@@ -93,7 +93,8 @@ const INVISIBLE =
 const MARK_FLOOD = new RegExp(`(\\p{M}{${MAX_COMBINING_MARKS}})\\p{M}+`, 'gu')
 
 const JWT_START = 'eyJ'
-const KEY_START = 'tula_sk_'
+// A secret key and an agent key (ADR 0053). A publishable key is public and is not one.
+const KEY_STARTS = ['tula_sk_', 'tula_ak_'] as const
 // The characters a key or a JWT is made of, with the dot that joins a JWT's parts.
 const TOKEN_RUN = /[A-Za-z0-9_.-]+/g
 
@@ -151,8 +152,8 @@ function jwtSpans(text: string): Span[] {
 
 /**
  * Shapes that are secrets wherever they turn up: a Tula secret key, a JWT, a password hash,
- * an authenticator URI or its `secret=`, a PEM block. The projection already drops every field
- * that could hold one; this is for a secret that arrives inside a field that is kept (a user
+ * an authenticator URI or its `secret=`, a PEM block, a webhook signing secret. The projection
+ * already drops every field that could hold one; this is for a secret that arrives inside a field that is kept (a user
  * who pasted a key into their name, an API that one day answers differently).
  *
  * Each answers where its shape is, and costs time in proportion to the text: a pattern here
@@ -162,10 +163,15 @@ function jwtSpans(text: string): Span[] {
  */
 const SECRET_SHAPES: readonly ((text: string) => Span[])[] = [
   spansOf(/tula_sk_[a-z]+_[A-Za-z0-9_-]{8,}/g),
+  // An agent key (ADR 0053): it reads everything a secret key reads.
+  spansOf(/tula_ak_[a-z]+_[A-Za-z0-9_-]{8,}/g),
   jwtSpans,
   spansOf(/\$(?:argon2(?:id|i|d)|2[aby]|scrypt)\$[^\s"']+/g),
   spansOf(/otpauth:\/\/[^\s"']+/g),
   spansOf(/-----BEGIN [A-Z ]+-----[\s\S]*?(?:-----END [A-Z ]+-----|$)/g),
+  // A webhook endpoint's signing secret (ADR 0034): `whsec_` and base64. From its prefix on,
+  // however short: one the window cut is a secret from where it starts.
+  spansOf(/whsec_[A-Za-z0-9+/=]*/g),
 ]
 
 function isTokenCharacter(code: number): boolean {
@@ -182,7 +188,8 @@ function isTokenCharacter(code: number): boolean {
 /**
  * For text the window cut: a key or a JWT that began before the cut and did not finish is too
  * short for its shape, and would be returned as it is. It is a secret from where it starts to
- * the end. (A hash, an authenticator URI and a PEM block match however short they were cut.)
+ * the end. (A hash, an authenticator URI, a PEM block and a webhook signing secret match
+ * however short they were cut.)
  */
 function cutSecretSpans(text: string): Span[] {
   let start = text.length
@@ -190,7 +197,9 @@ function cutSecretSpans(text: string): Span[] {
     start -= 1
   }
   const tail = text.slice(start)
-  const starts = [tail.indexOf(KEY_START), tail.indexOf(JWT_START)].filter((at) => at !== -1)
+  const starts = [...KEY_STARTS, JWT_START]
+    .map((start) => tail.indexOf(start))
+    .filter((at) => at !== -1)
   return starts.length === 0 ? [] : [[start + Math.min(...starts), text.length]]
 }
 

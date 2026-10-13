@@ -199,3 +199,56 @@ test('expected claims are keyed by the path of the token in the body', () => {
   ).toBe(true)
   expect(ScenarioSchema.safeParse(scenario(['session.accessToken'])).success).toBe(false)
 })
+
+test('a scenario that reads a text message must say so, so it is skipped where there is no inbox', () => {
+  const read = { name: 'read', smsCode: { to: '{{phone}}', capture: 'code' } }
+  const base = { name: 'n', description: 'd', steps: [read] }
+  expect(ScenarioSchema.safeParse(base).success).toBe(false)
+  expect(ScenarioSchema.safeParse({ ...base, needsSmsInbox: false }).success).toBe(false)
+  expect(ScenarioSchema.safeParse({ ...base, needsSmsInbox: true }).success).toBe(true)
+  // In the cleanup too.
+  const step = { name: 's', request: { method: 'GET', path: '/x' }, expect: { status: 200 } }
+  expect(
+    ScenarioSchema.safeParse({ name: 'n', description: 'd', steps: [step], cleanup: [read] })
+      .success
+  ).toBe(false)
+  // Nothing unknown in the step.
+  expect(
+    ScenarioSchema.safeParse({
+      ...base,
+      needsSmsInbox: true,
+      steps: [{ name: 'read', smsCode: { to: 'x', capture: 'code', body: true } }],
+    }).success
+  ).toBe(false)
+})
+
+test('a scenario that waits longer than a run can sleep must say so, so a live server skips it', () => {
+  const base = (wait: string) => ({ name: 'n', description: 'd', steps: [{ name: 'w', wait }] })
+  // Ten minutes is the most a live run sleeps; a millisecond's worth more needs the flag.
+  expect(ScenarioSchema.safeParse(base('10m')).success).toBe(true)
+  expect(ScenarioSchema.safeParse(base('600s')).success).toBe(true)
+  expect(ScenarioSchema.safeParse(base('601s')).success).toBe(false)
+  expect(ScenarioSchema.safeParse(base('1d')).success).toBe(false)
+  expect(ScenarioSchema.safeParse({ ...base('1d'), needsTestClock: false }).success).toBe(false)
+  expect(ScenarioSchema.safeParse({ ...base('1d'), needsTestClock: true }).success).toBe(true)
+  // In the cleanup too.
+  expect(
+    ScenarioSchema.safeParse({ ...base('1s'), cleanup: [{ name: 'c', wait: '1d' }] }).success
+  ).toBe(false)
+  // A short wait may still ask for the clock, and a malformed one is refused for itself.
+  expect(ScenarioSchema.safeParse({ ...base('30s'), needsTestClock: true }).success).toBe(true)
+  expect(ScenarioSchema.safeParse({ ...base('soon'), needsTestClock: true }).success).toBe(false)
+})
+
+test('a variable is generated only as a kind the runner knows', () => {
+  const scenario = (generate: string) => ({
+    name: 'n',
+    description: 'd',
+    variables: { value: { generate } },
+    steps: [{ name: 's', request: { method: 'GET', path: '/x' }, expect: { status: 200 } }],
+  })
+  for (const kind of ['email', 'password', 'phone', 'phone_fr']) {
+    expect(ScenarioSchema.safeParse(scenario(kind)).success).toBe(true)
+  }
+  expect(ScenarioSchema.safeParse(scenario('address')).success).toBe(false)
+})

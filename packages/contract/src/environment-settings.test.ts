@@ -17,10 +17,12 @@ import {
   parseStoredEnvironmentSettings,
   RedirectUrlSchema,
   readStoredEnvironmentSettings,
+  SIGN_IN_METHODS_WITHOUT_SIGN_UP,
   SignUpPasswordModeSchema,
   WebOriginSchema,
 } from './environment-settings'
 import { PASSWORD_POLICY_PRESETS } from './password-policy'
+import { DEFAULT_SMS_DAILY_MESSAGE_LIMIT, MAX_SMS_DAILY_MESSAGE_LIMIT } from './phone'
 
 const accepts = (input: unknown) => EnvironmentSettingsSchema.safeParse(input).success
 
@@ -39,11 +41,14 @@ const DEFAULT_PROFILE: SessionProfile = {
   refresh: { reuseGracePeriod: '10s' },
   stepUpAfter: null,
   clientSelectable: false,
+  jwtTemplate: null,
+  deviceBinding: 'optional',
 }
 const DEFAULT_SESSIONS: SessionSettings = {
-  profiles: { web: DEFAULT_PROFILE, mobile: DEFAULT_PROFILE },
+  profiles: { web: { ...DEFAULT_PROFILE, deviceBinding: 'none' }, mobile: DEFAULT_PROFILE },
   maxPerUser: null,
   onLimit: 'end_oldest',
+  jwtTemplates: {},
 }
 
 describe('EnvironmentSettingsSchema', () => {
@@ -58,20 +63,24 @@ describe('EnvironmentSettingsSchema', () => {
           emailCode: { enabled: false },
           emailLink: { enabled: false },
           passkey: { enabled: false },
+          smsCode: { enabled: false },
         },
       },
       signUp: { password: 'required' },
       urls: { allowedOrigins: [], allowedRedirectUrls: [] },
       audit: { retentionDays: null },
+      agents: { proposalsInProduction: false, testSignIn: null },
       notifications: {
         passwordChanged: true,
         newSignIn: true,
         mfaChanged: true,
         identityChanged: true,
       },
-      mfa: { policy: 'optional' },
+      mfa: { policy: 'optional', smsCode: { enabled: false } },
       passkeys: { rpId: null },
       sessions: DEFAULT_SESSIONS,
+      sms: { enabled: false, allowedCountries: [], dailyMessageLimit: 500, templates: {} },
+      emails: { templates: {} },
     })
     expect(DEFAULT_ENVIRONMENT_SETTINGS).toEqual(EnvironmentSettingsSchema.parse({}))
   })
@@ -120,6 +129,38 @@ describe('EnvironmentSettingsSchema', () => {
 
   test('the name may use any script and punctuation', () => {
     expect(accepts({ app: { name: 'Café “Zoë” & Søn <3 東京' } })).toBe(true)
+    // Joiners and variation selectors are how Persian and emoji are written.
+    expect(accepts({ app: { name: 'می\u{200C}خواهم \u{2764}\u{FE0F} 👩\u{200D}💻' } })).toBe(true)
+    // A brand may be a domain name: the link rule of email templates is not applied here.
+    expect(accepts({ app: { name: 'Acme.com' } })).toBe(true)
+  })
+
+  // The name goes into every subject and body (ADR 0039): what reorders the text around
+  // it, or is nobody's character, is refused when it is set.
+  test.each<[string, string]>([
+    ['a right-to-left override', 'Acme\u{202E}moc'],
+    ['a left-to-right isolate', '\u{2066}Acme'],
+    ['a pop directional isolate', 'Acme\u{2069}'],
+    ['a right-to-left mark', 'Acme\u{200F}'],
+    ['an Arabic letter mark', 'Acme\u{061C}'],
+    ['a private-use character', 'Acme\u{E000}'],
+    ['an unassigned code point', 'Acme\u{0378}'],
+    ['a lone surrogate', 'Acme\u{D83D}'],
+  ])('a name with %s is refused on input', (_, name) => {
+    const result = EnvironmentSettingsInputSchema.safeParse({ app: { name } })
+    expect(result.success).toBe(false)
+    expect(result.error?.issues.map((issue) => [issue.path.join('.'), issue.message])).toEqual([
+      [
+        'app.name',
+        'must not contain text-direction controls, private-use or unassigned characters, or half a surrogate pair',
+      ],
+    ])
+  })
+
+  test('a name already stored with such a character is still read, and still answered', () => {
+    const name = 'Acme\u{202E}moc'
+    expect(readStoredEnvironmentSettings({ app: { name } }).settings.app.name).toBe(name)
+    expect(EnvironmentSettingsSchema.safeParse({ app: { name } }).success).toBe(true)
   })
 
   test('the support address must be an email address or null', () => {
@@ -144,6 +185,31 @@ describe('EnvironmentSettingsSchema', () => {
     expect(hasEnabledSignInMethod(EnvironmentSettingsSchema.parse(allOff))).toBe(false)
     expect(hasEnabledSignInMethod(DEFAULT_ENVIRONMENT_SETTINGS)).toBe(true)
     expect(AT_LEAST_ONE_SIGN_IN_METHOD).toContain('at least one')
+  })
+
+  test('the SMS code is off by default, additive, and never counts as the one way in', () => {
+    expect(DEFAULT_ENVIRONMENT_SETTINGS.signIn.methods.smsCode).toEqual({ enabled: false })
+    // A document stored before the method existed reads with it off.
+    const stored = parseStoredEnvironmentSettings({
+      signIn: { methods: { password: { enabled: true } } },
+    })
+    expect(stored.signIn.methods.smsCode).toEqual({ enabled: false })
+    // Nobody signs up with a phone number: alone, it would let nobody in who is not in already.
+    const onlySms = EnvironmentSettingsSchema.parse({
+      signIn: { methods: { password: { enabled: false }, smsCode: { enabled: true } } },
+    })
+    expect(hasEnabledSignInMethod(onlySms)).toBe(false)
+    expect(SIGN_IN_METHODS_WITHOUT_SIGN_UP).toEqual(['smsCode'])
+    const withCode = EnvironmentSettingsSchema.parse({
+      signIn: {
+        methods: {
+          password: { enabled: false },
+          emailCode: { enabled: true },
+          smsCode: { enabled: true },
+        },
+      },
+    })
+    expect(hasEnabledSignInMethod(withCode)).toBe(true)
   })
 
   test('the lists are bounded and hold no duplicates', () => {
@@ -218,7 +284,18 @@ describe('RedirectUrlSchema', () => {
     ['credentials', 'https://user:pw@app.example.com/cb', false],
     ['a fragment', 'https://app.example.com/cb#token', false],
     ['a javascript URL', 'javascript:alert(1)', false],
-    ['a custom scheme', 'myapp://callback', false],
+    ['a custom scheme with no full stop', 'myapp://callback', false],
+    ['a custom scheme in reverse-domain form', 'com.example.app:/oauth', true],
+    ['the same with two slashes', 'com.example.app://oauth/callback', true],
+    ['a custom scheme in another case', 'Com.Example.App:/oauth', false],
+    ['a custom scheme with a query', 'com.example.app:/oauth?x=1', false],
+    ['a custom scheme with a fragment', 'com.example.app:/oauth#x', false],
+    ['a custom scheme with credentials', 'com.example.app://u@h/x', false],
+    ['a custom scheme with a hidden character', 'com.example.app:/oauth\u200b', false],
+    ['a data URL', 'data:text/html,x', false],
+    ['an intent URL', 'intent://x/#Intent;end', false],
+    ['an https URL in upper case', 'HTTPS://app.example.com/cb', false],
+    ['an https URL with one slash', 'https:/app.example.com/cb', false],
     ['whitespace', 'https://app.example.com/a b', false],
     ['an empty string', '', false],
   ])('%s', (_, url, ok) => {
@@ -322,11 +399,19 @@ describe('reading a stored document never fails over a list entry', () => {
     expect(readStoredEnvironmentSettings({ urls: { allowedOrigins: 'https://a.test' } })).toEqual({
       settings: DEFAULT_ENVIRONMENT_SETTINGS,
       dropped: 1,
+      droppedEmailTemplates: [],
+      unknownEmailTemplates: 0,
+      droppedSmsTemplates: [],
+      unknownSmsTemplates: 0,
     })
     expect(readStoredEnvironmentSettings({ urls: null }).dropped).toBe(0)
     expect(readStoredEnvironmentSettings(DEFAULT_ENVIRONMENT_SETTINGS)).toEqual({
       settings: DEFAULT_ENVIRONMENT_SETTINGS,
       dropped: 0,
+      droppedEmailTemplates: [],
+      unknownEmailTemplates: 0,
+      droppedSmsTemplates: [],
+      unknownSmsTemplates: 0,
     })
   })
 })
@@ -342,20 +427,24 @@ describe('EnvironmentSettingsInputSchema', () => {
           emailCode: { enabled: false },
           emailLink: { enabled: false },
           passkey: { enabled: false },
+          smsCode: { enabled: false },
         },
       },
       signUp: { password: 'required' },
       urls: { allowedRedirectUrls: [] },
       audit: { retentionDays: null },
+      agents: { proposalsInProduction: false, testSignIn: null },
       notifications: {
         passwordChanged: true,
         newSignIn: true,
         mfaChanged: true,
         identityChanged: true,
       },
-      mfa: { policy: 'optional' },
+      mfa: { policy: 'optional', smsCode: { enabled: false } },
       passkeys: { rpId: null },
       sessions: DEFAULT_SESSIONS,
+      sms: { enabled: false, allowedCountries: [], dailyMessageLimit: 500, templates: {} },
+      emails: { templates: {} },
     })
     const sent = EnvironmentSettingsInputSchema.parse({
       password: PASSWORD_POLICY_PRESETS.strict,
@@ -467,6 +556,7 @@ describe('email sign-in methods and the sign-up password', () => {
       emailCode: { enabled: false },
       emailLink: { enabled: false },
       passkey: { enabled: false },
+      smsCode: { enabled: false },
     })
     expect(settings.signUp).toEqual({ password: 'required' })
     // And what it reads is a document the strict schema accepts.
@@ -496,7 +586,10 @@ describe('two-step verification: the policy and its notice', () => {
     }
 
   test('the policy is optional and its notice on until an environment says otherwise', () => {
-    expect(DEFAULT_ENVIRONMENT_SETTINGS.mfa).toEqual({ policy: 'optional' })
+    expect(DEFAULT_ENVIRONMENT_SETTINGS.mfa).toEqual({
+      policy: 'optional',
+      smsCode: { enabled: false },
+    })
     expect(DEFAULT_ENVIRONMENT_SETTINGS.notifications.mfaChanged).toBe(true)
     expect(MfaPolicySchema.options).toEqual(['off', 'optional', 'required'])
   })
@@ -505,9 +598,15 @@ describe('two-step verification: the policy and its notice', () => {
     'every policy is accepted, and the notice can be switched off (schema %#)',
     (schema) => {
       for (const policy of MfaPolicySchema.options) {
-        expect(schema.parse({ mfa: { policy } }).mfa).toEqual({ policy })
+        expect(schema.parse({ mfa: { policy } }).mfa).toEqual({
+          policy,
+          smsCode: { enabled: false },
+        })
       }
-      expect(schema.parse({ mfa: {} }).mfa).toEqual({ policy: 'optional' })
+      expect(schema.parse({ mfa: {} }).mfa).toEqual({
+        policy: 'optional',
+        smsCode: { enabled: false },
+      })
       expect(schema.parse({ notifications: { mfaChanged: false } }).notifications).toEqual({
         passwordChanged: true,
         newSignIn: true,
@@ -532,6 +631,41 @@ describe('two-step verification: the policy and its notice', () => {
     }
   )
 
+  test.each([EnvironmentSettingsSchema, EnvironmentSettingsInputSchema])(
+    'a texted code as the second step is off until an environment switches it on (schema %#)',
+    (schema) => {
+      expect(schema.parse({}).mfa.smsCode).toEqual({ enabled: false })
+      expect(schema.parse({ mfa: { smsCode: {} } }).mfa.smsCode).toEqual({ enabled: false })
+      expect(schema.parse({ mfa: { smsCode: { enabled: true } } }).mfa).toEqual({
+        policy: 'optional',
+        smsCode: { enabled: true },
+      })
+      expect(paths(schema)({ mfa: { smsCode: { enabled: 'yes' } } })).toEqual([
+        'mfa.smsCode.enabled',
+      ])
+      expect(paths(schema)({ mfa: { smsCode: true } })).toEqual(['mfa.smsCode'])
+      expect(paths(schema)({ mfa: { smsCode: { enabled: true, fallback: true } } })).toEqual([
+        'mfa.smsCode',
+      ])
+    }
+  )
+
+  test('a stored switch that is not a boolean reads as off, never as on', () => {
+    for (const smsCode of [{ enabled: 'yes' }, { enabled: 1 }, true, null, 'on']) {
+      let settings: ReturnType<typeof readStoredEnvironmentSettings>['settings'] | undefined
+      try {
+        settings = readStoredEnvironmentSettings({ mfa: { policy: 'required', smsCode } }).settings
+      } catch {
+        // A document that cannot be read at all switches nothing on either.
+        continue
+      }
+      expect(settings.mfa.smsCode.enabled).toBe(false)
+    }
+    expect(
+      readStoredEnvironmentSettings({ mfa: { smsCode: { enabled: true } } }).settings.mfa
+    ).toEqual({ policy: 'optional', smsCode: { enabled: true } })
+  })
+
   test('a document stored before the policy existed reads as optional, with the notice on', () => {
     const stored = {
       version: 1,
@@ -540,7 +674,7 @@ describe('two-step verification: the policy and its notice', () => {
     }
     const { settings, dropped } = readStoredEnvironmentSettings(stored)
     expect(dropped).toBe(0)
-    expect(settings.mfa).toEqual({ policy: 'optional' })
+    expect(settings.mfa).toEqual({ policy: 'optional', smsCode: { enabled: false } })
     expect(settings.notifications).toEqual({
       passwordChanged: false,
       newSignIn: true,
@@ -554,7 +688,7 @@ describe('two-step verification: the policy and its notice', () => {
     const settings = parseStoredEnvironmentSettings({
       mfa: { policy: 'required', methods: ['sms'], gracePeriodDays: 7 },
     })
-    expect(settings.mfa).toEqual({ policy: 'required' })
+    expect(settings.mfa).toEqual({ policy: 'required', smsCode: { enabled: false } })
     // What was read is a document the strict schema accepts.
     expect(EnvironmentSettingsSchema.parse(settings)).toEqual(settings)
   })
@@ -644,5 +778,158 @@ describe('passkeys', () => {
     const { settings } = readStoredEnvironmentSettings({ app: { name: 'Acme' } })
     expect(settings.signIn.methods.passkey).toEqual({ enabled: false })
     expect(settings.passkeys).toEqual({ rpId: null })
+  })
+})
+
+describe('sms', () => {
+  test('is off and allows no country until an environment says otherwise', () => {
+    expect(DEFAULT_ENVIRONMENT_SETTINGS.sms).toEqual({
+      enabled: false,
+      allowedCountries: [],
+      dailyMessageLimit: DEFAULT_SMS_DAILY_MESSAGE_LIMIT,
+      templates: {},
+    })
+    expect(parseStoredEnvironmentSettings({ app: { name: 'Acme' } }).sms).toEqual({
+      enabled: false,
+      allowedCountries: [],
+      dailyMessageLimit: 500,
+      templates: {},
+    })
+  })
+
+  test.each([
+    ['strict', EnvironmentSettingsSchema],
+    ['input', EnvironmentSettingsInputSchema],
+  ] as const)('the %s schema takes upper-case country codes the table knows', (_name, schema) => {
+    expect(schema.parse({ sms: { enabled: true, allowedCountries: ['DE', 'US'] } }).sms).toEqual({
+      enabled: true,
+      allowedCountries: ['DE', 'US'],
+      dailyMessageLimit: 500,
+      templates: {},
+    })
+    for (const allowedCountries of [
+      ['de'],
+      ['DEU'],
+      ['ZZ'],
+      ['D'],
+      [''],
+      ['+49'],
+      ['constructor'],
+      ['DE', 'DE'],
+      [49],
+      'DE',
+    ]) {
+      const result = schema.safeParse({ sms: { allowedCountries } })
+      expect(result.success).toBe(false)
+      expect(result.error?.issues[0]?.path.slice(0, 2)).toEqual(['sms', 'allowedCountries'])
+    }
+    expect(schema.safeParse({ sms: { enabled: 'yes' } }).success).toBe(false)
+    expect(schema.safeParse({ sms: { provider: 'twilio' } }).success).toBe(false)
+  })
+
+  test('a stored document keeps the countries this version knows and counts the rest', () => {
+    const { settings, dropped } = readStoredEnvironmentSettings({
+      sms: { enabled: true, allowedCountries: ['DE', 'de', 'ZZ', 'DE', 'US', 7], sender: 'x' },
+    })
+    expect(settings.sms).toEqual({
+      enabled: true,
+      allowedCountries: ['DE', 'US'],
+      dailyMessageLimit: 500,
+      templates: {},
+    })
+    expect(dropped).toBe(4)
+    expect(readStoredEnvironmentSettings({ sms: null })).toEqual({
+      settings: DEFAULT_ENVIRONMENT_SETTINGS,
+      dropped: 0,
+      droppedEmailTemplates: [],
+      unknownEmailTemplates: 0,
+      droppedSmsTemplates: [],
+      unknownSmsTemplates: 0,
+    })
+    expect(readStoredEnvironmentSettings({ sms: { allowedCountries: 'DE' } })).toEqual({
+      settings: DEFAULT_ENVIRONMENT_SETTINGS,
+      dropped: 1,
+      droppedEmailTemplates: [],
+      unknownEmailTemplates: 0,
+      droppedSmsTemplates: [],
+      unknownSmsTemplates: 0,
+    })
+  })
+
+  test.each([
+    ['strict', EnvironmentSettingsSchema],
+    ['input', EnvironmentSettingsInputSchema],
+  ] as const)(
+    'the %s schema holds the daily limit to a whole number in its range',
+    (_name, schema) => {
+      for (const dailyMessageLimit of [1, 500, MAX_SMS_DAILY_MESSAGE_LIMIT]) {
+        expect(schema.parse({ sms: { dailyMessageLimit } }).sms.dailyMessageLimit).toBe(
+          dailyMessageLimit
+        )
+      }
+      // No value switches the limit off: not zero, not null, not a number past the maximum.
+      for (const dailyMessageLimit of [0, -1, 1.5, MAX_SMS_DAILY_MESSAGE_LIMIT + 1, null, '500']) {
+        const result = schema.safeParse({ sms: { dailyMessageLimit } })
+        expect(result.success).toBe(false)
+        expect(result.error?.issues[0]?.path).toEqual(['sms', 'dailyMessageLimit'])
+      }
+    }
+  )
+
+  test('a document stored before the daily limit existed has the default one', () => {
+    expect(
+      parseStoredEnvironmentSettings({ sms: { enabled: true, allowedCountries: ['DE'] } }).sms
+    ).toEqual({ enabled: true, allowedCountries: ['DE'], dailyMessageLimit: 500, templates: {} })
+  })
+
+  test('the client config has a place for whether a phone number can be added', () => {
+    const config = {
+      app: { name: 'Acme', supportEmail: null },
+      signIn: { methods: ['password'] },
+      password: PASSWORD_POLICY_PRESETS.recommended,
+    }
+    expect(ClientConfigSchema.parse({ ...config, phone: { enabled: true } }).phone).toEqual({
+      enabled: true,
+    })
+    // An older server's answer has none.
+    expect(ClientConfigSchema.parse(config).phone).toBeUndefined()
+  })
+})
+
+describe('agents.testSignIn', () => {
+  test('is null by default, in the stored document and in the input', () => {
+    expect(EnvironmentSettingsSchema.parse({}).agents).toEqual({
+      proposalsInProduction: false,
+      testSignIn: null,
+    })
+    expect(EnvironmentSettingsInputSchema.parse({}).agents).toEqual({
+      proposalsInProduction: false,
+      testSignIn: null,
+    })
+    expect(parseStoredEnvironmentSettings({}).agents).toEqual({
+      proposalsInProduction: false,
+      testSignIn: null,
+    })
+  })
+
+  test.each([true, false, null])('takes %p', (value) => {
+    expect(EnvironmentSettingsSchema.parse({ agents: { testSignIn: value } }).agents).toEqual({
+      proposalsInProduction: false,
+      testSignIn: value,
+    })
+  })
+
+  test('refuses anything that is not a boolean or null, and an unknown key beside it', () => {
+    for (const agents of [{ testSignIn: 'yes' }, { testSignIn: 1 }, { testSignIn: null, x: 1 }]) {
+      expect(EnvironmentSettingsSchema.safeParse({ agents }).success).toBe(false)
+      expect(EnvironmentSettingsInputSchema.safeParse({ agents }).success).toBe(false)
+    }
+  })
+
+  test('a stored document with a key beside it reads as the default', () => {
+    expect(parseStoredEnvironmentSettings({ agents: { later: true } }).agents).toEqual({
+      proposalsInProduction: false,
+      testSignIn: null,
+    })
   })
 })

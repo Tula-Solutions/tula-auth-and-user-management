@@ -48,6 +48,10 @@ export const ERROR_DEFINITIONS = {
   },
 
   'email.invalid': { status: 422, message: 'Enter a valid email address.' },
+  // Adding an address to an account that has one (ADR 0059). Changing an address is another
+  // operation, which does not exist. Only ever told to the account's own signed-in user, or
+  // to an administrator, about that account.
+  'email.already_set': { status: 409, message: 'This account already has an email address.' },
 
   'password.too_short': { status: 422, message: 'Password is too short.' },
   'password.too_long': { status: 422, message: 'Password is too long.' },
@@ -73,6 +77,12 @@ export const ERROR_DEFINITIONS = {
     message: 'Avoid repeating the same character.',
   },
   'password.sequence': { status: 422, message: 'Avoid sequences like "abcd" or "1234".' },
+  // The new password is one of the account's last `params.history` passwords, the current one
+  // included (ADR 0038). Only ever told to someone who has already proven the account is theirs.
+  'password.reused': {
+    status: 422,
+    message: 'You have used this password recently. Choose a different one.',
+  },
   // "Change my password" on an account that has none (it signs in another way). Only ever told
   // to the signed-in user about their own account.
   'password.not_set': {
@@ -116,6 +126,29 @@ export const ERROR_DEFINITIONS = {
   'mfa.not_available': {
     status: 403,
     message: 'Two-step verification is not available for this app.',
+  },
+  // The environment's `mfa.policy` is `required`, the user has no second factor, and all the
+  // sign-in proved is a texted code. A phone number alone must not be what enrols an account's
+  // second factor (ADR 0037): sign in another way.
+  'mfa.enrolment_needs_other_sign_in': {
+    status: 403,
+    message: 'Sign in another way to set up two-step verification.',
+  },
+  // A texted code is the account's only second factor and all the sign-in proved is a texted
+  // code to the same number: one phone is not two steps (ADR 0025). Sign in another way first.
+  'mfa.needs_other_sign_in': {
+    status: 403,
+    message: 'Sign in another way. A texted code cannot be both steps.',
+  },
+  // A texted code is never a second factor beside an authenticator app or a passkey.
+  'mfa.sms_not_allowed': {
+    status: 409,
+    message: 'This account already has a stronger second step than a texted code.',
+  },
+  // Enrolling a texted code as the second factor needs a phone number on the account.
+  'mfa.phone_number_required': {
+    status: 409,
+    message: 'Add a phone number to your account first.',
   },
   // The environment's `mfa.policy` is `required`: a user cannot turn their second factor off.
   'mfa.required_by_policy': {
@@ -181,6 +214,45 @@ export const ERROR_DEFINITIONS = {
     message: 'This is your only way to sign in. Add a password or connect another account first.',
   },
 
+  // A webhook endpoint's address is not one the server may call (ADR 0034): not `https`,
+  // credentials in it, or a host that does not resolve to public addresses only.
+  // `params.reason` is a fixed word saying which rule; never the address or what it resolved to.
+  'webhook.url_not_allowed': {
+    status: 422,
+    message: 'The server cannot deliver to that address.',
+  },
+  // A past delivery cannot be sent again (ADR 0034). `params.reason` is a fixed word saying
+  // why: `delivery_pending` (the server is still retrying it), `endpoint_disabled` (nothing
+  // is sent to an endpoint that is off), `event_gone` (its payload is no longer kept) or
+  // `attempt_limit` (the delivery has had as many requests as one may have).
+  'webhook.cannot_redeliver': {
+    status: 409,
+    message: 'This delivery cannot be sent again.',
+  },
+  // A signing secret cannot be replaced, or its overlap ended, right now (ADR 0034).
+  // `params.reason` is a fixed word: `rotation_in_progress` (two secrets already sign),
+  // `no_rotation_in_progress` (there is no previous secret to revoke) or `secret_unreadable`
+  // (the server cannot open the current secret, so it could not keep signing).
+  'webhook.rotation_refused': {
+    status: 409,
+    message: 'The signing secret cannot be changed now.',
+  },
+
+  // Hooks (ADR 0035). The operator's hook refused a sign-up (`before_sign_up`) or a sign-in
+  // (`before_session`); `params.code` is the hook's own message code when it gave one, for
+  // the app to turn into words. Answered only where the address, or every factor, was
+  // already proven, so it says nothing about any account. One code for both points: a client
+  // knows which of the two it was doing, and the words name neither.
+  'hook.denied': { status: 403, message: 'This was not allowed.' },
+  // A hook could not be asked or gave no usable answer, and it refuses on failure. Nothing
+  // was created; trying again later may work.
+  'hook.unavailable': {
+    status: 503,
+    message: 'This is unavailable right now. Try again later.',
+  },
+  // A hook's address is not one the server may call: as `webhook.url_not_allowed`.
+  'hook.url_not_allowed': { status: 422, message: 'The server cannot call that address.' },
+
   // Passkeys (ADR 0027). A failed passkey sign-in is always `auth.invalid_credentials`.
   'passkey.registration_failed': {
     status: 422,
@@ -200,6 +272,27 @@ export const ERROR_DEFINITIONS = {
     message: 'This is your only way to sign in. Add a password or connect an account first.',
   },
 
+  // Phone numbers and SMS (ADR 0037). Both refusals of a send are answered to the signed-in
+  // owner of the request, about the environment and the number they typed: neither says
+  // anything about another account.
+  'phone.invalid': {
+    status: 422,
+    message: 'Enter a phone number with its country code, such as +14155550100.',
+  },
+  // The environment's settings have SMS off (`sms.enabled`), or allow no country at all.
+  'sms.disabled': { status: 403, message: 'Text messages are not available.' },
+  // The number's country is not in the environment's `sms.allowedCountries`. Nothing was sent.
+  'sms.country_not_allowed': {
+    status: 422,
+    message: 'Text messages cannot be sent to that country.',
+  },
+  // The message could not be handed to a sender (none is configured, or it failed). Nothing
+  // was stored: an earlier code keeps working.
+  'sms.unavailable': {
+    status: 503,
+    message: 'The text message could not be sent. Try again later.',
+  },
+
   'session.invalid_token': { status: 401, message: 'Your session is invalid. Sign in again.' },
   'session.expired': { status: 401, message: 'Your session has expired. Sign in again.' },
   'session.revoked': { status: 401, message: 'Your session was signed out. Sign in again.' },
@@ -216,6 +309,36 @@ export const ERROR_DEFINITIONS = {
       'You are signed in on too many devices. Sign out on another device, or reset your password to sign out everywhere, then try again.',
   },
 
+  // Device binding (ADR 0043). None of the three is a `session.*` code, on purpose: a session
+  // whose refresh is refused for its proof is still alive, and a client must not sign out.
+  //
+  // A proof (the `DPoP` header) is missing where the session is bound to a key, or is not a
+  // valid proof for that key and this request. Nothing was rotated and the session lives on.
+  'device.proof_invalid': {
+    status: 401,
+    message: 'This session is bound to a device key, and the request did not prove that key.',
+  },
+  // The proof's nonce is missing or too old. The answer carries a fresh one in the
+  // `DPoP-Nonce` header: make a new proof with it and send the request again.
+  'device.nonce_required': {
+    status: 400,
+    message: 'The proof needs a fresh nonce. Send the request again with the nonce provided.',
+  },
+  // A proof was sent where a session cannot be bound: by a browser (`x-tula-client: web`),
+  // for a session profile whose `deviceBinding` is `none`, or to a deployment whose own
+  // public URL no proof can name (ADR 0043).
+  'device.binding_not_supported': {
+    status: 400,
+    message: 'A session of this kind of client cannot be bound to a device key.',
+  },
+  // A sign-in of a client that is not a browser started without a proof, for a session
+  // profile whose `deviceBinding` is `required`. Nothing was started. A `device.*` code and
+  // not a `session.*` one: no session is over.
+  'device.binding_required': {
+    status: 400,
+    message: 'Signing in here needs a device key.',
+  },
+
   rate_limited: { status: 429, message: 'Too many requests. Try again shortly.' },
   'request.malformed': { status: 400, message: 'The request could not be read.' },
   'request.too_large': { status: 413, message: 'The request body is too large.' },
@@ -226,8 +349,11 @@ export const ERROR_DEFINITIONS = {
     status: 403,
     message: 'This origin is not allowed to sign in to this app.',
   },
-  // An emailed sign-in link was asked for with a `redirectUrl` that is not, exactly, one of the
-  // environment's `urls.allowedRedirectUrls`. Says nothing about any account.
+  // An emailed sign-in link or a provider sign-in was asked for with a `redirectUrl` that is
+  // not, exactly, one of the environment's `urls.allowedRedirectUrls`. Says nothing about any
+  // account. With `params.reason` (a fixed word of `CUSTOM_SCHEME_REDIRECT_REFUSALS`) the URL
+  // is listed and is a custom scheme this request may not be returned to (ADR 0044):
+  // `provider_without_pkce`, `client_not_native` or `not_a_provider_sign_in`.
   'request.redirect_not_allowed': {
     status: 400,
     message: 'This redirect URL is not allowed for this app.',

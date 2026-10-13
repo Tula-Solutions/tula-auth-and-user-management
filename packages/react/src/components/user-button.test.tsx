@@ -2,6 +2,7 @@ import { afterEach, describe, expect, mock, test } from 'bun:test'
 import { screen, waitFor } from '@testing-library/react'
 import { TulaProvider, useTulaContext } from '../context'
 import {
+  expectAbsent,
   expectFocus,
   failure,
   json,
@@ -29,7 +30,7 @@ describe('<UserButton>', () => {
     const w = world()
     w.mount(<UserButton />)
     await waitFor(() => expect(w.client.state.status).toBe('signed-out'))
-    expect(screen.queryByRole('button')).toBeNull()
+    expectAbsent(screen.queryByRole('button'))
   })
 
   test('the trigger shows initials and announces itself as a menu button', async () => {
@@ -39,7 +40,7 @@ describe('<UserButton>', () => {
     expect(trigger.textContent).toBe('M')
     expect(trigger.getAttribute('aria-haspopup')).toBe('menu')
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
-    expect(screen.queryByRole('menu')).toBeNull()
+    expectAbsent(screen.queryByRole('menu'))
   })
 
   test('mouse: click opens with focus on the first item, a click outside closes', async () => {
@@ -60,13 +61,13 @@ describe('<UserButton>', () => {
     expect(screen.getByText(TEST_USER.email)).toBeTruthy()
 
     await w.user.click(screen.getByRole('button', { name: 'elsewhere' }))
-    expect(screen.queryByRole('menu')).toBeNull()
+    expectAbsent(screen.queryByRole('menu'))
 
     // Clicking the trigger again toggles.
     await w.user.click(trigger)
     expect(screen.getByRole('menu')).toBeTruthy()
     await w.user.click(trigger)
-    expect(screen.queryByRole('menu')).toBeNull()
+    expectAbsent(screen.queryByRole('menu'))
   })
 
   test('keyboard: arrows open and move, Home and End jump, Escape closes and returns focus', async () => {
@@ -92,14 +93,14 @@ describe('<UserButton>', () => {
     await w.user.keyboard('a')
     expect(screen.getByRole('menu')).toBeTruthy()
     await w.user.keyboard('{Escape}')
-    expect(screen.queryByRole('menu')).toBeNull()
+    expectAbsent(screen.queryByRole('menu'))
     await expectFocus(trigger)
 
     // Enter opens too (a button's click), and Tab closes the menu behind it.
     await w.user.keyboard('{Enter}')
     expect(screen.getByRole('menu')).toBeTruthy()
     await w.user.tab()
-    expect(screen.queryByRole('menu')).toBeNull()
+    expectAbsent(screen.queryByRole('menu'))
     trigger.focus()
     await w.user.keyboard('{ArrowUp}')
     expect(screen.getByRole('menu')).toBeTruthy()
@@ -113,7 +114,7 @@ describe('<UserButton>', () => {
     await w.user.click(screen.getByRole('menuitem', { name: 'Sign out' }))
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('/'))
     expect(w.client.state.status).toBe('signed-out')
-    expect(screen.queryByRole('button')).toBeNull()
+    expectAbsent(screen.queryByRole('button'))
     expect(w.api.calls(ROUTE.signOut)).toHaveLength(1)
   })
 
@@ -290,7 +291,7 @@ describe('<UserButton>', () => {
     await w.user.click(screen.getByRole('menuitem', { name: 'Manage account' }))
     const dialog = await screen.findByRole('dialog', { name: 'Account' })
     expect((dialog as HTMLDialogElement).open).toBe(true)
-    expect(screen.queryByRole('menu')).toBeNull()
+    expectAbsent(screen.queryByRole('menu'))
     expect(await screen.findByRole('heading', { level: 2, name: 'Account' })).toBeTruthy()
     await w.user.click(screen.getByRole('button', { name: 'Close' }))
     await waitFor(() => expect(openDialogs()).toBe(0))
@@ -304,7 +305,7 @@ describe('<UserButton>', () => {
     await w.user.click(await screen.findByRole('button', { name: TRIGGER }))
     await w.user.click(screen.getByRole('menuitem', { name: 'Manage account' }))
     expect(navigate).toHaveBeenCalledWith('/account')
-    expect(screen.queryByRole('dialog')).toBeNull()
+    expectAbsent(screen.queryByRole('dialog'))
     first.unmount()
 
     const onManageAccount = mock()
@@ -325,5 +326,24 @@ describe('<UserButton>', () => {
       name: `Account menu for ${TEST_USER.email}`,
     })
     expect(trigger.textContent).toBe('M')
+  })
+})
+
+describe('a user with no email address (an account made through X or Facebook)', () => {
+  test.each([
+    ['a name', { firstName: 'Nelly', lastName: 'Okafor' }, 'NO', 'Account menu for Nelly Okafor'],
+    ['no name either', { firstName: null, lastName: null }, '?', 'Account menu for Account'],
+  ])('with %s: no address line, and never the word "null"', async (_case, names, avatar, label) => {
+    const w = world({ signedIn: true })
+    w.api.on(ROUTE.me, () =>
+      json(200, { ...TEST_USER, ...names, email: null, emailVerifiedAt: null })
+    )
+    const { container } = w.mount(<UserButton />)
+    const trigger = await screen.findByRole('button', { name: label })
+    expect(trigger.textContent).toBe(avatar)
+    await w.user.click(trigger)
+    expect(screen.getAllByRole('menuitem')).toHaveLength(2)
+    expectAbsent(container.querySelector('.tula-profile-email'))
+    expect(container.textContent).not.toContain('null')
   })
 })

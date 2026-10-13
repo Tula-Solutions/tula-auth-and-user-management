@@ -1,10 +1,24 @@
 import { z } from 'zod'
 import { PasskeyAssertionCredentialSchema, PasskeyRequestOptionsSchema } from './passkey'
 
-/** Second-factor methods a flow can ask for. */
+/**
+ * Second-factor methods a flow can ask for.
+ *
+ * `sms_code` is a 6-digit code texted to the account's proven phone number (ADR 0025). It is
+ * the weakest of them and is listed **alone or not at all**: a user who has an authenticator
+ * app or a passkey is never offered it.
+ */
 export const SecondFactorMethodSchema = z
   .enum(['totp', 'passkey', 'backup_code', 'sms_code'])
   .meta({ ref: 'SecondFactorMethod' })
+
+/**
+ * The second factors whose proof the server sends first: `sms_code`. Asked for with
+ * `second-factor/prepare` and proven with `second-factor`.
+ */
+export const PreparedSecondFactorMethodSchema = z
+  .enum(['sms_code'])
+  .meta({ ref: 'PreparedSecondFactorMethod' })
 
 /**
  * Ways to prove who you are as the first step of a sign-in.
@@ -18,9 +32,15 @@ export const FirstFactorStrategySchema = z
     'email_code',
     'email_link',
     'passkey',
+    'sms_code',
     'oauth_google',
     'oauth_github',
     'oauth_apple',
+    'oauth_microsoft',
+    'oauth_discord',
+    'oauth_linkedin',
+    'oauth_x',
+    'oauth_facebook',
   ])
   .meta({ ref: 'FirstFactorStrategy' })
 
@@ -34,6 +54,22 @@ export const FactorEnrolmentMethodSchema = z.enum(['totp']).meta({ ref: 'FactorE
 export const EmailVerificationStrategySchema = z
   .enum(['email_code', 'email_link'])
   .meta({ ref: 'EmailVerificationStrategy' })
+
+/**
+ * The first factors that are proven with a code (or link) the server sends first: the two
+ * email strategies, and `sms_code`, a 6-digit code texted to the phone number the sign-in was
+ * started with (ADR 0037). They are asked for with `first-factor/prepare` and proven with
+ * `first-factor/attempt`.
+ */
+export const PreparedFirstFactorStrategySchema = z
+  .enum(['email_code', 'email_link', 'sms_code'])
+  .meta({ ref: 'PreparedFirstFactorStrategy' })
+
+/**
+ * Why a sign-in stops to ask for a new password. `expired`: the password is older than the
+ * environment's `password.expiryDays` (ADR 0041). A closed list that may grow.
+ */
+export const NewPasswordReasonSchema = z.enum(['expired']).meta({ ref: 'NewPasswordReason' })
 
 /**
  * The next step of a sign-in or sign-up, decided by the server.
@@ -54,13 +90,14 @@ export const FlowStepSchema = z
       status: z.literal('needs_first_factor'),
       strategies: z.array(FirstFactorStrategySchema).min(1),
       /**
-       * Present once an email was asked for (`first-factor/prepare`): which email strategy, and
-       * the masked address it went to. The address is the identifier the attempt was started
-       * with, so it says nothing about any account. A client that does not know the field can
+       * Present once an email or a text message was asked for (`first-factor/prepare`): which
+       * strategy, and the masked address or number it went to (`***42` for a number). It is the
+       * identifier the attempt was started with, so it says nothing about any account, and it
+       * is there whether or not anything was sent. A client that does not know the field can
        * ignore it: the step is otherwise unchanged.
        */
       prepared: z
-        .object({ strategy: EmailVerificationStrategySchema, destination: z.string() })
+        .object({ strategy: PreparedFirstFactorStrategySchema, destination: z.string() })
         .optional(),
     }),
     z.object({
@@ -69,16 +106,41 @@ export const FlowStepSchema = z
       destination: z.string(),
       strategies: z.array(EmailVerificationStrategySchema).min(1),
     }),
-    z.object({
-      /**
-       * A password reset: submit the emailed code together with the new password. They travel in
-       * one request so that a verified attempt id never works as a credential on its own.
-       */
-      status: z.literal('needs_new_password'),
-      /** Masked destination the code was sent to. */
-      destination: z.string(),
-      strategies: z.array(EmailVerificationStrategySchema).min(1),
-    }),
+    z
+      .object({
+        /**
+         * A new password is wanted, for one of two reasons.
+         *
+         * **A password reset** (an attempt of kind `password_reset`; no `reason`): submit the
+         * emailed code together with the new password. They travel in one request so that a
+         * verified attempt id never works as a credential on its own.
+         *
+         * **An expired password** (an attempt of kind `sign_in`; `reason: 'expired'`): the
+         * password just typed was right and is older than the environment's
+         * `password.expiryDays` allows (ADR 0041). Everything else the sign-in needed is proven
+         * by now, a second factor included; submit a new password
+         * (`sign-ins/:attemptId/new-password`) and the sign-in completes. No session exists
+         * and no tokens are returned until then. Nothing was emailed: `strategies` is empty.
+         */
+        status: z.literal('needs_new_password'),
+        /**
+         * Masked email address: where the code of a reset was sent, or, for an expired
+         * password, the address of the account whose password it is.
+         */
+        destination: z.string(),
+        /** How the emailed code can be had. Empty for an expired password: there is no code. */
+        strategies: z.array(EmailVerificationStrategySchema),
+        /**
+         * Why a new password is wanted, when it is not a reset. A client that does not know the
+         * field sees the step it has always seen; one that does says why before it asks.
+         */
+        reason: NewPasswordReasonSchema.optional(),
+      })
+      // A reset always says how its code can be had; a step with a reason never has a code.
+      .refine((step) => (step.reason === undefined) === step.strategies.length > 0, {
+        message: 'strategies is empty exactly when a reason is given',
+        path: ['strategies'],
+      }),
     z.object({
       /**
        * The first factor was accepted and the user has a second one: prove one of `options`. No
@@ -86,6 +148,13 @@ export const FlowStepSchema = z
        */
       status: z.literal('needs_second_factor'),
       options: z.array(SecondFactorMethodSchema).min(1),
+      /**
+       * Present once a code was texted for this attempt (`second-factor/prepare`): the method
+       * and the masked number it went to (`***42`). Nothing is sent until the client asks.
+       */
+      prepared: z
+        .object({ method: PreparedSecondFactorMethodSchema, destination: z.string() })
+        .optional(),
     }),
     z.object({
       /**
@@ -181,7 +250,11 @@ export const SignUpRequestSchema = z
   })
   .meta({ ref: 'SignUpRequest' })
 
-/** Start a sign-in by identifying the user. */
+/**
+ * Start a sign-in by identifying the user: an email address, or, for a sign-in with a texted
+ * code (`sms_code`, ADR 0037), a phone number in international form (`+14155550100`; spaces,
+ * hyphens and parentheses are ignored).
+ */
 export const SignInStartRequestSchema = z
   .object({ identifier: z.string().max(320) })
   .meta({ ref: 'SignInStartRequest' })
@@ -198,32 +271,38 @@ export const PasswordAttemptRequestSchema = z
 const MAX_LINK_FIELD_LENGTH = 2048
 
 /**
- * Ask for the email that proves an email first factor, for a sign-in on `needs_first_factor`.
+ * Ask for the email or the text message that proves a first factor, for a sign-in on
+ * `needs_first_factor`.
  *
  * - `email_code`: a 6-digit code.
  * - `email_link`: the same code and a link to `redirectUrl`, which must be one of the
  *   environment's `urls.allowedRedirectUrls`, exactly. The link carries its token in the URL
  *   fragment and works only in the browser that asked for it.
+ * - `sms_code`: a 6-digit code texted to the phone number the sign-in was started with. The
+ *   answer is the same for every identifier; a message is sent only to a number exactly one
+ *   account has proven.
  */
 export const FirstFactorPrepareRequestSchema = z
   .object({
-    strategy: EmailVerificationStrategySchema,
+    strategy: PreparedFirstFactorStrategySchema,
     /** Where the emailed link leads. Required for `email_link`, ignored for `email_code`. */
     redirectUrl: z.string().max(MAX_LINK_FIELD_LENGTH).optional(),
   })
   .meta({ ref: 'FirstFactorPrepareRequest' })
 
 /**
- * Prove an email first factor.
+ * Prove an email or SMS first factor.
  *
  * - `email_code`: the emailed code.
  * - `email_link`: nothing to submit. It asks whether the emailed link has been opened (in this
  *   browser) and completes the sign-in if so; until then the answer is the unchanged step.
+ * - `sms_code`: the texted code. Every failure is `auth.invalid_credentials`.
  */
 export const FirstFactorAttemptRequestSchema = z
   .discriminatedUnion('strategy', [
     z.object({ strategy: z.literal('email_code'), code: z.string().regex(/^\d{6}$/) }),
     z.object({ strategy: z.literal('email_link') }),
+    z.object({ strategy: z.literal('sms_code'), code: z.string().regex(/^\d{6}$/) }),
   ])
   .meta({ ref: 'FirstFactorAttemptRequest' })
 
@@ -263,10 +342,12 @@ const MAX_BACKUP_CODE_INPUT_LENGTH = 64
  * - `backup_code`: one of the user's unused backup codes. Case, spaces and dashes are ignored.
  *   Each works once.
  * - `passkey`: an assertion for the options of `…/second-factor/passkey/options` (ADR 0027).
+ * - `sms_code`: the 6-digit code `…/second-factor/prepare` texted to the account's number.
  */
 export const SecondFactorRequestSchema = z
   .discriminatedUnion('method', [
     z.object({ method: z.literal('totp'), code: z.string().regex(/^\d{6}$/) }),
+    z.object({ method: z.literal('sms_code'), code: z.string().regex(/^\d{6}$/) }),
     z.object({
       method: z.literal('backup_code'),
       code: z.string().min(1).max(MAX_BACKUP_CODE_INPUT_LENGTH),
@@ -274,6 +355,17 @@ export const SecondFactorRequestSchema = z
     z.object({ method: z.literal('passkey'), credential: PasskeyAssertionCredentialSchema }),
   ])
   .meta({ ref: 'SecondFactorRequest' })
+
+/**
+ * Ask for the code of a second factor that is sent (`…/second-factor/prepare`), for an
+ * attempt waiting on `needs_second_factor` whose `options` include the method.
+ *
+ * - `sms_code`: a 6-digit code texted to the account's proven phone number. A message that
+ *   could not be sent is `sms.unavailable`; the earlier code keeps working.
+ */
+export const SecondFactorPrepareRequestSchema = z
+  .object({ method: PreparedSecondFactorMethodSchema })
+  .meta({ ref: 'SecondFactorPrepareRequest' })
 
 /**
  * A started passkey sign-in (`POST /v1/client/sign-ins/passkey`): an attempt of its own, with
@@ -293,6 +385,14 @@ export const PasswordResetRequestSchema = z
   .object({ code: z.string().regex(/^\d{6}$/), password: z.string().max(1024) })
   .meta({ ref: 'PasswordResetRequest' })
 
+/**
+ * Submit the password that replaces an expired one, for a sign-in attempt on
+ * `needs_new_password` (ADR 0041). The expired password itself is never accepted.
+ */
+export const NewPasswordRequestSchema = z
+  .object({ password: z.string().max(1024) })
+  .meta({ ref: 'NewPasswordRequest' })
+
 /** A started passkey sign-in. */
 export type PasskeySignInStart = z.infer<typeof PasskeySignInStartSchema>
 /** First-factor strategy. */
@@ -303,6 +403,12 @@ export type SecondFactorMethod = z.infer<typeof SecondFactorMethodSchema>
 export type FactorEnrolmentMethod = z.infer<typeof FactorEnrolmentMethodSchema>
 /** Second-factor request body. */
 export type SecondFactorRequest = z.infer<typeof SecondFactorRequestSchema>
+/** A second factor whose proof is sent first. */
+export type PreparedSecondFactorMethod = z.infer<typeof PreparedSecondFactorMethodSchema>
+/** Body of `…/second-factor/prepare`. */
+export type SecondFactorPrepareRequest = z.infer<typeof SecondFactorPrepareRequestSchema>
+/** A first factor that is asked for before it is proven. */
+export type PreparedFirstFactorStrategy = z.infer<typeof PreparedFirstFactorStrategySchema>
 /** Email verification strategy. */
 export type EmailVerificationStrategy = z.infer<typeof EmailVerificationStrategySchema>
 /** Server-decided next step. */
@@ -340,3 +446,7 @@ export type VerifyEmailRequest = z.infer<typeof VerifyEmailRequestSchema>
 export type PasswordResetStartRequest = z.infer<typeof PasswordResetStartRequestSchema>
 /** Password reset request body. */
 export type PasswordResetRequest = z.infer<typeof PasswordResetRequestSchema>
+/** The body that replaces an expired password. */
+export type NewPasswordRequest = z.infer<typeof NewPasswordRequestSchema>
+/** Why a sign-in asks for a new password. */
+export type NewPasswordReason = z.infer<typeof NewPasswordReasonSchema>

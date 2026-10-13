@@ -8,11 +8,16 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
+    "./custom-claims": "./src/custom-claims.ts",
+    "./device-binding": "./src/device-binding.ts",
     "./error-codes": "./src/error-codes.ts",
+    "./event-types": "./src/event-types.ts",
     "./headers": "./src/headers.ts",
     "./issuer": "./src/issuer.ts",
     "./password-rules": "./src/password-rules.ts",
+    "./redirect-url": "./src/redirect-url.ts",
     "./theme": "./src/theme.ts",
+    "./webhook-signature": "./src/webhook-signature.ts",
     "./openapi.json": "./openapi.json"
   },
   "publishConfig": {
@@ -21,9 +26,21 @@
         "types": "./dist/index.d.ts",
         "default": "./dist/index.js"
       },
+      "./custom-claims": {
+        "types": "./dist/custom-claims.d.ts",
+        "default": "./dist/custom-claims.js"
+      },
+      "./device-binding": {
+        "types": "./dist/device-binding.d.ts",
+        "default": "./dist/device-binding.js"
+      },
       "./error-codes": {
         "types": "./dist/error-codes.d.ts",
         "default": "./dist/error-codes.js"
+      },
+      "./event-types": {
+        "types": "./dist/event-types.d.ts",
+        "default": "./dist/event-types.js"
       },
       "./headers": {
         "types": "./dist/headers.d.ts",
@@ -37,9 +54,17 @@
         "types": "./dist/password-rules.d.ts",
         "default": "./dist/password-rules.js"
       },
+      "./redirect-url": {
+        "types": "./dist/redirect-url.d.ts",
+        "default": "./dist/redirect-url.js"
+      },
       "./theme": {
         "types": "./dist/theme.d.ts",
         "default": "./dist/theme.js"
+      },
+      "./webhook-signature": {
+        "types": "./dist/webhook-signature.d.ts",
+        "default": "./dist/webhook-signature.js"
       },
       "./openapi.json": "./openapi.json",
       "./package.json": "./package.json"

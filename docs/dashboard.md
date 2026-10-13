@@ -4,7 +4,8 @@ The dashboard is a web app for the operator of a deployment. The API serves it a
 `/dashboard` (the image ships it; nothing else to deploy), and it manages the same things the
 admin API and the CLI do: workspaces, projects and environments; users and their sessions;
 sign-in methods and OAuth providers; the password policy and session profiles; API keys and
-signing keys; the audit logs; and the deployment's diagnostics.
+signing keys; webhook endpoints and their deliveries; the audit logs; and the deployment's
+diagnostics.
 
 How it is built and tested: [apps/dashboard/README.md](../apps/dashboard/README.md). The
 session, its CSRF rules and how the app is served: [ADR 0032](adr/0032-dashboard.md).
@@ -45,12 +46,20 @@ deletes a workspace, project or environment yet.
 | Screen | What you can do |
 | --- | --- |
 | Users | Search by email or name; create a user; open one. |
-| A user | Profile and state; how they sign in (password, verified address, linked accounts, two-step verification and backup codes left, passkeys: never a secret); active sessions (revoke one or all); recent audit entries; set a new password; reset two-step verification; ban or unban; delete. |
-| Sign-in methods | Switch password, emailed code, emailed link and passkeys on or off; set the passkey domain; whether sign-up needs a password; the two-step verification policy; configure Google, GitHub and Apple. |
-| Password policy | A preset or custom rules. |
-| Session profiles | Lifetimes per profile, custom profiles, and the limit on concurrent sessions. |
+| A user | Profile and state, the phone number and when it was verified; how they sign in (password, verified address, linked accounts, two-step verification and backup codes left, passkeys: never a secret); active sessions (revoke one or all); recent audit entries; set a new password; reset two-step verification; ban or unban; delete. |
+| Sign-in methods | Switch password, emailed code, emailed link, and passkeys on or off (the two uses of a texted code are shown here with whether each is on, and are switched on the **Text messages** screen); set the passkey domain; whether sign-up needs a password; the two-step verification policy; configure Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X and Facebook (the last two say on their cards that an account made through them has no email address). |
+| Password policy | A preset or custom rules, among them how many passwords are remembered (`password.history`); lowering that number is a weaker policy and is asked about first. "Password expires after (days)" is `password.expiryDays`: a user who signs in with an older password sets a new one first. Changing it is not asked about (rotation is not a strength measure). |
+| Session profiles | Lifetimes per profile, custom profiles, and the limit on concurrent sessions. **JWT templates** ([docs](jwt-templates.md)): add a template and its claims (a source or a fixed value each), see how large it can get against the 1,024-byte cap and which profiles use it, and choose a template on a profile's card. A reserved or malformed claim name and the caps are refused in the form; a template a profile uses cannot be taken out until the profile lets go of it; a save that takes claims away from a profile's sessions asks first. **Device binding** ([docs](device-binding.md)): each profile's card has the option (`none`, `optional`, `required`), with what it means for native apps, that browsers are never affected (the `web` profile and a stateful one say the value changes nothing there) and that a change applies to new sign-ins only; asking less asks first, in those words. A new profile starts with what `mobile` asks. The user screen's session list says for each session whether it is bound to a device key, as "Bound" or "Not bound", never the key. |
+| Messages | Every email and text message the server sends, in four groups, each marked as built-in or in your own wording. Edit a subject, a body or a text message's sentence, with a button for each placeholder the message has; see why a wording would be refused as you type; see the message as the server would write it, with sample values, and how many segments a text message is; reset a message to the built-in wording. ([Email templates](email-templates.md), [text message wording](phone-numbers.md#your-own-wording).) |
+| Text messages | Everything about an environment's SMS in one place ([phone numbers](phone-numbers.md)). Whether text messages are sent; the countries they may go to, chosen from the list the server knows, each with its calling prefix and the countries it shares one with (an empty list sends nothing, never everywhere); the most messages in a day, with what that allows in an hour in all and to one destination prefix; whether a texted code signs people in and whether it may be the second step. First on the screen is whether the deployment has an SMS sender, in the words of the `sms_sender` diagnostic: without one nothing is sent whatever is saved, and the settings can still be edited. That note can be up to five minutes old (a run of the diagnostics reads every environment's settings, so the screen does not start one on every visit); the **Diagnostics** screen always asks and has the current answer. Its `OK` says a sender is configured, not that its credentials work. **Asked about first**: a higher daily limit, a texted code that begins to sign people in, a texted code allowed as the second step an environment requires, and text messages or a country added under either of those. Below the settings, **codes sent and never used by destination prefix**, for today, 7 or 30 days in UTC, most never used first: the server's counts, with no rate or trend worked out from them. They count codes, not deliveries, segments or money. |
 | API keys | List (prefix and last four characters only), create, revoke. |
 | Signing keys | List with status; rotate. |
+| Webhooks | List an environment's webhook endpoints with how each is doing; add one (its signing secret is shown once), change its address and event types, switch it off and on, rotate its secret, send a test event, delete it. |
+| A webhook endpoint | The endpoint, and the log of what was sent to it: one row per delivery, filtered by state and event type. |
+| A delivery | Every request the server made for it (status code, duration, time, and why one failed), and "Send again". |
+| Hooks | The three points at which the server asks your backend a question (`before_sign_up`, `before_session`, `before_token`), each with its hook or none: its address, whether it is on, its deadline, what happens when a call fails, and the last call that failed. Add a hook (its signing secret is shown once), change it, switch it off and on, remove it. |
+| Native apps | The iOS and Android apps the server names in the two files Apple and Android fetch ([native-apps.md](native-apps.md)), and the addresses of those files. Register an app (always asked about first: the files will name it), change an iOS app's team, an Android app's certificate fingerprints or either's link paths (asked about when the change adds a team, a certificate or a path; for Android the question says that a path lets the app claim every link of the domain), remove one. In a production environment the bundle ID or package name is typed to confirm. |
+| Proposals | What an AI agent asked for with an agent key and has not happened ([proposals](proposals.md)): each one waiting, with the server's description, the exact operation, what it would act on as it is now, the agent key that asked and the time left. Approve one, after a question that names the operation and the target (typed, in a production environment). What is no longer waiting is listed below with how it ended. |
 | Audit log | An environment's entries, filtered by action, actor type, actor, target and day. |
 | Settings | App name, support address, allowed origins and redirect URLs, security notices, audit retention. |
 | Instance audit log | Dashboard sign-ins, and workspaces, projects and environments being created. |
@@ -64,7 +73,9 @@ deletes a workspace, project or environment yet.
   "Replace secret"; it never shows the old one. The redirect URI to register with the
   provider is shown on each provider's card.
 - **Setting a password** ends every session of that user and emails them a notice. An admin
-  never sees an existing password. Policy errors are listed in the dialog.
+  never sees an existing password. Policy errors are listed in the dialog. The password
+  history is not applied to a password an admin sets (it would tell the admin that a
+  candidate is one of the user's old passwords), but the password is remembered.
 - **Resetting two-step verification** removes the user's authenticator, backup codes and
   passkeys. When that would leave the user no way to sign in, the confirmation says so before
   you reset; afterwards the dashboard says whether the user can still sign in with what is
@@ -73,6 +84,96 @@ deletes a workspace, project or environment yet.
   yet, so a second rotation within ten minutes is refused.
 - **At least one sign-in method must stay on.** Switching off the last one (counting enabled
   providers) is refused by the server, and the dashboard says so.
+- **Switching off X or Facebook can lock people out, and the dashboard does not warn.** The
+  rule above is about the environment, not about a user. An account made by signing in with
+  X or Facebook has no email address, so it has no password, cannot be given one and cannot
+  reset one: with its provider off or removed it has no way in until you configure the
+  provider again (unless it added a passkey or connected another provider). The account
+  itself stays and is still listed. See [X](providers/x.md#before-you-switch-it-off) and
+  [Facebook](providers/facebook.md#before-you-switch-it-off).
+- **A webhook signing secret is shown once**, when the endpoint is added and when its secret
+  is rotated. Copy it from the dialog; closing the dialog discards it, and the API cannot
+  show it again. If it is lost, rotate. While the request is under way the dialog cannot be
+  closed (Cancel says why, Escape does nothing): the server has made the secret by the time
+  it answers, and the answer is the only place it is. The same holds for a new API key.
+  Leaving the page during that moment still loses the secret; the endpoint is then in the
+  list, and its secret is rotated to get one.
+- **Rotating a webhook secret breaks nothing at once.** For 24 hours every delivery is signed
+  with the new secret and the previous one, and the endpoint's card says until when. "End
+  the overlap now" stops the previous secret at once: use it once your receiver has the new
+  one, or when the old one leaked. It names the endpoint and, in a production environment,
+  asks for its address to be typed, as deleting does. A second rotation waits until the
+  overlap is over.
+- **An address is shown so that it can be checked by eye.** A character nobody can see, or
+  one that turns the text round (a zero-width space, a right-to-left override), is written
+  out as `\u{…}` with its code point, wherever the address appears; so is a mark that is
+  drawn on the character before it (a stroke laid over a slash, an accent that is a
+  character of its own), and a backslash, so two addresses are shown alike only when they
+  are the same. To confirm by typing, type what is shown. In the form that adds or changes
+  an endpoint the field holds the address as it is, and the written-out form appears under
+  it when the two differ. The price: an address that holds text of a script written with
+  such marks as itself, and not in Punycode or percent escapes, is shown with escapes in
+  it. Letters of different scripts that look alike are not told apart.
+- **An endpoint the server switched off says why**: it answered `410 Gone`, or requests to it
+  failed for five days. Fix the receiver, send a test event, then switch the endpoint on.
+- **A test event changes nothing about an endpoint.** It carries `"test": true`, is sent
+  once, and neither counts as a failure nor ends a run of failures. "Send again" on a
+  delivery is one request too, with the same event and id; if it gets through it does end
+  the run. Both share a limit of ten requests a minute per environment, beside the admin
+  API's general one; a refusal for too many requests says how long to wait, not which of
+  the two it was, because the server's answer does not say.
+- **Where the webhook worker is a service of its own** (`WEBHOOK_WORKER=separate`,
+  [self-host.md](self-host.md#the-webhook-worker-as-its-own-service)), a test event and
+  "Send again" are refused, and the dashboard says so in words: this deployment delivers
+  webhooks from a separate worker, so neither can be done from here. Nothing is sent and
+  nothing is recorded. Real events are delivered by that worker, to an endpoint that is
+  switched on and subscribed to their type, and a pending delivery is retried by it; the
+  endpoint's deliveries show them. The refusal says how the deployment is set up, not that
+  a worker is running.
+- **An address that names nothing reads "not found"**: an endpoint or a delivery that was
+  deleted, one of another environment, and an id that is no id at all (a mistyped address)
+  alike, with the way back to the list. A page past the newest 10,000 deliveries, which the
+  server does not page beyond, is read as the first page.
+- **Some event types are explained where they are chosen**: the three `hook.*` types are
+  about hooks (a question asked before a sign-up), not webhooks, and say so; so do
+  `signing_key.rotated`, `webhook_endpoint.secret_rotated`, `webhook_endpoint.disabled` and
+  `session.reuse_detected`.
+- **Deleting an endpoint deletes its delivery log** and its pending deliveries with it.
+
+More about webhooks: [webhooks.md](webhooks.md).
+
+Hooks ([hooks.md](hooks.md)) are a different thing from webhooks, on a screen of their own:
+
+- **A hook is a question, and its answer decides.** The screen always lists the three
+  points, so a point with no hook says "nothing is asked at this point" instead of being
+  absent.
+- **What lets through is asked about first.** Choosing "let it through" for when a call
+  fails, switching a hook off, and removing a hook that is on each take away a check, and
+  the server records each as a weakening. The dashboard uses the server's own rule for
+  which changes those are, says in a sentence what is let through at that point (a sign-up,
+  a sign-in, a session without the hook's claims), and in a production environment asks for
+  the point's name to be typed. Adding a hook that refuses on failure, switching one on and
+  removing one that is already off are not weakenings; removing still deletes the signing
+  secret, so in production it is typed too.
+- **"Recent outcomes" is four counts and the most recent call, and the screen says that is
+  all.** The server counts what each call of a hook came to, by the hour: *Allowed*,
+  *Denied*, *Failed* and *Timed out*, for the current hour and the 23 before it (between
+  23 and 24 hours, and the row says where the window starts), with when the hook was last
+  called and what that call came to. The numbers are the server's own; the screen draws no
+  rate, share or trend from them. Of the most recent call it says *Last call answered*,
+  *Last call failed* or *Last call timed out*, **with when that call was**, or *Not
+  called*. It never says "failing now": the call may be most of a day old, one call does
+  not say what a call made now would come to, and the screen says so (for a hook that is
+  switched off: that it has not been asked since). Nothing else of a call is kept: not
+  what was asked, not a denial's code.
+- **"Last failed call" is the one failure whose reason is kept**: when, and a fixed word
+  for why; "no answer within the deadline" is shown as *Timed out*, anything else as
+  *Failed*. It stays until another call fails, however long ago it was, so it is not how
+  the hook is doing now.
+- **The signing secret is shown once**, in the dialog that added the hook, and cannot be
+  shown again or rotated. If it is lost, remove the hook and add it again.
+- **A point or a word a later server knows** is shown as the text it is. Such a hook can be
+  switched off, switched on and removed, but not edited.
 
 ## Saving settings
 
@@ -85,10 +186,61 @@ Every settings screen works the same way: change the form, then **Save changes**
   minimum password, a switched-off security notice, a looser two-step policy, longer
   sessions) asks for confirmation and lists what gets weaker. The audit entry records
   `weakened: true`.
+- **This deletes older audit entries for good.** Setting an audit retention period where
+  there was none, or a shorter one, asks in those words: starting with its next retention
+  run (they run every ten minutes, and a large backlog takes several) the server deletes
+  every audit entry of the environment older than the new period, and nothing brings them
+  back. A longer period, or none, saves without asking. It is recorded
+  as a weakening too.
 - **Managed by a config file.** When the settings were applied with `tula apply`
   ([config.md](config.md)), a banner says so on every settings screen. You can still edit
   them, after a confirmation; the change is then reported as drift, and the next
   `tula apply` puts the file's values back.
+
+### The Messages screen
+
+Messages is a settings screen like the others: the wording is part of the settings, so it
+is saved with **Save changes**, refused when the settings changed elsewhere, and asked
+about when a config file manages them. A change of wording is not a weakening and is not
+asked about for itself.
+
+- **The preview is the server's.** It is asked for a moment after you stop typing and
+  shows what would be sent with sample values (the code is always `123456`). It is text:
+  markup you type is shown as you typed it, in the preview and in the email. An email's
+  preview is its text part; the HTML part has the same words inside the server's layout.
+- **A wording that would be refused is not previewed**, and the field says why. Saving it
+  anyway is refused by the server, and the message is marked "Refused" in the list.
+- **An empty field means the built-in wording** for that part. "Reset to built-in" empties
+  the whole message.
+- **A character you cannot see is named** under the field and under the preview
+  (`U+200B`), since the text itself cannot show it.
+- **The message you were looking at is not in the address**: a reload opens the first one.
+
+### The Proposals screen
+
+A proposal is a change an agent asked for; nothing happens until it is approved
+([proposals.md](proposals.md#approving-in-the-dashboard) has the whole procedure).
+
+- **The question names what you approve.** It repeats the operation and the target, says in
+  the dashboard's own words what approving does, and shows the target as it is now (a
+  user's address and whether they are banned, whose session it is and whether it is live,
+  whether a provider is on). In a production environment you type the target's id. The
+  request sends back the operation and the target the question showed, and the server
+  refuses it if the proposal says something else.
+- **An approval is used once, and the screen says how it ended**: carried out; carried out
+  with nothing to change; approved and not carried out, with why; or only partly carried
+  out, with what is left for you to do. A proposal that expired, was already approved, or
+  whose agent key was revoked cannot be approved, and says so.
+- **The time left is counted by your browser's clock**, as a guide. Whether a proposal has
+  expired is the server's decision: the list is read again every ten seconds and when a
+  time runs out.
+- **A proposal cannot be dismissed.** It expires by itself ten minutes after it was made.
+  To end everything an agent has waiting at once, revoke its key on the **API keys**
+  screen.
+- **An operation this version of the dashboard does not know is shown and cannot be
+  approved here.**
+- **The agent's words are never shown**: a proposal holds none. The description is the
+  server's.
 
 ## Audit
 
@@ -96,15 +248,23 @@ Everything the dashboard changes in an environment is recorded in that environme
 log with the actor type `instance_admin` and the id of the dashboard session that did it.
 Filter the audit log by "Actor type: instance_admin" to see what was done from the dashboard.
 
+What an agent proposed and you approved is recorded with both: the proposal
+(`proposal.created`), the change itself and its outcome have the actor `agent` (the agent
+key's id), with "Approved by" and the proposal's id under Details; the approval
+(`proposal.approved`) has you as its actor, with "Asked for by agent". Filter by "Actor
+type: agent" to see what agents asked for.
+
 Failed sign-ins to the dashboard are in the instance audit log, at most one entry a minute
 per address; each says how many failures from that address in the minute before were not
 recorded one by one. The instance audit log is kept for `INSTANCE_AUDIT_RETENTION_DAYS`
-(a year by default); an environment's audit log is kept for good.
+(a year by default); an environment's audit log is kept for good unless its settings give
+it a retention period, and entries older than that are then deleted permanently.
 
 ## Switching and signing out
 
 - Switching environment, project, workspace or user discards what was typed and not saved on
-  the screen you leave: a settings draft, a half-typed provider secret, an open confirmation.
+  the screen you leave: a settings draft, a half-typed provider secret, a webhook secret
+  still on screen, an open confirmation.
   Nothing typed for one environment can be saved to another.
 - If signing out fails (the API did not answer), the dashboard stays where it is and says
   that you are still signed in. Choose "Sign out" again; until it succeeds the session in

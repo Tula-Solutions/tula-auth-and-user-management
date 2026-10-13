@@ -39,7 +39,10 @@ const parity: {
   secondFactorProof: Same<Core.SecondFactorProof, Contract.SecondFactorRequest>
   stepUpProof: Same<Core.StepUpProof, Contract.StepUpRequest>
   stepUpMethod: Same<Core.StepUpMethod, Contract.StepUpMethod>
-  stepUpPrepared: Same<Core.StepUpPrepared, Contract.StepUpEmailCode>
+  stepUpPrepared: Same<Core.StepUpPrepared, Contract.StepUpEmailCode | Contract.SmsFactorCode>
+  smsFactorCode: Same<Core.SmsFactorCode, Contract.SmsFactorCode>
+  phoneCodeSent: Same<Core.PhoneCodeSent, Contract.PhoneCodeSent>
+  emailCodeSent: Same<Core.EmailCodeSent, Contract.EmailCodeSent>
   mfaPolicy: Same<Core.MfaPolicy, Contract.MfaPolicy>
   enrolmentMethod: Same<Core.FactorEnrolmentMethod, Contract.FactorEnrolmentMethod>
 } = {
@@ -63,6 +66,9 @@ const parity: {
   stepUpProof: true,
   stepUpMethod: true,
   stepUpPrepared: true,
+  smsFactorCode: true,
+  phoneCodeSent: true,
+  emailCodeSent: true,
   mfaPolicy: true,
   enrolmentMethod: true,
 }
@@ -94,7 +100,7 @@ describe('parity with @tula/contract', () => {
     for (const route of Object.values(OPERATIONS)) {
       expect(route.path.startsWith('/v1/client/')).toBe(true)
     }
-    expect(Object.keys(OPERATIONS)).toHaveLength(53)
+    expect(Object.keys(OPERATIONS)).toHaveLength(67)
   })
 
   test('evaluatePassword is the contract’s rule engine and accepts the generated policy type', () => {

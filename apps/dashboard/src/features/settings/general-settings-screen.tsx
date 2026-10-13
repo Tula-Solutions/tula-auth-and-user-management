@@ -91,7 +91,7 @@ function GeneralFields({ draft, update, errors }: SettingsEditor) {
           label='Allowed redirect URLs'
           itemName='URL'
           placeholder='https://app.example.com/auth/callback'
-          hint='Matched exactly: no wildcard and no prefix.'
+          hint='Matched exactly: no wildcard and no prefix. For a native app, list an https link the app opens (see Native apps), or a custom scheme in reverse-domain form such as com.example.app:/oauth, which is accepted only for a provider that uses PKCE.'
           values={draft.urls.allowedRedirectUrls}
           onChange={(values) =>
             update((current) => ({
@@ -123,6 +123,26 @@ function GeneralFields({ draft, update, errors }: SettingsEditor) {
           ))}
         </div>
       </Section>
+      <Section
+        title='AI agents'
+        description='What an agent that holds an agent key of this environment may ask for. An agent key reads; a change it asks for is a proposal, and nothing happens until a person approves it with a secret key.'
+      >
+        <div>
+          <SwitchRow
+            label='Accept proposals in production'
+            description='Off: where this is a production environment, every proposal is refused, when it is made and when it is approved. An environment that is not a production one accepts proposals whatever this says.'
+            checked={draft.agents?.proposalsInProduction ?? false}
+            onChange={(checked) =>
+              // Spread: `agents` holds more than this switch (`testSignIn`, which this
+              // screen does not draw), and a save replaces the whole document.
+              update((current) => ({
+                ...current,
+                agents: { ...current.agents, proposalsInProduction: checked },
+              }))
+            }
+          />
+        </div>
+      </Section>
       <Section title='Audit log'>
         <TextField
           label='Keep audit entries for (days)'
@@ -139,7 +159,7 @@ function GeneralFields({ draft, update, errors }: SettingsEditor) {
             }))
           }
           error={errors['audit.retentionDays']}
-          hint={`1 to ${MAX_AUDIT_RETENTION_DAYS}. Empty: keep them for good.`}
+          hint={`1 to ${MAX_AUDIT_RETENTION_DAYS}. Empty: keep them for good. Older entries are then deleted for good, starting with the next retention run (every ten minutes).`}
         />
       </Section>
     </>
@@ -147,7 +167,9 @@ function GeneralFields({ draft, update, errors }: SettingsEditor) {
 }
 
 /**
- * General settings of an environment: its name, URLs, notices and audit retention.
+ * General settings of an environment: its name, URLs, notices, whether a production
+ * environment accepts an agent's proposals, and audit retention. (Text messages have a
+ * screen of their own, `features/sms`.)
  *
  * @returns The screen.
  */

@@ -76,6 +76,23 @@ export type BackupCodes = Schemas['BackupCodes']
 const { codes }: BackupCodes = await tula.mfa.regenerateBackupCodes()
 ```
 
+### `ChannelLike`
+
+_interface_, defined in `packages/core/src/environment.ts`
+
+The part of `BroadcastChannel` the client uses: messages between tabs of one origin.
+
+```ts
+export interface ChannelLike {
+  /** @param message - Delivered to every other tab's channel of the same name. */
+  postMessage(message: unknown): void
+  /** Called with each message another tab posts. */
+  onmessage: ((event: { data: unknown }) => void) | null
+  /** Stop receiving. A channel that is only posted to once is closed right after. */
+  close?(): void
+}
+```
+
 ### `ClientConfig`
 
 _type_, defined in `packages/core/src/types.ts`
@@ -151,6 +168,101 @@ const DEFAULT_TIMEOUT_MS: 15000
 createTulaClient({ publishableKey, baseUrl, timeoutMs: DEFAULT_TIMEOUT_MS * 2 })
 ```
 
+### `DeviceKey`
+
+_interface_, defined in `packages/contract/src/device-binding.ts`
+
+A key a session can be bound to: its public half, and a way to sign with the private half
+that never hands the private half out. A native SDK backs it with the Secure Enclave or
+StrongBox; {@link generateSoftwareDeviceKey} backs it with WebCrypto, for tests and for
+platforms with no hardware key.
+
+```ts
+export interface DeviceKey {
+  /** The public key, sent in every proof's header. */
+  publicJwk: DevicePublicJwk
+  /**
+   * Sign with ECDSA over P-256 and SHA-256.
+   *
+   * @param data - The bytes to sign (a proof's `header.payload`).
+   * @returns The signature in the JWS form: `r` then `s`, 32 bytes each (64 bytes). A platform
+   *   that produces a DER signature converts it before returning.
+   */
+  sign(data: Uint8Array): Promise<Uint8Array>
+  /**
+   * A unique id for one proof (its `jti`), for a runtime whose `crypto.getRandomValues`
+   * cannot be counted on (a native app’s JavaScript engine). Left out, 16 random bytes of
+   * the runtime’s own. The id is not a secret: the server only refuses one it has seen, so
+   * it has to be new every time and need not be unguessable.
+   *
+   * @returns An id no other proof of this key carries.
+   */
+  proofId?(): string
+}
+```
+
+**Example**
+
+```ts
+const key: DeviceKey = await generateSoftwareDeviceKey()
+const proof = await createDpopProof(key, { method: 'POST', url, nonce })
+```
+
+### `DeviceKeySource`
+
+_type_, defined in `packages/core/src/transport.ts`
+
+Where a client's device key comes from, for a runtime that cannot hand one over when the
+client is created: a key in a phone's secure hardware is found or made by a native call,
+which takes time and can fail (ADR 0052). Asked before every request a key proves.
+
+```ts
+export type DeviceKeySource = (
+  operation: string
+) => DeviceKey | undefined | Promise<DeviceKey | undefined>
+```
+
+**Parameters**
+
+- `operation`: The request about to be sent: the operation id of one of the starts,
+  or `refreshSession`.
+
+**Returns**
+
+The key to prove the request with, or `undefined` to send it without a proof.
+A rejection sends nothing: the call fails with `device.key_failed`.
+
+**Example**
+
+```ts
+const deviceKey: DeviceKeySource = async () => hardwareKey
+const environment = { ...runtimeEnvironment(), deviceKey }
+```
+
+### `DevicePublicJwk`
+
+_interface_, defined in `packages/contract/src/device-binding.ts`
+
+The public half of a device key, as a proof's header carries it: a P-256 point and nothing
+else. No private member (`d`), no key id, no other field.
+
+```ts
+export interface DevicePublicJwk {
+  kty: 'EC'
+  crv: 'P-256'
+  /** The point's x coordinate: 32 bytes, base64url without padding. */
+  x: string
+  /** The point's y coordinate: 32 bytes, base64url without padding. */
+  y: string
+}
+```
+
+**Example**
+
+```ts
+const jwk: DevicePublicJwk = { kty: 'EC', crv: 'P-256', x: '…', y: '…' }
+```
+
 ### `EMAIL_LINK_POLL_INTERVAL_MS`
 
 _constant_, defined in `packages/core/src/email-link.ts`
@@ -202,6 +314,24 @@ const EN_MESSAGES: Readonly<Record<TulaErrorCode, string>>
 EN_MESSAGES['auth.invalid_credentials'] // 'The email or password is incorrect.'
 ```
 
+### `EmailCodeSent`
+
+_type_, defined in `packages/core/src/types.ts`
+
+The receipt of a code emailed to an address a user wants on their account: where it went
+(masked) and when it stops working. Never the code, and never the whole address.
+
+```ts
+export type EmailCodeSent = Schemas['EmailCodeSent']
+```
+
+**Example**
+
+```ts
+const sent: EmailCodeSent = await tula.user.email.request({ email: 'ada@example.com' })
+show(`We emailed a code to ${sent.destination}`)
+```
+
 ### `EmailLinkOutcome`
 
 _interface_, defined in `packages/core/src/email-link.ts`
@@ -230,6 +360,67 @@ const outcome: EmailLinkOutcome = await tula.signIn.handleEmailLink()
 if (outcome.status === 'different_browser') {
   show('Open the link in the browser where you started, or enter the code there.')
 }
+```
+
+### `Environment`
+
+_interface_, defined in `packages/core/src/environment.ts`
+
+What the client takes from the runtime besides `fetch`. Tests pass fakes; a real client uses
+{@link runtimeEnvironment}; a runtime that is not a browser replaces the members it does
+differently (`createTulaClientWithEnvironment`).
+
+```ts
+export interface Environment {
+  /** Current time in epoch milliseconds. */
+  now(): number
+  /** The Web Locks manager, when the runtime has one. */
+  locks: LockManagerLike | undefined
+  /** Opens a channel to the origin's other tabs, when the runtime can. */
+  createChannel: ((name: string) => ChannelLike) | undefined
+  /**
+   * Storage shared by the tabs of one browser, when the runtime has it and allows it. Used for
+   * an emailed link's binding and nothing else: never a token, never an attempt's secret.
+   */
+  linkStorage: LinkStorageLike | undefined
+  /**
+   * Storage one tab keeps across a navigation and no other tab can read (`sessionStorage`).
+   * Holds the binding of an OAuth round trip while the tab is at the provider (ADR 0026): not a
+   * token, and not an attempt's secret.
+   */
+  tabStorage: LinkStorageLike | undefined
+  /** The page's address, in a browser. */
+  page: PageLike | undefined
+  /**
+   * Where `navigator.credentials` and `PublicKeyCredential` are looked up when a passkey is
+   * asked for (ADR 0027). Read lazily: a runtime without WebAuthn simply has neither.
+   */
+  passkeys: PasskeyGlobals | undefined
+  /**
+   * The platform's passkey calls, where a passkey is not asked of `navigator.credentials`: a
+   * native app's passkey sheet. With one, {@link Environment.passkeys} is not looked at.
+   */
+  passkeyProvider?: PasskeyProvider
+  /**
+   * Where the client's device key comes from, for a runtime that finds or makes it by a call
+   * that takes time (a key in a phone's secure hardware; ADR 0052). Asked before every
+   * request a key proves, unless the client was given a `deviceKey` of its own. Never for a
+   * `web` client.
+   */
+  deviceKey?: DeviceKeySource
+  /**
+   * Run `callback` once after `ms` milliseconds.
+   *
+   * @returns A function that cancels it.
+   */
+  setTimer(callback: () => void, ms: number): () => void
+}
+```
+
+**Example**
+
+```ts
+const environment: Environment = { ...runtimeEnvironment(), passkeyProvider }
 ```
 
 ### `ErrorParams`
@@ -410,6 +601,72 @@ if (flow.step.status === 'needs_email_verification') {
 }
 ```
 
+### `IdTokenName`
+
+_interface_, defined in `packages/core/src/flows.ts`
+
+The name an Apple sign-in sheet handed the app, passed on beside the ID token.
+
+```ts
+export interface IdTokenName {
+  /** The given name, at most 100 characters. */
+  givenName?: string
+  /** The family name, at most 100 characters. */
+  familyName?: string
+}
+```
+
+### `IdTokenProvider`
+
+_type_, defined in `packages/core/src/flows.ts`
+
+A provider whose ID token `signIn.withIdToken` exchanges.
+
+```ts
+export type IdTokenProvider = Schemas['IdTokenProvider']
+```
+
+### `IdTokenSignIn`
+
+_interface_, defined in `packages/core/src/flows.ts`
+
+A native sign-in that waits for the provider's ID token: what `signIn.withIdToken` returns.
+
+The attempt's secret stays in this object's closure: it is not a property, and nothing of
+the sign-in is kept in storage.
+
+```ts
+export interface IdTokenSignIn {
+  /**
+   * The server's nonce for this sign-in. It is not a secret and authorizes nothing. What to
+   * hand to the provider's SDK depends on the provider, and the server accepts one form:
+   *
+   * - **Google**: this value, unchanged, as the nonce of the request.
+   * - **Apple**: the **lowercase hexadecimal SHA-256 of this value's UTF-8 bytes**, as
+   *   `ASAuthorizationAppleIDRequest.nonce`. The client does not hash it for you: take the
+   *   hash with the platform's own API (CryptoKit's `SHA256` in Swift, `expo-crypto` in
+   *   Expo). A token that carries this value itself is refused.
+   */
+  readonly nonce: string
+  /**
+   * Exchange the ID token the provider's SDK returned. **Once**: the server judges one token
+   * per sign-in, so after a refusal start again with `signIn.withIdToken`.
+   *
+   * @param idToken - The token, as the SDK handed it over.
+   * @param name - **Apple only.** The name the system's sheet handed the app
+   *   (`fullName.givenName`, `fullName.familyName`), which Apple gives on the first
+   *   authorization only and never puts in the token. It names a new account and is used
+   *   for nothing else; nobody signed it. Leave it out for Google, whose token has its own.
+   * @returns The sign-in flow, past its first factor: `complete`, or waiting on a second
+   *   factor or an enrolment.
+   * @throws TulaError `auth.invalid_credentials` for a token the API does not accept (every
+   *   reason is the same), `auth.method_disabled`, `oauth.account_exists`,
+   *   `oauth.email_unverified`, `oauth.email_missing`, `auth.user_banned`.
+   */
+  exchange(idToken: string, name?: IdTokenName): Promise<SignInFlow>
+}
+```
+
 ### `Identity`
 
 _type_, defined in `packages/core/src/oauth.ts`
@@ -418,6 +675,53 @@ A provider account connected to the signed-in user.
 
 ```ts
 export type Identity = Schemas['Identity']
+```
+
+### `LinkStorageLike`
+
+_interface_, defined in `packages/core/src/environment.ts`
+
+The part of `localStorage` the client uses, for one thing only: the binding of an emailed
+sign-in link, which a new tab of the same browser has to be able to read.
+
+```ts
+export interface LinkStorageLike {
+  /** @returns The stored value, or `null`. */
+  getItem(key: string): string | null
+  /** @param value - Stored under `key`, replacing what was there. */
+  setItem(key: string, value: string): void
+  /** @param key - The entry to delete. */
+  removeItem(key: string): void
+  /** How many entries the storage holds, to find the client's own expired ones. */
+  readonly length: number
+  /** @returns The name of the `index`-th entry, or `null`. */
+  key(index: number): string | null
+}
+```
+
+### `LockManagerLike`
+
+_interface_, defined in `packages/core/src/environment.ts`
+
+The part of the Web Locks API the client uses: one named, exclusive lock shared by every tab
+of an origin.
+
+```ts
+export interface LockManagerLike {
+  /**
+   * Run `callback` while holding the lock `name`, waiting for it first.
+   *
+   * @param name - The lock's name.
+   * @param options - `signal` gives up waiting; it has no effect once the lock is held.
+   * @param callback - What to do while holding the lock.
+   * @returns What `callback` returned.
+   */
+  request<T>(
+    name: string,
+    options: { signal?: AbortSignal },
+    callback: () => Promise<T>
+  ): Promise<T>
+}
 ```
 
 ### `MAX_REFRESH_BACKOFF_MS`
@@ -524,6 +828,33 @@ A provider `signIn.withOAuth` can be asked for.
 export type OAuthProvider = Schemas['OAuthProvider']
 ```
 
+### `PageLike`
+
+_interface_, defined in `packages/core/src/environment.ts`
+
+The page's address, as far as the client reads and rewrites it.
+
+```ts
+export interface PageLike {
+  /** @returns The page's full URL, fragment included. */
+  url(): string
+  /**
+   * Replace the address shown for the page without loading anything
+   * (`history.replaceState`).
+   *
+   * @param url - The new URL.
+   */
+  replaceUrl(url: string): void
+  /**
+   * Send the page somewhere else (`location.assign`). Absent where there is nothing to
+   * navigate: the caller is then handed the URL instead.
+   *
+   * @param url - Where to go.
+   */
+  assign?(url: string): void
+}
+```
+
 ### `Passkey`
 
 _type_, defined in `packages/core/src/types.ts`
@@ -540,6 +871,94 @@ export type Passkey = Schemas['Passkey']
 ```ts
 const [passkey]: Passkey[] = await tula.user.passkeys.list()
 label.textContent = passkey.synced ? `${passkey.name} (synced)` : passkey.name
+```
+
+### `PasskeyCreationOptions`
+
+_type_, defined in `packages/core/src/passkey.ts`
+
+Options for creating a passkey, as the API issues them.
+
+```ts
+export type PasskeyCreationOptions = Schemas['PasskeyCreationOptions']
+```
+
+### `PasskeyGlobals`
+
+_interface_, defined in `packages/core/src/passkey.ts`
+
+The globals WebAuthn needs, as far as this module uses them.
+
+```ts
+export interface PasskeyGlobals {
+  navigator?: {
+    credentials?: {
+      create?(options: unknown): Promise<unknown>
+      get?(options: unknown): Promise<unknown>
+    }
+  }
+  PublicKeyCredential?: {
+    parseCreationOptionsFromJSON?(options: unknown): unknown
+    parseRequestOptionsFromJSON?(options: unknown): unknown
+    isConditionalMediationAvailable?(): Promise<boolean>
+  }
+}
+```
+
+### `PasskeyProvider`
+
+_interface_, defined in `packages/core/src/passkey.ts`
+
+How a runtime that has no `navigator.credentials` asks its platform for a passkey: a native
+app's passkey sheet (Apple's authorization API, Android's Credential Manager), reached
+through whatever native module the app has. `@tula/expo` supplies one; a browser needs none.
+
+Both calls take the options exactly as the API issued them (WebAuthn's JSON forms, binary
+values as base64url) and answer the credential in the JSON form the API verifies
+(`RegistrationResponseJSON`, `AuthenticationResponseJSON`). The client checks the answer
+before it sends it, and keeps nothing of a ceremony.
+
+**How a call fails is said by the rejection's `name`, as a browser says it**:
+`NotAllowedError` or `AbortError` when the user dismissed the sheet or the ceremony was
+called off (the client's `passkey.cancelled`), `InvalidStateError` when the device already
+holds a passkey of the account (`passkey.already_on_device`), `NotSupportedError` where
+the platform has no passkeys (`passkey.unsupported`). Anything else is `passkey.failed`.
+Nothing else of the rejection is read: its message never reaches an error of the client.
+
+```ts
+export interface PasskeyProvider {
+  /**
+   * Whether a passkey can be offered in a field's autofill (a browser's conditional
+   * mediation). Left out, it cannot.
+   */
+  autofillAvailable?(): unknown
+  /**
+   * Make a passkey.
+   *
+   * @param options - The creation options, as the API issued them.
+   * @param request - `signal`: the caller gave the ceremony up.
+   * @returns The registration, in WebAuthn's JSON form.
+   */
+  create(options: PasskeyCreationOptions, request: Pick<PasskeyRequest, 'signal'>): Promise<unknown>
+  /**
+   * Ask for a passkey.
+   *
+   * @param options - The request options, as the API issued them.
+   * @param request - `signal`: the caller gave the ceremony up. `autofill`: asked only of a
+   *   provider whose `autofillAvailable` answered `true`.
+   * @returns The assertion, in WebAuthn's JSON form.
+   */
+  get(options: PasskeyRequestOptions, request: PasskeyRequest): Promise<unknown>
+}
+```
+
+**Example**
+
+```ts
+const provider: PasskeyProvider = {
+  create: (options) => NativePasskeys.create(options),
+  get: (options) => NativePasskeys.get(options),
+}
 ```
 
 ### `PasskeyRequest`
@@ -559,6 +978,16 @@ export interface PasskeyRequest {
    */
   autofill?: boolean
 }
+```
+
+### `PasskeyRequestOptions`
+
+_type_, defined in `packages/core/src/passkey.ts`
+
+Options for asking for a passkey, as the API issues them.
+
+```ts
+export type PasskeyRequestOptions = Schemas['PasskeyRequestOptions']
 ```
 
 ### `PasswordCheck`
@@ -681,6 +1110,24 @@ export interface PasswordUserInfo {
   lastName?: string
   username?: string
 }
+```
+
+### `PhoneCodeSent`
+
+_type_, defined in `packages/core/src/types.ts`
+
+The receipt of a code texted to a phone number: where it went (masked) and when it stops
+working. Never the code, and never the whole number.
+
+```ts
+export type PhoneCodeSent = Schemas['PhoneCodeSent']
+```
+
+**Example**
+
+```ts
+const sent: PhoneCodeSent = await tula.user.phone.request({ phoneNumber: '+14155550142' })
+show(`We texted a code to the number ending ${sent.destination.slice(-2)}`)
 ```
 
 ### `REFRESH_RETRY_WINDOW_MS`
@@ -821,6 +1268,11 @@ A user with two-step verification stops at `needs_second_factor` (answer it with
 `submitSecondFactor`); where the environment requires it and the user has none, at
 `needs_factor_enrolment` (`startTotpEnrolment`, then `confirmTotpEnrolment`).
 
+Where the environment's passwords expire, a right password that is too old stops at
+`needs_new_password` with `reason: 'expired'`, after everything else the sign-in needs
+(a second factor included): answer it with `submitNewPassword`. Nobody is signed in until
+then.
+
 ```ts
 export interface SignInFlow extends Flow<'sign_in'>, FactorEnrolmentActions, SecondFactorActions {
   /**
@@ -833,6 +1285,27 @@ export interface SignInFlow extends Flow<'sign_in'>, FactorEnrolmentActions, Sec
    */
   submitPassword(input: { password: string }): Promise<FlowStep>
   /**
+   * Replace a password that has expired (step `needs_new_password` with `reason: 'expired'`)
+   * and finish the sign-in. Every other session of the user ends.
+   *
+   * A refused password leaves the flow on the step: call it again with another.
+   *
+   * @param input - The new password. It must meet the environment's policy and must not be
+   *   the expired password, nor one the password history still refuses.
+   * @returns The next step: `complete`.
+   * @throws TulaError a `password.*` code with per-field `errors` when the password is
+   *   refused (`password.reused` for the expired one), `rate_limited` after too many tries,
+   *   and `flow.invalid_step` when the account's password was replaced some other way
+   *   meanwhile: start the sign-in again.
+   * @example
+   * ```ts
+   * if (flow.step.status === 'needs_new_password' && flow.step.reason === 'expired') {
+   *   await flow.submitNewPassword({ password: newPassword })
+   * }
+   * ```
+   */
+  submitNewPassword(input: { password: string }): Promise<FlowStep>
+  /**
    * Submit the emailed 6-digit code (step `needs_email_verification`: the account's address
    * was never verified).
    *
@@ -844,8 +1317,14 @@ export interface SignInFlow extends Flow<'sign_in'>, FactorEnrolmentActions, Sec
   verifyEmail(input: { code: string }): Promise<FlowStep>
   /**
    * Ask for the email that proves an email first factor (step `needs_first_factor` offering
-   * `email_code` or `email_link`). The answer is the same whether or not the address has an
-   * account. Calling it again sends a fresh email, at most one a minute.
+   * `email_code` or `email_link`), or for the text message of `sms_code`. The answer is the
+   * same whether or not the address has an account. Calling it again sends a fresh email, at
+   * most one a minute.
+   *
+   * With `sms_code`, for a sign-in started with a phone number (`signIn.start({ identifier:
+   * '+14155550100' })`), a 6-digit code is texted to the number when exactly one account has
+   * proven it within the last year. For any other number nothing is sent and the answer is
+   * the same; whether the message could be sent is not reported either.
    *
    * With `email_link` the email also carries a link to `redirectUrl`, which must be one of the
    * environment's allowed redirect URLs, exactly, **and on the same origin as the page that
@@ -857,25 +1336,36 @@ export interface SignInFlow extends Flow<'sign_in'>, FactorEnrolmentActions, Sec
    * @param input - The strategy, and for a link the page it leads to.
    * @returns The step, still `needs_first_factor`, now with `prepared`.
    * @throws TulaError `request.redirect_not_allowed` for a URL that is not allowed,
-   *   `rate_limited` (with `retryAfterMs`) when asked too soon, and two raised by the client
+   *   `rate_limited` (with `retryAfterMs`) when asked too soon, `sms.country_not_allowed`,
+   *   `sms.disabled` or `sms.unavailable` for a texted code, and two raised by the client
    *   itself, with `status: 0` and no request sent: `link.cross_origin` for a `redirectUrl` on
    *   another origin than the page (checked only where there is a page), and `storage.failed`
    *   for `email_link` in a browser without usable storage.
    */
   prepareFirstFactor(
-    input: { strategy: 'email_code' } | { strategy: 'email_link'; redirectUrl: string }
+    input:
+      | { strategy: 'email_code' }
+      | { strategy: 'email_link'; redirectUrl: string }
+      | { strategy: 'sms_code' }
   ): Promise<FlowStep>
   /**
    * Prove an email first factor: submit the emailed code, or (`email_link`) ask once whether
-   * the emailed link has been opened in this browser.
+   * the emailed link has been opened in this browser. Or prove `sms_code` with the texted
+   * code.
    *
-   * @param input - The strategy, and the code for `email_code`.
+   * @param input - The strategy, and the code for `email_code` and `sms_code`.
    * @returns The next step. For a link not opened yet: the unchanged `needs_first_factor`.
    * @throws TulaError `verification.invalid_code`, `verification.expired`,
-   *   `verification.too_many_attempts`, or `rate_limited` while the address is locked.
+   *   `verification.too_many_attempts`, or `rate_limited` while the address is locked. For
+   *   `sms_code` every failure is `auth.invalid_credentials`, and
+   *   `mfa.enrolment_needs_other_sign_in` where two-step verification is required and the
+   *   account has none: the flow stays on `needs_first_factor`, for another strategy.
    */
   attemptFirstFactor(
-    input: { strategy: 'email_code'; code: string } | { strategy: 'email_link' }
+    input:
+      | { strategy: 'email_code'; code: string }
+      | { strategy: 'email_link' }
+      | { strategy: 'sms_code'; code: string }
   ): Promise<FlowStep>
   /**
    * Wait for the emailed link to be opened in this browser, then finish the sign-in here.
@@ -957,6 +1447,24 @@ const step = await flow.verifyEmail({ code: '123456' })
 // step.status === 'complete': tula.state.status is now 'signed-in'
 ```
 
+### `SmsFactorCode`
+
+_type_, defined in `packages/core/src/types.ts`
+
+The receipt of the code texted to enrol a texted code as the second step: the masked number
+and when the code stops working. Never the code.
+
+```ts
+export type SmsFactorCode = Schemas['SmsFactorCode']
+```
+
+**Example**
+
+```ts
+const sent: SmsFactorCode = await tula.mfa.startSms()
+show(`We texted a code to ${sent.destination}`)
+```
+
 ### `StepUpMethod`
 
 _type_, defined in `packages/core/src/types.ts`
@@ -978,11 +1486,11 @@ const methods: StepUpMethod[] = stepUpMethods(error) // ['totp', 'backup_code']
 
 _type_, defined in `packages/core/src/types.ts`
 
-The receipt of an emailed step-up code: where it went (masked) and when it stops working.
-Never the code.
+The receipt of an emailed or a texted step-up code: where it went (masked) and when it stops
+working. Never the code.
 
 ```ts
-export type StepUpPrepared = Schemas['StepUpEmailCode']
+export type StepUpPrepared = Schemas['StepUpEmailCode'] | Schemas['SmsFactorCode']
 ```
 
 **Example**
@@ -1228,7 +1736,44 @@ export interface TulaClient {
      */
     withPasskey(request?: PasskeyRequest): Promise<SignInFlow>
     /**
-     * "Continue with Google, GitHub or Apple": a sign-in that creates the account when the
+     * A native app's "Continue with Google" or "Sign in with Apple", with no browser: start
+     * a sign-in whose proof is the ID token the provider's own SDK hands the app (Credential
+     * Manager on Android, Google Sign-In on iOS, the system's Sign in with Apple sheet). For
+     * `ios` and `android` clients only, and for Apple an `ios` client.
+     *
+     * Two calls. This one asks the API for an attempt and a **nonce the server made**. Give
+     * the nonce to the provider's SDK as the nonce of its sign-in request (**Google:
+     * unchanged; Apple: its SHA-256 in lowercase hexadecimal**, see
+     * {@link IdTokenSignIn.nonce}), then pass the ID token it returns to `exchange`, once.
+     * The token must have been issued for a client id the environment accepts (for Apple:
+     * the bundle id of one of its registered iOS apps) and carry that nonce in that form;
+     * anything else is `auth.invalid_credentials`, whatever the reason, and the sign-in
+     * starts again. Like `withOAuth`, it creates the account when the provider's verified
+     * address has none. Apple's token has no name: pass the one the sheet gave the app as
+     * the second argument of `exchange`.
+     *
+     * @param input - The provider.
+     * @returns The nonce, and `exchange(idToken, name?)`, which resolves to the sign-in flow
+     *   past its first factor (`complete`, or waiting on a second factor or an enrolment).
+     * @throws TulaError `auth.method_disabled` (the provider is not enabled, or for Apple no
+     *   iOS app is registered) and `validation.failed` (the client is not a native one, or
+     *   not `ios` for Apple) from this call; `auth.invalid_credentials`,
+     *   `oauth.account_exists`, `oauth.email_unverified`, `oauth.email_missing` from
+     *   `exchange`.
+     *
+     * @example
+     * ```ts
+     * const pending = await tula.signIn.withIdToken({ provider: 'google' })
+     * const idToken = await askGoogleForAnIdToken({ nonce: pending.nonce })
+     * const flow = await pending.exchange(idToken)
+     * if (flow.step.status === 'complete') {
+     *   showApp()
+     * }
+     * ```
+     */
+    withIdToken(input: { provider: IdTokenProvider }): Promise<IdTokenSignIn>
+    /**
+     * "Continue with Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X or Facebook": a sign-in that creates the account when the
      * provider's verified address has none.
      *
      * Asks the API for the provider's URL, keeps the round trip's binding for this tab
@@ -1433,7 +1978,7 @@ export interface TulaClient {
      * }
      * ```
      */
-    prepareStepUp(request: { method: 'email_code' }): Promise<StepUpPrepared>
+    prepareStepUp(request: { method: 'email_code' | 'sms_code' }): Promise<StepUpPrepared>
   }
   /** The signed-in user. */
   readonly user: {
@@ -1507,7 +2052,111 @@ export interface TulaClient {
        */
       remove(input: { passkeyId: string }): Promise<void>
     }
-    /** The provider accounts (Google, GitHub, Apple) connected to the signed-in user. */
+    /**
+     * The signed-in user's phone number: one, optional, proven with a 6-digit code sent by
+     * text message. Each call may answer `auth.step_up_required`; see `session.stepUp`.
+     *
+     * Whether a number can be added at all is `phone.enabled` of `config.get()`. The number
+     * itself is `phoneNumber` of the user, with `phoneNumberVerifiedAt`.
+     */
+    readonly phone: {
+      /**
+       * Text a 6-digit code to a number the user wants on their account. The number is
+       * only pending: the account's own number, if it has one, stays until `verify`.
+       *
+       * @param input - The number, with its country code (`+14155550142`; spaces, hyphens
+       *   and parentheses are ignored).
+       * @returns The receipt: the number masked and when the code expires. Never the code.
+       * @throws TulaError `phone.invalid` for what is not a phone number, `sms.disabled`
+       *   where the application sends no text messages, `sms.country_not_allowed` for a
+       *   number of a country it does not send to, `sms.unavailable` when the message could
+       *   not be sent, `rate_limited` when a code was sent too recently or too often.
+       *
+       * @example
+       * ```ts
+       * const sent = await tula.user.phone.request({ phoneNumber: '+1 415 555 0142' })
+       * ```
+       */
+      request(input: { phoneNumber: string }): Promise<PhoneCodeSent>
+      /**
+       * Prove the pending number with the code texted to it. The number becomes the
+       * account's, replacing one it had, and the state's user is updated.
+       *
+       * @param input - The 6-digit code.
+       * @returns The user, with the number.
+       * @throws TulaError `verification.invalid_code` for a wrong code,
+       *   `verification.expired` when no code is waiting (none was asked for, or it expired,
+       *   was used or was replaced), `verification.too_many_attempts` or `rate_limited`
+       *   after repeated wrong codes, `sms.disabled` or `sms.country_not_allowed` when the
+       *   application stopped sending to that number since the code was asked for.
+       *
+       * @example
+       * ```ts
+       * const user = await tula.user.phone.verify({ code: '482913' })
+       * user.phoneNumber // '+14155550142'
+       * ```
+       */
+      verify(input: { code: string }): Promise<User>
+      /**
+       * Take the phone number off the account. Nothing happens when it has none.
+       *
+       * @example
+       * ```ts
+       * await tula.user.phone.remove()
+       * ```
+       */
+      remove(): Promise<void>
+    }
+    /**
+     * An email address for a signed-in user whose account has **none**: one made by a
+     * first sign-in with X or Facebook, which give no address. Proven with a 6-digit code
+     * emailed to it. Each call may answer `auth.step_up_required`; see `session.stepUp`.
+     * A user with no address, no passkey and no authenticator app has nothing to step up
+     * with (`params.methods` is empty): they sign in again and ask within the window.
+     *
+     * It never changes an address: for a user who has one, both calls answer
+     * `email.already_set`.
+     */
+    readonly email: {
+      /**
+       * Email a 6-digit code to the address the user wants on their account. The address
+       * is only pending until `verify`. The answer is the same whether or not another
+       * account has the address: that one is sent a notice with no code, and no code
+       * confirms it.
+       *
+       * @param input - The address.
+       * @returns The receipt: the address masked and when the code expires. Never the code.
+       * @throws TulaError `email.already_set` for a user who has an address,
+       *   `request.validation_failed` for what is not an address, `rate_limited` when a
+       *   code was sent too recently or too often.
+       *
+       * @example
+       * ```ts
+       * const sent = await tula.user.email.request({ email: 'ada@example.com' })
+       * ```
+       */
+      request(input: { email: string }): Promise<EmailCodeSent>
+      /**
+       * Prove the pending address with the code emailed to it. The address becomes the
+       * account's, verified, and the state's user is updated.
+       *
+       * @param input - The 6-digit code.
+       * @returns The user, with the address.
+       * @throws TulaError `verification.invalid_code` for a wrong code,
+       *   `verification.expired` when no code is waiting (none was asked for, or it
+       *   expired, was used or was replaced; also when the address was taken by another
+       *   account meanwhile), `verification.too_many_attempts` or `rate_limited` after
+       *   repeated wrong codes, `email.already_set` for a user who has an address.
+       *
+       * @example
+       * ```ts
+       * const user = await tula.user.email.verify({ code: '482913' })
+       * user.email // 'ada@example.com'
+       * ```
+       */
+      verify(input: { code: string }): Promise<User>
+    }
+    /** The provider accounts (Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X, Facebook) connected to the signed-in user. */
     readonly identities: {
       /**
        * @returns The connected accounts, oldest first.
@@ -1598,6 +2247,44 @@ export interface TulaClient {
      */
     disableTotp(): Promise<void>
     /**
+     * Text a 6-digit code to the account's proven phone number, to make a texted code the
+     * user's second step. It is offered only where the application has switched it on
+     * (`config.mfa.smsCode`), to a user with a proven number and no authenticator app or
+     * passkey (`mfa.get().sms.available`). A new call replaces the earlier code.
+     *
+     * @returns The masked number and when the code stops working. Never the code.
+     * @throws TulaError `mfa.not_available` where the application does not offer it,
+     *   `mfa.phone_number_required` for an account with no proven number,
+     *   `mfa.sms_not_allowed` for a user who has an authenticator app or a passkey,
+     *   `mfa.already_enabled`, `rate_limited` (with `retryAfterMs`) when asked too soon,
+     *   `sms.disabled`, `sms.country_not_allowed` or `sms.unavailable` when the message
+     *   cannot be sent, `auth.step_up_required`.
+     * @example
+     * ```ts
+     * const { destination } = await tula.mfa.startSms()
+     * await tula.mfa.confirmSms({ code: await askForCode(destination) })
+     * ```
+     */
+    startSms(): Promise<SmsFactorCode>
+    /**
+     * Confirm the texted code: it is now the user's second step, and their other sessions
+     * end. The client then refreshes this session, as after `confirmTotp`. There are no
+     * backup codes for a texted code.
+     *
+     * @param input - The code.
+     * @returns What the user has enrolled now.
+     * @throws TulaError `mfa.invalid_code` for a wrong, used or expired code, `rate_limited`
+     *   after repeated wrong codes, and what `startSms` refuses with.
+     */
+    confirmSms(input: { code: string }): Promise<Factors>
+    /**
+     * Stop using a texted code as the second step. The phone number stays on the account.
+     *
+     * @throws TulaError `mfa.not_enabled`, `mfa.required_by_policy` where the application
+     *   requires a second step and this is the user's only one, `auth.step_up_required`.
+     */
+    disableSms(): Promise<void>
+    /**
      * Replace the user's backup codes. The earlier ones stop working.
      *
      * @returns Ten new backup codes, once.
@@ -1662,6 +2349,27 @@ export interface TulaClientOptions {
    * ```
    */
   sessionProfile?: string
+  /**
+   * A key to bind this client's sessions to (ADR 0043). With one, every sign-in, sign-up and
+   * password reset this client starts asks for a **device-bound** session, and every refresh
+   * proves the key: a refresh token copied off the device is then of no use without it. The
+   * proofs (`DPoP` headers) and the server's nonce are handled by the client.
+   *
+   * Not for `web` clients: a browser has nowhere to keep a key that outlives what steals its
+   * tokens. A native SDK supplies a key held by the Secure Enclave or StrongBox;
+   * `generateSoftwareDeviceKey` makes one in software.
+   *
+   * The key must stay the same for as long as its sessions live: a session is bound to one
+   * key for good, and a client that has lost the key can only sign in again. The proof names
+   * `baseUrl`, which must therefore be the API's own public address, not a proxy's.
+   *
+   * @example
+   * ```ts
+   * const deviceKey = await generateSoftwareDeviceKey()
+   * const tula = createTulaClient({ publishableKey, baseUrl, client: 'ios', storage, deviceKey })
+   * ```
+   */
+  deviceKey?: DeviceKey
   /** The `fetch` to use. Defaults to the global one. */
   fetch?: FetchLike
   /** Called after every change of {@link AuthState}; the same as a first `onChange` listener. */
@@ -1866,6 +2574,42 @@ try {
 }
 ```
 
+### `createTulaClientWithEnvironment`
+
+_function_, defined in `packages/core/src/client.ts`
+
+Build a client with an explicit environment: what it takes from the runtime besides
+`fetch`. Exported as `createTulaClientWithEnvironment`.
+
+Applications use {@link createTulaClient}, which reads the runtime's own. This is for a
+runtime that is not a browser and has its own way of doing what a browser's globals do: a
+native app's passkey sheet (`passkeyProvider`) and its system browser session, which is
+given a place in memory for the binding of a provider round trip (`tabStorage`) and the
+address it came back to (`page`). `@tula/expo` is built on it, and tests pass fakes.
+
+```ts
+export function createClient(options: TulaClientOptions, environment: Environment): TulaClient
+```
+
+**Parameters**
+
+- `options`: The client's options.
+- `environment`: What the client takes from the runtime. Start from
+  `runtimeEnvironment()` and replace what the runtime does differently.
+
+**Returns** The client.
+
+**Throws** TypeError for options that can never work.
+
+**Example**
+
+```ts
+const tula = createTulaClientWithEnvironment(
+  { publishableKey, baseUrl, client: 'ios', storage },
+  { ...runtimeEnvironment(), passkeyProvider }
+)
+```
+
 ### `evaluatePassword`
 
 _function_, defined in `packages/contract/src/password-rules.ts`
@@ -1928,6 +2672,31 @@ formatMessage('password.too_short', {
   messages: { 'password.too_short': 'Use at least {min} characters.' },
   params: { min: 10 },
 }) // 'Use at least 10 characters.'
+```
+
+### `generateSoftwareDeviceKey`
+
+_function_, defined in `packages/contract/src/device-binding.ts`
+
+Make a device key in software, with WebCrypto: a fresh P-256 key pair whose private half is
+**not extractable**, so the page or process that holds it can sign with it and cannot read
+it. It lives in memory only; a client that wants it to outlive the process keeps the
+`CryptoKey` where its platform allows (IndexedDB stores one without exposing it).
+
+This is what tests and the conformance runner bind with. It proves nothing about hardware:
+a native SDK supplies its own {@link DeviceKey} backed by the Secure Enclave or StrongBox.
+
+```ts
+export async function generateSoftwareDeviceKey(): Promise<DeviceKey>
+```
+
+**Returns** A key whose `sign` uses the private half.
+
+**Example**
+
+```ts
+const deviceKey = await generateSoftwareDeviceKey()
+const tula = createTulaClient({ publishableKey, baseUrl, client: 'ios', deviceKey })
 ```
 
 ### `isRetryableOAuthError`
@@ -2036,6 +2805,35 @@ export function memoryStorage(): TokenStorage
 
 ```ts
 createTulaClient({ publishableKey, baseUrl, client: 'server', storage: memoryStorage() })
+```
+
+### `runtimeEnvironment`
+
+_function_, defined in `packages/core/src/environment.ts`
+
+Read the cross-tab primitives from the runtime's globals, if it has them.
+
+Browsers have both. Where one is missing the client simply coordinates less: without locks
+two tabs can refresh at once (the server's reuse grace period makes that harmless), and
+without a channel a tab learns of another tab's sign-out on its next refresh. Without
+`localStorage` an emailed sign-in link cannot be honoured (the code in the same email can).
+
+```ts
+export function runtimeEnvironment(
+  globals: RuntimeGlobals = globalThis as unknown as RuntimeGlobals
+): Environment
+```
+
+**Parameters**
+
+- `globals`: The global object to read (the real one unless a test passes its own).
+
+**Returns** The environment.
+
+**Example**
+
+```ts
+const environment = { ...runtimeEnvironment(), passkeyProvider }
 ```
 
 ### `stepUpMethods`

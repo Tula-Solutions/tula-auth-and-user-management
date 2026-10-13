@@ -144,8 +144,23 @@ describe('runtime role privileges are least-privilege (F3)', () => {
     'delete from tula.environments',
     'delete from tula.api_keys',
     'update tula.audit_logs set action = action',
-    'delete from tula.audit_logs',
-    'delete from tula.events',
+    'truncate tula.audit_logs',
+    'truncate tula.events',
+    // The outbox: the one column the runtime role may update is `delivered_at` (0019).
+    "update tula.events set type = 'user.created'",
+    "update tula.events set payload = '{}'::jsonb",
+    'update tula.events set occurred_at = now()',
+    // A delivery's identity and age are not the runtime role's to change (0019).
+    'update tula.webhook_deliveries set endpoint_id = endpoint_id',
+    'update tula.webhook_deliveries set event_id = event_id',
+    "update tula.webhook_deliveries set event_type = 'user.created'",
+    'update tula.webhook_deliveries set test = true',
+    'update tula.webhook_deliveries set created_at = now()',
+    // The log of attempts is append-only.
+    'update tula.webhook_delivery_attempts set status_code = 200',
+    'delete from tula.webhook_delivery_attempts',
+    'truncate tula.webhook_delivery_attempts',
+    'truncate tula.webhook_deliveries',
   ])('tula_app cannot run: %s', async (statement) => {
     expect(await failureReason(testDb.db.execute(sql.raw(statement)))).toMatch(/permission denied/)
   })
@@ -183,7 +198,7 @@ describe('runtime role privileges are least-privilege (F3)', () => {
     expect(rows).toEqual([])
   })
 
-  test('the instance audit log can be purged by the runtime role but never rewritten; an environment’s log can be neither', async () => {
+  test('both audit logs can be purged by the runtime role, and neither can be rewritten or emptied', async () => {
     const rows = await queryRows<{ table: string; privilege: string; held: boolean }>(
       testDb.db,
       sql`
@@ -195,14 +210,405 @@ describe('runtime role privileges are least-privilege (F3)', () => {
       `
     )
     expect(rows).toEqual([
-      { table: 'audit_logs', privilege: 'DELETE', held: false },
+      // The retention job's purge of entries past `audit.retentionDays` (migration 0017).
+      { table: 'audit_logs', privilege: 'DELETE', held: true },
       { table: 'audit_logs', privilege: 'TRUNCATE', held: false },
       { table: 'audit_logs', privilege: 'UPDATE', held: false },
-      // The retention job's purge (migration 0016): the one audit log with an end.
+      // The retention job's purge (migration 0016).
       { table: 'instance_audit_logs', privilege: 'DELETE', held: true },
       { table: 'instance_audit_logs', privilege: 'TRUNCATE', held: false },
       { table: 'instance_audit_logs', privilege: 'UPDATE', held: false },
     ])
+  })
+
+  test('the webhook tables and the outbox: what the runtime role holds on each', async () => {
+    const rows = await queryRows<{ table: string; privilege: string; held: boolean }>(
+      testDb.db,
+      sql`
+        select t.name as table, p.name as privilege,
+               has_table_privilege('tula_app', 'tula.' || t.name, p.name) as held
+        from (values ('webhook_deliveries'), ('webhook_delivery_attempts'), ('webhook_endpoints'),
+                     ('events')) as t(name),
+             (values ('INSERT'), ('UPDATE'), ('DELETE'), ('TRUNCATE')) as p(name)
+        order by t.name, p.name
+      `
+    )
+    expect(rows).toEqual([
+      // The retention job deletes settled events (0019), inside `events_retention_floor`.
+      { table: 'events', privilege: 'DELETE', held: true },
+      { table: 'events', privilege: 'INSERT', held: true },
+      { table: 'events', privilege: 'TRUNCATE', held: false },
+      // Not on the table any more: on `delivered_at` alone (below).
+      { table: 'events', privilege: 'UPDATE', held: false },
+      // The retention job deletes old rows (0019), inside `webhook_deliveries_retention_floor`.
+      { table: 'webhook_deliveries', privilege: 'DELETE', held: true },
+      { table: 'webhook_deliveries', privilege: 'INSERT', held: true },
+      { table: 'webhook_deliveries', privilege: 'TRUNCATE', held: false },
+      // Not on the table: on the state columns alone (below).
+      { table: 'webhook_deliveries', privilege: 'UPDATE', held: false },
+      // One row per request, written once.
+      { table: 'webhook_delivery_attempts', privilege: 'DELETE', held: false },
+      { table: 'webhook_delivery_attempts', privilege: 'INSERT', held: true },
+      { table: 'webhook_delivery_attempts', privilege: 'TRUNCATE', held: false },
+      { table: 'webhook_delivery_attempts', privilege: 'UPDATE', held: false },
+      // An administrator removes an endpoint on the request path.
+      { table: 'webhook_endpoints', privilege: 'DELETE', held: true },
+      { table: 'webhook_endpoints', privilege: 'INSERT', held: true },
+      { table: 'webhook_endpoints', privilege: 'TRUNCATE', held: false },
+      { table: 'webhook_endpoints', privilege: 'UPDATE', held: true },
+    ])
+  })
+
+  test('the columns the runtime role may update on the outbox and on a delivery, and no others', async () => {
+    const rows = await queryRows<{ table: string; column: string }>(
+      testDb.db,
+      sql`
+        select c.relname as table, a.attname as column
+        from pg_class c
+        join pg_namespace n on n.oid = c.relnamespace and n.nspname = 'tula'
+        join pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
+        where c.relname in ('events', 'webhook_deliveries', 'webhook_delivery_attempts')
+          and has_column_privilege('tula_app', c.oid, a.attname, 'UPDATE')
+        order by c.relname, a.attname
+      `
+    )
+    expect(rows).toEqual([
+      { table: 'events', column: 'delivered_at' },
+      { table: 'webhook_deliveries', column: 'attempts' },
+      { table: 'webhook_deliveries', column: 'completed_at' },
+      { table: 'webhook_deliveries', column: 'failure_reason' },
+      { table: 'webhook_deliveries', column: 'last_attempt_at' },
+      { table: 'webhook_deliveries', column: 'next_attempt_at' },
+      { table: 'webhook_deliveries', column: 'state' },
+      { table: 'webhook_deliveries', column: 'status_code' },
+      { table: 'webhook_deliveries', column: 'updated_at' },
+    ])
+  })
+
+  test('neither a delivery nor an attempt has a column that could hold a receiver’s answer', async () => {
+    const rows = await queryRows<{ table: string; column: string }>(
+      testDb.db,
+      sql`
+        select table_name as table, column_name as column from information_schema.columns
+        where table_schema = 'tula'
+          and table_name in ('webhook_deliveries', 'webhook_delivery_attempts')
+        order by table_name, column_name
+      `
+    )
+    expect(rows.map((row) => `${row.table}.${row.column}`)).toEqual([
+      'webhook_deliveries.attempts',
+      'webhook_deliveries.completed_at',
+      'webhook_deliveries.created_at',
+      'webhook_deliveries.endpoint_id',
+      'webhook_deliveries.environment_id',
+      'webhook_deliveries.event_id',
+      'webhook_deliveries.event_type',
+      'webhook_deliveries.failure_reason',
+      'webhook_deliveries.id',
+      'webhook_deliveries.last_attempt_at',
+      'webhook_deliveries.next_attempt_at',
+      'webhook_deliveries.project_id',
+      'webhook_deliveries.state',
+      'webhook_deliveries.status_code',
+      'webhook_deliveries.test',
+      'webhook_deliveries.updated_at',
+      'webhook_delivery_attempts.attempt',
+      'webhook_delivery_attempts.attempted_at',
+      'webhook_delivery_attempts.delivery_id',
+      'webhook_delivery_attempts.duration_ms',
+      'webhook_delivery_attempts.environment_id',
+      'webhook_delivery_attempts.failure_reason',
+      'webhook_delivery_attempts.id',
+      'webhook_delivery_attempts.project_id',
+      'webhook_delivery_attempts.status_code',
+    ])
+  })
+
+  describe('what the runtime role may delete from the outbox', () => {
+    const DAY = 86_400_000
+    const write = async (tenant: TestTenant, occurredAt: Date, deliveredAt: Date | null) => {
+      const id = Bun.randomUUIDv7()
+      await withTenant(testDb.db, tenant.environmentId, (tx) =>
+        settle(
+          tx.insert(schema.events).values({
+            id,
+            projectId: tenant.projectId,
+            environmentId: tenant.environmentId,
+            type: 'user.created',
+            payload: {},
+            occurredAt,
+            deliveredAt,
+          })
+        )
+      )
+      return id
+    }
+    const exists = async (tenant: TestTenant, id: string) =>
+      (
+        await withTenant(testDb.db, tenant.environmentId, (tx) =>
+          tx.select().from(schema.events).where(eq(schema.events.id, id))
+        )
+      ).length === 1
+    const old = () => new Date(Date.now() - 40 * DAY)
+    const sweep = (tenant: TestTenant) =>
+      withTenant(testDb.db, tenant.environmentId, (tx) => tx.delete(schema.events).returning())
+
+    test('a settled event of its own environment that is more than a day old', async () => {
+      const id = await write(a, old(), old())
+      expect((await sweep(a)).map((row) => row.id)).toContain(id)
+      expect(await exists(a, id)).toBe(false)
+    })
+
+    test('never an event no worker has settled, however old', async () => {
+      const id = await write(a, old(), null)
+      expect((await sweep(a)).map((row) => row.id)).not.toContain(id)
+      expect(await exists(a, id)).toBe(true)
+    })
+
+    test('never an event of the last day, settled or not', async () => {
+      const id = await write(a, new Date(Date.now() - DAY + 3_600_000), new Date())
+      expect((await sweep(a)).map((row) => row.id)).not.toContain(id)
+      expect(await exists(a, id)).toBe(true)
+    })
+
+    test('never another environment’s event', async () => {
+      const id = await write(b, old(), old())
+      expect((await sweep(a)).map((row) => row.id)).not.toContain(id)
+      expect(await exists(b, id)).toBe(true)
+    })
+
+    test('nothing at all outside a tenant scope (fail closed)', async () => {
+      const id = await write(a, old(), old())
+      expect(await queryRows(testDb.db, sql`delete from tula.events returning id`)).toEqual([])
+      expect(await exists(a, id)).toBe(true)
+    })
+
+    test('and it can settle an event but not backdate one to get past the floor', async () => {
+      const id = await write(a, new Date(), null)
+      const settled = await withTenant(testDb.db, a.environmentId, (tx) =>
+        tx
+          .update(schema.events)
+          .set({ deliveredAt: old() })
+          .where(eq(schema.events.id, id))
+          .returning()
+      )
+      expect(settled).toHaveLength(1)
+      // Settled long ago, as far as the row says; it still happened today.
+      expect((await sweep(a)).map((row) => row.id)).not.toContain(id)
+      const backdate = withTenant(testDb.db, a.environmentId, (tx) =>
+        settle(tx.update(schema.events).set({ occurredAt: old() }).where(eq(schema.events.id, id)))
+      )
+      expect(await failureReason(backdate)).toMatch(/permission denied/)
+    })
+  })
+
+  describe('what the runtime role may delete from the delivery log', () => {
+    const DAY = 86_400_000
+    const endpoint = async (tenant: TestTenant) => {
+      const id = Bun.randomUUIDv7()
+      await withTenant(testDb.db, tenant.environmentId, (tx) =>
+        settle(
+          tx.insert(schema.webhookEndpoints).values({
+            id,
+            projectId: tenant.projectId,
+            environmentId: tenant.environmentId,
+            url: 'https://hooks.example.com/tula',
+            eventTypes: ['user.created'],
+            secret: 'sealed',
+          })
+        )
+      )
+      return id
+    }
+    const write = async (
+      tenant: TestTenant,
+      endpointId: string,
+      state: 'pending' | 'delivered' | 'failed',
+      createdAt: Date
+    ) => {
+      const id = Bun.randomUUIDv7()
+      await withTenant(testDb.db, tenant.environmentId, async (tx) => {
+        await tx.insert(schema.webhookDeliveries).values({
+          id,
+          projectId: tenant.projectId,
+          environmentId: tenant.environmentId,
+          endpointId,
+          eventId: Bun.randomUUIDv7(),
+          eventType: 'user.created',
+          state,
+          attempts: 1,
+          createdAt,
+        })
+        await tx.insert(schema.webhookDeliveryAttempts).values({
+          id: Bun.randomUUIDv7(),
+          projectId: tenant.projectId,
+          environmentId: tenant.environmentId,
+          deliveryId: id,
+          attempt: 1,
+          attemptedAt: createdAt,
+          statusCode: 500,
+          durationMs: 1,
+        })
+      })
+      return id
+    }
+    const attemptsOf = (tenant: TestTenant, deliveryId: string) =>
+      withTenant(testDb.db, tenant.environmentId, (tx) =>
+        tx
+          .select()
+          .from(schema.webhookDeliveryAttempts)
+          .where(eq(schema.webhookDeliveryAttempts.deliveryId, deliveryId))
+      )
+    const old = () => new Date(Date.now() - 100 * DAY)
+    const sweep = (tenant: TestTenant) =>
+      withTenant(testDb.db, tenant.environmentId, (tx) =>
+        tx.delete(schema.webhookDeliveries).returning()
+      )
+
+    test('an old finished delivery of its own environment, and its attempts go with it', async () => {
+      const at = await endpoint(a)
+      const delivered = await write(a, at, 'delivered', old())
+      const failed = await write(a, at, 'failed', old())
+      const ids = (await sweep(a)).map((row) => row.id)
+      expect(ids).toContain(delivered)
+      expect(ids).toContain(failed)
+      expect(await attemptsOf(a, delivered)).toEqual([])
+    })
+
+    test('never a delivery that is still pending, however old', async () => {
+      const id = await write(a, await endpoint(a), 'pending', old())
+      expect((await sweep(a)).map((row) => row.id)).not.toContain(id)
+      expect(await attemptsOf(a, id)).toHaveLength(1)
+    })
+
+    test('never a delivery of the last week', async () => {
+      const id = await write(a, await endpoint(a), 'failed', new Date(Date.now() - 6 * DAY))
+      expect((await sweep(a)).map((row) => row.id)).not.toContain(id)
+    })
+
+    test('never another environment’s, and nothing outside a tenant scope', async () => {
+      const id = await write(b, await endpoint(b), 'failed', old())
+      expect((await sweep(a)).map((row) => row.id)).not.toContain(id)
+      expect(
+        await queryRows(testDb.db, sql`delete from tula.webhook_deliveries returning id`)
+      ).toEqual([])
+      expect(await attemptsOf(b, id)).toHaveLength(1)
+    })
+
+    test('removing an endpoint still removes its deliveries, pending and recent ones too', async () => {
+      const at = await endpoint(a)
+      const pending = await write(a, at, 'pending', new Date())
+      const recent = await write(a, at, 'failed', new Date())
+      await withTenant(testDb.db, a.environmentId, (tx) =>
+        settle(tx.delete(schema.webhookEndpoints).where(eq(schema.webhookEndpoints.id, at)))
+      )
+      const left = await withTenant(testDb.db, a.environmentId, (tx) =>
+        tx
+          .select()
+          .from(schema.webhookDeliveries)
+          .where(eq(schema.webhookDeliveries.endpointId, at))
+      )
+      expect(left).toEqual([])
+      expect(await attemptsOf(a, pending)).toEqual([])
+      expect(await attemptsOf(a, recent)).toEqual([])
+    })
+
+    test('an attempt cannot be written for another environment’s delivery', async () => {
+      const foreign = await write(b, await endpoint(b), 'failed', new Date())
+      const insert = withTenant(testDb.db, a.environmentId, (tx) =>
+        settle(
+          tx.insert(schema.webhookDeliveryAttempts).values({
+            id: Bun.randomUUIDv7(),
+            projectId: a.projectId,
+            environmentId: a.environmentId,
+            deliveryId: foreign,
+            attempt: 2,
+            attemptedAt: new Date(),
+            durationMs: 1,
+          })
+        )
+      )
+      expect(await failureReason(insert)).toMatch(/violates foreign key constraint/)
+    })
+  })
+
+  describe('what the runtime role may delete from an environment’s audit log', () => {
+    const DAY = 86_400_000
+    const entry = (tenant: TestTenant, occurredAt: Date) => ({
+      id: Bun.randomUUIDv7(),
+      projectId: tenant.projectId,
+      environmentId: tenant.environmentId,
+      actorType: 'system' as const,
+      action: 'user.created',
+      occurredAt,
+    })
+    const write = async (tenant: TestTenant, occurredAt: Date) => {
+      const row = entry(tenant, occurredAt)
+      await withTenant(testDb.db, tenant.environmentId, (tx) =>
+        settle(tx.insert(schema.auditLogs).values(row))
+      )
+      return row.id
+    }
+    const exists = async (tenant: TestTenant, id: string) =>
+      (
+        await withTenant(testDb.db, tenant.environmentId, (tx) =>
+          tx.select().from(schema.auditLogs).where(eq(schema.auditLogs.id, id))
+        )
+      ).length === 1
+    const old = () => new Date(Date.now() - 400 * DAY)
+
+    test('an old entry of its own environment', async () => {
+      const id = await write(a, old())
+      const deleted = await withTenant(testDb.db, a.environmentId, (tx) =>
+        tx.delete(schema.auditLogs).where(eq(schema.auditLogs.id, id)).returning()
+      )
+      expect(deleted).toHaveLength(1)
+      expect(await exists(a, id)).toBe(false)
+    })
+
+    test('never another environment’s entry, however old', async () => {
+      const id = await write(b, old())
+      const deleted = await withTenant(testDb.db, a.environmentId, (tx) =>
+        tx.delete(schema.auditLogs).returning()
+      )
+      expect(deleted.map((row) => row.id)).not.toContain(id)
+      expect(await exists(b, id)).toBe(true)
+    })
+
+    test('nothing at all outside a tenant scope (fail closed)', async () => {
+      const id = await write(a, old())
+      const deleted = await queryRows(testDb.db, sql`delete from tula.audit_logs returning id`)
+      expect(deleted).toEqual([])
+      expect(await exists(a, id)).toBe(true)
+    })
+
+    test('never an entry of the last day: the shortest period that can be set is one day', async () => {
+      const fresh = await write(a, new Date(Date.now() - DAY + 3_600_000))
+      const justNow = await write(a, new Date())
+      const past = await write(a, new Date(Date.now() - DAY - 3_600_000))
+      const deleted = await withTenant(testDb.db, a.environmentId, (tx) =>
+        tx
+          .delete(schema.auditLogs)
+          .where(eq(schema.auditLogs.environmentId, a.environmentId))
+          .returning()
+      )
+      const ids = deleted.map((row) => row.id)
+      expect(ids).toContain(past)
+      expect(ids).not.toContain(fresh)
+      expect(ids).not.toContain(justNow)
+      expect(await exists(a, fresh)).toBe(true)
+      expect(await exists(a, justNow)).toBe(true)
+    })
+
+    test('and it cannot backdate an entry to get past that floor', async () => {
+      const id = await write(a, new Date())
+      const backdate = withTenant(testDb.db, a.environmentId, (tx) =>
+        settle(
+          tx.update(schema.auditLogs).set({ occurredAt: old() }).where(eq(schema.auditLogs.id, id))
+        )
+      )
+      expect(await failureReason(backdate)).toMatch(/permission denied/)
+    })
   })
 
   test('tenant data can still be deleted through RLS (e.g. revoking sessions)', async () => {
@@ -274,7 +680,7 @@ describe('refresh-token pruning is by whole session (F6)', () => {
 })
 
 describe('every tenant table has exactly the isolation policy (F5)', () => {
-  test('one policy per RLS table, keyed on the tenant setting for reads and writes', async () => {
+  test('one permissive policy per RLS table, keyed on the tenant setting for reads and writes', async () => {
     await testDb.setRole('postgres')
     const rows = await queryRows<{ table: string; policies: number; tenantScoped: number }>(
       testDb.db,
@@ -287,6 +693,7 @@ describe('every tenant table has exactly the isolation policy (F5)', () => {
         from pg_class c
         join pg_namespace n on n.oid = c.relnamespace and n.nspname = 'tula'
         left join pg_policies p on p.schemaname = 'tula' and p.tablename = c.relname
+          and p.permissive = 'PERMISSIVE'
         where c.relkind = 'r' and c.relrowsecurity
         group by c.relname order by c.relname
       `
@@ -294,6 +701,62 @@ describe('every tenant table has exactly the isolation policy (F5)', () => {
     await testDb.setRole('tula_app')
     expect(rows.length).toBeGreaterThanOrEqual(10)
     expect(rows.filter((row) => row.policies !== 1 || row.tenantScoped !== 1)).toEqual([])
+  })
+
+  test('the only other policies narrow what the retention job may delete; none widens anything', async () => {
+    await testDb.setRole('postgres')
+    const rows = await queryRows<{
+      table: string
+      name: string
+      command: string
+      roles: string
+      using: string
+    }>(
+      testDb.db,
+      sql`
+        select tablename as table, policyname as name, cmd as command, roles::text as roles,
+               qual as using
+        from pg_policies where schemaname = 'tula' and permissive <> 'PERMISSIVE'
+        order by tablename
+      `
+    )
+    await testDb.setRole('tula_app')
+    // A restrictive policy is ANDed with the tenant policy: it can only take rows away.
+    expect(rows).toEqual([
+      {
+        table: 'audit_logs',
+        name: 'audit_logs_retention_floor',
+        command: 'DELETE',
+        roles: '{public}',
+        using: expect.stringMatching(/occurred_at < \(now\(\) - '1 day'::interval\)/),
+      },
+      {
+        table: 'events',
+        name: 'events_retention_floor',
+        command: 'DELETE',
+        roles: '{public}',
+        using: expect.stringMatching(
+          /delivered_at IS NOT NULL.*occurred_at < \(now\(\) - '1 day'::interval\)/
+        ),
+      },
+      {
+        table: 'sms_code_counts',
+        name: 'sms_code_counts_retention_floor',
+        command: 'DELETE',
+        roles: '{public}',
+        // In days of the UTC calendar, as the rows are: never the session's time zone.
+        using: expect.stringMatching(/day < \(\(.*now\(\).*'utc'.*\)::date - 7\)/i),
+      },
+      {
+        table: 'webhook_deliveries',
+        name: 'webhook_deliveries_retention_floor',
+        command: 'DELETE',
+        roles: '{public}',
+        using: expect.stringMatching(
+          /state <> 'pending'.*created_at < \(now\(\) - '7 days'::interval\)/
+        ),
+      },
+    ])
   })
 
   test('api_keys is the only table with environment_id and no RLS', async () => {

@@ -13,9 +13,18 @@ updates:
     commit-message:
       prefix: build
 
-  # The service images in docker-compose.yml (Postgres, Redis, Mailpit), also pinned by digest.
+  # The service images in docker-compose.yml (Postgres, Redis, Mailpit), also pinned by digest,
+  # and the same images in the Compose file create-tula scaffolds. A test of create-tula holds
+  # the two files equal, so they are one group: an update of either comes as one pull request
+  # that changes both.
   - package-ecosystem: docker-compose
-    directory: /
+    directories:
+      - /
+      - /packages/create-tula/templates/base
+    groups:
+      service-images:
+        patterns:
+          - '*'
     target-branch: develop
     schedule:
       interval: weekly
@@ -30,3 +39,38 @@ updates:
       interval: weekly
     commit-message:
       prefix: ci
+
+  # The Kotlin client's Gradle build (`native/android`, ADR 0054): the plugins and libraries
+  # of `gradle/libs.versions.toml`, from the build's root. One group, because the Kotlin
+  # compiler, its serialization plugin and Kover move together or the build does not load.
+  # Nothing verifies what Gradle downloads against a checksum yet (no
+  # `verification-metadata.xml`: ADR 0054, "What this is not"): read an update before merging.
+  - package-ecosystem: gradle
+    directory: /native/android
+    groups:
+      kotlin-client-build:
+        patterns:
+          - '*'
+    target-branch: develop
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build
+
+  # The Android half of `@tula/expo-screens` (`packages/expo-screens/android`, ADR 0063): a
+  # build file with library versions of its own, older than the Kotlin client's catalog on
+  # purpose (an Expo app's Kotlin cannot read the newer ones). An update here is not a
+  # routine bump: `.claude/hooks/expo-native-libraries.test.ts` lists every difference from
+  # the catalog with its reason and fails until the list is changed too, and what an Expo
+  # app compiles with has to be tried by hand (docs/plans/phase-2-unverified.md, Step 2.16).
+  - package-ecosystem: gradle
+    directory: /packages/expo-screens/android
+    groups:
+      expo-native-screens-build:
+        patterns:
+          - '*'
+    target-branch: develop
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build

@@ -91,7 +91,8 @@ function UserButtonParts(props: UserButtonProps) {
   if (!user) {
     return null
   }
-  const name = fullName(user) ?? user.email
+  // An account with neither a name nor an address is still "Account".
+  const name = fullName(user) ?? user.email ?? t.userProfile.title
 
   const onTriggerKey = (event: KeyboardEvent) => {
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -177,7 +178,7 @@ function UserButtonParts(props: UserButtonProps) {
             </span>
             <div className='tula-profile-text'>
               {fullName(user) ? <p className='tula-profile-name'>{fullName(user)}</p> : null}
-              <p className='tula-profile-email'>{user.email}</p>
+              {user.email === null ? null : <p className='tula-profile-email'>{user.email}</p>}
             </div>
           </div>
           <div

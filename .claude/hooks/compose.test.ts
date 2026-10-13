@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -31,10 +31,24 @@ interface Service {
   ports?: { published: string; target: number; host_ip?: string }[]
   volumes?: { source: string; target: string; read_only?: boolean }[]
   depends_on?: Record<string, unknown>
+  command?: string[]
+  network_mode?: string
+  healthcheck?: { disable?: boolean }
+  restart?: string
 }
 
-/** The Compose file as Docker resolves it, with only the given variables set. */
-function resolved(variables: Record<string, string>, profile = true): Record<string, Service> {
+/**
+ * The Compose file as Docker resolves it, with only the given variables set.
+ *
+ * @param variables - The variables of the environment file, and nothing else.
+ * @param profiles - The profiles asked for; `app` alone unless said.
+ * @param files - Further Compose files laid over the repository's, relative to its root.
+ */
+function resolved(
+  variables: Record<string, string>,
+  profiles: readonly string[] = ['app'],
+  files: readonly string[] = []
+): Record<string, Service> {
   const envFile = join(mkdtempSync(join(tmpdir(), 'tula-compose-')), 'env')
   writeFileSync(
     envFile,
@@ -48,9 +62,10 @@ function resolved(variables: Record<string, string>, profile = true): Record<str
       'compose',
       '-f',
       join(root, 'docker-compose.yml'),
+      ...files.flatMap((file) => ['-f', join(root, file)]),
       '--env-file',
       envFile,
-      ...(profile ? ['--profile', 'app'] : []),
+      ...profiles.flatMap((profile) => ['--profile', profile]),
       'config',
       '--format',
       'json',
@@ -206,11 +221,191 @@ describe.skipIf(!hasCompose)('docker-compose.yml', () => {
   })
 
   test('the development stack is unchanged: no API unless the profile is asked for', () => {
-    expect(Object.keys(resolved(DEVELOPER_ENV, false)).sort()).toEqual([
+    expect(Object.keys(resolved(DEVELOPER_ENV, [])).sort()).toEqual([
       'mailpit',
       'postgres',
       'redis',
     ])
+  })
+})
+
+// TULA-52: the webhook worker as a container of its own, from the same image.
+describe.skipIf(!hasCompose)('the optional worker service', () => {
+  const WITH_WORKER = ['app', 'worker']
+
+  test('the app profile alone starts no worker, and its instances deliver', () => {
+    const services = resolved({})
+    expect(Object.keys(services)).not.toContain('worker')
+    expect(services.api?.environment?.WEBHOOK_WORKER).toBe('api')
+    expect(services['api-2']?.environment?.WEBHOOK_WORKER).toBe('api')
+  })
+
+  // What an API instance is given and the worker is not: nothing the worker runs reads them
+  // (it serves no admin, instance or client route, signs nobody in and stores no password),
+  // and the schema lets a process start without each, in every tier.
+  const API_ONLY = [
+    'CORS_ORIGINS',
+    'OAUTH_MOCK_PROVIDER',
+    'PASSWORD_POLICY',
+    // The worker sends no text message (ADR 0037), and a development inbox in it would be
+    // one nobody reads.
+    'SMS_PROVIDER',
+    'TRUST_PROXY',
+    'TULA_ADMIN_TOKEN',
+    // Twilio's credentials and sender: read only with `SMS_PROVIDER=twilio`, which the
+    // worker is not given either. A credential is in no container that has no use for it.
+    'TWILIO_ACCOUNT_SID',
+    'TWILIO_API_KEY_SECRET',
+    'TWILIO_API_KEY_SID',
+    'TWILIO_AUTH_TOKEN',
+    'TWILIO_FROM_NUMBER',
+    'TWILIO_MESSAGING_SERVICE_SID',
+  ]
+
+  test('the worker’s environment is the API’s without what only the API reads', () => {
+    const services = resolved(
+      {
+        WEBHOOK_WORKER: 'separate',
+        // Every one of them set, so that "absent" is not "left at its default".
+        TULA_ADMIN_TOKEN: 'an-admin-token-for-this-test-only',
+        OAUTH_MOCK_PROVIDER: 'true',
+        PASSWORD_POLICY: 'strict',
+        CORS_ORIGINS: 'https://app.example.com',
+        TRUST_PROXY: 'true',
+        SMS_PROVIDER: 'twilio',
+        TWILIO_ACCOUNT_SID: `AC${'0a1b2c3d'.repeat(4)}`,
+        TWILIO_API_KEY_SID: `SK${'9f8e7d6c'.repeat(4)}`,
+        TWILIO_API_KEY_SECRET: 'a-twilio-key-secret-for-this-test-only',
+        TWILIO_AUTH_TOKEN: 'a-twilio-auth-token-for-this-test-only',
+        TWILIO_MESSAGING_SERVICE_SID: `MG${'1122aabb'.repeat(4)}`,
+        TWILIO_FROM_NUMBER: '+15005550006',
+      },
+      WITH_WORKER
+    )
+    const api = services.api?.environment ?? {}
+    const worker = services.worker?.environment ?? {}
+    for (const name of API_ONLY) {
+      expect(Object.keys(api)).toContain(name)
+    }
+    expect(api.TULA_ADMIN_TOKEN).toBe('an-admin-token-for-this-test-only')
+    // The deployment's most powerful credential is not in a container that has no use for it.
+    expect(Object.keys(worker)).not.toContain('TULA_ADMIN_TOKEN')
+    expect(JSON.stringify(services.worker)).not.toContain('an-admin-token-for-this-test-only')
+    expect(Object.keys(worker)).not.toContain('OAUTH_MOCK_PROVIDER')
+    // Passed through to the API as written, and nothing of them reaches the worker.
+    expect(api.SMS_PROVIDER).toBe('twilio')
+    expect(api.TWILIO_API_KEY_SECRET).toBe('a-twilio-key-secret-for-this-test-only')
+    expect(api.TWILIO_AUTH_TOKEN).toBe('a-twilio-auth-token-for-this-test-only')
+    expect(api.TWILIO_FROM_NUMBER).toBe('+15005550006')
+    expect(Object.keys(worker).filter((name) => /SMS|TWILIO/.test(name))).toEqual([])
+    expect(JSON.stringify(services.worker)).not.toMatch(/for-this-test-only|AC0a1b|SK9f8e|MG1122/)
+    // Exactly the API's, value for value, minus that list: the database, the master key (it
+    // opens the signing secrets), ENVIRONMENT (the tier the outbound guard judges an address
+    // in), and what the schema demands of every process of a live deployment.
+    const expected = Object.fromEntries(
+      Object.entries(api).filter(([name]) => !API_ONLY.includes(name))
+    )
+    expect(worker).toEqual(expected)
+    expect(Object.keys(worker).sort()).toEqual([
+      'BREACH_CHECK',
+      'DATABASE_URL',
+      'ENVIRONMENT',
+      'LOG_LEVEL',
+      'MAIL_FROM',
+      'PUBLIC_URL',
+      'REDIS_URL',
+      'SMTP_URL',
+      'TULA_MASTER_KEY',
+      'WEBHOOK_WORKER',
+    ])
+  })
+
+  test('the worker profile adds one service: the same image, another command', () => {
+    const services = resolved({ WEBHOOK_WORKER: 'separate' }, WITH_WORKER)
+    expect(Object.keys(services).sort()).toEqual([
+      'api',
+      'api-2',
+      'lb',
+      'mailpit',
+      'migrate',
+      'postgres',
+      'redis',
+      'worker',
+    ])
+    const { api, worker } = services
+    expect(worker?.image).toBe(api?.image ?? '')
+    expect(worker?.command).toEqual(['bun', 'run', 'src/worker.ts'])
+    // It waits for the migrations like the API, and runs none itself.
+    expect(Object.keys(worker?.depends_on ?? {}).sort()).toEqual([
+      'mailpit',
+      'migrate',
+      'postgres',
+      'redis',
+    ])
+    expect(worker?.restart).toBe('unless-stopped')
+  })
+
+  test('one variable moves the deliveries: every container is given the same value', () => {
+    const services = resolved({ WEBHOOK_WORKER: 'separate' }, WITH_WORKER)
+    expect(services.api?.environment?.WEBHOOK_WORKER).toBe('separate')
+    expect(services['api-2']?.environment?.WEBHOOK_WORKER).toBe('separate')
+    expect(services.worker?.environment?.WEBHOOK_WORKER).toBe('separate')
+    // Asked for without the variable, the worker is given `api` and refuses to start
+    // (apps/api/src/process.ts): it never runs beside instances that deliver.
+    expect(resolved({}, WITH_WORKER).worker?.environment?.WEBHOOK_WORKER).toBe('api')
+  })
+
+  test('the worker takes no traffic: nothing of it is published', () => {
+    expect(resolved({ WEBHOOK_WORKER: 'separate' }, WITH_WORKER).worker?.ports ?? []).toEqual([])
+  })
+
+  test('the image the API tag names is the worker’s too', () => {
+    expect(resolved({ API_IMAGE: 'tula-api:other' }, WITH_WORKER).worker?.image).toBe(
+      'tula-api:other'
+    )
+  })
+})
+
+// The receiver CI's `self-host-worker` job delivers to (scripts/worker-check). The server's
+// outbound guard refuses a private address in every tier, so a receiver in a container of its
+// own could not be reached without loosening it. This one shares the worker's network
+// namespace instead: the worker reaches it on the loopback, which the `local` tier allows,
+// and the API instances cannot reach it at all.
+describe.skipIf(!hasCompose)('docker/worker-check/compose.yml', () => {
+  const CHECK = ['docker/worker-check/compose.yml']
+  const stack = (variables: Record<string, string> = {}) =>
+    resolved({ WEBHOOK_WORKER: 'separate', ...variables }, ['app', 'worker'], CHECK)
+
+  test('the receiver lives in the worker’s network namespace and publishes nothing', () => {
+    const { receiver } = stack()
+    expect(receiver?.network_mode).toBe('service:worker')
+    expect(receiver?.ports ?? []).toEqual([])
+  })
+
+  test('it is the API image running the repository’s script, mounted read-only', () => {
+    const { receiver, api } = stack({ API_IMAGE: 'tula-api:other' })
+    // No third-party image: Bun is already in the image the job built.
+    expect(receiver?.image).toBe(api?.image ?? '')
+    expect(receiver?.image).toBe('tula-api:other')
+    expect(receiver?.command).toEqual(['bun', 'run', '/check/receiver.ts'])
+    expect(receiver?.volumes).toEqual([
+      expect.objectContaining({
+        source: join(root, 'scripts/worker-check/receiver.ts'),
+        target: '/check/receiver.ts',
+        read_only: true,
+      }),
+    ])
+  })
+
+  test('it is given nothing of the deployment: no key, no database, no settings', () => {
+    expect(stack({ TULA_MASTER_KEY: 'ab'.repeat(32) }).receiver?.environment ?? {}).toEqual({})
+  })
+
+  test('the file adds the receiver and changes no other service', () => {
+    const { receiver: _receiver, ...rest } = stack()
+    expect(rest).toEqual(resolved({ WEBHOOK_WORKER: 'separate' }, ['app', 'worker']))
+    // Without the worker profile there is no receiver either: it has nothing to live in.
+    expect(Object.keys(resolved({}, ['app'], CHECK))).not.toContain('receiver')
   })
 })
 
@@ -289,6 +484,24 @@ test('Dependabot watches every place a digest or an action version is pinned', a
     expect(config).toContain(`package-ecosystem: ${ecosystem}\n`)
   }
   expect(config).toContain('directory: /apps/api\n')
+})
+
+// The scaffold's Compose file pins the same images, and a test of create-tula holds the two
+// equal: an update of one alone leaves develop red (it did, for Mailpit v1.31.4).
+test('Dependabot updates the scaffold’s Compose file with the repository’s, in one pull request', async () => {
+  const config = Bun.YAML.parse(await Bun.file(join(root, '.github/dependabot.yml')).text()) as {
+    updates: { 'package-ecosystem': string; directories?: string[]; groups?: object }[]
+  }
+  const compose = config.updates.filter((entry) => entry['package-ecosystem'] === 'docker-compose')
+  expect(compose).toHaveLength(1)
+  expect(compose[0]?.directories).toEqual(['/', '/packages/create-tula/templates/base'])
+  expect(Object.keys(compose[0]?.groups ?? {})).toHaveLength(1)
+  for (const directory of compose[0]?.directories ?? []) {
+    const names = ['docker-compose.yml', 'compose.yaml'].filter((name) =>
+      existsSync(join(root, directory, name))
+    )
+    expect(names).toHaveLength(1)
+  }
 })
 
 test('the API image installs no browser package: their manifests never reach the install stage', async () => {

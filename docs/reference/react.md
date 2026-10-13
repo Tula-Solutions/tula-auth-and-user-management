@@ -860,7 +860,44 @@ export interface TulaClient {
      */
     withPasskey(request?: PasskeyRequest): Promise<SignInFlow>
     /**
-     * "Continue with Google, GitHub or Apple": a sign-in that creates the account when the
+     * A native app's "Continue with Google" or "Sign in with Apple", with no browser: start
+     * a sign-in whose proof is the ID token the provider's own SDK hands the app (Credential
+     * Manager on Android, Google Sign-In on iOS, the system's Sign in with Apple sheet). For
+     * `ios` and `android` clients only, and for Apple an `ios` client.
+     *
+     * Two calls. This one asks the API for an attempt and a **nonce the server made**. Give
+     * the nonce to the provider's SDK as the nonce of its sign-in request (**Google:
+     * unchanged; Apple: its SHA-256 in lowercase hexadecimal**, see
+     * {@link IdTokenSignIn.nonce}), then pass the ID token it returns to `exchange`, once.
+     * The token must have been issued for a client id the environment accepts (for Apple:
+     * the bundle id of one of its registered iOS apps) and carry that nonce in that form;
+     * anything else is `auth.invalid_credentials`, whatever the reason, and the sign-in
+     * starts again. Like `withOAuth`, it creates the account when the provider's verified
+     * address has none. Apple's token has no name: pass the one the sheet gave the app as
+     * the second argument of `exchange`.
+     *
+     * @param input - The provider.
+     * @returns The nonce, and `exchange(idToken, name?)`, which resolves to the sign-in flow
+     *   past its first factor (`complete`, or waiting on a second factor or an enrolment).
+     * @throws TulaError `auth.method_disabled` (the provider is not enabled, or for Apple no
+     *   iOS app is registered) and `validation.failed` (the client is not a native one, or
+     *   not `ios` for Apple) from this call; `auth.invalid_credentials`,
+     *   `oauth.account_exists`, `oauth.email_unverified`, `oauth.email_missing` from
+     *   `exchange`.
+     *
+     * @example
+     * ```ts
+     * const pending = await tula.signIn.withIdToken({ provider: 'google' })
+     * const idToken = await askGoogleForAnIdToken({ nonce: pending.nonce })
+     * const flow = await pending.exchange(idToken)
+     * if (flow.step.status === 'complete') {
+     *   showApp()
+     * }
+     * ```
+     */
+    withIdToken(input: { provider: IdTokenProvider }): Promise<IdTokenSignIn>
+    /**
+     * "Continue with Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X or Facebook": a sign-in that creates the account when the
      * provider's verified address has none.
      *
      * Asks the API for the provider's URL, keeps the round trip's binding for this tab
@@ -1065,7 +1102,7 @@ export interface TulaClient {
      * }
      * ```
      */
-    prepareStepUp(request: { method: 'email_code' }): Promise<StepUpPrepared>
+    prepareStepUp(request: { method: 'email_code' | 'sms_code' }): Promise<StepUpPrepared>
   }
   /** The signed-in user. */
   readonly user: {
@@ -1139,7 +1176,111 @@ export interface TulaClient {
        */
       remove(input: { passkeyId: string }): Promise<void>
     }
-    /** The provider accounts (Google, GitHub, Apple) connected to the signed-in user. */
+    /**
+     * The signed-in user's phone number: one, optional, proven with a 6-digit code sent by
+     * text message. Each call may answer `auth.step_up_required`; see `session.stepUp`.
+     *
+     * Whether a number can be added at all is `phone.enabled` of `config.get()`. The number
+     * itself is `phoneNumber` of the user, with `phoneNumberVerifiedAt`.
+     */
+    readonly phone: {
+      /**
+       * Text a 6-digit code to a number the user wants on their account. The number is
+       * only pending: the account's own number, if it has one, stays until `verify`.
+       *
+       * @param input - The number, with its country code (`+14155550142`; spaces, hyphens
+       *   and parentheses are ignored).
+       * @returns The receipt: the number masked and when the code expires. Never the code.
+       * @throws TulaError `phone.invalid` for what is not a phone number, `sms.disabled`
+       *   where the application sends no text messages, `sms.country_not_allowed` for a
+       *   number of a country it does not send to, `sms.unavailable` when the message could
+       *   not be sent, `rate_limited` when a code was sent too recently or too often.
+       *
+       * @example
+       * ```ts
+       * const sent = await tula.user.phone.request({ phoneNumber: '+1 415 555 0142' })
+       * ```
+       */
+      request(input: { phoneNumber: string }): Promise<PhoneCodeSent>
+      /**
+       * Prove the pending number with the code texted to it. The number becomes the
+       * account's, replacing one it had, and the state's user is updated.
+       *
+       * @param input - The 6-digit code.
+       * @returns The user, with the number.
+       * @throws TulaError `verification.invalid_code` for a wrong code,
+       *   `verification.expired` when no code is waiting (none was asked for, or it expired,
+       *   was used or was replaced), `verification.too_many_attempts` or `rate_limited`
+       *   after repeated wrong codes, `sms.disabled` or `sms.country_not_allowed` when the
+       *   application stopped sending to that number since the code was asked for.
+       *
+       * @example
+       * ```ts
+       * const user = await tula.user.phone.verify({ code: '482913' })
+       * user.phoneNumber // '+14155550142'
+       * ```
+       */
+      verify(input: { code: string }): Promise<User>
+      /**
+       * Take the phone number off the account. Nothing happens when it has none.
+       *
+       * @example
+       * ```ts
+       * await tula.user.phone.remove()
+       * ```
+       */
+      remove(): Promise<void>
+    }
+    /**
+     * An email address for a signed-in user whose account has **none**: one made by a
+     * first sign-in with X or Facebook, which give no address. Proven with a 6-digit code
+     * emailed to it. Each call may answer `auth.step_up_required`; see `session.stepUp`.
+     * A user with no address, no passkey and no authenticator app has nothing to step up
+     * with (`params.methods` is empty): they sign in again and ask within the window.
+     *
+     * It never changes an address: for a user who has one, both calls answer
+     * `email.already_set`.
+     */
+    readonly email: {
+      /**
+       * Email a 6-digit code to the address the user wants on their account. The address
+       * is only pending until `verify`. The answer is the same whether or not another
+       * account has the address: that one is sent a notice with no code, and no code
+       * confirms it.
+       *
+       * @param input - The address.
+       * @returns The receipt: the address masked and when the code expires. Never the code.
+       * @throws TulaError `email.already_set` for a user who has an address,
+       *   `request.validation_failed` for what is not an address, `rate_limited` when a
+       *   code was sent too recently or too often.
+       *
+       * @example
+       * ```ts
+       * const sent = await tula.user.email.request({ email: 'ada@example.com' })
+       * ```
+       */
+      request(input: { email: string }): Promise<EmailCodeSent>
+      /**
+       * Prove the pending address with the code emailed to it. The address becomes the
+       * account's, verified, and the state's user is updated.
+       *
+       * @param input - The 6-digit code.
+       * @returns The user, with the address.
+       * @throws TulaError `verification.invalid_code` for a wrong code,
+       *   `verification.expired` when no code is waiting (none was asked for, or it
+       *   expired, was used or was replaced; also when the address was taken by another
+       *   account meanwhile), `verification.too_many_attempts` or `rate_limited` after
+       *   repeated wrong codes, `email.already_set` for a user who has an address.
+       *
+       * @example
+       * ```ts
+       * const user = await tula.user.email.verify({ code: '482913' })
+       * user.email // 'ada@example.com'
+       * ```
+       */
+      verify(input: { code: string }): Promise<User>
+    }
+    /** The provider accounts (Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X, Facebook) connected to the signed-in user. */
     readonly identities: {
       /**
        * @returns The connected accounts, oldest first.
@@ -1229,6 +1370,44 @@ export interface TulaClient {
      *   requires it, `auth.step_up_required`.
      */
     disableTotp(): Promise<void>
+    /**
+     * Text a 6-digit code to the account's proven phone number, to make a texted code the
+     * user's second step. It is offered only where the application has switched it on
+     * (`config.mfa.smsCode`), to a user with a proven number and no authenticator app or
+     * passkey (`mfa.get().sms.available`). A new call replaces the earlier code.
+     *
+     * @returns The masked number and when the code stops working. Never the code.
+     * @throws TulaError `mfa.not_available` where the application does not offer it,
+     *   `mfa.phone_number_required` for an account with no proven number,
+     *   `mfa.sms_not_allowed` for a user who has an authenticator app or a passkey,
+     *   `mfa.already_enabled`, `rate_limited` (with `retryAfterMs`) when asked too soon,
+     *   `sms.disabled`, `sms.country_not_allowed` or `sms.unavailable` when the message
+     *   cannot be sent, `auth.step_up_required`.
+     * @example
+     * ```ts
+     * const { destination } = await tula.mfa.startSms()
+     * await tula.mfa.confirmSms({ code: await askForCode(destination) })
+     * ```
+     */
+    startSms(): Promise<SmsFactorCode>
+    /**
+     * Confirm the texted code: it is now the user's second step, and their other sessions
+     * end. The client then refreshes this session, as after `confirmTotp`. There are no
+     * backup codes for a texted code.
+     *
+     * @param input - The code.
+     * @returns What the user has enrolled now.
+     * @throws TulaError `mfa.invalid_code` for a wrong, used or expired code, `rate_limited`
+     *   after repeated wrong codes, and what `startSms` refuses with.
+     */
+    confirmSms(input: { code: string }): Promise<Factors>
+    /**
+     * Stop using a texted code as the second step. The phone number stays on the account.
+     *
+     * @throws TulaError `mfa.not_enabled`, `mfa.required_by_policy` where the application
+     *   requires a second step and this is the user's only one, `auth.step_up_required`.
+     */
+    disableSms(): Promise<void>
     /**
      * Replace the user's backup codes. The earlier ones stop working.
      *
@@ -1360,6 +1539,10 @@ export interface TulaLocalization {
     /** Shown until the app's name is known. */
     subtitleNoApp: string
     emailLabel: string
+    /** The first field's label where a texted code is among the ways to sign in. */
+    identifierLabel: string
+    /** Under that field: how to write a phone number. */
+    identifierHint: string
     continue: string
     passwordTitle: string
     passwordLabel: string
@@ -1392,6 +1575,24 @@ export interface TulaLocalization {
     /** `{time}`. */
     emailResendIn: string
     emailResent: string
+    /** The button that asks for a texted code, and the title before one was asked for. */
+    smsCode: string
+    /** Before a code was asked for. */
+    smsCodePrompt: string
+    /** The title once a code was asked for. */
+    smsTitle: string
+    /**
+     * `{destination}` is the masked number (`***42`). It must not say that a message was
+     * sent: the server answers the same for a number that signs nobody in, and sends nothing.
+     */
+    smsCodeSubtitle: string
+    smsResend: string
+    /** `{time}`. */
+    smsResendIn: string
+    /** After asking again. Like the subtitle, it promises no message. */
+    smsResent: string
+    /** A texted code that did not sign in: wrong, expired, or a number that signs nobody in. */
+    smsCodeWrong: string
   }
   /** `<SignUp>`. */
   signUp: {
@@ -1424,7 +1625,7 @@ export interface TulaLocalization {
     /** The link back to `<SignIn>`. */
     signIn: string
   }
-  /** Signing in with a provider (Google, GitHub, Apple), and the page it returns to. */
+  /** Signing in with a provider (Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X, Facebook), and the page it returns to. */
   oauth: {
     /** `{provider}` is the provider's name. */
     continueWith: string
@@ -1476,6 +1677,18 @@ export interface TulaLocalization {
     empty: string
     add: string
     added: string
+    /**
+     * Above "Add a passkey" for a user whose second step is a code by text message: the
+     * passkey takes that step over, and it has no backup codes.
+     */
+    replacesTextedCode: string
+    /**
+     * Read with "Add a passkey" while the account's second step is still being read: the
+     * button is unavailable until it is known whether a passkey would replace a texted code.
+     */
+    addChecking: string
+    /** Read with "Add a passkey" when that read failed: the button stays unavailable. */
+    addUnchecked: string
     /** In place of "Add a passkey" in a browser without WebAuthn. */
     addUnsupported: string
     /**
@@ -1538,6 +1751,13 @@ export interface TulaLocalization {
     submit: string
     backToSignIn: string
   }
+  /** A sign-in stopped because the password is older than the environment allows. */
+  expiredPassword: {
+    title: string
+    subtitle: string
+    newPasswordLabel: string
+    submit: string
+  }
   /** Password fields and the live checklist. */
   password: {
     show: string
@@ -1549,6 +1769,12 @@ export interface TulaLocalization {
     summary: string
     /** One line per rule; `{min}` and `{max}` come from the policy. */
     rules: Record<PasswordRule, string>
+    /** The history rule, which only the server can judge. `{count}`: the policy's number. */
+    history: string
+    /** The history rule where the policy remembers only the current password. */
+    historyCurrent: string
+    /** The state of the history rule before the server has answered. */
+    checkedOnSave: string
   }
   /** Two-step verification: the second factor at sign-in, enrolment, backup codes. */
   mfa: {
@@ -1605,6 +1831,67 @@ export interface TulaLocalization {
     regenerated: string
     /** Shown instead of "Turn off" where the app requires two-step verification. */
     requiredByApp: string
+    /** Above the button that texts a code, at a sign-in's second step. Nothing was sent yet. */
+    smsSubtitle: string
+    /** The button that texts the code: a message is sent only when the user asks. */
+    smsSend: string
+    /** The profile's line for a user who could use a texted code as their second step. */
+    smsOffer: string
+    /** The profile's button that starts it. */
+    smsTurnOn: string
+    /** `{date}`. */
+    smsStatusOn: string
+    /**
+     * Beside `smsStatusOn` while an authenticator app or a passkey is used instead: the
+     * texted code is set aside, not removed, and is the second step again once the stronger
+     * method is gone. The user is told both halves.
+     */
+    smsNotInUse: string
+    /** Shown where a texted code is the second step and no authenticator app is set up. */
+    smsWeaker: string
+    smsTurnOff: string
+    smsTurnedOn: string
+    smsTurnedOff: string
+  }
+  /** The profile's "Phone number" section (ADR 0037). */
+  phone: {
+    sectionTitle: string
+    none: string
+    verified: string
+    add: string
+    change: string
+    /** The accessible name of "Change". */
+    changeLabel: string
+    remove: string
+    /** The accessible name of "Remove". */
+    removeLabel: string
+    numberLabel: string
+    numberHint: string
+    send: string
+    /** `{digits}` is the last digits of the number the code was texted to. */
+    codeSent: string
+    verify: string
+    differentNumber: string
+    cancel: string
+    added: string
+    removed: string
+  }
+  /** The profile's "Email address" section, for an account that has none (ADR 0059). */
+  emailAddress: {
+    sectionTitle: string
+    none: string
+    add: string
+    addressLabel: string
+    send: string
+    /**
+     * `{destination}` is the server's mask of the address. Never worded as "we sent a
+     * code": an address another account holds is emailed a notice with no code.
+     */
+    checkInbox: string
+    verify: string
+    differentAddress: string
+    cancel: string
+    added: string
   }
   /** The dialog that asks a signed-in user to prove who they are before a sensitive change. */
   stepUp: {
@@ -1624,6 +1911,8 @@ export interface TulaLocalization {
     emailInstead: string
     /** Offered next to the emailed code: switch back to the password. */
     passwordInstead: string
+    /** Above the button that texts a code. Nothing was sent yet. */
+    smsSubtitle: string
     submit: string
     cancel: string
     /** Shown when the user has nothing to step up with: they must sign in again. */
@@ -1673,6 +1962,12 @@ export interface TulaLocalization {
     sessionsTitle: string
     sessionsLoading: string
     thisDevice: string
+    /**
+     * Marks a session that is bound to a device key (ADR 0043): it can be refreshed only by
+     * the app installation that signed in. It says what the session needs, not what the
+     * device is: binding proves possession of a key and nothing about the device.
+     */
+    deviceBound: string
     activeNow: string
     /** `{time}` is a relative time such as "2 days ago". */
     lastActive: string
@@ -1926,6 +2221,15 @@ export interface UseResetPasswordResult extends FlowState, FactorEnrolmentHookAc
   /** Email a fresh code. The server allows one a minute (`rate_limited` with `retryAfterMs`). */
   resendCode(): Promise<FlowStep | null>
   /**
+   * Ask for the code of a second factor the server sends (step `needs_second_factor` whose
+   * `options` include `sms_code`): a 6-digit code is texted to the account's phone number.
+   * Nothing is sent until this is called.
+   *
+   * @param input - The method: `sms_code`.
+   * @returns The step, now with `prepared`, or `null` when the request failed (see `error`).
+   */
+  prepareSecondFactor(input: { method: 'sms_code' }): Promise<FlowStep | null>
+  /**
    * Prove a second factor (step `needs_second_factor`): the reset stored the new password,
    * and the user's authenticator code or a backup code signs them in.
    *
@@ -2017,6 +2321,15 @@ export interface UseSignInResult extends FlowState, FactorEnrolmentHookActions {
    */
   submitPassword(input: { password: string }): Promise<FlowStep | null>
   /**
+   * Replace a password that has expired (step `needs_new_password` with `reason: 'expired'`)
+   * and finish the sign-in. A refused password (`password.*`, `password.reused` for the
+   * expired one) leaves the step as it is; `flow.invalid_step` means the password was
+   * replaced some other way meanwhile, and the sign-in starts again.
+   *
+   * @param input - The new password.
+   */
+  submitNewPassword(input: { password: string }): Promise<FlowStep | null>
+  /**
    * Submit the emailed 6-digit code (step `needs_email_verification`).
    *
    * @param input - The code.
@@ -2031,17 +2344,27 @@ export interface UseSignInResult extends FlowState, FactorEnrolmentHookActions {
    * environment's allowed redirect URLs, exactly. Call it again for a fresh email (one a
    * minute).
    *
+   * With `sms_code`, for a sign-in started with a phone number: a 6-digit code by text
+   * message. The answer is the same whether or not the number can sign anyone in, and does
+   * not say whether a message was sent.
+   *
    * @param input - The strategy, and for a link the page it leads to.
    */
   prepareFirstFactor(
-    input: { strategy: 'email_code' } | { strategy: 'email_link'; redirectUrl: string }
+    input:
+      | { strategy: 'email_code' }
+      | { strategy: 'email_link'; redirectUrl: string }
+      | { strategy: 'sms_code' }
   ): Promise<FlowStep | null>
   /**
-   * Submit the emailed sign-in code.
+   * Submit the emailed sign-in code, or the texted one (`sms_code`).
    *
    * @param input - The strategy and the code.
    */
-  attemptFirstFactor(input: { strategy: 'email_code'; code: string }): Promise<FlowStep | null>
+  attemptFirstFactor(input: {
+    strategy: 'email_code' | 'sms_code'
+    code: string
+  }): Promise<FlowStep | null>
   /**
    * Wait for the emailed link to be opened in this browser, and finish the sign-in here when
    * it is. It does not set `isPending`, and the other actions keep working while it waits.
@@ -2056,6 +2379,15 @@ export interface UseSignInResult extends FlowState, FactorEnrolmentHookActions {
    * cannot.
    */
   canUseEmailLink(): boolean
+  /**
+   * Ask for the code of a second factor the server sends (step `needs_second_factor` whose
+   * `options` include `sms_code`): a 6-digit code is texted to the account's phone number.
+   * Nothing is sent until this is called.
+   *
+   * @param input - The method: `sms_code`.
+   * @returns The step, now with `prepared`, or `null` when the request failed (see `error`).
+   */
+  prepareSecondFactor(input: { method: 'sms_code' }): Promise<FlowStep | null>
   /**
    * Prove a second factor (step `needs_second_factor`): the 6-digit code an authenticator app
    * shows, or an unused backup code.
@@ -2263,7 +2595,8 @@ export interface UserButtonProps {
 
 _function_, defined in `packages/react/src/components/user-profile.tsx`
 
-Account management for the signed-in user: who they are, change the password, two-step
+Account management for the signed-in user: who they are, change the password, a phone
+number (where the app sends text messages: add it with a texted code, remove it), two-step
 verification, passkeys (where the environment has them on), connected accounts, and where
 they are signed in, with "this device" marked, one device or all the others signed out, and
 sign out. Renders nothing while signed out.
@@ -2455,7 +2788,10 @@ _function_, defined in `packages/react/src/hooks/use-password-checklist.ts`
 
 A live password checklist that agrees with the server: the environment's policy, evaluated
 by the same function the server runs. (The breached-password check is server-side only and
-is reported when the password is submitted.)
+is reported when the password is submitted. So is the password history: where
+`policy.history` is at least 1, a password that replaces one must not be one of the user's
+last that many, which only the server can judge. It is not among `checks`; the answer to a
+reused password is the error `password.reused`.)
 
 ```ts
 export function usePasswordChecklist(

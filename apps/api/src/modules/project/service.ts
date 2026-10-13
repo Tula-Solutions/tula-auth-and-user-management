@@ -1,4 +1,4 @@
-import { PUBLISHABLE_KEY_PREFIX, SECRET_KEY_PREFIX } from '@tula/contract'
+import { AGENT_KEY_PREFIX, PUBLISHABLE_KEY_PREFIX, SECRET_KEY_PREFIX } from '@tula/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { ConflictError, NotFoundError } from '~/exceptions'
 import type { Actor } from '~/lib/actor'
@@ -32,16 +32,22 @@ export const MAX_ACTIVE_KEYS = 100
  */
 export const MAX_KEYS = 1_000
 
+/** The prefix of each kind of key: what a route looks at before it hashes anything. */
+export const KEY_PREFIXES: Readonly<Record<ApiKeyKind, string>> = {
+  publishable: PUBLISHABLE_KEY_PREFIX,
+  secret: SECRET_KEY_PREFIX,
+  agent: AGENT_KEY_PREFIX,
+}
+
 /**
  * Mint a new raw API key: prefix, environment segment, then 256 random bits.
  *
- * @param kind - Publishable or secret.
+ * @param kind - Publishable, secret or agent.
  * @param environment - The environment kind, for the readable segment.
  * @returns The full key, e.g. `tula_sk_prod_<43 base64url chars>`.
  */
 export function generateKey(kind: ApiKeyKind, environment: EnvironmentKind): string {
-  const prefix = kind === 'secret' ? SECRET_KEY_PREFIX : PUBLISHABLE_KEY_PREFIX
-  return `${prefix}${KEY_ENVIRONMENT_SEGMENT[environment]}_${randomToken(32)}`
+  return `${KEY_PREFIXES[kind]}${KEY_ENVIRONMENT_SEGMENT[environment]}_${randomToken(32)}`
 }
 
 /**

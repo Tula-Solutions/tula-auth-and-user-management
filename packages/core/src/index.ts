@@ -5,6 +5,12 @@
  * engine is re-exported from the contract (its Zod-free entry point) so that a live password
  * checklist needs only this package and always agrees with the server.
  */
+
+export {
+  type DeviceKey,
+  type DevicePublicJwk,
+  generateSoftwareDeviceKey,
+} from '@tula/contract/device-binding'
 export {
   evaluatePassword,
   type PasswordCheck,
@@ -13,6 +19,7 @@ export {
   type PasswordUserInfo,
 } from '@tula/contract/password-rules'
 export {
+  createClient as createTulaClientWithEnvironment,
   createTulaClient,
   DEFAULT_TIMEOUT_MS,
   type TulaClient,
@@ -23,6 +30,14 @@ export {
   EMAIL_LINK_SESSION_WAIT_MS,
   type EmailLinkOutcome,
 } from './email-link'
+export {
+  type ChannelLike,
+  type Environment,
+  type LinkStorageLike,
+  type LockManagerLike,
+  type PageLike,
+  runtimeEnvironment,
+} from './environment'
 export {
   type ClientErrorCode,
   EN_MESSAGES,
@@ -40,6 +55,9 @@ export {
 export type {
   FactorEnrolmentResult,
   FlowSnapshot,
+  IdTokenName,
+  IdTokenProvider,
+  IdTokenSignIn,
   PasswordResetFlow,
   SecondFactorResult,
   SignInFlow,
@@ -47,7 +65,13 @@ export type {
 } from './flows'
 export type { Identity, OAuthCallbackOutcome, OAuthProvider } from './oauth'
 export { isRetryableOAuthError } from './oauth'
-export type { PasskeyRequest } from './passkey'
+export type {
+  PasskeyCreationOptions,
+  PasskeyGlobals,
+  PasskeyProvider,
+  PasskeyRequest,
+  PasskeyRequestOptions,
+} from './passkey'
 export {
   ACCESS_TOKEN_EXPIRY_SKEW_MS,
   MAX_REFRESH_BACKOFF_MS,
@@ -55,11 +79,13 @@ export {
   REFRESH_TIMEOUT_MS,
 } from './session'
 export { memoryStorage, type TokenStorage } from './storage'
+export type { DeviceKeySource } from './transport'
 export type {
   AuthState,
   BackupCodes,
   ClientConfig,
   ClientKind,
+  EmailCodeSent,
   FactorEnrolmentMethod,
   Factors,
   FetchLike,
@@ -69,9 +95,11 @@ export type {
   MfaPolicy,
   Passkey,
   PasswordPolicy,
+  PhoneCodeSent,
   SecondFactorMethod,
   SecondFactorProof,
   Session,
+  SmsFactorCode,
   StepUpMethod,
   StepUpPrepared,
   StepUpProof,

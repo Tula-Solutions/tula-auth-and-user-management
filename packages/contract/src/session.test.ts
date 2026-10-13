@@ -16,6 +16,7 @@ const session = {
   lastActiveAt: '2026-01-02T00:00:00.000Z',
   expiresAt: '2026-01-09T00:00:00.000Z',
   current: true,
+  deviceBound: false,
 }
 
 describe('Session', () => {

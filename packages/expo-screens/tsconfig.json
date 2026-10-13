@@ -1,0 +1,7 @@
+{
+  "extends": "@tula/tsconfig/react.json",
+  "compilerOptions": {
+    "types": ["bun-types"]
+  },
+  "include": ["src/**/*"]
+}

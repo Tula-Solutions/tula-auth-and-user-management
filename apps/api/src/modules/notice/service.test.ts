@@ -782,3 +782,102 @@ describe('settled', () => {
     expect(deps.mailer.outbox).toEqual([])
   })
 })
+
+describe('new sign-in notice for a session bound to a device key (ADR 0043)', () => {
+  // A bound session is known by its key, not by its family: every phone of one platform is
+  // the same family, and a key belongs to one installation of an app.
+  const KEY = 'K'.repeat(43)
+  const OTHER_KEY = 'O'.repeat(43)
+  const IOS_APP = 'NorthlineApp/3.1 CFNetwork/1568 Darwin/24'
+  const phone = (deviceThumbprint?: string) => ({
+    ...from(IOS_APP, 'ios'),
+    ...(deviceThumbprint && { deviceThumbprint }),
+  })
+
+  test('a key the account has not been seen with is announced, though the family is known', async () => {
+    await registered()
+    // The family becomes known, unbound: announced once, as before.
+    await signIn(phone())
+    expect(await sent(SIGN_IN_SUBJECT)).toHaveLength(1)
+    await signIn(phone())
+    expect(await sent(SIGN_IN_SUBJECT)).toHaveLength(1)
+    // The same family with a key: a device the account has not been seen on.
+    await signIn(phone(KEY))
+    const notices = await sent(SIGN_IN_SUBJECT)
+    expect(notices).toHaveLength(2)
+    expect(notices[1]?.text).toContain('Device: iOS app\n')
+  })
+
+  test('the same key again is not announced; another key of the same family is', async () => {
+    await registered()
+    await signIn(phone(KEY))
+    expect(await sent(SIGN_IN_SUBJECT)).toHaveLength(1)
+    await signIn(phone(KEY))
+    await signIn({ ...phone(KEY), userAgent: 'NorthlineApp/4.0 CFNetwork/1600 Darwin/25' })
+    expect(await sent(SIGN_IN_SUBJECT)).toHaveLength(1)
+    // A second phone, or the same phone after the app was installed again: a new key.
+    await signIn(phone(OTHER_KEY))
+    expect(await sent(SIGN_IN_SUBJECT)).toHaveLength(2)
+  })
+
+  test('a key seen only on a session that has ended is still known', async () => {
+    const { userId } = await registered()
+    await signIn(phone(KEY))
+    expect(await sent(SIGN_IN_SUBJECT)).toHaveLength(1)
+    await Sessions.revokeAllForUser(deps, tenant, userId, 'revoked_by_admin', TEST_ACTOR)
+    deps.clock.advance('8d')
+    await signIn(phone(KEY))
+    expect(await sent(SIGN_IN_SUBJECT)).toHaveLength(1)
+  })
+
+  test('a key is known per user: another account’s session with it says nothing', async () => {
+    await registered()
+    const other = await Users.create(
+      deps,
+      tenant,
+      { email: 'someone@elsewhere.example', password: PASSWORD, emailVerified: true },
+      TEST_ACTOR
+    )
+    await Sessions.create(deps, tenant, { userId: other.id, client: 'ios', deviceThumbprint: KEY })
+    await signIn(phone(KEY))
+    expect(await sent(SIGN_IN_SUBJECT)).toHaveLength(1)
+  })
+
+  test('the first-ever session of an account is not announced, bound or not', async () => {
+    await Users.create(
+      deps,
+      tenant,
+      { email: EMAIL, password: PASSWORD, emailVerified: true },
+      TEST_ACTOR
+    )
+    expect((await signIn(phone(KEY))).attempt.step.status).toBe('complete')
+    expect(await sent(SIGN_IN_SUBJECT)).toEqual([])
+  })
+
+  test('a session that is not bound is judged by its family, also after bound ones of it', async () => {
+    await registered()
+    await signIn(phone(KEY))
+    expect(await sent(SIGN_IN_SUBJECT)).toHaveLength(1)
+    // The family is known from the bound session: the rule for an unbound one is unchanged,
+    // and the store is not asked about a key.
+    const asked = spyOn(deps.sessions, 'hasBoundSessionBefore')
+    spies.push(asked)
+    await signIn(phone())
+    expect(await sent(SIGN_IN_SUBJECT)).toHaveLength(1)
+    expect(asked).not.toHaveBeenCalled()
+  })
+
+  test('nothing of the key is in the email or the log, and the wording is the notice’s own', async () => {
+    await registered()
+    const said = logged('info', 'warn', 'error')
+    await signIn(phone(KEY))
+    const [notice] = await sent(SIGN_IN_SUBJECT)
+    const everything = `${notice?.subject}\n${notice?.text}\n${notice?.html}`
+    expect(everything).not.toContain(KEY)
+    expect(everything).not.toContain(KEY.slice(0, 8))
+    expect(said()).not.toContain(KEY)
+    expect(notice?.subject).toBe(SIGN_IN_SUBJECT)
+    expect(notice?.text).toContain("If it wasn't you, open Tula and reset your password")
+    expectNothingSensitive(notice as MailMessage, IOS_APP)
+  })
+})

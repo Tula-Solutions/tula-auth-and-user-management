@@ -147,12 +147,22 @@ describe('PUT /v1/admin/settings', () => {
     async (policy) => {
       const res = await put({ mfa: { policy } }, '"0"')
       expect(res.status).toBe(200)
-      expect(((await res.json()) as State).settings.mfa).toEqual({ policy })
-      expect(((await (await read()).json()) as State).settings.mfa).toEqual({ policy })
-      expect(ClientConfigSchema.parse(await (await config()).json()).mfa).toEqual({ policy })
+      expect(((await res.json()) as State).settings.mfa).toEqual({
+        policy,
+        smsCode: { enabled: false },
+      })
+      expect(((await (await read()).json()) as State).settings.mfa).toEqual({
+        policy,
+        smsCode: { enabled: false },
+      })
+      expect(ClientConfigSchema.parse(await (await config()).json()).mfa).toEqual({
+        policy,
+        smsCode: false,
+      })
       // The other environment keeps its own.
       expect(ClientConfigSchema.parse(await (await config(PROD_PK)).json()).mfa).toEqual({
         policy: 'optional',
+        smsCode: false,
       })
     }
   )
@@ -161,7 +171,7 @@ describe('PUT /v1/admin/settings', () => {
     const res = await put({ notifications: { mfaChanged: false, identityChanged: true } }, '"0"')
     expect(res.status).toBe(200)
     const { settings } = (await res.json()) as State
-    expect(settings.mfa).toEqual({ policy: 'optional' })
+    expect(settings.mfa).toEqual({ policy: 'optional', smsCode: { enabled: false } })
     expect(settings.notifications).toEqual({
       passwordChanged: true,
       newSignIn: true,
@@ -402,8 +412,17 @@ describe('GET /v1/client/config', () => {
       signIn: { methods: ['password'], oauth: [] },
       signUp: { password: 'required' },
       password: PASSWORD_POLICY_PRESETS.recommended,
-      mfa: { policy: 'optional' },
+      mfa: { policy: 'optional', smsCode: false },
+      phone: { enabled: false },
     })
+  })
+
+  test('a phone number is offered only where the deployment has an SMS sender', async () => {
+    await put({ sms: { enabled: true, allowedCountries: ['US'] } }, '"0"')
+    const offered = async () => ClientConfigSchema.parse(await (await config()).json()).phone
+    expect(await offered()).toEqual({ enabled: true })
+    deps.sms.configured = false
+    expect(await offered()).toEqual({ enabled: false })
   })
 
   test('reflects a change at once on the instance that made it, and nothing operator-only', async () => {
@@ -425,7 +444,8 @@ describe('GET /v1/client/config', () => {
       signIn: { methods: ['password'], oauth: [] },
       signUp: { password: 'required' },
       password: strictPolicy,
-      mfa: { policy: 'optional' },
+      mfa: { policy: 'optional', smsCode: false },
+      phone: { enabled: false },
     })
     expect(text).not.toContain('https://acme.test')
     expect(text).not.toContain('retentionDays')

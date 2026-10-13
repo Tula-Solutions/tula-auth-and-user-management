@@ -1,9 +1,18 @@
-import { OAUTH_PROVIDERS, OAuthProviderSchema } from '@tula/contract'
+import {
+  givesNoAddress,
+  IdTokenProviderSchema,
+  MicrosoftTenantSchema,
+  OAUTH_PROVIDERS,
+  OAuthProviderSchema,
+} from '@tula/contract'
 import type { Context } from 'hono'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { issueMockCode } from '~/adapters/oauth/mock'
+import { isGuid, MICROSOFT_CONSUMER_TENANT_ID, microsoftSubject } from '~/adapters/oauth/microsoft'
+import { issueMockCode, issueMockIdToken } from '~/adapters/oauth/mock'
 import type { AppEnv } from '~/dependencies'
+import { isLoopbackHost } from '~/env'
+import { ForbiddenError } from '~/exceptions'
 import { sha256Hex } from '~/lib/crypto'
 import { parseEmail } from '~/lib/email'
 import { escapeHtml } from '~/modules/email/templates'
@@ -15,12 +24,27 @@ import * as OAuth from '~/modules/oauth/service'
  * `createApp` mounts this router only when the deployment runs with `ENVIRONMENT=local` and
  * `OAUTH_MOCK_PROVIDER=true` (`env.ts` refuses that variable in every other tier); everywhere
  * else these paths do not exist. Each handler checks the configuration again, so the page cannot
- * answer even if it were mounted by mistake.
+ * answer even if it were mounted by mistake. **And each answers only a request whose `Host`
+ * names this machine** (`isLoopbackHost`): a request that arrives through a tunnel, or from a
+ * page that reaches this port by DNS rebinding, is a bare 403. **The form's post is taken only
+ * from the page this API served** (`postedByOwnPage`), or from a tool that is no browser.
  *
  * It plays the part of the provider: `GET` shows a form asking which address the "provider"
  * should assert, `POST` issues a code and sends the browser to this API's real callback, which
  * then runs exactly the code a real provider's answer runs. It is deliberately outside the
  * OpenAPI document: it is not part of the contract.
+ *
+ * For Microsoft the form asks what a Microsoft token says instead of one account id: the
+ * tenant id, the object id, and whether the verified-domain claim (`xms_edov`) is there.
+ * For LinkedIn what the form says becomes a userinfo answer (`sub`, `email`, `email_verified`,
+ * the names) carried in the code, which is where the adapter reads a LinkedIn profile from.
+ * For X and Facebook the address typed is carried in the code and **dropped by the mock
+ * adapter**, as the real adapters read none: it is there to derive an account id from and to
+ * show that an address the provider reports reaches nothing.
+ *
+ * `POST /id-token` is the same aid for a native sign-in (ADR 0045), where there is no page:
+ * it mints the ID token the provider's SDK would have handed the app. It is for tools and
+ * is guarded more tightly than the consent page (see the handler).
  */
 const router = new Hono<AppEnv>()
 
@@ -31,18 +55,79 @@ const ParamsSchema = z.object({
   state: z.string().min(1).max(512),
   nonce: z.string().min(1).max(512),
   code_challenge: z.string().min(1).max(512),
+  /** Microsoft only: the environment's `tenant`, so that the page offers a tenant id it accepts. */
+  tenant: MicrosoftTenantSchema.optional(),
 })
 
 const ConsentSchema = ParamsSchema.extend({
   email: z.string().max(320).default(''),
   subject: z.string().max(200).default(''),
+  tenant_id: z.string().max(36).default(''),
+  object_id: z.string().max(36).default(''),
   given_name: z.string().max(100).default(''),
   family_name: z.string().max(100).default(''),
   unverified: z.string().optional(),
   action: z.enum(['allow', 'deny']).default('allow'),
 })
 
-const NAMES = { google: 'Google', github: 'GitHub', apple: 'Apple' } as const
+const NAMES = {
+  google: 'Google',
+  github: 'GitHub',
+  apple: 'Apple',
+  microsoft: 'Microsoft',
+  discord: 'Discord',
+  linkedin: 'LinkedIn',
+  x: 'X',
+  facebook: 'Facebook',
+} as const
+
+/** The organization the mock's Microsoft accounts are in when nothing else is said. */
+export const MOCK_MICROSOFT_TENANT_ID = '11111111-2222-4333-8444-555555555555'
+
+/** The tenant id the consent page offers: one the environment's `tenant` accepts. */
+function defaultTenantId(tenant: string | undefined): string {
+  if (tenant === 'consumers') {
+    return MICROSOFT_CONSUMER_TENANT_ID
+  }
+  return isGuid(tenant) ? tenant : MOCK_MICROSOFT_TENANT_ID
+}
+
+/** A GUID that is stable per seed, so signing in again finds the same identity. */
+function guidOf(seed: string): string {
+  const hex = sha256Hex(seed)
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20, 32),
+  ].join('-')
+}
+
+/**
+ * The account id of an address when none is typed. Discord's is a snowflake and X's and
+ * Facebook's are decimal ids too (here sixty bits of the address's hash), as the real
+ * adapters accept nothing else.
+ */
+function derivedSubject(provider: string, normalizedEmail: string): string {
+  const hex = sha256Hex(normalizedEmail)
+  return provider === 'discord' || provider === 'x' || provider === 'facebook'
+    ? String(BigInt(`0x${hex.slice(0, 15)}`) + 1n)
+    : `mock-${hex.slice(0, 24)}`
+}
+
+const ACCOUNT_FIELDS =
+  '<label for="subject">Account id (optional; derived from the email when empty)</label>' +
+  '<input id="subject" name="subject" type="text" autocomplete="off">'
+
+function microsoftFields(tenant: string | undefined): string {
+  return (
+    '<label for="tenant_id">Tenant id (tid)</label>' +
+    `<input id="tenant_id" name="tenant_id" type="text" autocomplete="off" value="${escapeHtml(defaultTenantId(tenant))}">` +
+    '<label for="object_id">Object id (oid; optional, derived from the email when empty)</label>' +
+    '<input id="object_id" name="object_id" type="text" autocomplete="off">'
+  )
+}
 
 const STYLE =
   'body{font-family:system-ui,sans-serif;max-width:26rem;margin:8vh auto;padding:0 1rem;color:#1a1a1a;background:#fff}' +
@@ -56,7 +141,12 @@ function page(c: Context<AppEnv>, body: string, status: 200 | 400 = 200): Respon
   c.header('Cache-Control', 'no-store')
   // No `form-action`: browsers apply it to the redirects that follow a form post as well, and
   // this form's post ends, through the API's callback, on the app's own origin.
-  c.header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'")
+  // `frame-ancestors`: no other page draws this one inside itself, so none can lay something
+  // over the form and have a developer's click send it.
+  c.header(
+    'Content-Security-Policy',
+    "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'"
+  )
   return c.html(
     '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
       '<meta name="viewport" content="width=device-width, initial-scale=1">' +
@@ -72,6 +162,16 @@ router.use(async (c, next) => {
   const { config } = c.get('deps')
   if (!config.oauthMock || config.tier !== 'local') {
     return c.notFound()
+  }
+  // Every route here signs somebody in as whoever is asked for, so each answers only a
+  // request that was sent to this machine by name. `env.ts` already refuses the mock with a
+  // `PUBLIC_URL` that is not loopback; this is about how a request arrives, whatever the
+  // configuration says: through a tunnel (`tula dev --tunnel`, ADR 0049, or one a developer
+  // opened by hand) or from a page that reaches this port by DNS rebinding, the `Host`
+  // header names another machine. A forwarding header is never read: a tunnel writes those.
+  if (!isLoopbackHost(c.req.header('host'))) {
+    // Nothing in the body: whoever asked under another name is told nothing at all.
+    return c.body(null, 403)
   }
   await next()
 })
@@ -90,29 +190,82 @@ router.get('/authorize', (c) => {
     .map(([name, value]) => `<input type="hidden" name="${name}" value="${escapeHtml(value)}">`)
     .join('')
   const name = NAMES[parsed.data.provider]
+  const microsoft = parsed.data.provider === 'microsoft'
   return page(
     c,
     `<h1>Mock ${name} sign-in</h1>` +
       '<p class="note"><strong>Development only.</strong> This page stands in for ' +
       `${name}. It exists only with ENVIRONMENT=local and OAUTH_MOCK_PROVIDER=true.</p>` +
       `<form method="post" action="/v1/dev/oauth/authorize">${hidden}` +
-      '<label for="email">Email address the provider reports</label>' +
+      `<label for="email">${
+        givesNoAddress(parsed.data.provider)
+          ? `Email address (never read from ${name}: it only derives an account id)`
+          : 'Email address the provider reports'
+      }</label>` +
       '<input id="email" name="email" type="email" autocomplete="off">' +
-      '<label for="subject">Account id (optional; derived from the email when empty)</label>' +
-      '<input id="subject" name="subject" type="text" autocomplete="off">' +
+      (microsoft ? microsoftFields(parsed.data.tenant) : ACCOUNT_FIELDS) +
       '<label for="given_name">First name (optional)</label>' +
       '<input id="given_name" name="given_name" type="text" autocomplete="off">' +
       '<label for="family_name">Last name (optional)</label>' +
       '<input id="family_name" name="family_name" type="text" autocomplete="off">' +
       '<p><label style="font-weight:400"><input type="checkbox" name="unverified" value="1"> ' +
-      'Report the email as unverified</label></p>' +
+      `${
+        microsoft
+          ? 'Leave out the verified-domain claim (xms_edov): the address is unverified'
+          : 'Report the email as unverified'
+      }</label></p>` +
       '<button type="submit" name="action" value="allow">Continue</button>' +
       '<button type="submit" name="action" value="deny" class="secondary">Cancel</button>' +
       '</form>'
   )
 })
 
+/**
+ * Whether the consent form's post comes from the page this API served, or from a tool that
+ * is no browser (TULA-68).
+ *
+ * The post issues a code for whatever address it is told, so a page of another origin has
+ * no business sending it: another site's, and equally the application under development on
+ * another port of this machine. A browser says where a post comes from in two headers no
+ * page can set:
+ *
+ * - `Sec-Fetch-Site` must not name another origin: `same-origin`, `none`, or absent.
+ * - `Origin`, when there is one, must be this API's own (`PUBLIC_URL`'s, compared as the
+ *   string it is), **or `null` beside `Sec-Fetch-Site: same-origin`**. The second form is
+ *   what a browser really sends for this page's own form: every response of the API says
+ *   `Referrer-Policy: no-referrer`, under which a form post's `Origin` is `null`. The
+ *   browser's own word that the post is same-origin is then what is believed, and `null`
+ *   alone (an older browser without fetch metadata, a sandboxed frame) is refused.
+ *
+ * A request with neither header is taken for a tool's (the conformance runner, a test,
+ * `curl`). **That is not airtight, and is accepted**: a browser from before `Origin` was
+ * sent with every post (Firefox before 70) sends neither for a page's form, so there
+ * another site's page can still post. It gains what a foreign post always gained, which
+ * is nothing it can reach (below): refusing a request with neither header would shut out
+ * every tool to close that.
+ *
+ * What this stops is small, and ADR 0026 ("The mock provider") says so: a foreign page
+ * never held a live `state`, and a code it had issued completed nothing without the
+ * attempt's PKCE verifier and the starting browser's binding.
+ */
+function postedByOwnPage(c: Context<AppEnv>): boolean {
+  const site = c.req.header('sec-fetch-site')
+  if (site !== undefined && site !== 'same-origin' && site !== 'none') {
+    return false
+  }
+  const origin = c.req.header('origin')
+  return (
+    origin === undefined ||
+    origin === new URL(c.get('deps').config.publicUrl).origin ||
+    (origin === 'null' && site === 'same-origin')
+  )
+}
+
 router.post('/authorize', async (c) => {
+  if (!postedByOwnPage(c)) {
+    // Before the form is read, and with nothing in the body, as for a foreign `Host`.
+    return c.body(null, 403)
+  }
   let form: Record<string, unknown> = {}
   try {
     form = await c.req.parseBody()
@@ -136,9 +289,21 @@ router.post('/authorize', async (c) => {
     return c.redirect(callback.toString(), 302)
   }
   const email = parseEmail(consent.email)
-  if (!email && consent.subject === '') {
+  // Stable per address, so signing in again finds the same identity. Microsoft's is the pair
+  // of ids its tokens carry, built as the real adapter builds it.
+  const subject =
+    consent.provider === 'microsoft'
+      ? email || consent.object_id !== ''
+        ? microsoftSubject(
+            consent.tenant_id || defaultTenantId(consent.tenant),
+            consent.object_id || guidOf(email?.normalized ?? '')
+          )
+        : null
+      : consent.subject || (email ? derivedSubject(consent.provider, email.normalized) : null)
+  if (subject === null) {
     return refused(c)
   }
+  const verified = email !== null && consent.unverified === undefined
   callback.searchParams.set(
     'code',
     await issueMockCode(deps.secretBox, deps.clock, {
@@ -148,16 +313,129 @@ router.post('/authorize', async (c) => {
       nonce: consent.nonce,
       codeChallenge: consent.code_challenge,
       profile: {
-        // Stable per address, so signing in again finds the same identity.
-        subject: consent.subject || `mock-${sha256Hex(email?.normalized ?? '').slice(0, 24)}`,
+        subject,
         email: email?.email ?? null,
-        emailVerified: email !== null && consent.unverified === undefined,
+        emailVerified: verified,
         ...(consent.given_name && { givenName: consent.given_name }),
         ...(consent.family_name && { familyName: consent.family_name }),
       },
+      // LinkedIn's address and name are its userinfo answer's, in LinkedIn's own field names:
+      // the mock adapter reads them from here and nowhere else, as the real one does.
+      ...(consent.provider === 'linkedin' && {
+        userinfo: {
+          sub: subject,
+          ...(email && { email: email.email, email_verified: verified }),
+          ...(consent.given_name && { given_name: consent.given_name }),
+          ...(consent.family_name && { family_name: consent.family_name }),
+        },
+      }),
     })
   )
   return c.redirect(callback.toString(), 302)
+})
+
+/** How the private relay addresses Apple hands out in a token end. */
+const APPLE_RELAY_SUFFIX = '@privaterelay.appleid.com'
+
+const IdTokenSchema = z.strictObject({
+  provider: IdTokenProviderSchema,
+  /** The client id the token is "issued for". Whatever the caller asks: another app's too. */
+  audience: z.string().min(1).max(512),
+  /** The client that "asked", when it is not the audience. */
+  authorizedParty: z.string().min(1).max(512).optional(),
+  /**
+   * The nonce the token carries, **as given**: the mock echoes what "the app" passed, as a
+   * provider does. For Apple the caller passes the SHA-256 the app would. Left out, the
+   * token has none.
+   */
+  nonce: z.string().min(1).max(512).optional(),
+  email: z.string().max(320).optional(),
+  subject: z.string().min(1).max(200).optional(),
+  unverified: z.boolean().optional(),
+  givenName: z.string().max(100).optional(),
+  familyName: z.string().max(100).optional(),
+  /** Mint a token whose expiry has already passed. */
+  expired: z.boolean().optional(),
+})
+
+/**
+ * Mint the ID token a native app would have been handed by the provider's SDK (ADR 0045):
+ * what the consent page is to a browser's round trip. **It signs a token for any address
+ * and any audience**, which is what it is for, and why it exists only where the mock
+ * provider does (the guard above) and only for tools on this machine: a request that
+ * carries an `Origin`, that a browser marks as coming from another site, or whose `Host`
+ * does not name this machine is refused, as the development SMS inbox refuses it. A page a
+ * developer has open cannot ask for a token, and neither can one that reaches this port by
+ * DNS rebinding. **Its rule is stricter than the consent form's** (`postedByOwnPage` takes
+ * this API's own `Origin`; here any `Origin` at all is refused): the form has a page of
+ * this API's that posts it, and this route has none, so nothing a browser sends on a
+ * page's behalf belongs here. Outside the OpenAPI document: it is not part of the contract.
+ *
+ * A token for Apple (ADR 0047) has Apple's shape: `email_verified` and `is_private_email`
+ * as strings, `nonce_supported: true`, and **no name** whatever was asked (Apple's token has
+ * none). Its audience is whatever bundle id the caller names.
+ */
+router.post('/id-token', async (c) => {
+  if (!isLoopbackHost(c.req.header('host'))) {
+    // Nothing in the body: whoever asked under another name is told nothing at all.
+    return c.body(null, 403)
+  }
+  const site = c.req.header('sec-fetch-site')
+  if (
+    c.req.header('origin') !== undefined ||
+    (site !== undefined && site !== 'none' && site !== 'same-origin')
+  ) {
+    throw new ForbiddenError()
+  }
+  let body: unknown
+  try {
+    body = await c.req.json()
+  } catch {
+    body = null
+  }
+  const parsed = IdTokenSchema.safeParse(body)
+  const email = parsed.success && parsed.data.email ? parseEmail(parsed.data.email) : null
+  const subject = parsed.success
+    ? (parsed.data.subject ??
+      (email ? derivedSubject(parsed.data.provider, email.normalized) : null))
+    : null
+  if (!parsed.success || subject === null) {
+    return c.json({ error: 'invalid request' }, 400)
+  }
+  const asked = parsed.data
+  const apple = asked.provider === 'apple'
+  const deps = c.get('deps')
+  c.header('Cache-Control', 'no-store')
+  return c.json({
+    idToken: await issueMockIdToken(
+      deps.secretBox,
+      deps.clock,
+      asked.provider,
+      {
+        aud: asked.audience,
+        ...(asked.authorizedParty !== undefined && { azp: asked.authorizedParty }),
+        sub: subject,
+        ...(asked.nonce !== undefined && { nonce: asked.nonce }),
+        ...(apple
+          ? {
+              // Apple's shape: booleans as strings, `nonce_supported`, and no name (the
+              // system's sheet hands that to the app, never to the token).
+              nonce_supported: true,
+              ...(email && {
+                email: email.email,
+                email_verified: asked.unverified === true ? 'false' : 'true',
+                is_private_email: email.normalized.endsWith(APPLE_RELAY_SUFFIX) ? 'true' : 'false',
+              }),
+            }
+          : {
+              ...(email && { email: email.email, email_verified: asked.unverified !== true }),
+              ...(asked.givenName && { given_name: asked.givenName }),
+              ...(asked.familyName && { family_name: asked.familyName }),
+            }),
+      },
+      { expired: asked.expired === true }
+    ),
+  })
 })
 
 export default router

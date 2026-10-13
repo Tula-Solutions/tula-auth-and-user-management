@@ -230,8 +230,8 @@ export type SecondFactorProof = Schemas['SecondFactorRequest']
 export type StepUpProof = Schemas['StepUpRequest']
 
 /**
- * The receipt of an emailed step-up code: where it went (masked) and when it stops working.
- * Never the code.
+ * The receipt of an emailed or a texted step-up code: where it went (masked) and when it stops
+ * working. Never the code.
  *
  * @example
  * ```ts
@@ -239,7 +239,43 @@ export type StepUpProof = Schemas['StepUpRequest']
  * show(`We emailed a code to ${sent.destination}`)
  * ```
  */
-export type StepUpPrepared = Schemas['StepUpEmailCode']
+export type StepUpPrepared = Schemas['StepUpEmailCode'] | Schemas['SmsFactorCode']
+
+/**
+ * The receipt of the code texted to enrol a texted code as the second step: the masked number
+ * and when the code stops working. Never the code.
+ *
+ * @example
+ * ```ts
+ * const sent: SmsFactorCode = await tula.mfa.startSms()
+ * show(`We texted a code to ${sent.destination}`)
+ * ```
+ */
+export type SmsFactorCode = Schemas['SmsFactorCode']
+
+/**
+ * The receipt of a code texted to a phone number: where it went (masked) and when it stops
+ * working. Never the code, and never the whole number.
+ *
+ * @example
+ * ```ts
+ * const sent: PhoneCodeSent = await tula.user.phone.request({ phoneNumber: '+14155550142' })
+ * show(`We texted a code to the number ending ${sent.destination.slice(-2)}`)
+ * ```
+ */
+export type PhoneCodeSent = Schemas['PhoneCodeSent']
+
+/**
+ * The receipt of a code emailed to an address a user wants on their account: where it went
+ * (masked) and when it stops working. Never the code, and never the whole address.
+ *
+ * @example
+ * ```ts
+ * const sent: EmailCodeSent = await tula.user.email.request({ email: 'ada@example.com' })
+ * show(`We emailed a code to ${sent.destination}`)
+ * ```
+ */
+export type EmailCodeSent = Schemas['EmailCodeSent']
 
 /**
  * A way to step up. An `auth.step_up_required` error says which ones the user may use; see

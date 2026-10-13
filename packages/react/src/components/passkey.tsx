@@ -394,6 +394,16 @@ function PasskeyRow(props: {
 }
 
 /**
+ * What is known of the account's second step when a passkey could be added.
+ *
+ * - `checking`: the account's factors are still being read.
+ * - `unchecked`: that read failed.
+ * - `texted_code`: a code by text message is the second step in use; a passkey replaces it.
+ * - `other`: read, and a passkey replaces nothing.
+ */
+export type SecondStepRead = 'checking' | 'unchecked' | 'texted_code' | 'other'
+
+/**
  * The "Passkeys" section of `<UserProfile>`: the user's passkeys (name, whether it is synced,
  * when it was added and last used), a way to add one on this device, to rename one and to
  * remove one after a confirmation.
@@ -411,11 +421,35 @@ function PasskeyRow(props: {
  *
  * Every result is checked against the session it was asked under before it is shown.
  *
+ * @param props.secondStep - What is known of the account's second step
+ *   ({@link SecondStepRead}; `other` when left out, for a section drawn alone). For
+ *   `texted_code` a passkey the user adds takes that step over (the server asks for the
+ *   stronger factor and sets the texted code aside) and has no backup codes, so the section
+ *   says so above "Add a passkey", before any ceremony, and the button is described by it.
+ *   For `checking` and `unchecked` the button is there and can be focused but does nothing,
+ *   and is described by the reason: nobody adds a passkey before it is known whether that
+ *   warning is owed.
+ * @param props.onChanged - Called after a passkey was added or removed: what the user is
+ *   asked for as a second step may have changed with it.
  * @returns The section; nothing where the environment has passkeys switched off and the user
  *   has none (or the list is not known).
  */
-export function PasskeysSection() {
+export function PasskeysSection(props: { secondStep?: SecondStepRead; onChanged?(): void } = {}) {
   const { el, t } = useUi()
+  const warningId = useId()
+  const { secondStep = 'other' } = props
+  // What is read with the add button. Only a known second step lets a passkey be added: a
+  // user who is about to replace a texted code is told so first, which cannot be done before
+  // the account's factors have been read, or when that read failed.
+  const said =
+    secondStep === 'texted_code'
+      ? t.passkey.replacesTextedCode
+      : secondStep === 'checking'
+        ? t.passkey.addChecking
+        : secondStep === 'unchecked'
+          ? t.passkey.addUnchecked
+          : null
+  const held = secondStep === 'checking' || secondStep === 'unchecked'
   const { client } = useTulaContext()
   const offered = usePasskeyOffered()
   const supported = usePasskeySupport()
@@ -506,6 +540,7 @@ export function PasskeysSection() {
       await load()
       if (current()) {
         setMessage(t.passkey.added)
+        props.onChanged?.()
       }
     })
   const rename = (passkey: Passkey, name: string) =>
@@ -528,6 +563,7 @@ export function PasskeysSection() {
       }
       await load()
       if (current()) {
+        props.onChanged?.()
         setMessage(t.passkey.removed)
         // The row and its buttons are gone: the section's title is where reading resumes.
         title.current?.focus()
@@ -578,10 +614,16 @@ export function PasskeysSection() {
         <p {...el('hint')}>{t.passkey.addUnsupported}</p>
       ) : (
         <div className='tula-passkey' ref={adder}>
+          {said === null ? null : (
+            <p {...el('hint')} id={warningId}>
+              {said}
+            </p>
+          )}
           <Button
             kind='secondary'
+            aria-describedby={said === null ? undefined : warningId}
             pending={busy === 'add'}
-            disabled={(busy !== null && busy !== 'add') || editing !== null}
+            disabled={held || (busy !== null && busy !== 'add') || editing !== null}
             onClick={() => void add()}
           >
             <PasskeyLabel>{t.passkey.add}</PasskeyLabel>

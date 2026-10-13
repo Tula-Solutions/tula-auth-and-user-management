@@ -16,6 +16,15 @@
     "needsSecretKey": {
       "type": "boolean"
     },
+    "needsWebhookReceiver": {
+      "type": "boolean"
+    },
+    "needsSmsInbox": {
+      "type": "boolean"
+    },
+    "needsTestClock": {
+      "type": "boolean"
+    },
     "variables": {
       "type": "object",
       "propertyNames": {
@@ -31,7 +40,15 @@
             "properties": {
               "generate": {
                 "type": "string",
-                "enum": ["email", "password"]
+                "enum": [
+                  "email",
+                  "password",
+                  "uuid",
+                  "snowflake",
+                  "phone",
+                  "phone_fr",
+                  "p256_private_key"
+                ]
               }
             },
             "required": ["generate"],
@@ -91,6 +108,24 @@
                     "additionalProperties": {
                       "type": "string"
                     }
+                  },
+                  "proof": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "pattern": "^[a-z][A-Za-z0-9]*$"
+                      },
+                      "nonce": {
+                        "type": "string"
+                      },
+                      "capture": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": ["key"],
+                    "additionalProperties": false
                   },
                   "instance": {
                     "type": "string",
@@ -256,6 +291,97 @@
                 "type": "string",
                 "minLength": 1
               },
+              "emailMessage": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string"
+                  },
+                  "subjectContains": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "captureCode": {
+                    "type": "string"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "textContains": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "textExcludes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "required": ["to", "subjectContains"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "emailMessage"],
+            "additionalProperties": false,
+            "ref": "ConformanceEmailMessageStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "smsCode": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string"
+                  },
+                  "capture": {
+                    "type": "string"
+                  },
+                  "captureWrong": {
+                    "type": "string"
+                  },
+                  "not": {
+                    "type": "string"
+                  },
+                  "textContains": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "textExcludes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "required": ["to", "capture"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "smsCode"],
+            "additionalProperties": false,
+            "ref": "ConformanceSmsCodeStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
               "totp": {
                 "type": "object",
                 "properties": {
@@ -298,6 +424,12 @@
                   "subject": {
                     "type": "string"
                   },
+                  "tenantId": {
+                    "type": "string"
+                  },
+                  "objectId": {
+                    "type": "string"
+                  },
                   "unverified": {
                     "type": "boolean"
                   },
@@ -315,6 +447,9 @@
                   },
                   "captureCallback": {
                     "type": "string"
+                  },
+                  "expectRedirectTo": {
+                    "type": "string"
                   }
                 },
                 "additionalProperties": false
@@ -323,6 +458,62 @@
             "required": ["name", "oauth"],
             "additionalProperties": false,
             "ref": "ConformanceOAuthStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "idToken": {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "default": "google",
+                    "type": "string"
+                  },
+                  "audience": {
+                    "type": "string"
+                  },
+                  "authorizedParty": {
+                    "type": "string"
+                  },
+                  "nonce": {
+                    "type": "string"
+                  },
+                  "nonceSha256": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "unverified": {
+                    "type": "boolean"
+                  },
+                  "givenName": {
+                    "type": "string"
+                  },
+                  "familyName": {
+                    "type": "string"
+                  },
+                  "expired": {
+                    "type": "boolean"
+                  },
+                  "capture": {
+                    "type": "string"
+                  }
+                },
+                "required": ["audience", "capture"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "idToken"],
+            "additionalProperties": false,
+            "ref": "ConformanceIdTokenStep"
           },
           {
             "type": "object",
@@ -347,6 +538,9 @@
                   "origin": {
                     "type": "string"
                   },
+                  "androidCertFingerprint": {
+                    "type": "string"
+                  },
                   "capture": {
                     "type": "string"
                   },
@@ -362,13 +556,210 @@
                     "type": "boolean"
                   }
                 },
-                "required": ["authenticator", "origin", "capture"],
+                "required": ["authenticator", "capture"],
                 "additionalProperties": false
               }
             },
             "required": ["name", "passkey"],
             "additionalProperties": false,
             "ref": "ConformancePasskeyStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "webhook": {
+                "type": "object",
+                "properties": {
+                  "receiver": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "captureUrl": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "answers": {
+                    "minItems": 1,
+                    "maxItems": 16,
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 200,
+                      "maximum": 599
+                    }
+                  },
+                  "expect": {
+                    "type": "object",
+                    "properties": {
+                      "secret": {
+                        "type": "string"
+                      },
+                      "type": {
+                        "type": "string"
+                      },
+                      "body": {},
+                      "captureId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "alsoSecrets": {
+                        "minItems": 1,
+                        "maxItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "notSecrets": {
+                        "minItems": 1,
+                        "maxItems": 4,
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "signatures": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 2
+                      }
+                    },
+                    "required": ["secret"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["receiver"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "webhook"],
+            "additionalProperties": false,
+            "ref": "ConformanceWebhookStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "hook": {
+                "type": "object",
+                "properties": {
+                  "receiver": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "captureUrl": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "answer": {
+                    "anyOf": [
+                      {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "decision": {
+                                "type": "string",
+                                "const": "allow"
+                              }
+                            },
+                            "required": ["decision"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "decision": {
+                                "type": "string",
+                                "const": "deny"
+                              },
+                              "code": {
+                                "type": "string",
+                                "pattern": "^[a-z0-9_]{1,64}$"
+                              }
+                            },
+                            "required": ["decision"],
+                            "additionalProperties": false
+                          }
+                        ],
+                        "ref": "HookAnswer"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "claims": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "type": ["string", "number", "boolean"]
+                            }
+                          }
+                        },
+                        "required": ["claims"],
+                        "additionalProperties": false,
+                        "ref": "HookClaimsAnswer"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "integer",
+                            "minimum": 200,
+                            "maximum": 599
+                          }
+                        },
+                        "required": ["status"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "string",
+                        "const": "hang"
+                      }
+                    ]
+                  },
+                  "expect": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "secret": {
+                            "type": "string"
+                          },
+                          "body": {}
+                        },
+                        "required": ["secret"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "nothing": {
+                            "type": "boolean",
+                            "const": true
+                          }
+                        },
+                        "required": ["nothing"],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "required": ["receiver"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "hook"],
+            "additionalProperties": false,
+            "ref": "ConformanceHookStep"
           },
           {
             "type": "object",
@@ -441,6 +832,24 @@
                       "type": "string"
                     }
                   },
+                  "proof": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string",
+                        "pattern": "^[a-z][A-Za-z0-9]*$"
+                      },
+                      "nonce": {
+                        "type": "string"
+                      },
+                      "capture": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": ["key"],
+                    "additionalProperties": false
+                  },
                   "instance": {
                     "type": "string",
                     "enum": ["first", "second"]
@@ -605,6 +1014,97 @@
                 "type": "string",
                 "minLength": 1
               },
+              "emailMessage": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string"
+                  },
+                  "subjectContains": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "captureCode": {
+                    "type": "string"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "textContains": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "textExcludes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "required": ["to", "subjectContains"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "emailMessage"],
+            "additionalProperties": false,
+            "ref": "ConformanceEmailMessageStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "smsCode": {
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string"
+                  },
+                  "capture": {
+                    "type": "string"
+                  },
+                  "captureWrong": {
+                    "type": "string"
+                  },
+                  "not": {
+                    "type": "string"
+                  },
+                  "textContains": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "textExcludes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "required": ["to", "capture"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "smsCode"],
+            "additionalProperties": false,
+            "ref": "ConformanceSmsCodeStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
               "totp": {
                 "type": "object",
                 "properties": {
@@ -647,6 +1147,12 @@
                   "subject": {
                     "type": "string"
                   },
+                  "tenantId": {
+                    "type": "string"
+                  },
+                  "objectId": {
+                    "type": "string"
+                  },
                   "unverified": {
                     "type": "boolean"
                   },
@@ -664,6 +1170,9 @@
                   },
                   "captureCallback": {
                     "type": "string"
+                  },
+                  "expectRedirectTo": {
+                    "type": "string"
                   }
                 },
                 "additionalProperties": false
@@ -672,6 +1181,62 @@
             "required": ["name", "oauth"],
             "additionalProperties": false,
             "ref": "ConformanceOAuthStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "idToken": {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "default": "google",
+                    "type": "string"
+                  },
+                  "audience": {
+                    "type": "string"
+                  },
+                  "authorizedParty": {
+                    "type": "string"
+                  },
+                  "nonce": {
+                    "type": "string"
+                  },
+                  "nonceSha256": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "unverified": {
+                    "type": "boolean"
+                  },
+                  "givenName": {
+                    "type": "string"
+                  },
+                  "familyName": {
+                    "type": "string"
+                  },
+                  "expired": {
+                    "type": "boolean"
+                  },
+                  "capture": {
+                    "type": "string"
+                  }
+                },
+                "required": ["audience", "capture"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "idToken"],
+            "additionalProperties": false,
+            "ref": "ConformanceIdTokenStep"
           },
           {
             "type": "object",
@@ -696,6 +1261,9 @@
                   "origin": {
                     "type": "string"
                   },
+                  "androidCertFingerprint": {
+                    "type": "string"
+                  },
                   "capture": {
                     "type": "string"
                   },
@@ -711,13 +1279,210 @@
                     "type": "boolean"
                   }
                 },
-                "required": ["authenticator", "origin", "capture"],
+                "required": ["authenticator", "capture"],
                 "additionalProperties": false
               }
             },
             "required": ["name", "passkey"],
             "additionalProperties": false,
             "ref": "ConformancePasskeyStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "webhook": {
+                "type": "object",
+                "properties": {
+                  "receiver": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "captureUrl": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "answers": {
+                    "minItems": 1,
+                    "maxItems": 16,
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 200,
+                      "maximum": 599
+                    }
+                  },
+                  "expect": {
+                    "type": "object",
+                    "properties": {
+                      "secret": {
+                        "type": "string"
+                      },
+                      "type": {
+                        "type": "string"
+                      },
+                      "body": {},
+                      "captureId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "alsoSecrets": {
+                        "minItems": 1,
+                        "maxItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "notSecrets": {
+                        "minItems": 1,
+                        "maxItems": 4,
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "signatures": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 2
+                      }
+                    },
+                    "required": ["secret"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["receiver"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "webhook"],
+            "additionalProperties": false,
+            "ref": "ConformanceWebhookStep"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "hook": {
+                "type": "object",
+                "properties": {
+                  "receiver": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "captureUrl": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "answer": {
+                    "anyOf": [
+                      {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "decision": {
+                                "type": "string",
+                                "const": "allow"
+                              }
+                            },
+                            "required": ["decision"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "decision": {
+                                "type": "string",
+                                "const": "deny"
+                              },
+                              "code": {
+                                "type": "string",
+                                "pattern": "^[a-z0-9_]{1,64}$"
+                              }
+                            },
+                            "required": ["decision"],
+                            "additionalProperties": false
+                          }
+                        ],
+                        "ref": "HookAnswer"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "claims": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "type": ["string", "number", "boolean"]
+                            }
+                          }
+                        },
+                        "required": ["claims"],
+                        "additionalProperties": false,
+                        "ref": "HookClaimsAnswer"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "integer",
+                            "minimum": 200,
+                            "maximum": 599
+                          }
+                        },
+                        "required": ["status"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "string",
+                        "const": "hang"
+                      }
+                    ]
+                  },
+                  "expect": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "secret": {
+                            "type": "string"
+                          },
+                          "body": {}
+                        },
+                        "required": ["secret"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "nothing": {
+                            "type": "boolean",
+                            "const": true
+                          }
+                        },
+                        "required": ["nothing"],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "required": ["receiver"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["name", "hook"],
+            "additionalProperties": false,
+            "ref": "ConformanceHookStep"
           },
           {
             "type": "object",

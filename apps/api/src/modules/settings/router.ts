@@ -90,7 +90,9 @@ router.put(
       'header is `precondition.required`, a revision that is no longer current is ' +
       '`precondition.failed`. The change is recorded in the audit log as ' +
       '`environment.settings_updated` with the keys that changed, never their values, and ' +
-      '`weakened: true` when it made the password policy weaker. ' +
+      '`weakened: true` when it weakened a security setting or shortened what is kept (a ' +
+      'weaker password policy, a security notice switched off, a looser MFA policy, longer ' +
+      'sessions, an audit retention period set or shortened). ' +
       'A tool that applies a config file names itself in `x-tula-managed-by` with the ' +
       'config’s fingerprint in `x-tula-config-hash`; the answer’s `managedBy` then says so, ' +
       'and `managedBy.drifted` turns true when the settings are later replaced without them. ' +
@@ -188,7 +190,10 @@ router.get(
     c.header('Cache-Control', `private, max-age=${CLIENT_CONFIG_MAX_AGE_SECONDS}`)
     // The response depends on which environment the key belongs to.
     c.header('Vary', PUBLISHABLE_KEY_HEADER, { append: true })
-    return c.json(ClientConfigSchema.parse(Settings.clientConfig(settings, providers)))
+    const { sms } = c.get('deps')
+    return c.json(
+      ClientConfigSchema.parse(Settings.clientConfig(settings, providers, sms.configured))
+    )
   }
 )
 

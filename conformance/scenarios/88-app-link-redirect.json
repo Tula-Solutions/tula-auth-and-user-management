@@ -1,0 +1,573 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "provider sign-in returned to an app link",
+  "description": "An operator hands a registered app the links of exact paths of their domain (appLinkPaths, off by default), and the files the platforms fetch say so: Apple’s gets an applinks entry with one component per exact path, with no wildcard, for that app and no other; Android’s, which has no place for a path, gets the handle_all_urls relation for an app with at least one path and for no other. A path that is not exact (a wildcard, a query, a trailing slash) is refused. An https URL the app opens is then listed as a redirect URL like any other, and a provider sign-in started by a native client returns to it: the callback redirects to exactly that URL with a single-use ticket in the fragment, sets no cookie and returns no token, and the ticket completes nothing without the binding only the app that started holds. The server does not check that the redirect URL’s host is the domain the files are published on: lining the two up is the operator’s (docs/native-apps.md). Giving an app a path is recorded as a weakening, by count and field name, never the path. Uses the server’s mock provider. Cleanup removes the apps, the user, the credentials and restores the settings.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "appLink": "https://app.conformance.example/oauth/callback",
+    "teamId": "TULAC0NF81",
+    "bundleId": "com.tula.conformance.linked",
+    "packageName": "com.tula.conformance.linked_app",
+    "fingerprint": "14:B6:C3:A1:E9:D0:7F:52:88:6A:4B:0C:3D:9E:1F:20:A7:B8:C9:D0:E1:F2:A3:B4:C5:D6:E7:F8:09:1A:2B:3C"
+  },
+  "steps": [
+    {
+      "name": "find the environment the key belongs to",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/api-keys",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "environmentId": "data[0].environmentId"
+      }
+    },
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "revision": "$any",
+          "settings": "$any"
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "app": "settings.app",
+        "passwordPolicy": "settings.password",
+        "origins": "settings.urls.allowedOrigins",
+        "audit": "settings.audit",
+        "notifications": "settings.notifications"
+      }
+    },
+    {
+      "name": "an iOS app is registered with no link path: off by default",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/native-apps",
+        "auth": "secret",
+        "body": {
+          "platform": "ios",
+          "teamId": "{{teamId}}",
+          "bundleId": "{{bundleId}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "platform": "ios",
+          "bundleId": "{{bundleId}}",
+          "appLinkPaths": []
+        }
+      },
+      "capture": {
+        "iosAppId": "id"
+      }
+    },
+    {
+      "name": "Apple’s file names it for credentials and hands it no link",
+      "request": {
+        "method": "GET",
+        "path": "/v1/environments/{{environmentId}}/.well-known/apple-app-site-association",
+        "auth": "none"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "webcredentials": {
+            "apps": ["{{teamId}}.{{bundleId}}"]
+          },
+          "applinks": "$absent"
+        }
+      }
+    },
+    {
+      "name": "a path with a wildcard is refused",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/native-apps/{{iosAppId}}",
+        "auth": "secret",
+        "body": {
+          "appLinkPaths": ["/oauth/*"]
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "validation.failed"
+        }
+      }
+    },
+    {
+      "name": "and so is one with a query",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/native-apps/{{iosAppId}}",
+        "auth": "secret",
+        "body": {
+          "appLinkPaths": ["/oauth/callback?x=1"]
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "validation.failed"
+        }
+      }
+    },
+    {
+      "name": "and one with a trailing slash",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/native-apps/{{iosAppId}}",
+        "auth": "secret",
+        "body": {
+          "appLinkPaths": ["/oauth/callback/"]
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "validation.failed"
+        }
+      }
+    },
+    {
+      "name": "the app is given one exact path",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/native-apps/{{iosAppId}}",
+        "auth": "secret",
+        "body": {
+          "appLinkPaths": ["/oauth/callback"]
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{iosAppId}}",
+          "appLinkPaths": ["/oauth/callback"]
+        }
+      }
+    },
+    {
+      "name": "Apple’s file now hands that app that path, exactly, and nothing wider",
+      "request": {
+        "method": "GET",
+        "path": "/v1/environments/{{environmentId}}/.well-known/apple-app-site-association",
+        "auth": "none"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "webcredentials": {
+            "apps": ["{{teamId}}.{{bundleId}}"]
+          },
+          "applinks": {
+            "details": [
+              {
+                "appIDs": ["{{teamId}}.{{bundleId}}"],
+                "components": [
+                  {
+                    "/": "/oauth/callback"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "an Android app is registered with a path",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/native-apps",
+        "auth": "secret",
+        "body": {
+          "platform": "android",
+          "packageName": "{{packageName}}",
+          "sha256CertFingerprints": ["{{fingerprint}}"],
+          "appLinkPaths": ["/oauth/callback"]
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "platform": "android",
+          "appLinkPaths": ["/oauth/callback"]
+        }
+      },
+      "capture": {
+        "androidAppId": "id"
+      }
+    },
+    {
+      "name": "Android’s file gives it the relation that covers the domain’s links, and names no path",
+      "request": {
+        "method": "GET",
+        "path": "/v1/environments/{{environmentId}}/.well-known/assetlinks.json",
+        "auth": "none"
+      },
+      "expect": {
+        "status": 200,
+        "body": [
+          {
+            "relation": [
+              "delegate_permission/common.get_login_creds",
+              "delegate_permission/common.handle_all_urls"
+            ],
+            "target": {
+              "namespace": "android_app",
+              "package_name": "{{packageName}}",
+              "sha256_cert_fingerprints": ["{{fingerprint}}"]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "the last path taken away takes the relation away",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/native-apps/{{androidAppId}}",
+        "auth": "secret",
+        "body": {
+          "appLinkPaths": []
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "appLinkPaths": []
+        }
+      }
+    },
+    {
+      "name": "Android’s file is back to credentials only",
+      "request": {
+        "method": "GET",
+        "path": "/v1/environments/{{environmentId}}/.well-known/assetlinks.json",
+        "auth": "none"
+      },
+      "expect": {
+        "status": 200,
+        "body": [
+          {
+            "relation": ["delegate_permission/common.get_login_creds"],
+            "target": {
+              "namespace": "android_app",
+              "package_name": "{{packageName}}",
+              "sha256_cert_fingerprints": ["{{fingerprint}}"]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "the audit log says a path was gained, by count and field name",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?action=native_app.updated&size=10",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": "$any",
+          "meta": "$any"
+        }
+      }
+    },
+    {
+      "name": "an administrator sets the environment’s own Google credentials",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/google",
+        "auth": "secret",
+        "body": {
+          "clientId": "conformance-google-client",
+          "clientSecret": "conformance-google-secret"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "google",
+          "configured": true,
+          "enabled": true
+        }
+      }
+    },
+    {
+      "name": "the app link is listed as a redirect URL, like any other",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{app}}"
+          },
+          "password": {
+            "$json": "{{passwordPolicy}}"
+          },
+          "urls": {
+            "allowedOrigins": {
+              "$json": "{{origins}}"
+            },
+            "allowedRedirectUrls": ["{{appLink}}"]
+          },
+          "audit": {
+            "$json": "{{audit}}"
+          },
+          "notifications": {
+            "$json": "{{notifications}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "urls": {
+              "allowedRedirectUrls": ["{{appLink}}"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "the same link with a trailing slash is not the listed URL",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "{{appLink}}/"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "status": 400,
+          "code": "request.redirect_not_allowed",
+          "detail": "$any",
+          "params": "$absent"
+        },
+        "bodyExcludes": ["authorizationUrl", "binding", "attemptSecret"]
+      }
+    },
+    {
+      "name": "a native client starts a sign-in that returns to the app link",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "{{appLink}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_google"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "aUrl": "authorizationUrl",
+        "aBinding": "binding"
+      }
+    },
+    {
+      "name": "the provider vouches and the callback sends the ticket to exactly that URL, in the fragment",
+      "oauth": {
+        "authorizationUrl": "{{aUrl}}",
+        "email": "{{email}}",
+        "expectRedirectTo": "{{appLink}}",
+        "captureTicket": "aTicket",
+        "captureAttempt": "aId"
+      }
+    },
+    {
+      "name": "whoever received the redirect has the ticket and the attempt’s id, and completes nothing with them",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "client": "ios",
+        "body": {
+          "ticket": "{{aTicket}}",
+          "attemptId": "{{aId}}"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "status": 409,
+          "code": "oauth.different_browser",
+          "detail": "$any"
+        }
+      }
+    },
+    {
+      "name": "nor with a binding that is not the one the start returned",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "client": "ios",
+        "body": {
+          "ticket": "{{aTicket}}",
+          "attemptId": "{{aId}}",
+          "binding": "tula_ob_not-the-binding"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "status": 409,
+          "code": "oauth.different_browser",
+          "detail": "$any"
+        }
+      }
+    },
+    {
+      "name": "the app that started the sign-in holds the binding and is signed in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "client": "ios",
+        "body": {
+          "ticket": "{{aTicket}}",
+          "attemptId": "{{aId}}",
+          "binding": "{{aBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_in",
+          "step": {
+            "status": "complete",
+            "userId": "$any",
+            "sessionId": "$any"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "refreshToken": "$any"
+          }
+        }
+      },
+      "capture": {
+        "aUserId": "step.userId"
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "remove the user the sign-in created",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/users/{{aUserId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "remove the iOS app",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/native-apps/{{iosAppId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "remove the Android app",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/native-apps/{{androidAppId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "remove the google credentials",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/oauth-providers/google",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

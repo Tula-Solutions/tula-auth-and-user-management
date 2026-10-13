@@ -10,7 +10,7 @@ everything here is run from a checkout of the repository ([quickstart](quickstar
 | --- | --- |
 | [Quickstart](quickstart.md) | From nothing to a signed-in user: build the image, pack the packages, `create-tula`, `tula dev`. |
 | [Self-hosting](self-host.md) | The server's settings, an environment's settings, Redis and several instances, proxies, upgrades. |
-| [What was not verified](plans/phase-1-unverified.md) | Everything in Phase 1 that was tested against a stand-in rather than the real thing. |
+| [What was not verified](plans/phase-1-unverified.md) | Everything in Phase 1 that was tested against a stand-in rather than the real thing. [Phase 2's list](plans/phase-2-unverified.md) is kept step by step. |
 
 ## Sign-in methods
 
@@ -24,10 +24,51 @@ by error code. Their code samples are copied from files of this repository by
 | [Password](methods/password.md) | Sign-up, sign-in, reset, the password policy. |
 | [Emailed code](methods/email-code.md) | A 6-digit code; sign-up without a password. |
 | [Emailed link](methods/email-link.md) | A link that works in the browser that asked for it. |
-| [Google, GitHub, Apple](methods/oauth.md) | OAuth sign-in and connected accounts. Setup checklists: [Google](providers/google.md), [GitHub](providers/github.md), [Apple](providers/apple.md). |
+| [Texted code](methods/sms-code.md) | A 6-digit code by SMS, to a number the account has proven. Sign-in only; off by default. |
+| [Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X, Facebook](methods/oauth.md) | OAuth sign-in and connected accounts. Setup checklists: [Google](providers/google.md), [GitHub](providers/github.md), [Apple](providers/apple.md), [Microsoft](providers/microsoft.md), [Discord](providers/discord.md), [LinkedIn](providers/linkedin.md), [X](providers/x.md), [Facebook](providers/facebook.md). |
 | [Passkeys](methods/passkeys.md) | WebAuthn: sign-in, second step, step-up. |
 | [Two-step verification](methods/two-step-verification.md) | Authenticator app, backup codes, the policy, step-up. |
 | [Sessions](methods/sessions.md) | Profiles, devices, the concurrent-session limit, what your server sees. |
+
+## More about a user
+
+| | |
+| --- | --- |
+| [Phone numbers](phone-numbers.md) | A number on an account, proven with a texted code: the `sms` setting and its country list, sending through Twilio ([setup checklist](providers/twilio.md)), the development SMS inbox, the SDK calls, your own wording for a text message and what it costs in segments, the error codes, and what is not built yet. |
+
+## What your users are sent
+
+| | |
+| --- | --- |
+| [Email templates](email-templates.md) | Your own subject and wording for each email: the kinds of message and their placeholders, what a template is refused for, the stricter rules of a security notice, what happens when a template cannot be used, and the preview. |
+
+## Claims for your backend
+
+| | |
+| --- | --- |
+| [JWT templates](jwt-templates.md) | Custom claims under `ext`: the sources a claim can have, the reserved names and the size cap, when a change takes effect, reading them with `@tula/nextjs`. |
+
+## Events for your backend
+
+| | |
+| --- | --- |
+| [Webhooks](webhooks.md) | Register an endpoint, the delivery's headers and body, verifying it with `@tula/admin`, what is stored, and what is not built yet (retries among them). |
+
+## Questions for your backend
+
+| | |
+| --- | --- |
+| [Hooks](hooks.md) | Register the hook asked before a sign-up, the question and the answer, verifying it with `@tula/admin`, the deadline, what a failed call does, and where the hook is and is not asked. |
+
+## Native apps
+
+| | |
+| --- | --- |
+| [Expo](expo.md) | `@tula/expo`: the headless SDK for an Expo app on iOS and Android. The client, the provider and the hooks, drawing your own screens from the server's step, where the tokens are kept, what happens offline, and what this version does not do yet. |
+| [Swift](swift.md) | The Swift package: `TulaAuth`, the client with no screen (flows drawn from the server's step, the session and its refresh, the refresh token in the Keychain, the errors), and `TulaAuthUI`, SwiftUI screens for sign-in, sign-up and a password reset (the theme, the strings, the slots); what this version does not do and has not been run on. |
+| [Kotlin](kotlin.md) | The Kotlin SDK for an Android app: the client with no UI (creating it, a flow step by step, the session, the second step, passkeys, Google and the other providers, a session bound to a device key, where the token is kept) and Compose screens for sign-in, sign-up and a password reset (their words, theme and slots, what a rotation costs, the example and its UI tests), and what this version does not do yet. The screens ran on one emulator; nothing ran on a device, and no passkey, provider or device key was run on Android. |
+| [Device binding](device-binding.md) | A session bound to a key the device holds: the proof a client sends when a sign-in starts and at every refresh, the nonce, the answers, what an operator sees, and what binding does and does not show. |
+| [Native apps](native-apps.md) | Register an environment's iOS and Android apps, the two association files the server builds from them, what is and is not in them, how to get them onto your own domain, and how a provider sign-in returns to an app: by an app link (recommended) or a custom scheme. |
 
 ## Tools
 
@@ -36,28 +77,30 @@ by error code. Their code samples are copied from files of this repository by
 | [CLI](cli.md) | `create-tula`, `tula dev`, `tula doctor`, `tula policy test`, `tula diff`, `tula apply`, `tula mcp`. |
 | [Settings as code](config.md) | `tula.config.ts`, what `diff` and `apply` do, using them in CI. |
 | [Dashboard](dashboard.md) | The operator's screens at `/dashboard`. |
-| [MCP server](mcp.md) | Read-only tools for an AI assistant. |
+| [MCP server](mcp.md) | Tools for an AI assistant: reads, drafts, proposals and a sign-in test. |
 | [Conformance suite](../conformance/README.md) | The scenarios every server and SDK must pass, and how to run them against yours. |
 
 ## SDK reference
 
 Generated from the JSDoc of every public entry point ([how](reference/README.md)):
 [`@tula/core`](reference/core.md), [`@tula/react`](reference/react.md),
-[`@tula/nextjs`](reference/nextjs.md), [`@tula/admin`](reference/admin.md),
+[`@tula/nextjs`](reference/nextjs.md), [`@tula/expo`](reference/expo.md),
+[`@tula/admin`](reference/admin.md),
 [`@tula/config`](reference/config.md), [`@tula/contract`](reference/contract.md).
 
 The packages' own READMEs are the guides: [`@tula/core`](../packages/core/README.md),
 [`@tula/react`](../packages/react/README.md), [`@tula/nextjs`](../packages/nextjs/README.md),
 [`@tula/admin`](../packages/admin/README.md), [`@tula/config`](../packages/config/README.md).
 The example apps: [Next.js](../examples/nextjs-app-router/README.md),
-[Vite + React](../examples/react-vite/README.md).
+[Vite + React](../examples/react-vite/README.md), [Expo](../examples/expo/README.md).
 
 ## For contributors
 
 | | |
 | --- | --- |
+| [Codebase map](codebase-map/README.md) | An interactive graph of the files, functions and classes and how they relate, in 20 layers with a guided tour: where it is, how to open it, and what it leaves out. A generated snapshot, not kept up to date. |
 | [Architecture decisions](adr/) | One record per decision, with the reasoning the pages above link to. |
 | [Phase 1 plan](plans/phase-1.md) | What was built, in what order, and the exit criteria with their evidence. |
-| [Phase 2 plan](plans/phase-2.md) | Draft: webhooks, hooks, SMS, more providers, the Expo, Swift and Kotlin SDKs; the decisions it needs first. |
+| [Phase 2 plan](plans/phase-2.md) | Approved: webhooks, hooks, SMS, more providers, the Expo, Swift and Kotlin SDKs; the decisions it was started on. |
 | [Releasing](releasing.md) | How the packages are built, packed and checked. |
 | [Business plan](business-plan.md) | Product context. |

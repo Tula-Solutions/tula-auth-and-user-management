@@ -3,21 +3,28 @@ import type { UserAuthentication } from '~/api/generated/api.gen'
 import { Section } from '~/components/page'
 import { type QueryLike, QueryState } from '~/components/states'
 import { formatDateTime } from '~/lib/format'
+import { own } from '~/lib/own'
 
 /** Display names of the providers the API knows; any other is shown as the API names it. */
 const PROVIDER_NAME: Record<string, string> = {
   google: 'Google',
   github: 'GitHub',
   apple: 'Apple',
+  microsoft: 'Microsoft',
+  discord: 'Discord',
+  linkedin: 'LinkedIn',
+  x: 'X',
+  facebook: 'Facebook',
 }
 
 /** Display names of second factors; any other is shown as the API names it. */
 const FACTOR_NAME: Record<string, string> = {
   totp: 'Authenticator app',
+  sms: 'Texted code',
 }
 
 function providerName(provider: string): string {
-  return PROVIDER_NAME[provider] ?? provider
+  return own(PROVIDER_NAME, provider) ?? provider
 }
 
 function joined(items: readonly string[]): string {
@@ -114,7 +121,7 @@ export function SignInMethods({ query }: { query: QueryLike<UserAuthentication> 
                 <Lines>
                   {authentication.factors.map((factor) => (
                     <li key={factor.type}>
-                      {FACTOR_NAME[factor.type] ?? factor.type} since{' '}
+                      {own(FACTOR_NAME, factor.type) ?? factor.type} since{' '}
                       {formatDateTime(factor.confirmedAt)}
                     </li>
                   ))}

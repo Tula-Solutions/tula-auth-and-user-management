@@ -28,7 +28,13 @@ import {
   VerificationScreen,
 } from './flow-screens'
 import { attemptsLeft, fieldResolver, formatDuration, placeErrors } from './form-errors'
-import { canEnrolTotp, drawableFactors, FactorEnrolmentScreen, SecondFactorScreen } from './mfa'
+import {
+  canEnrolTotp,
+  drawableFactors,
+  FactorEnrolmentScreen,
+  offersTextedCode,
+  SecondFactorScreen,
+} from './mfa'
 import { OAuthButtons } from './oauth'
 import { PasskeySignIn, usePasskeyOffered, usePasskeySupport } from './passkey'
 import {
@@ -39,8 +45,10 @@ import {
   FormError,
   type HeadingLevel,
   PasswordField,
+  passwordHistoryRule,
   Root,
   Status,
+  TextField,
   useScreenChanged,
   useUi,
 } from './ui'
@@ -141,6 +149,8 @@ interface FirstFactorProps {
   prepared?: FirstFactorStep['prepared']
   /** Ask the server for the email of an email strategy (again, for a fresh one). */
   sendEmail?(strategy: 'email_code' | 'email_link'): Promise<FlowStep | null>
+  /** Ask the server to text the code of `sms_code` (again, for a fresh one). */
+  sendText?(): Promise<FlowStep | null>
   /** The other ways to sign in the attempt offers, drawn under the form. */
   alternatives?: ReactNode
 }
@@ -155,19 +165,40 @@ const FIRST_FACTOR_FORMS: Partial<Record<FirstFactorStrategy, ComponentType<Firs
   email_code: EmailCodeScreen,
   email_link: EmailLinkScreen,
   passkey: PasskeyScreen,
+  sms_code: SmsCodeScreen,
+}
+
+// What people type between a number's digits, and the shape of what is left: the server's
+// own grammar (`parsePhoneNumber` in the contract). Only used to choose which of the offered
+// forms to draw; the server judges the number.
+const PHONE_SEPARATORS = /[ ()-]/g
+const PHONE_SHAPE = /^\+[1-9][0-9]{7,14}$/
+
+/**
+ * Whether what was typed on the first screen is a phone number rather than an address.
+ *
+ * @param identifier - What the sign-in was started with.
+ */
+function isPhoneNumber(identifier: string): boolean {
+  return PHONE_SHAPE.test(identifier.replace(PHONE_SEPARATORS, ''))
 }
 
 function supportedStrategies(
   strategies: readonly string[],
-  can: { link: boolean; passkey: boolean }
+  can: { link: boolean; passkey: boolean; phone: boolean }
 ): FirstFactorStrategy[] {
-  return strategies.filter(
+  const known = strategies.filter(
     (strategy): strategy is FirstFactorStrategy =>
       Object.hasOwn(FIRST_FACTOR_FORMS, strategy) &&
       (strategy !== 'email_link' || can.link) &&
       // Hidden, not broken, in a browser without WebAuthn.
-      (strategy !== 'passkey' || can.passkey)
+      (strategy !== 'passkey' || can.passkey) &&
+      // A code is texted to a number: for an address the form could only ever fail.
+      (strategy !== 'sms_code' || can.phone)
   )
+  // And the other way round: a password or an emailed code for a phone number signs nobody
+  // in, so where a texted code is offered for a number it is the form that is drawn.
+  return can.phone && known.includes('sms_code') ? ['sms_code'] : known
 }
 
 /**
@@ -190,7 +221,11 @@ function IdentifierScreen(props: {
 }) {
   const { t } = useUi()
   const { signIn, email } = props
-  const appName = useClientConfig()?.app.name
+  const config = useClientConfig()
+  const appName = config?.app.name
+  // Whether a texted code is among the environment's ways to sign in: the first field then
+  // takes a phone number too.
+  const byPhone = config?.signIn.methods.includes('smsCode') === true
   const passkeys = usePasskeyOffered()
   const [missing, setMissing] = useState<{ message: string } | null>(null)
   const limits = useRetryAfter<'start'>(signIn.error)
@@ -222,19 +257,41 @@ function IdentifierScreen(props: {
           message={placed.form}
           detail={wait > 0 ? formatText(t.common.retryIn, { time: formatDuration(wait, t) }) : null}
         />
-        <EmailField
-          label={t.signIn.emailLabel}
-          name='email'
-          // `webauthn` lets the browser offer the user's passkeys in this field's autofill.
-          autoComplete={passkeys ? 'username webauthn' : 'username'}
-          value={email}
-          onValue={(value) => {
-            props.setEmail(value)
-            setMissing(null)
-          }}
-          errors={missing ? [missing.message] : placed.fields.email}
-          required
-        />
+        {byPhone ? (
+          // One field for both: a text field, since a browser's own check of an email field
+          // would refuse a number. `username`, not `tel`: it is what a password manager fills.
+          <TextField
+            label={t.signIn.identifierLabel}
+            hint={t.signIn.identifierHint}
+            name='email'
+            type='text'
+            autoCapitalize='none'
+            autoCorrect='off'
+            spellCheck={false}
+            autoComplete={passkeys ? 'username webauthn' : 'username'}
+            value={email}
+            onValue={(value) => {
+              props.setEmail(value)
+              setMissing(null)
+            }}
+            errors={missing ? [missing.message] : placed.fields.email}
+            required
+          />
+        ) : (
+          <EmailField
+            label={t.signIn.emailLabel}
+            name='email'
+            // `webauthn` lets the browser offer the user's passkeys in this field's autofill.
+            autoComplete={passkeys ? 'username webauthn' : 'username'}
+            value={email}
+            onValue={(value) => {
+              props.setEmail(value)
+              setMissing(null)
+            }}
+            errors={missing ? [missing.message] : placed.fields.email}
+            required
+          />
+        )}
         <Button type='submit' pending={signIn.isPending} disabled={wait > 0}>
           {t.signIn.continue}
         </Button>
@@ -347,7 +404,10 @@ function EmailFactorScreen(props: FirstFactorProps & { strategy: 'email_code' | 
   const sendWait = limits.secondsLeft('send')
   const viaLink = strategy === 'email_link'
   // The email for a link carries the code too, so a link's email serves the code screen.
-  const sent = prepared !== undefined && (viaLink ? prepared.strategy === 'email_link' : true)
+  const sent =
+    prepared !== undefined &&
+    prepared.strategy !== 'sms_code' &&
+    (viaLink ? prepared.strategy === 'email_link' : true)
   const waiting = viaLink && sent
 
   // The latest `waitForEmailLink`, read by the effect below without making it re-run: its
@@ -487,6 +547,125 @@ function PasskeyScreen(props: FirstFactorProps) {
   )
 }
 
+/**
+ * The `sms_code` first factor: a code texted to the phone number the sign-in was started with.
+ *
+ * Nothing is sent until the user asks: a text message costs the application money, so
+ * arriving on this screen sends none. What the screen says after asking never claims a
+ * message was sent, because the server answers the same for a number that signs nobody in.
+ */
+function SmsCodeScreen(props: FirstFactorProps) {
+  const { t } = useUi()
+  const { signIn, prepared } = props
+  const [code, setCode] = useState('')
+  const [incomplete, setIncomplete] = useState<{ message: string } | null>(null)
+  const [resent, setResent] = useState(false)
+  const [action, setAction] = useState<'submit' | 'send' | null>(null)
+  const limits = useRetryAfter<'submit' | 'send'>(signIn.error, 'send')
+  // One answer for every way a texted code fails; said in this screen's words, about a code.
+  const refused = signIn.error?.code === 'auth.invalid_credentials'
+  const placed = placeErrors(refused ? null : signIn.error, fieldResolver(['code']))
+  const codeErrors = incomplete ? [incomplete.message] : refused ? [t.signIn.smsCodeWrong] : []
+  const submitWait = limits.secondsLeft('submit')
+  const sendWait = limits.secondsLeft('send')
+  const sent = prepared?.strategy === 'sms_code'
+  const send = async (again: boolean) => {
+    setIncomplete(null)
+    setResent(false)
+    limits.mark('send')
+    setAction('send')
+    const next = (await props.sendText?.()) ?? null
+    setResent(again && next !== null)
+  }
+  const submit = async () => {
+    setResent(false)
+    if (code.length !== CODE_LENGTH) {
+      setIncomplete({ message: t.verification.codeIncomplete })
+      return
+    }
+    setIncomplete(null)
+    limits.mark('submit')
+    setAction('submit')
+    const next = await signIn.attemptFirstFactor({ strategy: 'sms_code', code })
+    if (next === null) {
+      // A wrong code is retyped from scratch.
+      setCode('')
+    }
+  }
+  const retry = (seconds: number) =>
+    seconds > 0 ? formatText(t.common.retryIn, { time: formatDuration(seconds, t) }) : null
+
+  if (!sent) {
+    return (
+      <Card
+        key='ask'
+        title={t.signIn.smsCode}
+        subtitle={t.signIn.smsCodePrompt}
+        focusTitle={props.focusTitle}
+      >
+        <IdentityRow email={props.email} onChange={props.onChangeEmail} />
+        <Form
+          onSubmit={() => void send(false)}
+          failure={signIn.error}
+          blocked={signIn.isPending || sendWait > 0}
+        >
+          <FormError message={placed.form} detail={retry(sendWait)} />
+          <Button type='submit' pending={signIn.isPending} disabled={sendWait > 0}>
+            {t.signIn.smsCode}
+          </Button>
+        </Form>
+        {props.alternatives}
+      </Card>
+    )
+  }
+
+  return (
+    <Card
+      key='sent'
+      title={t.signIn.smsTitle}
+      subtitle={formatText(t.signIn.smsCodeSubtitle, {
+        destination: prepared.destination.replace(/^\*+/, ''),
+      })}
+      focusTitle={props.focusTitle}
+    >
+      <IdentityRow email={props.email} onChange={props.onChangeEmail} />
+      <Form
+        onSubmit={submit}
+        failure={incomplete ?? signIn.error}
+        blocked={signIn.isPending || submitWait > 0}
+      >
+        <FormError message={placed.form} detail={retry(Math.max(submitWait, sendWait))} />
+        <CodeField
+          value={code}
+          onValue={(value) => {
+            setCode(value)
+            setIncomplete(null)
+          }}
+          errors={codeErrors}
+        />
+        <Button
+          type='submit'
+          pending={signIn.isPending && action === 'submit'}
+          disabled={signIn.isPending || submitWait > 0}
+        >
+          {t.signIn.emailCodeSubmit}
+        </Button>
+        <div className='tula-actions'>
+          <ResendButton
+            secondsLeft={sendWait}
+            pending={signIn.isPending && action === 'send'}
+            onResend={() => void send(true)}
+            label={t.signIn.smsResend}
+            waitingLabel={t.signIn.smsResendIn}
+          />
+        </div>
+        <Status message={resent ? t.signIn.smsResent : null} />
+      </Form>
+      {props.alternatives}
+    </Card>
+  )
+}
+
 function EmailCodeScreen(props: FirstFactorProps) {
   return <EmailFactorScreen {...props} strategy='email_code' />
 }
@@ -509,6 +688,8 @@ function strategyLabel(
       return t.signIn.emailLink
     case 'passkey':
       return t.passkey.signIn
+    case 'sms_code':
+      return t.signIn.smsCode
     default:
       return null
   }
@@ -516,7 +697,7 @@ function strategyLabel(
 
 /** `needs_first_factor`: one form per strategy the server offered that this version knows. */
 function FirstFactorScreen(
-  props: Omit<FirstFactorProps, 'prepared' | 'alternatives' | 'sendEmail'> & {
+  props: Omit<FirstFactorProps, 'prepared' | 'alternatives' | 'sendEmail' | 'sendText'> & {
     step: FirstFactorStep
     /** The page an emailed link leads to, as the developer gave it. */
     emailLinkUrl?: string
@@ -538,10 +719,11 @@ function FirstFactorScreen(
   const linkConfigured = safeUrl(props.emailLinkUrl, 'http://localhost') !== null
   // Until the browser has been asked (after mount) a passkey is not ruled out: where it is the
   // only method, the screen must not open on "not supported" and then change its mind.
-  const passkeyUsable = usePasskeySupport() !== false
+  const passkeySupport = usePasskeySupport()
   const known = supportedStrategies(step.strategies, {
     link: storageUsable && linkConfigured,
-    passkey: passkeyUsable,
+    passkey: passkeySupport !== false,
+    phone: isPhoneNumber(props.email),
   })
   // What the user picked on this screen; until then, what the server last emailed for, or the
   // first strategy on offer.
@@ -558,6 +740,15 @@ function FirstFactorScreen(
   const others = known.filter(
     (strategy) =>
       strategy !== active &&
+      // Among the other ways only once the browser is known to have WebAuthn, as on the
+      // second-factor and step-up screens (`mfa.tsx`, `prompts.tsx`): "not ruled out" above is
+      // for the screen itself. The cost, accepted: support is asked after mount, so in a
+      // browser that has WebAuthn the link (and, where it is the only other way, this whole
+      // list) is drawn one commit after the screen, a frame late and after the title has taken
+      // the focus. The other choice draws, in a browser that has none, a link that is then
+      // taken away: a control that is broken for as long as it shows. Late is better than
+      // wrong. `passkey.test.tsx` pins both halves.
+      (strategy !== 'passkey' || passkeySupport === true) &&
       // The email a link came in carries the code, and that screen takes it.
       !(strategy === 'email_code' && active === 'email_link' && prepared?.strategy === 'email_link')
   )
@@ -608,6 +799,7 @@ function FirstFactorScreen(
       {...form}
       prepared={prepared}
       sendEmail={sendEmail}
+      sendText={() => signIn.prepareFirstFactor({ strategy: 'sms_code' })}
       alternatives={alternatives}
     />
   )
@@ -690,6 +882,8 @@ function NewPasswordScreen(props: {
   const [local, setLocal] = useState<{ code?: string; password?: string } | null>(null)
   const [resent, setResent] = useState(false)
   const [action, setAction] = useState<'submit' | 'resend' | null>(null)
+  // Whether the password was retyped since the last answer: a refusal is about what was sent.
+  const [edited, setEdited] = useState(false)
   const checklist = usePasswordChecklist(password, { email })
   const limits = useRetryAfter<'submit' | 'resend'>(reset.error)
   const placed = placeErrors(reset.error, fieldResolver(['code', 'password']))
@@ -706,6 +900,7 @@ function NewPasswordScreen(props: {
       return
     }
     setLocal(null)
+    setEdited(false)
     limits.mark('submit')
     setAction('submit')
     const next = await reset.submit({ code, password })
@@ -763,9 +958,11 @@ function NewPasswordScreen(props: {
           onValue={(value) => {
             setPassword(value)
             setLocal(null)
+            setEdited(true)
           }}
           errors={local?.password ? [local.password] : local ? [] : placed.fields.password}
           checks={checklist.checks}
+          history={passwordHistoryRule(checklist.policy, reset.error, edited)}
           required
         />
         <Button
@@ -783,6 +980,95 @@ function NewPasswordScreen(props: {
           />
         </div>
         <Status message={resent ? t.verification.resent : null} />
+      </Form>
+    </Card>
+  )
+}
+
+/**
+ * `needs_new_password` of a sign-in (`reason: 'expired'`): the password was right and is
+ * older than the environment allows. One field; the sign-in finishes when it is accepted.
+ */
+function ExpiredPasswordScreen(props: {
+  email: string
+  signIn: UseSignInResult
+  focusTitle: boolean
+  onChangeEmail(): void
+}) {
+  const { t } = useUi()
+  const { signIn, email } = props
+  const [password, setPassword] = useState('')
+  const [missing, setMissing] = useState<{ message: string } | null>(null)
+  // Whether the password was retyped since the last answer: a refusal is about what was sent.
+  const [edited, setEdited] = useState(false)
+  const checklist = usePasswordChecklist(password, { email })
+  const limits = useRetryAfter<'submit'>(signIn.error)
+  const placed = placeErrors(signIn.error, fieldResolver(['password'], 'password'))
+  const wait = limits.secondsLeft('submit')
+  // The expired password is refused as its own replacement whatever the policy's history
+  // says, so the line is drawn for a history of at least one ("not your current password").
+  const history = passwordHistoryRule(
+    checklist.policy && { history: Math.max(checklist.policy.history, 1) },
+    signIn.error,
+    edited
+  )
+  const submit = async () => {
+    if (password === '') {
+      setMissing({ message: t.common.required })
+      return
+    }
+    setMissing(null)
+    setEdited(false)
+    limits.mark('submit')
+    const next = await signIn.submitNewPassword({ password })
+    if (next?.status === 'complete') {
+      setPassword('')
+    }
+  }
+  return (
+    <Card
+      title={t.expiredPassword.title}
+      subtitle={t.expiredPassword.subtitle}
+      focusTitle={props.focusTitle}
+    >
+      <IdentityRow email={email} onChange={props.onChangeEmail} />
+      <Form
+        onSubmit={submit}
+        failure={missing ?? signIn.error}
+        blocked={signIn.isPending || wait > 0}
+      >
+        <FormError
+          message={placed.form}
+          detail={wait > 0 ? formatText(t.common.retryIn, { time: formatDuration(wait, t) }) : null}
+        />
+        <input
+          className='tula-visually-hidden'
+          type='text'
+          name='username'
+          autoComplete='username'
+          value={email}
+          readOnly
+          tabIndex={-1}
+          aria-hidden='true'
+        />
+        <PasswordField
+          label={t.expiredPassword.newPasswordLabel}
+          name='new-password'
+          autoComplete='new-password'
+          value={password}
+          onValue={(value) => {
+            setPassword(value)
+            setMissing(null)
+            setEdited(true)
+          }}
+          errors={missing ? [missing.message] : placed.fields.password}
+          checks={checklist.checks}
+          history={history}
+          required
+        />
+        <Button type='submit' pending={signIn.isPending} disabled={wait > 0}>
+          {t.expiredPassword.submit}
+        </Button>
       </Form>
     </Card>
   )
@@ -823,6 +1109,7 @@ function SignInScreens(props: SignInProps) {
       )
     },
     submitPassword: (input) => signInFlow.submitPassword(input).then(finish),
+    submitNewPassword: (input) => signInFlow.submitNewPassword(input).then(finish),
     verifyEmail: (input) => signInFlow.verifyEmail(input).then(finish),
     attemptFirstFactor: (input) => signInFlow.attemptFirstFactor(input).then(finish),
     waitForEmailLink: (options) => signInFlow.waitForEmailLink(options).then(finish),
@@ -861,7 +1148,8 @@ function SignInScreens(props: SignInProps) {
   const afterFactors = (flow: typeof signInFlow | typeof resetFlow) => {
     if (step?.status === 'needs_second_factor') {
       const methods = drawableFactors(step.options)
-      return methods.length === 0 ? null : (
+      const texted = offersTextedCode(step.options)
+      return methods.length === 0 && !texted ? null : (
         <SecondFactorScreen
           key={screen}
           methods={methods}
@@ -870,6 +1158,14 @@ function SignInScreens(props: SignInProps) {
           error={flow.error}
           submit={(proof) => flow.submitSecondFactor(proof).then(finish)}
           submitPasskey={(signal) => flow.submitSecondFactorWithPasskey({ signal }).then(finish)}
+          texted={
+            texted
+              ? {
+                  destination: step.prepared?.destination ?? null,
+                  send: () => flow.prepareSecondFactor({ method: 'sms_code' }),
+                }
+              : undefined
+          }
           onRestart={toSignIn}
         />
       )
@@ -965,6 +1261,19 @@ function SignInScreens(props: SignInProps) {
           verify={(code) => signIn.verifyEmail({ code })}
           resend={signIn.resendCode}
         />
+      )
+    case 'needs_new_password':
+      // A sign-in asks for a new password for one reason this version knows.
+      return step.reason === 'expired' ? (
+        <ExpiredPasswordScreen
+          key={screen}
+          email={email}
+          signIn={signIn}
+          focusTitle={focusTitle}
+          onChangeEmail={toSignIn}
+        />
+      ) : (
+        unsupported
       )
     default:
       // A step a newer server added.

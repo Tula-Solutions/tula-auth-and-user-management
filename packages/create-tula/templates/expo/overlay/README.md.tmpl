@@ -1,0 +1,118 @@
+# {{displayName}}
+
+An Expo app with [Tula Auth](https://github.com/Tula-Solutions), and the Tula API it signs in
+to, which runs on your machine in Docker. The server's files are here, at the project's root;
+the app is in `app/`, a copy of the Tula repository's Expo example (`examples/expo/app`).
+
+**Nobody has run this app on a phone, in a simulator or in an emulator**: the example it is
+copied from was installed, typechecked and bundled, and no build of it was completed. Read
+"What was run, and what was not" in the Tula repository's `examples/expo/README.md` before
+you count on any of it.
+
+## Start the server
+
+```sh
+bun install
+bunx tula dev        # starts the stack, migrates, seeds, mints development keys
+```
+
+`tula dev` prints the URLs: the API, its reference, and Mailpit, the inbox every email the
+API sends lands in (verification codes included). It writes the development keys to
+`.env.local` here; run it again any time, it changes nothing that is already there.
+
+## Start the app
+
+```sh
+cd app
+bun install
+cp .env.example .env.local
+```
+
+Fill in `app/.env.local`. Both values are public (Expo puts every `EXPO_PUBLIC_*` variable
+into the app's bundle), and neither is written for you:
+
+- `EXPO_PUBLIC_TULA_PUBLISHABLE_KEY`: the value of `TULA_PUBLISHABLE_KEY` in the project's
+  `.env.local`. **Never the secret key.**
+- `EXPO_PUBLIC_TULA_API_URL`: the API as the app reaches it. The iOS simulator shares this
+  machine's `http://localhost:{{apiPort}}`; the Android emulator reaches it as
+  `http://10.0.2.2:{{apiPort}}`. A phone reaches neither: see "On a phone" below.
+
+The app imports native modules Expo Go does not contain (a passkey sheet, Google's sheet, a
+device key), so it needs a development build, made once:
+
+```sh
+bunx expo run:ios        # needs Xcode; or
+bunx expo run:android    # needs Android Studio's SDK and an emulator
+bun run start            # afterwards
+```
+
+## Tula's own screens
+
+This app draws its screens itself, on `@tula/expo`'s headless client. Tula's native screens
+(SwiftUI on iOS, Compose on Android) are a separate package, `@tula/expo-screens`, with a
+native module of its own: nothing here installs it, so your build compiles none of it. It is
+a separate install and an app uses it instead of the headless client, never beside it. Its
+iOS module has not been compiled, and no screen has been drawn through it anywhere: read
+`docs/expo.md` in the Tula repository before you add it.
+
+## On a phone
+
+A phone cannot reach `localhost`, and a passkey, an app link and a provider's own sheet need
+`https` on a name the phone trusts. From the project's root:
+
+```sh
+bunx tula dev --tunnel   # the stack under this machine's Tailscale Funnel address
+```
+
+It needs your own Tailscale account, signed in on this machine, and it prints the address
+and the settings it did not change. Put the address in `app/.env.local` as
+`EXPO_PUBLIC_TULA_API_URL` and build the app onto the phone (`bunx expo run:ios --device`,
+`bunx expo run:android --device`). Close the tunnel with `bunx tula dev down`. Nobody has
+run `tula dev --tunnel` against a phone.
+
+## What needs your own accounts
+
+| For | You need | Where it goes |
+| --- | --- | --- |
+| A build on an iPhone | An Apple Developer account: a team, a bundle ID of your own in `app/app.json` (it is `com.example.tula` here) | Xcode's signing settings |
+| Passkeys | A public `https` domain (the tunnel's will do), and the app registered under `nativeApps` in `tula.config.ts`: on iOS your team ID and bundle ID, on Android your package name and the SHA-256 fingerprint of your signing certificate | `tula.config.ts`, then `bunx tula apply`; `EXPO_PUBLIC_TULA_DOMAIN` in `app/.env.local` |
+| Sign in with Apple's sheet | An Apple Developer account with the Sign in with Apple capability for your bundle ID | Apple's developer site; the Apple provider and the iOS app in `tula.config.ts` |
+| Sign in with Google's sheet | A Google Cloud project of your own: a web OAuth client ID, and an iOS or Android client ID (Android's is made from your package name and SHA-256 fingerprint) | `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`, `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID`; the Google provider in `tula.config.ts` |
+| A provider in the system browser | The provider's own OAuth client, and the app's redirect URL (`com.example.tula:/oauth/callback` until you change the scheme) among the environment's allowed redirect URLs | `tula.config.ts` |
+| The tunnel | A Tailscale account | `tailscale up` on this machine |
+
+None of these is made for you, and no identifier here is yours: change `com.example.tula`
+in `app/app.json` and in `app/src/tula.ts` before you register anything.
+
+## What is here
+
+| File | What |
+| --- | --- |
+| `app/` | The Expo app: its own `package.json`, `.env.example` and `.gitignore`. |
+| `compose.yaml` | The local stack: Postgres, Redis, Mailpit, the migrations and the Tula API. |
+| `.env` | The stack's secrets, generated for this project: the master key, the instance admin token, the database passwords. Ignored by git. **Back up `TULA_MASTER_KEY`**: without it the stored signing keys and provider credentials cannot be opened. |
+| `.env.local` | Written by `tula dev`: the API URL and the development keys. Ignored by git. |
+| `.env.example` | What `.env` holds, without the values. Commit this one. |
+| `tula.config.ts` | The environment's settings as code. |
+| `docker/postgres/init.sh` | Creates the API's database role when the volume is first created. |
+
+## Everyday commands
+
+```sh
+bunx tula doctor          # checks the stack: database, migrations, master key, mail, Redis
+bunx tula diff            # what tula.config.ts would change on the server
+bunx tula apply           # make the server match tula.config.ts
+bunx tula dev down        # stop the stack, and close a tunnel (the data is kept)
+```
+
+## The API image
+
+`TULA_API_IMAGE` in `.env` names the Tula API image; it is `{{apiImage}}` here. Nothing is
+published to a registry yet, so build it from the Tula repository and tag it with that name:
+
+```sh
+docker build -f apps/api/Dockerfile -t {{apiImage}} .   # in the Tula repository
+```
+
+The API is on port `{{apiPort}}` and Mailpit on `{{mailpitPort}}` (`API_PORT` and
+`MAILPIT_UI_PORT` in `.env`).

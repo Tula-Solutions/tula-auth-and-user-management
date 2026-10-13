@@ -180,7 +180,8 @@ describe('every HTML response of the API', () => {
         continue
       }
       seen.add(key)
-      const res = await api.request(path, { method: route.method })
+      // As a browser on this machine asks: the development-only pages answer no other Host.
+      const res = await api.request(path, { method: route.method, headers: { host: 'localhost' } })
       if (!(res.headers.get('content-type') ?? '').includes('text/html')) {
         continue
       }

@@ -1,4 +1,4 @@
-# ADR 0026 — OAuth sign-in: Google, GitHub, Apple
+# ADR 0026 — OAuth sign-in: Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X, Facebook
 
 - Status: accepted
 - Date: 2026-10-03
@@ -75,6 +75,19 @@ else. Adapters are stateless; credentials are passed per call.
   Apple's code is bound to the attempt by the `nonce` in the signed ID token (a code that
   belongs to another sign-in yields a token with another nonce, refused), by the single-use
   `state` and by the client-secret JWT.
+- **Microsoft** (Phase 2, TULA-12): OIDC with PKCE and a nonce, on `arctic`'s
+  `MicrosoftEntraId` and the shared `jose` verifier. Everything about it that differs from
+  Google is in "Microsoft: the tenant, the issuer and the address" below.
+- **Discord** (Phase 2, TULA-13): plain OAuth 2.0 with PKCE, no ID token, on `arctic`'s
+  `Discord`; the profile is read from `GET /users/@me`. **LinkedIn** (TULA-13): OIDC with
+  **no PKCE and no nonce**, on `arctic`'s `LinkedIn` and the shared `jose` verifier; the
+  ID token gives the account and `GET /v2/userinfo` the address. Both are in "Discord and
+  LinkedIn" below.
+- **X** (Phase 2, TULA-14): plain OAuth 2.0 with PKCE, no ID token, on `arctic`'s generic
+  `OAuth2Client`; the account is read from `GET /2/users/me`. **Facebook** (TULA-14): plain
+  OAuth 2.0 with **no PKCE and no nonce**, on `arctic`'s `Facebook`; the account is read
+  from the Graph API's `/me`. **Neither is asked for an email address**, which changes the
+  linking table for the two of them: "X and Facebook: providers without an address" below.
 - `arctic` calls the global `fetch` and takes no injected one. The adapters therefore use the
   global `fetch` throughout, looked up at call time, and their tests stub it (`spyOn`) with
   locally generated keys: no test touches the network.
@@ -126,7 +139,11 @@ POST /v1/client/sign-ins/oauth/exchange { ticket, attemptId, binding } → the n
 ```
 
 - **Start.** Publishable key, the origin rule, the provider enabled, and `redirectUrl` exactly
-  on `urls.allowedRedirectUrls` (loopback in the local tier). The attempt is a `sign_in` on
+  on `urls.allowedRedirectUrls` (loopback in the local tier). Since
+  [ADR 0044](0044-app-link-and-custom-scheme-redirects.md) an entry may be a custom scheme
+  (`com.example.app:/oauth`), which is honoured only for a native client and a provider that
+  sends PKCE (not Apple, LinkedIn or Facebook), judged here and again at the callback; an
+  app link is an `https` entry like any other. The attempt is a `sign_in` on
   `needs_first_factor` offering only `oauth_<provider>`: one kind for sign-in and sign-up,
   because "continue with Google" creates the account when there is none. Kept on the attempt,
   server-side: SHA-256 of `state`, the PKCE verifier, the nonce, SHA-256 of the binding. The
@@ -168,6 +185,14 @@ POST /v1/client/sign-ins/oauth/exchange { ticket, attemptId, binding } → the n
 | A user has the address, verified on their Tula account | The identity is connected to them (`user.identity_linked`, `method: auto`, the owner is emailed) and they sign in. A second factor still applies. |
 | A user has the address, **unverified** on their Tula account | `oauth.account_exists`. Nothing is connected. |
 
+For **X and Facebook** rows two to five are replaced by one, because they give no address
+("X and Facebook: providers without an address"):
+
+| Situation | Outcome |
+| --- | --- |
+| The identity (provider + subject) is a user's | That user, as above. |
+| The identity is nobody's | A new user with the identity and **no email address**, whatever address the person has at the provider and whoever has it at Tula. Nothing is looked up by address and nothing is connected. |
+
 **An address is compared as it was written.** `parseEmail` validates a provider's address
 before any case folding and accepts printable ASCII only (an IDN domain in its punycode form):
 a look-alike such as U+212A KELVIN SIGN, which lowercases to `k`, is `oauth.email_missing` and
@@ -198,12 +223,353 @@ its address, or answers `oauth.identity_in_use` / `oauth.already_linked`;
 `DELETE /v1/client/me/identities/:id` (step-up) is refused with `identity.last_sign_in_method`
 when nothing else would let the user in. "A way to sign in" is one function
 (`OAuth.canStillSignIn`): a password where passwords are on, a verified address where the
-email code is on, or another identity of an enabled provider. The check runs inside the store's
+email code is on, or another identity of an enabled provider. An account with no address has
+neither of the first two, so its one identity cannot be removed until it has a passkey or a
+second provider. The check runs inside the store's
 transaction with the user row locked.
 
 **The unique keys arbitrate races**: `(environment, provider, subject)` and the new
 `(user, provider)`. A create or link that loses is looked at again once and ends as a sign-in;
 never a 500.
+
+**The table holds for every provider, and a test says so per provider.**
+`modules/oauth/linking-table.test.ts` states the outcome of every combination (the provider's
+address verified, unverified or absent; the Tula account verified, unverified or absent; the
+identity known or new) once for each entry of the contract's `OAUTH_PROVIDERS`, with what
+that provider's "verified" rests on, and fails for a provider that has no rows. A new
+provider adds its rows there; it does not get a rule of its own. There are two rules and no
+third: the table above, and the one row of a provider in `OAUTH_PROVIDERS_WITHOUT_ADDRESS`.
+The test states which rule each provider has, so moving one between them is a visible change.
+
+### Microsoft: the tenant, the issuer and the address
+
+Phase 2 (TULA-12). Scopes `openid profile email` and nothing else; no Graph call.
+
+- **The tenant is a credential field, required, with no default.** `tenant` is `common`,
+  `organizations`, `consumers` or one tenant's id (a GUID; a domain name is refused, because
+  a token names its tenant by id and ids are what is compared). It is stored in the
+  provider's `config` beside nothing secret, returned by the list, and recorded on a change
+  as the name `tenant` in `oauth_provider.updated.changed`, never its value. A default of
+  `common` was considered and not taken: it would let every Microsoft account on earth sign
+  in to an environment whose operator only typed a client id. No migration: `config` is
+  `jsonb` and the provider column is text. The admin route stores only such a value; a row
+  that holds anything else (changed in the database) is not repaired: `OAuth.credentials`
+  answers `auth.method_disabled`, at the point and in the words of a provider that is off,
+  so a start makes no attempt and an anonymous caller learns nothing about why, and the
+  field's name is logged for the operator. **Such a row is not counted as a way to sign in**
+  (`isSignInMethod`, behind `OAuth.enabledProviders` and the settings' "at least one
+  sign-in method"): it is not offered, an identity of it is no way in for a user, and it
+  cannot be what lets the last working method be switched off; the admin list still shows it
+  as stored, `enabled` included, so it can be repaired. "Enabled" is not "usable" in one
+  other case, which is left as it was: a provider whose stored secret no longer opens (a
+  changed master key) is still counted, because telling means opening the secret on every
+  count; the diagnostics' master-key check is what reports it.
+- **An account is `<tid>:<oid>`**, both GUIDs, lower-cased. Never `sub` (pairwise: another
+  value for every application, so it would not survive a new app registration), and never
+  `email`, `preferred_username` or `upn`, which a tenant's administrator sets. The object id
+  alone is not enough: it is unique within a tenant only. A token without a well-formed
+  `tid` and `oid` is refused.
+- **The issuer is checked against the token's own tenant.** With `common`, `organizations`
+  and `consumers` there is no one issuer to compare with: Microsoft's metadata gives
+  `https://login.microsoftonline.com/{tenantid}/v2.0`. The adapter verifies the signature
+  against the configured authority's keys, then requires `tid` to be a GUID and `iss` to
+  be exactly that template with the token's `tid` in it, then that the signing key is one
+  Microsoft publishes for that issuer (each key carries an `issuer`, templated or, for the
+  personal-account tenant, exact: Microsoft's "Validate the signing key issuer"), then that
+  the tenant is one the configured value accepts (the tenant itself for a GUID; the
+  personal-account tenant `9188040d-6c67-4c5b-b112-36a304b66dad` and only it for
+  `consumers`; every tenant but it for `organizations`). Without the first of these a
+  token signed by any tenant's key would be accepted with another tenant's `tid` typed into
+  it; without the key rule, a personal-account key could sign for an organization. **A key
+  with no `issuer` is refused**: Microsoft's keys document has one on each, and accepting a
+  key that says nothing about whom it signs for would undo the rule. Every failure is the
+  one `invalid_token` (`oauth.provider_error` to the client), carrying nothing of the token.
+- **The address is verified only with `xms_edov` exactly `true`.** `email` in a Microsoft
+  token is what the tenant's administrator stored; Microsoft's claims reference says it
+  "isn't guaranteed to be correct" and gives `xms_edov` ("whether the user's email domain
+  owner has been verified") as the claim to rely on. Absent, `false`, the string `"true"` or
+  `1`: unverified. The table above then applies unchanged: an unverified provider address
+  is `oauth.email_unverified` **before any lookup**, so a Microsoft token without the claim
+  signs in an identity that is already known and nothing else. It creates no account and is
+  linked to none, and the answer is the same whether or not the address has an account.
+  That is stricter than the ticket's wording ("automatic linking does not happen") and is
+  what the existing rule gives; a path that created an account with an unverified address
+  for Microsoft alone would be a second linking rule, and was not added. The cost is real:
+  an operator who has not added the optional claim to the app registration gets no
+  Microsoft sign-ups, and the user's message ("verify it with the provider") points at
+  something the user cannot do. `docs/providers/microsoft.md` says so in its checklist.
+  **Whether a personal account's token carries the claim is not known**: the reference
+  speaks of a domain owner, which a personal account does not have in the same sense, and
+  no such token was seen. If it does not, `consumers` admits accounts that can be
+  connected from a profile and can never sign up.
+- **PKCE is sent** (S256), and the nonce is checked in the ID token.
+- **The mock provider serves it** with a tenant id and an object id on its consent page and
+  a box that leaves the verified-domain claim out, and refuses an account of a tenant the
+  configured `tenant` does not accept, as the adapter does. Its guards are unchanged.
+- **Not exercised against Microsoft.** No tenant, no credentials, no real token. The
+  adapter's refusals are tested with tokens the tests sign with their own keys, published
+  through a stubbed keys document that carries `issuer` the way Microsoft's documentation
+  shows it. That `xms_edov` arrives as a JSON boolean, that every key carries `issuer`, and
+  what the portal calls each step are read from the documentation, not observed.
+
+### Discord and LinkedIn
+
+Added in Phase 2 (TULA-13). Each takes a client id and a client secret and nothing else; the
+linking table, the callback, the ticket and the exchange are unchanged, and
+`OAuth.resolveAccount` was not touched.
+
+**Discord** is plain OAuth 2.0 (its documentation describes no OpenID Connect and no ID
+token), so the shape is GitHub's.
+
+- Scopes: `identify` and `email`, and nothing else.
+- After the exchange the adapter reads `GET https://discord.com/api/v10/users/@me` with the
+  access token (Discord's "Get Current User"). **Subject = `id`**, a snowflake, accepted only
+  as a decimal string of one to twenty digits with no sign and no leading zero (`isSnowflake`):
+  one spelling per id, so two spellings can never be two accounts. Never the username.
+- **`emailVerified` only when `verified === true`** (the JSON boolean; Discord documents
+  `verified` as "whether the email on this account has been verified", with the `email`
+  scope) and an address is present. `email` is nullable: an account without one is
+  `oauth.email_missing` for a sign-up, by the existing rule.
+- The access token is dropped when the adapter returns and is **not revoked**. Discord has a
+  revocation endpoint; GitHub's adapter revokes nothing either, and a second outbound call
+  that can fail after the profile was read would need an answer for "the profile is good and
+  the revocation timed out". The token grants reading the same profile again and nothing
+  else was asked for.
+- **PKCE (S256) is sent.** `arctic` 3.7.0's `Discord.createAuthorizationURL(state,
+  codeVerifier, scopes)` adds `code_challenge` for a confidential client and
+  `validateAuthorizationCode(code, codeVerifier)` sends the verifier with the client's Basic
+  credentials. The rule is that **a new provider sends PKCE unless its documentation rules
+  it out, and silence does not rule it out**. **Discord's OAuth2 page does not mention
+  PKCE** (read 2026-10-08), neither for nor against: the source for sending it is the client
+  library, not Discord's page, and that Discord accepts the parameters or refuses a wrong
+  verifier was never observed against the real service. Apple and LinkedIn are different
+  cases: each documents the list of its request's parameters, and a challenge is not among
+  them. An authorization server that ignores unknown parameters loses nothing, and one that
+  honours them gains the binding. If Discord ever rejects the parameters, passing `null` as the
+  verifier to `arctic` removes them; the mock would then have to stop checking Discord's.
+  An exchange with an empty verifier is refused before any request, as GitHub's is.
+- The profile answer is read up to 64 KiB (`DISCORD_MAX_PROFILE_BYTES`) and a longer one is
+  cancelled, not buffered; the request follows no redirect (it would carry the token along).
+
+**LinkedIn** is OpenID Connect ("Sign In with LinkedIn using OpenID Connect"), so the shape
+is Google's with two things missing.
+
+- Scopes: `openid`, `profile`, `email`.
+- **The ID token is the identity and nothing else.** It is checked by the shared verifier:
+  `RS256`, audience = client id, expiry, and keys from
+  `https://www.linkedin.com/oauth/openid/jwks`. Subject = `sub`, which LinkedIn's discovery
+  document says is pairwise (per application). No other claim of the token is read.
+- **Two issuers are accepted, exactly**: `https://www.linkedin.com/oauth` and
+  `https://www.linkedin.com`. LinkedIn's discovery document
+  (`https://www.linkedin.com/oauth/.well-known/openid-configuration`, fetched 2026-10-08)
+  says the first; LinkedIn's guide says the second in its table of ID-token claims. Which one
+  a real token carries was not observed. Both are LinkedIn's own, under keys only LinkedIn
+  publishes, so accepting either admits nobody else.
+- **The address, whether it is verified and the name come from the userinfo endpoint, and
+  only from there.** After the token has verified, the adapter reads
+  `GET https://api.linkedin.com/v2/userinfo` with the access token: it is where LinkedIn's
+  guide documents `email`, `email_verified`, `name`, `given_name` and `family_name` (for the
+  ID token it lists `iss`, `sub`, `aud`, `iat` and `exp`). The first version of this adapter
+  read the token only; it was changed before any release, because a sign-up that depends on
+  claims the provider does not document for the token is a guess. There is **one path**, not
+  "the token first, userinfo when it has no address": two sources for one fact are two rules
+  for what "verified" means.
+- **The answer must be about the member the token is about**: its own `sub` must equal the
+  verified token's (`linkedInProfile`), else the exchange fails as an invalid token does
+  (`invalid_token`). The answer is protected by TLS and not by a signature, as GitHub's and
+  Discord's are; the token is what was verified, so it stays the anchor of who signed in.
+- **`emailVerified` only when the answer's `email_verified === true`**, the JSON boolean,
+  strictly (LinkedIn documents a Boolean), beside an address. `"true"`, `1`, `false` and an
+  absent field are unverified.
+- **The read has the bounds of Discord's** (one function, `readProfile` in
+  `adapters/oauth/profile-read.ts`): a fixed address, a deadline, `redirect: 'error'` (a
+  redirect would carry the token along), at most 64 KiB read and the rest cancelled. No
+  answer, a non-2xx (a 401 and a 403 among them, as GitHub's adapter has always treated its
+  profile read) and a body cut off are `unavailable`; an oversized or non-JSON answer, or
+  one that is not an object, is `invalid_profile`. Nothing of the answer or the token is in
+  an error or a log line, and the access token is dropped when the exchange returns.
+- **The mock provider keeps the two sources**: a LinkedIn code carries a userinfo answer
+  beside the "token's" subject, and the profile is made by `linkedInProfile`, the real
+  adapter's own function. The mock still makes no request; its guards are unchanged.
+- **No PKCE.** LinkedIn's authorization-code flow page lists five parameters for the
+  authorization request and five for the token request, none of them a challenge or a
+  verifier; the discovery document has no `code_challenge_methods_supported`; and `arctic`'s
+  `LinkedIn.createAuthorizationURL(state, scopes)` takes no verifier. As with Apple, nothing
+  undocumented is sent. LinkedIn does document PKCE, but as a flow of its own for native
+  clients ("Authenticating with OAuth 2.0 for Native Clients", read 2026-10-09): another
+  authorization endpoint (`/oauth/native-pkce/authorization`), a loopback redirect address
+  only, no client secret in the token request, and switched on for one app at a time by
+  LinkedIn on request. It is not something a server that exchanges a code with a secret
+  can send, so it is not an alternative here.
+- **No nonce.** The same request takes none, the discovery document does not list `nonce`
+  among `claims_supported`, and the guide's ID token has none. `verifyIdToken` used to
+  require the attempt's nonce; it now takes `nonce: string | typeof NONCE_NOT_ECHOED`, with
+  no default, so that leaving the check out is written at the call and cannot happen by
+  forgetting an argument. An empty string is refused there. Only LinkedIn's adapter passes
+  the symbol.
+- **So LinkedIn's code is bound to the attempt by the single-use `state` and the client
+  secret alone**: the weakest binding of the six providers (Google and Microsoft have PKCE
+  and a nonce, GitHub and Discord PKCE, Apple a nonce). Someone who can read another user's
+  redirect to the callback, and has an unused `state` of their own, could present that
+  user's code under their own attempt. The exact, registered redirect URI and the code's
+  short life at LinkedIn are what stand in the way. This is LinkedIn's protocol, accepted,
+  and stated in `docs/providers/linkedin.md`.
+
+**Read by server-supplied name.** Both the dashboard's cards and its sign-in summary look a
+provider up by the name the server sent; they now do it by own key (`own()`), and a provider
+this build has no name for gets no card (settings) or is shown as the server's word (the
+user's sign-in summary) instead of a property of `Object.prototype`.
+
+### X and Facebook: providers without an address
+
+Added in Phase 2 (TULA-14). Each takes a client id and a client secret and nothing else. The
+callback, the ticket, the binding and the exchange are unchanged. **`OAuth.resolveAccount`
+gained one branch**, and that branch is what this section decides.
+
+**Neither adapter reports an address, ever.** `email` is `null` and `emailVerified` is
+`false` in every profile either returns. X is not asked for the `users.email` scope and its
+`/2/users/me` is read with no `user.fields`; Facebook is asked for `public_profile` only and
+its `/me` for `fields=id,name`. An answer that carried an address anyway would not be read:
+the adapters take two named fields. The reason is the linking table: an address decides which
+account a sign-in belongs to, and it may only do that when the provider asserts it verified
+in a way the adapter can check. X's `confirmed_email` and Facebook's `email` ("the primary
+email address listed on their profile") come with no such assertion that was found. Asking
+for an address and then treating it as unverified would refuse every new sign-up
+(`oauth.email_unverified`), which is no provider at all; so the address is not asked for, and
+a provider that gives none is given a rule that needs none.
+
+**That a provider gives no address is declared in one place**: the contract's
+`OAUTH_PROVIDERS_WITHOUT_ADDRESS` (`['x', 'facebook']`, typed against `OAUTH_PROVIDERS`),
+read through `givesNoAddress(provider)`. It is a property of the provider, in code. No
+request, header, setting or stored row can switch it on for another provider or off for
+these two, and the API, the mock provider, the dashboard's card and the linking-table test
+all read that one list.
+
+**What `resolveAccount` does for such a provider**, after the row every provider shares (a
+known identity is its user):
+
+- the `before_sign_up` hook is asked, at the point it is asked for every provider (the
+  account is about to be created, the exchange has checked the ticket and the binding), with
+  `email: null` (ADR 0035);
+- a user is created with the identity, **no address**, no password, and the name the
+  provider gave;
+- a creation that loses the unique key `(environment, provider, subject)` to a parallel
+  callback is looked at again and ends as that user's sign-in.
+
+Nothing is looked up by address, so nothing can be linked by one, and
+`oauth.email_missing` / `oauth.email_unverified` / `oauth.account_exists` cannot be the
+answer. For every other provider the code path is what it was: a profile with no address is
+still `oauth.email_missing`, and a test holds that beside the new rule.
+
+*Alternative: require an address before the account exists* (a step after the provider that
+asks for one and proves it by code). It keeps "every user has an address" and joins the
+person to an existing account when they prove its address. Rejected for this ticket: it is a
+new flow step (`needs_email`), a screen in every SDK and a change to `FlowStep`; and the
+acceptance criterion is the opposite ("a provider account with no address signs up an
+account with none"). It remains the natural next step and is listed for the product's
+owner.
+
+**A user may now have no email address.** Phase 1 assumed one everywhere. What changed:
+
+| Where | Before | Now |
+| --- | --- | --- |
+| `users.email`, `users.email_normalized` | `NOT NULL` | Nullable, with the check `users_email_whole`: both or neither, and no verified-at without an address (migration `0025_user_without_address`). The unique key on `(environment, email_normalized)` is unchanged: `NULL`s do not collide, so any number of such users coexist. |
+| The `email` identity row | One per user | None for a user with no address. |
+| The contract's `User.email`, and `CurrentUser` | `string` | `string \| null`. A client that reads `user.email` has to allow for `null`: a breaking change of the type for TypeScript callers, said in the changeset. |
+| `HookBeforeSignUpData.email` | `string` | `string \| null` (ADR 0035). |
+| A password | Looked up by address | An account with no address has none and cannot be given one: an administrator's set-password answers 409, a change-password `password.not_set`. A password signs in beside an address; there is no identifier to sign in with. |
+| Security notices (ADR 0023) | Sent to the address | **Not sent.** `Notices` returns before the limiter and logs the skip by user id. A new device, a factor changed, an identity changed: none is announced. |
+| Step-up (ADR 0025) | A password, or an emailed code | `Mfa.stepUpMethods` is empty until the account has a passkey or an authenticator. Inside the window after sign-in (`stepUpAfter`, ten minutes by default) sensitive changes work; after it, the user signs in again. |
+| The label of a passkey and of an authenticator entry | The address | The name, else the word "Account" (`~/lib/account-label`). |
+| A JWT template's `user.email` and `user.email_verified` sources (ADR 0036) | The address, and whether it is proven | No value for either, so no key for either: `email_verified` is about the address, and `false` would read as "has an address that is not proven". A template of only those two adds no `ext`. An account with an unproven address still gets `false`. |
+| `user.created` | `emailVerified: true` for a provider sign-up | `emailVerified: false`. The payload has no address field and gains none, and the schema is unchanged: `false` there now also covers "no address". A consumer that needs to tell "unproven" from "none" reads the user (`email` is `null`). Unlike the token claim above, the field is required by the event's schema, so it cannot be left out within this schema version. |
+| The React profile and user button, the dashboard's user screens | Drew the address | Draw the name (or "Account" / the id), no address line, no "Not verified" badge, no password section and no "Set password" action. |
+
+`Factors.requiredFor`, the `mfa.policy` and the flow's `finish` needed no change: none reads
+the address. A passkey sign-in of such a user skips the emailed-code step it would send an
+unverified address through (there is nothing to verify). `OAuth.canStillSignIn` needed no
+change either: with no password and no verified address its answer rests on the other
+identities and the passkeys, which is why the last identity cannot be removed.
+
+**There is no way to add an address to such an account today**, and none was added: no
+route changes any user's address. That is the largest cost of this decision and is listed
+for the product's owner (`docs/plans/phase-2-unverified.md`).
+
+**Switching the provider off, or removing its credentials, locks such an account out, and
+nothing refuses or warns.** `OAuth.update` and `OAuth.remove` ask one thing under the
+`sign_in_methods` lock: would the *environment* still have a way to sign in
+(`requireWayIn`). Neither asks whether some *user* depends on the provider, on purpose:
+that would mean reading every user. Until now the answer to "what about that user" was
+that they are not locked out for good, because a reset sets a first password and an
+administrator can set one. For an account with no address neither exists: no password can
+be set (409), there is nothing to send a code, a link or a reset to, and no route gives it
+an address. Its only other ways in are a passkey it registered (with passkeys on) or
+another provider it connected that is still on. Otherwise it is locked out until the
+provider is configured again, which lets it back in: nothing is deleted, the identity row
+stays, the admin API still shows the user, and the sessions it has run their course
+(disabling a provider ends none). Facebook's id is scoped to the app, so "again" means the
+same Facebook app.
+
+This was documented and pinned, not prevented, when the two providers were added.
+**[ADR 0059](0059-email-for-accounts-without-one.md) changed it**: such an account's user
+can add an address and prove it, an administrator can set one, and the accounts that depend
+on a provider are counted (a bounded read over the provider's identities) and shown before
+it is switched off or removed, which is then recorded as a weakening. It is still not
+refused; that ADR says why and how a refusal could replace the question.
+
+**X** (`adapters/oauth/x.ts`):
+
+- `arctic`'s `Twitter` client still names `twitter.com` and `api.twitter.com`. X's
+  documentation (read 2026-10-09) writes `https://x.com/i/oauth2/authorize` and
+  `https://api.x.com/2/oauth2/token`, so the adapter uses `arctic`'s generic `OAuth2Client`
+  on those: the same library, no new dependency.
+- **PKCE (S256) is sent**: X documents `code_challenge`, `code_challenge_method` and
+  `code_verifier`. The client id and secret travel in the token request's `Authorization`
+  header (a confidential client).
+- Scopes `users.read` and `tweet.read`, the two X's reference lists for the endpoint.
+- **Subject = `data.id`** of `GET https://api.x.com/2/users/me`, accepted only as a decimal
+  string of one to twenty digits with no sign and no leading zero (`isXUserId`): one
+  spelling per account. Never `username`, which a person can change and another can take.
+  `data.name` is the display name. The read goes through `readProfile`.
+- **X's access terms were read and not confirmed.** Its pricing page (read 2026-10-09)
+  describes pay-per-usage credits with no subscription and no free tier named, and a price
+  per user read; whether `/2/users/me` is billed is not stated. `docs/providers/x.md` and
+  `docs/plans/phase-2-unverified.md` say exactly what was read.
+
+**Facebook** (`adapters/oauth/facebook.ts`):
+
+- `arctic`'s `Facebook` client writes the dialog and the token request (the app id and
+  secret in the body).
+- **No PKCE and no nonce.** Meta's manual-flow page (read 2026-10-09) documents
+  `client_id`, `redirect_uri`, `state`, `response_type` and `scope` for the dialog and
+  `client_id`, `redirect_uri`, `client_secret` and `code` for the exchange. A
+  `code_challenge` and a `nonce` are documented only for Meta's OpenID Connect flow (the
+  `openid` scope), which is another flow with an ID token and is not used. As with Apple and
+  LinkedIn, nothing undocumented is sent, and `arctic`'s client takes no verifier. **So
+  Facebook's code is bound to the attempt by the single-use `state`, and to the app by the
+  app secret and the exact redirect URI**: what LinkedIn's has. The browser binding of the
+  ticket (login CSRF) is unaffected.
+  *Alternative: Meta's OIDC flow*, which has PKCE and a nonce. Rejected here: it is
+  documented for Limited Login and native clients, its ID token would have to be verified
+  against a key set and an issuer nobody here has seen, and it would be chosen only for the
+  binding, on a reading of a page. Worth revisiting with real credentials.
+- **Subject = `id`** of `GET https://graph.facebook.com/v25.0/me?fields=id,name`, the
+  app-scoped user id, accepted only as a decimal string of one to thirty-two digits with no
+  sign and no leading zero (`isFacebookUserId`). `name` is the display name. Through
+  `readProfile`, with the token in the `Authorization` header.
+- **`appsecret_proof` is sent**: the access token's HMAC-SHA256 under the app secret, hex,
+  computed inside the adapter and put in that one request's query. Meta documents it for
+  server calls and requires it when the app's "Require App Secret" is on.
+- **The Graph version of the profile read is pinned** (`FACEBOOK_GRAPH_VERSION`, `v25.0`)
+  and has to be raised before Meta retires it (`docs/providers/facebook.md`). The dialog
+  and token URLs are `arctic`'s, on the version it was built with (`v16.0` in 3.7.0).
+- A failed exchange that Facebook answers in the Graph API's error format is `unavailable`,
+  not `invalid_grant`: `arctic` reads OAuth's `error` string. Pinned by a test, accepted:
+  the caller sees a failed sign-in either way.
+
+**The mock provider** stands in for both: its account id must be digits as the adapters
+require, **whatever address is typed on its consent page is dropped** (`givesNoAddress`),
+and it checks a PKCE challenge for Facebook too, which the real service cannot.
 
 ### The mock provider
 
@@ -211,7 +577,8 @@ never a 500.
 (`/v1/dev/oauth/authorize`, on the API) asks which address the provider should report. Its
 code is the grant sealed with the secret box (stateless, so two instances work), bound to the
 client id and redirect URI, expiring in a minute, and exchanged only with the matching PKCE
-verifier and nonce. The real callback, ticket, exchange and linking code run behind it in the
+verifier and nonce (for every provider, also the two whose real adapters send no PKCE; for
+Discord its account id must be a snowflake, and for X and Facebook digits, as the adapters require). The real callback, ticket, exchange and linking code run behind it in the
 browser tests, the conformance scenarios and local development.
 
 Guards: `env.ts` refuses to boot with the variable in any tier but `local` (including `dev`),
@@ -224,6 +591,86 @@ OpenAPI document. A standalone mock OIDC server pointed at through an issuer ove
 considered: it would exercise the Google adapter's verifier too, but needs a second process
 reachable from both the browser and the API container, and an override that exists in
 production code. The adapters' verifiers are covered by unit tests with local keys instead.
+
+#### What a page of another origin can do with the consent routes (TULA-68)
+
+The two consent routes (`GET` and `POST /v1/dev/oauth/authorize`) had neither of the request
+checks the development SMS inbox has. Traced, this is what a page a developer has open
+could do with them, what already stopped it, and what the two checks added since stop.
+
+**What the mock's other guards already stopped.** The post issues a code for whatever
+address it is told, but a code is not a sign-in:
+
+- The code goes only to this API's own callback (the redirect URI is compared with it,
+  so the route is no open redirector), and the callback finds its attempt by `state`
+  alone. A foreign page has no live `state`: it cannot start an attempt and read the
+  answer (the start needs the publishable key in a header, which a cross-origin page
+  can send only after a preflight that CORS refuses it), and it cannot read the
+  authorization URL of an attempt the developer started. With a `state` it made up the
+  callback answers its static page and nothing is spent.
+- With a live `state` it somehow held, a code it had issued still fails the exchange
+  unless it carries the attempt's own PKCE challenge and nonce, which travel in the same
+  URL it cannot read. What that costs is the attempt (its `state` is consumed before the
+  exchange): the developer starts again.
+- With all three, the callback hands its ticket to the attempt's allow-listed page in the
+  developer's own browser, and the ticket completes only with the binding that browser
+  was given. The result would be the developer signed in, on their own machine, as an
+  address the other page chose: a login CSRF, against local data, by a page that had
+  read a URL it has no way to read. No token would have reached the other page.
+
+So a page of **another site** gained nothing it could reach.
+
+**What the loopback `Host` check stops** (the router's middleware, ADR 0049). A page that
+reaches this port by DNS rebinding is, to the browser, the same origin as the API: it
+could read the consent form, post it, follow the redirect, and call `/v1/client/*`
+itself. With the environment's publishable key (which is not a secret) and an attempt
+declared as a native client's (a browser attempt is held to the allowed origins; a native
+one has none to be held to), it could have run a whole sign-in as any address against the
+mock and read the tokens. The `Host` such a request carries is the rebinding name, so it
+is a bare 403 before anything is read, as it is for a request that arrives through a
+tunnel. **That check is not this ticket's**: the consent routes, the ID-token route and
+the inbox were held to a loopback `Host` before it (ADR 0049). It is described here
+because it is what stops the one page that could have reached something. What TULA-68
+added is the two things below: the origin check on the post, and `frame-ancestors`.
+
+**What the origin check on the post stops** (`postedByOwnPage`). The post is taken only
+when `Sec-Fetch-Site` is absent, `same-origin` or `none`, and only when `Origin` is absent,
+the API's own (`PUBLIC_URL`'s origin, compared as a string), or `null` beside
+`Sec-Fetch-Site: same-origin`. The last form is what a browser sends for the page's own
+form: every response of the API carries `Referrer-Policy: no-referrer`, under which a form
+post's `Origin` is `null` (found by the browser tests, which a first version that wanted
+the API's own origin failed). The policy stays, because the page's address holds the
+attempt's `state`; what is believed instead is the browser's own statement that the post
+is same-origin, which no page can set. `null` alone is refused, so the form does not work
+in a browser that sends no fetch metadata (Safari before 16.4): accepted for a development
+aid. That refuses another site's page and, equally, the application under development on
+another port of the same machine, whose `Origin` differs and which a browser marks
+`same-site`: both before the form is read, with a bare 403. `Sec-Fetch-Site` is read as an
+allow-list: a value that is neither `same-origin` nor `none` is refused, an empty one and
+one this version does not know included. `none` is the browser's word for a request no
+page caused, and is taken like a tool's. By the trace above this closes
+no hole that was reachable; it makes "the form is sent by the page that showed it" a rule
+of the route instead of a consequence of three other things holding. A request with
+neither header is taken for a tool's (the conformance runner, the SDK journeys, `curl`).
+That is **not airtight, and accepted**: a current browser cannot leave both out of a
+page's post, but one from before `Origin` was sent with every post (Firefox before 70)
+sends neither, and there another site's page can still post the form. It gains what the
+trace above says a foreign post gains: nothing it can reach, because it holds no live
+`state`, and a code completes nothing without the attempt's PKCE challenge and nonce and
+the starting browser's binding. Refusing a request with neither header would shut out
+every tool to close that. The ID-token route is stricter (any `Origin` is refused): it
+has no page of the API's that posts to it. The page also says `frame-ancestors 'none'`, beside
+the `X-Frame-Options: SAMEORIGIN` every response already had, so no other page can draw it
+and have a click send it.
+
+**Not held to an origin: showing the page.** The `GET` changes nothing and issues nothing,
+and it is reached as a real provider's page is, by a navigation from the application,
+which is another site. It answers a loopback `Host` only, like every route here.
+
+**What none of this covers.** A tunnel or proxy that rewrites `Host` to a loopback name
+(ADR 0049 says the same), and anything running on the developer's machine that is no
+browser: with the mock on, whoever can send this API a request as `localhost` signs in as
+any address. That is what the mock is, and why it exists in the `local` tier only.
 
 ### SDKs
 
@@ -250,11 +697,32 @@ production code. The adapters' verifiers are covered by unit tests with local ke
 
 - An environment's first OAuth sign-in needs set-up outside Tula: an app at the provider with
   the callback URL registered (`docs/providers/`), and the app's landing URL on the allow-list.
-- **Real Google, GitHub and Apple were not exercised**: there are no credentials. Everything
+- **Real Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X and Facebook were not exercised**: there are no credentials. Everything
   up to the provider's endpoints is covered against the mock and with stubbed HTTP.
 - GitHub sign-in sends PKCE, and that was checked against the mock provider and stubbed
   HTTP only: nothing here has seen github.com refuse a wrong verifier. Apple sign-in has no
   PKCE (Apple documents none); its code is bound by the ID token's nonce.
+- **Microsoft sign-up depends on a claim the operator has to switch on** (`xms_edov`):
+  without it every new Microsoft account is `oauth.email_unverified`. Whether to let such an
+  account in with an unverified address instead is an open product question; it would
+  change the linking table for every provider or add a second rule for one.
+- **LinkedIn sign-in has neither PKCE nor a nonce**, because LinkedIn documents neither:
+  its code is bound to the attempt by `state` and the client secret only. Its address comes
+  from the userinfo endpoint: a second outbound call per sign-in, whose answer TLS protects
+  and no signature does. No real answer was seen; if its `sub` were not the token's, every
+  LinkedIn sign-in would be refused.
+- Discord sign-in sends PKCE that Discord's documentation does not mention, on the client
+  library's word: not observed against the real service.
+- **An account made through X or Facebook has no email address** and cannot be given one
+  today: no security notice reaches it, it cannot use an emailed code, a link or a password,
+  and it is lost with the provider account unless it has a passkey. Someone with an
+  existing account who chooses "Continue with X" gets a second account. A consumer of the
+  API, of a webhook or of the `before_sign_up` hook that assumed every user has an address
+  now meets `email: null`.
+- **Facebook sign-in has neither PKCE nor a nonce**, as LinkedIn's has not: its code is
+  bound by `state`, the app secret and the redirect URI. Its Graph API version is a
+  constant that ages.
+- **What X charges for the one API call a sign-in makes is not known here.**
 - A user who signs up through a provider has no password; removing that provider leaves them
   to a password reset. A provider's changed email never changes the Tula address.
 - A sign-in start reads the environment's providers (one indexed read, not cached).
@@ -282,6 +750,17 @@ production code. The adapters' verifiers are covered by unit tests with local ke
   administrator.
 - `@tula/core` grew from about 11.0 kB to 12.5 kB gzip (budget 12 → 13 kB) and `@tula/react`
   from 32.7 kB to 38 kB (budget 35 → 39 kB).
+- Discord and LinkedIn (TULA-13) left `@tula/core` at 15,504 bytes and took `@tula/react`
+  from 45,985 to 46,846 bytes (two marks and two names; budget 46,000 → 46,861, its fifteen
+  bytes of room kept). The conformance format gained a variable generator, `snowflake`, and
+  four scenarios (60 to 63) with their SDK journeys. No migration: the provider columns are
+  text and their set of values lives in TypeScript.
+- X and Facebook (TULA-14) left `@tula/core`'s bundle unchanged (no new error code: the
+  refusals reuse `identity.last_sign_in_method`, `password.not_set` and `resource.conflict`)
+  and took `@tula/react` from 48,362 to 48,885 bytes (two marks, two names, and a profile
+  that may have no address; budget 48,798 → 49,321, its 436 bytes of room kept). Four
+  scenarios (66 to 69) with their SDK journeys; the scenario format did not change. One
+  migration, `0025_user_without_address`.
 - The conformance format gained an `oauth` step; three scenarios (25 to 27) and their SDK
   journeys were added. A live run is about 95 seconds longer (a 61-second and a 31-second wait).
 
@@ -313,7 +792,9 @@ Findings of the review of this step, and what was decided.
   reach the API finds the ticket spent (`oauth.ticket_invalid`), which is a definitive answer:
   the user starts again. The ticket is held no longer than the API honours it.
 - **F5, the mock provider.** Loud (a warning at every boot) and loopback-only (`PUBLIC_URL`),
-  on top of the tier check.
+  on top of the tier check. Its routes answer a loopback `Host` only, and the consent form's
+  post is taken only from the page that showed it ("What a page of another origin can do
+  with the consent routes", above).
 - **F6, provider timeouts.** `AbortSignal.timeout` on GitHub's REST reads; `timeoutDuration` on
   `jose`'s key-set fetch; and a timer raced against every call, which is the only way to bound
   `arctic`'s code exchange (it takes neither a `fetch` nor a signal: the request is abandoned,

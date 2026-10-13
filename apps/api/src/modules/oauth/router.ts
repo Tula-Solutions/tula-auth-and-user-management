@@ -6,6 +6,7 @@ import type { AppEnv, TenantVariables } from '~/dependencies'
 import { validationHook } from '~/handlers'
 import { adminActor, userActor } from '~/lib/actor'
 import { clientIp } from '~/lib/client-ip'
+import * as logger from '~/lib/logger'
 import { originMayUseCookies } from '~/middleware/cors'
 import { publishableKey } from '~/middleware/publishable-key'
 import { adminRateLimit, byIp, rateLimit } from '~/middleware/rate-limit'
@@ -21,6 +22,7 @@ import {
   IdentityListSchema,
   IdentitySchema,
   OAuthExchangeRequestSchema,
+  OAuthProviderDependentsSchema,
   OAuthProviderSettingsListSchema,
   OAuthProviderSettingsSchema,
   OAuthProviderUpdateSchema,
@@ -75,7 +77,7 @@ router.get(
     tags: ['OAuth'],
     summary: 'List OAuth providers',
     description:
-      'Every provider (Google, GitHub, Apple), configured or not: whether credentials are ' +
+      'Every provider (Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X, Facebook), configured or not: whether credentials are ' +
       'stored and sign-in offers it, the client id, and `callbackUrl`, the redirect URI to ' +
       'paste into the provider’s console exactly. Never a secret.',
     security: openapi.security.admin,
@@ -105,8 +107,10 @@ router.put(
     summary: 'Set an OAuth provider’s credentials',
     description:
       'Stores the environment’s own credentials for the provider and whether sign-in offers ' +
-      'it. Google and GitHub take `clientId` and `clientSecret`; Apple takes `clientId` (the ' +
-      'Services ID), `teamId`, `keyId` and `privateKey` (the `.p8` file’s PEM). The secret is ' +
+      'it. Google, GitHub, Discord, LinkedIn, X and Facebook take `clientId` and `clientSecret`; Apple takes `clientId` (the ' +
+      'Services ID), `teamId`, `keyId` and `privateKey` (the `.p8` file’s PEM); Microsoft ' +
+      'takes `clientId`, `clientSecret` and `tenant` (`common`, `organizations`, `consumers` ' +
+      'or a tenant id: which accounts may sign in). The secret is ' +
       'stored encrypted and never returned; leave it out to keep the stored one. Recorded in ' +
       'the audit log by key, never by value. `enabled: false` is refused (422) when it would ' +
       'leave the environment with no way to sign in.',
@@ -148,8 +152,13 @@ router.delete(
     description:
       'Removes the stored credentials; sign-in stops offering the provider. Users keep their ' +
       'connected accounts of it, so configuring it again lets them back in. Refused (422) ' +
-      'when it would leave the environment with no way to sign in. It is not refused because ' +
-      'some user has no other way in: such a user sets a password through a password reset.',
+      'when it would leave the environment with no way to sign in. It is **not** refused ' +
+      'because some user has no other way in: the accounts whose only way in is this ' +
+      'provider are counted and, when there is one, the audit entry says `weakened: true` ' +
+      'with the count. Read `GET /v1/admin/oauth-providers/{provider}/dependents` first. A ' +
+      'user with an email address sets a password through a password reset; one with none ' +
+      'is locked out until the provider is back or an administrator gives the account an ' +
+      'address.',
     security: openapi.security.admin,
     responses: {
       204: { description: 'Removed.' },
@@ -164,6 +173,44 @@ router.delete(
   async (c) => {
     await OAuth.remove(c.get('deps'), c.get('tenant'), c.req.valid('param').provider, adminActor(c))
     return c.body(null, 204)
+  }
+)
+
+router.get(
+  '/admin/oauth-providers/:provider/dependents',
+  describeRoute({
+    operationId: 'getOAuthProviderDependents',
+    tags: ['OAuth'],
+    summary: 'Count the accounts that depend on a provider',
+    description:
+      'How many accounts have this provider connected and could not sign in without it, by ' +
+      'the environment’s settings and its other providers as they are now: what to look at ' +
+      'before switching the provider off or removing its credentials. A number and nothing ' +
+      'about who. At most 1,000 accounts of the provider are looked at; past that `more` ' +
+      'is `true` and `accounts` is a floor. Changes nothing. An account with an email ' +
+      'address can be recovered (a password reset, an administrator’s password); one with ' +
+      'none (a first sign-in with X or Facebook) cannot, until it is given an address.',
+    security: openapi.security.admin,
+    responses: {
+      200: {
+        description: 'The count.',
+        content: { 'application/json': { schema: resolver(OAuthProviderDependentsSchema) } },
+      },
+      422: openapi.responses[422],
+      ...errors,
+      ...openapi.adminResponses,
+    },
+  }),
+  adminRateLimit(),
+  secretKey(),
+  validator('param', ProviderParamSchema, validationHook),
+  async (c) => {
+    c.header('Cache-Control', 'no-store')
+    return c.json(
+      OAuthProviderDependentsSchema.parse(
+        await OAuth.dependents(c.get('deps'), c.get('tenant'), c.req.valid('param').provider)
+      )
+    )
   }
 )
 
@@ -195,8 +242,20 @@ async function answerCallback(
       })
     : ({ invalid: true } as const)
   if ('redirectTo' in result) {
-    // 303: the browser follows with a GET, also after Apple's form post.
-    return c.redirect(result.redirectTo, 303)
+    try {
+      // 303: the browser follows with a GET, also after Apple's form post.
+      return c.redirect(result.redirectTo, 303)
+    } catch (error) {
+      // A destination no header can carry (a control character in a stored redirect URL:
+      // no save accepts one, but the state is spent by now and a 500 would say nothing to
+      // the person in front of the browser). The static page, and the reason by name only:
+      // the runtime's message quotes the value.
+      logger.error('oauth callback: the redirect could not be built', {
+        provider,
+        reason: error instanceof Error ? error.name : 'unknown',
+      })
+      c.header('Location', undefined)
+    }
   }
   c.header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'")
   return c.html(OAUTH_INVALID_PAGE, 400)
@@ -264,7 +323,7 @@ router.get(
     tags: ['OAuth'],
     summary: 'List my connected accounts',
     description:
-      'The provider accounts (Google, GitHub, Apple) connected to the signed-in user. Never ' +
+      'The provider accounts (Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X, Facebook) connected to the signed-in user. Never ' +
       'the provider’s own id for an account.',
     security: openapi.security.session,
     responses: {

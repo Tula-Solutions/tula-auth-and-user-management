@@ -1,6 +1,8 @@
 import { SelectField, SwitchRow, TextField } from '~/components/field'
 import { Section } from '~/components/page'
 import { NativeSelectOption } from '~/components/ui/native-select'
+import { EnvironmentLink } from '~/features/shell/environment-link'
+import { ENVIRONMENT_PATH } from '~/features/shell/sections'
 import { textOrNull } from './inputs'
 import type { SettingsDocument } from './model'
 import { OAuthProviders } from './oauth-providers'
@@ -28,6 +30,28 @@ const METHODS: readonly { name: MethodName; label: string; description: string }
   { name: 'passkey', label: 'Passkeys', description: 'Needs the relying-party domain below.' },
 ]
 
+/**
+ * A setting of this document that is changed on the Text messages screen, as it stands in
+ * the draft: said here, where an operator looks for it, with the way to where it is changed.
+ * One place changes a setting; this row never does.
+ */
+function ElsewhereRow({ label, on, children }: { label: string; on: boolean; children: string }) {
+  return (
+    <div className='flex items-center justify-between gap-4 border-b py-3 last:border-b-0'>
+      <div className='flex min-w-0 flex-col'>
+        <span className='text-sm font-medium'>{label}</span>
+        <span className='text-sm text-muted-foreground'>
+          {children} Changed under{' '}
+          <EnvironmentLink to={`${ENVIRONMENT_PATH}/text-messages`}>Text messages</EnvironmentLink>.
+        </span>
+      </div>
+      <span className='shrink-0 text-sm font-medium' data-elsewhere={on ? 'on' : 'off'}>
+        {on ? 'On' : 'Off'}
+      </span>
+    </div>
+  )
+}
+
 function MethodFields({ draft, update, errors }: SettingsEditor) {
   const methods = draft.signIn?.methods ?? {}
   function setMethod(name: MethodName, enabled: boolean) {
@@ -50,11 +74,15 @@ function MethodFields({ draft, update, errors }: SettingsEditor) {
               onChange={(checked) => setMethod(method.name, checked)}
             />
           ))}
+          <ElsewhereRow label='Texted code' on={draft.signIn?.methods?.smsCode?.enabled ?? false}>
+            A six-digit code texted to a phone number an account has proven. It never counts as the
+            one method an environment must keep.
+          </ElsewhereRow>
         </div>
         {refusal ? (
           <p role='alert' className='text-sm font-medium text-destructive'>
             Not saved: {refusal}. Keep one method or one OAuth provider enabled, or nobody could
-            sign in.
+            sign in. A texted code does not count: nobody can sign up with one.
           </p>
         ) : null}
         <TextField
@@ -96,7 +124,11 @@ function MethodFields({ draft, update, errors }: SettingsEditor) {
             onChange={(event) =>
               update((current) => ({
                 ...current,
-                mfa: { policy: event.target.value as 'off' | 'optional' | 'required' },
+                // Only the policy: whatever else `mfa` holds stays as it is.
+                mfa: {
+                  ...current.mfa,
+                  policy: event.target.value as 'off' | 'optional' | 'required',
+                },
               }))
             }
             error={errors['mfa.policy']}
@@ -106,6 +138,15 @@ function MethodFields({ draft, update, errors }: SettingsEditor) {
             <NativeSelectOption value='optional'>Optional</NativeSelectOption>
             <NativeSelectOption value='required'>Required</NativeSelectOption>
           </SelectField>
+        </div>
+        <div>
+          <ElsewhereRow
+            label='Texted code as the second step'
+            on={draft.mfa?.smsCode?.enabled ?? false}
+          >
+            Whether a texted code may be a user’s second step: the weakest one, never asked for
+            beside an authenticator app or a passkey.
+          </ElsewhereRow>
         </div>
       </Section>
     </>

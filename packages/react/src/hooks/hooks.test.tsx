@@ -8,6 +8,7 @@ import { TulaProvider } from '../context'
 import {
   attempt,
   completed,
+  expectAbsent,
   failure,
   json,
   ROUTE,
@@ -156,7 +157,7 @@ describe('when things the components ask for cannot be had', () => {
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 10))
     })
-    expect(screen.queryByRole('list', { name: 'Password requirements' })).toBeNull()
+    expectAbsent(screen.queryByRole('list', { name: 'Password requirements' }))
     expect(screen.getByLabelText('Password').getAttribute('aria-describedby')).toBeNull()
   })
 

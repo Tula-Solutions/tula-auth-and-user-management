@@ -10,19 +10,28 @@ import { MemoryEnvironmentSettingsStore } from '~/adapters/memory/environment-se
 import { MemoryEnvironmentRepository } from '~/adapters/memory/environments'
 import { MemoryFactorStore } from '~/adapters/memory/factors'
 import { MemoryFlowAttemptStore } from '~/adapters/memory/flow-attempts'
+import { MemoryHookStore } from '~/adapters/memory/hooks'
 import { SequentialIds } from '~/adapters/memory/ids'
 import { MemoryJobLock } from '~/adapters/memory/job-lock'
 import { MemoryLockout } from '~/adapters/memory/lockout'
 import { MemoryMailer } from '~/adapters/memory/mailer'
+import { MemoryNativeAppStore } from '~/adapters/memory/native-apps'
 import { type FakeOAuthProviders, fakeOAuthProviders } from '~/adapters/memory/oauth'
 import { MemoryOAuthProviderStore } from '~/adapters/memory/oauth-providers'
+import { FakeOutbound } from '~/adapters/memory/outbound'
 import { MemoryPasskeyStore } from '~/adapters/memory/passkeys'
+import { MemoryProofReplayGuard } from '~/adapters/memory/proof-replay'
+import { MemoryProposalStore } from '~/adapters/memory/proposals'
 import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
 import { MemoryRevokedSessions } from '~/adapters/memory/revoked-sessions'
 import { MemorySessionStore } from '~/adapters/memory/sessions'
 import { MemorySigningKeyStore } from '~/adapters/memory/signing-keys'
+import { MemorySmsSender } from '~/adapters/memory/sms-sender'
+import { MemorySmsUsageStore } from '~/adapters/memory/sms-usage'
 import { MemoryUserRepository } from '~/adapters/memory/users'
 import { MemoryVerificationTokenStore } from '~/adapters/memory/verification-tokens'
+import { MemoryWebhookDeliveryStore } from '~/adapters/memory/webhook-deliveries'
+import { MemoryWebhookEndpointStore } from '~/adapters/memory/webhook-endpoints'
 import type { AppConfig, Deps } from '~/dependencies'
 import type { Actor } from '~/lib/actor'
 import { sha256Hex } from '~/lib/crypto'
@@ -49,13 +58,22 @@ export interface TestDeps extends Deps {
   oauth: FakeOAuthProviders
   activityLog: MemoryActivityLog
   revokedSessions: MemoryRevokedSessions
+  proofReplay: MemoryProofReplayGuard
   mailer: MemoryMailer
+  sms: MemorySmsSender
+  smsUsage: MemorySmsUsageStore
   rateLimiter: MemoryRateLimiter
   lockout: MemoryLockout
   breachChecker: MemoryBreachChecker
   jobLock: MemoryJobLock
   environmentLock: MemoryEnvironmentLock
   controlPlane: MemoryControlPlane
+  webhookEndpoints: MemoryWebhookEndpointStore
+  webhookDeliveries: MemoryWebhookDeliveryStore
+  hooks: MemoryHookStore
+  nativeApps: MemoryNativeAppStore
+  proposals: MemoryProposalStore
+  outbound: FakeOutbound
 }
 
 /** Master key for test secret boxes. Never use outside tests. */
@@ -73,6 +91,7 @@ export const TEST_CONFIG: AppConfig = {
   dashboardDir: null,
   apiDocs: true,
   instanceAuditRetentionDays: 365,
+  deliversWebhooks: true,
 }
 
 /**
@@ -91,26 +110,55 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
   const clock = overrides.clock ?? new FixedClock()
   // One log shared by every store, as the Postgres stores share the two activity tables.
   const activityLog = overrides.activityLog ?? new MemoryActivityLog()
-  const users = new MemoryUserRepository(activityLog)
+  // The factor store and the passkey store report to the user repository (what a user
+  // holds decides whether a texted second factor may be turned on, and what their last way
+  // to sign in is). An override of one of the three is wired to the others here, or refused.
+  // A store of another adapter handed in under a cast (a test that puts a Postgres store
+  // beside memory ones) cannot report to a memory repository at all: it is taken as it is,
+  // and the repository then has nobody reporting to it, so its `enableSmsFactor` throws.
+  const users = overrides.users ?? new MemoryUserRepository(activityLog)
+  const factors = overrides.factors ?? new MemoryFactorStore(activityLog, users)
+  const passkeys = overrides.passkeys ?? new MemoryPasskeyStore(activityLog, users)
+  if (factors instanceof MemoryFactorStore && !factors.belongsTo(users)) {
+    throw new Error(
+      'createTestDeps: the `factors` override does not report to the `users` of these deps. ' +
+        'Build it as `new MemoryFactorStore(activityLog, users)` and pass that `users` too.'
+    )
+  }
+  if (passkeys instanceof MemoryPasskeyStore && !passkeys.belongsTo(users)) {
+    throw new Error(
+      'createTestDeps: the `passkeys` override does not report to the `users` of these deps. ' +
+        'Build it as `new MemoryPasskeyStore(activityLog, users)` and pass that `users` too.'
+    )
+  }
   // Shared with the control plane, so an environment created through it resolves everywhere.
   const environments = overrides.environments ?? new MemoryEnvironmentRepository()
+  // Shared with the delivery store, which refuses a delivery of an endpoint that is gone.
+  const webhookEndpoints = overrides.webhookEndpoints ?? new MemoryWebhookEndpointStore(activityLog)
+  // Shared with the proposal store, which reads whether a proposal's agent key is still one.
+  const apiKeys = overrides.apiKeys ?? new MemoryApiKeyRepository(activityLog)
   return {
     config: TEST_CONFIG,
     ids: new SequentialIds(),
-    apiKeys: new MemoryApiKeyRepository(activityLog),
+    apiKeys,
     controlPlane: new MemoryControlPlane(environments),
     environmentSettings: new MemoryEnvironmentSettingsStore(activityLog),
     signingKeys: new MemorySigningKeyStore(activityLog),
     verificationTokens: new MemoryVerificationTokenStore(),
     sessions: new MemorySessionStore(activityLog),
     users,
-    factors: new MemoryFactorStore(activityLog),
-    passkeys: new MemoryPasskeyStore(activityLog, users),
+    factors,
+    passkeys,
     flowAttempts: new MemoryFlowAttemptStore(),
     oauthProviders: new MemoryOAuthProviderStore(activityLog),
     oauth: fakeOAuthProviders(),
     revokedSessions: new MemoryRevokedSessions(clock),
+    proofReplay: new MemoryProofReplayGuard(clock),
     mailer: new MemoryMailer(),
+    sms: new MemorySmsSender(clock),
+    // No inbox route unless a test asks for one (`smsInbox: deps.sms`).
+    smsInbox: null,
+    smsUsage: new MemorySmsUsageStore(),
     rateLimiter: new MemoryRateLimiter(clock),
     lockout: new MemoryLockout(clock),
     breachChecker: new MemoryBreachChecker(),
@@ -120,10 +168,19 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     environmentLock: new MemoryEnvironmentLock(),
     probes: [],
     diagnostics: new MemoryDiagnostics(clock),
+    webhookDeliveries: new MemoryWebhookDeliveryStore(activityLog, webhookEndpoints),
+    hooks: new MemoryHookStore(activityLog),
+    nativeApps: new MemoryNativeAppStore(activityLog),
+    proposals: new MemoryProposalStore(activityLog, apiKeys),
+    // The tier of `TEST_CONFIG`, and a resolver that knows only the names a test gives it.
+    outbound: new FakeOutbound((overrides.config ?? TEST_CONFIG).tier),
+    // No spread: a retry is due exactly when the schedule says.
+    jitter: () => 0,
     ...overrides,
     clock,
     activityLog,
     environments,
+    webhookEndpoints,
   }
 }
 
@@ -146,7 +203,8 @@ export const TEST_TENANT = {
  * Store an API key directly, bypassing the project service.
  *
  * @param deps - Test dependencies.
- * @param key - The raw key value; its kind is inferred from the `tula_pk_` / `tula_sk_` prefix.
+ * @param key - The raw key value; its kind is inferred from the `tula_pk_` / `tula_sk_` /
+ *   `tula_ak_` prefix.
  * @param overrides - Record fields to override (environment, id, …).
  * @returns The stored record.
  */
@@ -155,7 +213,11 @@ export function seedApiKey(
   key: string,
   overrides: Partial<Omit<ApiKeyRecord, 'lastUsedAt' | 'revokedAt'>> = {}
 ): Promise<ApiKeyRecord> {
-  const kind: ApiKeyKind = key.startsWith('tula_sk_') ? 'secret' : 'publishable'
+  const kind: ApiKeyKind = key.startsWith('tula_sk_')
+    ? 'secret'
+    : key.startsWith('tula_ak_')
+      ? 'agent'
+      : 'publishable'
   return deps.apiKeys.insert(
     {
       id: deps.ids.next(),

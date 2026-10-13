@@ -6,6 +6,7 @@ import type {
   WorkspaceRecord,
 } from '~/ports/control-plane'
 import type { EnvironmentRecord } from '~/ports/environment-repository'
+import { comparable } from '~/testing/comparable'
 
 /**
  * Behaviour every `ControlPlane` must have. Run against each adapter so the memory store used
@@ -221,14 +222,16 @@ export function describeControlPlane(name: string, setup: () => Promise<ControlP
         'instance.signed_in',
       ])
       expect(all.totalCount).toBe(3)
-      expect(all.items[1]).toMatchObject({
-        actor: { type: 'instance_admin', id: actorId },
-        target: { type: 'project', id: targetId },
-        ipAddress: '203.0.113.9',
-        userAgent: 'suite/1.0',
-        data: { changed: ['name'] },
-        occurredAt: at(2),
-      })
+      expect(comparable(all.items[1])).toMatchObject(
+        comparable({
+          actor: { type: 'instance_admin', id: actorId },
+          target: { type: 'project', id: targetId },
+          ipAddress: '203.0.113.9',
+          userAgent: 'suite/1.0',
+          data: { changed: ['name'] },
+          occurredAt: at(2),
+        })
+      )
       expect(all.items[0]?.target).toBeNull()
 
       const byAction = await plane.listAudit({

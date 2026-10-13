@@ -15,6 +15,7 @@ import { EmptyState, QueryState } from '~/components/states'
 import { NativeSelectOption } from '~/components/ui/native-select'
 import { useEnvironmentRequest } from '~/features/shell/environment-context'
 import { formatDateTime } from '~/lib/format'
+import { printable } from '~/lib/printable'
 import { pageSearch } from '~/lib/search'
 
 /** How many entries one page of the log holds. */
@@ -85,12 +86,58 @@ export function auditQuery(filters: AuditFilters) {
   }
 }
 
+/**
+ * Who else an entry names, beside its actor (ADR 0053): the human who approved an agent's
+ * proposal, the agent that asked for one a human approved, and the proposal a change
+ * carried out. Read from the entry's metadata by the contract's field names; anything of
+ * another shape is left to the raw line below.
+ *
+ * What came from the server is made printable: a type and an id are shown so that they can
+ * be checked by eye, whatever they hold.
+ *
+ * @param metadata - The entry's metadata, as the server sent it.
+ * @returns One line per party found, in a fixed order: the words, and the id drawn apart.
+ */
+export function otherParties(
+  metadata: Record<string, unknown>
+): { words: string; id: string | null }[] {
+  const lines: { words: string; id: string | null }[] = []
+  const approver = metadata.approvedBy
+  if (typeof approver === 'object' && approver !== null && !Array.isArray(approver)) {
+    const { type, id } = approver as { type?: unknown; id?: unknown }
+    if (typeof type === 'string') {
+      lines.push({
+        words: `Approved by ${printable(type)}`,
+        id: typeof id === 'string' ? printable(id) : null,
+      })
+    }
+  }
+  if (typeof metadata.proposedBy === 'string') {
+    lines.push({ words: 'Asked for by agent', id: printable(metadata.proposedBy) })
+  }
+  if (typeof metadata.proposalId === 'string') {
+    lines.push({ words: 'Carried out proposal', id: printable(metadata.proposalId) })
+  }
+  return lines
+}
+
 function Details({ entry }: { entry: AuditLog }) {
   const metadata = Object.keys(entry.metadata).length > 0 ? JSON.stringify(entry.metadata) : ''
   return (
     <span className='flex flex-col gap-0.5 text-xs'>
       {entry.ipAddress ? <span>IP {entry.ipAddress}</span> : null}
       {/* Server text, rendered as text: React escapes it, and nothing here is ever HTML. */}
+      {otherParties(entry.metadata).map((line) => (
+        <span key={line.words} data-testid='audit-party' className='break-all'>
+          {line.words}
+          {line.id !== null ? (
+            <>
+              {' '}
+              <bdi dir='ltr'>{line.id}</bdi>
+            </>
+          ) : null}
+        </span>
+      ))}
       {metadata ? <code className='break-all'>{metadata}</code> : null}
       {!entry.ipAddress && !metadata ? '—' : null}
     </span>
@@ -196,7 +243,7 @@ export function AuditLogScreen({ scope, filters, onFilters }: AuditLogScreenProp
         title={scope === 'environment' ? 'Audit log' : 'Instance audit log'}
         description={
           scope === 'environment'
-            ? 'Every change to who can do what in this environment, newest first. Changes made here show the actor “instance_admin”.'
+            ? 'Every change to who can do what in this environment, newest first. Changes made here show the actor “instance_admin”. A change an AI agent proposed shows the actor “agent”, with whoever approved it beside it.'
             : 'What has no environment: dashboard sign-ins, and workspaces, projects and environments being created.'
         }
       />

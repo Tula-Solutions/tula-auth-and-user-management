@@ -4,6 +4,7 @@ import {
   type CurrentUser,
   DEFAULT_PAGE_SIZE,
   type OAuthProvider,
+  type ProposalApprover,
   type User,
   type UserAuthentication,
   type UserList,
@@ -16,6 +17,7 @@ import {
   InvalidEmailError,
   NotFoundError,
   RateLimitError,
+  ServiceUnavailableError,
 } from '~/exceptions'
 import { type Actor, cleanOrigin, type Origin } from '~/lib/actor'
 import { parseEmail } from '~/lib/email'
@@ -29,7 +31,7 @@ import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
 import * as Settings from '~/modules/settings/service'
 import { CREDENTIAL_LOCKOUT, signInLockKey } from '~/ports/lockout'
-import type { UserRecord } from '~/ports/user-repository'
+import type { PasswordOutcome, UserRecord } from '~/ports/user-repository'
 
 type Scope = Pick<Tenant, 'projectId' | 'environmentId'>
 
@@ -43,6 +45,8 @@ function toUser(record: UserRecord): User {
     bannedAt: record.bannedAt?.toISOString() ?? null,
     lastSignInAt: record.lastSignInAt?.toISOString() ?? null,
     createdAt: record.createdAt.toISOString(),
+    phoneNumber: record.phoneNumber,
+    phoneNumberVerifiedAt: record.phoneNumberVerifiedAt?.toISOString() ?? null,
   }
 }
 
@@ -123,7 +127,7 @@ export async function me(
   userId: string
 ): Promise<CurrentUser> {
   const user = await requireUser(deps, scope, userId)
-  const found = await deps.users.findByEmailWithPassword(scope.environmentId, user.emailNormalized)
+  const found = await Passwords.ofUser(deps, scope.environmentId, user)
   return { ...toUser(user), hasPassword: Boolean(found?.passwordHash) }
 }
 
@@ -147,22 +151,26 @@ export async function me(
 export async function authentication(
   deps: Pick<
     Deps,
-    'users' | 'factors' | 'passkeys' | 'environmentSettings' | 'config' | 'oauthProviders'
+    'users' | 'factors' | 'passkeys' | 'environmentSettings' | 'config' | 'oauthProviders' | 'sms'
   >,
   scope: Pick<Tenant, 'environmentId'>,
   userId: string
 ): Promise<UserAuthentication> {
   const user = await requireUser(deps, scope, userId)
-  const found = await deps.users.findByEmailWithPassword(scope.environmentId, user.emailNormalized)
+  const found = await Passwords.ofUser(deps, scope.environmentId, user)
   const hasPassword = Boolean(found?.passwordHash)
   const emailVerified = user.emailVerifiedAt !== null
   const identities = await OAuth.identities(deps, scope, userId)
-  const { totp, backupCodes } = await Mfa.status(deps, scope, userId)
+  const { totp, backupCodes, sms } = await Mfa.status(deps, scope, userId)
   return {
     hasPassword,
     emailVerified,
     identities: identities.map(({ provider, createdAt }) => ({ provider, linkedAt: createdAt })),
-    factors: totp.confirmedAt === null ? [] : [{ type: 'totp', confirmedAt: totp.confirmedAt }],
+    factors: [
+      ...(totp.confirmedAt === null ? [] : [{ type: 'totp', confirmedAt: totp.confirmedAt }]),
+      // A texted code as the second factor (ADR 0025). The type and the time: never the number.
+      ...(sms?.enabledAt ? [{ type: 'sms', confirmedAt: sms.enabledAt }] : []),
+    ],
     backupCodesRemaining: backupCodes.remaining,
     passkeys: await Passkeys.list(deps, scope, userId),
     canSignInWithoutPasskeys: OAuth.canStillSignIn(
@@ -226,6 +234,9 @@ export async function create(
     bannedAt: null,
     lastSignInAt: null,
     createdAt: now,
+    phoneNumber: null,
+    phoneNumberVerifiedAt: null,
+    smsFactorEnabledAt: null,
   }
   const created = await deps.users.create(
     {
@@ -263,6 +274,9 @@ type RevocationDeps = Pick<Deps, 'users' | 'sessions' | 'revokedSessions' | 'clo
  * @param scope - The project and environment.
  * @param userId - The user.
  * @param actor - Who is banning them, for the audit log.
+ * @param proposal - When the ban carries out an agent's proposal a human approved (ADR
+ *   0053): the proposal and who approved it, recorded in the entry beside the agent actor.
+ *   Only `Proposals.approve` passes it.
  * @returns The banned user. Banning again keeps the original ban time.
  * @throws NotFoundError when they do not exist in this environment.
  */
@@ -270,7 +284,8 @@ export async function ban(
   deps: RevocationDeps,
   scope: Scope,
   userId: string,
-  actor: Actor
+  actor: Actor,
+  proposal?: { proposalId: string; approvedBy: ProposalApprover }
 ): Promise<User> {
   const now = deps.clock.now()
   const user = await deps.users.setBanned(
@@ -278,7 +293,12 @@ export async function ban(
     userId,
     now,
     now,
-    Audit.entry(deps, scope, { type: 'user.banned', actor, target: { type: 'user', id: userId } })
+    Audit.entry(deps, scope, {
+      type: 'user.banned',
+      actor,
+      target: { type: 'user', id: userId },
+      data: proposal ? { proposalId: proposal.proposalId, approvedBy: proposal.approvedBy } : {},
+    })
   )
   if (!user) {
     throw new NotFoundError()
@@ -297,6 +317,8 @@ export async function ban(
  * @param scope - The project and environment.
  * @param userId - The user.
  * @param actor - Who is lifting the ban, for the audit log.
+ * @param proposal - The approved proposal this carries out (ADR 0053), named in the entry;
+ *   left out for an administrator's own change.
  * @returns The user.
  * @throws NotFoundError when they do not exist in this environment.
  */
@@ -304,12 +326,40 @@ export async function unban(
   deps: RevocationDeps,
   scope: Scope,
   userId: string,
-  actor: Actor
+  actor: Actor,
+  proposal?: { proposalId: string; approvedBy: ProposalApprover }
 ): Promise<User> {
+  return (await liftBan(deps, scope, userId, actor, proposal)).user
+}
+
+/**
+ * Lift a ban and say whether one was lifted: {@link unban}, for a caller that reports what
+ * the call did (an approved proposal, ADR 0053).
+ *
+ * `lifted` is said by the branch that writes, not by a look a caller made earlier: it is
+ * `true` exactly when this call cleared the ban and wrote its `user.unbanned` entry.
+ *
+ * @param deps - Users, sessions, denylist, ids and clock.
+ * @param scope - The project and environment.
+ * @param userId - The user.
+ * @param actor - Who is lifting the ban, for the audit log.
+ * @param proposal - The approved proposal this carries out, named in the entry; left out
+ *   for an administrator's own change.
+ * @returns The user, and whether this call lifted a ban (`false`: nobody had banned them,
+ *   nothing was written and nobody was signed out).
+ * @throws NotFoundError when they do not exist in this environment.
+ */
+export async function liftBan(
+  deps: RevocationDeps,
+  scope: Scope,
+  userId: string,
+  actor: Actor,
+  proposal?: { proposalId: string; approvedBy: ProposalApprover }
+): Promise<{ user: User; lifted: boolean }> {
   const current = await requireUser(deps, scope, userId)
   if (current.bannedAt === null) {
     // Not banned: nothing to lift, and no reason to sign them out.
-    return toUser(current)
+    return { user: toUser(current), lifted: false }
   }
   await Sessions.revokeAllForUser(deps, scope, userId, 'user_banned', actor)
   const user = await deps.users.setBanned(
@@ -317,12 +367,17 @@ export async function unban(
     userId,
     null,
     deps.clock.now(),
-    Audit.entry(deps, scope, { type: 'user.unbanned', actor, target: { type: 'user', id: userId } })
+    Audit.entry(deps, scope, {
+      type: 'user.unbanned',
+      actor,
+      target: { type: 'user', id: userId },
+      data: proposal ? { proposalId: proposal.proposalId, approvedBy: proposal.approvedBy } : {},
+    })
   )
   if (!user) {
     throw new NotFoundError()
   }
-  return toUser(user)
+  return { user: toUser(user), lifted: true }
 }
 
 /**
@@ -360,6 +415,26 @@ export async function remove(
 type PasswordDeps = RevocationDeps &
   Pick<Deps, 'config' | 'environmentSettings' | 'breachChecker' | 'mailer' | 'rateLimiter'>
 
+/**
+ * How often storing a password is tried when the stored password moved between the comparison
+ * with the user's previous passwords and the write (ADR 0038). Each pass needs another password
+ * change, or a hash upgrade at sign-in, of the same user to land inside it.
+ */
+const PASSWORD_STORE_ATTEMPTS = 3
+
+/**
+ * How many times the sessions of a user are tried to be ended after an expired password was
+ * replaced, before the request gives up with a 503 (ADR 0041).
+ */
+const EXPIRED_PASSWORD_SWEEP_ATTEMPTS = 3
+
+/**
+ * The pause before the second try of that sweep, in milliseconds; the one before the third is
+ * twice as long. Short on purpose: the user is waiting, and a store that is away for longer
+ * than a blink is not waited out by a request.
+ */
+const EXPIRED_PASSWORD_SWEEP_PAUSE_MS = 20
+
 /** How a password notice names each way a password is stored. */
 const CHANGED_BY = { admin_reset: 'admin', self: 'self', reset: 'reset' } as const
 
@@ -375,6 +450,17 @@ const CHANGED_BY = { admin_reset: 'admin', self: 'self', reset: 'reset' } as con
  * still does, so no path stores a password without it and a later failure (ending the other
  * sessions, clearing the lockout) cannot leave a changed password unannounced. The notice is
  * sent in the background and cannot fail or delay the change.
+ *
+ * Where the environment's `password.history` is at least 1, a user's own password (a change, a
+ * reset) is refused with `password.reused` when it is one of their last that many, the current
+ * one included; an administrator's is not compared. Either way the store keeps the hash that
+ * stops being current and deletes what the policy no longer keeps, in the transaction that
+ * stores the new one (ADR 0038).
+ *
+ * @param expired - Given when the password replaces one that has expired, by a sign-in that
+ *   proved it (`setAt`: when the password it proved was set). The expired password is then
+ *   refused as its own replacement whatever the history says, and nothing is compared or
+ *   stored once the stored password is no longer that one (`flow.invalid_step`).
  */
 async function replacePassword(
   deps: PasswordDeps,
@@ -383,29 +469,113 @@ async function replacePassword(
   password: string,
   actor: Actor,
   method: 'admin_reset' | 'self' | 'reset',
-  beforeStore?: () => Promise<void>
+  beforeStore?: () => Promise<void>,
+  expired?: { setAt: number }
 ): Promise<void> {
+  const { email, emailNormalized } = user
+  if (email === null || emailNormalized === null) {
+    // A password sign-in starts with an address. On an account that has none (made through X
+    // or Facebook; ADR 0026) a password would be a credential nobody can use, and one that
+    // "a way to sign in" would then wrongly count when the account's last identity is removed.
+    throw new ConflictError({
+      message: 'This account has no email address, so it cannot sign in with a password.',
+    })
+  }
   await Passwords.assess(deps, scope, password, {
-    email: user.email,
+    email,
     firstName: user.firstName ?? undefined,
     lastName: user.lastName ?? undefined,
   })
+  const { history } = await Passwords.policy(deps, scope)
+  // A password that replaces an expired one is never that same password, whatever the
+  // history says: with `history: 0` the user could otherwise set it again, and the expiry
+  // would have asked for nothing (ADR 0041). What is *kept* stays the policy's own number.
+  const refused = expired ? Math.max(history, 1) : history
+  // An administrator's password is kept in the history and never refused by it: they do not
+  // know the user's old passwords, and a refusal would tell them a candidate is one of them.
+  const compared = refused > 0 && method !== 'admin_reset'
+  /**
+   * Compare the new password with the stored ones, and return the hash it was judged against.
+   *
+   * For an expired password the comparison is made only while the stored password is still
+   * the one the sign-in proved, and that is asked again before every comparison: by when the
+   * password was set, which a replacement always moves (the store sees to it, whatever the
+   * writer's clock says) and a hash upgrade never does. So a hash upgrade that lands
+   * meanwhile (another tab signing in) costs a pass and nothing else, and a replacement ends
+   * in `flow.invalid_step` before anything is counted or verified. The hash read with that
+   * time is handed on as `proven`, and the write is a compare-and-set on it: a change between
+   * this read and either of those is seen there, and asked about again here.
+   */
+  async function compare(counted: boolean): Promise<string | null> {
+    if (!expired) {
+      return Passwords.assertNotReused(deps, scope, user.id, password, refused, counted)
+    }
+    for (let pass = 1; ; pass++) {
+      const found = await Passwords.ofUser(deps, scope.environmentId, user)
+      if (
+        !found ||
+        found.passwordHash === null ||
+        found.passwordChangedAt?.getTime() !== expired.setAt
+      ) {
+        throw new AuthError('flow.invalid_step')
+      }
+      try {
+        return await Passwords.assertNotReused(
+          deps,
+          scope,
+          user.id,
+          password,
+          refused,
+          counted,
+          found.passwordHash
+        )
+      } catch (error) {
+        // `flow.invalid_step` from there means the hash moved after the read above, and
+        // nothing was counted or verified: read again and let the time say which it was.
+        const moved = error instanceof AuthError && error.code === 'flow.invalid_step'
+        if (!moved || pass >= PASSWORD_STORE_ATTEMPTS) {
+          throw error
+        }
+      }
+    }
+  }
+  // Last of the checks, and only here: whoever reaches it has proven the account is theirs
+  // and offered a password the policy accepts (ADR 0038).
+  let judgedAgainst = compared ? await compare(true) : undefined
   // Hash first: a failure here must leave whatever `beforeStore` spends untouched.
   const passwordHash = await Passwords.hash(password)
   await beforeStore?.()
   const now = deps.clock.now()
-  const outcome = await deps.users.setPasswordHash(
-    scope.environmentId,
-    user.id,
-    passwordHash,
-    now,
-    Audit.entry(deps, scope, {
-      type: 'user.password_changed',
-      actor,
-      target: { type: 'user', id: user.id },
-      data: { method },
+  let outcome: PasswordOutcome | 'stale' | null = 'stale'
+  for (let pass = 0; pass < PASSWORD_STORE_ATTEMPTS && outcome === 'stale'; pass++) {
+    if (pass > 0) {
+      // The password changed between the comparison and the write (another change, or a hash
+      // upgrade at sign-in): compare again with what is stored now. Not counted twice.
+      judgedAgainst = await compare(false)
+    }
+    outcome = await deps.users.setPasswordHash(
+      scope.environmentId,
+      user.id,
+      passwordHash,
+      now,
+      Audit.entry(deps, scope, {
+        type: 'user.password_changed',
+        actor,
+        target: { type: 'user', id: user.id },
+        data: { method },
+      }),
+      {
+        keep: Passwords.previousKept(history),
+        ...(compared && { ifCurrent: judgedAgainst ?? null }),
+      }
+    )
+  }
+  if (outcome === 'stale') {
+    // Nothing was stored. Never store a password on a comparison that no longer holds.
+    throw new ServiceUnavailableError({
+      internalMessage: 'the password kept changing while its history was being compared',
     })
-  )
+  }
   if (outcome === null) {
     // The user was deleted after the caller loaded them. Never report success for a password
     // that was not stored.
@@ -416,6 +586,76 @@ async function replacePassword(
     added: outcome === 'created',
     at: now,
   })
+}
+
+/**
+ * Give a user who has **no** email address one, from a server or the dashboard (ADR 0059).
+ *
+ * The address is stored **unverified**: nobody has proven it. It signs nobody in by itself
+ * and counts for nothing that asks for a verified address; whoever reads its inbox proves
+ * it with the first emailed sign-in code or password reset they complete, exactly as for
+ * a user an administrator created. The user's own way (`modules/email-address`) stores a
+ * proven one.
+ *
+ * Never replaces an address, and the store's unique key decides who has one: an address
+ * another user holds is the conflict a create answers. No session ends and nothing is
+ * emailed: the account is not less protected than it was, and an unproven address is not
+ * told anything.
+ *
+ * @param deps - Users, ids and clock.
+ * @param scope - The project and environment.
+ * @param userId - The user.
+ * @param email - The address as given.
+ * @param actor - Who is setting it, for the audit log.
+ * @returns The user as they now are.
+ * @throws InvalidEmailError for what is not an address.
+ * @throws NotFoundError for an unknown user.
+ * @throws AuthError `email.already_set` for a user who has an address.
+ * @throws ConflictError when another user of the environment has the address.
+ */
+export async function setEmail(
+  deps: Pick<Deps, 'users' | 'ids' | 'clock' | 'config'>,
+  scope: Scope,
+  userId: string,
+  email: string,
+  actor: Actor
+): Promise<User> {
+  const parsed = parseEmail(email)
+  if (!parsed) {
+    throw new InvalidEmailError()
+  }
+  const user = await requireUser(deps, scope, userId)
+  if (user.email !== null) {
+    throw new AuthError('email.already_set')
+  }
+  const now = deps.clock.now()
+  const stored = await deps.users.addEmail(
+    scope.environmentId,
+    userId,
+    {
+      email: parsed.email,
+      normalized: parsed.normalized,
+      verifiedAt: null,
+      identityId: deps.ids.next(),
+    },
+    now,
+    Audit.entry(deps, scope, {
+      type: 'user.email_added',
+      actor,
+      target: { type: 'user', id: userId },
+      data: { method: 'admin', verified: false },
+    })
+  )
+  if (stored === 'not_found') {
+    throw new NotFoundError()
+  }
+  if (stored === 'has_email') {
+    throw new AuthError('email.already_set')
+  }
+  if (stored === 'taken') {
+    throw new ConflictError({ message: 'A user with this email already exists.' })
+  }
+  return toUser(stored)
 }
 
 /**
@@ -445,7 +685,10 @@ export async function setPassword(
   await replacePassword(deps, scope, user, password, actor, 'admin_reset')
   await Sessions.revokeAllForUser(deps, scope, userId, 'password_changed', actor)
   // Guesses at the old password must not keep the user out of the new one they were just given.
-  await deps.lockout.clear(signInLockKey(scope.environmentId, user.emailNormalized))
+  // (`replacePassword` refused an account with no address, so there is one to clear for.)
+  if (user.emailNormalized !== null) {
+    await deps.lockout.clear(signInLockKey(scope.environmentId, user.emailNormalized))
+  }
 }
 
 /**
@@ -491,7 +734,9 @@ export async function resetPassword(
   // between the first sweep and the store, and that session must not outlive the reset.
   await Sessions.revokeAllForUser(deps, scope, userId, 'password_changed', actor)
   try {
-    await deps.lockout.clear(signInLockKey(scope.environmentId, user.emailNormalized))
+    if (user.emailNormalized !== null) {
+      await deps.lockout.clear(signInLockKey(scope.environmentId, user.emailNormalized))
+    }
   } catch (error) {
     // The password is stored; a lockout left in place only delays the next sign-in.
     logger.warn('could not clear the sign-in lockout after a password reset', {
@@ -499,6 +744,76 @@ export async function resetPassword(
       err: error instanceof Error ? error.name : 'unknown',
     })
   }
+}
+
+/**
+ * Replace a password that has expired, for a user who has just proved it at a sign-in and
+ * has no session yet (`Flows.replaceExpiredPassword`, ADR 0041).
+ *
+ * It is the user's own change, proven by the current password: recorded and announced as
+ * one (`user.password_changed` with `method: 'self'`), compared with their previous
+ * passwords as one, and counted against the same hourly allowance. Two things differ. **The
+ * expired password itself is always refused** (`password.reused`, with `params.history` of at
+ * least 1), also where `password.history` is 0: otherwise the user would type the old
+ * password again and the expiry would have changed nothing. And **every session of the user
+ * ends**, not every other one: the sign-in that asked has none yet, and its own is created
+ * after this returns. They end **after** the password is stored, as for a user's own change
+ * and unlike a reset: of two requests at once only the one whose password was stored ends
+ * anything, so the one that lost cannot end the session the other's sign-in has just been
+ * given.
+ *
+ * **A sweep that fails is tried again, and then said.** The password is stored by then and
+ * cannot be taken back, so the sweep is tried `EXPIRED_PASSWORD_SWEEP_ATTEMPTS` times, a few
+ * tens of milliseconds apart. If none works the answer is `service.unavailable` (503), nobody
+ * is signed in, and an error is logged with the environment and the user's id: the password
+ * is the new one, and the sessions made under the old one live on until they end by
+ * themselves or an administrator ends them (`DELETE /v1/admin/users/:userId/sessions`).
+ * Nothing remembers that the sweep is owed (ADR 0041).
+ *
+ * @param deps - Users, password policy, sessions, denylist, mailer, limiter, ids and clock.
+ * @param scope - The project and environment.
+ * @param user - The user, as the sign-in loaded them.
+ * @param password - The new password; must meet the policy.
+ * @param actor - The user themselves, with the request's origin, for the audit log.
+ * @param setAt - When the expired password the sign-in proved was set, in milliseconds.
+ *   Nothing is compared or stored unless the stored password is still that one.
+ * @throws AuthError `flow.invalid_step` when the stored password is no longer the one the
+ *   sign-in proved.
+ * @throws ServiceUnavailableError when the password was stored and the user's earlier
+ *   sessions could not be ended.
+ * @throws NotFoundError, or a `password.*` ServiceException with per-field `errors`
+ *   (`password.reused` among them).
+ * @throws RateLimitError when the user's allowance of history comparisons is used up.
+ */
+export async function replaceExpiredPassword(
+  deps: PasswordDeps,
+  scope: Scope,
+  user: UserRecord,
+  password: string,
+  actor: Actor,
+  setAt: number
+): Promise<void> {
+  await replacePassword(deps, scope, user, password, actor, 'self', undefined, { setAt })
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await Sessions.revokeAllForUser(deps, scope, user.id, 'password_changed', actor)
+      return
+    } catch {
+      if (attempt >= EXPIRED_PASSWORD_SWEEP_ATTEMPTS) {
+        break
+      }
+      await Bun.sleep(EXPIRED_PASSWORD_SWEEP_PAUSE_MS * attempt)
+    }
+  }
+  // Fixed words and two ids: nothing of the failure, which may hold a connection string. This
+  // line is the only trace that the sessions are still to be ended: never drop or quieten it.
+  logger.error(
+    'a password that replaced an expired one was stored, and the user’s earlier sessions could not be ended',
+    { environmentId: scope.environmentId, userId: user.id }
+  )
+  throw new ServiceUnavailableError({
+    internalMessage: 'sessions not ended after an expired password was replaced',
+  })
 }
 
 /**
@@ -540,10 +855,9 @@ export async function changePassword(
 ): Promise<void> {
   const actor: Actor = { type: 'user', id: self.userId, ...cleanOrigin(origin) }
   const user = await deps.users.findById(scope.environmentId, self.userId)
-  const found = user
-    ? await deps.users.findByEmailWithPassword(scope.environmentId, user.emailNormalized)
-    : null
-  if (found && found.passwordHash === null) {
+  const found = user ? await Passwords.ofUser(deps, scope.environmentId, user) : null
+  // An account with no address has no password either, and gets the same answer.
+  if (user?.emailNormalized === null || (found && found.passwordHash === null)) {
     throw new AuthError('password.not_set')
   }
   // Counted as a failure up front and cleared once the current password checks out, so only

@@ -23,6 +23,12 @@ export interface SettingsSuiteContext {
    * write path: what another version, or a hand, may have left there.
    */
   storeManager: (tenant: SettingsSuiteTenant, manager: unknown) => Promise<void>
+  /**
+   * Put a settings document where a tenant that has saved none keeps its own, directly and
+   * at revision 1, past the store's own write path: what another version, or a hand, may
+   * have left there. The document is whatever JSON holds, not only what the API would store.
+   */
+  storeDocument: (tenant: SettingsSuiteTenant, settings: unknown) => Promise<void>
 }
 
 /**
@@ -67,7 +73,8 @@ export function describeEnvironmentSettingsStore(
         target: { type: 'environment', id: tenant.environmentId },
         ipAddress: '203.0.113.9',
         userAgent: 'suite/1.0',
-        data: { changed },
+        // A whole event of its type: the outbox payload is built from this (ADR 0012).
+        data: { revision: 1, changed },
         occurredAt: now,
       }
     }
@@ -235,6 +242,169 @@ export function describeEnvironmentSettingsStore(
       })
     })
 
+    // Every adapter reads a stored document the same way (`readStoredRow`): the store unit
+    // tests use must not hand a service what the real one would have altered or refused.
+    describe('a stored document the API did not write', () => {
+      test('one from another version reads with today’s defaults, without the keys this one does not know', async () => {
+        await ctx.storeDocument(a, {
+          app: { name: 'Acme', logoUrl: 'https://acme.test/logo.png' },
+          futureSection: { enabled: true },
+        })
+        expect(await ctx.store.get(a.environmentId, true)).toEqual({
+          revision: 1,
+          settings: { ...DEFAULT_ENVIRONMENT_SETTINGS, app: { name: 'Acme', supportEmail: null } },
+        })
+      })
+
+      test('an empty one is every default', async () => {
+        await ctx.storeDocument(a, {})
+        expect(await ctx.store.get(a.environmentId, true)).toEqual({
+          revision: 1,
+          settings: DEFAULT_ENVIRONMENT_SETTINGS,
+        })
+      })
+
+      test('a list entry settings would refuse is left out, said with a count and never the entry', async () => {
+        const warn = spyOn(logger, 'warn').mockImplementation(() => {})
+        try {
+          await ctx.storeDocument(a, {
+            app: { name: 'Acme' },
+            urls: {
+              allowedOrigins: ['http://app.lan', 'https://app.acme.test', 'https://app.acme.test'],
+            },
+            sms: { allowedCountries: ['GB', 'not a country'] },
+          })
+          expect(await ctx.store.get(a.environmentId, true)).toEqual({
+            revision: 1,
+            settings: {
+              ...DEFAULT_ENVIRONMENT_SETTINGS,
+              app: { name: 'Acme', supportEmail: null },
+              urls: { allowedOrigins: ['https://app.acme.test'], allowedRedirectUrls: [] },
+              sms: { ...DEFAULT_ENVIRONMENT_SETTINGS.sms, allowedCountries: ['GB'] },
+            },
+          })
+          expect(warn.mock.calls).toEqual([
+            [
+              'stored environment settings held list entries that are not valid; they were ignored',
+              { environmentId: a.environmentId, dropped: 3 },
+            ],
+          ])
+          // The union for preflights leaves the entry out as well.
+          const origins = await ctx.store.allowedOrigins()
+          expect(origins).not.toContain('http://app.lan')
+          expect(origins.filter((origin) => origin === 'https://app.acme.test')).toHaveLength(1)
+        } finally {
+          warn.mockRestore()
+        }
+      })
+
+      test('wording this version cannot use is left out and said by kind, never by its text', async () => {
+        const warn = spyOn(logger, 'warn').mockImplementation(() => {})
+        const canary = 'canary-wording-2a6c'
+        try {
+          await ctx.storeDocument(a, {
+            emails: {
+              templates: {
+                step_up: { subject: `${canary} kept`, body: '{{code}}' },
+                // A placeholder a later version had, a notice with a link, a kind not known here.
+                password_reset: { body: `${canary} {{code}} {{firstName}}` },
+                new_sign_in: { body: `${canary} https://evil.test` },
+                later_kind: { body: canary },
+              },
+            },
+            sms: {
+              templates: {
+                sign_in: { text: `Your code is {{code}}` },
+                // No code at all, and a kind not known here.
+                phone_verification: { text: canary },
+                later_kind: { text: `${canary} {{code}}` },
+              },
+            },
+          })
+          const read = await ctx.store.get(a.environmentId, true)
+          expect(read?.settings.emails).toEqual({
+            templates: { step_up: { subject: `${canary} kept`, body: '{{code}}' } },
+          })
+          expect(read?.settings.sms.templates).toEqual({
+            sign_in: { text: 'Your code is {{code}}' },
+          })
+          expect(warn.mock.calls).toEqual([
+            [
+              'stored text message template this version cannot use was ignored; the built-in text is sent in its place',
+              { environmentId: a.environmentId, kinds: ['phone_verification'], unknownKinds: 1 },
+            ],
+            [
+              'stored email template text this version cannot use was ignored; the built-in copy is sent in its place',
+              {
+                environmentId: a.environmentId,
+                kinds: ['password_reset', 'new_sign_in'],
+                unknownKinds: 1,
+              },
+            ],
+          ])
+          expect(JSON.stringify(warn.mock.calls).replaceAll(`${canary} kept`, '')).not.toContain(
+            canary
+          )
+        } finally {
+          warn.mockRestore()
+        }
+      })
+
+      // A scalar of a known field that is not valid is not left out and not defaulted: the
+      // read throws, in every adapter, and what reads the settings has to stand that.
+      test.each<[string, unknown]>([
+        [
+          'a password history below zero',
+          { password: { ...DEFAULT_ENVIRONMENT_SETTINGS.password, history: -1 } },
+        ],
+        [
+          'a password history that is text',
+          { password: { ...DEFAULT_ENVIRONMENT_SETTINGS.password, history: '2' } },
+        ],
+        ['a password policy with a field missing', { password: { minLength: 12 } }],
+        ['an audit period of zero', { audit: { retentionDays: 0 } }],
+        ['an audit period that is text', { audit: { retentionDays: '30' } }],
+        ['an MFA policy this version does not know', { mfa: { policy: 'sometimes' } }],
+        ['a document that is a string', 'settings'],
+      ])(
+        '%s cannot be read: the read throws, and the origins are still listed',
+        async (_name, settings) => {
+          await ctx.storeDocument(a, settings)
+          await replace(b, 0, named('B', ['https://b.test']))
+          await expect(ctx.store.get(a.environmentId, true)).rejects.toThrow()
+          // Another environment is read as before, and a preflight is still answered.
+          expect((await ctx.store.get(b.environmentId, true))?.settings.app.name).toBe('B')
+          expect(await ctx.store.allowedOrigins()).toContain('https://b.test')
+        }
+      )
+
+      test('a replace puts a readable document in the place of one that could not be read', async () => {
+        await ctx.storeDocument(a, { audit: { retentionDays: 0 } })
+        await expect(ctx.store.get(a.environmentId, true)).rejects.toThrow()
+        expect(await replace(a, 1, named('Repaired'))).toEqual({
+          revision: 2,
+          settings: named('Repaired'),
+        })
+        expect(await ctx.store.get(a.environmentId, true)).toEqual({
+          revision: 2,
+          settings: named('Repaired'),
+        })
+      })
+
+      test('the origin list survives documents of any shape', async () => {
+        await ctx.storeDocument(a, {
+          urls: { allowedOrigins: ['https://odd-shape.test', 7, null] },
+        })
+        await ctx.storeDocument(b, { urls: { allowedOrigins: 'https://not-a-list.test' } })
+        await ctx.storeDocument(await ctx.freshTenant(), { urls: null })
+        await ctx.storeDocument(await ctx.freshTenant(), 'https://not-a-document.test')
+        const origins = await ctx.store.allowedOrigins()
+        expect(origins).toContain('https://odd-shape.test')
+        expect(origins).not.toContain('https://not-a-list.test')
+        expect(origins.every((origin) => typeof origin === 'string')).toBe(true)
+      })
+    })
+
     test('a refused replace leaves the manager as it was', async () => {
       await ctx.store.replace(a.environmentId, 0, named('Managed'), now, activity(a, []), {
         tool: 'tula-apply',
@@ -294,7 +464,7 @@ export function describeEnvironmentSettingsStore(
       expect(await ctx.store.get(a.environmentId)).toEqual(won[0] ?? null)
       // Only the winner is on record.
       expect(await audited(a)).toEqual([
-        { changed: [won[0]?.settings.app.name === 'Left' ? 'left' : 'right'] },
+        { revision: 1, changed: [won[0]?.settings.app.name === 'Left' ? 'left' : 'right'] },
       ])
     })
 
@@ -313,7 +483,9 @@ export function describeEnvironmentSettingsStore(
 
     test('the change is on record with the keys it was given, in the same write', async () => {
       await replace(a, 0, named('Acme'), ['app.name', 'urls.allowedOrigins'])
-      expect(await audited(a)).toEqual([{ changed: ['app.name', 'urls.allowedOrigins'] }])
+      expect(await audited(a)).toEqual([
+        { revision: 1, changed: ['app.name', 'urls.allowedOrigins'] },
+      ])
     })
 
     test('one environment’s settings are invisible to, and untouched by, another', async () => {

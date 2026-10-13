@@ -4,7 +4,7 @@ Tula's API is one container image, a PostgreSQL database and, for more than one 
 Redis. This guide covers trying it locally with Docker Compose, and what to change for a real
 deployment.
 
-Phase 1 status: passwords, emailed codes and links, Google, GitHub and Apple, passkeys,
+Phase 1 status: passwords, emailed codes and links, Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X and Facebook, passkeys,
 two-step verification, session profiles, user administration and the audit log (one page per
 method under [methods/](README.md#sign-in-methods)). Administration is through the dashboard at
 `/dashboard` ([dashboard.md](dashboard.md)), settings as code (`tula apply`,
@@ -15,7 +15,7 @@ stand-in (real providers, a physical passkey authenticator, and more) is listed 
 
 Contents: [try it locally](#try-it-locally) · [the server's settings](#settings) ·
 [an environment's settings](#settings-of-an-environment) ·
-[providers](#signing-in-with-google-github-or-apple) · [sessions](#sessions) ·
+[providers](#signing-in-with-a-provider) · [sessions](#sessions) ·
 [passkeys](#passkeys) · [`tula doctor`](#checking-a-deployment-tula-doctor) ·
 [the dashboard](#the-dashboard) · [running it for real](#running-it-for-real) (the database,
 https and the proxy, Redis and several instances, retention) · [upgrading](#upgrading).
@@ -88,7 +88,8 @@ packaged stack:
 | `API_PUBLIC_URL` | `http://localhost:<API_PORT>` | The `PUBLIC_URL` of **both** instances: it is the issuer of every access token, so they must agree on it. When clients come through the proxy, set it to the proxy's address (`http://localhost:3005`). A separate name, because `PUBLIC_URL` in a developer's `.env` describes `bun run dev`. |
 | `API_REDIS_URL` | `redis://redis:6379` | The API's `REDIS_URL`: the stack's own Redis unless you point it elsewhere. A separate name for the same reason. |
 | `API_SMTP_URL` | `smtp://mailpit:1025` | The mail relay **as seen from inside the container**. Required in `staging` and `prod`, where the bundled Mailpit is refused. `SMTP_URL` is deliberately not used here: in a developer's `.env` it points at `127.0.0.1`. |
-| `ENVIRONMENT`, `MAIL_FROM`, `BREACH_CHECK`, `PASSWORD_POLICY`, `CORS_ORIGINS`, `TRUST_PROXY`, `TULA_ADMIN_TOKEN`, `OAUTH_MOCK_PROVIDER`, `LOG_LEVEL` | as in [Settings](#settings) | Passed through. Set `TRUST_PROXY=true` only when every request comes through the proxy: the instances' own ports are published here too, and on those a client could then write its own address. |
+| `ENVIRONMENT`, `MAIL_FROM`, `BREACH_CHECK`, `PASSWORD_POLICY`, `CORS_ORIGINS`, `TRUST_PROXY`, `TULA_ADMIN_TOKEN`, `OAUTH_MOCK_PROVIDER`, `SMS_PROVIDER`, the six `TWILIO_*` variables, `LOG_LEVEL` | as in [Settings](#settings) | Passed through. Set `TRUST_PROXY=true` only when every request comes through the proxy: the instances' own ports are published here too, and on those a client could then write its own address. |
+| `WEBHOOK_WORKER` | `api` | Passed to every container of the stack. With `separate` the two instances make no webhook delivery and the `worker` service has to be started with them: `--profile app --profile worker` ([The webhook worker as its own service](#the-webhook-worker-as-its-own-service)). |
 | `POSTGRES_PORT`, `REDIS_PORT`, `MAILPIT_SMTP_PORT`, `MAILPIT_UI_PORT` | `5432`, `6379`, `1025`, `8025` | Host ports of the other services. |
 
 The database addresses inside the stack are fixed; `DATABASE_URL` from `.env` is not used.
@@ -134,7 +135,7 @@ The API reads its settings from the environment and refuses to start if one is i
 | `TULA_MASTER_KEY` | yes | | 64 hex characters (`openssl rand -hex 32`). Encrypts signing keys, provider credentials and authenticator secrets, and keys the hashes of emailed codes and backup codes. |
 | `TULA_ADMIN_TOKEN` | | none | The instance admin token: the dashboard and `tula doctor` sign in with it. Unset, `/v1/instance/*` does not exist and the dashboard has no sign-in. At least 32 characters, generated (`openssl rand -hex 32`); the same on every instance. With it set, the server refuses to start, in any tier, when `PUBLIC_URL` is plain `http:` on a host that is not loopback: the token and the dashboard's session would cross the network unencrypted. See [`tula doctor`](#checking-a-deployment-tula-doctor) and [the dashboard](#the-dashboard). |
 | `DASHBOARD_DIR` | | `apps/dashboard/dist` next to the API | Directory of the dashboard's build output, served at `/dashboard`. The image ships it; a directory with no `index.html` means no dashboard. |
-| `PUBLIC_URL` | | `http://localhost:3003` | Where clients reach the API. It is part of every access token's issuer. |
+| `PUBLIC_URL` | | `http://localhost:3003` | Where clients reach the API: a scheme, a host and at most a port and a path. It is part of every access token's issuer, and the address the server requests to check itself (`tula doctor`). A user name, a password (any `@` before the host), a query or a fragment in it stops the boot. |
 | `PORT` | | `3003` | |
 | `SMTP_URL` | | `smtp://127.0.0.1:1025` | Your mail relay, e.g. `smtps://user:pass@smtp.example.com:465`. |
 | `MAIL_FROM` | | `Tula Auth <no-reply@localhost>` | Sender of verification emails. |
@@ -143,9 +144,17 @@ The API reads its settings from the environment and refuses to start if one is i
 | `CORS_ORIGINS` | | none | Comma-separated browser origins. Allowed for `/v1/admin/*`, and the **default** allowed origins of an environment until it saves its own settings (below). |
 | `TRUST_PROXY` | | `false` | Set `true` only behind a proxy that overwrites `X-Forwarded-For`. **Behind a proxy it must be set**: without it every client has the proxy's address, so they all share one rate-limit bucket (one visitor's guesses lock everyone out, the dashboard's sign-in included) and one audit sample. Without a proxy it must stay `false`, or a client picks its own bucket with a header. |
 | `API_DOCS` | | `on` in `local` and `dev`, `off` in `staging` and `prod` | `on` or `off`: whether the API reference page is served at `/v1/docs`. The page is on the same origin as the dashboard; it loads no script from another host (the reference's bundle is served by the API from its own installed package) and has its own Content-Security-Policy, and a deployment that does not need it should leave it off. `/v1/openapi.json` is served either way. |
-| `INSTANCE_AUDIT_RETENTION_DAYS` | | `365` | Days an entry of the **instance** audit log (dashboard sign-ins, workspaces, projects) is kept before the retention job deletes it; at least 30. An environment's audit log is never deleted. |
+| `INSTANCE_AUDIT_RETENTION_DAYS` | | `365` | Days an entry of the **instance** audit log (dashboard sign-ins, workspaces, projects) is kept before the retention job deletes it; at least 30. An environment's audit log has its own period, the `audit.retentionDays` setting. |
 | `OAUTH_MOCK_PROVIDER` | | `false` | **Development and tests only.** `true` serves every OAuth provider from a built-in mock provider whose consent page signs in as any address typed into it. The server refuses to start with it unless `ENVIRONMENT=local` **and** `PUBLIC_URL` is a loopback address (`localhost`, `127.0.0.1`, `[::1]` or a `*.localhost` name), and logs a warning at every start while it is on. |
-| `REDIS_URL` | in `staging` and `prod` | none | Redis shared by every API instance, e.g. `rediss://user:pass@cache.example.com:6380`. A `valkey://` or `valkeys://` URL is accepted too, but only Redis (7 and 8) has been tested; Valkey has never been run. Holds rate limits, the password lockout and revoked sessions. Without it they are kept in the process's memory, which is only correct for a single instance. |
+| `SMS_PROVIDER` | | `none` | How text messages are sent ([ADR 0037](adr/0037-phone-numbers-and-sms.md)). `none`: there is no sender, and a request that would send a message is answered `sms.unavailable` (503). `dev`: **development and tests only.** Nothing is sent; the newest 50 messages are kept in the server's memory and read at `GET /v1/dev/sms/messages` (`?to=` narrows to one number), codes included. The server refuses to start with `dev` unless `ENVIRONMENT=local` **and** `PUBLIC_URL` is a loopback address, and logs a warning at every start while it is on. Each instance has its own inbox. `twilio`: messages are really sent, through Twilio, with the `TWILIO_*` variables below; allowed in every tier ([Text messages with Twilio](#text-messages-with-twilio)). Whether an environment sends text messages, and to which countries, is its [`sms` setting](phone-numbers.md), off by default. |
+| `TWILIO_ACCOUNT_SID` | with `SMS_PROVIDER=twilio` | none | The Twilio account messages are sent from: `AC` and 32 hexadecimal characters. **Every `TWILIO_*` variable is read only when `SMS_PROVIDER` is `twilio`, and ignored otherwise**, whatever it holds. With `twilio` the server refuses to start unless there is an account, exactly one way to authenticate and exactly one sender, each of the shape Twilio shows it in; the refusal names the variable and never repeats a value. |
+| `TWILIO_API_KEY_SID` | one way to authenticate | none | An API key of that account (`SK` and 32 hexadecimal characters), with its secret in `TWILIO_API_KEY_SECRET`. **Preferred**: a key can be revoked by itself and is not the account's master credential. |
+| `TWILIO_API_KEY_SECRET` | with `TWILIO_API_KEY_SID` | none | That key's secret. A secret: Twilio shows it once. Never logged, returned or put in an error. |
+| `TWILIO_AUTH_TOKEN` | the other way to authenticate | none | The account's auth token, **instead of** the API key: setting both is refused. It can do everything the account can; prefer the key. A secret. |
+| `TWILIO_MESSAGING_SERVICE_SID` | one sender | none | A Messaging Service (`MG` and 32 hexadecimal characters): Twilio picks the sender from its pool. What a registered United States campaign needs. |
+| `TWILIO_FROM_NUMBER` | the other sender | none | One Twilio number in E.164 form (`+14155550100`), **instead of** the Messaging Service: setting both is refused. A short code or an alphanumeric sender goes in a Messaging Service. |
+| `REDIS_URL` | in `staging` and `prod` | none | Redis shared by every API instance, e.g. `rediss://user:pass@cache.example.com:6380`. A `valkey://` or `valkeys://` URL is accepted too, but only Redis (7 and 8) has been tested; Valkey has never been run. Holds rate limits, the password lockout, revoked sessions and the ids of used device-binding proofs ([device-binding.md](device-binding.md)). Without it they are kept in the process's memory, which is only correct for a single instance. |
+| `WEBHOOK_WORKER` | | `api` | `api` or `separate`: where webhook deliveries are made. `api`: inside the API instances. `separate`: only in a worker process (the same image, `bun run src/worker.ts`), and an API instance makes none. **Every process gets the same value**, and with `separate` a worker has to be running or nothing is delivered. See [The webhook worker as its own service](#the-webhook-worker-as-its-own-service). |
 | `LOG_LEVEL` | | `info` | `debug`, `info`, `warn`, `error` or `silent`. |
 
 ## Settings of an environment
@@ -155,16 +164,17 @@ API key belongs to) has a settings document, read and replaced with its secret k
 
 | Section | |
 | --- | --- |
-| `app.name`, `app.supportEmail` | The product's name and help address. Every email names the app; the default name is `Tula`. |
-| `password` | The password policy. |
+| `app.name`, `app.supportEmail` | The product's name and help address. Every email names the app; the default name is `Tula`. A name is refused when it holds a text-direction control (such as U+202E), a private-use or unassigned character or half a surrogate pair; one saved before that rule is still read, and has to be corrected at the next save. |
+| `password` | The password policy. `password.history` (0 to 24) is how many of a user's last passwords, the current one included, cannot be chosen again; lowering it deletes the stored hashes it no longer covers and raising it cannot bring them back. `password.expiryDays` (days, at least 1; `null` is off) is how old a password may be when it signs in: an older one has to be replaced before the sign-in completes ([methods/password.md](methods/password.md#security-properties-and-limits)). |
 | `signIn.methods` | Which sign-in methods are offered: `password` (on by default), `emailCode` (a 6-digit code by email), `emailLink` (a link in that email; needs `emailCode`) and `passkey` (needs `passkeys.rpId`; see [Passkeys](#passkeys)). At least one must stay on. |
 | `passkeys.rpId` | The WebAuthn relying-party id: the domain every passkey of this environment belongs to, e.g. `example.com`. `null` by default. A host name only (or `localhost`): no scheme, port, path or IP address. |
 | `signUp.password` | `required` (default), or `optional`: a sign-up may then leave the password out and the account signs in by email (needs `emailCode`). |
 | `urls.allowedOrigins` | Browser origins that may call the client API: exact origins such as `https://app.example.com`, no paths or wildcards, `http` only for localhost. |
 | `urls.allowedRedirectUrls` | URLs a flow may send users to, matched **exactly**. An emailed sign-in link leads only to a URL listed here. |
-| `audit.retentionDays` | How long audit entries are kept (`null`: for ever). Stored; nothing is deleted yet. |
+| `audit.retentionDays` | How many days this environment's audit entries are kept: 1 to 3650, or `null` (the default) for ever. With a number set, the retention job, which runs on start-up and every ten minutes, deletes the entries older than that; an entry is never deleted in its first day. **Saving a period, or a shorter one, deletes the older entries for good**, starting with the next retention run (a large backlog takes several runs): there is no undo, so export what you need to keep longer (`GET /v1/admin/audit-logs`) first. Because of that it counts as a weakening: the dashboard asks before saving it and `tula apply --yes` needs `--allow-weaker`. Keep the API's server logs: the audit entry that records who changed the period is itself deleted once it is older than the new period, and the log line of each deletion is then the only trace. See "Retention" under [Running it for real](#running-it-for-real). |
 | `notifications.passwordChanged` | Email a user when their password is changed, reset, set by an administrator or added. On by default. |
 | `sessions.profiles` | Named session profiles. `web` (browsers) and `mobile` (every other client) always exist; add up to ten more. Each has `type` (`hybrid` or `stateful`), `accessTokenTtl` (30s to 15m, never longer than `idleTimeout`), `idleTimeout` (1m to 365d), `absoluteTimeout` (at least the idle timeout, or `null`), `refresh.reuseGracePeriod` (10s to 60s, or `null` for none), `stepUpAfter` (1m to 24h, or `null` for ten minutes) and `clientSelectable`. See [Sessions](#sessions). |
+| `sessions.jwtTemplates`, `sessions.profiles.<name>.jwtTemplate` | Named sets of custom claims (at most 10 templates, 16 claims each, 1,024 bytes of JSON), issued under the `ext` claim of the access token to the sessions of the profile that names one (`null`, the default: none). A profile cannot name a template that does not exist. See [JWT templates](jwt-templates.md). |
 | `sessions.maxPerUser`, `sessions.onLimit` | The most live sessions one user may have (`null`: no limit), and what a sign-in at the limit does: `end_oldest` (default) or `refuse_newest`. |
 | `notifications.newSignIn` | Email a user when their account is signed in to from a browser and operating system (or a native app) none of their other sessions has. On by default. |
 
@@ -207,7 +217,8 @@ Without `If-Match` the answer is 428 (`precondition.required`); with a revision 
 longer current, 412 (`precondition.failed`): read again and retry. Each change is in the audit
 log as `environment.settings_updated`, listing the keys that changed and never their values,
 with `"weakened": true` when the change made the password policy weaker, switched a security
-notice off or moved the MFA policy towards `off`.
+notice off, moved the MFA policy towards `off`, let sessions live longer, or set or shortened
+the audit retention period.
 
 **Security notices.** The `notifications` switches control the emails that let a user
 notice a takeover ([ADR 0023](adr/0023-security-notices.md)). They are sent after the change,
@@ -216,7 +227,8 @@ password change, it only costs the notice, and the API logs `security notice not
 error's name and SMTP status (never the address). A user is sent at most three of each kind an
 hour. The notices contain no link and no code. "A new device" is judged from the browser and
 operating system in the `User-Agent` header, so it is a hint to the user, not a guarantee: it
-does not replace the audit log. To turn one off, send it in the settings document:
+does not replace the audit log. (A native app's session that is
+[bound to a device key](device-binding.md) is judged by that key instead.) To turn one off, send it in the settings document:
 `"notifications": { "newSignIn": false }` (the others keep their defaults). The third switch,
 `mfaChanged`, covers two-step verification being turned on, turned off or reset, new backup
 codes, and a backup code being used to sign in.
@@ -311,7 +323,7 @@ Switching a sign-in method or an OAuth provider off takes up to 5 seconds to rea
 instance with Redis and up to 30 without: settings are cached per instance. What each migration
 needs from you is under [Upgrading](#upgrading).
 
-## Signing in with Google, GitHub or Apple
+## Signing in with a provider
 
 Each environment uses **its own** OAuth credentials; none ship with Tula
 ([ADR 0026](adr/0026-oauth.md)). For each provider: register an app with the provider using the
@@ -319,10 +331,73 @@ redirect URI `GET /v1/admin/oauth-providers` lists as `callbackUrl`
 (`PUBLIC_URL/v1/oauth/callback/<provider>`), store the credentials with
 `PUT /v1/admin/oauth-providers/<provider>`, and add your app's landing page to
 `urls.allowedRedirectUrls`. Step-by-step: [Google](providers/google.md),
-[GitHub](providers/github.md), [Apple](providers/apple.md). The secret is stored encrypted
+[GitHub](providers/github.md), [Apple](providers/apple.md),
+[Microsoft](providers/microsoft.md) (which also takes a `tenant`: which Microsoft accounts
+may sign in), [Discord](providers/discord.md), [LinkedIn](providers/linkedin.md), [X](providers/x.md),
+[Facebook](providers/facebook.md) (an account made through either of the last two has no
+email address). The secret is stored encrypted
 with `TULA_MASTER_KEY` and never returned; no provider token is stored at all.
 `DELETE /v1/admin/oauth-providers/<provider>` removes the credentials (users keep their
 connected accounts). To try the flow without credentials, see `OAUTH_MOCK_PROVIDER` above.
+
+## Text messages with Twilio
+
+A text message (the code that proves a [phone number](phone-numbers.md)) is sent only when
+the **deployment** has a sender and the **environment** has text messages switched on. The
+sender is `SMS_PROVIDER`: `none` (the default, nothing is sent), `dev` (a local inbox, refused
+outside `ENVIRONMENT=local`) or `twilio`, the one that really sends
+([ADR 0037](adr/0037-phone-numbers-and-sms.md)). The step-by-step is the
+[Twilio checklist](providers/twilio.md); in short:
+
+1. **Register your sender with Twilio first**: it takes days to weeks, and without it a
+   carrier blocks what Twilio accepted. For the United States that is A2P 10DLC (a Brand and
+   a Campaign, on a Messaging Service) for a 10-digit number, or toll-free verification for a
+   toll-free number. A trial account cannot send Tula's messages at all.
+2. **Enable in Twilio exactly the countries your environments allow** (Twilio's *geo
+   permissions*; a new account can send to its home country only). Tula's
+   `sms.allowedCountries` and Twilio's list are separate, and both must allow a number.
+3. **Turn on Twilio's SMS pumping protection.** It is a second net under Tula's own
+   [send limits and daily limit](phone-numbers.md#send-limits-and-the-daily-limit).
+4. **Create an API key** and set, on every API instance:
+
+   ```sh
+   SMS_PROVIDER=twilio
+   TWILIO_ACCOUNT_SID=AC…
+   TWILIO_API_KEY_SID=SK…
+   TWILIO_API_KEY_SECRET=…             # or TWILIO_AUTH_TOKEN, never both
+   TWILIO_MESSAGING_SERVICE_SID=MG…    # or TWILIO_FROM_NUMBER, never both
+   ```
+
+5. **Switch text messages on in the environment** (`sms.enabled`, the countries, a daily
+   limit you can afford), run `tula doctor`, and send one message to your own phone.
+
+What to know before relying on it:
+
+- **Accepted is not delivered.** A message is "sent" when Twilio takes it into its queue.
+  Tula asks for no delivery receipt: a message a carrier drops afterwards looks sent, and the
+  user waits for a code that does not come. Twilio's message log has what happened to it.
+- **A failed send is `sms.unavailable`** (503) for the user, with nothing of Twilio's answer.
+  The reason is in the API's log (`twilio did not take a text message`: a fixed word, the
+  HTTP status, Twilio's error number and its text with numbers and credentials taken out).
+  Nothing is retried.
+- **A send Twilio did not refuse stays in the day's count.** A message Twilio refused (a
+  4xx) is given back to the [daily limit](phone-numbers.md#send-limits-and-the-daily-limit);
+  one that timed out, whose connection failed, or that Twilio answered with a 5xx is not,
+  because Twilio may have taken and billed it (`twilio gave no answer for a text message`,
+  or `twilio answered without saying whether it took a text message` with the status, in
+  the log). While Twilio cannot be reached, or answers 5xx, every try uses one of the
+  day's messages.
+- **The credentials are the API's alone.** They are never logged, returned or put in an
+  error, and the [webhook worker](#the-webhook-worker-as-its-own-service) is not given them.
+- **`staging` and `prod` refuse to start with `SMS_PROVIDER=dev`** (and so does `dev`): the
+  development inbox shows every code to whoever can reach the API. What the start cannot
+  see is an environment's own setting, so the other half is `tula doctor`: its `sms_sender`
+  line warns when an environment has text messages switched on and the deployment has no
+  sender (`SMS_PROVIDER=none`), in which case nothing is sent and nobody is told. It fails
+  when that environment also signs in with a texted code: the method is offered to nobody.
+- **Only Twilio's default region (US1, `api.twilio.com`)** is supported.
+- **No message has been delivered to a real phone from this code**: it is tested against a
+  stubbed network only. Do step 5 before you tell users it works.
 
 ## Sessions
 
@@ -427,7 +502,10 @@ the API, and they work again when it is switched back on with the same `rpId`.
 
 `tula doctor` checks what actually goes wrong, each with its fix: the database and its
 migrations, `TULA_MASTER_KEY` against the stored secrets, the mail relay, Redis, the clocks,
-`PUBLIC_URL`, and the redirect URI each enabled OAuth provider needs
+`PUBLIC_URL`, the redirect URI each enabled OAuth provider needs, whether webhook events
+are waiting with nothing delivering them, whether an environment has text messages
+switched on in a deployment with nothing to send them, and whether the native apps an
+environment registered are well formed and their association files served
 ([cli.md](cli.md#tula-doctor)). The checks run inside the API, behind
 `GET /v1/instance/diagnostics`, and that route takes the **instance admin token**:
 
@@ -585,7 +663,10 @@ hashes, never an email or IP address.
 Treat Redis as part of the service. If the API cannot reach it, sign-in, sign-up and every
 request that carries an access token are answered with 503 (`service.unavailable`) until it is
 back; the API will not guess whether a limit was reached or a session revoked. Sessions
-themselves survive: refreshing a token needs only the database and keeps working. Redis needs
+themselves survive: refreshing a token needs only the database and keeps working. The one
+exception is a session bound to a device key ([device-binding.md](device-binding.md)): its
+refresh has to remember the proof it was given, in Redis, and is answered 503 until Redis is
+back; the session is not ended and the same refresh token works afterwards. Redis needs
 no backup. If it loses its data, counters and lockouts start again and nothing else is lost.
 See [ADR 0016](adr/0016-redis-and-multiple-instances.md).
 
@@ -621,6 +702,103 @@ through Redis and are immediate.
 Without `REDIS_URL` (allowed in `local` and `dev`) run a single instance: each one would count
 separately, and a restart forgets all three.
 
+### The webhook worker as its own service
+
+By default webhook deliveries are made inside the API instances (`WEBHOOK_WORKER=api`): one
+instance does a round every five seconds, the others skip it, and there is nothing to
+configure. `WEBHOOK_WORKER=separate` moves them into a **worker**: a second process from the
+same image that does nothing else.
+
+```sh
+# The API instances, as before, and the worker: the same image, another command.
+docker run … -e WEBHOOK_WORKER=separate tula-api                          # each API instance
+docker run … -e WEBHOOK_WORKER=separate tula-api bun run src/worker.ts    # the worker
+```
+
+With the Compose file: `WEBHOOK_WORKER=separate docker compose --profile app --profile worker
+up -d` (and stop with both profiles). `--profile app` alone is unchanged: no worker, and the
+instances deliver.
+
+**When to separate it.** A delivery is a request to an address one of your tenants typed.
+Separate the worker when you want those requests to leave from somewhere else than the
+machines that take sign-in traffic:
+
+- **Egress rules.** The worker's containers get the route to the internet (or to the egress
+  proxy's network, the allow-list, the fixed outbound address your customers put in their
+  firewalls). The API instances need none of that for webhooks.
+- **Load.** A burst of events, or receivers that answer slowly, then takes CPU, sockets and
+  database connections from the worker, not from the instances answering sign-ins.
+- **Restarts and scaling of their own.** You can deploy, stop or resize the worker without
+  touching the API, and the other way round.
+
+A deployment with one or two instances and no such requirement gains nothing from it: leave
+the default.
+
+**What the worker is.**
+
+- **The same image, and less of the environment than the API.** What it uses: `DATABASE_URL`
+  (the runtime role), the same `TULA_MASTER_KEY` (it opens the endpoints' signing secrets),
+  the same `ENVIRONMENT` (the tier the address guard judges by), `WEBHOOK_WORKER` and
+  `LOG_LEVEL`. It checks its variables under the same rules as the API, so in `staging` and
+  `prod` it also has to be given what those rules demand of every process, though it never
+  uses them: `REDIS_URL`, `SMTP_URL`, `MAIL_FROM`, `BREACH_CHECK=hibp` and an https
+  `PUBLIC_URL`. **Do not give it `TULA_ADMIN_TOKEN`**: it serves no instance route, and the
+  deployment's most powerful credential should be in no container that has no use for it.
+  It has no use for `OAUTH_MOCK_PROVIDER`, `SMS_PROVIDER` or the `TWILIO_*` variables (it sends no text message: **do not give it Twilio's credentials**), `CORS_ORIGINS`, `TRUST_PROXY`, `PASSWORD_POLICY`,
+  `API_DOCS`, `DASHBOARD_DIR` or `INSTANCE_AUDIT_RETENTION_DAYS` either. The Compose file's
+  `worker` service is given exactly the first two lists.
+- **It takes no traffic.** It listens on `PORT` for `GET /v1/status` and `GET /v1/ready` and
+  answers 404 to everything else: no sign-in route, no admin route, no dashboard. Do not
+  publish the port and put no load balancer in front of it. `/v1/ready` checks the database
+  and is what the image's health check asks.
+- **It never runs migrations** and creates no signing keys. Run migrations as before, and
+  start the worker after them.
+- **It makes the same rounds, under the same lock.** The schedule, the retries, the guard on
+  every address and the log lines (`webhook delivery round finished`) are the ones described
+  in [webhooks.md](webhooks.md#how-the-server-calls-you). Like retention, the lock needs
+  `DATABASE_URL` to be a direct connection or a session-mode pooler.
+- **You may run several.** Each tries the lock every five seconds; one is let through and the
+  others skip that round. A second worker is for availability, not for throughput.
+- **Stopping it is safe.** On `SIGTERM` it starts no new round, lets the round under way
+  finish the requests it is making and record them, and exits (within ten seconds, or it
+  exits anyway). What it had not sent stays where it was and is sent by the next round of
+  any worker. A request that was sent and not recorded is sent again: delivery is at least
+  once, as always. It keeps running when the database is away: rounds fail, `/v1/ready`
+  answers 503, and it carries on when the database is back.
+
+**What does not move.**
+
+- **Hooks stay in the API.** A [hook](hooks.md) is asked inside the sign-in or sign-up
+  request that waits for its answer, by the instance serving that request. If you use hooks,
+  the API instances still call your hook addresses, and their egress has to allow those.
+- **Saving an endpoint still looks its address up** from the API instance (a DNS lookup of
+  the host, to refuse a private address at once). No request is made to it.
+- **A test event and a delivery sent again are refused.** Both are requests the API instance
+  that takes the call would make itself. With `WEBHOOK_WORKER=separate` they answer
+  `501 not_implemented` with `params.reason: "worker_separate"`, and nothing is sent. The
+  endpoints, the delivery log and secret rotation work as before
+  ([webhooks.md](webhooks.md#send-a-test-event)).
+- **Retention stays in the API**, the deletion of old events and delivery records included.
+
+**Give every process the same value, and run the worker.** The variable says where the
+deployment delivers; the command says what a process is.
+
+| `WEBHOOK_WORKER` on | Worker running? | What happens |
+| --- | --- | --- |
+| every process: `api` (or unset) | no | The API instances deliver. The default. |
+| every process: `separate` | yes | The worker delivers; no API instance makes a request to an endpoint. |
+| every process: `separate` | **no** | **Nothing is delivered.** Events wait in the outbox and are delivered, late, once a worker runs. Each API instance says at start-up `WEBHOOK_WORKER=separate: this API instance makes no webhook delivery`, and `tula doctor` fails `webhook_worker` once an event has waited a minute. The same failure is what a worker that runs and cannot keep up, or cannot work, looks like: the check reads the outbox and says so. |
+| the worker: `api` (or unset) | it refuses to start | It exits with a message naming the variable: the API instances already deliver, and a worker beside them would separate nothing. |
+| API instances with different values | | Not detected. The instances with `api` deliver, so the separation is not in force. Set it in one place for all of them. |
+
+`tula doctor` ([above](#checking-a-deployment-tula-doctor)) is the check to run after the
+change. Its `webhook_worker` line looks at what is waiting, not at the worker: with nothing
+waiting it is `ok` whether or not a worker runs, so create an event (a test user) and run it
+again a minute later, or look for `webhook delivery round finished` in the worker's log.
+
+To go back, set `WEBHOOK_WORKER=api` everywhere (or remove it), restart the API instances and
+stop the worker. Nothing is lost either way: what waits is in the database.
+
 **Retention.** The API cleans up after itself; there is nothing to schedule. On start-up and
 every ten minutes one instance (whichever takes a PostgreSQL advisory lock first; the others
 skip that round) deletes:
@@ -633,16 +811,37 @@ transaction-mode pooler (PgBouncer in `transaction` mode) retention can stop wit
 - sessions, with their refresh tokens, 30 days after they were revoked or expired;
 - authenticator enrolments that were started and never confirmed, and expired passkey
   challenges;
-- entries of the **instance** audit log older than `INSTANCE_AUDIT_RETENTION_DAYS`.
+- entries of the **instance** audit log older than `INSTANCE_AUDIT_RETENTION_DAYS`;
+- an environment's audit entries older than its `audit.retentionDays` setting, **only where
+  the environment has set one**. The default is `null`: keep them for ever;
+- hashes of users' previous passwords beyond what the environment's `password.history`
+  keeps, after the number was lowered.
 
-It never deletes audit entries or outbox events (an environment's `audit.retentionDays`
-setting is stored but not applied yet). Each run logs one line, `retention run
-finished`, with counts only (at `debug` level when there was nothing to delete). The periods
-are fixed for now. See [ADR 0017](adr/0017-retention.md).
+Audit entries are the one thing in this list an operator chooses to end, and their deletion
+is permanent: there is no archive and nothing brings an entry back. A new or shorter period
+takes effect with the next run. One run deletes at most 100,000 entries of an environment,
+and a run is skipped on an instance that does not hold the lock, so a large backlog is
+finished over several runs; only "for good" is certain, not how soon. Export first if you
+need the older entries. The database itself refuses to delete an entry of the last day, and the API's
+database role can still not change one. When entries are deleted the log has a line,
+`audit entries past the retention period deleted`, with the environment's id, the period
+and the count. **Keep those logs.** The audit entry that says who set or shortened the
+period (`environment.settings_updated`, `weakened: true`) is deleted like any other once it
+is older than the period, so after that the server's log is the only record that entries
+were deleted and under which period. The entries' outbox events are not deleted.
+
+It also deletes what the webhook worker leaves behind, on fixed periods: an outbox event 30
+days after the worker settled it, and the record of a delivery (with every request made for
+it) 90 days after it was queued, once it has ended. An event that a delivery still pending is
+of is kept. See [webhooks.md](webhooks.md#what-the-server-keeps). The counts of text messages by destination
+([phone-numbers.md](phone-numbers.md#what-was-sent-and-what-was-never-used)) go 90 days after their day. Each run logs one line, `retention run finished`, with
+counts only (at `debug` level when there was nothing to delete). The other periods are fixed
+for now. See [ADR 0017](adr/0017-retention.md).
 
 **Health.** `GET /v1/status` answers while the process is up; `GET /v1/ready` also checks the
 database, and Redis when it is configured, and is what the image's health check and a load
-balancer should use.
+balancer should use. A [webhook worker](#the-webhook-worker-as-its-own-service) answers the
+same two paths and nothing else; its `/v1/ready` checks the database.
 
 **The image.** It runs as the unprivileged `bun` user and listens on 3003. It contains the
 API's sources, the two workspace packages the API imports (`packages/db`, with the migrations
@@ -678,7 +877,18 @@ reports whether the database is at the version the running image ships.
 | `0013` managed by | Records which config file last applied an environment's settings (`tula apply`). | Nothing. |
 | `0014` diagnostics | A function, owned by the schema owner, that tells the API which migrations are applied (for `tula doctor`). | Nothing, as long as migrations run as the owner and the API as a member of `tula_app`: the function is how the non-owner role reads that one fact. |
 | `0015` instance audit log | The log of dashboard sign-ins and of workspaces, projects and environments being created. | Nothing. It is written only where `TULA_ADMIN_TOKEN` is set. |
-| `0016` instance audit retention | Lets the API delete instance audit entries older than `INSTANCE_AUDIT_RETENTION_DAYS` (default 365, at least 30). | Set the variable if a year is not what you want. An environment's audit log is still never deleted. |
+| `0016` instance audit retention | Lets the API delete instance audit entries older than `INSTANCE_AUDIT_RETENTION_DAYS` (default 365, at least 30). | Set the variable if a year is not what you want. |
+| `0028` native apps | A table for an environment's iOS and Android apps ([native-apps.md](native-apps.md)). Empty after the migration. | Nothing to do, and no quiet window needed: one new, empty table with its own grants; no existing table is touched. Two public routes exist from this version on (`/v1/environments/<id>/.well-known/apple-app-site-association` and `…/assetlinks.json`); until an app is registered they answer `{}` and `[]`. Three event types exist that a webhook endpoint can subscribe to (`native_app.created`, `native_app.updated`, `native_app.deleted`). |
+| `0027` phone number lookup | An index on `users` by phone number, for [signing in with a texted code](methods/sms-code.md). No data changes and nothing is on by default. | The index is built inside the migration's transaction (a plain `CREATE INDEX`), which takes a write lock on `users` while it builds: sign-ups and profile changes wait for it. It covers only the rows that have a phone number, so it is quick on most deployments; on a very large `users` table run the migration in a quiet window. |
+| `0029` password age | `credentials` gains `secret_changed_at`: when the password was last set, which the server's re-hashing of a password does not move. Existing rows get the time their row was last written. Password expiry ([methods/password.md](methods/password.md#security-properties-and-limits)) is counted from it. | **Check `password.expiryDays` of each environment, and `PASSWORD_POLICY`, before you upgrade: the number is enforced from this version on.** It was stored and ignored before, and the `legacy` preset has it at 90. A user whose password row was last written longer ago than the period is asked for a new password at their next sign-in with it; nobody is signed out and no email is sent. Set it to `null` first if that is not what you want. **Upgrade your clients before the server**: an app built on a `@tula/react` or `@tula/core` older than this release shows "This step is not supported" where the new password is asked for, so a user with an expired password cannot sign in through it; or keep `expiryDays` at `null` until every client is upgraded. The migration rewrites every row of `credentials` once, under a lock on the table: sign-ins with a password wait for it. |
+| `0031` device binding | A session can be bound to a device key ([device-binding.md](device-binding.md)): `sessions` gains `device_thumbprint` (null for every existing session), a check that it is a 43-character thumbprint on a `hybrid` session, and a trigger that refuses every update of the column: a session is bound when it is created or never. No grant changes. | Nothing to do, and no quiet window needed: one nullable column is added without rewriting the table. Sessions that exist are not bound and behave as before; nothing binds a session unless a client sends a proof when it starts a sign-in. From this version on `session.created` events and audit entries may carry `deviceBound: true`, there is a new event type `session.refresh_proof_refused`, and the access token of a bound session carries `cnf.jkt`. **Roll back with care**: an earlier version ignores the column, so a bound session is refreshed there with the refresh token alone, as if it had never been bound (reasoned from the code, not tried). The trigger stays and is harmless to an earlier version, which never writes the column. |
+| `0026` password history | A table for the hashes of users' previous passwords ([methods/password.md](methods/password.md#security-properties-and-limits)). | Check `password.history` of each environment, and `PASSWORD_POLICY`: **the number is enforced from this version on**. It was stored and ignored before, and the `strict` preset has it at 5. The history starts empty: only passwords changed after the upgrade are remembered. |
+| `0022` session hook claims | Where the claims of a `before_token` hook are kept ([hooks.md](hooks.md)): `sessions` gains `hook_claims` (JSON, empty for every existing session) and a check that it is an object of at most 4,096 bytes. No grant changes: the API's role already reads and writes that table. | Nothing to do, and no quiet window needed: one nullable column is added without rewriting the table, and the check passes for every existing row (they hold nothing). Sessions that exist keep working and carry no hook claims; they get them, where a `before_token` hook is registered, at their next sign-in or step-up, not at a refresh. From this version on two more hooks can be registered (`before_session`, `before_token`), `session.created` events and audit entries may carry `hookBypassed: true` and `claimsHookBypassed: true`, and `session.stepped_up` may carry `claimsHookBypassed: true`. **Roll back with care**: an earlier version ignores the column, so a session's hook claims silently stop being issued; and a hook registered for one of the two new points is a row an earlier version does not know, and its list of hooks may fail on it (remove those hooks before rolling back; this was reasoned from the code, not tried). |
+| `0021` hooks | A table for hooks ([hooks.md](hooks.md)): the endpoint an environment has the server ask before a sign-up creates an account. Empty after the migration: nothing is asked until an operator registers one. | Nothing to do, and no quiet window needed: one new, empty table with its own grants; no existing table is touched. Sign-up behaves exactly as before until a hook is registered. From this version on `user.created` events and audit entries may carry `hookBypassed: true`, and three event types exist that a webhook endpoint can subscribe to (`hook.created`, `hook.updated`, `hook.deleted`). |
+| `0020` webhook secret rotation | An endpoint's signing secret can be replaced with an overlap ([webhooks.md](webhooks.md#rotate-a-secret)): `webhook_endpoints` gains `previous_secret` and `previous_secret_expires_at`, both empty for every existing endpoint, and a check that the two are set or empty together. No grant changes: the API's role already updates that table. | Nothing to do, and no quiet window needed: two nullable columns are added without rewriting the table, and the check is validated against a table of at most ten rows per environment. **Existing secrets are untouched and keep signing**: a secret sealed by an earlier version opens exactly as before. Until an endpoint is rotated for the first time, nothing about its deliveries changes. From this version on a delivery may carry **two** signatures in `webhook-signature` (during a rotation's 24 hours); a receiver that uses `verifyWebhook` or a Standard Webhooks library already reads that. `verifyWebhook` now also takes a list of two secrets. |
+| `0019` webhook retries | Webhook deliveries are retried and logged ([webhooks.md](webhooks.md#retries)): the delivery table gains a state and a schedule, a new table holds every request made, and endpoints gain `failing_since`, `last_failed_at` and `disabled_reason` (empty for existing endpoints). The API's role loses `UPDATE` on `events` but for one column, and gains two bounded `DELETE`s for the retention job. | **Apply it in a quiet window if the outbox is large.** It builds one more index on `events` and takes short exclusive locks on that table (a policy, and lifting and restoring forced row-level security around a backfill), all held until the migration commits; inserts into `events`, which every sign-in, sign-out and admin change makes, wait until then. Nothing is built `CONCURRENTLY` (migrations run in a transaction). `webhook_deliveries` is rewritten in place: existing rows keep their outcome, and each request becomes the first entry of the new log. **From this version on the retention job deletes**: an event 30 days after the worker settled it, and an ended delivery 90 days after it was queued. The 30 days count from when an event was settled, not from when it happened: the backlog a deployment had when it first ran the worker (`0018`) was settled then, and goes 30 days after that, up to 100,000 events per environment per run. Those events were never sent to anyone (no endpoint existed). Their audit entries are separate and are not touched. |
+| `0018` webhooks | Tables for webhook endpoints and the record of their deliveries; a unique key and a different index on `events`, the outbox. Starts the delivery worker ([webhooks.md](webhooks.md)). | **Apply it in a quiet window if the outbox is large.** The unique key and the index are each built under a lock that blocks inserts into `events`, and every sign-in, sign-out and admin change inserts an event: those requests wait until both are built (they are not built `CONCURRENTLY`; migrations run in a transaction). The first start of the new version then marks every event recorded so far as settled, in bulk (up to 100,000 per environment every five seconds), sending none of them: no endpoint existed when they happened. |
+| `0017` audit retention | Lets the API delete an environment's audit entries older than its `audit.retentionDays` setting, and adds a database rule that no entry of the last day can be deleted. Until this version the setting was stored and did nothing. | **Check the setting in every environment before you upgrade.** One that already holds a number starts deleting older entries, for good, with the first retention run of the new version (at start-up; a large backlog takes several runs). `null` (the default) keeps everything, as before. |
 
 Settings added since Phase 0 that a deployment behind a proxy or with several instances should
 look at: `REDIS_URL` (required in `staging` and `prod`), `TRUST_PROXY`, `TULA_ADMIN_TOKEN`,
@@ -698,9 +908,14 @@ DELETE FROM tula.api_keys WHERE environment_id = '<environment id>' AND revoked_
 ## Not there yet
 
 - No published image; build it from source.
-- Audit entries and outbox events are kept for ever: audit retention becomes a setting in a
-  later step, and nothing delivers the event outbox yet (webhooks arrive in Phase 2), so no
-  event is deleted until something has delivered it.
+- Text messages through Twilio have never been delivered to a real phone from this code, and
+  there is no delivery receipt: "sent" means Twilio accepted the message
+  ([Text messages with Twilio](#text-messages-with-twilio)). Twilio is the only provider.
+- Audit entries are kept for ever unless an environment sets `audit.retentionDays`. (Outbox
+  events and the record of webhook deliveries have fixed periods: 30 and 90 days.)
+- The periods and the schedule of webhooks are fixed, not settings: eight requests over a day
+  and a few hours, then the delivery is given up; an endpoint that takes nothing for five
+  days is switched off ([webhooks.md](webhooks.md#what-can-still-be-lost)).
 - A `TULA_MASTER_KEY` that does not match the stored signing keys does not stop the server. It
   logs `signing keys are unusable in some environments` at start-up, and sign-in fails in those
   environments until the right key is restored.

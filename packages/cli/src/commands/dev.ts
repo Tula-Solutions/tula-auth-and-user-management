@@ -3,7 +3,7 @@ import { startDev, stopDev } from '../dev'
 import { type Command, EXIT } from '../framework'
 
 const USAGE =
-  'tula dev [--project-name <name>] [--show-keys] [--rotate-keys] [--timeout <seconds>]\n' +
+  'tula dev [--tunnel] [--project-name <name>] [--show-keys] [--rotate-keys] [--timeout <seconds>]\n' +
   '       tula dev down [--volumes [--yes]] [--project-name <name>]'
 
 /** How long pulling, building, migrating and becoming ready may each take, by default. */
@@ -12,10 +12,12 @@ const DEFAULT_TIMEOUT_SECONDS = 900
 /**
  * `tula dev`: start the project's local stack with Docker Compose, migrate, seed, mint
  * development keys into `.env.local` and print the URLs. `tula dev down` stops it.
+ * `--tunnel` also gives the stack a public https address (ADR 0049).
  *
  * @example
  * ```sh
  * tula dev            # start, or continue: running it again changes nothing
+ * tula dev --tunnel   # the same, reachable from a phone at a stable https address
  * tula dev down       # stop; --volumes also deletes the database
  * ```
  */
@@ -31,6 +33,14 @@ export const devCommand: Command = {
     'URLs. A second run reuses the keys. The secret key is printed only with --show-keys.\n\n' +
     '`tula dev down` stops the stack and keeps the data; `--volumes` deletes the database ' +
     'after a confirmation (--yes without a terminal).\n\n' +
+    '`--tunnel` gives the stack a public https address a phone can reach, through Tailscale ' +
+    'Funnel (the machine’s own name under ts.net, the same on every run). The Tailscale client ' +
+    'and its sign-in are your own setup: tula passes it no credential and reads none. The ' +
+    'address goes into the block of .env.local and the API is started under it; no setting ' +
+    'of the environment is changed, the changes to make are printed. Under a public address ' +
+    'the mock OAuth provider and the development SMS inbox cannot be on: with either, ' +
+    '--tunnel stops before anything is started. `tula dev` without --tunnel, and `tula dev ' +
+    'down`, close the tunnel.\n\n' +
     'The Compose project name comes from --project-name, else COMPOSE_PROJECT_NAME, else ' +
     'Compose’s default (the directory’s name). Ports come from the Compose file and its .env.\n\n' +
     'Exit codes: 0 done, 1 an error.',
@@ -41,6 +51,10 @@ export const devCommand: Command = {
       short: 'p',
       value: '<name>',
       description: 'The Compose project name. Default: COMPOSE_PROJECT_NAME, then the directory.',
+    },
+    tunnel: {
+      type: 'boolean',
+      description: 'Open a public https address for the stack (Tailscale Funnel).',
     },
     'show-keys': { type: 'boolean', description: 'Print the secret key too.' },
     'rotate-keys': {
@@ -72,6 +86,9 @@ export const devCommand: Command = {
       )
     }
 
+    if (subcommand === 'down' && flags.tunnel === true) {
+      throw new UsageError('--tunnel belongs to `tula dev`: `tula dev down` closes the tunnel.')
+    }
     if (subcommand === 'down') {
       const volumes = flags.volumes === true
       if (volumes && flags.yes !== true) {
@@ -106,6 +123,7 @@ export const devCommand: Command = {
       timeoutMs: seconds * 1000,
       showKeys: flags['show-keys'] === true,
       rotateKeys: flags['rotate-keys'] === true,
+      tunnel: flags.tunnel === true,
     })
     return EXIT.ok
   },

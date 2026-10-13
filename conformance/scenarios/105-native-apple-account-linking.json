@@ -1,0 +1,412 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "native Apple sign-in and existing accounts",
+  "description": "Which account an Apple identity token signs in to is decided exactly as after the browser round trip, by the same rule. It is connected automatically to an existing account only when Apple vouches for the address and the account's address is verified too; an unverified account is oauth.account_exists; an address Apple does not vouch for is oauth.email_unverified; and a first sign-in whose token carries no address at all is oauth.email_missing. None of the refusals creates a user. Uses the server's mock provider. Expects an environment with no other native app; the credentials and the app are removed afterwards.",
+  "needsSecretKey": true,
+  "variables": {
+    "member": {
+      "generate": "email"
+    },
+    "squatted": {
+      "generate": "email"
+    },
+    "unvouched": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    },
+    "stranger": {
+      "generate": "uuid"
+    },
+    "appleKey": {
+      "generate": "p256_private_key"
+    },
+    "servicesId": "app.tula.conformance.signin",
+    "teamId": "C0NF0RM4NC",
+    "bundleId": "app.tula.conformance.apple105"
+  },
+  "steps": [
+    {
+      "name": "an administrator sets the apple credentials",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/apple",
+        "auth": "secret",
+        "body": {
+          "clientId": "{{servicesId}}",
+          "teamId": "{{teamId}}",
+          "keyId": "C0NF0RMKEY",
+          "privateKey": "{{appleKey}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "apple",
+          "enabled": true
+        },
+        "bodyExcludes": ["PRIVATE KEY"]
+      }
+    },
+    {
+      "name": "an administrator registers the iOS app",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/native-apps",
+        "auth": "secret",
+        "body": {
+          "platform": "ios",
+          "teamId": "{{teamId}}",
+          "bundleId": "{{bundleId}}"
+        }
+      },
+      "expect": {
+        "status": 201
+      },
+      "capture": {
+        "iosAppId": "id"
+      }
+    },
+    {
+      "name": "an account with a verified address and a password",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users",
+        "auth": "secret",
+        "body": {
+          "email": "{{member}}",
+          "password": "{{password}}",
+          "emailVerified": true
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": "$any"
+      },
+      "capture": {
+        "memberId": "id"
+      }
+    },
+    {
+      "name": "the member's app asks for an attempt",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "ios",
+        "body": {
+          "provider": "apple"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": "$any"
+      },
+      "capture": {
+        "aId": "attempt.id",
+        "aSecret": "attempt.attemptSecret",
+        "aNonce": "nonce"
+      }
+    },
+    {
+      "name": "Apple vouches for the member's address",
+      "idToken": {
+        "provider": "apple",
+        "audience": "{{bundleId}}",
+        "nonceSha256": "{{aNonce}}",
+        "email": "{{member}}",
+        "capture": "aToken"
+      }
+    },
+    {
+      "name": "both sides have verified the address: the Apple account is connected and the member signed in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{aId}}/id-token",
+        "client": "ios",
+        "attempt": "{{aSecret}}",
+        "body": {
+          "idToken": "{{aToken}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "{{memberId}}",
+            "sessionId": "$any"
+          },
+          "session": {
+            "accessToken": "$any",
+            "refreshToken": "$any"
+          }
+        }
+      },
+      "capture": {
+        "memberToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "the member has a connected account and still has the password",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "accessToken": "{{memberToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{memberId}}",
+          "hasPassword": true
+        }
+      }
+    },
+    {
+      "name": "the connected account is listed",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/identities",
+        "accessToken": "{{memberToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "provider": "apple"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "the link is recorded",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?targetId={{memberId}}&action=user.identity_linked",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "action": "user.identity_linked"
+            }
+          ]
+        },
+        "bodyExcludes": ["{{aToken}}", "{{aNonce}}", "{{bundleId}}"]
+      }
+    },
+    {
+      "name": "an account someone made for an address they never proved",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users",
+        "auth": "secret",
+        "body": {
+          "email": "{{squatted}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": "$any"
+      }
+    },
+    {
+      "name": "the address's owner asks for an attempt",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "ios",
+        "body": {
+          "provider": "apple"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": "$any"
+      },
+      "capture": {
+        "bId": "attempt.id",
+        "bSecret": "attempt.attemptSecret",
+        "bNonce": "nonce"
+      }
+    },
+    {
+      "name": "Apple vouches for the squatted address",
+      "idToken": {
+        "provider": "apple",
+        "audience": "{{bundleId}}",
+        "nonceSha256": "{{bNonce}}",
+        "email": "{{squatted}}",
+        "capture": "bToken"
+      }
+    },
+    {
+      "name": "an unverified account is never connected: nobody is signed in to it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{bId}}/id-token",
+        "client": "ios",
+        "attempt": "{{bSecret}}",
+        "body": {
+          "idToken": "{{bToken}}"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "status": 409,
+          "code": "oauth.account_exists",
+          "detail": "$any"
+        },
+        "bodyExcludes": ["accessToken", "refreshToken"]
+      }
+    },
+    {
+      "name": "someone asks for an attempt",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "ios",
+        "body": {
+          "provider": "apple"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": "$any"
+      },
+      "capture": {
+        "cId": "attempt.id",
+        "cSecret": "attempt.attemptSecret",
+        "cNonce": "nonce"
+      }
+    },
+    {
+      "name": "Apple reports an address it does not vouch for",
+      "idToken": {
+        "provider": "apple",
+        "audience": "{{bundleId}}",
+        "nonceSha256": "{{cNonce}}",
+        "email": "{{unvouched}}",
+        "unverified": true,
+        "capture": "cToken"
+      }
+    },
+    {
+      "name": "an unverified provider address creates no account",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{cId}}/id-token",
+        "client": "ios",
+        "attempt": "{{cSecret}}",
+        "body": {
+          "idToken": "{{cToken}}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "oauth.email_unverified",
+          "detail": "$any"
+        },
+        "bodyExcludes": ["accessToken", "refreshToken"]
+      }
+    },
+    {
+      "name": "no user was made for that address",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users?q={{unvouched}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": []
+        }
+      }
+    },
+    {
+      "name": "an Apple account nobody here knows asks for an attempt",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "ios",
+        "body": {
+          "provider": "apple"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": "$any"
+      },
+      "capture": {
+        "dId": "attempt.id",
+        "dSecret": "attempt.attemptSecret",
+        "dNonce": "nonce"
+      }
+    },
+    {
+      "name": "its token carries no address",
+      "idToken": {
+        "provider": "apple",
+        "audience": "{{bundleId}}",
+        "nonceSha256": "{{dNonce}}",
+        "subject": "apple-{{stranger}}",
+        "capture": "dToken"
+      }
+    },
+    {
+      "name": "a first sign-in with no address makes no account: oauth.email_missing",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{dId}}/id-token",
+        "client": "ios",
+        "attempt": "{{dSecret}}",
+        "body": {
+          "idToken": "{{dToken}}",
+          "givenName": "Nobody"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "oauth.email_missing",
+          "detail": "$any"
+        },
+        "bodyExcludes": ["accessToken", "refreshToken"]
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "remove the apple credentials",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/oauth-providers/apple",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "remove the iOS app",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/native-apps/{{iosAppId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    }
+  ]
+}

@@ -15,7 +15,7 @@ import { Checkbox } from '~/components/ui/checkbox'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
 import { useEnvironmentRequest } from '~/features/shell/environment-context'
-import { formatDateTime, fullName } from '~/lib/format'
+import { formatDateTime, fullName, userLabel } from '~/lib/format'
 
 /** How many users one page of the table holds. */
 export const USERS_PAGE_SIZE = 20
@@ -30,14 +30,25 @@ export interface EnvironmentScope {
 /**
  * A user's state in words: verified or not, banned or not. Never colour alone.
  *
+ * An account with no email address (made through X or Facebook) is said to have none: it is
+ * not "unverified", there is nothing to verify.
+ *
  * @param props - `user`: the user.
  * @returns The labels.
  */
-export function UserStatus({ user }: { user: Pick<User, 'emailVerifiedAt' | 'bannedAt'> }) {
+export function UserStatus({
+  user,
+}: {
+  user: Pick<User, 'email' | 'emailVerifiedAt' | 'bannedAt'>
+}) {
   return (
     <span className='inline-flex flex-wrap gap-1.5'>
       <span className='rounded-full border border-input px-2 py-0.5 text-xs font-medium'>
-        {user.emailVerifiedAt ? 'Verified' : 'Unverified'}
+        {user.email === null
+          ? 'No email address'
+          : user.emailVerifiedAt
+            ? 'Verified'
+            : 'Unverified'}
       </span>
       {user.bannedAt ? (
         <span className='rounded-full border border-destructive bg-destructive-surface px-2 py-0.5 text-xs font-semibold text-destructive'>
@@ -70,12 +81,16 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
   const create = useCreateUser({ mutation: { gcTime: 0 }, request: useEnvironmentRequest() })
   const [form, setForm] = useState(EMPTY_FORM)
   const [problems, setProblems] = useState<Record<string, string>>({})
+  // From the click until the dialog closes, which is after the list was read again: the
+  // request has succeeded before that, and a live button would send it a second time.
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     if (!open) {
       // The typed password does not outlive the dialog.
       setForm(EMPTY_FORM)
       setProblems({})
+      setSaving(false)
     }
   }, [open])
 
@@ -86,6 +101,9 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
 
   function submit(event: FormEvent) {
     event.preventDefault()
+    if (saving) {
+      return
+    }
     const parsed = CreateUserRequestSchema.safeParse({
       email: form.email.trim(),
       ...(form.firstName.trim() ? { firstName: form.firstName } : {}),
@@ -106,9 +124,11 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
     if (!parsed.success || Object.keys(found).length > 0) {
       return
     }
+    setSaving(true)
     create.mutate(
       { data: parsed.data },
       {
+        onError: () => setSaving(false),
         onSuccess: async () => {
           await queryClient.invalidateQueries({ queryKey: ['/v1/admin/users'] })
           notify('User created')
@@ -179,7 +199,7 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
           <ActionButton variant='outline' onClick={close}>
             Cancel
           </ActionButton>
-          <ActionButton type='submit' pending={create.isPending}>
+          <ActionButton type='submit' pending={saving}>
             Create user
           </ActionButton>
         </div>
@@ -279,7 +299,7 @@ export function UsersScreen({ scope, q, page, onSearch }: UsersScreenProps) {
                         params={{ ...scope, userId: user.id }}
                         className='font-medium text-link underline underline-offset-4'
                       >
-                        {user.email}
+                        {userLabel(user)}
                       </Link>
                     ),
                   },

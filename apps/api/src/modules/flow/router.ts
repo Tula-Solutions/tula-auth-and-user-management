@@ -1,4 +1,9 @@
-import type { FirstFactorAttemptRequest, FlowKind } from '@tula/contract'
+import {
+  DPOP_HEADER,
+  DPOP_NONCE_HEADER,
+  type FirstFactorAttemptRequest,
+  type FlowKind,
+} from '@tula/contract'
 import type { Context, MiddlewareHandler } from 'hono'
 import { Hono } from 'hono'
 import { createMiddleware } from 'hono/factory'
@@ -12,6 +17,7 @@ import { publishableKey } from '~/middleware/publishable-key'
 import { byIp, rateLimit } from '~/middleware/rate-limit'
 import * as Flows from '~/modules/flow/service'
 import { setRefreshCookie, setSessionCookie } from '~/modules/session/cookies'
+import * as DeviceBinding from '~/modules/session/device-binding'
 import * as openapi from '~/openapi'
 import {
   AttemptHeaderSchema,
@@ -24,6 +30,10 @@ import {
   FirstFactorPrepareRequestSchema,
   FLOW_ATTEMPT_HEADER,
   FlowAttemptSchema,
+  IdTokenExchangeRequestSchema,
+  IdTokenStartRequestSchema,
+  IdTokenStartSchema,
+  NewPasswordRequestSchema,
   OAuthExchangeRequestSchema,
   OAuthStartRequestSchema,
   OAuthStartSchema,
@@ -34,6 +44,7 @@ import {
   PasswordResetRequestSchema,
   PasswordResetStartRequestSchema,
   SESSION_PROFILE_HEADER,
+  SecondFactorPrepareRequestSchema,
   SecondFactorRequestSchema,
   SignInStartRequestSchema,
   SignUpRequestSchema,
@@ -100,7 +111,17 @@ const DELIVERY =
 const START =
   ' The response carries `attemptSecret`, once: send it as the `x-tula-attempt` header on ' +
   'every later call for this attempt. A browser attempt (`x-tula-client: web`) is refused ' +
-  'with `request.origin_not_allowed` from an origin the environment does not allow.'
+  'with `request.origin_not_allowed` from an origin the environment does not allow.' +
+  ' A client that is not a browser may send a `DPoP` header (a proof signed by a device ' +
+  'key, for this route’s address under the API’s public URL, with the server’s nonce) to ' +
+  'bind the session the attempt ends in to that key: its refreshes then need a proof of the ' +
+  'same key. A proof without a fresh nonce answers `device.nonce_required` (400) with one in ' +
+  'the `DPoP-Nonce` header, and the start is sent again; an invalid proof answers ' +
+  '`device.proof_invalid` (401), a browser’s `device.binding_not_supported` (400). The ' +
+  'session profile’s `deviceBinding` option is applied to a client that is not a browser: ' +
+  'where it is `none` a proof answers `device.binding_not_supported`, and where it is ' +
+  '`required` a start without one answers `device.binding_required` (400). Nothing is ' +
+  'started in any of these cases.'
 
 const BOUND =
   ' Requires the attempt’s secret in `x-tula-attempt`; without it the attempt answers ' +
@@ -109,14 +130,41 @@ const BOUND =
 /**
  * The requesting device, and whether its origin may set this environment's cookies. The one
  * place a flow route's context is built, so every route applies the same origin rule.
+ *
+ * **Given `start`** (the headers of a route that starts an attempt), it is also the one place
+ * a session is bound to a device key (ADR 0043): a `DPoP` header is judged here, before the
+ * service is called, and a proof that is refused or needs a nonce ends the request with
+ * nothing started. So does the profile's `deviceBinding` option: a proof where it is `none`,
+ * no proof where it is `required`. All of it before the service is called: the answer depends
+ * on the environment's settings, the client kind and the profile asked for, never on the
+ * identifier. A route that continues an attempt passes no `start` and never reads the
+ * header: the key is fixed when the attempt starts.
  */
 async function clientContext(
   c: FlowContext,
-  start: z.infer<typeof ClientHeaderSchema> = {}
+  start?: z.infer<typeof ClientHeaderSchema>
 ): Promise<Flows.ClientContext> {
+  const client = start?.[CLIENT_HEADER] ?? 'web'
+  const bound =
+    start === undefined
+      ? null
+      : await DeviceBinding.atStart(c.get('deps'), c.get('tenant'), {
+          proof: c.req.header(DPOP_HEADER),
+          method: c.req.method,
+          path: c.req.path,
+          client,
+          // The profile's device-binding option is applied here, to the profile this client
+          // would get: by the same rule the session is later made under.
+          profile: start[SESSION_PROFILE_HEADER],
+        })
+  if (bound) {
+    // A nonce for the client's next proof, on every start that brought one.
+    c.header(DPOP_NONCE_HEADER, bound.nonce)
+  }
   return {
-    client: start[CLIENT_HEADER] ?? 'web',
-    profile: start[SESSION_PROFILE_HEADER],
+    client,
+    profile: start?.[SESSION_PROFILE_HEADER],
+    ...(bound && { deviceThumbprint: bound.thumbprint }),
     userAgent: c.req.header('user-agent') ?? null,
     ipAddress: clientIp(c, c.get('deps').config.trustProxy),
     originAllowed: await originMayUseCookies(c),
@@ -134,8 +182,12 @@ function respond(c: FlowContext, result: Flows.FlowResult): Response {
   if (!result.tokens) {
     return c.json(FlowAttemptSchema.parse(result.attempt))
   }
-  const { refreshToken, sessionToken, cookieMaxAge, ...session } = result.tokens
+  const { refreshToken, sessionToken, cookieMaxAge, proofNonce, ...session } = result.tokens
   const [config, { environmentId }] = [c.get('deps').config, c.get('tenant')]
+  if (proofNonce) {
+    // A device-bound session: the nonce for its first refresh's proof, in a header only.
+    c.header(DPOP_NONCE_HEADER, proofNonce)
+  }
   if (sessionToken && cookieMaxAge) {
     // A stateful session (always a browser's): its one token goes into the cookie and nothing
     // of it into the body, which holds the session id only.
@@ -233,7 +285,11 @@ router.post(
       'For an attempt on `needs_password`, or on `needs_first_factor` with `password` among ' +
       'its strategies. Completes the sign-in, or moves it to `needs_email_verification` when ' +
       'the user’s email is not verified yet, or to `needs_second_factor` (no tokens) when the ' +
-      'user has a second factor. Every failure is the same `auth.invalid_credentials`.' +
+      'user has a second factor. Every failure is the same `auth.invalid_credentials`. A ' +
+      'password that is right and older than the environment’s `password.expiryDays` allows ' +
+      'does not sign in: once everything else the sign-in needs is proven (the second factor ' +
+      'included) the attempt waits on `needs_new_password` with `reason: "expired"` and no ' +
+      'tokens, for `…/new-password`. Only a right password is ever answered that way.' +
       BOUND +
       DELIVERY,
     security: openapi.security.client,
@@ -265,13 +321,63 @@ router.post(
 )
 
 router.post(
+  '/sign-ins/:attemptId/new-password',
+  describeRoute({
+    operationId: 'submitSignInNewPassword',
+    tags: ['Flows'],
+    summary: 'Replace an expired password',
+    description:
+      'For a sign-in on `needs_new_password` (`reason: "expired"`): the password it proved is ' +
+      'older than the environment’s `password.expiryDays` allows. Stores the new password, ' +
+      'ends every other session of the user and completes the sign-in. The new password must ' +
+      'meet the policy and must not be one the user may not set again (`password.reused`): ' +
+      'the expired password itself is always refused, whatever `password.history` says. A ' +
+      'refused password leaves the attempt on the step, to be tried again with another. ' +
+      'Answers `flow.invalid_step` when the account’s password was replaced some other way ' +
+      'since the attempt proved it: start the sign-in again.' +
+      BOUND +
+      DELIVERY,
+    security: openapi.security.client,
+    responses: {
+      413: openapi.responses[413],
+      200: attemptResponse('The completed attempt.'),
+      403: openapi.responses[403],
+      404: openapi.responses[404],
+      409: openapi.responses[409],
+      ...errors,
+    },
+  }),
+  limited('sign_in_new_password'),
+  publishableKey(),
+  validator('param', AttemptIdParamSchema, validationHook),
+  validator('header', AttemptHeaderSchema, validationHook),
+  validator('json', NewPasswordRequestSchema, validationHook),
+  async (c) =>
+    respond(
+      c,
+      await Flows.replaceExpiredPassword(
+        c.get('deps'),
+        c.get('tenant'),
+        { id: c.req.valid('param').attemptId, secret: c.req.valid('header')[FLOW_ATTEMPT_HEADER] },
+        c.req.valid('json').password,
+        await clientContext(c)
+      )
+    )
+)
+
+router.post(
   '/sign-ins/:attemptId/first-factor/prepare',
   describeRoute({
     operationId: 'prepareSignInFirstFactor',
     tags: ['Flows'],
-    summary: 'Email a sign-in code or link',
+    summary: 'Email or text a sign-in code, or email a link',
     description:
-      'For an attempt on `needs_first_factor` offering `email_code` or `email_link`. Emails a ' +
+      '`sms_code`, for a sign-in started with a phone number: texts a 6-digit code to the ' +
+      'number when exactly one account has proven it within the last year, and sends nothing ' +
+      'otherwise; the answer is the same either way, and whether the message could be sent ' +
+      'is not reported. The number’s country must be one the environment sends to ' +
+      '(`sms.country_not_allowed`). Limited as every text message is. ' +
+      'For an attempt on `needs_first_factor` offering `email_code` or `email_link`: emails a ' +
       '6-digit code and, for `email_link`, a link to `redirectUrl`, which must be exactly one ' +
       'of the environment’s `urls.allowedRedirectUrls` (`request.redirect_not_allowed` ' +
       'otherwise). The answer is the same whether or not the address has an account. The link ' +
@@ -319,8 +425,12 @@ router.post(
   describeRoute({
     operationId: 'attemptSignInFirstFactor',
     tags: ['Flows'],
-    summary: 'Prove an email first factor',
+    summary: 'Prove an emailed or texted first factor',
     description:
+      '`sms_code`: submits the texted code (five guesses, ten minutes; every try also counts ' +
+      'against the identifier’s lockout). Every failure is `auth.invalid_credentials`. Where ' +
+      'the environment requires two-step verification and the user has none, a texted code ' +
+      'alone does not sign in (`mfa.enrolment_needs_other_sign_in`). ' +
       '`email_code`: submits the emailed code (five guesses, ten minutes; every try also ' +
       'counts against the identifier’s lockout, shared with password sign-in). `email_link`: ' +
       'asks whether the emailed link has been opened in the browser that asked for it; until ' +
@@ -350,6 +460,7 @@ router.post(
   // valid key, are bounded by the per-IP limit on every client route.) A code is a guess at a
   // secret and keeps the credential limit; a poll for a link has its own, larger bucket.
   firstFactorLimit('email_code', codeAttemptLimit),
+  firstFactorLimit('sms_code', codeAttemptLimit),
   firstFactorLimit('email_link', linkPollLimit),
   async (c) =>
     respond(
@@ -498,14 +609,126 @@ router.post(
 )
 
 router.post(
+  '/sign-ins/id-token',
+  describeRoute({
+    operationId: 'startIdTokenSignIn',
+    tags: ['Flows'],
+    summary: 'Start a native sign-in with a provider’s ID token',
+    description:
+      'For a native app (`x-tula-client: ios` or `android`; any other client is refused ' +
+      'with a 422) that signs in with the system’s own account sheet instead of a browser: ' +
+      'Credential Manager on Android, Google Sign-In on iOS, Sign in with Apple on iOS ' +
+      '(`apple` is for an `ios` client only: 422 otherwise). The answer is an attempt of its ' +
+      'own on `needs_first_factor` and a `nonce`, once. **Google**: hand it, unchanged, to ' +
+      'the provider’s SDK as the nonce of the sign-in request. **Apple**: hand the lowercase ' +
+      'hexadecimal SHA-256 of its UTF-8 bytes to `ASAuthorizationAppleIDRequest.nonce`; a ' +
+      'token that carries the nonce itself is refused. Send the ID token that comes ' +
+      'back to `POST /v1/client/sign-ins/{attemptId}/id-token`. The provider must be enabled ' +
+      'for the environment, and for Apple the environment must have a registered iOS app, ' +
+      'whose bundle id is the token’s audience (`auth.method_disabled` otherwise). There is ' +
+      'no redirect URL. The answer says nothing about any account.' +
+      START,
+    security: openapi.security.client,
+    responses: {
+      413: openapi.responses[413],
+      200: {
+        description: 'The attempt and the nonce.',
+        content: { 'application/json': { schema: resolver(IdTokenStartSchema) } },
+      },
+      400: openapi.responses[400],
+      403: openapi.responses[403],
+      ...errors,
+    },
+  }),
+  limited('sign_in_id_token_start'),
+  publishableKey(),
+  validator('header', ClientHeaderSchema, validationHook),
+  validator('json', IdTokenStartRequestSchema, validationHook),
+  async (c) => {
+    const context = await clientContext(c, c.req.valid('header'))
+    const { client: _client, ...started } = await Flows.startIdTokenSignIn(
+      c.get('deps'),
+      c.get('tenant'),
+      c.req.valid('json').provider,
+      context
+    )
+    c.header('Cache-Control', 'no-store')
+    return c.json(IdTokenStartSchema.parse(started))
+  }
+)
+
+router.post(
+  '/sign-ins/:attemptId/id-token',
+  describeRoute({
+    operationId: 'submitSignInIdToken',
+    tags: ['Flows'],
+    summary: 'Sign in with a provider’s ID token',
+    description:
+      'Submits the ID token the provider’s SDK handed the app for the nonce of ' +
+      '`POST /v1/client/sign-ins/id-token`. The server verifies its signature against the ' +
+      'provider’s keys, its issuer and expiry, that it was issued for one of the ' +
+      'environment’s client ids (`aud`, and `azp` when present; for Apple the bundle id of ' +
+      'one of the environment’s registered iOS apps, read at this call) and that its ' +
+      '`nonce` is the attempt’s (for Apple its SHA-256, in lowercase hexadecimal). ' +
+      '`givenName` and `familyName` are for Apple alone, whose token carries no name: what ' +
+      'the system’s sheet handed the app on the first authorization. They are unsigned and ' +
+      'give a new account its display name, nothing else. ' +
+      '**Every refusal of a token is the same `auth.invalid_credentials`**, and ' +
+      'the nonce is used up by the first token presented: start again for another try. ' +
+      'Otherwise the sign-in continues as after any first factor: `complete`, or ' +
+      '`needs_second_factor` / `needs_factor_enrolment` (no tokens). A first sign-in creates ' +
+      'the account; `oauth.account_exists`: the address belongs to an account this provider ' +
+      'cannot be connected to automatically. `service.unavailable` (503): the provider’s ' +
+      'signing keys could not be had (no answer in time, a failed request, an answer that ' +
+      'is no key set), so the token was not judged. The nonce is used up all the same: ' +
+      'start a new sign-in, do not send the token again.' +
+      BOUND +
+      DELIVERY,
+    security: openapi.security.client,
+    responses: {
+      413: openapi.responses[413],
+      200: attemptResponse('The next step.'),
+      403: openapi.responses[403],
+      404: openapi.responses[404],
+      409: openapi.responses[409],
+      ...errors,
+    },
+  }),
+  limited('sign_in_id_token'),
+  publishableKey(),
+  validator('param', AttemptIdParamSchema, validationHook),
+  validator('header', AttemptHeaderSchema, validationHook),
+  validator('json', IdTokenExchangeRequestSchema, validationHook),
+  async (c) =>
+    respond(
+      c,
+      await Flows.submitIdToken(
+        c.get('deps'),
+        c.get('tenant'),
+        {
+          id: c.req.valid('param').attemptId,
+          secret: c.req.valid('header')[FLOW_ATTEMPT_HEADER],
+        },
+        c.req.valid('json').idToken,
+        await clientContext(c),
+        // Apple only, and unsigned: a display name for a new account (ADR 0047).
+        {
+          givenName: c.req.valid('json').givenName,
+          familyName: c.req.valid('json').familyName,
+        }
+      )
+    )
+)
+
+router.post(
   '/sign-ins/oauth',
   describeRoute({
     operationId: 'startOAuthSignIn',
     tags: ['Flows'],
     summary: 'Start signing in with an OAuth provider',
     description:
-      '"Continue with Google, GitHub or Apple": a sign-in that creates the account when the ' +
-      'provider’s verified address has none. The provider must be enabled for the environment ' +
+      '"Continue with Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X or Facebook": a sign-in that creates the account when the ' +
+      'provider’s verified address has none (X and Facebook give no address: a first sign-in with one creates an account without an email address, `email: null`). The provider must be enabled for the environment ' +
       '(`auth.method_disabled` otherwise) and `redirectUrl`, the page of the app the user ' +
       'comes back to, must be exactly one of `urls.allowedRedirectUrls` ' +
       '(`request.redirect_not_allowed`). The answer carries `authorizationUrl` (send the ' +
@@ -774,8 +997,9 @@ for (const [kind, path, tag] of [
         'current 30-second step or one either side; a code is accepted once), or ' +
         '`backup_code` with an unused backup code (case, spaces and dashes are ignored; it is ' +
         'spent, and `backupCodesRemaining` says how many are left). A wrong code is ' +
-        '`mfa.invalid_code`; wrong codes back off per user across both methods (429 with ' +
-        '`Retry-After`). No tokens are returned before this step succeeds.' +
+        '`mfa.invalid_code`; wrong codes back off per user across every method (429 with ' +
+        '`Retry-After`). `sms_code` takes the 6-digit code `…/second-factor/prepare` texted ' +
+        'for this attempt. No tokens are returned before this step succeeds.' +
         BOUND +
         DELIVERY,
       security: openapi.security.client,
@@ -813,6 +1037,53 @@ for (const [kind, path, tag] of [
         )
       )
     }
+  )
+
+  router.post(
+    `${path}/:attemptId/second-factor/prepare`,
+    describeRoute({
+      operationId: `prepare${tag}SecondFactor`,
+      tags: ['Flows'],
+      summary: 'Ask for a texted second-factor code',
+      description:
+        'For an attempt waiting on `needs_second_factor` whose `options` include `sms_code`: ' +
+        'texts a 6-digit code to the phone number on the account and returns the attempt, ' +
+        'still on `needs_second_factor`, with `prepared` (the masked number). Nothing is ' +
+        'sent before this is called. Submit the code to `…/second-factor` with ' +
+        '`method: "sms_code"`. A message that could not be sent is `sms.unavailable` (503) ' +
+        'and an earlier code keeps working. `sms_code` is an option only for a user whose ' +
+        'only second factor is a texted code: never beside an authenticator app or a passkey.' +
+        BOUND,
+      security: openapi.security.client,
+      responses: {
+        413: openapi.responses[413],
+        200: attemptResponse('The attempt, with `prepared`.'),
+        403: openapi.responses[403],
+        404: openapi.responses[404],
+        409: openapi.responses[409],
+        ...errors,
+      },
+    }),
+    limited(`${kind}_second_factor_prepare`),
+    publishableKey(),
+    validator('param', AttemptIdParamSchema, validationHook),
+    validator('header', AttemptHeaderSchema, validationHook),
+    validator('json', SecondFactorPrepareRequestSchema, validationHook),
+    async (c) =>
+      respond(
+        c,
+        await Flows.prepareSecondFactor(
+          c.get('deps'),
+          c.get('tenant'),
+          kind,
+          {
+            id: c.req.valid('param').attemptId,
+            secret: c.req.valid('header')[FLOW_ATTEMPT_HEADER],
+          },
+          c.req.valid('json'),
+          await clientContext(c)
+        )
+      )
   )
 
   router.post(

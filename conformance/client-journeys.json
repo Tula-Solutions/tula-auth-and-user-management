@@ -1,0 +1,1793 @@
+{
+  "$schema": "./client-journeys.schema.json",
+  "clients": {
+    "core": {
+      "description": "@tula/core, the TypeScript client. Its suite is apps/api/src/sdk-journeys.test.ts, which runs the journeys of apps/api/src/testing/sdk-journeys.ts for it.",
+      "suite": "exists"
+    },
+    "expo": {
+      "description": "@tula/expo, the headless Expo SDK (packages/expo): the password, emailed and texted codes, passkeys through the platform’s sheet, provider sign-in through a system browser session, the second step and the session. Its suite is packages/expo/src/journeys.test.ts, which runs the same journeys for an ios client (an android one where the scenario is Android’s) with its refresh token in a secure store, a software authenticator behind the passkey sheet and the journey itself as the browser: under bun and not on a device.",
+      "suite": "exists"
+    },
+    "swift": {
+      "description": "The Swift SDK (native/swift), an ios client with no screen: sign-up, sign-in with the password, an emailed code, a passkey, a provider’s ID token or a provider round trip through a browser session, the second step, step-up, a password reset and the session, optionally bound to a device key, with its refresh token behind a storage protocol. Its suite is native/swift/Tests/TulaAuthJourneyTests: XCTest methods that drive the client against the real API, which native/swift/fixture/server.ts serves in memory on a loopback port, on a macOS host and not on a device or in a simulator, with a software authenticator behind the passkey sheet, a software device key and the journey itself as the browser and as Apple’s sheet. native/swift/fixture/journeys.ts reads the journeys those tests declare and holds them to this list.",
+      "suite": "exists"
+    },
+    "kotlin": {
+      "description": "The Kotlin client (native/android/tula-auth), a library with no UI: sign-up, sign-in with a password, an emailed code, a texted code, a passkey, Google’s ID token or a provider’s page in a browser, the second step and step-up, password reset, and the session, bound to a device key where the app passes a key store. The passkey sheet, Google’s sheet, the browser and the key store are interfaces, and in the suite a software authenticator, a scripted browser and a software key stand behind them. Its suite is native/android/tula-auth/src/test/kotlin/dev/tula/auth/journeys/JourneysTest.kt, which drives the client as an android client over HTTP against the real API that e2e/kotlin-fixture.ts serves on this machine (`bun run native:kotlin:test`): on the JVM and not on a device or an emulator.",
+      "suite": "exists"
+    }
+  },
+  "behaviours": {
+    "concurrent_refresh": {
+      "description": "Calls that need a token at the same moment, with the access token expired, share one refresh request and one result.",
+      "clients": {
+        "core": {
+          "decision": "journey"
+        },
+        "expo": {
+          "decision": "journey"
+        },
+        "swift": {
+          "decision": "journey"
+        },
+        "kotlin": {
+          "decision": "journey"
+        }
+      }
+    },
+    "refresh_without_answer": {
+      "description": "A refresh that gets no answer (a timeout, a lost response) is repeated once, at once, with the same refresh token; an HTTP answer of any status is never repeated.",
+      "clients": {
+        "core": {
+          "decision": "journey"
+        },
+        "expo": {
+          "decision": "journey"
+        },
+        "swift": {
+          "decision": "journey"
+        },
+        "kotlin": {
+          "decision": "journey"
+        }
+      }
+    },
+    "unknown_step_not_supported": {
+      "description": "A flow step the client does not know is shown as \"not supported\": it is handed to the application unchanged, never guessed at, never an error, and it signs nobody in.",
+      "clients": {
+        "core": {
+          "decision": "journey"
+        },
+        "expo": {
+          "decision": "journey"
+        },
+        "swift": {
+          "decision": "journey"
+        },
+        "kotlin": {
+          "decision": "journey"
+        }
+      }
+    },
+    "session_kept_through_failed_refresh_offline": {
+      "description": "A refresh that cannot be made while the device is offline fails without ending the session: the client stays signed in, keeps its refresh token and refreshes when the network is back.",
+      "clients": {
+        "core": {
+          "decision": "journey"
+        },
+        "expo": {
+          "decision": "journey"
+        },
+        "swift": {
+          "decision": "journey"
+        },
+        "kotlin": {
+          "decision": "journey"
+        }
+      }
+    }
+  },
+  "scenarios": {
+    "Discord account linking": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "Discord sign-up and sign-in": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "Facebook never links by address": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "Facebook sign-up and sign-in": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "LinkedIn account linking": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "LinkedIn sign-up and sign-in": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "Microsoft account linking": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "Microsoft sign-up and sign-in": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "OAuth account linking": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "OAuth sign-up and sign-in": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "OAuth with a second factor": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "X never links by address": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "X sign-up and sign-in": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "a bound session's refresh with a proof of another key is refused": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "a bound session's refresh without a proof is refused and changes nothing": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "a passkey satisfies two-step verification": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "a profile that requires a device key leaves a browser alone": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "the scenario is a `web` client’s sign-up under a profile that binds native sessions. `@tula/expo` is never a `web` client: it refuses to be created on any platform but iOS and Android, Expo web included, and the client kind is not an option. What a native client without a key meets under such a profile is \"a profile that requires a device key refuses a native sign-in without one\"."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "the scenario is a `web` client’s sign-up under a profile that binds native sessions. The Swift client is never a `web` client: its kind is fixed to `ios` and is not an option. What a native client without a key meets under such a profile is \"a profile that requires a device key refuses a native sign-in without one\"."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the scenario is a `web` client’s sign-up under a profile that binds native sessions. The Kotlin client is never a `web` client: its client kind is the constant `android` and not an option. What a native client without a key meets under such a profile is \"a profile that requires a device key refuses a native sign-in without one\"."
+      }
+    },
+    "a profile that requires a device key lets a bound native sign-in through": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "a profile that requires a device key refuses a native sign-in without one": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "a profile with no device binding refuses a proof": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "a proof is accepted once": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "a proof with a stale nonce is asked for a fresh one": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "a session bound to a device key is refreshed with a proof": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "a session that is not bound behaves as before": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "a sign-in test runs where the environment allows it": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a sign-in test is run with an agent key on `/v1/agent/*` or with a secret key or a dashboard session on `/v1/admin/*`, and the server itself drives the sign-up and the sign-in inside its own process; a client SDK holds a publishable key and a user’s session and reaches neither route, and takes no part in the run. What a client does at each step the run takes is the journeys of \"sign-up\", \"sign-in\" and \"sign-out\"."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "a sign-in test is run with an agent key on `/v1/agent/*` or with a secret key or a dashboard session on `/v1/admin/*`, and the server itself drives the sign-up and the sign-in inside its own process; an app holds a publishable key and a user’s session and reaches neither route, and takes no part in the run. What a client does at each step the run takes is the journeys of \"sign-up\", \"sign-in\" and \"sign-out\"."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "a sign-in test is run with an agent key on `/v1/agent/*` or with a secret key or a dashboard session on `/v1/admin/*`, and the server itself drives the sign-up and the sign-in inside its own process; the Swift client, which talks to `/v1/client/*` only, holds a publishable key and a user’s session and reaches neither route, and takes no part in the run. What a client does at each step the run takes is the journeys of \"sign-up\", \"sign-in\" and \"sign-out\"."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a sign-in test is run with an agent key on `/v1/agent/*` or with a secret key or a dashboard session on `/v1/admin/*`, and the server itself drives the sign-up and the sign-in inside its own process; the Kotlin client, which talks to `/v1/client/*` only, holds a publishable key and a user’s session and reaches neither route, and takes no part in the run. What a client does at each step the run takes is the journeys of \"sign-up\", \"sign-in\" and \"sign-out\"."
+      }
+    },
+    "a texted code as the second factor": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "a texted code is never used beside an authenticator app": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "a texted sign-in code after the method is switched off": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "a texted sign-in code for an unknown number": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "a texted sign-in code is not completed by a texted second step": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "accounts that depend on a provider are counted before it is switched off": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "admin ban and audit log": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "admin second factor reset": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "admin user authentication": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "how a user signs in is read on the admin API with a secret key or a dashboard session, neither of which a client SDK holds; a signed-in user sees their own methods through `/v1/client/me/factors`, `/me/passkeys` and `/me/identities`, whose journeys cover them."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "how a user signs in is read on the admin API with a secret key or a dashboard session, neither of which a client SDK holds; a signed-in user of an app sees their own second step through `/v1/client/me/factors`, in the journeys of two-step verification."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "how a user signs in is read on the admin API with a secret key or a dashboard session, neither of which a client SDK holds: the Swift client talks to `/v1/client/*` only."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "how a user signs in is read on the admin API with a secret key or a dashboard session, neither of which a client SDK holds. The Kotlin client talks to `/v1/client/*` only."
+      }
+    },
+    "admin user sessions": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "listing and ending a user’s sessions is done on the admin API with a secret key or a dashboard session, neither of which a client SDK holds; what the client observes when an admin ends its sessions (the access token refused at once, the client signed out) is the \"admin second factor reset\" journey below."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "listing and ending a user’s sessions is done on the admin API with a secret key or a dashboard session, neither of which a client SDK holds; what the client observes when an admin ends its sessions (the access token refused at once, the client signed out) is the \"admin second factor reset\" journey."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "listing and ending a user’s sessions is done on the admin API with a secret key or a dashboard session, neither of which a client SDK holds; what the client observes when an admin acts on its user (signed out at its next refresh) is the journey of \"admin ban and audit log\"."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "listing and ending a user’s sessions is done on the admin API with a secret key or a dashboard session, neither of which a client SDK holds; what the client observes when an administrator ends its session (signed out at its next refresh) is part of \"admin ban and audit log\"."
+      }
+    },
+    "an administrator gives an account an email address": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "an agent proposes a ban and a person approves it": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; a client SDK holds a publishable key and a user’s session and reaches neither. What a client observes of the ban that follows (its access token and its refresh refused, the client signed out) is the \"admin ban and audit log\" journey."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; an app holds a publishable key and a user’s session and reaches neither. What an app observes of the ban that follows is the \"admin ban and audit log\" journey."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Swift client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. What an app observes of the ban that follows is the \"admin ban and audit log\" journey."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Kotlin client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. What an app observes of the ban that follows is the \"admin ban and audit log\" journey."
+      }
+    },
+    "an agent proposes ending a session and a person approves it": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; a client SDK holds a publishable key and a user’s session and reaches neither. What a client observes of the session that is ended (its access token and its refresh refused, the client signed out) is what it observes of any session an administrator ends."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; an app holds a publishable key and a user’s session and reaches neither. What an app observes of the session that is ended (its access token and its refresh refused, the client signed out) is what it observes of any session an administrator ends."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Swift client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. What an app observes of the session that is ended (its refresh refused, the client signed out) is what it observes of any session an administrator ends."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Kotlin client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. What an app observes of the session that is ended (its refresh refused, the client signed out) is what it observes of any session an administrator ends."
+      }
+    },
+    "an agent proposes lifting a ban and a person approves it": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; a client SDK holds a publishable key and a user’s session and reaches neither. Lifting a ban signs nobody in and ends nothing: there is nothing for a client to observe but that a later sign-in works, which is the \"admin ban and audit log\" journey."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; an app holds a publishable key and a user’s session and reaches neither. Lifting a ban signs nobody in and ends nothing: there is nothing for an app to observe but that a later sign-in works, which is the \"admin ban and audit log\" journey."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Swift client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. Lifting a ban signs nobody in and ends nothing: there is nothing for an app to observe but that a later sign-in works, which is the \"admin ban and audit log\" journey."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Kotlin client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. Lifting a ban signs nobody in and ends nothing: there is nothing for an app to observe but that a later sign-in works, which is the \"admin ban and audit log\" journey."
+      }
+    },
+    "an agent proposes switching a provider off and a person approves it": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; a client SDK holds a publishable key and a user’s session and reaches neither. What a client observes of a provider that is off (it is no longer in the client configuration, and a sign-in with it is `auth.method_disabled`) is the provider sign-in journeys’."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; an app holds a publishable key and a user’s session and reaches neither. What an app observes of a provider that is off (it is no longer in the client configuration, and a sign-in with it is `auth.method_disabled`) is the provider sign-in journeys’."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Swift client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. What an app observes of a provider that is off (it is no longer in the client configuration, and a sign-in with it is `auth.method_disabled`) is the provider sign-in journeys’."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Kotlin client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. What an app observes of a provider that is off (it is no longer in the client configuration, and a sign-in with it is `auth.method_disabled`) is the provider sign-in journeys’."
+      }
+    },
+    "an email address for an account without one": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "app link or custom scheme that is not listed": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "attempt binding": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "authenticator code replay": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "backup codes": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "claims added by a hook": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "concurrent session limit": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "custom scheme refused for a provider without PKCE": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the refusal is of a custom-scheme redirect, which only a native client may ask for: `@tula/core` in a browser never sends one (`link.cross_origin`, before any request), so no web journey reaches the rule. The native SDKs run the scenario itself, and `modules/oauth/native-redirects.test.ts` holds the refusal for every provider."
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "dashboard credential rules": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the rules of the dashboard’s cookie on the admin API (`x-tula-dashboard`, the environment header, the origin checks) concern the operator’s browser and a server’s secret key; `@tula/core` talks to `/v1/client/*` only and sends neither header."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "the rules of the dashboard’s cookie on the admin API (`x-tula-dashboard`, the environment header, the origin checks) concern the operator’s browser and a server’s secret key; `@tula/expo` talks to `/v1/client/*` only and sends neither header."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "the rules of the dashboard’s cookie on the admin API (`x-tula-dashboard`, the environment header, the origin checks) concern the operator’s browser and a server’s secret key; the Swift client talks to `/v1/client/*` only and sends neither header."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the rules of the dashboard’s cookie on the admin API (`x-tula-dashboard`, the environment header, the origin checks) concern the operator’s browser and a server’s secret key; the Kotlin client talks to `/v1/client/*` only and sends neither header."
+      }
+    },
+    "email code sign-in": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "email link sign-in": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "not_built",
+        "ticket": "TULA-56",
+        "reason": "the server honours an emailed link only in the client that asked for it, with a binding that client keeps, and a link in an email opens a browser unless it is an app link. The Swift client has no call that asks for a link: a step that offers only one is the screen `notSupported`, and the code in the same email is the path (\"email code sign-in\"). TULA-56 built the app-link return of a provider sign-in, whose binding lives in memory for one round trip; an emailed link needs a binding that outlives the app and a link the app judges, and neither is decided (the Expo SDK refuses it for the same reason, TULA-48). No ticket names it by itself."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-76",
+        "reason": "the server honours an emailed link only in the client that asked for it, with a binding that client keeps, and a link in an email opens a browser unless it is an app link. The Kotlin client has no call that asks for a link (`CodeStrategy` has none): a step that offers only one is the screen `NOT_SUPPORTED`, and the code in the same email is the path (\"email code sign-in\"). An emailed link needs a binding that outlives one round trip and an app link the client judges as it judges a provider's return; TULA-76 (the native clients' emailed link, Swift and Kotlin) decides and builds both."
+      }
+    },
+    "email wording": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "environment settings": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "hook that times out": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "jwt template custom claims": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "native Apple ID token refused": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the server takes an Apple ID token from an `ios` client only (`ID_TOKEN_CLIENT_KINDS`), and the Kotlin client always says it is an `android` client: Sign in with Apple reaches an Android app through the browser flow, never as an ID token."
+      }
+    },
+    "native Apple ID token used once": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the server takes an Apple ID token from an `ios` client only (`ID_TOKEN_CLIENT_KINDS`), and the Kotlin client always says it is an `android` client: Sign in with Apple reaches an Android app through the browser flow, never as an ID token."
+      }
+    },
+    "native Apple sign-in and existing accounts": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the server takes an Apple ID token from an `ios` client only (`ID_TOKEN_CLIENT_KINDS`), and the Kotlin client always says it is an `android` client: Sign in with Apple reaches an Android app through the browser flow, never as an ID token."
+      }
+    },
+    "native Apple sign-up and sign-in": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the server takes an Apple ID token from an `ios` client only (`ID_TOKEN_CLIENT_KINDS`), and the Kotlin client always says it is an `android` client: Sign in with Apple reaches an Android app through the browser flow, never as an ID token."
+      }
+    },
+    "native Google ID token refused": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "native Google ID token used once": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "native Google sign-in and existing accounts": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "native Google sign-up and sign-in": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "native app identity": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "an environment’s native apps are registered on the admin API with a secret key or a dashboard session, and the two association files are fetched by Apple and Android from the app’s own domain, not by an SDK: no client SDK calls either. What a native client does with a registered identity (a passkey, an app link) arrives with those features."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "an environment’s native apps are registered on the admin API with a secret key or a dashboard session, and the two association files are fetched by Apple and Android from the app’s own domain, not by an SDK: no client SDK calls either. What a native client does with a registered identity (a passkey, an app link) arrives with those features."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "an environment’s native apps are registered on the admin API with a secret key or a dashboard session, and the two association files are fetched by Apple and Android from the app’s own domain, not by an SDK: no client SDK calls either."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "an environment’s native apps are registered on the admin API with a secret key or a dashboard session, and the two association files are fetched by Apple and Android from the app’s own domain, not by an SDK: no client SDK calls either."
+      }
+    },
+    "passkey assertion replay": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the SDK asks the authenticator for a fresh assertion on every call and never holds one to present twice; replaying a response, or presenting one for another attempt’s challenge, takes a client that sends hand-made requests."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "the package asks the passkey sheet for a fresh assertion on every call and never holds one to present twice (nothing of a ceremony is kept); replaying a response, or presenting one for another attempt’s challenge, takes a client that sends hand-made requests."
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "passkey origin and relying party": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the origin inside a WebAuthn response is written by the browser, and the `Origin` header by the browser too; the SDK can set neither, so a response made on another site cannot be produced through it."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "the scenario is about a response made on another site’s page. In an app the origin inside a response is written by the platform’s passkey API from the app’s own identity, and an app’s requests carry no `Origin` header: `@tula/expo` hands the response on untouched and can set neither. What the server accepts from an app, and refuses, is covered by the scenarios about native apps, which are journeys of this suite."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "the scenario is about a response made on another site’s page, sent with a browser’s `Origin` header. In an app the origin inside a response is written by the platform’s passkey API from the app’s own identity and a request carries no `Origin` header: no native SDK can set either."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the scenario is about a response made on another site’s page. In an app the origin inside a response is written by Credential Manager from the app’s signing certificate, and an app’s requests carry no `Origin` header: an SDK can set neither."
+      }
+    },
+    "passkey registration and sign-in": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "passkey registration from a native app": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the origin a native app’s response carries is written by the platform (Credential Manager from the app’s signing certificate, Apple’s API from the relying-party id). `@tula/core` in this repository runs WebAuthn through the browser’s `navigator.credentials` and has no way to make such a response; the Swift and Kotlin SDKs (Phase 2) will need a ceremony that sends no `Origin` header, names its client kind and passes the platform’s response on untouched, and get this scenario as their journey then."
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "passkey sign-in from a native app": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "as for a registration from a native app: the response’s origin is the platform’s to write and `@tula/core` asks only a browser for one. The native SDKs will need the same start-and-submit in one call as `signIn.withPasskey()`, with the client kind fixed at the start; what a browser sees of the same sign-in is the \"passkey registration and sign-in\" journey below."
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "passkey sign-in from an unregistered app": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "which app is calling is said by the origin the platform derives from its signing certificate, never by anything an SDK sends: no client SDK can present another app’s origin or its own under another name. A native SDK will only ever see the two answers the scenario pins (`auth.invalid_credentials`, or `request.origin_not_allowed` where its platform has no registered app) and needs a message for each."
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "passkey sign-in with a fingerprint that is not the registered one": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a build’s signing certificate, and the spelling of the origin derived from it, are the platform’s; an SDK passes the response on untouched and cannot produce another certificate’s origin or a differently encoded one. Removing a fingerprint is an admin call with a secret key, which a client SDK never holds."
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "the scenario is an Android app’s: its origin is the app’s signing certificate (`android:apk-key-hash:`), compared with the registered fingerprints. The Swift client is an `ios` client, whose apps are registered with a team and a bundle ID and have no fingerprint."
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "passkey signature counter": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the signature counter is the authenticator’s; the SDK passes its response on untouched and has no way to make one report a lower counter."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "the signature counter is the authenticator’s; the package hands the sheet’s response on untouched and has no way to make one report a lower counter."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "the signature counter is the authenticator’s: an SDK hands the platform’s response on untouched and has no way to make one report a lower counter, whatever passkey call it has."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the signature counter is the authenticator’s; an SDK hands the platform’s response on untouched and has no way to make one report a lower counter."
+      }
+    },
+    "passkeys switched off mid-attempt": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "`signIn.withPasskey()` starts and submits in one call, so no settings change can be placed between the two through the SDK; the journey below covers the method being off at the start."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "`useSignIn().withPasskey()` is `@tula/core`’s `signIn.withPasskey()`, which starts and submits in one call, so no settings change can be placed between the two through the package; the method being off at the start is part of the journey of \"passkey registration and sign-in\"."
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "password expiry": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "password history": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "password lockout": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "password policy": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "password reset": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "password reset with a second factor": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "passwordless sign-up": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "phone number on an account": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": { "decision": "journey" }
+    },
+    "provider sign-in returned to a custom scheme": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a custom scheme opens a native app, never a page: `@tula/core` in a browser refuses a redirect off its own origin before any request (`link.cross_origin`), and the server refuses a browser attempt the scheme (`client_not_native`). The native SDKs run the scenario itself; the exact match the web SDK can observe is the journey of \"app link or custom scheme that is not listed\"."
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "provider sign-in returned to an app link": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the redirect is an https link that the operating system hands to a native app, and the link paths that make it one are set on the admin API with a secret key. `@tula/core` in a browser starts a provider sign-in only towards a page of its own origin and has no call that takes a ticket an app received; the native SDKs run the scenario itself. The same round trip to a web page, with the binding, is \"OAuth sign-up and sign-in\"."
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "refresh rotation and reuse detection": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "required second factor": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "second factor lockout": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "session profile selection": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "session profile timeouts": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "settings managed by a config file": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the marker is set and read on the admin API with a secret key, which a client SDK never holds; `@tula/admin` and the `tula` CLI are driven against it in their packages’ `real-api.test.ts`."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "the marker is set and read on the admin API with a secret key, which a client SDK never holds; `@tula/admin` and the `tula` CLI are driven against it in their packages’ `real-api.test.ts`."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "the marker is set and read on the admin API with a secret key, which a client SDK never holds; `@tula/admin` and the `tula` CLI are driven against it in their packages’ `real-api.test.ts`."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the marker is set and read on the admin API with a secret key, which a client SDK never holds; `@tula/admin` and the `tula` CLI are driven against it in their packages’ `real-api.test.ts`."
+      }
+    },
+    "sign in with a texted code": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "sign-in": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "sign-in denied by a hook": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "sign-in hook that times out": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "sign-out": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "sign-up": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "sign-up denied by a hook": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "sign-up for an existing address": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "stateful session": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "a stateful session is a cookie the server checks on every request, and it is for `web` clients only: an `ios` or `android` client is never given one, so no app built on `@tula/expo` holds a session of that type. Its sessions are the refreshed kind, in every other journey."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "a stateful session is a cookie the server checks on every request, and it is for `web` clients only: the Swift client’s kind is fixed to `ios`, which is never given one. Its sessions are the refreshed kind, in every other journey."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a stateful session is a cookie the server checks on every request, and it is for `web` clients only: the Kotlin client always says it is an `android` client and is never given one. Its sessions are the refreshed kind, in every other journey."
+      }
+    },
+    "step-up": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "step-up by emailed code": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "step-up window per profile": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "step-up with a passkey": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "text message wording": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": { "decision": "journey" }
+    },
+    "text messages past the daily limit": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": { "decision": "journey" }
+    },
+    "text messages to a blocked destination": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": { "decision": "journey" }
+    },
+    "the admin reset removes passkeys and says whether the user can still sign in": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the outcome is a response header of an admin route, read with the secret key by a server or the dashboard; a client SDK never calls it. What a client sees of a reset (the session ending at once) is the \"admin second factor reset\" journey below."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "the outcome is a response header of an admin route, read with the secret key by a server or the dashboard; a client SDK never calls it. What a client sees of a reset (the session ending at once) is the \"admin second factor reset\" journey."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "the outcome is a response header of an admin route, read with the secret key by a server or the dashboard; a client SDK never calls it."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the outcome is a response header of an admin route, read with the secret key by a server or the dashboard; a client SDK never calls it."
+      }
+    },
+    "the last way to sign in cannot be removed": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "the reuse grace window still requires a proof": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "two instances": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a property of the deployment (two API processes sharing Postgres and Redis). A client talks to one base URL and cannot tell instances apart; `multi-instance.test.ts` and the self-host CI job cover it."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "a property of the deployment (two API processes sharing Postgres and Redis). A client talks to one base URL and cannot tell instances apart; `multi-instance.test.ts` and the self-host CI job cover it."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "a property of the deployment (two API processes sharing Postgres and Redis). A client talks to one base URL and cannot tell instances apart; `multi-instance.test.ts` and the self-host CI job cover it."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a property of the deployment (two API processes sharing Postgres and Redis). A client talks to one base URL and cannot tell instances apart; `multi-instance.test.ts` and the self-host CI job cover it."
+      }
+    },
+    "two-step enrolment and sign-in": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "verification code attempts": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "webhook delivered and signed": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "webhook endpoints are registered on the admin API with a secret key, and a delivery goes from the server to an operator’s backend: a client SDK is on neither side of it. The receiving side is `@tula/admin`’s `verifyWebhook`, which `packages/admin/src/webhook-real-api.test.ts` hands a delivery the real worker made."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "webhook endpoints are registered on the admin API with a secret key, and a delivery goes from the server to an operator’s backend: a client SDK is on neither side of it. The receiving side is `@tula/admin`’s `verifyWebhook`, which `packages/admin/src/webhook-real-api.test.ts` hands a delivery the real worker made."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "webhook endpoints and their signing secrets are managed on the admin API with a secret key, and a delivery goes from the server to an operator’s backend: a client SDK is on neither side of it and holds neither the key nor a signing secret. The receiving side is `@tula/admin`’s `verifyWebhook`, tested in `packages/admin/src/webhook-real-api.test.ts`."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "webhook endpoints are registered on the admin API with a secret key, and a delivery goes from the server to an operator’s backend: a client SDK is on neither side of it."
+      }
+    },
+    "webhook endpoint on a refused address": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the outbound guard judges an address an operator registers with a secret key, which a client SDK never holds; `@tula/admin` is driven against the refusal in `packages/admin/src/webhook-real-api.test.ts`."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "the outbound guard judges an address an operator registers with a secret key, which a client SDK never holds; `@tula/admin` is driven against the refusal in `packages/admin/src/webhook-real-api.test.ts`."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "webhook endpoints and their signing secrets are managed on the admin API with a secret key, and a delivery goes from the server to an operator’s backend: a client SDK is on neither side of it and holds neither the key nor a signing secret. The receiving side is `@tula/admin`’s `verifyWebhook`, tested in `packages/admin/src/webhook-real-api.test.ts`."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the outbound guard judges an address an operator registers with a secret key, which a client SDK never holds."
+      }
+    },
+    "webhook retried after a 500": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "retries, the delivery log, test events and sending a delivery again all happen between the server, an operator’s backend and the admin API with a secret key: a client SDK is on no side of them. `@tula/admin` is driven through the same operations against the real API and worker in `packages/admin/src/webhook-real-api.test.ts`."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "retries, the delivery log, test events and sending a delivery again all happen between the server, an operator’s backend and the admin API with a secret key: a client SDK is on no side of them. `@tula/admin` is driven through the same operations against the real API and worker in `packages/admin/src/webhook-real-api.test.ts`."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "webhook endpoints and their signing secrets are managed on the admin API with a secret key, and a delivery goes from the server to an operator’s backend: a client SDK is on neither side of it and holds neither the key nor a signing secret. The receiving side is `@tula/admin`’s `verifyWebhook`, tested in `packages/admin/src/webhook-real-api.test.ts`."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "retries, the delivery log, test events and sending a delivery again all happen between the server, an operator’s backend and the admin API with a secret key: a client SDK is on no side of them."
+      }
+    },
+    "webhook secret rotated with an overlap": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a signing secret is rotated on the admin API with a secret key, and the two signatures of the overlap travel from the server to an operator’s backend: a client SDK holds neither the key nor a signing secret, and must never. The receiving side is `@tula/admin`’s `verifyWebhook` with one secret or both, which `packages/admin/src/webhook-real-api.test.ts` hands deliveries the real worker made before, during and after an overlap."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "a signing secret is rotated on the admin API with a secret key, and the two signatures of the overlap travel from the server to an operator’s backend: a client SDK holds neither the key nor a signing secret, and must never. The receiving side is `@tula/admin`’s `verifyWebhook` with one secret or both, which `packages/admin/src/webhook-real-api.test.ts` hands deliveries the real worker made before, during and after an overlap."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "webhook endpoints and their signing secrets are managed on the admin API with a secret key, and a delivery goes from the server to an operator’s backend: a client SDK is on neither side of it and holds neither the key nor a signing secret. The receiving side is `@tula/admin`’s `verifyWebhook`, tested in `packages/admin/src/webhook-real-api.test.ts`."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a signing secret is rotated on the admin API with a secret key, and the two signatures of the overlap travel from the server to an operator’s backend: a client SDK holds neither the key nor a signing secret, and must never."
+      }
+    }
+  }
+}

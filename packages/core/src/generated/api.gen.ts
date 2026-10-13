@@ -25,18 +25,34 @@ export interface Schemas {
     password: Schemas['PasswordPolicy']
     mfa?: {
       policy: Schemas['MfaPolicy']
+      smsCode?: boolean
+    }
+    phone?: {
+      enabled: boolean
     }
   }
   CurrentUser: {
     id: string
-    email: string
+    email: string | null
     emailVerifiedAt: string | null
     firstName: string | null
     lastName: string | null
     bannedAt: string | null
     lastSignInAt: string | null
     createdAt: string
+    phoneNumber?: string | null
+    phoneNumberVerifiedAt?: string | null
     hasPassword: boolean
+  }
+  EmailAddressRequest: {
+    email: string
+  }
+  EmailAddressVerifyRequest: {
+    code: string
+  }
+  EmailCodeSent: {
+    destination: string
+    expiresAt: string
   }
   EmailLinkRequest: {
     token: string
@@ -47,7 +63,7 @@ export interface Schemas {
     status: 'verified'
   }
   EmailVerificationStrategy: 'email_code' | 'email_link'
-  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.not_set' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.required_by_policy' | 'oauth.access_denied' | 'oauth.provider_error' | 'oauth.state_invalid' | 'oauth.ticket_invalid' | 'oauth.different_browser' | 'oauth.email_missing' | 'oauth.email_unverified' | 'oauth.account_exists' | 'oauth.identity_in_use' | 'oauth.already_linked' | 'identity.last_sign_in_method' | 'passkey.registration_failed' | 'passkey.already_registered' | 'passkey.limit_reached' | 'passkey.last_sign_in_method' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'session.limit_reached' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
+  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'email.already_set' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.reused' | 'password.not_set' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.enrolment_needs_other_sign_in' | 'mfa.needs_other_sign_in' | 'mfa.sms_not_allowed' | 'mfa.phone_number_required' | 'mfa.required_by_policy' | 'oauth.access_denied' | 'oauth.provider_error' | 'oauth.state_invalid' | 'oauth.ticket_invalid' | 'oauth.different_browser' | 'oauth.email_missing' | 'oauth.email_unverified' | 'oauth.account_exists' | 'oauth.identity_in_use' | 'oauth.already_linked' | 'identity.last_sign_in_method' | 'webhook.url_not_allowed' | 'webhook.cannot_redeliver' | 'webhook.rotation_refused' | 'hook.denied' | 'hook.unavailable' | 'hook.url_not_allowed' | 'passkey.registration_failed' | 'passkey.already_registered' | 'passkey.limit_reached' | 'passkey.last_sign_in_method' | 'phone.invalid' | 'sms.disabled' | 'sms.country_not_allowed' | 'sms.unavailable' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'session.limit_reached' | 'device.proof_invalid' | 'device.nonce_required' | 'device.binding_not_supported' | 'device.binding_required' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
   ErrorEnvelope: {
     status: number
     code: Schemas['ErrorCode']
@@ -67,6 +83,12 @@ export interface Schemas {
     backupCodes: {
       remaining: number
     }
+    sms?: {
+      enabled: boolean
+      enabledAt: string | null
+      inUse: boolean
+      available: boolean
+    }
   }
   FieldError: {
     field: string
@@ -79,12 +101,15 @@ export interface Schemas {
     code: string
   } | {
     strategy: 'email_link'
+  } | {
+    strategy: 'sms_code'
+    code: string
   }
   FirstFactorPrepareRequest: {
-    strategy: Schemas['EmailVerificationStrategy']
+    strategy: Schemas['PreparedFirstFactorStrategy']
     redirectUrl?: string
   }
-  FirstFactorStrategy: 'password' | 'email_code' | 'email_link' | 'passkey' | 'oauth_google' | 'oauth_github' | 'oauth_apple'
+  FirstFactorStrategy: 'password' | 'email_code' | 'email_link' | 'passkey' | 'sms_code' | 'oauth_google' | 'oauth_github' | 'oauth_apple' | 'oauth_microsoft' | 'oauth_discord' | 'oauth_linkedin' | 'oauth_x' | 'oauth_facebook'
   FlowAttempt: {
     id: string
     kind: Schemas['FlowKind']
@@ -105,7 +130,7 @@ export interface Schemas {
     status: 'needs_first_factor'
     strategies: Schemas['FirstFactorStrategy'][]
     prepared?: {
-      strategy: Schemas['EmailVerificationStrategy']
+      strategy: Schemas['PreparedFirstFactorStrategy']
       destination: string
     }
   } | {
@@ -116,9 +141,14 @@ export interface Schemas {
     status: 'needs_new_password'
     destination: string
     strategies: Schemas['EmailVerificationStrategy'][]
+    reason?: Schemas['NewPasswordReason']
   } | {
     status: 'needs_second_factor'
     options: Schemas['SecondFactorMethod'][]
+    prepared?: {
+      method: Schemas['PreparedSecondFactorMethod']
+      destination: string
+    }
   } | {
     status: 'needs_factor_enrolment'
     methods: Schemas['FactorEnrolmentMethod'][]
@@ -126,6 +156,19 @@ export interface Schemas {
     status: 'complete'
     userId: string
     sessionId: string
+  }
+  IdTokenExchangeRequest: {
+    idToken: string
+    givenName?: string
+    familyName?: string
+  }
+  IdTokenProvider: 'google' | 'apple'
+  IdTokenStart: {
+    attempt: Schemas['FlowAttempt']
+    nonce: string
+  }
+  IdTokenStartRequest: {
+    provider: Schemas['IdTokenProvider']
   }
   Identity: {
     id: string
@@ -142,12 +185,16 @@ export interface Schemas {
     data: Schemas['Identity'][]
   }
   MfaPolicy: 'off' | 'optional' | 'required'
+  NewPasswordReason: 'expired'
+  NewPasswordRequest: {
+    password: string
+  }
   OAuthExchangeRequest: {
     ticket: string
     attemptId: string
     binding?: string
   }
-  OAuthProvider: 'google' | 'github' | 'apple'
+  OAuthProvider: 'google' | 'github' | 'apple' | 'microsoft' | 'discord' | 'linkedin' | 'x' | 'facebook'
   OAuthStart: {
     attempt: Schemas['FlowAttempt']
     authorizationUrl: string
@@ -273,6 +320,18 @@ export interface Schemas {
   PasswordResetStartRequest: {
     email: string
   }
+  PhoneCodeSent: {
+    destination: string
+    expiresAt: string
+  }
+  PhoneNumberRequest: {
+    phoneNumber: string
+  }
+  PhoneNumberVerifyRequest: {
+    code: string
+  }
+  PreparedFirstFactorStrategy: 'email_code' | 'email_link' | 'sms_code'
+  PreparedSecondFactorMethod: 'sms_code'
   RefreshTokenRequest: {
     refreshToken?: string
   }
@@ -280,8 +339,14 @@ export interface Schemas {
     revoked: number
   }
   SecondFactorMethod: 'totp' | 'passkey' | 'backup_code' | 'sms_code'
+  SecondFactorPrepareRequest: {
+    method: Schemas['PreparedSecondFactorMethod']
+  }
   SecondFactorRequest: {
     method: 'totp'
+    code: string
+  } | {
+    method: 'sms_code'
     code: string
   } | {
     method: 'backup_code'
@@ -299,6 +364,7 @@ export interface Schemas {
     lastActiveAt: string
     expiresAt: string
     current: boolean
+    deviceBound: boolean
   }
   SessionClient: 'web' | 'ios' | 'android' | 'server'
   SessionList: {
@@ -320,6 +386,14 @@ export interface Schemas {
     firstName?: string
     lastName?: string
   }
+  SmsFactorCode: {
+    method: 'sms_code'
+    destination: string
+    expiresAt: string
+  }
+  SmsFactorConfirmRequest: {
+    code: string
+  }
   StepUpEmailCode: {
     method: 'email_code'
     destination: string
@@ -340,6 +414,9 @@ export interface Schemas {
   } | {
     method: 'passkey'
     credential: Schemas['PasskeyAssertionCredential']
+  } | {
+    method: 'sms_code'
+    code: string
   }
   TotpConfirmRequest: {
     code: string
@@ -355,7 +432,7 @@ export interface Schemas {
 
 /** Path parameters, JSON body and success response of every client operation. */
 export interface Operations {
-  /** Prove an email first factor (`POST /v1/client/sign-ins/{attemptId}/first-factor/attempt`). */
+  /** Prove an emailed or texted first factor (`POST /v1/client/sign-ins/{attemptId}/first-factor/attempt`). */
   attemptSignInFirstFactor: { params: { attemptId: string }; body: Schemas['FirstFactorAttemptRequest']; response: Schemas['FlowAttempt'] }
   /** Change my password (`POST /v1/client/me/password`). */
   changeMyPassword: { params: Record<string, never>; body: Schemas['ChangePasswordRequest']; response: undefined }
@@ -365,10 +442,14 @@ export interface Operations {
   confirmSignInTotpEnrolment: { params: { attemptId: string }; body: Schemas['TotpConfirmRequest']; response: Schemas['FlowAttempt'] }
   /** Confirm the authenticator app and complete the attempt (`POST /v1/client/sign-ups/{attemptId}/factor-enrolment/totp/confirm`). */
   confirmSignUpTotpEnrolment: { params: { attemptId: string }; body: Schemas['TotpConfirmRequest']; response: Schemas['FlowAttempt'] }
+  /** Confirm the texted code as my second factor (`POST /v1/client/me/factors/sms/confirm`). */
+  confirmSmsFactorEnrolment: { params: Record<string, never>; body: Schemas['SmsFactorConfirmRequest']; response: Schemas['Factors'] }
   /** Confirm the authenticator app (`POST /v1/client/me/factors/totp/confirm`). */
   confirmTotpEnrolment: { params: Record<string, never>; body: Schemas['TotpConfirmRequest']; response: Schemas['BackupCodes'] }
   /** Disconnect a provider account (`DELETE /v1/client/me/identities/{identityId}`). */
   deleteMyIdentity: { params: { identityId: string }; body: undefined; response: undefined }
+  /** Stop using a texted code as my second factor (`DELETE /v1/client/me/factors/sms`). */
+  disableSmsFactor: { params: Record<string, never>; body: undefined; response: undefined }
   /** Turn two-step verification off (`DELETE /v1/client/me/factors/totp`). */
   disableTotp: { params: Record<string, never>; body: undefined; response: undefined }
   /** Finish connecting a provider account (`POST /v1/client/me/identities/oauth/exchange`). */
@@ -397,16 +478,26 @@ export interface Operations {
   listMyPasskeys: { params: Record<string, never>; body: undefined; response: Schemas['PasskeyList'] }
   /** List my sessions (`GET /v1/client/sessions`). */
   listSessions: { params: Record<string, never>; body: undefined; response: Schemas['SessionList'] }
-  /** Email a sign-in code or link (`POST /v1/client/sign-ins/{attemptId}/first-factor/prepare`). */
+  /** Ask for a texted second-factor code (`POST /v1/client/password-resets/{attemptId}/second-factor/prepare`). */
+  preparePasswordResetSecondFactor: { params: { attemptId: string }; body: Schemas['SecondFactorPrepareRequest']; response: Schemas['FlowAttempt'] }
+  /** Email or text a sign-in code, or email a link (`POST /v1/client/sign-ins/{attemptId}/first-factor/prepare`). */
   prepareSignInFirstFactor: { params: { attemptId: string }; body: Schemas['FirstFactorPrepareRequest']; response: Schemas['FlowAttempt'] }
+  /** Ask for a texted second-factor code (`POST /v1/client/sign-ins/{attemptId}/second-factor/prepare`). */
+  prepareSignInSecondFactor: { params: { attemptId: string }; body: Schemas['SecondFactorPrepareRequest']; response: Schemas['FlowAttempt'] }
   /** Refresh a session (`POST /v1/client/sessions/refresh`). */
   refreshSession: { params: Record<string, never>; body: Schemas['RefreshTokenRequest']; response: Schemas['SessionTokens'] }
   /** Make new backup codes (`POST /v1/client/me/factors/backup-codes`). */
   regenerateBackupCodes: { params: Record<string, never>; body: undefined; response: Schemas['BackupCodes'] }
   /** Remove a passkey (`DELETE /v1/client/me/passkeys/{passkeyId}`). */
   removePasskey: { params: { passkeyId: string }; body: undefined; response: undefined }
+  /** Remove my phone number (`DELETE /v1/client/me/phone`). */
+  removePhoneNumber: { params: Record<string, never>; body: undefined; response: undefined }
   /** Rename a passkey (`PATCH /v1/client/me/passkeys/{passkeyId}`). */
   renamePasskey: { params: { passkeyId: string }; body: Schemas['PasskeyRenameRequest']; response: Schemas['Passkey'] }
+  /** Email a code to an address to add to my account (`POST /v1/client/me/email`). */
+  requestEmailAddressCode: { params: Record<string, never>; body: Schemas['EmailAddressRequest']; response: Schemas['EmailCodeSent'] }
+  /** Text a code to a phone number (`POST /v1/client/me/phone`). */
+  requestPhoneCode: { params: Record<string, never>; body: Schemas['PhoneNumberRequest']; response: Schemas['PhoneCodeSent'] }
   /** Resend the email code (`POST /v1/client/password-resets/{attemptId}/resend-code`). */
   resendPasswordResetCode: { params: { attemptId: string }; body: undefined; response: Schemas['FlowAttempt'] }
   /** Resend the email code (`POST /v1/client/sign-ins/{attemptId}/resend-code`). */
@@ -419,10 +510,14 @@ export interface Operations {
   revokeSession: { params: { sessionId: string }; body: undefined; response: undefined }
   /** Email me a code to prove it is still me (`POST /v1/client/sessions/step-up/email-code`). */
   sendStepUpEmailCode: { params: Record<string, never>; body: undefined; response: Schemas['StepUpEmailCode'] }
+  /** Text me a code to prove it is still me (`POST /v1/client/sessions/step-up/sms-code`). */
+  sendStepUpSmsCode: { params: Record<string, never>; body: undefined; response: Schemas['SmsFactorCode'] }
   /** Sign out (`POST /v1/client/sessions/sign-out`). */
   signOut: { params: Record<string, never>; body: Schemas['RefreshTokenRequest']; response: undefined }
   /** Start connecting a provider account (`POST /v1/client/me/identities/oauth`). */
   startIdentityLink: { params: Record<string, never>; body: Schemas['OAuthStartRequest']; response: Schemas['IdentityLinkStart'] }
+  /** Start a native sign-in with a provider’s ID token (`POST /v1/client/sign-ins/id-token`). */
+  startIdTokenSignIn: { params: Record<string, never>; body: Schemas['IdTokenStartRequest']; response: Schemas['IdTokenStart'] }
   /** Start signing in with an OAuth provider (`POST /v1/client/sign-ins/oauth`). */
   startOAuthSignIn: { params: Record<string, never>; body: Schemas['OAuthStartRequest']; response: Schemas['OAuthStart'] }
   /** Start registering a passkey (`POST /v1/client/me/passkeys/options`). */
@@ -441,6 +536,8 @@ export interface Operations {
   startSignUp: { params: Record<string, never>; body: Schemas['SignUpRequest']; response: Schemas['FlowAttempt'] }
   /** Start enrolling an authenticator app inside an attempt (`POST /v1/client/sign-ups/{attemptId}/factor-enrolment/totp`). */
   startSignUpTotpEnrolment: { params: { attemptId: string }; body: undefined; response: Schemas['TotpEnrolment'] }
+  /** Start making a texted code my second factor (`POST /v1/client/me/factors/sms`). */
+  startSmsFactorEnrolment: { params: Record<string, never>; body: undefined; response: Schemas['SmsFactorCode'] }
   /** Start enrolling an authenticator app (`POST /v1/client/me/factors/totp`). */
   startTotpEnrolment: { params: Record<string, never>; body: undefined; response: Schemas['TotpEnrolment'] }
   /** Prove it is still me (`POST /v1/client/sessions/step-up`). */
@@ -449,12 +546,20 @@ export interface Operations {
   submitPasswordReset: { params: { attemptId: string }; body: Schemas['PasswordResetRequest']; response: Schemas['FlowAttempt'] }
   /** Submit a second factor (`POST /v1/client/password-resets/{attemptId}/second-factor`). */
   submitPasswordResetSecondFactor: { params: { attemptId: string }; body: Schemas['SecondFactorRequest']; response: Schemas['FlowAttempt'] }
+  /** Sign in with a provider’s ID token (`POST /v1/client/sign-ins/{attemptId}/id-token`). */
+  submitSignInIdToken: { params: { attemptId: string }; body: Schemas['IdTokenExchangeRequest']; response: Schemas['FlowAttempt'] }
+  /** Replace an expired password (`POST /v1/client/sign-ins/{attemptId}/new-password`). */
+  submitSignInNewPassword: { params: { attemptId: string }; body: Schemas['NewPasswordRequest']; response: Schemas['FlowAttempt'] }
   /** Sign in with a passkey (`POST /v1/client/sign-ins/{attemptId}/passkey`). */
   submitSignInPasskey: { params: { attemptId: string }; body: Schemas['PasskeySignInRequest']; response: Schemas['FlowAttempt'] }
   /** Submit the password (`POST /v1/client/sign-ins/{attemptId}/password`). */
   submitSignInPassword: { params: { attemptId: string }; body: Schemas['PasswordAttemptRequest']; response: Schemas['FlowAttempt'] }
   /** Submit a second factor (`POST /v1/client/sign-ins/{attemptId}/second-factor`). */
   submitSignInSecondFactor: { params: { attemptId: string }; body: Schemas['SecondFactorRequest']; response: Schemas['FlowAttempt'] }
+  /** Confirm the address with its code (`POST /v1/client/me/email/verify`). */
+  verifyEmailAddress: { params: Record<string, never>; body: Schemas['EmailAddressVerifyRequest']; response: Schemas['CurrentUser'] }
+  /** Confirm a phone number with its code (`POST /v1/client/me/phone/verify`). */
+  verifyPhoneNumber: { params: Record<string, never>; body: Schemas['PhoneNumberVerifyRequest']; response: Schemas['CurrentUser'] }
   /** Submit the emailed code (`POST /v1/client/sign-ins/{attemptId}/verify-email`). */
   verifySignInEmail: { params: { attemptId: string }; body: Schemas['VerifyEmailRequest']; response: Schemas['FlowAttempt'] }
   /** Accept an emailed sign-in link (`POST /v1/client/sign-ins/link`). */
@@ -480,8 +585,10 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   confirmPasswordResetTotpEnrolment: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/factor-enrolment/totp/confirm', session: false },
   confirmSignInTotpEnrolment: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/factor-enrolment/totp/confirm', session: false },
   confirmSignUpTotpEnrolment: { method: 'POST', path: '/v1/client/sign-ups/{attemptId}/factor-enrolment/totp/confirm', session: false },
+  confirmSmsFactorEnrolment: { method: 'POST', path: '/v1/client/me/factors/sms/confirm', session: true },
   confirmTotpEnrolment: { method: 'POST', path: '/v1/client/me/factors/totp/confirm', session: true },
   deleteMyIdentity: { method: 'DELETE', path: '/v1/client/me/identities/{identityId}', session: true },
+  disableSmsFactor: { method: 'DELETE', path: '/v1/client/me/factors/sms', session: true },
   disableTotp: { method: 'DELETE', path: '/v1/client/me/factors/totp', session: true },
   exchangeIdentityLinkTicket: { method: 'POST', path: '/v1/client/me/identities/oauth/exchange', session: true },
   exchangeOAuthTicket: { method: 'POST', path: '/v1/client/sign-ins/oauth/exchange', session: false },
@@ -496,19 +603,26 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   listMyIdentities: { method: 'GET', path: '/v1/client/me/identities', session: true },
   listMyPasskeys: { method: 'GET', path: '/v1/client/me/passkeys', session: true },
   listSessions: { method: 'GET', path: '/v1/client/sessions', session: true },
+  preparePasswordResetSecondFactor: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/second-factor/prepare', session: false },
   prepareSignInFirstFactor: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/first-factor/prepare', session: false },
+  prepareSignInSecondFactor: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/second-factor/prepare', session: false },
   refreshSession: { method: 'POST', path: '/v1/client/sessions/refresh', session: false },
   regenerateBackupCodes: { method: 'POST', path: '/v1/client/me/factors/backup-codes', session: true },
   removePasskey: { method: 'DELETE', path: '/v1/client/me/passkeys/{passkeyId}', session: true },
+  removePhoneNumber: { method: 'DELETE', path: '/v1/client/me/phone', session: true },
   renamePasskey: { method: 'PATCH', path: '/v1/client/me/passkeys/{passkeyId}', session: true },
+  requestEmailAddressCode: { method: 'POST', path: '/v1/client/me/email', session: true },
+  requestPhoneCode: { method: 'POST', path: '/v1/client/me/phone', session: true },
   resendPasswordResetCode: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/resend-code', session: false },
   resendSignInCode: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/resend-code', session: false },
   resendSignUpCode: { method: 'POST', path: '/v1/client/sign-ups/{attemptId}/resend-code', session: false },
   revokeOtherSessions: { method: 'POST', path: '/v1/client/sessions/revoke-others', session: true },
   revokeSession: { method: 'DELETE', path: '/v1/client/sessions/{sessionId}', session: true },
   sendStepUpEmailCode: { method: 'POST', path: '/v1/client/sessions/step-up/email-code', session: true },
+  sendStepUpSmsCode: { method: 'POST', path: '/v1/client/sessions/step-up/sms-code', session: true },
   signOut: { method: 'POST', path: '/v1/client/sessions/sign-out', session: false },
   startIdentityLink: { method: 'POST', path: '/v1/client/me/identities/oauth', session: true },
+  startIdTokenSignIn: { method: 'POST', path: '/v1/client/sign-ins/id-token', session: false },
   startOAuthSignIn: { method: 'POST', path: '/v1/client/sign-ins/oauth', session: false },
   startPasskeyRegistration: { method: 'POST', path: '/v1/client/me/passkeys/options', session: true },
   startPasskeySignIn: { method: 'POST', path: '/v1/client/sign-ins/passkey', session: false },
@@ -518,13 +632,18 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   startSignInTotpEnrolment: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/factor-enrolment/totp', session: false },
   startSignUp: { method: 'POST', path: '/v1/client/sign-ups', session: false },
   startSignUpTotpEnrolment: { method: 'POST', path: '/v1/client/sign-ups/{attemptId}/factor-enrolment/totp', session: false },
+  startSmsFactorEnrolment: { method: 'POST', path: '/v1/client/me/factors/sms', session: true },
   startTotpEnrolment: { method: 'POST', path: '/v1/client/me/factors/totp', session: true },
   stepUpSession: { method: 'POST', path: '/v1/client/sessions/step-up', session: true },
   submitPasswordReset: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/password', session: false },
   submitPasswordResetSecondFactor: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/second-factor', session: false },
+  submitSignInIdToken: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/id-token', session: false },
+  submitSignInNewPassword: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/new-password', session: false },
   submitSignInPasskey: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/passkey', session: false },
   submitSignInPassword: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/password', session: false },
   submitSignInSecondFactor: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/second-factor', session: false },
+  verifyEmailAddress: { method: 'POST', path: '/v1/client/me/email/verify', session: true },
+  verifyPhoneNumber: { method: 'POST', path: '/v1/client/me/phone/verify', session: true },
   verifySignInEmail: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/verify-email', session: false },
   verifySignInLink: { method: 'POST', path: '/v1/client/sign-ins/link', session: false },
   verifySignUpEmail: { method: 'POST', path: '/v1/client/sign-ups/{attemptId}/verify-email', session: false },

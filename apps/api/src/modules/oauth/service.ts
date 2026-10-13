@@ -1,13 +1,25 @@
 import {
   AT_LEAST_ONE_SIGN_IN_METHOD,
+  BUNDLE_ID_PATTERN,
+  DEPENDENT_ACCOUNTS_SCAN_LIMIT,
   type EnvironmentSettings,
+  type EventData,
   type FirstFactorStrategy,
+  givesNoAddress,
   hasEnabledSignInMethod,
   type Identity,
+  type IdTokenProvider,
+  MAX_BUNDLE_ID_LENGTH,
   OAUTH_PROVIDERS,
   type OAuthProvider,
+  type OAuthProviderDependents,
   type OAuthProviderSettings,
   type OAuthProviderUpdate,
+  oauthProviderWeakenings,
+  ownClientIdAmong,
+  type ProposalApprover,
+  type SessionClient,
+  takesAdditionalClientIds,
 } from '@tula/contract'
 import type { AppConfig, Deps, Tenant } from '~/dependencies'
 import { AuthError, NotFoundError, ValidationError } from '~/exceptions'
@@ -17,11 +29,23 @@ import { parseEmail } from '~/lib/email'
 import * as logger from '~/lib/logger'
 import { isEcP256PrivateKey } from '~/lib/pkcs8'
 import * as Audit from '~/modules/audit/service'
+import * as Hooks from '~/modules/hook/service'
 import * as Notices from '~/modules/notice/service'
+import {
+  additionalClientIdsOf,
+  isSignInMethod,
+  unusableField,
+} from '~/modules/oauth/provider-record'
 import * as Settings from '~/modules/settings/service'
+import type { NativeAppRecord } from '~/ports/native-app-store'
 import type { OAuthCredentials, OAuthProfile } from '~/ports/oauth-provider'
 import type { OAuthProviderRecord } from '~/ports/oauth-provider-store'
-import type { IdentityRecord, SignInMeans, UserRecord } from '~/ports/user-repository'
+import type {
+  DependentAccounts,
+  IdentityRecord,
+  SignInMeans,
+  UserRecord,
+} from '~/ports/user-repository'
 
 /** Secret-box purpose of provider credentials: a key of their own, apart from every other secret. */
 export const OAUTH_SECRET_PURPOSE = 'oauth-credentials'
@@ -53,7 +77,9 @@ export function callbackUrl(config: Pick<AppConfig, 'publicUrl'>, provider: OAut
  * @param provider - The provider.
  * @returns `oauth_<provider>`.
  */
-export function strategyOf(provider: OAuthProvider): FirstFactorStrategy {
+export function strategyOf(
+  provider: OAuthProvider
+): FirstFactorStrategy & `oauth_${OAuthProvider}` {
   return `oauth_${provider}`
 }
 
@@ -97,10 +123,13 @@ export async function secretOpens(
 }
 
 /**
- * The OAuth providers an environment offers at sign-in: configured **and** enabled.
+ * The OAuth providers an environment offers at sign-in: configured, enabled **and** with
+ * nothing stored that rules them out (`isSignInMethod`: a Microsoft row whose `tenant` the
+ * server cannot use is not a method, because every start through it is refused).
  *
  * Depends on the environment alone, never on an identifier or an account, like every other
- * first factor.
+ * first factor. Every count of the ways to sign in goes through this or through
+ * `isSignInMethod` itself, so they agree.
  *
  * @param deps - Provider store.
  * @param tenant - The environment.
@@ -112,7 +141,7 @@ export async function enabledProviders(
 ): Promise<OAuthProvider[]> {
   const enabled = new Set(
     (await deps.oauthProviders.list(tenant.environmentId))
-      .filter((record) => record.enabled)
+      .filter(isSignInMethod)
       .map((record) => record.provider)
   )
   return OAUTH_PROVIDERS.filter((provider) => enabled.has(provider))
@@ -124,12 +153,18 @@ export async function enabledProviders(
  * Checked on every step that uses the provider (start, callback, exchange), so a provider
  * switched off while an attempt is under way stops working at once.
  *
+ * Credentials the server cannot use answer exactly as a provider that is off does, and at the
+ * same point (before a redirect URL is judged, a ceiling charged or an attempt made): an
+ * anonymous caller learns that the method is not available and nothing about why. The reason
+ * is logged for the operator, by field name and never by value.
+ *
  * @param deps - Provider store and secret box.
  * @param tenant - The environment.
  * @param provider - The provider.
  * @returns The opened credentials. Never log or return them.
- * @throws AuthError `auth.method_disabled` when the provider is not configured, not enabled, or
- *   its stored secret does not open (a changed master key): the method is unusable either way.
+ * @throws AuthError `auth.method_disabled` when the provider is not configured, not enabled,
+ *   its stored secret does not open (a changed master key) or a stored field is one the
+ *   provider cannot be called with (Microsoft's `tenant`): the method is unusable either way.
  */
 export async function credentials(
   deps: Pick<Deps, 'oauthProviders' | 'secretBox'>,
@@ -138,6 +173,15 @@ export async function credentials(
 ): Promise<OAuthCredentials> {
   const record = await deps.oauthProviders.find(tenant.environmentId, provider)
   if (!record?.enabled) {
+    throw new AuthError('auth.method_disabled', { method: strategyOf(provider) })
+  }
+  const field = unusableField(record)
+  if (field !== null) {
+    logger.error('stored OAuth credentials cannot be used', {
+      environmentId: tenant.environmentId,
+      provider,
+      field,
+    })
     throw new AuthError('auth.method_disabled', { method: strategyOf(provider) })
   }
   try {
@@ -164,6 +208,8 @@ function toSettings(
     clientId: record?.clientId ?? null,
     teamId: record?.config.teamId ?? null,
     keyId: record?.config.keyId ?? null,
+    tenant: record?.config.tenant ?? null,
+    additionalClientIds: record ? additionalClientIdsOf(record) : [],
     callbackUrl: callbackUrl(config, provider),
     updatedAt: record?.updatedAt.toISOString() ?? null,
   }
@@ -200,12 +246,111 @@ const PROVIDER_FIELDS = {
   google: { secret: 'clientSecret', config: [] },
   github: { secret: 'clientSecret', config: [] },
   apple: { secret: 'privateKey', config: ['teamId', 'keyId'] },
+  // `tenant` has no default: which Microsoft accounts may sign in is the operator's decision.
+  microsoft: { secret: 'clientSecret', config: ['tenant'] },
+  discord: { secret: 'clientSecret', config: [] },
+  linkedin: { secret: 'clientSecret', config: [] },
+  x: { secret: 'clientSecret', config: [] },
+  facebook: { secret: 'clientSecret', config: [] },
 } as const satisfies Record<
   OAuthProvider,
-  { secret: keyof SecretMaterial; config: readonly ('teamId' | 'keyId')[] }
+  { secret: keyof SecretMaterial; config: readonly ('teamId' | 'keyId' | 'tenant')[] }
 >
 
-const CREDENTIAL_FIELDS = ['clientSecret', 'privateKey', 'teamId', 'keyId'] as const
+const CREDENTIAL_FIELDS = ['clientSecret', 'privateKey', 'teamId', 'keyId', 'tenant'] as const
+
+/**
+ * The audiences an **Apple** ID token of a native sign-in may have been issued for
+ * (ADR 0047): the bundle ids of the environment's registered iOS apps, and nothing else.
+ *
+ * A native identity token names the app it was issued to (`aud` is the app's bundle id).
+ * The provider record's `clientId` is a Services ID, the audience of the web flow, and is
+ * not among them: a token for it was not obtained from the system's sheet. An app is taken
+ * only when its identifier is a bundle id by the contract's own pattern, so a row written
+ * by hand is never an accepted audience.
+ *
+ * @param apps - The environment's native apps, as stored.
+ * @returns The bundle ids, each once; empty when the environment has no iOS app.
+ */
+export function appleIdTokenAudiences(
+  apps: readonly Pick<NativeAppRecord, 'platform' | 'identifier'>[]
+): string[] {
+  const bundleIds = apps
+    .filter(
+      (app) =>
+        app.platform === 'ios' &&
+        typeof app.identifier === 'string' &&
+        app.identifier.length <= MAX_BUNDLE_ID_LENGTH &&
+        BUNDLE_ID_PATTERN.test(app.identifier)
+    )
+    .map((app) => app.identifier)
+  return [...new Set(bundleIds)]
+}
+
+/**
+ * The audiences an ID token of a native sign-in may have been issued for, read **now**.
+ *
+ * **The one place the accepted audiences are put together**; the adapter is handed this
+ * list and decides nothing about it.
+ *
+ * - **Google** (ADR 0045): the environment's own `clientId` and the additional ones stored
+ *   beside it, read tolerantly. `aud` must be one of them, and `azp` too when the token has
+ *   one.
+ * - **Apple** (ADR 0047): {@link appleIdTokenAudiences}, from the environment's rows as
+ *   they are at this call. So an app that was removed takes its audience with it at once,
+ *   for an attempt under way too, and an empty list means the sign-in is not available
+ *   ({@link requireIdTokenAudiences}).
+ *
+ * @param deps - The native-app store.
+ * @param tenant - The environment.
+ * @param provider - The provider.
+ * @param credentials - The provider's opened credentials (from {@link credentials}).
+ * @returns The accepted audiences.
+ */
+export async function idTokenAudiences(
+  deps: Pick<Deps, 'nativeApps'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  provider: IdTokenProvider,
+  credentials: Pick<OAuthCredentials, 'clientId' | 'additionalClientIds'>
+): Promise<string[]> {
+  if (provider === 'apple') {
+    return appleIdTokenAudiences(await deps.nativeApps.list(tenant.environmentId))
+  }
+  const additional = additionalClientIdsOf({
+    provider,
+    clientId: credentials.clientId,
+    config: { additionalClientIds: credentials.additionalClientIds },
+  })
+  return [credentials.clientId, ...additional]
+}
+
+/**
+ * {@link idTokenAudiences}, or a refusal when there is none: the native sign-in is then not
+ * something this environment offers, and it is answered as a provider that is switched off.
+ *
+ * Reached for Apple with no iOS app registered (Google always has its own client id). The
+ * answer depends on the environment's rows alone, never on who signs in, and it is given
+ * at the start and again at the exchange, before anything is counted or spent.
+ *
+ * @param deps - The native-app store.
+ * @param tenant - The environment.
+ * @param provider - The provider.
+ * @param credentials - The provider's opened credentials.
+ * @returns The accepted audiences, at least one.
+ * @throws AuthError `auth.method_disabled` when there is none.
+ */
+export async function requireIdTokenAudiences(
+  deps: Pick<Deps, 'nativeApps'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  provider: IdTokenProvider,
+  credentials: Pick<OAuthCredentials, 'clientId' | 'additionalClientIds'>
+): Promise<string[]> {
+  const audiences = await idTokenAudiences(deps, tenant, provider, credentials)
+  if (audiences.length === 0) {
+    throw new AuthError('auth.method_disabled', { method: strategyOf(provider) })
+  }
+  return audiences
+}
 
 /**
  * Refuse a change that would leave an environment with no way to sign in: its settings enable
@@ -214,9 +359,16 @@ const CREDENTIAL_FIELDS = ['clientSecret', 'privateKey', 'teamId', 'keyId'] as c
  *
  * Call it inside the environment's `sign_in_methods` lock, which `Settings.replace` takes too:
  * it reads the settings past the cache and the provider rows from the store, and what it reads
- * must still be true when the caller writes.
+ * must still be true when the caller writes. Called outside the lock it is a courtesy and
+ * decides nothing: an agent's proposal to switch a provider off asks it so (ADR 0053), and
+ * the approval asks again, under the lock, in {@link switchOff}.
+ *
+ * @param deps - Provider store, settings and config.
+ * @param tenant - The environment.
+ * @param provider - The provider that would be switched off or removed.
+ * @throws ValidationError (422, field `enabled`) when no way to sign in would remain.
  */
-async function requireWayIn(
+export async function requireWayIn(
   deps: Pick<Deps, 'oauthProviders' | 'environmentSettings' | 'config'>,
   tenant: Pick<Tenant, 'environmentId'>,
   provider: OAuthProvider
@@ -231,7 +383,73 @@ async function requireWayIn(
 }
 
 /**
+ * Count the accounts that have this provider connected and could not sign in without it
+ * (ADR 0059): by {@link canStillSignIn}, the one definition of "a way to sign in", asked
+ * with the environment's settings as stored and its enabled providers **minus this one**.
+ *
+ * At most `DEPENDENT_ACCOUNTS_SCAN_LIMIT` accounts of the provider are looked at; past that
+ * the answer says `more` and the count is a floor.
+ */
+async function countDependents(
+  deps: Pick<Deps, 'oauthProviders' | 'environmentSettings' | 'config' | 'users'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  provider: OAuthProvider
+): Promise<DependentAccounts> {
+  const { settings } = await Settings.get(deps, tenant, true)
+  const others = (await enabledProviders(deps, tenant)).filter((other) => other !== provider)
+  return deps.users.countDependentOn(
+    tenant.environmentId,
+    provider,
+    (means) => canStillSignIn(settings, others, means),
+    DEPENDENT_ACCOUNTS_SCAN_LIMIT
+  )
+}
+
+/**
+ * How many accounts depend on a provider: what an operator is shown before the provider is
+ * switched off or its credentials are removed (ADR 0059). A number and whether it is
+ * complete, and nothing about who: never an id, an address or a name.
+ *
+ * A read. It is what was true when it was read; {@link update}, {@link switchOff} and
+ * {@link remove} count again, under the environment's lock, for what they record. It answers for any provider,
+ * configured or not: an account whose provider is already off depends on it all the same.
+ *
+ * @param deps - Provider store, settings and users.
+ * @param tenant - The environment.
+ * @param provider - The provider.
+ * @returns The count and whether accounts were left unlooked at.
+ */
+export async function dependents(
+  deps: Pick<Deps, 'oauthProviders' | 'environmentSettings' | 'config' | 'users'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  provider: OAuthProvider
+): Promise<OAuthProviderDependents> {
+  return { provider, ...(await countDependents(deps, tenant, provider)) }
+}
+
+/**
+ * What an entry says of the accounts a change locks out: a count, and that it is a floor
+ * when not every account was looked at. Never who.
+ */
+function dependentData(counted: DependentAccounts): {
+  dependentAccounts: number
+  dependentAccountsIncomplete?: true
+} {
+  return {
+    dependentAccounts: counted.accounts,
+    ...(counted.more && { dependentAccountsIncomplete: true as const }),
+  }
+}
+
+/**
  * Set a provider's credentials and whether sign-in offers it.
+ *
+ * **Switching a provider off while accounts depend on it is a recorded weakening, not a
+ * refusal** (ADR 0059): the accounts whose only way in it is are counted under the lock
+ * ({@link dependents}'s rule) and, when there is one, the entry says `weakened: true` with
+ * the count. The dashboard and `tula apply` ask first, from the read.
+ *
+ * Microsoft also takes `tenant` (which accounts may sign in); it is required and not a secret.
  *
  * The secret (a client secret, or Apple's private key) is sealed with the secret box, bound to
  * the environment and the provider, before it is stored, and is never returned or logged. It may
@@ -239,8 +457,14 @@ async function requireWayIn(
  * checked to be a P-256 private key, so a wrong file is refused here instead of failing every
  * sign-in later.
  *
+ * Google also takes `additionalClientIds` (ADR 0045): the client ids of the operator's
+ * native apps, whose ID tokens a native sign-in accepts beside `clientId`'s. The field is the
+ * whole set on every write (left out, there are none), and a client id gained is recorded
+ * as a weakening (`oauthProviderWeakenings`): another app's tokens now sign users in.
+ *
  * Recorded as `oauth_provider.updated` in the same transaction, with the provider and the
- * **names** of what changed (`secret` among them), never a value.
+ * **names** of what changed (`secret` among them), never a value: of the additional client
+ * ids, how many there are.
  *
  * @param deps - Provider store, secret box, settings, the environment lock, ids and clock.
  * @param tenant - The environment.
@@ -261,6 +485,7 @@ export async function update(
     | 'config'
     | 'ids'
     | 'clock'
+    | 'users'
   >,
   tenant: Scope,
   provider: OAuthProvider,
@@ -279,6 +504,23 @@ export async function update(
       throw fieldError(field, `${field} is required for this provider`)
     }
   }
+  const takesClientIds = takesAdditionalClientIds(provider)
+  if (input.additionalClientIds !== undefined && !takesClientIds) {
+    throw fieldError('additionalClientIds', 'additionalClientIds is not used by this provider')
+  }
+  // The provider's own client id is not an additional one: its tokens are accepted already,
+  // and listed again it would be counted and recorded as another app. Here, where both
+  // values are known; the entry is named by its place, never repeated.
+  const own = ownClientIdAmong(input.clientId, input.additionalClientIds ?? [])
+  if (own !== -1) {
+    throw fieldError(
+      `additionalClientIds.${own}`,
+      'must not be the provider’s own clientId: its tokens are accepted already'
+    )
+  }
+  // The whole set on every write: left out, there are none. Sorted, so that the stored
+  // value and the answer do not depend on the order they were typed in.
+  const additionalClientIds = [...(input.additionalClientIds ?? [])].sort()
   // The read, the "at least one sign-in method" check and the write happen under the
   // environment's lock, shared with `Settings.replace`: neither decides on a snapshot.
   return deps.environmentLock.runExclusive(tenant.environmentId, 'sign_in_methods', async () => {
@@ -295,13 +537,29 @@ export async function update(
     }
 
     const now = deps.clock.now()
-    const config = { teamId: input.teamId, keyId: input.keyId }
-    const changed = [
-      ...(existing?.clientId !== input.clientId ? ['clientId'] : []),
-      ...(secret !== undefined ? ['secret'] : []),
+    const config = { teamId: input.teamId, keyId: input.keyId, tenant: input.tenant }
+    const before = existing ? additionalClientIdsOf(existing) : []
+    // Typed by the event contract: the names of what changed are a closed set there.
+    const changed: EventData<'oauth_provider.updated'>['changed'] = [
+      ...(existing?.clientId !== input.clientId ? (['clientId'] as const) : []),
+      ...(secret !== undefined ? (['secret'] as const) : []),
       ...fields.config.filter((field) => existing?.config[field] !== config[field]),
-      ...(existing?.enabled !== input.enabled ? ['enabled'] : []),
+      ...(takesClientIds && before.join('\n') !== additionalClientIds.join('\n')
+        ? (['additionalClientIds'] as const)
+        : []),
+      ...(existing?.enabled !== input.enabled ? (['enabled'] as const) : []),
     ]
+    // Counted only for the change that asks: a provider that was on and is now off.
+    const counted =
+      existing?.enabled && !input.enabled
+        ? await countDependents(deps, tenant, provider)
+        : undefined
+    // Judged against the row read under the lock, by the contract's one rule.
+    const weakenings = oauthProviderWeakenings(
+      { additionalClientIds: before, enabled: existing?.enabled ?? false, dependents: counted },
+      { additionalClientIds, enabled: input.enabled }
+    )
+    const weakened = weakenings.length > 0
     const record: OAuthProviderRecord = {
       id: existing?.id ?? deps.ids.next(),
       projectId: tenant.projectId,
@@ -316,7 +574,10 @@ export async function update(
               new TextEncoder().encode(JSON.stringify({ [fields.secret]: secret })),
               aad(tenant.environmentId, provider)
             ),
-      config: Object.fromEntries(fields.config.map((field) => [field, config[field]])),
+      config: {
+        ...Object.fromEntries(fields.config.map((field) => [field, config[field]])),
+        ...(takesClientIds && additionalClientIds.length > 0 && { additionalClientIds }),
+      },
       enabled: input.enabled,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
@@ -327,10 +588,112 @@ export async function update(
         type: 'oauth_provider.updated',
         actor,
         target: { type: 'environment', id: tenant.environmentId },
-        data: { provider, changed, ...(!existing && { created: true }) },
+        data: {
+          provider,
+          changed,
+          ...(!existing && { created: true }),
+          // A count and a boolean: a client id is in no entry (ADR 0045).
+          ...(changed.includes('additionalClientIds') && {
+            additionalClientIdCount: additionalClientIds.length,
+          }),
+          ...(weakened && { weakened: true }),
+          // A number: never which accounts (ADR 0059).
+          ...(counted && weakenings.includes('enabled') && dependentData(counted)),
+        },
       })
     )
     return toSettings(deps.config, provider, stored)
+  })
+}
+
+/** The human-approved proposal a change carried out, as its audit entry names it (ADR 0053). */
+export interface CarriedOutProposal {
+  proposalId: string
+  approvedBy: ProposalApprover
+}
+
+/**
+ * Switch a configured provider off, and change nothing else of it: `enabled: false`. Its
+ * client id, its sealed secret and the rest of its configuration are written back as they
+ * were read, under the lock. This is what an approved `disable_oauth_provider` proposal
+ * runs (ADR 0053): there is no counterpart that switches a provider on, removes one or
+ * touches a secret.
+ *
+ * It is held to what an administrator's own change is held to, by the same function, in the
+ * same place: {@link requireWayIn} inside the environment's `sign_in_methods` lock, which
+ * `Settings.replace` takes too. Like {@link update} it records `oauth_provider.updated` with
+ * `changed: ['enabled']` in the transaction of the write.
+ *
+ * **And it is the weakening {@link update}'s is, by the same rule** (ADR 0059): the accounts
+ * whose only way in the provider is are counted again under that lock ({@link dependents}'s
+ * rule), judged by the contract's `oauthProviderWeakenings`, and where there is one the
+ * entry says `weakened: true` with the count. It is not refused for them, as the route's
+ * change is not. A count that cannot be taken throws, before anything is written: the
+ * change is never recorded on a guess.
+ *
+ * A provider that is already off is left alone: nothing is counted and nothing recorded.
+ *
+ * @param deps - Provider store, settings, users, the environment lock, ids and clock.
+ * @param tenant - The environment.
+ * @param provider - The provider.
+ * @param actor - Who switches it off, for the audit log.
+ * @param proposal - The approved proposal this carries out, named in the entry.
+ * @returns Whether this call switched it off: `false` when it was already off under the
+ *   lock, and then nothing was written or recorded.
+ * @throws NotFoundError when the provider is not configured.
+ * @throws ValidationError (422) when no way to sign in would remain.
+ */
+export async function switchOff(
+  deps: Pick<
+    Deps,
+    | 'oauthProviders'
+    | 'environmentSettings'
+    | 'environmentLock'
+    | 'config'
+    | 'ids'
+    | 'clock'
+    | 'users'
+  >,
+  tenant: Scope,
+  provider: OAuthProvider,
+  actor: Actor,
+  proposal?: CarriedOutProposal
+): Promise<boolean> {
+  return deps.environmentLock.runExclusive(tenant.environmentId, 'sign_in_methods', async () => {
+    const existing = await deps.oauthProviders.find(tenant.environmentId, provider)
+    if (!existing) {
+      throw new NotFoundError()
+    }
+    if (!existing.enabled) {
+      return false
+    }
+    await requireWayIn(deps, tenant, provider)
+    // As `update` does for the same change: counted under the lock, judged by the
+    // contract's one rule against the row that was read.
+    const counted = await countDependents(deps, tenant, provider)
+    const before = additionalClientIdsOf(existing)
+    const weakened = oauthProviderWeakenings(
+      { additionalClientIds: before, enabled: true, dependents: counted },
+      { additionalClientIds: before, enabled: false }
+    ).includes('enabled')
+    await deps.oauthProviders.upsert(
+      // The row as it was read under the lock, with the switch turned: nothing of it is
+      // built from a request.
+      { ...existing, enabled: false, updatedAt: deps.clock.now() },
+      Audit.entry(deps, tenant, {
+        type: 'oauth_provider.updated',
+        actor,
+        target: { type: 'environment', id: tenant.environmentId },
+        data: {
+          provider,
+          changed: ['enabled'],
+          // A number: never which accounts (ADR 0059).
+          ...(weakened && { weakened: true, ...dependentData(counted) }),
+          ...(proposal && { proposalId: proposal.proposalId, approvedBy: proposal.approvedBy }),
+        },
+      })
+    )
+    return true
   })
 }
 
@@ -338,12 +701,19 @@ export async function update(
  * Remove a provider's credentials.
  *
  * Users keep their identities of that provider: configuring it again lets them back in. The
- * removal is **not** refused because some user has no other way to sign in. Deciding that would
- * mean reading every user, and such a user is not locked out for good (a password reset sets a
- * first password; an administrator can set one). It **is** refused when it would leave the
- * whole environment with no sign-in method.
+ * removal is **not** refused because some user has no other way to sign in: **it is a
+ * recorded weakening** (ADR 0059). The accounts whose only way in is this provider are
+ * counted under the lock ({@link dependents}'s rule, at most
+ * `DEPENDENT_ACCOUNTS_SCAN_LIMIT` looked at) and, when there is one, the entry says
+ * `weakened: true` with the count; the dashboard and `tula apply` ask first, from the read.
+ * A user with an email address is not locked out for good (a password reset sets a first
+ * password; an administrator can set one). A user with **no** address (one made by a first
+ * sign-in with X or Facebook, ADR 0026) is, until the provider is configured again, they
+ * sign in some other way they have, or an administrator gives the account an address
+ * (`Users.setEmail`). The same holds for switching a provider off ({@link update}). It
+ * **is** refused when it would leave the whole environment with no sign-in method.
  *
- * @param deps - Provider store, settings, the environment lock, ids and clock.
+ * @param deps - Provider store, settings, users, the environment lock, ids and clock.
  * @param tenant - The environment.
  * @param provider - The provider.
  * @param actor - Who is removing it, for the audit log.
@@ -353,7 +723,13 @@ export async function update(
 export async function remove(
   deps: Pick<
     Deps,
-    'oauthProviders' | 'environmentSettings' | 'environmentLock' | 'config' | 'ids' | 'clock'
+    | 'oauthProviders'
+    | 'environmentSettings'
+    | 'environmentLock'
+    | 'config'
+    | 'ids'
+    | 'clock'
+    | 'users'
   >,
   tenant: Scope,
   provider: OAuthProvider,
@@ -367,6 +743,13 @@ export async function remove(
     if (existing.enabled) {
       await requireWayIn(deps, tenant, provider)
     }
+    // A provider that is off locks nobody out by going: nothing to count.
+    const counted = existing.enabled ? await countDependents(deps, tenant, provider) : undefined
+    const weakened =
+      oauthProviderWeakenings(
+        { additionalClientIds: [], enabled: existing.enabled, dependents: counted },
+        null
+      ).length > 0
     const deleted = await deps.oauthProviders.delete(
       tenant.environmentId,
       provider,
@@ -374,7 +757,10 @@ export async function remove(
         type: 'oauth_provider.deleted',
         actor,
         target: { type: 'environment', id: tenant.environmentId },
-        data: { provider },
+        data: {
+          provider,
+          ...(weakened && counted && { weakened: true, ...dependentData(counted) }),
+        },
       })
     )
     if (!deleted) {
@@ -394,8 +780,68 @@ export interface ResolvedAccount {
 
 type AccountDeps = Pick<
   Deps,
-  'users' | 'ids' | 'clock' | 'mailer' | 'environmentSettings' | 'config' | 'rateLimiter'
+  | 'users'
+  | 'ids'
+  | 'clock'
+  | 'mailer'
+  | 'environmentSettings'
+  | 'config'
+  | 'rateLimiter'
+  | 'hooks'
+  | 'outbound'
+  | 'secretBox'
 >
+
+/**
+ * Create the account of a first sign-in with a provider: the identity, no password, and the
+ * address the provider vouched for, or none.
+ *
+ * @returns The new user, or `null` when the insert lost a race (the address or the provider
+ *   account was taken in the meantime).
+ */
+async function signUp(
+  deps: AccountDeps,
+  tenant: Scope,
+  provider: OAuthProvider,
+  profile: OAuthProfile,
+  origin: Partial<Origin>,
+  clearance: Hooks.SignUpClearance,
+  address: { email: string; normalized: string } | null
+): Promise<UserRecord | null> {
+  const now = deps.clock.now()
+  const userId = deps.ids.next()
+  const created = await deps.users.create(
+    {
+      id: userId,
+      projectId: tenant.projectId,
+      environmentId: tenant.environmentId,
+      email: address?.email ?? null,
+      emailNormalized: address?.normalized ?? null,
+      // The provider vouches for an address it reported; there is nothing to vouch for
+      // where there is none.
+      emailVerifiedAt: address ? now : null,
+      firstName: profile.givenName ?? null,
+      lastName: profile.familyName ?? null,
+      createdAt: now,
+      identityId: deps.ids.next(),
+      credentialId: deps.ids.next(),
+      passwordHash: null,
+      oauthIdentity: { id: deps.ids.next(), provider, subject: profile.subject },
+    },
+    Audit.entry(deps, tenant, {
+      type: 'user.created',
+      actor: { type: 'user', id: userId, ...cleanOrigin(origin) },
+      target: { type: 'user', id: userId },
+      data: {
+        method: strategyOf(provider),
+        emailVerified: address !== null,
+        passwordless: true,
+        ...(clearance === 'bypassed' && { hookBypassed: true }),
+      },
+    })
+  )
+  return created ? deps.users.findById(tenant.environmentId, userId) : null
+}
 
 /**
  * Decide which account a provider identity signs in to. **This is where takeovers happen**, so
@@ -404,11 +850,27 @@ type AccountDeps = Pick<
  * 1. **The identity (provider + subject) is already a user's** → that user. The provider's email
  *    is not looked at: a changed provider address neither changes the Tula address nor moves
  *    the identity to whoever now has it.
+ *
+ * **For a provider Tula takes no address from** (`OAUTH_PROVIDERS_WITHOUT_ADDRESS`: X and
+ * Facebook) there is one more row and no other: **an identity nobody has → a new user with
+ * the identity and no email address**. Whatever the profile says about an address is not
+ * read (their adapters report none; the rule does not rest on that), nothing is looked up by
+ * address, and so such an identity is never connected to an existing account by this
+ * function: only its signed-in owner can connect it ({@link link}). It is a sign-up, and the
+ * `before_sign_up` hook is asked, with `email: null`. Which providers these are is a fact of
+ * the contract's list, never of a request, a profile or a setting.
+ *
+ * For every other provider:
+ *
  * 2. **The provider shared no address, or does not assert it verified** → refused
  *    (`oauth.email_missing`, `oauth.email_unverified`), **before** the address is looked up, so
  *    an unverified address can neither create an account nor reveal whether one exists.
  * 3. **No user has that address** → a new user with the identity, the address marked verified
- *    (the provider vouches for it) and no password.
+ *    (the provider vouches for it) and no password. **This row is a sign-up**, and the only
+ *    place the environment's `before_sign_up` hook is asked on this path (ADR 0035): after
+ *    the provider has proven the address, where the answer already differs by whether an
+ *    account exists (rows 4 and 5), and never for rows 1, 2, 4 or 5. A refusal creates
+ *    nothing.
  * 4. **A user has that address, and it is verified on their Tula account** → the identity is
  *    connected to them and they sign in (a second factor still applies afterwards). Both sides
  *    have proven the same inbox.
@@ -425,24 +887,48 @@ type AccountDeps = Pick<
  * @param tenant - The environment.
  * @param provider - The provider that vouched.
  * @param profile - What it said.
- * @param origin - The request, for the audit entries.
+ * @param origin - The request, for the audit entries and the hook's question.
+ * @param client - The kind of client the sign-in was started from, for the hook's question.
  * @returns The account.
- * @throws AuthError `oauth.email_missing`, `oauth.email_unverified`, `oauth.account_exists`,
- *   `auth.user_banned` (a banned user is not connected to anything), or `flow.invalid_step`
- *   when two rounds both lost a race.
+ * @throws AuthError `oauth.email_missing`, `oauth.email_unverified`, `oauth.account_exists`
+ *   (none of the three for a provider Tula takes no address from),
+ *   `auth.user_banned` (a banned user is not connected to anything), `flow.invalid_step`
+ *   when two rounds both lost a race, or the hook's `hook.denied` or `hook.unavailable`.
  */
 export async function resolveAccount(
   deps: AccountDeps,
   tenant: Scope,
   provider: OAuthProvider,
   profile: OAuthProfile,
-  origin: Partial<Origin>
+  origin: Partial<Origin>,
+  client: SessionClient
 ): Promise<ResolvedAccount> {
   const { environmentId } = tenant
+  // Asked once: a second round (the insert lost a race) creates on the answer already given.
+  let clearance: Hooks.SignUpClearance | undefined
   for (let round = 0; round < 2; round += 1) {
     const known = await deps.users.findByIdentity(environmentId, provider, profile.subject)
     if (known) {
       return { user: known, created: false, linked: false }
+    }
+    if (givesNoAddress(provider)) {
+      // No address is read from the profile, so none can be looked up, linked to or stored.
+      clearance ??= await Hooks.beforeSignUp(deps, tenant, {
+        email: null,
+        method: strategyOf(provider),
+        client,
+        ipAddress: cleanOrigin(origin).ipAddress,
+      })
+      const user = await signUp(deps, tenant, provider, profile, origin, clearance, null)
+      if (user) {
+        return { user, created: true, linked: false }
+      }
+      // The insert was refused. What refuses it by design is another callback for the same
+      // new identity having created it first: look again, and row 1 finds that account. Any
+      // other refused insert has no such row to find, so the second round is refused too and
+      // the loop ends below in `flow.invalid_step`. That is intended: one retry, a contract
+      // error and no 500, and never an account made without the store's uniqueness holding.
+      continue
     }
     const parsed = profile.email === null ? null : parseEmail(profile.email)
     if (!parsed) {
@@ -454,31 +940,13 @@ export async function resolveAccount(
     const now = deps.clock.now()
     const owner = await deps.users.findByEmail(environmentId, parsed.normalized)
     if (!owner) {
-      const userId = deps.ids.next()
-      const created = await deps.users.create(
-        {
-          id: userId,
-          projectId: tenant.projectId,
-          environmentId,
-          email: parsed.email,
-          emailNormalized: parsed.normalized,
-          emailVerifiedAt: now,
-          firstName: profile.givenName ?? null,
-          lastName: profile.familyName ?? null,
-          createdAt: now,
-          identityId: deps.ids.next(),
-          credentialId: deps.ids.next(),
-          passwordHash: null,
-          oauthIdentity: { id: deps.ids.next(), provider, subject: profile.subject },
-        },
-        Audit.entry(deps, tenant, {
-          type: 'user.created',
-          actor: { type: 'user', id: userId, ...cleanOrigin(origin) },
-          target: { type: 'user', id: userId },
-          data: { method: strategyOf(provider), emailVerified: true, passwordless: true },
-        })
-      )
-      const user = created ? await deps.users.findById(environmentId, userId) : null
+      clearance ??= await Hooks.beforeSignUp(deps, tenant, {
+        email: parsed.normalized,
+        method: strategyOf(provider),
+        client,
+        ipAddress: cleanOrigin(origin).ipAddress,
+      })
+      const user = await signUp(deps, tenant, provider, profile, origin, clearance, parsed)
       if (user) {
         return { user, created: true, linked: false }
       }

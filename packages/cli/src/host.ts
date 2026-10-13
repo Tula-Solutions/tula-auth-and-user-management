@@ -38,6 +38,13 @@ export interface RunOptions {
    * captured: a minted key is printed there.
    */
   stderr?: 'capture' | 'inherit'
+  /**
+   * Run the command to its end whatever signal the CLI receives: it is not stopped by an
+   * interrupt, and is started outside the terminal's foreground group, so a Ctrl-C typed
+   * there does not reach it either. Its timeout still ends it. For the one command that
+   * must not be cut short by the interrupt it answers: closing a tunnel.
+   */
+  shielded?: boolean
 }
 
 /**
@@ -65,6 +72,8 @@ export interface Host {
    *
    * @param path - Absolute path.
    * @returns The text, or `null` when the file does not exist.
+   * @throws UsageError when `path` is a symbolic link or anything else that is not a regular
+   *   file (a named pipe, a directory): refused before it is opened, so a read never waits.
    */
   readFile(path: string): Promise<string | null>
   /**
@@ -75,6 +84,23 @@ export interface Host {
    * @throws UsageError when `path` is a symbolic link: nothing is written through one.
    */
   writeSecretFile(path: string, text: string): Promise<void>
+  /**
+   * Create a file that must not exist yet, readable by its owner only (mode 0600). Asking and
+   * taking the name are one step, so nothing that appears at the path meanwhile is replaced.
+   *
+   * @param path - Absolute path.
+   * @param text - The contents.
+   * @throws UsageError when anything is at `path`: a file (whatever it holds), a directory, a
+   *   named pipe or a symbolic link. Nothing there is opened or changed.
+   */
+  createSecretFile(path: string, text: string): Promise<void>
+  /**
+   * Remove a file. A symbolic link at the path is removed itself, never what it points at.
+   *
+   * @param path - Absolute path.
+   * @returns Whether there was something to remove.
+   */
+  removeFile(path: string): Promise<boolean>
   /**
    * Make an existing file readable and writable by its owner only (mode 0600), leaving its
    * contents alone.
@@ -91,4 +117,15 @@ export interface Host {
    * @param ms - How long.
    */
   sleep(ms: number): Promise<void>
+  /**
+   * Be told every time the CLI is asked to stop (`SIGINT`, `SIGTERM`, `SIGHUP`), for as long
+   * as the returned function has not been called. While something listens the signal does
+   * not end the process: the listener's owner ends the run itself, after what it must not
+   * leave behind (an open tunnel) is taken down. A signal that cannot be caught (a kill, a
+   * crash, a power loss) tells nobody.
+   *
+   * @param listener - Called once for every signal received.
+   * @returns Stop listening.
+   */
+  onInterrupt(listener: () => void): () => void
 }

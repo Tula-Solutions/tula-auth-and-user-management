@@ -216,7 +216,17 @@ describe('scaffold', () => {
   test('local tarballs: every Tula package, direct or transitive, comes from the directory', async () => {
     const tarballs = join(dir, 'release')
     await mkdir(tarballs)
-    for (const name of ['react', 'core', 'contract', 'cli', 'config', 'admin', 'nextjs', 'mcp']) {
+    for (const name of [
+      'react',
+      'core',
+      'contract',
+      'cli',
+      'config',
+      'admin',
+      'nextjs',
+      'expo',
+      'mcp',
+    ]) {
       await writeFile(join(tarballs, `tula-${name}-${VERSION}.tgz`), '')
     }
     await scaffold({ cwd: dir, name: 'shop', framework: 'react-vite', tulaPackages: tarballs })
@@ -393,6 +403,49 @@ describe('scaffold', () => {
     )
   })
 
+  test('the API’s public address is loopback unless `tula dev --tunnel` says otherwise', async () => {
+    await scaffold({ cwd: dir, name: 'shop', framework: 'nextjs' })
+    const root = join(dir, 'shop')
+    // The line `tula dev --tunnel` asks for, word for word (its own test holds the same
+    // text): the address comes from the environment of the command that starts the API.
+    expect(await readFile(join(root, 'compose.yaml'), 'utf8')).toContain(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: the Compose file's own syntax
+      '\n      PUBLIC_URL: ${TULA_PUBLIC_URL:-http://localhost:${API_PORT:-3003}}\n'
+    )
+    // Never set in a new project: a public address is asked for, run by run.
+    expect(await readFile(join(root, '.env'), 'utf8')).not.toContain('TULA_PUBLIC_URL')
+    expect(await readFile(join(root, '.env.example'), 'utf8')).not.toContain('TULA_PUBLIC_URL')
+  })
+
+  test('text messages are configured from .env: no sender and no Twilio value until then', async () => {
+    await scaffold({ cwd: dir, name: 'shop', framework: 'nextjs' })
+    const root = join(dir, 'shop')
+    const compose = await readFile(join(root, 'compose.yaml'), 'utf8')
+    expect(compose).toMatch(/^ {6}SMS_PROVIDER: \$\{SMS_PROVIDER:-none\}$/m)
+    // Every Twilio variable is passed through from .env and has no value of its own: a
+    // scaffold never ships a credential, a default one least of all.
+    const names = [
+      'TWILIO_ACCOUNT_SID',
+      'TWILIO_API_KEY_SID',
+      'TWILIO_API_KEY_SECRET',
+      'TWILIO_AUTH_TOKEN',
+      'TWILIO_MESSAGING_SERVICE_SID',
+      'TWILIO_FROM_NUMBER',
+    ]
+    for (const name of names) {
+      expect(compose).toContain(`      ${name}: \${${name}:-}\n`)
+    }
+    expect([...compose.matchAll(/^ {6}(TWILIO_[A-Z_]+):/gm)].map((match) => match[1])).toEqual(
+      names
+    )
+    const env = await readFile(join(root, '.env'), 'utf8')
+    expect(env).not.toMatch(/^(SMS_PROVIDER|TWILIO_[A-Z_]+)=/m)
+    const example = await readFile(join(root, '.env.example'), 'utf8')
+    for (const name of names) {
+      expect(example).toContain(`# ${name}=\n`)
+    }
+  })
+
   test('the pinned service images are the repository’s own', async () => {
     const repo = await readFile(join(import.meta.dir, '../../../docker-compose.yml'), 'utf8')
     const template = await readFile(join(import.meta.dir, '../templates/base/compose.yaml'), 'utf8')
@@ -431,8 +484,8 @@ describe('the templates', () => {
     expect(await templateDrift()).toEqual([])
   })
 
-  test('there is one per framework', () => {
-    expect(FRAMEWORKS).toEqual(['react-vite', 'nextjs'])
+  test('there is one per framework: two web apps, then the three native ones', () => {
+    expect(FRAMEWORKS).toEqual(['react-vite', 'nextjs', 'expo', 'swiftui', 'compose'])
   })
 })
 

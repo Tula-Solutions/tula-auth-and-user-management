@@ -1,4 +1,4 @@
-import { integer, text, unique, uuid } from 'drizzle-orm/pg-core'
+import { integer, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core'
 import { primaryKey, timestamps } from '../mixins'
 import { tenantColumns, tenantConstraints, tenantForeignKey } from '../tenant-columns'
 import { tula } from './pg-schema'
@@ -21,6 +21,13 @@ export const credentials = tula.table(
     secret: text('secret').notNull(),
     /** Password-policy revision the secret was last checked against (for "tighten policy"). */
     policyVersion: integer('policy_version').notNull().default(1),
+    /**
+     * When `secret` last became a **different** secret: for a password, when it was set. What
+     * a password's age is counted from (`password.expiryDays`, ADR 0041). Not `updated_at`,
+     * which also moves when the same password is hashed again with stronger parameters after
+     * a sign-in: a rehash must not make an old password look new.
+     */
+    secretChangedAt: timestamp('secret_changed_at', { withTimezone: true }).notNull().defaultNow(),
     ...timestamps(),
   },
   (t) => [

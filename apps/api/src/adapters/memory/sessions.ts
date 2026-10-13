@@ -1,5 +1,5 @@
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
-import { activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
+import { type Activity, activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import {
   type Authentication,
   beganBefore,
@@ -17,7 +17,19 @@ import {
   type SessionRecord,
   type SessionRevokeReason,
   type SessionStore,
+  sameMethods,
 } from '~/ports/session-store'
+
+/**
+ * A session as a caller gets it: never the store's own object, nor its lists or its claims.
+ */
+function copy(session: SessionRecord): SessionRecord {
+  return {
+    ...session,
+    authMethods: [...session.authMethods],
+    hookClaims: session.hookClaims && { ...session.hookClaims },
+  }
+}
 
 /** Sessions and refresh tokens held in memory, for tests. */
 export class MemorySessionStore implements SessionStore {
@@ -73,12 +85,21 @@ export class MemorySessionStore implements SessionStore {
       type: session.type ?? 'hybrid',
       factorVerifiedAt: session.factorVerifiedAt ?? null,
       authMethods: [...(session.authMethods ?? [])],
+      hookClaims: session.hookClaims ? { ...session.hookClaims } : null,
+      deviceThumbprint: session.deviceThumbprint ?? null,
       revokedAt: null,
       revokeReason: null,
     })
     this.#tokens.set(token.id, { ...token, replacedById: null, usedAt: null })
     this.#activityLog.record(activity ? [activity] : [])
     return { created: true, ended: (ending as SessionRecord[]).map((ended) => ended.id) }
+  }
+
+  /** @inheritdoc */
+  async reportRefusedProof(environmentId: string, id: string, activity: Activity): Promise<void> {
+    if (this.#session(environmentId, id)) {
+      this.#activityLog.record([activity])
+    }
   }
 
   /** @inheritdoc */
@@ -95,7 +116,7 @@ export class MemorySessionStore implements SessionStore {
   /** @inheritdoc */
   async findById(environmentId: string, id: string): Promise<SessionRecord | null> {
     const session = this.#session(environmentId, id)
-    return session ? { ...session } : null
+    return session ? copy(session) : null
   }
 
   /** @inheritdoc */
@@ -106,7 +127,7 @@ export class MemorySessionStore implements SessionStore {
     for (const token of this.#tokens.values()) {
       const session = this.#session(environmentId, token.sessionId)
       if (token.tokenHash === tokenHash && session) {
-        return { token: { ...token }, session: { ...session } }
+        return { token: { ...token }, session: copy(session) }
       }
     }
     return null
@@ -151,7 +172,7 @@ export class MemorySessionStore implements SessionStore {
           y.lastActiveAt.getTime() - x.lastActiveAt.getTime() ||
           (y.id > x.id ? 1 : y.id < x.id ? -1 : 0)
       )
-      .map((session) => ({ ...session }))
+      .map(copy)
   }
 
   /** @inheritdoc */
@@ -177,6 +198,22 @@ export class MemorySessionStore implements SessionStore {
       }
     }
     return [...devices.values()].slice(0, limit)
+  }
+
+  /** @inheritdoc */
+  async hasBoundSessionBefore(
+    environmentId: string,
+    userId: string,
+    session: Pick<SessionRecord, 'id' | 'createdAt'>,
+    thumbprint: string
+  ): Promise<boolean> {
+    return [...this.#sessions.values()].some(
+      (candidate) =>
+        candidate.environmentId === environmentId &&
+        candidate.userId === userId &&
+        candidate.deviceThumbprint === thumbprint &&
+        beganBefore(candidate, session)
+    )
   }
 
   /** @inheritdoc */
@@ -210,10 +247,15 @@ export class MemorySessionStore implements SessionStore {
     if (!session || !isActive(session, authentication.at)) {
       return null
     }
+    const { claims, ifAuthMethods } = authentication.hookClaims
+    if (ifAuthMethods && !sameMethods(session.authMethods, ifAuthMethods)) {
+      return null
+    }
     session.factorVerifiedAt = authentication.at
     session.authMethods = mergeAuthMethods(session.authMethods, authentication.methods)
+    session.hookClaims = claims && { ...claims }
     this.#activityLog.record(activity ? [activity] : [])
-    return { ...session, authMethods: [...session.authMethods] }
+    return copy(session)
   }
 
   /** @inheritdoc */

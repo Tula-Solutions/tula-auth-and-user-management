@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { screen, waitFor, within } from '@testing-library/react'
-import { FAKE_TOKEN, failure, IDS, installFakeApi } from '~/testing/fake-api'
+import { act, screen, waitFor, within } from '@testing-library/react'
+import { FAKE_TOKEN, failure, fakeWebhookEndpoint, IDS, installFakeApi } from '~/testing/fake-api'
 import {
   DEV_PATH,
   expectFocus,
@@ -33,6 +33,14 @@ async function heading(name: string | RegExp): Promise<HTMLElement> {
 
 function dialog(): HTMLElement {
   return screen.getByRole('dialog')
+}
+
+/** Everything the query client holds of its mutations: their answers and what they were sent. */
+function mutationsOf(current: World): unknown[] {
+  return current.queryClient
+    .getMutationCache()
+    .getAll()
+    .map((mutation) => [mutation.state.data, mutation.state.variables])
 }
 
 describe('session', () => {
@@ -310,6 +318,27 @@ describe('API keys', () => {
     expectNothingKept(world as World, [key])
   })
 
+  test('an agent key is created, said to read and propose only, and listed under its own prefix', async () => {
+    const { user } = start(`${DEV_PATH}/api-keys`)
+    await heading('API keys')
+    await user.click(screen.getByRole('button', { name: 'Create key' }))
+    await user.type(within(dialog()).getByLabelText('Name'), 'Assistant')
+    await user.selectOptions(within(dialog()).getByLabelText('Kind'), 'agent')
+    await user.click(within(dialog()).getByRole('button', { name: 'Create key' }))
+
+    const shown = await within(dialog()).findByTestId('created-key')
+    const key = shown.textContent ?? ''
+    expect(key).toMatch(/^tula_ak_dev_/)
+    expect(dialog().textContent).toContain(
+      'It cannot approve a proposal, and changes nothing itself but by running a sign-in test where this environment allows one'
+    )
+    await user.click(within(dialog()).getByRole('button', { name: 'I have copied it' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expectNothingKept(world as World, [key])
+    await screen.findByText(`tula_ak_…${key.slice(-4)}`)
+    await screen.findByText('Agent')
+  })
+
   test('revoking asks first; in production the name must be typed', async () => {
     const { user, api } = start(`${PROD_PATH}/api-keys`)
     await heading('API keys')
@@ -328,6 +357,110 @@ describe('API keys', () => {
     await user.click(within(dialog()).getByRole('button', { name: 'Revoke key' }))
     await screen.findByText(/^Revoked/)
     expect(api.state.keys[0]?.revokedAt).not.toBeNull()
+  })
+})
+
+describe('webhook signing secrets', () => {
+  const URL = 'https://api.example.com/webhooks/tula'
+
+  test('a new endpoint’s secret is shown once and is gone everywhere after the dialog closes', async () => {
+    const { user, api } = start(`${DEV_PATH}/webhooks`)
+    await heading('Webhooks')
+    await user.click(await screen.findByRole('button', { name: 'Add endpoint' }))
+    await user.type(within(dialog()).getByLabelText('Address'), URL)
+    await user.click(within(dialog()).getByRole('checkbox', { name: 'user.created' }))
+    await user.click(within(dialog()).getByRole('checkbox', { name: 'session.revoked' }))
+    await user.click(within(dialog()).getByRole('button', { name: 'Add endpoint' }))
+
+    const shown = await within(dialog()).findByTestId('webhook-secret')
+    const secret = shown.textContent ?? ''
+    expect(secret).toMatch(/^whsec_[A-Za-z0-9+/=]{20,}$/)
+    expect(within(dialog()).getByRole('heading').textContent).toBe('Copy the signing secret now')
+    // The request named the address and the types, and nothing else: the server makes the secret.
+    expect(api.callsTo('POST', '/v1/admin/webhook-endpoints').at(-1)?.body).toEqual({
+      url: URL,
+      eventTypes: ['user.created', 'session.revoked'],
+      enabled: true,
+    })
+    // While it is on screen it is in the document, and nowhere else.
+    expect(localStorage.length + sessionStorage.length).toBe(0)
+    expect(JSON.stringify(mutationsOf(world as World)).includes(secret)).toBe(false)
+    await user.click(within(dialog()).getByRole('button', { name: 'I have copied it' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expectNothingKept(world as World, [secret])
+    await screen.findByRole('heading', { level: 2, name: URL })
+    await screen.findByText('1 of 10 endpoints')
+
+    // Walk on: another screen, back again, the dialog reopened. The secret never comes back.
+    await user.click(screen.getByRole('link', { name: 'API keys' }))
+    await heading('API keys')
+    expectNothingKept(world as World, [secret])
+    await user.click(screen.getByRole('link', { name: 'Webhooks' }))
+    await heading('Webhooks')
+    await user.click(await screen.findByRole('button', { name: 'Add endpoint' }))
+    expect((within(dialog()).getByLabelText('Address') as HTMLInputElement).value).toBe('')
+    expect(within(dialog()).queryAllByTestId('webhook-secret')).toHaveLength(0)
+    expectNothingKept(world as World, [secret])
+  })
+
+  test('Escape on the secret is the same as closing it: nothing of it stays', async () => {
+    const { user } = start(`${DEV_PATH}/webhooks`)
+    await user.click(await screen.findByRole('button', { name: 'Add endpoint' }))
+    await user.type(within(dialog()).getByLabelText('Address'), URL)
+    await user.click(within(dialog()).getByRole('checkbox', { name: 'user.created' }))
+    await user.click(within(dialog()).getByRole('button', { name: 'Add endpoint' }))
+    const secret = (await within(dialog()).findByTestId('webhook-secret')).textContent ?? ''
+    expect(secret).toMatch(/^whsec_/)
+    // What the platform does for Escape on a modal dialog: it closes, and says so.
+    act(() => {
+      ;(dialog() as HTMLDialogElement).close()
+    })
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expectNothingKept(world as World, [secret])
+  })
+
+  test('a rotated secret is shown once with the overlap in words, and is gone after the dialog closes', async () => {
+    const api = installFakeApi()
+    api.state.webhookEndpoints.push(fakeWebhookEndpoint({ url: URL }))
+    const { user } = start(`${DEV_PATH}/webhooks`, { api })
+    await user.click(await screen.findByRole('button', { name: `Rotate the secret of ${URL}` }))
+    expect(within(dialog()).getByRole('heading').textContent).toBe('Rotate the signing secret?')
+    expect(dialog().textContent).toContain(
+      'The current secret is not dropped: for 24 hours every delivery is signed with both'
+    )
+    expect(api.calls.some((call) => call.path.endsWith('/secret/rotate'))).toBe(false)
+    await user.click(within(dialog()).getByRole('button', { name: 'Rotate secret' }))
+
+    const secret = (await within(dialog()).findByTestId('webhook-secret')).textContent ?? ''
+    expect(secret).toMatch(/^whsec_[A-Za-z0-9+/=]{20,}$/)
+    expect(within(dialog()).getByRole('heading').textContent).toBe('Copy the new secret now')
+    // When the previous secret stops signing: said in words, with the server's own time.
+    const overlap = within(dialog()).getByTestId('overlap-ends')
+    expect(overlap.textContent).toContain('The previous secret keeps signing beside it until')
+    expect(overlap.querySelector('time')?.getAttribute('datetime')).toBe('2026-10-05T12:00:00.000Z')
+    // The request carried no body: the server makes the secret.
+    expect(api.calls.find((call) => call.path.endsWith('/secret/rotate'))?.body).toBeUndefined()
+    expect(localStorage.length + sessionStorage.length).toBe(0)
+    expect(JSON.stringify(mutationsOf(world as World)).includes(secret)).toBe(false)
+
+    await user.click(within(dialog()).getByRole('button', { name: 'I have copied it' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expectNothingKept(world as World, [secret])
+    // The card now says that two secrets sign, and until when.
+    const notice = await screen.findByTestId('rotation-overlap')
+    expect(notice.textContent).toContain('Two secrets are signing')
+    expect(notice.querySelector('time')?.getAttribute('datetime')).toBe('2026-10-05T12:00:00.000Z')
+
+    // Walk on, come back, open the dialog again: it asks again, and shows no secret.
+    await user.click(screen.getByRole('link', { name: 'Signing keys' }))
+    await heading('Signing keys')
+    expectNothingKept(world as World, [secret])
+    await user.click(screen.getByRole('link', { name: 'Webhooks' }))
+    await heading('Webhooks')
+    await user.click(await screen.findByRole('button', { name: `Rotate the secret of ${URL}` }))
+    expect(within(dialog()).getByRole('heading').textContent).toBe('Rotate the signing secret?')
+    expect(within(dialog()).queryAllByTestId('webhook-secret')).toHaveLength(0)
+    expectNothingKept(world as World, [secret])
   })
 })
 
@@ -449,9 +582,23 @@ describe('settings', () => {
     await user.type(origin, 'https://app.example.com')
     await user.click(screen.getByRole('button', { name: 'Add origin' }))
     await screen.findByText('That one is already in the list.')
+    expect(
+      screen.getByText(
+        /Older entries are then deleted for good, starting with the next retention run/
+      )
+    ).toBeDefined()
+    expect(screen.queryByText(/within ten minutes/)).toBeNull()
     await user.type(screen.getByLabelText('Keep audit entries for (days)'), '30')
     await user.type(screen.getByLabelText('Support email (optional)'), 'help@example.com')
     await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    // A period where there was none deletes older entries: the editor asks, in those words.
+    expect(dialog().textContent).toContain('This deletes older audit entries for good')
+    expect(dialog().textContent).not.toContain('weakens security')
+    expect(dialog().textContent).toContain(
+      'Audit entries older than the new period are deleted for good, starting with the next retention run'
+    )
+    expect(api.callsTo('PUT', '/v1/admin/settings')).toHaveLength(0)
+    await user.click(within(dialog()).getByRole('button', { name: 'Save anyway' }))
     await screen.findByText('Settings saved')
     expect(api.state.settings.settings.urls.allowedOrigins).toEqual(['https://app.example.com'])
     expect(api.state.settings.settings.audit.retentionDays).toBe(30)
@@ -496,6 +643,7 @@ describe('settings', () => {
             clientId: 'gh-client',
             teamId: null,
             keyId: null,
+            tenant: null,
             callbackUrl: 'http://localhost:3003/v1/client/oauth/github/callback',
             updatedAt: '2026-10-04T12:00:00.000Z',
           },
@@ -627,6 +775,69 @@ describe('users', () => {
     expect(location()).toBe(`${PROD_PATH}/users`)
   })
 
+  describe('a user with no email address (an account made through X or Facebook)', () => {
+    const NELLY = '00000000-0000-7000-8000-0000000000e1'
+    function withNelly(names: { firstName: string | null; lastName: string | null }) {
+      const api = installFakeApi()
+      const ada = api.state.users[0]
+      if (!ada) {
+        throw new Error('the fake API has no user')
+      }
+      api.state.users.push({ ...ada, ...names, id: NELLY, email: null, emailVerifiedAt: null })
+      return api
+    }
+
+    test('is listed by name, said to have no address, and never as "null" or "Unverified"', async () => {
+      const api = withNelly({ firstName: 'Nelly', lastName: 'Okafor' })
+      start(`${DEV_PATH}/users`, { api })
+      const link = await screen.findByRole('link', { name: 'Nelly Okafor' })
+      const row = link.closest('tr') as HTMLElement
+      expect(within(row).getByText('No email address')).toBeDefined()
+      expect(within(row).queryByText('Unverified')).toBeNull()
+      expect((row.textContent ?? '').includes('null')).toBe(false)
+    })
+
+    test('with no name either, the link and the heading name the id', async () => {
+      const api = withNelly({ firstName: null, lastName: null })
+      const { user } = start(`${DEV_PATH}/users`, { api })
+      await user.click(await screen.findByRole('link', { name: `User ${NELLY}` }))
+      await heading(`User ${NELLY}`)
+    })
+
+    test('its screen offers no password, and says why', async () => {
+      const api = withNelly({ firstName: 'Nelly', lastName: null })
+      const { user } = start(`${DEV_PATH}/users/${NELLY}`, { api })
+      await heading('Nelly')
+      expect(screen.getByText('No address to verify')).toBeDefined()
+      expect(screen.queryByRole('button', { name: 'Set password' })).toBeNull()
+      expect(screen.getByText(/so it has no password and none can be set/)).toBeDefined()
+      await user.click(screen.getByRole('button', { name: 'Ban user' }))
+      expect(dialog().textContent).toContain('Ban Nelly?')
+      await user.click(within(dialog()).getByRole('button', { name: 'Cancel' }))
+      await waitFor(() => expect(openDialogs()).toBe(0))
+      // Nobody is told of a reset: there is no address to tell.
+      await user.click(screen.getByRole('button', { name: 'Reset two-step verification' }))
+      expect(dialog().textContent).toContain('They are not told')
+      expect(dialog().textContent).not.toContain('told by email')
+      expect(api.callsTo('PUT', `/v1/admin/users/${NELLY}/password`)).toHaveLength(0)
+    })
+
+    test('in production a destructive action needs the id typed, there being no address', async () => {
+      const api = withNelly({ firstName: 'Nelly', lastName: null })
+      const { user } = start(`${PROD_PATH}/users/${NELLY}`, { api })
+      await heading('Nelly')
+      await user.click(screen.getByRole('button', { name: 'Delete user' }))
+      await user.type(within(dialog()).getByLabelText(/to confirm/), 'Nelly')
+      await user.click(within(dialog()).getByRole('button', { name: 'Delete user' }))
+      expect(api.state.users).toHaveLength(2)
+      await user.clear(within(dialog()).getByLabelText(/to confirm/))
+      await user.type(within(dialog()).getByLabelText(/to confirm/), NELLY)
+      await user.click(within(dialog()).getByRole('button', { name: 'Delete user' }))
+      await heading('Users')
+      expect(api.state.users).toHaveLength(1)
+    })
+  })
+
   test('sessions: revoke one, then all', async () => {
     const api = installFakeApi()
     api.state.sessions.push({ ...api.state.sessions[0], id: 'second', client: 'ios' })
@@ -705,6 +916,26 @@ describe('users', () => {
     // A passkey's name is the user's own text: drawn as text, and its state said in words.
     expect(text).toMatch(/<b>Key<\/b>.*never used.*this device only/)
     expect(signInSection().querySelector('b')).toBeNull()
+  })
+
+  test('a user with no phone number: the profile says none', async () => {
+    start(`${DEV_PATH}/users/${IDS.user}`)
+    const row = (await screen.findByText('Phone number')).closest('div') as HTMLElement
+    expect(row.textContent).toBe('Phone numberNone')
+  })
+
+  test('a user’s phone number is shown with when it was verified', async () => {
+    const api = installFakeApi()
+    const [account] = api.state.users
+    if (!account) {
+      throw new Error('the fake API has no user')
+    }
+    account.phoneNumber = '+14155550142'
+    account.phoneNumberVerifiedAt = '2026-05-03T09:00:00.000Z'
+    start(`${DEV_PATH}/users/${IDS.user}`, { api })
+    const row = (await screen.findByText('Phone number')).closest('div') as HTMLElement
+    expect(row.textContent).toContain('+14155550142')
+    expect(row.textContent).toMatch(/verified .*2026/)
   })
 
   test('a user with no password: what they sign in with instead', async () => {
@@ -852,12 +1083,58 @@ describe('the other screens', () => {
     const checks = [...document.querySelectorAll('li[data-status]')].map((item) =>
       item.getAttribute('data-status')
     )
-    expect(checks).toEqual(['fail', 'warn', 'ok', 'skipped'])
+    expect(checks).toEqual(['fail', 'warn', 'ok', 'ok', 'skipped'])
     expect(screen.getByText('Check SMTP_URL.')).toBeDefined()
     await user.click(screen.getByRole('button', { name: 'Run again' }))
     await waitFor(() =>
       expect(api.callsTo('GET', '/v1/instance/diagnostics').length).toBeGreaterThan(1)
     )
+  })
+
+  test('diagnostics: the native app checks are drawn like any other, skipped ones included', async () => {
+    const api = installFakeApi()
+    api.override('GET', /^\/v1\/instance\/diagnostics$/, () => ({
+      version: '0.0.0',
+      environment: 'prod',
+      time: '2026-10-04T12:00:00.000Z',
+      publicUrl: 'https://auth.example.com',
+      checks: [
+        {
+          id: 'native_app_passkeys',
+          status: 'skipped',
+          summary: 'No native app is registered in any environment.',
+        },
+        {
+          id: 'native_app_files',
+          status: 'warn',
+          summary: 'But fetched at PUBLIC_URL, a file comes back different.',
+          fix: 'Run the check again later.',
+        },
+        {
+          id: 'native_app_identities',
+          status: 'fail',
+          summary: '1 of the 2 native apps registered in 1 environment is not well formed.',
+          fix: 'Remove each such app and register it again with the right values.',
+        },
+      ],
+    }))
+    start('/instance/diagnostics', { api })
+    await heading('Diagnostics')
+    await screen.findByText('1 failing, 1 warning.')
+    const drawn = [...document.querySelectorAll('li[data-status]')].map((item) => [
+      item.querySelector('code')?.textContent,
+      item.getAttribute('data-status'),
+    ])
+    expect(drawn).toEqual([
+      ['native_app_identities', 'fail'],
+      ['native_app_files', 'warn'],
+      ['native_app_passkeys', 'skipped'],
+    ])
+    expect(screen.getByText('No native app is registered in any environment.')).toBeDefined()
+    expect(screen.getByText('Run the check again later.')).toBeDefined()
+    expect(
+      screen.getByText('Remove each such app and register it again with the right values.')
+    ).toBeDefined()
   })
 
   test('a 403 is "not allowed", with no retry; any other failure can be retried', async () => {

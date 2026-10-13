@@ -1,0 +1,721 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "passkey sign-in from an unregistered app",
+  "description": "An app the operator has not registered cannot use a passkey, even one it holds. Where the environment has an Android app, another app’s start is answered like every start (the options name no credential and say nothing of what is registered) and its assertion, whose client data carries the origin of its own signing certificate, is the generic failed sign-in: 401 auth.invalid_credentials, no session, and the challenge is used up. Where the environment has no app of the caller’s platform there is no ceremony at all: the start and the registration are refused (403 request.origin_not_allowed) before an attempt or a challenge exists, as a request with no Origin always was. Removing an app refuses the sign-ins under way from it without using them up and leaves every passkey on its account, where a page of the relying party still uses it; registering the app again lets the same response through. An iOS app that is not registered cannot be told from one that is by anything a server sees: the scenario shows only the environment with no iOS app. The software authenticator stands in for the platform: that a physical authenticator, an emulator or either platform accepts the association and writes these origins has not been shown here. Expects an environment with no other native app; cleanup removes the ones it registers and puts the settings back.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    },
+    "rpId": "native-passkeys.example",
+    "pageOrigin": "https://app.native-passkeys.example",
+    "teamId": "TULAC0NF02",
+    "bundleId": "com.tula.conformance.passkeys-ios",
+    "packageName": "com.tula.conformance.passkeys_android",
+    "fingerprint": "14:B6:C3:A1:E9:D0:7F:52:88:6A:4B:0C:3D:9E:1F:20:A7:B8:C9:D0:E1:F2:A3:B4:C5:D6:E7:F8:09:1A:2B:3C",
+    "secondFingerprint": "FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C",
+    "unregisteredFingerprint": "FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF"
+  },
+  "steps": [
+    {
+      "name": "start a sign-up from the app",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "android",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signUpId": "id",
+        "signUpSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "signUpCode"
+      }
+    },
+    {
+      "name": "verify the address: the account exists and is signed in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signUpSecret}}",
+        "body": {
+          "code": "{{signUpCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          }
+        }
+      },
+      "capture": {
+        "userId": "step.userId",
+        "accessToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "revision": "$any"
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "app": "settings.app",
+        "passwordPolicy": "settings.password",
+        "passwordMethod": "settings.signIn.methods.password",
+        "emailCodeMethod": "settings.signIn.methods.emailCode",
+        "emailLinkMethod": "settings.signIn.methods.emailLink",
+        "signUpSettings": "settings.signUp",
+        "redirects": "settings.urls.allowedRedirectUrls",
+        "audit": "settings.audit",
+        "notifications": "settings.notifications",
+        "mfaSettings": "settings.mfa"
+      }
+    },
+    {
+      "name": "switch passkeys on, with a relying-party id and a page that belongs to it",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{app}}"
+          },
+          "password": {
+            "$json": "{{passwordPolicy}}"
+          },
+          "signIn": {
+            "methods": {
+              "password": {
+                "$json": "{{passwordMethod}}"
+              },
+              "emailCode": {
+                "$json": "{{emailCodeMethod}}"
+              },
+              "emailLink": {
+                "$json": "{{emailLinkMethod}}"
+              },
+              "passkey": {
+                "enabled": true
+              }
+            }
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "allowedOrigins": ["{{pageOrigin}}"],
+            "allowedRedirectUrls": {
+              "$json": "{{redirects}}"
+            }
+          },
+          "audit": {
+            "$json": "{{audit}}"
+          },
+          "notifications": {
+            "$json": "{{notifications}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "rpId": "{{rpId}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "passkeys": {
+              "rpId": "{{rpId}}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "register the Android app: the only app of the environment",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/native-apps",
+        "auth": "secret",
+        "body": {
+          "platform": "android",
+          "packageName": "{{packageName}}",
+          "sha256CertFingerprints": ["{{fingerprint}}"]
+        }
+      },
+      "expect": {
+        "status": 201
+      },
+      "capture": {
+        "androidAppId": "id"
+      }
+    },
+    {
+      "name": "the registered app: ask for the options, with no Origin header",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys/options",
+        "accessToken": "{{accessToken}}",
+        "client": "android",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "rp": {
+            "id": "{{rpId}}",
+            "name": "$any"
+          },
+          "challenge": {
+            "$matches": "^[A-Za-z0-9_-]{43}$"
+          }
+        }
+      },
+      "captureJson": {
+        "androidCreation": ""
+      }
+    },
+    {
+      "name": "the registered app: the authenticator makes a passkey",
+      "passkey": {
+        "authenticator": "phone",
+        "create": "{{androidCreation}}",
+        "capture": "androidRegistration",
+        "androidCertFingerprint": "{{fingerprint}}"
+      }
+    },
+    {
+      "name": "the registered app: finish",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys",
+        "accessToken": "{{accessToken}}",
+        "client": "android",
+        "body": {
+          "credential": {
+            "$json": "{{androidRegistration}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 201
+      }
+    },
+    {
+      "name": "an app that is not registered starts as any caller does: the options say nothing",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "android",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "options": {
+            "rpId": "{{rpId}}",
+            "allowCredentials": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "strangerId": "attempt.id",
+        "strangerSecret": "attempt.attemptSecret"
+      },
+      "captureJson": {
+        "strangerOptions": "options"
+      }
+    },
+    {
+      "name": "it has the user’s passkey, and is signed with its own certificate",
+      "passkey": {
+        "authenticator": "phone",
+        "get": "{{strangerOptions}}",
+        "androidCertFingerprint": "{{unregisteredFingerprint}}",
+        "capture": "strangerAssertion"
+      }
+    },
+    {
+      "name": "the registered app would have signed the same challenge so",
+      "passkey": {
+        "authenticator": "phone",
+        "get": "{{strangerOptions}}",
+        "androidCertFingerprint": "{{fingerprint}}",
+        "capture": "lateAssertion"
+      }
+    },
+    {
+      "name": "the unregistered app’s assertion is the generic failed sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{strangerId}}/passkey",
+        "attempt": "{{strangerSecret}}",
+        "body": {
+          "credential": {
+            "$json": "{{strangerAssertion}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials",
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "and it used the challenge up: the right response for it is refused the same way",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{strangerId}}/passkey",
+        "attempt": "{{strangerSecret}}",
+        "body": {
+          "credential": {
+            "$json": "{{lateAssertion}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials",
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "no iOS app is registered: an iOS client has no ceremony to start",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "ios",
+        "body": {}
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "request.origin_not_allowed"
+        }
+      }
+    },
+    {
+      "name": "nor one to register a passkey with",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys/options",
+        "accessToken": "{{accessToken}}",
+        "client": "ios",
+        "body": {}
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "request.origin_not_allowed"
+        }
+      }
+    },
+    {
+      "name": "the registered app, after all that: start a passkey sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "android",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["passkey"]
+            }
+          },
+          "options": {
+            "rpId": "{{rpId}}",
+            "userVerification": "required",
+            "allowCredentials": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "knownId": "attempt.id",
+        "knownSecret": "attempt.attemptSecret"
+      },
+      "captureJson": {
+        "knownOptions": "options"
+      }
+    },
+    {
+      "name": "the registered app, after all that: the authenticator signs the challenge",
+      "passkey": {
+        "authenticator": "phone",
+        "get": "{{knownOptions}}",
+        "capture": "knownAssertion",
+        "androidCertFingerprint": "{{fingerprint}}"
+      }
+    },
+    {
+      "name": "the registered app, after all that: the answer",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{knownId}}/passkey",
+        "attempt": "{{knownSecret}}",
+        "body": {
+          "credential": {
+            "$json": "{{knownAssertion}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "set-cookie": "$absent"
+        },
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "sub": "{{userId}}",
+            "amr": {
+              "$set": ["hwk", "user", "mfa"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "a sign-in the registered app starts",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "android",
+        "body": {}
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "pendingId": "attempt.id",
+        "pendingSecret": "attempt.attemptSecret"
+      },
+      "captureJson": {
+        "pendingOptions": "options"
+      }
+    },
+    {
+      "name": "the authenticator signs its challenge",
+      "passkey": {
+        "authenticator": "phone",
+        "get": "{{pendingOptions}}",
+        "androidCertFingerprint": "{{fingerprint}}",
+        "capture": "pendingAssertion"
+      }
+    },
+    {
+      "name": "the operator removes the app",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/native-apps/{{androidAppId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "the sign-in under way cannot finish from an app that is no longer registered",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{pendingId}}/passkey",
+        "attempt": "{{pendingSecret}}",
+        "body": {
+          "credential": {
+            "$json": "{{pendingAssertion}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "request.origin_not_allowed"
+        }
+      }
+    },
+    {
+      "name": "and none can start",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "android",
+        "body": {}
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "request.origin_not_allowed"
+        }
+      }
+    },
+    {
+      "name": "the passkey is still the account’s",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/passkeys",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "passkeys": [
+            {
+              "id": "$any"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "a page of the relying party still signs in with it: start a passkey sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "ios",
+        "body": {},
+        "headers": {
+          "Origin": "{{pageOrigin}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["passkey"]
+            }
+          },
+          "options": {
+            "rpId": "{{rpId}}",
+            "userVerification": "required",
+            "allowCredentials": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "webId": "attempt.id",
+        "webSecret": "attempt.attemptSecret"
+      },
+      "captureJson": {
+        "webOptions": "options"
+      }
+    },
+    {
+      "name": "a page of the relying party still signs in with it: the authenticator signs the challenge",
+      "passkey": {
+        "authenticator": "phone",
+        "get": "{{webOptions}}",
+        "capture": "webAssertion",
+        "origin": "{{pageOrigin}}"
+      }
+    },
+    {
+      "name": "a page of the relying party still signs in with it: the answer",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{webId}}/passkey",
+        "attempt": "{{webSecret}}",
+        "body": {
+          "credential": {
+            "$json": "{{webAssertion}}"
+          }
+        },
+        "headers": {
+          "Origin": "{{pageOrigin}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "set-cookie": "$absent"
+        },
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "sub": "{{userId}}",
+            "amr": {
+              "$set": ["hwk", "user", "mfa"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "the operator registers the app again",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/native-apps",
+        "auth": "secret",
+        "body": {
+          "platform": "android",
+          "packageName": "{{packageName}}",
+          "sha256CertFingerprints": ["{{fingerprint}}"]
+        }
+      },
+      "expect": {
+        "status": 201
+      },
+      "capture": {
+        "restoredAppId": "id"
+      }
+    },
+    {
+      "name": "the refusal took nothing: the same response for the same challenge now signs in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{pendingId}}/passkey",
+        "attempt": "{{pendingSecret}}",
+        "body": {
+          "credential": {
+            "$json": "{{pendingAssertion}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "set-cookie": "$absent"
+        },
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "sub": "{{userId}}",
+            "amr": {
+              "$set": ["hwk", "user", "mfa"]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "remove the Android app",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/native-apps/{{restoredAppId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    }
+  ]
+}

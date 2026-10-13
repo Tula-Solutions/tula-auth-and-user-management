@@ -1,0 +1,7 @@
+ALTER TABLE "tula"."native_apps" ADD COLUMN "app_link_paths" text[] DEFAULT '{}'::text[] NOT NULL;--> statement-breakpoint
+ALTER TABLE "tula"."native_apps" ADD CONSTRAINT "native_apps_app_link_paths_shape" CHECK (cardinality("tula"."native_apps"."app_link_paths") <= 10 and array_position("tula"."native_apps"."app_link_paths", null) is null and array_to_string("tula"."native_apps"."app_link_paths", ',') ~ '^((/[A-Za-z0-9._~-]+)+(,(/[A-Za-z0-9._~-]+)+)*)?$' and array_to_string("tula"."native_apps"."app_link_paths", ',') !~ '/\.\.?(/|,|$)' and char_length(array_to_string("tula"."native_apps"."app_link_paths", ',')) - char_length(replace(array_to_string("tula"."native_apps"."app_link_paths", ','), ',', '')) = greatest(cardinality("tula"."native_apps"."app_link_paths") - 1, 0) and char_length(array_to_string("tula"."native_apps"."app_link_paths", ',')) <= 2560 and (cardinality("tula"."native_apps"."app_link_paths") = 0 or char_length(array_to_string("tula"."native_apps"."app_link_paths", ',')) >= 2));--> statement-breakpoint
+-- Added by hand (Drizzle cannot declare a grant). The runtime role's UPDATE on this table is
+-- by column (0028): an update of an app's link paths needs the new column named too. Still
+-- never `platform` or `identifier` (what the app is), the id, the tenant columns or
+-- `created_at`. The shape of a path is the check above, which no grant gets past.
+GRANT UPDATE ("app_link_paths") ON "tula"."native_apps" TO tula_app;

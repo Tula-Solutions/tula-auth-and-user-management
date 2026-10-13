@@ -30,7 +30,7 @@ const ACCESS_TOKEN_VERSION: 1
 
 ### `ACTIVITY_TYPES`
 
-_constant_, defined in `packages/contract/src/audit.ts`
+_constant_, defined in `packages/contract/src/event-types.ts`
 
 Everything the API records. Each entry is written to the event outbox (for webhooks) and to
 the audit log, in the same database transaction as the change it describes.
@@ -39,8 +39,128 @@ A session ends with exactly one of `session.revoked` (its `reason` says why) or
 `session.reuse_detected` (a rotated refresh token was replayed, so the session was revoked as
 possibly stolen).
 
+A new type needs three things, and a test fails for each one that is missing: its name here
+(and in {@link EVENT_TARGET_TYPES}), a `data` schema in `EVENT_DATA_SCHEMAS` and an example
+in `EVENT_FIXTURES`.
+
 ```ts
 const ACTIVITY_TYPES
+```
+
+**Example**
+
+```ts
+import { ACTIVITY_TYPES, type ActivityType } from '@tula/contract/event-types'
+
+function isKnown(type: string): type is ActivityType {
+  return (ACTIVITY_TYPES as readonly string[]).includes(type)
+}
+```
+
+### `AGENT_KEY_PREFIX`
+
+_constant_, defined in `packages/contract/src/tokens.ts`
+
+Prefix of agent keys, followed by `<env>_`: the key an operator gives an AI agent's MCP
+server (ADR 0053). It reads what a secret key reads and can ask for a change as a
+proposal; every route that changes anything refuses it.
+
+```ts
+const AGENT_KEY_PREFIX: "tula_ak_"
+```
+
+### `ANDROID_APK_KEY_HASH_PREFIX`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+What every origin an Android app presents for a passkey starts with (ADR 0027, "Passkeys
+from a native app").
+
+```ts
+const ANDROID_APK_KEY_HASH_PREFIX: "android:apk-key-hash:"
+```
+
+**Example**
+
+```ts
+origin.startsWith(ANDROID_APK_KEY_HASH_PREFIX)
+```
+
+### `APPLE_TEAM_ID_PATTERN`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+An Apple team id: ten characters, upper-case letters and digits.
+
+```ts
+const APPLE_TEAM_ID_PATTERN: {}
+```
+
+**Example**
+
+```ts
+APPLE_TEAM_ID_PATTERN.test('A1B2C3D4E5') // true
+```
+
+### `APP_LINK_PATH_PATTERN`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+An app-link path: one or more segments, each after a slash, of the characters
+`A-Z a-z 0-9 . _ ~ -`. So no wildcard (`*`, `?`), no query, no fragment, no percent-encoded
+octet, no empty segment and no trailing slash: Apple reads `*` and `?` in a path as
+patterns, and a path here is one path. Compared exactly, case included. (A `.` or `..`
+segment fits the pattern and is refused by {@link isAppLinkPath}.)
+
+```ts
+const APP_LINK_PATH_PATTERN: {}
+```
+
+**Example**
+
+```ts
+APP_LINK_PATH_PATTERN.test('/oauth/callback') // true
+APP_LINK_PATH_PATTERN.test('/oauth/*') // false
+```
+
+### `ASSET_LINKS_APP_LINK_RELATION`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+The relation an Android app is served **only when it has at least one app-link path**
+(ADR 0044): `handle_all_urls`, which lets the app open links of the domain the file is
+served from. The file has no way to say which links; the app's manifest names the paths
+it takes. So this hands the app every link of the domain, and is off until an operator
+lists a path for that app.
+
+```ts
+const ASSET_LINKS_APP_LINK_RELATION: "delegate_permission/common.handle_all_urls"
+```
+
+**Example**
+
+```ts
+ASSET_LINKS_APP_LINK_RELATION // 'delegate_permission/common.handle_all_urls'
+```
+
+### `ASSET_LINKS_RELATIONS`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+The Digital Asset Links relations every registered Android app is served with (ADR 0040).
+
+One: `get_login_creds`, which lets the app use the credentials (passkeys, saved passwords)
+of the domain the file is served from. An app with app-link paths is served
+{@link ASSET_LINKS_APP_LINK_RELATION} as well.
+
+```ts
+const ASSET_LINKS_RELATIONS: readonly ["delegate_permission/common.get_login_creds"]
+```
+
+**Example**
+
+```ts
+ASSET_LINKS_RELATIONS.includes('delegate_permission/common.get_login_creds') // true
 ```
 
 ### `AT_LEAST_ONE_SIGN_IN_METHOD`
@@ -61,7 +181,9 @@ const AT_LEAST_ONE_SIGN_IN_METHOD: "at least one sign-in method must stay enable
 _constant_, defined in `packages/contract/src/audit.ts`
 
 Who can perform a recorded action: a signed-in `user`, an `admin` (a secret key; the id is the
-key's), the `system` itself, an AI `agent` acting through the MCP server, or the
+key's), the `system` itself, an AI `agent` acting through the MCP server (an agent key; the
+id is the key's. It asks for changes as proposals, and what a human approved is recorded
+with the agent as the actor and the approving human beside it: ADR 0053), or the
 `instance_admin`: the operator of the deployment, through the dashboard (the id is the
 dashboard session's) or with the instance admin token itself (no id).
 
@@ -76,7 +198,7 @@ _constant_, defined in `packages/contract/src/audit.ts`
 What a recorded action can be about.
 
 ```ts
-const AUDIT_TARGET_TYPES: readonly ["user", "session", "api_key", "signing_key", "environment"]
+const AUDIT_TARGET_TYPES
 ```
 
 ### `AUTHENTICATION_METHODS`
@@ -88,6 +210,11 @@ What `amr` (RFC 8176, "authentication methods references") can hold in a Tula ac
 - `pwd`: the password.
 - `email`: an emailed code or link (a sign-in's email first factor, a verified sign-up, a
   password reset's code).
+- `sms`: a code texted to the account's phone number: as a sign-in's first factor
+  (ADR 0037), or as the second factor of a user who has nothing stronger (ADR 0025). It
+  **never brings `mfa`**: an application that wants an authenticator app or a passkey
+  tests for `mfa`, and one that accepts a texted second step tests for `sms` beside
+  another value. `sms` alone is never a recent authentication.
 - `otp`: a code from an authenticator app (TOTP).
 - `backup_code`: a single-use backup code.
 - `hwk` / `swk`: a passkey, proven with user verification (ADR 0027). `hwk` for a credential
@@ -95,14 +222,15 @@ What `amr` (RFC 8176, "authentication methods references") can hold in a Tula ac
   synced passkey). Always beside `user`.
 - `user`: the authenticator tested that the user was present and verified them.
 - `mfa`: more than one kind of factor was proven for this session: a password or email and
-  then a second factor, or a passkey, which is possession and a verified user in one step.
+  then a second factor that is not a texted code (an authenticator app, a backup code, a
+  passkey), or a passkey, which is possession and a verified user in one step.
 
-`pwd`, `otp`, `hwk`, `swk`, `user` and `mfa` are RFC 8176 values; `email` and `backup_code`
+`pwd`, `sms`, `otp`, `hwk`, `swk`, `user` and `mfa` are RFC 8176 values; `email` and `backup_code`
 are Tula's own. Later servers may add values (a social provider): treat unknown ones as
 opaque.
 
 ```ts
-const AUTHENTICATION_METHODS: readonly ["pwd", "email", "otp", "backup_code", "mfa", "hwk", "swk", "user"]
+const AUTHENTICATION_METHODS: readonly ["pwd", "email", "sms", "otp", "backup_code", "mfa", "hwk", "swk", "user"]
 ```
 
 ### `AccessTokenClaims`
@@ -130,12 +258,12 @@ const AccessTokenClaimsSchema
 
 ### `ActivityType`
 
-_type_, defined in `packages/contract/src/audit.ts`
+_type_, defined in `packages/contract/src/event-types.ts`
 
-A recorded action type.
+A recorded action type: one of {@link ACTIVITY_TYPES}.
 
 ```ts
-export type ActivityType = z.infer<typeof ActivityTypeSchema>
+export type ActivityType = (typeof ACTIVITY_TYPES)[number]
 ```
 
 ### `ActivityTypeSchema`
@@ -146,6 +274,167 @@ One of {@link ACTIVITY_TYPES}.
 
 ```ts
 const ActivityTypeSchema: z.ZodEnum<{}>
+```
+
+### `AdditionalClientIdsSchema`
+
+_constant_, defined in `packages/contract/src/oauth.ts`
+
+The client ids, beside a provider's own `clientId`, whose **ID tokens** the server accepts
+in a native sign-in (ADR 0045): for Google, the Android and iOS OAuth client ids of the
+operator's apps. Not secrets. A set: an id is written once, and the order says nothing.
+
+Each entry widens who can mint a token the server takes as a sign-in, which is why it is
+validated by shape here, capped at {@link MAX_ADDITIONAL_CLIENT_IDS}, and why adding one
+is a recorded weakening ({@link oauthProviderWeakenings}).
+
+```ts
+const AdditionalClientIdsSchema: z.ZodArray<z.ZodString>
+```
+
+**Example**
+
+```ts
+AdditionalClientIdsSchema.parse(['1234567890-abc123.apps.googleusercontent.com'])
+```
+
+### `AdminSession`
+
+_type_, defined in `packages/contract/src/session.ts`
+
+One session as an administrator reads it by its id. See {@link AdminSessionSchema}.
+
+```ts
+export type AdminSession = z.infer<typeof AdminSessionSchema>
+```
+
+### `AdminSessionSchema`
+
+_constant_, defined in `packages/contract/src/session.ts`
+
+One session as an administrator reads it by its id
+(`GET /v1/admin/sessions/{sessionId}`): a {@link SessionSchema} with whose session it is
+and whether it is still active. An ended session is read too, which is what tells an
+administrator that there is nothing left to end. Never token material; `current` is
+always `false`.
+
+```ts
+const AdminSessionSchema
+```
+
+### `AndroidApp`
+
+_type_, defined in `packages/contract/src/native-app.ts`
+
+A registered Android app.
+
+```ts
+export type AndroidApp = z.infer<typeof AndroidAppSchema>
+```
+
+### `AndroidAppIdentity`
+
+_type_, defined in `packages/contract/src/native-app.ts`
+
+An Android app's identity.
+
+```ts
+export type AndroidAppIdentity = z.infer<typeof AndroidAppIdentitySchema>
+```
+
+### `AndroidAppIdentitySchema`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+The identity of an Android app, as a registration and a config file write it. A fingerprint
+is accepted as colon-separated hex in either case or as 64 hex digits, and stored upper
+case with colons.
+
+```ts
+const AndroidAppIdentitySchema
+```
+
+### `AndroidAppSchema`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+A registered Android app: a package name and the certificates it may be signed with.
+
+```ts
+const AndroidAppSchema
+```
+
+### `AppleAppSiteAssociation`
+
+_type_, defined in `packages/contract/src/native-app.ts`
+
+The served `apple-app-site-association`.
+
+```ts
+export type AppleAppSiteAssociation = z.infer<typeof AppleAppSiteAssociationSchema>
+```
+
+### `AppleAppSiteAssociationSchema`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+Apple's `apple-app-site-association` document, as served for an environment.
+
+- `webcredentials`: every registered iOS app. An app named there may use the credentials
+  (passkeys, saved passwords) of the domain.
+- `applinks`: one entry per iOS app that has app-link paths, naming exactly those paths
+  (`{ "/": "<path>" }`, no wildcard). An app with none is not in it, and with no such app
+  the section is absent.
+
+With no iOS app registered the document is `{}`: a section that is absent grants nothing.
+
+```ts
+const AppleAppSiteAssociationSchema
+```
+
+### `ApproveProposalRequest`
+
+_type_, defined in `packages/contract/src/proposal.ts`
+
+The body that approves one.
+
+```ts
+export type ApproveProposalRequest = z.infer<typeof ApproveProposalRequestSchema>
+```
+
+### `ApproveProposalRequestSchema`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+Body of `POST /v1/admin/proposals/{id}/approve`: the operation and the target the human
+was shown. The server carries out what the **proposal** holds, and only when this names
+the same thing: an approval is of what was read, not of an id.
+
+```ts
+const ApproveProposalRequestSchema
+```
+
+### `AssetLinks`
+
+_type_, defined in `packages/contract/src/native-app.ts`
+
+The served `assetlinks.json`.
+
+```ts
+export type AssetLinks = z.infer<typeof AssetLinksSchema>
+```
+
+### `AssetLinksSchema`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+Android's `assetlinks.json`, as served for an environment: one statement per registered
+Android app, each with the relations of {@link ASSET_LINKS_RELATIONS}, and
+{@link ASSET_LINKS_APP_LINK_RELATION} for an app that has app-link paths. With no Android
+app registered it is `[]`.
+
+```ts
+const AssetLinksSchema
 ```
 
 ### `AuditActorType`
@@ -241,6 +530,23 @@ The profiles every environment has: `web` for browsers, `mobile` for every other
 const BUILT_IN_SESSION_PROFILES: readonly ["web", "mobile"]
 ```
 
+### `BUNDLE_ID_PATTERN`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+An iOS bundle id: two or more segments of letters, digits and hyphens, joined by periods
+(reverse-DNS). Compared exactly, case included.
+
+```ts
+const BUNDLE_ID_PATTERN: {}
+```
+
+**Example**
+
+```ts
+BUNDLE_ID_PATTERN.test('com.example.app') // true
+```
+
 ### `BackupCodes`
 
 _type_, defined in `packages/contract/src/mfa.ts`
@@ -299,6 +605,24 @@ const res = await fetch(`${api}/v1/admin/users/${userId}/factors`, {
   headers: { authorization: `Bearer ${secretKey}` },
 })
 const lockedOut = res.headers.get(CAN_STILL_SIGN_IN_HEADER) === 'false'
+```
+
+### `CERT_FINGERPRINT_PATTERN`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+A SHA-256 certificate fingerprint as the server stores and serves it: 32 bytes as
+upper-case hex pairs joined by colons, which is how `keytool` and the Play Console print
+one and how `assetlinks.json` carries it.
+
+```ts
+const CERT_FINGERPRINT_PATTERN: {}
+```
+
+**Example**
+
+```ts
+CERT_FINGERPRINT_PATTERN.test(fingerprint)
 ```
 
 ### `CLIENT_HEADER`
@@ -413,6 +737,70 @@ const CONFIG_UNMANAGED: "none"
 headers[CONFIG_MANAGED_BY_HEADER] = CONFIG_UNMANAGED
 ```
 
+### `COUNTRY_CALLING_PREFIXES`
+
+_constant_, defined in `packages/contract/src/phone.ts`
+
+The prefixes of the E.164 numbers of each country, by ISO 3166-1 alpha-2 code (plus `XK`,
+the user-assigned code in common use for Kosovo).
+
+A prefix is a country calling code, or a calling code and the leading digits that tell one
+country's numbers from another's inside a shared code (the Caribbean members of `+1`,
+Kazakhstan inside `+7`). **Countries that share a prefix cannot be told apart by this
+table**, and are treated as one destination by {@link phoneNumberCountries}: the United
+States and Canada (`+1`), the United Kingdom and the Crown Dependencies (`+44`), Italy and
+the Vatican (`+39`), and a few more.
+
+It is here for the SMS country allow-list and holds nothing else about a country: no
+number lengths, no line types, no names.
+
+```ts
+const COUNTRY_CALLING_PREFIXES: Readonly<Record<string, readonly string[]>>
+```
+
+### `CUSTOM_CLAIMS_CLAIM`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The one top-level claim every custom claim is nested under (ADR 0036).
+
+An operator's claims never sit beside Tula's own, so a claim Tula adds later cannot collide
+with a customer's, and a template cannot set a claim Tula's servers or SDKs act on. `ext`
+("extension") is three bytes in every token, and is not a registered claim name (IANA's
+"JSON Web Token Claims" registry, read in October 2026) nor one OpenID Connect defines.
+
+```ts
+const CUSTOM_CLAIMS_CLAIM: "ext"
+```
+
+**Example**
+
+```ts
+const role = payload[CUSTOM_CLAIMS_CLAIM]?.role // payload.ext.role
+```
+
+### `CUSTOM_SCHEME_REDIRECT_REFUSALS`
+
+_constant_, defined in `packages/contract/src/redirect-url.ts`
+
+Why a listed custom-scheme redirect URL is still refused for one request, as the fixed word
+in `params.reason` of `request.redirect_not_allowed`:
+
+- `provider_without_pkce`: the provider's code is not bound with PKCE.
+- `client_not_native`: the attempt was not started as a native client (`x-tula-client: ios` or
+  `android`).
+- `not_a_provider_sign_in`: the redirect is not for a provider sign-in (an emailed link).
+
+```ts
+const CUSTOM_SCHEME_REDIRECT_REFUSALS: readonly ["provider_without_pkce", "client_not_native", "not_a_provider_sign_in"]
+```
+
+**Example**
+
+```ts
+const reason: CustomSchemeRedirectRefusal = CUSTOM_SCHEME_REDIRECT_REFUSALS[0]
+```
+
 ### `ChangePasswordRequest`
 
 _type_, defined in `packages/contract/src/user.ts`
@@ -452,22 +840,98 @@ nothing an operator would not put on that screen.
 
 - `app.supportEmail` is included because a sign-in screen links to it ("Need help?") and every
   email already shows it. It is `null` when none is set.
-- `signIn.oauth` lists the enabled OAuth providers by name (`google`, `github`, `apple`), for
+- `signIn.oauth` lists the enabled OAuth providers by name (`google`, `github`, `apple`, `microsoft`, `discord`, `linkedin`, `x`, `facebook`), for
   the "Continue with …" buttons. Optional, and plain strings: ignore the ones you do not know.
-- `signIn.methods` lists the enabled methods by name (`password`, `emailCode`, `emailLink`, `passkey`). It
+- `signIn.methods` lists the enabled methods by name (`password`, `emailCode`, `emailLink`, `passkey`, `smsCode`;
+  `smsCode` only while a texted code can really be asked for: the method and `sms` are on, a
+  country is allowed and the deployment has a sender). It
   is an array of plain strings, not an enum, so a client built against this version keeps
   working when a server offers a method it does not know; it should ignore those.
 - `signUp.password` says whether the sign-up form must ask for a password. Optional in the
   schema, so a client reading an older server's answer treats a missing one as `required`.
 - `mfa.policy` says whether a profile screen should offer two-step verification (`off`: hide
   it) and whether it can be turned off (`required`: it cannot). Optional in the schema, so a
-  client reading an older server's answer treats a missing one as `off`.
-- The allow-lists (`urls`), the audit settings, the notice switches (`notifications`) and
+  client reading an older server's answer treats a missing one as `off`. `mfa.smsCode` is
+  `true` while a texted code can be enrolled as a second factor at all (the setting and
+  text messages are on, a country is allowed, the deployment has a sender, the policy is
+  not `off`); whether **this** user may enrol one is said by `GET /v1/client/me/factors`.
+- `phone.enabled` says whether a profile screen should offer adding a phone number: SMS is
+  on and at least one country is allowed. Which countries is not said. Optional in the
+  schema, so a client reading an older server's answer treats a missing one as `false`.
+- The allow-lists (`urls`, `sms.allowedCountries`), the audit settings, the email templates (`emails`), the notice switches (`notifications`) and
   everything under `sessions` (profiles, timeouts, the session limit) are deliberately
   absent: a client learns how its session is held from the response that starts it.
 
 ```ts
 const ClientConfigSchema
+```
+
+### `CreateHookRequest`
+
+_type_, defined in `packages/contract/src/hook.ts`
+
+Body of a hook's registration.
+
+```ts
+export type CreateHookRequest = z.infer<typeof CreateHookRequestSchema>
+```
+
+### `CreateHookRequestSchema`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+Body of `POST /v1/admin/hooks`.
+
+`url` must be one the server may call: `https`, no credentials, and a host that resolves to
+public addresses only (`hook.url_not_allowed` otherwise). There is no `secret` field: the
+server generates it. `failureMode: 'allow'` is recorded as a weakening.
+
+```ts
+const CreateHookRequestSchema
+```
+
+### `CreateNativeAppRequest`
+
+_type_, defined in `packages/contract/src/native-app.ts`
+
+Body of an app's registration.
+
+```ts
+export type CreateNativeAppRequest = z.infer<typeof CreateNativeAppRequestSchema>
+```
+
+### `CreateNativeAppRequestSchema`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+Body of `POST /v1/admin/native-apps`: an iOS app (`teamId`, `bundleId`) or an Android app
+(`packageName`, `sha256CertFingerprints`). An environment has one app per platform and
+bundle id or package name.
+
+```ts
+const CreateNativeAppRequestSchema
+```
+
+### `CreateProposalRequest`
+
+_type_, defined in `packages/contract/src/proposal.ts`
+
+The body that asks for a proposal.
+
+```ts
+export type CreateProposalRequest = z.infer<typeof CreateProposalRequestSchema>
+```
+
+### `CreateProposalRequestSchema`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+Body of `POST /v1/agent/proposals`: the operation and its one target, and nothing else.
+Strict: a proposal has no free text, no reason and no second target. The target is of
+the operation's own kind ({@link PROPOSAL_OPERATION_TARGETS}).
+
+```ts
+const CreateProposalRequestSchema
 ```
 
 ### `CreateUserRequest`
@@ -493,6 +957,72 @@ in another way) and gets one through a password reset or an admin "set password"
 const CreateUserRequestSchema
 ```
 
+### `CreateWebhookEndpointRequest`
+
+_type_, defined in `packages/contract/src/webhook.ts`
+
+Create-endpoint request body.
+
+```ts
+export type CreateWebhookEndpointRequest = z.infer<typeof CreateWebhookEndpointRequestSchema>
+```
+
+### `CreateWebhookEndpointRequestSchema`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+Body of `POST /v1/admin/webhook-endpoints`.
+
+`url` must be one the server may call: `https`, no credentials, and a host that resolves to
+public addresses only (`webhook.url_not_allowed` otherwise). There is no `secret` field: the
+server generates it.
+
+```ts
+const CreateWebhookEndpointRequestSchema
+```
+
+### `CreatedHook`
+
+_type_, defined in `packages/contract/src/hook.ts`
+
+A hook with its secret, as its registration returns it.
+
+```ts
+export type CreatedHook = z.infer<typeof CreatedHookSchema>
+```
+
+### `CreatedHookSchema`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+A newly registered hook. `secret` is its signing secret (`whsec_…`), in this response only:
+the server keeps it sealed and never returns it again.
+
+```ts
+const CreatedHookSchema
+```
+
+### `CreatedWebhookEndpoint`
+
+_type_, defined in `packages/contract/src/webhook.ts`
+
+A newly registered webhook endpoint, with its signing secret.
+
+```ts
+export type CreatedWebhookEndpoint = z.infer<typeof CreatedWebhookEndpointSchema>
+```
+
+### `CreatedWebhookEndpointSchema`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+A newly registered endpoint. `secret` is its signing secret (`whsec_…`), in this response
+only: the server keeps it sealed and never returns it again.
+
+```ts
+const CreatedWebhookEndpointSchema
+```
+
 ### `CurrentUser`
 
 _type_, defined in `packages/contract/src/user.ts`
@@ -512,6 +1042,64 @@ profile screen needs to know about how they sign in. Never a credential.
 
 ```ts
 const CurrentUserSchema
+```
+
+### `CustomClaimValue`
+
+_type_, defined in `packages/contract/src/custom-claims.ts`
+
+What a custom claim's value can be: one string, number or boolean. Never a list or an object.
+
+```ts
+export type CustomClaimValue = string | number | boolean
+```
+
+### `CustomClaims`
+
+_type_, defined in `packages/contract/src/custom-claims.ts`
+
+The custom claims of a verified session, as an SDK hands them to an application: a frozen
+map from claim key to value.
+
+The values are typed `unknown` because only the operator knows what their template puts
+under each key: narrow before use. At run time each is a string, a number or a boolean.
+
+```ts
+export type CustomClaims = Readonly<Record<string, unknown>>
+```
+
+**Example**
+
+```ts
+const { customClaims } = await auth()
+const isAdmin = customClaims.role === 'admin' // a missing claim is `undefined`: "no"
+```
+
+### `CustomClaimsCheck`
+
+_type_, defined in `packages/contract/src/custom-claims.ts`
+
+What {@link checkCustomClaims} found: the claims, or why they are not claims.
+
+- `invalid`: not a plain object, a key that fails {@link isCustomClaimKey} (a reserved
+  name and `__proto__` among them), or a value that is not one string, number or boolean.
+- `too_large`: every claim is fine and together they are over
+  {@link MAX_CUSTOM_CLAIMS_BYTES}.
+
+```ts
+export type CustomClaimsCheck =
+| { claims: Record<string, CustomClaimValue> }
+| { problem: 'invalid' | 'too_large' }
+```
+
+### `CustomSchemeRedirectRefusal`
+
+_type_, defined in `packages/contract/src/redirect-url.ts`
+
+One of {@link CUSTOM_SCHEME_REDIRECT_REFUSALS}.
+
+```ts
+export type CustomSchemeRedirectRefusal = (typeof CUSTOM_SCHEME_REDIRECT_REFUSALS)[number]
 ```
 
 ### `DASHBOARD_HEADER`
@@ -594,9 +1182,10 @@ const DEFAULT_ENVIRONMENT_SETTINGS: EnvironmentSettings
 
 _constant_, defined in `packages/contract/src/session-profile.ts`
 
-The built-in `mobile` profile until an environment changes it. The same values as `web`:
+The built-in `mobile` profile until an environment changes it. The same limits as `web`:
 before profiles existed every client got that one profile, and an environment that saved
-nothing must behave exactly as it did.
+nothing must behave exactly as it did. They differ in `deviceBinding` alone (`optional`
+here, `none` for `web`), which is also what each did before that option existed.
 
 ```ts
 const DEFAULT_MOBILE_SESSION_PROFILE: SessionProfile
@@ -610,6 +1199,18 @@ Page size when the client does not ask for one.
 
 ```ts
 const DEFAULT_PAGE_SIZE: 20
+```
+
+### `DEFAULT_SMS_DAILY_MESSAGE_LIMIT`
+
+_constant_, defined in `packages/contract/src/phone.ts`
+
+How many text messages an environment sends in one day (UTC) unless it says otherwise: the
+default of `sms.dailyMessageLimit`. The limit is on by default, so that an attack on an
+environment that has just switched SMS on has a fixed maximum cost (ADR 0037).
+
+```ts
+const DEFAULT_SMS_DAILY_MESSAGE_LIMIT: 500
 ```
 
 ### `DEFAULT_SPECIAL_CHARS`
@@ -661,6 +1262,243 @@ The built-in `web` profile until an environment changes it (§5.3).
 const DEFAULT_WEB_SESSION_PROFILE: SessionProfile
 ```
 
+### `DEPENDENT_ACCOUNTS_SCAN_LIMIT`
+
+_constant_, defined in `packages/contract/src/oauth.ts`
+
+The most accounts of one provider the server looks at when it counts the ones that depend
+on it ({@link OAuthProviderDependentsSchema}; ADR 0059). The count is a read an operator
+waits for, so its work is bounded: past this many accounts the answer says `more`.
+
+```ts
+const DEPENDENT_ACCOUNTS_SCAN_LIMIT: 1000
+```
+
+### `DPOP_ALGORITHMS`
+
+_constant_, defined in `packages/contract/src/device-binding.ts`
+
+The signature algorithms a proof may use: a closed list, and `ES256` alone. It is what the
+Secure Enclave and StrongBox sign with (ECDSA over P-256 with SHA-256); a later algorithm is
+added here on purpose, never accepted because a proof names it.
+
+```ts
+const DPOP_ALGORITHMS: readonly ["ES256"]
+```
+
+**Example**
+
+```ts
+DPOP_ALGORITHMS.includes(header.alg) // only 'ES256'
+```
+
+### `DPOP_HEADER`
+
+_constant_, defined in `packages/contract/src/device-binding.ts`
+
+Request header carrying the proof: one DPoP proof JWT (RFC 9449), made for this one request.
+Sent when an attempt starts, to bind the session it ends in, and on every refresh of a bound
+session.
+
+```ts
+const DPOP_HEADER: "DPoP"
+```
+
+**Example**
+
+```ts
+headers[DPOP_HEADER] = await createDpopProof(key, { method: 'POST', url, nonce })
+```
+
+### `DPOP_NONCE_HEADER`
+
+_constant_, defined in `packages/contract/src/device-binding.ts`
+
+Response header carrying the server's nonce: on the answer that asks for one
+(`device.nonce_required`), on every refresh of a bound session and on every start that
+brought a proof. A client keeps the newest one and puts it in its next proof.
+
+```ts
+const DPOP_NONCE_HEADER: "DPoP-Nonce"
+```
+
+**Example**
+
+```ts
+const nonce = response.headers.get(DPOP_NONCE_HEADER)
+```
+
+### `DPOP_PROOF_TYPE`
+
+_constant_, defined in `packages/contract/src/device-binding.ts`
+
+The `typ` of a proof's header. A token of any other type is not a proof.
+
+```ts
+const DPOP_PROOF_TYPE: "dpop+jwt"
+```
+
+**Example**
+
+```ts
+header.typ === DPOP_PROOF_TYPE // 'dpop+jwt'
+```
+
+### `DeviceBindingPolicy`
+
+_type_, defined in `packages/contract/src/session-profile.ts`
+
+How strictly a profile's sessions are bound to a device key.
+
+```ts
+export type DeviceBindingPolicy = z.infer<typeof DeviceBindingPolicySchema>
+```
+
+### `DeviceBindingPolicySchema`
+
+_constant_, defined in `packages/contract/src/session-profile.ts`
+
+How strictly a profile's sessions are bound to a device key (ADR 0043): what a sign-in of a
+client that is **not a browser** is held to when it starts.
+
+- `none`: no session of the profile is bound. A start that brings a proof (the `DPoP`
+  header) is refused with `device.binding_not_supported`, never answered with a session
+  that is silently not bound.
+- `optional`: the client chooses. A start with a valid proof ends in a bound session, one
+  without a proof in a session that is not bound.
+- `required`: a start without a proof is refused with `device.binding_required`.
+
+**A browser (`web`) is not affected by any value**: its session is never bound and a proof
+it sends is refused, whatever the profile says.
+
+The option decides how a **new** sign-in starts, never what an existing session is: a
+session bound under `optional` keeps needing a proof at every refresh after its profile
+became `none`, and a session that is not bound lives on, and refreshes, after its profile
+became `required`.
+
+Binding proves that a request was signed by the key the session was bound to. It says
+nothing about what the device is.
+
+```ts
+const DeviceBindingPolicySchema: z.ZodEnum<{}>
+```
+
+### `DeviceKey`
+
+_interface_, defined in `packages/contract/src/device-binding.ts`
+
+A key a session can be bound to: its public half, and a way to sign with the private half
+that never hands the private half out. A native SDK backs it with the Secure Enclave or
+StrongBox; {@link generateSoftwareDeviceKey} backs it with WebCrypto, for tests and for
+platforms with no hardware key.
+
+```ts
+export interface DeviceKey {
+  /** The public key, sent in every proof's header. */
+  publicJwk: DevicePublicJwk
+  /**
+   * Sign with ECDSA over P-256 and SHA-256.
+   *
+   * @param data - The bytes to sign (a proof's `header.payload`).
+   * @returns The signature in the JWS form: `r` then `s`, 32 bytes each (64 bytes). A platform
+   *   that produces a DER signature converts it before returning.
+   */
+  sign(data: Uint8Array): Promise<Uint8Array>
+  /**
+   * A unique id for one proof (its `jti`), for a runtime whose `crypto.getRandomValues`
+   * cannot be counted on (a native app’s JavaScript engine). Left out, 16 random bytes of
+   * the runtime’s own. The id is not a secret: the server only refuses one it has seen, so
+   * it has to be new every time and need not be unguessable.
+   *
+   * @returns An id no other proof of this key carries.
+   */
+  proofId?(): string
+}
+```
+
+**Example**
+
+```ts
+const key: DeviceKey = await generateSoftwareDeviceKey()
+const proof = await createDpopProof(key, { method: 'POST', url, nonce })
+```
+
+### `DevicePublicJwk`
+
+_interface_, defined in `packages/contract/src/device-binding.ts`
+
+The public half of a device key, as a proof's header carries it: a P-256 point and nothing
+else. No private member (`d`), no key id, no other field.
+
+```ts
+export interface DevicePublicJwk {
+  kty: 'EC'
+  crv: 'P-256'
+  /** The point's x coordinate: 32 bytes, base64url without padding. */
+  x: string
+  /** The point's y coordinate: 32 bytes, base64url without padding. */
+  y: string
+}
+```
+
+**Example**
+
+```ts
+const jwk: DevicePublicJwk = { kty: 'EC', crv: 'P-256', x: '…', y: '…' }
+```
+
+### `DpopAlgorithm`
+
+_type_, defined in `packages/contract/src/device-binding.ts`
+
+One of {@link DPOP_ALGORITHMS}.
+
+```ts
+export type DpopAlgorithm = (typeof DPOP_ALGORITHMS)[number]
+```
+
+### `DpopProofInput`
+
+_interface_, defined in `packages/contract/src/device-binding.ts`
+
+What a proof is made for.
+
+```ts
+export interface DpopProofInput {
+  /** The request's method, e.g. `POST`: the proof's `htm`. */
+  method: string
+  /**
+   * The request's address **as the API knows itself**: its public URL and the route's
+   * path. The proof's `htu`. Never the address of a proxy or of an app's own route handler
+   * in front of the API.
+   *
+   * It has one spelling: `http` or `https`, `://`, the host, an optional `:port` in digits,
+   * then a path that starts with `/`, in printable ASCII. A host may hold letters, digits,
+   * dots, hyphens and underscores, or be an IPv6 address in brackets. The server compares
+   * it, as text, with what a URL parser makes of its own public URL, so write it that way:
+   * the host as the server's public URL is written once lower-cased (letters outside ASCII
+   * in their `xn--` form, no dot added or removed at the end); an IPv6 host compressed and
+   * in brackets (`[::1]`); the port without leading zeros and left out when it is the
+   * scheme's default; the path exactly as the route's. The server forgives the case of the
+   * scheme and of the host and a default port written out (`:443`, `:80`), and nothing
+   * else. It **refuses** an address with a backslash, a `.` or `..` path segment, a percent
+   * sign, a query or a fragment (an empty one too), user info (`user@`), or a space, a tab
+   * or a line break. It is signed as given: this module does not rewrite it, so a client
+   * with a URL parser passes the API's URL through it first.
+   */
+  url: string
+  /** The server's nonce, once the client has one ({@link DPOP_NONCE_HEADER}). */
+  nonce?: string
+  /**
+   * The proof's unique id. Left out, the key's own `proofId()`, or 16 random bytes where the
+   * key has none. A proof is accepted once.
+   */
+  jti?: string
+  /** When the proof is made, in milliseconds since the epoch. Left out, now. */
+  now?: number
+}
+```
+
 ### `Duration`
 
 _type_, defined in `packages/contract/src/duration.ts`
@@ -697,6 +1535,26 @@ const EMAIL_LINK_ATTEMPT_PARAM: "tula_attempt"
 const attemptId = new URLSearchParams(location.hash.slice(1)).get(EMAIL_LINK_ATTEMPT_PARAM)
 ```
 
+### `EMAIL_LINK_SCHEMES`
+
+_constant_, defined in `packages/contract/src/email-template.ts`
+
+The schemes that need no `//` and that a mail client, or the application it hands off to,
+acts on: an address to write to, a number to call, an account to message, a document to
+run. A closed list, matched as a word followed by a colon and something that is not a
+space, so that `Note: your code`, `Tel: 555 0100` and `10:30` are sentences. Every scheme
+written with `://` is refused whatever its name.
+
+```ts
+const EMAIL_LINK_SCHEMES
+```
+
+**Example**
+
+```ts
+EMAIL_LINK_SCHEMES.includes('mailto') // true
+```
+
 ### `EMAIL_LINK_TOKEN_PARAM`
 
 _constant_, defined in `packages/contract/src/headers.ts`
@@ -715,6 +1573,103 @@ const EMAIL_LINK_TOKEN_PARAM: "tula_link"
 
 ```ts
 const token = new URLSearchParams(location.hash.slice(1)).get(EMAIL_LINK_TOKEN_PARAM)
+```
+
+### `EMAIL_TEMPLATE_DIGIT_PLACEHOLDERS`
+
+_constant_, defined in `packages/contract/src/email-template.ts`
+
+The placeholders whose value always starts with a digit: a code, a number of minutes, a
+count, and a time (`2026-10-03 14:05 UTC`).
+
+A notice's subject must not start with a digit, so one that starts with any of these is
+refused when it is saved: it would be replaced by the built-in subject at every send. A
+new placeholder whose value is a number or a date is added here in the same change.
+
+```ts
+const EMAIL_TEMPLATE_DIGIT_PLACEHOLDERS: readonly EmailTemplatePlaceholder[]
+```
+
+**Example**
+
+```ts
+EMAIL_TEMPLATE_DIGIT_PLACEHOLDERS.includes('time') // true
+```
+
+### `EMAIL_TEMPLATE_KINDS`
+
+_constant_, defined in `packages/contract/src/email-template.ts`
+
+Every email whose wording an environment can change (ADR 0039): one kind per message the
+server sends, so that a template never has to say two different things.
+
+- `email_verification`, `password_reset`, `sign_in`, `step_up`: the messages that carry a
+  6-digit code (`sign_in` can carry a link as well).
+- `account_exists`, `no_account`, `no_account_sign_in`, `email_in_use`: what is sent
+  instead of a code, so that a sign-up, a reset, a sign-in and adding an address to an
+  account (ADR 0059) answer alike for every address.
+- the rest: security notices (ADR 0023), one per thing that can have happened.
+
+A closed list. Later servers may add kinds: additive.
+
+```ts
+const EMAIL_TEMPLATE_KINDS
+```
+
+**Example**
+
+```ts
+EMAIL_TEMPLATE_KINDS.includes('sign_in') // true
+```
+
+### `EMAIL_TEMPLATE_PLACEHOLDERS`
+
+_constant_, defined in `packages/contract/src/email-template.ts`
+
+Every placeholder a template can name, as `{{name}}`.
+
+- `appName`: the environment's app name.
+- `code`: the 6-digit code of a code message.
+- `link`: the sign-in link. In a body only; the server draws it as its own button, and a
+  paragraph that names it is left out of a message that has no link.
+- `expiresInMinutes`: minutes until the code (and link) stop working. A number.
+- `device`: the device family of a new sign-in (`Chrome on Windows`): one of the server's
+  fixed names, never the user agent.
+- `time`: when it happened, in UTC (`2026-10-03 14:05 UTC`).
+- `provider`: the provider of a connected account, by its fixed name (`Google`).
+- `backupCodesLeft`: how many unused backup codes are left. A number.
+
+Deliberately absent: any address (the recipient's included), an IP address, a user agent,
+a token, and a URL of any kind other than the server's own `link`.
+
+```ts
+const EMAIL_TEMPLATE_PLACEHOLDERS
+```
+
+**Example**
+
+```ts
+EMAIL_TEMPLATE_PLACEHOLDERS.includes('code') // true
+```
+
+### `EMAIL_TEMPLATE_RULES`
+
+_constant_, defined in `packages/contract/src/email-template.ts`
+
+What each kind's templates must and may name. Plain data: an editor draws its list of
+placeholders from it, and the server validates against the same table.
+
+A subject may name everything its kind allows except `link`. No kind of the `notice`
+category lists `code` or `link`, which is what keeps one out of a security notice.
+
+```ts
+const EMAIL_TEMPLATE_RULES: Readonly<Record<EmailTemplateKind, EmailTemplateRules>>
+```
+
+**Example**
+
+```ts
+EMAIL_TEMPLATE_RULES.sign_in.required // ['code', 'link']
 ```
 
 ### `ENVIRONMENT_HEADER`
@@ -763,6 +1718,190 @@ Sign-up deliberately has no "email already taken" code: an existing address stil
 const ERROR_DEFINITIONS: Record<string, ErrorDefinition>
 ```
 
+### `EVENT_DATA_SCHEMAS`
+
+_constant_, defined in `packages/contract/src/events.ts`
+
+The `data` of each event type: the details beyond who (`actor`) and what (`target`).
+
+Typed so that a type in {@link ACTIVITY_TYPES} without an entry does not compile; the
+contract's tests check the same at run time.
+
+```ts
+const EVENT_DATA_SCHEMAS: Record<any, z.ZodObject<Record<string, any>, z.core.$strip>>
+```
+
+**Example**
+
+```ts
+EVENT_DATA_SCHEMAS['session.revoked'].parse({ userId: 'u_1', reason: 'sign_out' })
+```
+
+### `EVENT_FIXTURES`
+
+_constant_, defined in `packages/contract/src/event-fixtures.ts`
+
+A valid example of every event type, keyed by type: for documentation, for a receiver's
+tests and for sending a test delivery. Every optional field is present, so an example shows
+the whole shape (but for `user.passkey_removed`, whose fields depend on its `method`: the
+example is a removal by the owner). Typed so that a type without an example does not compile.
+
+Plain data: nothing here is a real id.
+
+```ts
+const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> }
+```
+
+**Example**
+
+```ts
+test('handles a replayed refresh token', () => {
+  handle(EVENT_FIXTURES['session.reuse_detected'])
+})
+```
+
+### `EVENT_SCHEMAS`
+
+_constant_, defined in `packages/contract/src/events.ts`
+
+The schema of each event type: the envelope around its {@link EVENT_DATA_SCHEMAS} entry.
+
+Parsing strips every key a schema does not name, at each level.
+
+```ts
+const EVENT_SCHEMAS
+```
+
+**Example**
+
+```ts
+const event = EVENT_SCHEMAS['user.created'].parse(JSON.parse(body))
+```
+
+### `EVENT_SCHEMA_VERSION`
+
+_constant_, defined in `packages/contract/src/event-types.ts`
+
+The version of the event payloads: the `schemaVersion` of every event.
+
+Within a version a payload only grows: a later server may add an event type, a field or an
+enum value, so a receiver ignores what it does not know. Removing or renaming a field, or
+changing what one means, is a new version.
+
+```ts
+const EVENT_SCHEMA_VERSION: 1
+```
+
+**Example**
+
+```ts
+if (event.schemaVersion !== EVENT_SCHEMA_VERSION) {
+  // Written by a server with a newer payload format than this code was built for.
+}
+```
+
+### `EVENT_TARGET_TYPES`
+
+_constant_, defined in `packages/contract/src/event-types.ts`
+
+What each event is about: the `target.type` of its payload. `target.id` is that thing's id.
+
+An event about a user's credentials targets the `user` (the passkey or session concerned
+is named in `data`); an OAuth provider's credentials belong to the `environment`. A webhook
+endpoint has an id of its own, as an API key does, so it is its own kind of target, and so
+are a hook, a native app and a proposal (what a proposal would change is in its `data`).
+
+```ts
+const EVENT_TARGET_TYPES: Record<any, any>
+```
+
+**Example**
+
+```ts
+EVENT_TARGET_TYPES['session.revoked'] // 'session'
+```
+
+### `EmailAddressRequest`
+
+_type_, defined in `packages/contract/src/user.ts`
+
+An address to email a code to.
+
+```ts
+export type EmailAddressRequest = z.infer<typeof EmailAddressRequestSchema>
+```
+
+### `EmailAddressRequestSchema`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+Ask for a code to be emailed to an address the signed-in user wants on their account
+(`POST /v1/client/me/email`; ADR 0059). Only for an account that has **no** address: one
+made by a first sign-in with a provider Tula takes no address from (X, Facebook).
+
+```ts
+const EmailAddressRequestSchema: z.ZodObject<{ email: z.ZodString; }, z.core.$strip>
+```
+
+**Example**
+
+```ts
+EmailAddressRequestSchema.parse({ email: 'ada@example.com' })
+```
+
+### `EmailAddressVerifyRequest`
+
+_type_, defined in `packages/contract/src/user.ts`
+
+The code that confirms an email address.
+
+```ts
+export type EmailAddressVerifyRequest = z.infer<typeof EmailAddressVerifyRequestSchema>
+```
+
+### `EmailAddressVerifyRequestSchema`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+The code an address is confirmed with (`POST /v1/client/me/email/verify`).
+
+```ts
+const EmailAddressVerifyRequestSchema: z.ZodObject<{ code: z.ZodString; }, z.core.$strip>
+```
+
+**Example**
+
+```ts
+EmailAddressVerifyRequestSchema.parse({ code: '482913' })
+```
+
+### `EmailCodeSent`
+
+_type_, defined in `packages/contract/src/user.ts`
+
+Where an emailed code went and when it expires.
+
+```ts
+export type EmailCodeSent = z.infer<typeof EmailCodeSentSchema>
+```
+
+### `EmailCodeSentSchema`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+What asking for that code answers: where it went, masked, and when it stops working. Never
+the code, and the same for an address that is free and one another account holds.
+
+```ts
+const EmailCodeSentSchema: z.ZodObject<{ destination: z.ZodString; expiresAt: z.ZodISODateTime; }, z.core.$strip>
+```
+
+**Example**
+
+```ts
+EmailCodeSentSchema.parse({ destination: 'a***@example.com', expiresAt: '2026-10-12T09:10:00.000Z' })
+```
+
 ### `EmailLinkRequest`
 
 _type_, defined in `packages/contract/src/flow.ts`
@@ -803,6 +1942,209 @@ started it. Carries no tokens: opening a link never signs the opener in by itsel
 
 ```ts
 const EmailLinkResultSchema: z.ZodObject<{ status: z.ZodLiteral<unknown>; }, z.core.$strip>
+```
+
+### `EmailSettings`
+
+_type_, defined in `packages/contract/src/email-template-schema.ts`
+
+The `emails` section of an environment's settings.
+
+```ts
+export type EmailSettings = z.infer<typeof EmailSettingsSchema>
+```
+
+### `EmailSettingsSchema`
+
+_constant_, defined in `packages/contract/src/email-template-schema.ts`
+
+The `emails` section of an environment's settings: the wording of its emails.
+
+- `templates`: the environment's own subject and body for each kind of message. Empty by
+  default: every message is the built-in copy.
+
+```ts
+const EmailSettingsSchema
+```
+
+### `EmailTemplate`
+
+_interface_, defined in `packages/contract/src/email-template.ts`
+
+One environment's template for one kind: a subject, a body, or both.
+
+```ts
+export interface EmailTemplate {
+  /** The subject line. Left out: the built-in subject. */
+  subject?: string | undefined
+  /** The body, as plain text: paragraphs separated by a blank line. Left out: the built-in body. */
+  body?: string | undefined
+}
+```
+
+### `EmailTemplateCategory`
+
+_type_, defined in `packages/contract/src/email-template.ts`
+
+What a kind of message is, which decides the rules its templates are held to.
+
+```ts
+export type EmailTemplateCategory = 'code' | 'notice'
+```
+
+### `EmailTemplateKind`
+
+_type_, defined in `packages/contract/src/email-template.ts`
+
+One of {@link EMAIL_TEMPLATE_KINDS}.
+
+```ts
+export type EmailTemplateKind = (typeof EMAIL_TEMPLATE_KINDS)[number]
+```
+
+### `EmailTemplatePlaceholder`
+
+_type_, defined in `packages/contract/src/email-template.ts`
+
+One of {@link EMAIL_TEMPLATE_PLACEHOLDERS}.
+
+```ts
+export type EmailTemplatePlaceholder = (typeof EMAIL_TEMPLATE_PLACEHOLDERS)[number]
+```
+
+### `EmailTemplateProblem`
+
+_interface_, defined in `packages/contract/src/email-template.ts`
+
+One reason a template is refused.
+
+```ts
+export interface EmailTemplateProblem {
+  /** Which part. */
+  field: 'subject' | 'body'
+  /** Why, as a fixed word. */
+  code: EmailTemplateProblemCode
+  /** The placeholder's name, for `unknown_placeholder` and `missing_placeholder`. */
+  placeholder?: string
+  /** The reason in words. It names a placeholder at most, never the template's text. */
+  message: string
+}
+```
+
+### `EmailTemplateProblemCode`
+
+_type_, defined in `packages/contract/src/email-template.ts`
+
+Why a template is refused, as a fixed word.
+
+- `empty`: nothing but white space and characters that draw nothing.
+- `too_long`: over {@link MAX_EMAIL_SUBJECT_LENGTH} or {@link MAX_EMAIL_BODY_LENGTH}.
+- `control_character`: a control character, or a line break in a subject. A body's lines
+  end in `\n` only.
+- `hidden_character`: a text-direction control (U+202A to U+202E, U+2066 to U+2069,
+  U+200E, U+200F, U+061C), a private-use or unassigned code point, or a lone surrogate.
+  The zero-width joiner and non-joiner and variation selectors are allowed.
+- `malformed_braces`: a `{` or `}` that is not part of a `{{name}}`.
+- `unknown_placeholder`: a name this kind does not have, or `link` in a subject.
+- `missing_placeholder`: the body lacks one its message needs.
+- `link_beside_code`: a paragraph names the link and the code. The paragraph of a link is
+  left out of a message that has none, and the code would go with it.
+- `reads_as_link`: it holds something a mail client would turn into a link (every kind).
+- `leading_digit`: a notice's subject starts with a digit, or with a placeholder of
+  {@link EMAIL_TEMPLATE_DIGIT_PLACEHOLDERS}, once what is invisible is set aside.
+
+```ts
+export type EmailTemplateProblemCode =
+| 'empty'
+| 'too_long'
+| 'control_character'
+| 'hidden_character'
+| 'malformed_braces'
+| 'unknown_placeholder'
+| 'missing_placeholder'
+| 'link_beside_code'
+| 'reads_as_link'
+| 'leading_digit'
+```
+
+### `EmailTemplateRules`
+
+_interface_, defined in `packages/contract/src/email-template.ts`
+
+The rules of one kind's templates.
+
+```ts
+export interface EmailTemplateRules {
+  /**
+   * `code`: the message exists to carry a code. `notice`: it carries none, its template can
+   * name no code and no link, and its subject does not lead with a digit. No kind of either
+   * category can hold something that reads as a link.
+   */
+  category: EmailTemplateCategory
+  /** Placeholders a body must name: without them the message could not do its job. */
+  required: readonly EmailTemplatePlaceholder[]
+  /** Placeholders a subject or a body may name besides. */
+  optional: readonly EmailTemplatePlaceholder[]
+}
+```
+
+### `EmailTemplateSchema`
+
+_constant_, defined in `packages/contract/src/email-template-schema.ts`
+
+An environment's wording for one kind of email (ADR 0039): a subject, a body, or both. The
+part left out is the server's built-in copy.
+
+Both are **plain text with `{{name}}` placeholders and nothing else**: no HTML, no
+Markdown, no expression. The server lays the body out (paragraphs are separated by a blank
+line), escapes every character of it, and keeps the layout, the code's styling, the link's
+button and the footer. A subject is at most {@link MAX_EMAIL_SUBJECT_LENGTH} characters on
+one line, a body at most {@link MAX_EMAIL_BODY_LENGTH}.
+
+Which placeholders a kind has, and which its body must contain, is `EMAIL_TEMPLATE_RULES`.
+
+```ts
+const EmailTemplateSchema
+```
+
+### `EmailTemplateToken`
+
+_type_, defined in `packages/contract/src/email-template.ts`
+
+A piece of a parsed template: literal text, or a placeholder by name.
+
+```ts
+export type EmailTemplateToken = { text: string } | { placeholder: string }
+```
+
+### `EmailTemplates`
+
+_type_, defined in `packages/contract/src/email-template.ts`
+
+An environment's templates, by kind. A kind left out sends the built-in copy.
+
+```ts
+export type EmailTemplates = { [Kind in EmailTemplateKind]?: EmailTemplate | undefined }
+```
+
+### `EmailTemplatesSchema`
+
+_constant_, defined in `packages/contract/src/email-template-schema.ts`
+
+An environment's email templates, by kind (`EMAIL_TEMPLATE_KINDS`). A kind left out sends
+the built-in copy; a kind the server does not know is refused.
+
+A template is refused, with the path of the field and the placeholder's name, when it
+names a placeholder its kind does not have, lacks one its message needs (the code; for
+`sign_in` the link too), has a brace that is not part of a `{{name}}`, or holds a control
+character, a hidden character, nothing a reader can see, or anything that reads as a link,
+an address or a domain name (every kind: the only link is the server's own `link`). A
+notice's subject is also refused when it starts with a digit or with a placeholder that
+is always a number or a time. Together the templates take at most
+{@link MAX_EMAIL_TEMPLATES_BYTES} bytes as compact UTF-8 JSON.
+
+```ts
+const EmailTemplatesSchema
 ```
 
 ### `EmailVerificationStrategy`
@@ -861,6 +2203,10 @@ or locks browser apps out by accident. A value that is sent, an empty list inclu
 as sent. Everything else is as in {@link EnvironmentSettingsSchema}: other fields left out
 take their defaults, and unknown keys are refused.
 
+One rule is the input's alone: `app.name` is refused when it holds a text-direction
+control, a private-use or unassigned character or half a surrogate pair. A name saved
+before that rule is still read and returned; it has to be corrected at the next save.
+
 The shape says which of the two were sent, so a server cannot store the document without
 first deciding what the missing ones are.
 
@@ -886,19 +2232,39 @@ otherwise silently reset the password policy to its default.
   {@link MIN_PASSWORD_MIN_LENGTH}.
 - `signIn.methods`: which first factors are offered: `password` (on by default), `emailCode`
   (a 6-digit code by email), `emailLink` (a link in that email, which needs `emailCode`
-  too) and `passkey` (WebAuthn, which needs `passkeys.rpId`). At least one must stay enabled, unless an OAuth provider is (the server checks:
-  providers are configured apart from this document, ADR 0026).
+  too), `passkey` (WebAuthn, which needs `passkeys.rpId`) and `smsCode` (a 6-digit code
+  texted to the phone number an account has proven; offered only while `sms` is on with a
+  country, in a deployment that can send text messages; ADR 0037). At least one of the
+  first four must stay enabled, unless an OAuth provider is (the server checks: providers
+  are configured apart from this document, ADR 0026). `smsCode` does not count: nobody
+  signs up with a phone number. Switching it on is a weakening (`settingsWeakenings`).
 - `signUp.password`: whether a sign-up must choose a password (`required`, the default) or
   may leave it out (`optional`, which needs `emailCode`).
 - `urls`: browser origins allowed by CORS, and URLs flows may redirect to.
-- `audit.retentionDays`: how long audit entries are kept.
+- `audit.retentionDays`: how many days audit entries are kept before the server deletes
+  them for good; `null` (the default) keeps them for ever.
+- `agents.proposalsInProduction`: whether a production environment accepts proposals from
+  an AI agent (`false` by default; ADR 0053). Switching it on is a weakening.
 - `notifications`: which security notices are emailed to an account's owner
   (`passwordChanged`, `newSignIn`, `mfaChanged`, `identityChanged`). All are on unless switched off.
 - `mfa.policy`: whether two-step verification is `off`, `optional` (the default) or
   `required`.
+- `mfa.smsCode`: whether a texted code may be a user's second factor (`enabled`, off by
+  default). Never beside an authenticator app or a passkey (ADR 0025).
 - `passkeys.rpId`: the WebAuthn relying-party id passkeys are bound to (ADR 0027).
 - `sessions`: the named session profiles (`web` and `mobile` always exist) and the
   concurrent-session rule (`maxPerUser`, `onLimit`). See `SessionSettings` (ADR 0028).
+- `sms`: whether text messages are sent (`enabled`, off by default), to which countries
+  (`allowedCountries`, empty by default, which sends nothing) and how many in one day at
+  most (`dailyMessageLimit`, 500 by default). See ADR 0037. `sms.templates` is the
+  environment's own sentence for each kind of text message (`SmsTemplates`, ADR 0042);
+  empty by default: every message is the built-in text.
+- `emails.templates`: the environment's own subject and body for each kind of email, as
+  plain text with `{{name}}` placeholders (`EmailTemplates`). Empty by default: every
+  message is the built-in copy. See ADR 0039.
+- `agents.testSignIn`: whether an AI agent may run a sign-in test here (ADR 0058): `true`,
+  `false`, or `null` (the default) for "in a development environment yes, in a production
+  one no".
 
 ```ts
 const EnvironmentSettingsSchema
@@ -980,6 +2346,76 @@ Parameters that give an error its specifics, e.g. `{ min: 10 }` for `password.to
 
 ```ts
 const ErrorParamsSchema: z.ZodRecord<z.ZodString, z.ZodUnion<[z.ZodString, z.ZodNumber, z.ZodBoolean]>>
+```
+
+### `EventActorSchema`
+
+_constant_, defined in `packages/contract/src/events.ts`
+
+Who did it. `id` is a user's id, an API key's (`admin`), a dashboard session's
+(`instance_admin`), or `null`: the server itself, or the instance admin token.
+
+```ts
+const EventActorSchema: z.ZodObject<{ type: z.ZodEnum<{}>; id: z.ZodNullable<z.ZodString>; }, z.core.$strip>
+```
+
+### `EventData`
+
+_type_, defined in `packages/contract/src/events.ts`
+
+The `data` of an event of type `T`; without `T`, of any event.
+
+```ts
+export type EventData<T extends ActivityType = ActivityType> = z.infer<
+  (typeof EVENT_DATA_SCHEMAS)[T]
+>
+```
+
+**Example**
+
+```ts
+const data: EventData<'session.created'> = { userId: 'u_1', client: 'ios' }
+```
+
+### `EventOf`
+
+_interface_, defined in `packages/contract/src/events.ts`
+
+An event of type `T`, as a webhook delivers it.
+
+- `id`: the event's id, the same as its audit log entry's. A delivery that is repeated
+  carries the same id: use it to drop duplicates.
+- `schemaVersion`: {@link EVENT_SCHEMA_VERSION}.
+- `occurredAt`: ISO 8601, UTC.
+- `actor`, `target`: who did it and what it was done to, by id.
+- `data`: the details, per type.
+- `test`: `true` on a test event (one an administrator asked the server to send, built from
+  an example: nothing it describes happened), and absent on every real event. Signed with
+  the rest of the body. Check it before acting on an event.
+
+There is no IP address and no user agent: those stay in the audit log.
+
+```ts
+export interface EventOf<T extends ActivityType> {
+  id: string
+  type: T
+  schemaVersion: typeof EVENT_SCHEMA_VERSION
+  occurredAt: string
+  actor: { type: AuditActorType; id: string | null }
+  target: { type: EventTargetType<T>; id: string }
+  data: EventData<T>
+  test?: true
+}
+```
+
+### `EventTargetType`
+
+_type_, defined in `packages/contract/src/event-types.ts`
+
+What an event of type `T` is about.
+
+```ts
+export type EventTargetType<T extends ActivityType = ActivityType> = (typeof EVENT_TARGET_TYPES)[T]
 ```
 
 ### `FLOW_ATTEMPT_HEADER`
@@ -1085,11 +2521,12 @@ export type FirstFactorAttemptRequest = z.infer<typeof FirstFactorAttemptRequest
 
 _constant_, defined in `packages/contract/src/flow.ts`
 
-Prove an email first factor.
+Prove an email or SMS first factor.
 
 - `email_code`: the emailed code.
 - `email_link`: nothing to submit. It asks whether the emailed link has been opened (in this
   browser) and completes the sign-in if so; until then the answer is the unchanged step.
+- `sms_code`: the texted code. Every failure is `auth.invalid_credentials`.
 
 ```ts
 const FirstFactorAttemptRequestSchema
@@ -1109,12 +2546,16 @@ export type FirstFactorPrepareRequest = z.infer<typeof FirstFactorPrepareRequest
 
 _constant_, defined in `packages/contract/src/flow.ts`
 
-Ask for the email that proves an email first factor, for a sign-in on `needs_first_factor`.
+Ask for the email or the text message that proves a first factor, for a sign-in on
+`needs_first_factor`.
 
 - `email_code`: a 6-digit code.
 - `email_link`: the same code and a link to `redirectUrl`, which must be one of the
   environment's `urls.allowedRedirectUrls`, exactly. The link carries its token in the URL
   fragment and works only in the browser that asked for it.
+- `sms_code`: a 6-digit code texted to the phone number the sign-in was started with. The
+  answer is the same for every identifier; a message is sent only to a number exactly one
+  account has proven.
 
 ```ts
 const FirstFactorPrepareRequestSchema: z.ZodObject<{ strategy: z.ZodEnum<{}>; redirectUrl: z.ZodOptional<z.ZodString>; }, z.core.$strip>
@@ -1216,6 +2657,635 @@ what lets a new auth method ship everywhere with only a server change (business 
 const FlowStepSchema
 ```
 
+### `HOOK_ANSWER_KINDS`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+What each point takes for an answer: a `decision` ({@link HookAnswerSchema}: allow, or deny
+with a code) or `claims` ({@link HookClaimsAnswerSchema}). A point takes one kind and never
+the other: a claims hook cannot deny, and a deciding hook cannot add a claim.
+
+```ts
+const HOOK_ANSWER_KINDS: Record<any, "claims" | "decision">
+```
+
+**Example**
+
+```ts
+HOOK_ANSWER_KINDS.before_token // 'claims'
+```
+
+### `HOOK_DEFAULT_DEADLINE_MS`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+How long the server waits for a hook's answer unless the hook says otherwise, in
+milliseconds. A hook is on the path of a person signing up: they are waiting.
+
+```ts
+const HOOK_DEFAULT_DEADLINE_MS: 2000
+```
+
+**Example**
+
+```ts
+const deadlineMs = input.deadlineMs ?? HOOK_DEFAULT_DEADLINE_MS
+```
+
+### `HOOK_DENIAL_CODE_PATTERN`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+What a denial's message code looks like: lower-case letters, digits and underscores. The
+operator's own name for why (`disposable_email`), which their app turns into words: narrow
+enough that it can be shown, logged and put in an error's `params` without being markup,
+a sentence or a secret.
+
+```ts
+const HOOK_DENIAL_CODE_PATTERN: {}
+```
+
+**Example**
+
+```ts
+HOOK_DENIAL_CODE_PATTERN.test('disposable_email') // true
+```
+
+### `HOOK_FAILURE_MODES`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+What happens when a hook cannot be asked or does not answer as the contract says: `deny`
+refuses what was asked about (the default: a check that is down lets nobody through),
+`allow` lets it happen as if there were no hook. Choosing `allow` is a recorded weakening.
+
+```ts
+const HOOK_FAILURE_MODES: readonly ["deny", "allow"]
+```
+
+**Example**
+
+```ts
+const mode: HookFailureMode = 'deny'
+```
+
+### `HOOK_FAILURE_REASONS`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+Why a call of a hook failed, as a hook's `lastFailureReason` says it. Fixed words of the
+server's own: the first eight are the outbound guard's (the request was not made, or got no
+usable answer), then an answer whose status was not 2xx, an answer that was not exactly the
+answer its point takes, and a signing secret the server could not open. The last two are a
+claims hook's alone: a claim that breaks a rule (a reserved name, a key outside the grammar,
+a value that is not one string, number or boolean), and claims over the size cap, by
+themselves or together with the claims of the session's JWT template.
+
+```ts
+const HOOK_FAILURE_REASONS
+```
+
+**Example**
+
+```ts
+if (hook.lastFailureReason === 'timeout') {
+  // the endpoint did not answer inside the hook's deadline
+}
+```
+
+### `HOOK_FIELDS`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+The fields of a hook an update can change, as `hook.updated` names them. `url` says the
+address changed, never what it is or was.
+
+```ts
+const HOOK_FIELDS: readonly ["url", "enabled", "deadlineMs", "failureMode"]
+```
+
+**Example**
+
+```ts
+const changed: (typeof HOOK_FIELDS)[number][] = ['failureMode']
+```
+
+### `HOOK_MAX_DEADLINE_MS`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+The longest deadline a hook can be given, in milliseconds. Not configurable above this: the
+API's schema refuses a larger number and so does the database.
+
+```ts
+const HOOK_MAX_DEADLINE_MS: 5000
+```
+
+**Example**
+
+```ts
+deadlineMs <= HOOK_MAX_DEADLINE_MS
+```
+
+### `HOOK_MAX_DENIAL_CODE_LENGTH`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+Longest message code a hook may deny with.
+
+```ts
+const HOOK_MAX_DENIAL_CODE_LENGTH: 64
+```
+
+**Example**
+
+```ts
+code.length <= HOOK_MAX_DENIAL_CODE_LENGTH
+```
+
+### `HOOK_MIN_DEADLINE_MS`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+The shortest deadline a hook can be given, in milliseconds.
+
+```ts
+const HOOK_MIN_DEADLINE_MS: 100
+```
+
+**Example**
+
+```ts
+deadlineMs >= HOOK_MIN_DEADLINE_MS
+```
+
+### `HOOK_OUTCOMES`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+What a call of a hook came to, as a hook's `recentOutcomes` counts it (ADR 0035, "Recent
+outcomes"). A closed list, and all the server keeps of a call:
+
+- `allowed`: the hook answered as its point's contract says and did not refuse. For
+  `before_token`, which cannot refuse, every usable answer is this one.
+- `denied`: a deciding hook answered `deny`.
+- `timed_out`: no answer inside the hook's deadline (the failure reason `timeout`).
+- `failed`: every other failed call ({@link HOOK_FAILURE_REASONS}).
+
+A failed or timed-out call is counted whatever the hook's failure mode then did with it.
+
+```ts
+const HOOK_OUTCOMES: readonly ["allowed", "denied", "failed", "timed_out"]
+```
+
+**Example**
+
+```ts
+const lastCallFailed = hookLastCallFailed(hook.recentOutcomes.lastOutcome)
+```
+
+### `HOOK_OUTCOME_WINDOW_HOURS`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+How many hours of calls a hook's `recentOutcomes` covers: the hour the answer is made in
+and the ones before it, so between one hour less than this and this many. The server
+counts by the hour and keeps no call by itself.
+
+```ts
+const HOOK_OUTCOME_WINDOW_HOURS: 24
+```
+
+### `HOOK_POINTS`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+The points at which the server can ask a hook. A closed list: an environment has at most one
+hook per point.
+
+- `before_sign_up`: before a sign-up creates an account. Allows or denies.
+- `before_session`: before a sign-in (a sign-up's and a password reset's too) creates a
+  session, after every factor was proven. Allows or denies.
+- `before_token`: when a session is created and each time its user proves a factor again,
+  before the token is issued. Answers with claims for the token; it cannot deny.
+
+```ts
+const HOOK_POINTS: readonly ["before_sign_up", "before_session", "before_token"]
+```
+
+**Example**
+
+```ts
+const point: HookPoint = HOOK_POINTS[0] // 'before_sign_up'
+```
+
+### `HOOK_QUESTION_FIXTURES`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+A valid example of every question, keyed by point: for documentation and for a receiver's
+tests. Plain data: nothing here is a real id or a real address.
+
+```ts
+const HOOK_QUESTION_FIXTURES: { readonly [P in HookPoint]: HookQuestionOf<P> }
+```
+
+**Example**
+
+```ts
+test('refuses a disposable address', async () => {
+  expect(await decide(HOOK_QUESTION_FIXTURES.before_sign_up)).toEqual({ decision: 'allow' })
+})
+```
+
+### `HOOK_QUESTION_SCHEMAS`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+The question of each point: the envelope around its `data`.
+
+- `id`: the question's id, also the `webhook-id` header. Every question has a new one.
+- `type`: {@link HOOK_QUESTION_TYPES} of the point.
+- `schemaVersion`: {@link HOOK_SCHEMA_VERSION}.
+- `occurredAt`: when the question was asked, ISO 8601, UTC.
+
+```ts
+const HOOK_QUESTION_SCHEMAS: Record<any, z.ZodObject<Record<string, any>, z.core.$strip>>
+```
+
+**Example**
+
+```ts
+const question = HOOK_QUESTION_SCHEMAS.before_sign_up.parse(JSON.parse(body))
+```
+
+### `HOOK_QUESTION_TYPES`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+The `type` of the question asked at each point. None of them is the name of an event.
+
+```ts
+const HOOK_QUESTION_TYPES: Record<any, `hook.${any}`>
+```
+
+**Example**
+
+```ts
+if (question.type === HOOK_QUESTION_TYPES.before_sign_up) {
+  // question.data.email is the address being signed up, or null when there is none
+}
+```
+
+### `HOOK_SCHEMA_VERSION`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+The version of the hook questions: the `schemaVersion` of every question. Within a version a
+question only grows.
+
+```ts
+const HOOK_SCHEMA_VERSION: 1
+```
+
+**Example**
+
+```ts
+question.schemaVersion === HOOK_SCHEMA_VERSION
+```
+
+### `HOOK_SIGN_UP_METHODS`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+How a sign-up is being made, as a `hook.before_sign_up` question says it: with a password,
+without one (an emailed code proved the address), or by a first sign-in with a provider.
+
+```ts
+const HOOK_SIGN_UP_METHODS: readonly ["password", "passwordless", ...any[]]
+```
+
+**Example**
+
+```ts
+const method: (typeof HOOK_SIGN_UP_METHODS)[number] = 'oauth_google'
+```
+
+### `Hook`
+
+_type_, defined in `packages/contract/src/hook.ts`
+
+A hook as listed.
+
+```ts
+export type Hook = z.infer<typeof HookSchema>
+```
+
+### `HookAnswer`
+
+_type_, defined in `packages/contract/src/hook.ts`
+
+What a hook answers.
+
+```ts
+export type HookAnswer = z.infer<typeof HookAnswerSchema>
+```
+
+### `HookAnswerSchema`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+The answer of a hook: allow, or deny with an optional message code of the operator's own.
+
+**Exactly this and nothing else.** A body that is not JSON, another `decision`, a `code`
+beside an `allow`, a code outside {@link HOOK_DENIAL_CODE_PATTERN} or **any other key** is
+not an answer: the call has failed and the hook's failure mode decides. An unknown key is
+not ignored, because a later version may give one meaning and a server that does not know
+it must not act on half of an answer. A hook can allow or deny; it cannot mark an address
+verified, skip a second factor, choose a user or add anything to an account.
+
+```ts
+const HookAnswerSchema
+```
+
+**Example**
+
+```ts
+return Response.json({ decision: 'deny', code: 'disposable_email' } satisfies HookAnswer)
+```
+
+### `HookBeforeSessionDataSchema`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+The `data` of a `hook.before_session` question: who is about to get a session, and how
+they proved it. An allow-list, and strict.
+
+- `userId`: the user. Every factor the sign-in needed has been **proven** by the time the
+  question is asked.
+- `client`: the kind of client the sign-in was started from.
+- `profile`: the name of the session profile the session would get.
+- `amr`: what was proven, as the token's `amr` will say it. A set.
+- `signUp`: `true` when the session is the one a sign-up ends with (the account was created
+  by the same attempt), `false` for a sign-in and for a password reset.
+- `ipAddress`: the address the request that would create the session came from, as the
+  server knows it; `null` when it does not.
+
+**No email address**: the account exists, and its id names it (an operator reads the
+address from the admin API by that id). Never a password, a code, a token, an attempt's id
+or secret, a name or a user agent.
+
+```ts
+const HookBeforeSessionDataSchema
+```
+
+### `HookBeforeSignUpDataSchema`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+The `data` of a `hook.before_sign_up` question. An allow-list, and strict: nothing reaches a
+question by being passed along.
+
+- `email`: the address the account would be created for, normalised (lower case): the form
+  an account is unique by. The address has been **proven** by the time the question is
+  asked (an emailed code, or a provider that asserts it verified). **`null` when the
+  account would have no address**: a first sign-in with a provider Tula takes none from
+  (`oauth_x`, `oauth_facebook`; ADR 0026). The key is always there; a receiver that
+  decides by the address decides what an account without one gets.
+- `method`: one of {@link HOOK_SIGN_UP_METHODS}.
+- `client`: the kind of client the sign-up was started from.
+- `ipAddress`: the address the request that would create the account came from, as the
+  server knows it; `null` when it does not.
+
+Never a password, a code, a token, an attempt's id or secret, a name, a user agent or
+anything of a provider's profile.
+
+```ts
+const HookBeforeSignUpDataSchema
+```
+
+### `HookBeforeTokenDataSchema`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+The `data` of a `hook.before_token` question: the session whose token is about to carry the
+claims the hook answers with. An allow-list, and strict.
+
+- `userId`, `sessionId`: the user and the session. When the question is asked for a new
+  session, the session **does not exist yet** and may never (the environment's
+  concurrent-session rule can still refuse it): do not act on the id, only answer.
+- `client`: the kind of client the session was created from.
+- `profile`: the name of the session's profile.
+- `amr`: everything the session has proven so far, as the token's `amr` says it. A set.
+
+**No email address and no IP address.** The id names the user; and a claim that depends on
+where one request came from would be signed into every later token of the session, long
+after the request. Never a password, a code, a token or a user agent.
+
+```ts
+const HookBeforeTokenDataSchema
+```
+
+### `HookClaimsAnswer`
+
+_type_, defined in `packages/contract/src/hook.ts`
+
+What a claims hook answers.
+
+```ts
+export type HookClaimsAnswer = z.infer<typeof HookClaimsAnswerSchema>
+```
+
+### `HookClaimsAnswerSchema`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+The answer of a claims hook (`before_token`): the claims to issue under the namespace claim
+(`ext`) of the session's tokens, and **nothing else**.
+
+- `claims`: an object of at most {@link MAX_CUSTOM_CLAIMS_BYTES} bytes as JSON whose every
+  key passes `isCustomClaimKey` (letters, digits and underscores, at most 32, not a reserved
+  claim name) and whose every value is one string, number or boolean. `{}` is an answer and
+  means none.
+
+Any other key beside `claims` (a `decision` among them) is not an answer. A claim that
+breaks a rule fails the **whole** answer: nothing of it is issued, and the hook's failure
+mode decides. The claims sit inside `ext`, so no answer can set `sub`, `amr`, `auth_time`
+or any other claim Tula issues; a claims hook cannot deny, choose a user, mark an address
+verified or skip a second factor.
+
+This schema describes the shape and holds every rule but one: a schema library copies an
+object and drops a `__proto__` key on the way. The server judges the body as it was parsed,
+with {@link readHookClaimsAnswer}, which refuses that key too.
+
+```ts
+const HookClaimsAnswerSchema
+```
+
+**Example**
+
+```ts
+return Response.json({ claims: { role: 'admin', plan: 'team' } } satisfies HookClaimsAnswer)
+```
+
+### `HookClaimsRead`
+
+_type_, defined in `packages/contract/src/hook.ts`
+
+What {@link readHookClaimsAnswer} found in a body: the claims, or which of the fixed failure
+words ({@link HOOK_FAILURE_REASONS}) says why there are none.
+
+```ts
+export type HookClaimsRead =
+| { claims: Record<string, CustomClaimValue> }
+| { problem: 'answer_invalid' | 'claims_invalid' | 'claims_too_large' }
+```
+
+### `HookFailureMode`
+
+_type_, defined in `packages/contract/src/hook.ts`
+
+One of {@link HOOK_FAILURE_MODES}.
+
+```ts
+export type HookFailureMode = (typeof HOOK_FAILURE_MODES)[number]
+```
+
+### `HookFailureReason`
+
+_type_, defined in `packages/contract/src/hook.ts`
+
+One of {@link HOOK_FAILURE_REASONS}.
+
+```ts
+export type HookFailureReason = (typeof HOOK_FAILURE_REASONS)[number]
+```
+
+### `HookListSchema`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+An environment's hooks, oldest first: at most one per point.
+
+```ts
+const HookListSchema
+```
+
+### `HookOutcome`
+
+_type_, defined in `packages/contract/src/hook.ts`
+
+One of {@link HOOK_OUTCOMES}.
+
+```ts
+export type HookOutcome = (typeof HOOK_OUTCOMES)[number]
+```
+
+### `HookPoint`
+
+_type_, defined in `packages/contract/src/hook.ts`
+
+A point at which a hook is asked.
+
+```ts
+export type HookPoint = (typeof HOOK_POINTS)[number]
+```
+
+### `HookPointSchema`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+One of {@link HOOK_POINTS}.
+
+```ts
+const HookPointSchema: z.ZodEnum<{}>
+```
+
+### `HookQuestion`
+
+_type_, defined in `packages/contract/src/hook.ts`
+
+Any question a hook is asked: a union told apart by `type`.
+
+```ts
+export type HookQuestion = { [P in HookPoint]: HookQuestionOf<P> }[HookPoint]
+```
+
+### `HookQuestionOf`
+
+_type_, defined in `packages/contract/src/hook.ts`
+
+The question asked at point `P`.
+
+```ts
+export type HookQuestionOf<P extends HookPoint> = z.infer<(typeof HOOK_QUESTION_SCHEMAS)[P]>
+```
+
+### `HookQuestionSchema`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+Any question, told apart by `type`: what a hook's receiver parses a request with.
+
+```ts
+const HookQuestionSchema: z.ZodDiscriminatedUnion<[any, any, any], "type">
+```
+
+**Example**
+
+```ts
+const question = HookQuestionSchema.parse(JSON.parse(body))
+```
+
+### `HookRecentOutcomes`
+
+_type_, defined in `packages/contract/src/hook.ts`
+
+A hook's `recentOutcomes`: see {@link HookRecentOutcomesSchema}.
+
+```ts
+export type HookRecentOutcomes = z.infer<typeof HookRecentOutcomesSchema>
+```
+
+### `HookRecentOutcomesSchema`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+What a hook's calls of the current hour and the {@link HOOK_OUTCOME_WINDOW_HOURS} - 1
+before it came to: four
+counts, and when the most recent call was and what it came to. **Counts only.** Nothing of
+a question (it holds an email address and an IP address) and nothing of an answer but
+which of the four it was: not the operator's code of a denial, not a claim, not a status.
+The server counts by the hour, so there is no time of any call but the most recent.
+
+```ts
+const HookRecentOutcomesSchema
+```
+
+### `HookSchema`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+A hook as the admin API lists it. The signing secret is never part of it: it is returned
+once, by the call that registered the hook.
+
+```ts
+const HookSchema
+```
+
+### `HookStrength`
+
+_interface_, defined in `packages/contract/src/hook.ts`
+
+What of a hook decides how much it protects.
+
+```ts
+export interface HookStrength {
+  enabled: boolean
+  failureMode: HookFailureMode
+}
+```
+
 ### `HybridSessionTokens`
 
 _type_, defined in `packages/contract/src/flow.ts`
@@ -1226,6 +3296,57 @@ every sign-in returns unless the environment made the session's profile `statefu
 ```ts
 export type HybridSessionTokens = SessionTokens &
 Required<Pick<SessionTokens, 'accessToken' | 'accessTokenExpiresAt'>>
+```
+
+### `ID_TOKEN_CLIENT_KINDS`
+
+_constant_, defined in `packages/contract/src/oauth.ts`
+
+The client kinds (`x-tula-client`) that may start a native ID-token sign-in with each
+provider. Google's SDKs hand an app a token on both platforms; Apple's sheet exists on
+Apple's own, and a token Apple issues to an Android app or a web page is issued for a
+Services ID, which this exchange does not accept.
+
+The client kind is the client's own claim: this is what an honest client is told early,
+not what bounds the exchange (the token is).
+
+```ts
+const ID_TOKEN_CLIENT_KINDS: Record<any, {}>
+```
+
+**Example**
+
+```ts
+ID_TOKEN_CLIENT_KINDS.apple // ['ios']
+```
+
+### `ID_TOKEN_PROVIDERS`
+
+_constant_, defined in `packages/contract/src/oauth.ts`
+
+The providers whose **ID token** a native app may hand to the server for a sign-in, with no
+browser redirect (ADR 0045): the app shows the system's own account sheet, the provider
+gives the app an ID token, and the server verifies it.
+
+A closed list in the contract, as a fact about what the server can verify and not a
+setting: a provider is here only when its adapter verifies an ID token's signature,
+issuer, expiry, audience and nonce.
+
+- `google`: Credential Manager on Android, Google Sign-In on iOS. The accepted audiences
+  are the provider's `clientId` and its `additionalClientIds`.
+- `apple`: the system's Sign in with Apple sheet, on Apple's platforms only
+  ({@link ID_TOKEN_CLIENT_KINDS}). The accepted audiences are the bundle ids of the
+  environment's registered iOS apps, and the token's `nonce` is the SHA-256 of the
+  server's ({@link IdTokenStartSchema}; ADR 0047).
+
+```ts
+const ID_TOKEN_PROVIDERS: ["google", "apple"]
+```
+
+**Example**
+
+```ts
+ID_TOKEN_PROVIDERS.includes('google') // true
 ```
 
 ### `INSTANCE_ACTIVITY_TYPES`
@@ -1248,6 +3369,105 @@ What an instance audit entry can be about.
 
 ```ts
 const INSTANCE_AUDIT_TARGET_TYPES: readonly ["workspace", "project", "environment"]
+```
+
+### `IdTokenExchangeRequest`
+
+_type_, defined in `packages/contract/src/oauth.ts`
+
+Native ID-token exchange request body.
+
+```ts
+export type IdTokenExchangeRequest = z.infer<typeof IdTokenExchangeRequestSchema>
+```
+
+### `IdTokenExchangeRequestSchema`
+
+_constant_, defined in `packages/contract/src/oauth.ts`
+
+What a native app sends to finish the sign-in: the provider's ID token and, **for Apple
+only**, the name the system's sheet handed the app.
+
+Apple's ID token carries no name: the sheet gives it to the app, on the first
+authorization only (`ASAuthorizationAppleIDCredential.fullName`). `givenName` and
+`familyName` are where the app passes it on. **They are not signed by anyone**: the
+server reads a display name from them for a new account and nothing else, exactly as it
+reads the unsigned `user` field of Apple's web flow, and never an address or an id. For
+a provider whose token carries its own names (Google) they are not read at all.
+
+```ts
+const IdTokenExchangeRequestSchema
+```
+
+### `IdTokenProvider`
+
+_type_, defined in `packages/contract/src/oauth.ts`
+
+A provider whose ID token a native app may exchange.
+
+```ts
+export type IdTokenProvider = z.infer<typeof IdTokenProviderSchema>
+```
+
+### `IdTokenProviderSchema`
+
+_constant_, defined in `packages/contract/src/oauth.ts`
+
+One of {@link ID_TOKEN_PROVIDERS}.
+
+```ts
+const IdTokenProviderSchema: z.ZodEnum<{}>
+```
+
+### `IdTokenStart`
+
+_type_, defined in `packages/contract/src/oauth.ts`
+
+Native ID-token sign-in start response.
+
+```ts
+export type IdTokenStart = z.infer<typeof IdTokenStartSchema>
+```
+
+### `IdTokenStartRequest`
+
+_type_, defined in `packages/contract/src/oauth.ts`
+
+Native ID-token sign-in start request body.
+
+```ts
+export type IdTokenStartRequest = z.infer<typeof IdTokenStartRequestSchema>
+```
+
+### `IdTokenStartRequestSchema`
+
+_constant_, defined in `packages/contract/src/oauth.ts`
+
+Start a native sign-in with a provider's ID token (ADR 0045). The body names the provider
+and nothing else: there is no redirect URL, because there is no browser.
+
+```ts
+const IdTokenStartRequestSchema: z.ZodObject<{ provider: z.ZodEnum<{}>; }, z.core.$strict>
+```
+
+### `IdTokenStartSchema`
+
+_constant_, defined in `packages/contract/src/oauth.ts`
+
+The answer to starting a native ID-token sign-in.
+
+- `attempt`: the attempt, waiting on `needs_first_factor` with the provider's strategy.
+- `nonce`: made by the server, returned **once**. It is not a secret and authorizes
+  nothing. What the app hands to the provider's SDK depends on the provider, and exactly
+  one form is accepted for each:
+  - **Google**: the nonce, unchanged. The ID token's `nonce` claim must be exactly it.
+  - **Apple**: the **lowercase hexadecimal SHA-256 of the nonce's UTF-8 bytes** (64
+    characters), as `ASAuthorizationAppleIDRequest.nonce`. Apple puts the string it was
+    given into the token, so the token's `nonce` claim must be that hash; a token that
+    carries the nonce itself is refused (ADR 0047).
+
+```ts
+const IdTokenStartSchema
 ```
 
 ### `Identity`
@@ -1341,6 +3561,76 @@ What an instance action was about.
 export type InstanceAuditTargetType = (typeof INSTANCE_AUDIT_TARGET_TYPES)[number]
 ```
 
+### `IosApp`
+
+_type_, defined in `packages/contract/src/native-app.ts`
+
+A registered iOS app.
+
+```ts
+export type IosApp = z.infer<typeof IosAppSchema>
+```
+
+### `IosAppIdentity`
+
+_type_, defined in `packages/contract/src/native-app.ts`
+
+An iOS app's identity.
+
+```ts
+export type IosAppIdentity = z.infer<typeof IosAppIdentitySchema>
+```
+
+### `IosAppIdentitySchema`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+The identity of an iOS app, as a registration and a config file write it. `appLinkPaths`
+left out is none: the app is handed no link.
+
+```ts
+const IosAppIdentitySchema
+```
+
+### `IosAppSchema`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+A registered iOS app: a bundle id under an Apple team.
+
+```ts
+const IosAppSchema
+```
+
+### `JWT_TEMPLATE_SOURCES`
+
+_constant_, defined in `packages/contract/src/jwt-template.ts`
+
+What a template's claim can be read from, besides a constant (ADR 0036). A closed list:
+things the server itself knows about the user and the session, never something a request
+said.
+
+- `user.email`: the user's address in its normalised form (trimmed, ASCII letters
+  lowercased), which is the form Tula matches addresses by. A string.
+- `user.email_verified`: whether that address has been proven. A boolean. A user with no
+  address has no value for it, as for `user.email`: the key is left out, never `false`.
+- `user.created_at`: when the account was created, in seconds since the epoch. A number.
+- `session.client`: the kind of client the session was started from (`web`, `ios`,
+  `android`, `server`). A string.
+- `session.created_at`: when the session was signed in to, in seconds since the epoch.
+  Unlike `auth_time` a step-up does not move it. A number.
+
+Deliberately absent: the user id (it is `sub`), names (text the user chose), anything
+secret, and the session's IP address and user agent (what a request claimed about itself
+when the session began: personal data, not facts the server knows, and stale by the next
+request).
+
+Later servers may add sources: additive.
+
+```ts
+const JWT_TEMPLATE_SOURCES
+```
+
 ### `Jwk`
 
 _type_, defined in `packages/contract/src/tokens.ts`
@@ -1381,6 +3671,84 @@ The public key set served at `/.well-known/jwks.json`.
 const JwksSchema
 ```
 
+### `JwtTemplate`
+
+_type_, defined in `packages/contract/src/jwt-template.ts`
+
+A JWT template.
+
+```ts
+export type JwtTemplate = z.infer<typeof JwtTemplateSchema>
+```
+
+### `JwtTemplateClaim`
+
+_type_, defined in `packages/contract/src/jwt-template.ts`
+
+Where one custom claim's value comes from.
+
+```ts
+export type JwtTemplateClaim = z.infer<typeof JwtTemplateClaimSchema>
+```
+
+### `JwtTemplateClaimSchema`
+
+_constant_, defined in `packages/contract/src/jwt-template.ts`
+
+Where one custom claim's value comes from: **exactly one** source.
+
+- `{ from: … }`: one of {@link JWT_TEMPLATE_SOURCES}, read from the user and the session
+  each time a token is issued.
+- `{ value: … }`: a constant: a string of at most
+  {@link MAX_CUSTOM_CLAIM_CONSTANT_LENGTH} characters, a number or a boolean. Every session
+  of the profile gets it. It says what the operator typed, not something Tula checked.
+
+There is no expression language, no concatenation and no nesting: a value is one source.
+
+```ts
+const JwtTemplateClaimSchema
+```
+
+### `JwtTemplateSchema`
+
+_constant_, defined in `packages/contract/src/jwt-template.ts`
+
+A JWT template: a named set of custom claims an environment adds to the sessions of the
+profiles that use it (ADR 0036).
+
+The claims are issued under the one namespace claim `ext`, in a `hybrid` session's access
+token and in what the server answers for a `stateful` session. They are read again from the
+user and the session every time a token is issued. A source that has no value for a user
+leaves its key out; a template with no claim adds nothing at all.
+
+Refused: an unknown key, more than {@link MAX_JWT_TEMPLATE_CLAIMS} claims, and a template
+whose claims **could** take more than `MAX_CUSTOM_CLAIMS_BYTES` as JSON
+({@link jwtTemplateMaxBytes}).
+
+```ts
+const JwtTemplateSchema
+```
+
+### `JwtTemplateSource`
+
+_type_, defined in `packages/contract/src/jwt-template.ts`
+
+One of {@link JWT_TEMPLATE_SOURCES}.
+
+```ts
+export type JwtTemplateSource = z.infer<typeof JwtTemplateSourceSchema>
+```
+
+### `JwtTemplateSourceSchema`
+
+_constant_, defined in `packages/contract/src/jwt-template.ts`
+
+One of {@link JWT_TEMPLATE_SOURCES}.
+
+```ts
+const JwtTemplateSourceSchema: z.ZodEnum<{}>
+```
+
 ### `MAX_ACCESS_TOKEN_TTL`
 
 _constant_, defined in `packages/contract/src/session-profile.ts`
@@ -1391,6 +3759,18 @@ said when a token was signed, no access token outlives this.
 
 ```ts
 const MAX_ACCESS_TOKEN_TTL: Duration
+```
+
+### `MAX_ADDITIONAL_CLIENT_IDS`
+
+_constant_, defined in `packages/contract/src/oauth.ts`
+
+The most client ids a provider accepts ID tokens for beside its own `clientId`
+(`additionalClientIds`). An app has an Android and an iOS client, sometimes one more per
+build flavour; a longer list is a list nobody reviews.
+
+```ts
+const MAX_ADDITIONAL_CLIENT_IDS: 8
 ```
 
 ### `MAX_ALLOWED_ORIGINS`
@@ -1413,6 +3793,39 @@ Most redirect URLs one environment may allow.
 const MAX_ALLOWED_REDIRECT_URLS: 100
 ```
 
+### `MAX_APP_LINK_PATHS`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+How many app-link paths one app can have. A sign-in needs one; a few more leave room for a
+second callback and a migration from one path to another.
+
+```ts
+const MAX_APP_LINK_PATHS: 10
+```
+
+**Example**
+
+```ts
+app.appLinkPaths.length <= MAX_APP_LINK_PATHS
+```
+
+### `MAX_APP_LINK_PATH_LENGTH`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+Longest app-link path accepted, in characters.
+
+```ts
+const MAX_APP_LINK_PATH_LENGTH: 255
+```
+
+**Example**
+
+```ts
+path.length <= MAX_APP_LINK_PATH_LENGTH
+```
+
 ### `MAX_APP_NAME_LENGTH`
 
 _constant_, defined in `packages/contract/src/environment-settings.ts`
@@ -1433,6 +3846,93 @@ Longest audit retention that can be set, in days (ten years).
 const MAX_AUDIT_RETENTION_DAYS: 3650
 ```
 
+### `MAX_BUNDLE_ID_LENGTH`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+Longest bundle id accepted. Apple's own limit is not stated here as a fact: this is a cap
+that every bundle id the platform accepts is believed to fit (ADR 0040).
+
+```ts
+const MAX_BUNDLE_ID_LENGTH: 155
+```
+
+**Example**
+
+```ts
+bundleId.length <= MAX_BUNDLE_ID_LENGTH
+```
+
+### `MAX_CERT_FINGERPRINTS`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+How many signing-certificate fingerprints an Android app can have: a debug key, an upload
+key, the store's signing key and a rotation of each fit several times over.
+
+```ts
+const MAX_CERT_FINGERPRINTS: 10
+```
+
+**Example**
+
+```ts
+app.sha256CertFingerprints.length <= MAX_CERT_FINGERPRINTS
+```
+
+### `MAX_CHANGED_SETTINGS`
+
+_constant_, defined in `packages/contract/src/events.ts`
+
+Most names an `environment.settings_updated` event lists in `changed`. Above what the
+settings document can hold; the API has a test that builds the largest one.
+
+```ts
+const MAX_CHANGED_SETTINGS: 256
+```
+
+**Example**
+
+```ts
+names.slice(0, MAX_CHANGED_SETTINGS)
+```
+
+### `MAX_CUSTOM_CLAIMS_BYTES`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The most bytes the namespace claim's value may take as JSON (UTF-8), whatever puts claims
+in it.
+
+An access token is sent with every request and `@tula/nextjs` keeps it in a cookie, where a
+browser allows about 4,096 bytes for the name and the value together. A token without
+custom claims is about 700 bytes; this cap adds at most 1,366 (base64url), which leaves
+room for a long issuer URL.
+
+```ts
+const MAX_CUSTOM_CLAIMS_BYTES: 1024
+```
+
+### `MAX_CUSTOM_CLAIM_CONSTANT_LENGTH`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+Longest string a template may set as a constant, in characters.
+
+```ts
+const MAX_CUSTOM_CLAIM_CONSTANT_LENGTH: 256
+```
+
+### `MAX_CUSTOM_CLAIM_KEY_LENGTH`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+Longest custom claim key, in characters.
+
+```ts
+const MAX_CUSTOM_CLAIM_KEY_LENGTH: 32
+```
+
 ### `MAX_CUSTOM_SESSION_PROFILES`
 
 _constant_, defined in `packages/contract/src/session-profile.ts`
@@ -1443,6 +3943,23 @@ Most profiles an environment may define besides the built-in `web` and `mobile`.
 const MAX_CUSTOM_SESSION_PROFILES: 10
 ```
 
+### `MAX_DPOP_PROOF_LENGTH`
+
+_constant_, defined in `packages/contract/src/device-binding.ts`
+
+Longest proof the server reads, in characters. A proof is a small header, six short claims
+and a 64-byte signature: about 500 characters. Anything longer is refused unread.
+
+```ts
+const MAX_DPOP_PROOF_LENGTH: 2048
+```
+
+**Example**
+
+```ts
+proof.length <= MAX_DPOP_PROOF_LENGTH
+```
+
 ### `MAX_DURATION_MS`
 
 _constant_, defined in `packages/contract/src/duration.ts`
@@ -1451,6 +3968,130 @@ Longest duration accepted anywhere in config: 10 years.
 
 ```ts
 const MAX_DURATION_MS: number
+```
+
+### `MAX_EMAIL_BODY_LENGTH`
+
+_constant_, defined in `packages/contract/src/email-template.ts`
+
+Longest body of a template, in characters (UTF-16 code units).
+
+```ts
+const MAX_EMAIL_BODY_LENGTH: 2000
+```
+
+### `MAX_EMAIL_CLAIM_BYTES`
+
+_constant_, defined in `packages/contract/src/jwt-template.ts`
+
+The most bytes a `user.email` claim's value can take as JSON: every character of the longest
+address escaped, and the two quotes. A true upper bound, not an estimate: a template is
+refused when its claims **could** exceed {@link MAX_CUSTOM_CLAIMS_BYTES}.
+
+```ts
+const MAX_EMAIL_CLAIM_BYTES: number
+```
+
+### `MAX_EMAIL_SUBJECT_LENGTH`
+
+_constant_, defined in `packages/contract/src/email-template.ts`
+
+Longest subject of a template, in characters (UTF-16 code units).
+
+```ts
+const MAX_EMAIL_SUBJECT_LENGTH: 200
+```
+
+### `MAX_EMAIL_TEMPLATES_BYTES`
+
+_constant_, defined in `packages/contract/src/email-template.ts`
+
+The most bytes an environment's templates may take together, as the UTF-8 of their JSON.
+
+The settings document is read on the request path, cached per instance and replaced whole
+in one request, which the API caps at 64 KiB: this leaves the rest of the document its
+room, and is the worst-case size of the section whatever script it is written in.
+
+The two caps count different bytes. This one is the UTF-8 of the section's compact JSON;
+the request's is what arrived on the wire. A client that escapes characters outside
+ASCII as `\uXXXX`, or indents the document, can be refused for the request's size (413)
+with a section that is under this cap: send compact UTF-8.
+
+```ts
+const MAX_EMAIL_TEMPLATES_BYTES: number
+```
+
+### `MAX_ID_TOKEN_LENGTH`
+
+_constant_, defined in `packages/contract/src/oauth.ts`
+
+Longest ID token a request may carry. Google's are under two thousand characters.
+
+```ts
+const MAX_ID_TOKEN_LENGTH: 8192
+```
+
+### `MAX_ID_TOKEN_NAME_LENGTH`
+
+_constant_, defined in `packages/contract/src/oauth.ts`
+
+Longest given or family name an ID-token exchange may carry beside the token.
+
+```ts
+const MAX_ID_TOKEN_NAME_LENGTH: 100
+```
+
+### `MAX_JWT_TEMPLATES`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+Most JWT templates an environment may define.
+
+```ts
+const MAX_JWT_TEMPLATES: 10
+```
+
+### `MAX_JWT_TEMPLATE_CLAIMS`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+Most claims one JWT template may define.
+
+```ts
+const MAX_JWT_TEMPLATE_CLAIMS: 16
+```
+
+### `MAX_NATIVE_APPS`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+How many native apps an environment can register, both platforms together. The served files
+are public, fetched unauthenticated and built on every request: they stay small.
+
+```ts
+const MAX_NATIVE_APPS: 20
+```
+
+**Example**
+
+```ts
+apps.length <= MAX_NATIVE_APPS
+```
+
+### `MAX_PACKAGE_NAME_LENGTH`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+Longest Android package name accepted.
+
+```ts
+const MAX_PACKAGE_NAME_LENGTH: 255
+```
+
+**Example**
+
+```ts
+packageName.length <= MAX_PACKAGE_NAME_LENGTH
 ```
 
 ### `MAX_PAGE_SIZE`
@@ -1481,6 +4122,37 @@ Longest name a user can give a passkey.
 
 ```ts
 const MAX_PASSKEY_NAME_LENGTH: 64
+```
+
+### `MAX_PASSWORD_HISTORY`
+
+_constant_, defined in `packages/contract/src/password-policy.ts`
+
+The most passwords `history` may tell a server to remember for a user.
+
+A new password is compared with every one of them, and each comparison is a full argon2id
+verification: about a second and a half of one core for all 24 (ADR 0038 has the
+measurement and the limits that bound how often a caller can cause it). 24 is what the
+strictest common baselines ask for.
+
+```ts
+const MAX_PASSWORD_HISTORY: 24
+```
+
+**Example**
+
+```ts
+policy.history <= MAX_PASSWORD_HISTORY // true for every policy the schema accepts
+```
+
+### `MAX_PHONE_NUMBER_DIGITS`
+
+_constant_, defined in `packages/contract/src/phone.ts`
+
+Most digits of an E.164 number (after the `+`): the limit of ITU-T E.164.
+
+```ts
+const MAX_PHONE_NUMBER_DIGITS: 15
 ```
 
 ### `MAX_REUSE_GRACE_PERIOD`
@@ -1523,6 +4195,53 @@ Longest idle or absolute timeout a profile may set.
 const MAX_SESSION_TIMEOUT: Duration
 ```
 
+### `MAX_SETTING_NAME_LENGTH`
+
+_constant_, defined in `packages/contract/src/events.ts`
+
+Longest name of a changed setting, e.g. `sessions.profiles.<name>.refresh.reuseGracePeriod`.
+
+```ts
+const MAX_SETTING_NAME_LENGTH: 128
+```
+
+**Example**
+
+```ts
+name.length <= MAX_SETTING_NAME_LENGTH
+```
+
+### `MAX_SMS_DAILY_MESSAGE_LIMIT`
+
+_constant_, defined in `packages/contract/src/phone.ts`
+
+The most `sms.dailyMessageLimit` can be set to. There is no value that means "no limit".
+
+```ts
+const MAX_SMS_DAILY_MESSAGE_LIMIT: 1000000
+```
+
+### `MAX_SMS_TEMPLATE_LENGTH`
+
+_constant_, defined in `packages/contract/src/sms-template.ts`
+
+Longest template of a text message, in characters (UTF-16 code units).
+
+A message is billed by the segment, so the cap is what bounds an environment's cost per
+message. A template names the app at most once: with the longest name the settings accept
+(64 characters, in place of the 11 of `{{appName}}`) the sentence is at most 193
+characters, and the server's own last line adds 11 and the host of the environment's
+first allowed origin (at most 253). So a message is **at most three segments** in the
+GSM 7-bit alphabet whatever the host (457 of 459 characters), and at most two with a host
+of up to 102 characters. One character outside that alphabet, in the template or in the
+app's name, makes a carrier send the whole message as UCS-2, where a segment holds 67
+characters instead of 153: the same worst case is then seven segments.
+{@link smsSegments} counts them for a given text.
+
+```ts
+const MAX_SMS_TEMPLATE_LENGTH: 140
+```
+
 ### `MAX_STEP_UP_AFTER`
 
 _constant_, defined in `packages/contract/src/session-profile.ts`
@@ -1542,6 +4261,53 @@ few hundred bytes) with plenty to spare, and nothing a body could be padded with
 
 ```ts
 const MAX_VERIFIED_TOKEN_LENGTH: 4096
+```
+
+### `MAX_WEBHOOK_ENDPOINTS`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+Most webhook endpoints one environment may have. Every event is sent to each endpoint that
+subscribed to its type, so the number of endpoints bounds the requests one event causes.
+
+```ts
+const MAX_WEBHOOK_ENDPOINTS: 10
+```
+
+**Example**
+
+```ts
+if (endpoints.length >= MAX_WEBHOOK_ENDPOINTS) {
+  // remove one first
+}
+```
+
+### `MAX_WEBHOOK_URL_LENGTH`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+Longest address of a webhook endpoint.
+
+```ts
+const MAX_WEBHOOK_URL_LENGTH: 2048
+```
+
+**Example**
+
+```ts
+url.length <= MAX_WEBHOOK_URL_LENGTH
+```
+
+### `MICROSOFT_TENANT_ALIASES`
+
+_constant_, defined in `packages/contract/src/oauth.ts`
+
+The authorities of the Microsoft identity platform that are not one organization: any
+Microsoft account (`common`), any work or school account (`organizations`), personal
+accounts only (`consumers`).
+
+```ts
+const MICROSOFT_TENANT_ALIASES: readonly ["common", "organizations", "consumers"]
 ```
 
 ### `MIN_ACCESS_TOKEN_TTL`
@@ -1573,6 +4339,16 @@ user-chosen password). Every built-in preset is at or above it.
 
 ```ts
 const MIN_PASSWORD_MIN_LENGTH: 8
+```
+
+### `MIN_PHONE_NUMBER_DIGITS`
+
+_constant_, defined in `packages/contract/src/phone.ts`
+
+Fewest digits of an E.164 number Tula accepts (after the `+`).
+
+```ts
+const MIN_PHONE_NUMBER_DIGITS: 8
 ```
 
 ### `MIN_REUSE_GRACE_PERIOD`
@@ -1620,6 +4396,83 @@ Whether users can, or must, protect their account with a second factor.
 const MfaPolicySchema: z.ZodEnum<{}>
 ```
 
+### `MicrosoftTenant`
+
+_type_, defined in `packages/contract/src/oauth.ts`
+
+Which Microsoft accounts may sign in.
+
+```ts
+export type MicrosoftTenant = z.infer<typeof MicrosoftTenantSchema>
+```
+
+### `MicrosoftTenantSchema`
+
+_constant_, defined in `packages/contract/src/oauth.ts`
+
+Which Microsoft accounts may sign in: one of {@link MICROSOFT_TENANT_ALIASES}, or the id (a
+GUID, lower-cased) of the one organization whose accounts are accepted. Not a secret.
+
+A domain name (`contoso.onmicrosoft.com`) is refused on purpose: a sign-in is checked
+against the tenant id in the token, and only an id can be compared with it.
+
+```ts
+const MicrosoftTenantSchema: z.ZodString
+```
+
+**Example**
+
+```ts
+MicrosoftTenantSchema.parse('common') // 'common'
+MicrosoftTenantSchema.parse('72F988BF-86F1-41AF-91AB-2D7CD011DB47') // lower-cased
+```
+
+### `NATIVE_APP_FIELDS`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+The fields of a registered app an update can change, as `native_app.updated` names them.
+The platform and the bundle id or package name are what the app **is** and cannot change.
+
+```ts
+const NATIVE_APP_FIELDS: readonly ["teamId", "sha256CertFingerprints", "appLinkPaths"]
+```
+
+**Example**
+
+```ts
+const changed: (typeof NATIVE_APP_FIELDS)[number][] = ['sha256CertFingerprints']
+```
+
+### `NATIVE_APP_PLATFORMS`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+The platforms an app can be registered for. A closed list.
+
+```ts
+const NATIVE_APP_PLATFORMS: readonly ["ios", "android"]
+```
+
+**Example**
+
+```ts
+const platform: NativeAppPlatform = NATIVE_APP_PLATFORMS[0] // 'ios'
+```
+
+### `NamedJwtTemplate`
+
+_interface_, defined in `packages/contract/src/jwt-template.ts`
+
+A template together with the name it is stored under.
+
+```ts
+export interface NamedJwtTemplate {
+  name: string
+  template: JwtTemplate
+}
+```
+
 ### `NamedSessionProfile`
 
 _interface_, defined in `packages/contract/src/session-profile.ts`
@@ -1631,6 +4484,105 @@ export interface NamedSessionProfile {
   name: string
   profile: SessionProfile
 }
+```
+
+### `NativeApp`
+
+_type_, defined in `packages/contract/src/native-app.ts`
+
+A registered native app.
+
+```ts
+export type NativeApp = z.infer<typeof NativeAppSchema>
+```
+
+### `NativeAppIdentity`
+
+_type_, defined in `packages/contract/src/native-app.ts`
+
+What of an app the served files are built from.
+
+```ts
+export type NativeAppIdentity =
+| { platform: 'ios'; teamId: string; bundleId: string; appLinkPaths?: readonly string[] }
+| {
+    platform: 'android'
+    packageName: string
+    sha256CertFingerprints: readonly string[]
+    appLinkPaths?: readonly string[]
+  }
+```
+
+### `NativeAppListSchema`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+An environment's native apps, oldest first.
+
+```ts
+const NativeAppListSchema
+```
+
+### `NativeAppPlatform`
+
+_type_, defined in `packages/contract/src/native-app.ts`
+
+One of {@link NATIVE_APP_PLATFORMS}.
+
+```ts
+export type NativeAppPlatform = (typeof NATIVE_APP_PLATFORMS)[number]
+```
+
+### `NativeAppSchema`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+A native app registered for an environment, as the admin API lists it.
+
+```ts
+const NativeAppSchema
+```
+
+### `NewPasswordReason`
+
+_type_, defined in `packages/contract/src/flow.ts`
+
+Why a sign-in asks for a new password.
+
+```ts
+export type NewPasswordReason = z.infer<typeof NewPasswordReasonSchema>
+```
+
+### `NewPasswordReasonSchema`
+
+_constant_, defined in `packages/contract/src/flow.ts`
+
+Why a sign-in stops to ask for a new password. `expired`: the password is older than the
+environment's `password.expiryDays` (ADR 0041). A closed list that may grow.
+
+```ts
+const NewPasswordReasonSchema: z.ZodEnum<{}>
+```
+
+### `NewPasswordRequest`
+
+_type_, defined in `packages/contract/src/flow.ts`
+
+The body that replaces an expired password.
+
+```ts
+export type NewPasswordRequest = z.infer<typeof NewPasswordRequestSchema>
+```
+
+### `NewPasswordRequestSchema`
+
+_constant_, defined in `packages/contract/src/flow.ts`
+
+Submit the password that replaces an expired one, for a sign-in attempt on
+`needs_new_password` (ADR 0041). The expired password itself is never accepted.
+
+```ts
+const NewPasswordRequestSchema: z.ZodObject<{ password: z.ZodString; }, z.core.$strip>
 ```
 
 ### `OAUTH_ERROR_PARAM`
@@ -1657,7 +4609,72 @@ _constant_, defined in `packages/contract/src/oauth.ts`
 The OAuth providers an environment can configure with its own credentials (ADR 0026).
 
 ```ts
-const OAUTH_PROVIDERS: readonly ["google", "github", "apple"]
+const OAUTH_PROVIDERS: readonly ["google", "github", "apple", "microsoft", "discord", "linkedin", "x", "facebook"]
+```
+
+### `OAUTH_PROVIDERS_WITHOUT_ADDRESS`
+
+_constant_, defined in `packages/contract/src/oauth.ts`
+
+The providers Tula takes **no email address** from, as a fact about the provider and not a
+setting: X and Facebook (ADR 0026, "Providers without an address").
+
+Neither asserts an address verified in a way a sign-in can rest on, so their adapters ask
+for none and report none. A first sign-in with one creates an account **with no email
+address**, and such an identity is never connected to an existing account by an address.
+Every other provider is the opposite: no address, no account (`oauth.email_missing`).
+
+A closed list in the contract, read by the server's account resolution and by the screens
+that tell an operator what enabling the provider means. Nothing a request or an
+environment's settings say moves a provider in or out of it.
+
+```ts
+const OAUTH_PROVIDERS_WITHOUT_ADDRESS: ["x", "facebook"]
+```
+
+**Example**
+
+```ts
+OAUTH_PROVIDERS_WITHOUT_ADDRESS.includes('x') // true
+```
+
+### `OAUTH_PROVIDERS_WITHOUT_PKCE`
+
+_constant_, defined in `packages/contract/src/redirect-url.ts`
+
+The providers that do **not** bind their code with PKCE, as a fact about the provider and
+not a setting: Apple and LinkedIn document none, and Facebook's has it only in a flow that
+is not used (ADR 0026).
+
+A provider sign-in with one of them is never returned to a custom scheme
+({@link customSchemeRedirectRefusal}). A new provider is added to this list or to
+{@link OAUTH_PROVIDERS_WITH_PKCE}; a test fails for one that is in neither.
+
+```ts
+const OAUTH_PROVIDERS_WITHOUT_PKCE: ["apple", "linkedin", "facebook"]
+```
+
+**Example**
+
+```ts
+OAUTH_PROVIDERS_WITHOUT_PKCE.includes('apple') // true
+```
+
+### `OAUTH_PROVIDERS_WITH_PKCE`
+
+_constant_, defined in `packages/contract/src/redirect-url.ts`
+
+The providers whose authorization code Tula binds to the attempt with PKCE (ADR 0026): the
+code is redeemable only with the verifier the attempt holds.
+
+```ts
+const OAUTH_PROVIDERS_WITH_PKCE: ["google", "github", "microsoft", "discord", "x"]
+```
+
+**Example**
+
+```ts
+OAUTH_PROVIDERS_WITH_PKCE.includes('google') // true
 ```
 
 ### `OAUTH_TICKET_PARAM`
@@ -1711,6 +4728,64 @@ An OAuth provider.
 
 ```ts
 export type OAuthProvider = z.infer<typeof OAuthProviderSchema>
+```
+
+### `OAuthProviderAudiences`
+
+_interface_, defined in `packages/contract/src/oauth.ts`
+
+What of a provider's record {@link oauthProviderWeakenings} judges: whose ID tokens are
+accepted, and whether sign-in offers the provider while accounts depend on it.
+
+```ts
+export interface OAuthProviderAudiences {
+  /** The client ids accepted beside the provider's own. Absent means none. */
+  additionalClientIds?: readonly string[]
+  /** Whether sign-in offers the provider. Absent: not said, and not judged. */
+  enabled?: boolean
+  /**
+   * Of the record **before** the change: the accounts that depend on the provider, as the
+   * server counted them. Absent: not counted, and the rule about them is not judged.
+   */
+  dependents?: Pick<OAuthProviderDependents, 'accounts' | 'more'>
+}
+```
+
+### `OAuthProviderDependents`
+
+_type_, defined in `packages/contract/src/oauth.ts`
+
+How many accounts depend on a provider.
+
+```ts
+export type OAuthProviderDependents = z.infer<typeof OAuthProviderDependentsSchema>
+```
+
+### `OAuthProviderDependentsSchema`
+
+_constant_, defined in `packages/contract/src/oauth.ts`
+
+How many accounts **depend** on a provider: have an account of it connected and no other
+way to sign in that the environment accepts (a password, a verified address with the
+emailed code on, another enabled provider, a passkey). Switching the provider off, or
+removing its credentials, locks those accounts out until it is back
+(`GET /v1/admin/oauth-providers/{provider}/dependents`; ADR 0059).
+
+A number and a boolean, and nothing about who: never an id, an address or a name.
+
+- `accounts`: how many were found among the accounts looked at.
+- `more`: `true` when the provider has more accounts than
+  {@link DEPENDENT_ACCOUNTS_SCAN_LIMIT}, so not all were looked at and `accounts` is a
+  floor: read it as "at least".
+
+```ts
+const OAuthProviderDependentsSchema: z.ZodObject<{ provider: z.ZodEnum<{}>; accounts: z.ZodNumber; more: z.ZodBoolean; }, z.core.$strip>
+```
+
+**Example**
+
+```ts
+OAuthProviderDependentsSchema.parse({ provider: 'x', accounts: 12, more: false })
 ```
 
 ### `OAuthProviderSchema`
@@ -1781,9 +4856,15 @@ _constant_, defined in `packages/contract/src/oauth.ts`
 
 Set a provider's credentials and whether sign-in offers it.
 
-- Google and GitHub: `clientId` and `clientSecret`.
+- Google, GitHub, Discord, LinkedIn, X and Facebook: `clientId` and `clientSecret`.
 - Apple: `clientId` (the Services ID), `teamId`, `keyId` and `privateKey` (the `.p8` file's
   contents, PKCS#8 PEM).
+- Microsoft: `clientId` (the application id), `clientSecret` and `tenant`
+  ({@link MicrosoftTenantSchema}: which accounts may sign in).
+
+Google also takes `additionalClientIds`: the client ids of the operator's Android and iOS
+apps, whose ID tokens a native sign-in accepts beside `clientId`'s (ADR 0045). Left out,
+there are none: the field is the whole set on every write, never merged.
 
 The secret (`clientSecret` or `privateKey`) may be left out when the provider is already
 configured: the stored one is kept. It is stored sealed and never returned.
@@ -1841,6 +4922,23 @@ The answer to starting an OAuth sign-in.
 const OAuthStartSchema
 ```
 
+### `PACKAGE_NAME_PATTERN`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+An Android package name: two or more segments joined by periods, each starting with a
+letter and holding letters, digits and underscores only.
+
+```ts
+const PACKAGE_NAME_PATTERN: {}
+```
+
+**Example**
+
+```ts
+PACKAGE_NAME_PATTERN.test('com.example.app') // true
+```
+
 ### `PASSKEY_ALGORITHMS`
 
 _constant_, defined in `packages/contract/src/passkey.ts`
@@ -1874,6 +4972,209 @@ composition rules.
 const PASSWORD_POLICY_PRESETS: Readonly<
   Record<Exclude<PasswordPolicy['preset'], 'custom'>, PasswordPolicy>
 >
+```
+
+### `PROPOSAL_APPROVAL_REFUSALS`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+Why an approval is refused with `resource.conflict`, as `params.reason` says it:
+
+- `expired`: the proposal was not approved before its `expiresAt`;
+- `already_decided`: it was approved before (a proposal is single use);
+- `mismatch`: the approval names another operation or target than the proposal holds;
+- `agent_key_revoked`: the agent key that asked has been revoked (or is gone). What a
+  revoked key asked for is never carried out, however recently it asked;
+- `production_environment`: the environment is a production one and does not accept
+  agents' proposals now (`agents.proposalsInProduction` is off: it was never on, or was
+  switched off after the proposal was made). The proposal is not spent by this refusal.
+
+```ts
+const PROPOSAL_APPROVAL_REFUSALS: readonly ["expired", "already_decided", "mismatch", "agent_key_revoked", "production_environment"]
+```
+
+**Example**
+
+```ts
+if (error.params.reason === 'expired') {
+  // Ask the agent to propose again.
+}
+```
+
+### `PROPOSAL_APPROVER_TYPES`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+Who may approve a proposal: an `admin` (a secret key) or the `instance_admin` (a dashboard
+session). Never an `agent`.
+
+```ts
+const PROPOSAL_APPROVER_TYPES: readonly ["admin", "instance_admin"]
+```
+
+**Example**
+
+```ts
+const type: ProposalApproverType = 'admin'
+```
+
+### `PROPOSAL_CREATION_REFUSALS`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+Why asking for a proposal is refused with `auth.forbidden`, as `params.reason` says it:
+
+- `production_environment`: a production environment accepts no proposal from an agent
+  unless its settings say so (`agents.proposalsInProduction`, off by default).
+
+```ts
+const PROPOSAL_CREATION_REFUSALS: readonly ["production_environment"]
+```
+
+**Example**
+
+```ts
+if (error.params.reason === 'production_environment') {
+  // Make the change yourself, in the dashboard.
+}
+```
+
+### `PROPOSAL_EXPIRY_REASONS`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+Why a proposal is `expired`, in one of the server's fixed words:
+
+- `time`: nobody approved it before its `expiresAt`;
+- `agent_key_revoked`: the agent key that asked was revoked (or is gone) while it waited.
+  Revoking an agent key ends everything it has asked for and that nobody has approved.
+
+```ts
+const PROPOSAL_EXPIRY_REASONS: readonly ["time", "agent_key_revoked"]
+```
+
+**Example**
+
+```ts
+if (proposal.expiryReason === 'agent_key_revoked') {
+  // The key was revoked: whatever it asked for is not to be trusted.
+}
+```
+
+### `PROPOSAL_FAILURE_REASONS`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+Why an approved proposal's operation did not end as carried out, in one of the server's
+fixed words:
+
+- `target_not_found`: what it names no longer exists; nothing was changed;
+- `incomplete`: **the operation's own change was made and a later step of it failed.**
+  For `ban_user`: the user is banned, and ending their sessions failed, so some may
+  still be live until they are ended (the admin route that ends a user's sessions, or
+  the dashboard). Never read this as "nothing happened";
+- `error`: anything else. The target was read again afterwards and the change was not
+  there; the server's log has the failure;
+- `last_sign_in_method`: for `disable_oauth_provider`: when the approval came, switching
+  the provider off would have left the environment with no way to sign in, so it was
+  refused, by the rule an administrator's own change is held to. Nothing was changed.
+
+```ts
+const PROPOSAL_FAILURE_REASONS: readonly ["target_not_found", "error", "incomplete", "last_sign_in_method"]
+```
+
+**Example**
+
+```ts
+const reason: ProposalFailureReason = 'target_not_found'
+```
+
+### `PROPOSAL_OPERATIONS`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+What an agent may propose: a closed list of **reversible** operations. An operation is here
+because a human can undo it:
+
+- `ban_user`: the ban is lifted;
+- `unban_user`: the user is banned again;
+- `end_session`: one session, by its id; its user signs in again;
+- `disable_oauth_provider`: one provider is switched off (`enabled: false` and nothing
+  else: its credentials stay, nothing is removed); an administrator switches it on again.
+
+Never on the list: anything that cannot be undone (deleting a user, resetting a user's
+factors, rotating keys, removing a provider's credentials), anything that returns or sets
+a secret, switching a provider **on**, replacing settings, and anything that acts on more
+than one target (ending every session of a user is such a thing).
+
+```ts
+const PROPOSAL_OPERATIONS: readonly ["ban_user", "unban_user", "end_session", "disable_oauth_provider"]
+```
+
+**Example**
+
+```ts
+const operation: ProposalOperation = 'ban_user'
+```
+
+### `PROPOSAL_OPERATION_TARGETS`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+What each operation acts on. A proposal whose target is of another kind is refused.
+
+```ts
+const PROPOSAL_OPERATION_TARGETS: Record<any, any>
+```
+
+**Example**
+
+```ts
+PROPOSAL_OPERATION_TARGETS.ban_user // 'user'
+```
+
+### `PROPOSAL_STATUSES`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+Where a proposal stands:
+
+- `pending`: asked for, nothing has happened, a human may approve it until `expiresAt`;
+- `expired`: it can no longer be approved, and nothing happened: nobody approved it in
+  time, or the agent key that asked was revoked (`expiryReason` says which);
+- `approved`: a human approved it and the operation was started. A proposal stays here
+  only when the server could not record how the operation ended; it is never run again;
+- `executed`: approved, and the operation was carried out;
+- `failed`: approved, and the operation was not carried out (`failureReason` says why).
+
+A proposal is approved at most once: every status but `pending` is final for an approval.
+
+```ts
+const PROPOSAL_STATUSES: readonly ["pending", "expired", "approved", "executed", "failed"]
+```
+
+**Example**
+
+```ts
+if (proposal.status === 'pending') {
+  // A human can still approve it.
+}
+```
+
+### `PROPOSAL_TARGET_TYPES`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+What a proposal can be about.
+
+```ts
+const PROPOSAL_TARGET_TYPES: readonly ["user", "session", "oauth_provider"]
+```
+
+**Example**
+
+```ts
+const type: ProposalTargetType = 'user'
 ```
 
 ### `PUBLISHABLE_KEY_HEADER`
@@ -2300,6 +5601,348 @@ export interface PasswordUserInfo {
 }
 ```
 
+### `PhoneCodeSent`
+
+_type_, defined in `packages/contract/src/user.ts`
+
+Where a phone code went and when it expires.
+
+```ts
+export type PhoneCodeSent = z.infer<typeof PhoneCodeSentSchema>
+```
+
+### `PhoneCodeSentSchema`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+What asking for a phone code answers: where it went, masked, and when it stops working.
+Never the code.
+
+```ts
+const PhoneCodeSentSchema: z.ZodObject<{ destination: z.ZodString; expiresAt: z.ZodISODateTime; }, z.core.$strip>
+```
+
+### `PhoneNumberRequest`
+
+_type_, defined in `packages/contract/src/user.ts`
+
+A phone number to send a code to.
+
+```ts
+export type PhoneNumberRequest = z.infer<typeof PhoneNumberRequestSchema>
+```
+
+### `PhoneNumberRequestSchema`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+Ask for a code to be sent to a phone number the signed-in user wants on their account
+(`POST /v1/client/me/phone`). Spaces, hyphens and parentheses are taken out; anything else
+that is not a `+` and 8 to 15 digits is `phone.invalid`.
+
+```ts
+const PhoneNumberRequestSchema: z.ZodObject<{ phoneNumber: z.ZodString; }, z.core.$strip>
+```
+
+### `PhoneNumberVerifyRequest`
+
+_type_, defined in `packages/contract/src/user.ts`
+
+The code that confirms a phone number.
+
+```ts
+export type PhoneNumberVerifyRequest = z.infer<typeof PhoneNumberVerifyRequestSchema>
+```
+
+### `PhoneNumberVerifyRequestSchema`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+The code a phone number is confirmed with (`POST /v1/client/me/phone/verify`).
+
+```ts
+const PhoneNumberVerifyRequestSchema: z.ZodObject<{ code: z.ZodString; }, z.core.$strip>
+```
+
+### `PreparedFirstFactorStrategy`
+
+_type_, defined in `packages/contract/src/flow.ts`
+
+A first factor that is asked for before it is proven.
+
+```ts
+export type PreparedFirstFactorStrategy = z.infer<typeof PreparedFirstFactorStrategySchema>
+```
+
+### `PreparedFirstFactorStrategySchema`
+
+_constant_, defined in `packages/contract/src/flow.ts`
+
+The first factors that are proven with a code (or link) the server sends first: the two
+email strategies, and `sms_code`, a 6-digit code texted to the phone number the sign-in was
+started with (ADR 0037). They are asked for with `first-factor/prepare` and proven with
+`first-factor/attempt`.
+
+```ts
+const PreparedFirstFactorStrategySchema: z.ZodEnum<{}>
+```
+
+### `PreparedSecondFactorMethod`
+
+_type_, defined in `packages/contract/src/flow.ts`
+
+A second factor whose proof is sent first.
+
+```ts
+export type PreparedSecondFactorMethod = z.infer<typeof PreparedSecondFactorMethodSchema>
+```
+
+### `PreparedSecondFactorMethodSchema`
+
+_constant_, defined in `packages/contract/src/flow.ts`
+
+The second factors whose proof the server sends first: `sms_code`. Asked for with
+`second-factor/prepare` and proven with `second-factor`.
+
+```ts
+const PreparedSecondFactorMethodSchema: z.ZodEnum<{}>
+```
+
+### `Proposal`
+
+_type_, defined in `packages/contract/src/proposal.ts`
+
+A proposal.
+
+```ts
+export type Proposal = z.infer<typeof ProposalSchema>
+```
+
+### `ProposalApprovalRefusal`
+
+_type_, defined in `packages/contract/src/proposal.ts`
+
+Why an approval was refused.
+
+```ts
+export type ProposalApprovalRefusal = (typeof PROPOSAL_APPROVAL_REFUSALS)[number]
+```
+
+### `ProposalApprover`
+
+_type_, defined in `packages/contract/src/proposal.ts`
+
+Who approved a proposal.
+
+```ts
+export type ProposalApprover = z.infer<typeof ProposalApproverSchema>
+```
+
+### `ProposalApproverSchema`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+The human who approved a proposal: an `admin` (the id is the secret key's) or the
+`instance_admin` (the id is the dashboard session's).
+
+```ts
+const ProposalApproverSchema: z.ZodObject<{ type: z.ZodEnum<{}>; id: z.ZodNullable<z.ZodString>; }, z.core.$strip>
+```
+
+### `ProposalApproverType`
+
+_type_, defined in `packages/contract/src/proposal.ts`
+
+The kind of credential that may approve.
+
+```ts
+export type ProposalApproverType = (typeof PROPOSAL_APPROVER_TYPES)[number]
+```
+
+### `ProposalCreationRefusal`
+
+_type_, defined in `packages/contract/src/proposal.ts`
+
+Why asking for a proposal was refused.
+
+```ts
+export type ProposalCreationRefusal = (typeof PROPOSAL_CREATION_REFUSALS)[number]
+```
+
+### `ProposalExpiryReason`
+
+_type_, defined in `packages/contract/src/proposal.ts`
+
+One of {@link PROPOSAL_EXPIRY_REASONS}.
+
+```ts
+export type ProposalExpiryReason = (typeof PROPOSAL_EXPIRY_REASONS)[number]
+```
+
+### `ProposalFailureReason`
+
+_type_, defined in `packages/contract/src/proposal.ts`
+
+Why an approved proposal's operation was not carried out.
+
+```ts
+export type ProposalFailureReason = (typeof PROPOSAL_FAILURE_REASONS)[number]
+```
+
+### `ProposalList`
+
+_type_, defined in `packages/contract/src/proposal.ts`
+
+A list of proposals.
+
+```ts
+export type ProposalList = z.infer<typeof ProposalListSchema>
+```
+
+### `ProposalListSchema`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+An environment's proposals, newest first.
+
+```ts
+const ProposalListSchema
+```
+
+### `ProposalOperation`
+
+_type_, defined in `packages/contract/src/proposal.ts`
+
+An operation an agent may propose.
+
+```ts
+export type ProposalOperation = (typeof PROPOSAL_OPERATIONS)[number]
+```
+
+### `ProposalOperationSchema`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+One of {@link PROPOSAL_OPERATIONS}.
+
+```ts
+const ProposalOperationSchema: z.ZodEnum<{}>
+```
+
+### `ProposalSchema`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+A proposal, as the admin API answers it.
+
+`summary` is the server's own sentence for the operation with the target's id in it
+({@link proposalSummary}): no text an agent or a user wrote is ever part of a proposal.
+
+```ts
+const ProposalSchema
+```
+
+### `ProposalStatus`
+
+_type_, defined in `packages/contract/src/proposal.ts`
+
+Where a proposal stands.
+
+```ts
+export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number]
+```
+
+### `ProposalStatusSchema`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+One of {@link PROPOSAL_STATUSES}.
+
+```ts
+const ProposalStatusSchema: z.ZodEnum<{}>
+```
+
+### `ProposalTarget`
+
+_type_, defined in `packages/contract/src/proposal.ts`
+
+What a proposal would change.
+
+```ts
+export type ProposalTarget = z.infer<typeof ProposalTargetSchema>
+```
+
+### `ProposalTargetSchema`
+
+_constant_, defined in `packages/contract/src/proposal.ts`
+
+What a proposal would change: the kind of thing and its id. The id is the server's own
+(a UUID) for a user and a session, and for an OAuth provider its name from the closed
+list (`google`): never a name or an address anyone wrote.
+
+```ts
+const ProposalTargetSchema: z.ZodObject<{ type: z.ZodEnum<{}>; id: z.ZodUnion<[z.ZodUUID, z.ZodEnum<{}>]>; }, z.core.$strict>
+```
+
+### `ProposalTargetType`
+
+_type_, defined in `packages/contract/src/proposal.ts`
+
+What a proposal can be about.
+
+```ts
+export type ProposalTargetType = (typeof PROPOSAL_TARGET_TYPES)[number]
+```
+
+### `REDIRECT_SCHEMES_NEVER_CUSTOM`
+
+_constant_, defined in `packages/contract/src/redirect-url.ts`
+
+Schemes that are never a custom-scheme redirect, whatever follows the colon: the two web
+schemes (which have rules of their own) and the ones a browser or an operating system
+handles itself, where a redirect would run script, open a file, start a call or hand the
+URL to something that is nobody's app.
+
+**Best effort, and no more.** The entries without a full stop are also refused by the
+rule that a custom scheme contains one; the ones with a full stop, and the families of
+{@link REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM}, are refused by this list alone, and a
+scheme an operating system handles that nobody put here passes. What bounds that is not
+the list: every entry of `urls.allowedRedirectUrls` is written by the operator by hand,
+and a redirect carries only a ticket that is useless without the binding (ADR 0044).
+
+```ts
+const REDIRECT_SCHEMES_NEVER_CUSTOM
+```
+
+**Example**
+
+```ts
+REDIRECT_SCHEMES_NEVER_CUSTOM.includes('javascript') // true
+```
+
+### `REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM`
+
+_constant_, defined in `packages/contract/src/redirect-url.ts`
+
+Families of schemes that are never a custom-scheme redirect: every scheme that starts
+with one of these. They are written with full stops, so the reverse-domain rule lets
+them through, and each belongs to a platform and to no operator's app: the schemes of
+Windows' built-in apps (`microsoft.windows.camera`, `microsoft.windows.photos.crop`, …),
+Apple's `x-apple.` schemes (`x-apple.systempreferences`) and Apple's own bundle-id space
+(`com.apple.`, which no third party's app can be in).
+
+Best effort, like {@link REDIRECT_SCHEMES_NEVER_CUSTOM}: a family that is not here passes.
+
+```ts
+const REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM: readonly ["microsoft.windows.", "x-apple.", "com.apple."]
+```
+
+**Example**
+
+```ts
+REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM.some((family) => 'com.apple.tv'.startsWith(family)) // true
+```
+
 ### `REFRESH_TOKEN_PREFIX`
 
 _constant_, defined in `packages/contract/src/session.ts`
@@ -2310,12 +5953,52 @@ Prefix of refresh tokens, so secret scanners and humans can recognise one.
 const REFRESH_TOKEN_PREFIX: "tula_rt_"
 ```
 
+### `RESERVED_CLAIM_NAMES`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+Claim names a custom claim's key may never be: every claim Tula's tokens carry, the
+registered claims a verifier acts on, `cnf` (reserved for device binding) and the namespace
+claim itself.
+
+A custom claim lives inside {@link CUSTOM_CLAIMS_CLAIM}, so it could not overwrite one of
+these anyway. They are refused so that nobody reads `claims.ext.sub` as the subject.
+
+```ts
+const RESERVED_CLAIM_NAMES
+```
+
+**Example**
+
+```ts
+RESERVED_CLAIM_NAMES.includes('sub') // true
+```
+
+### `RedirectUrlKind`
+
+_type_, defined in `packages/contract/src/redirect-url.ts`
+
+The kinds of redirect URL an environment may list.
+
+```ts
+export type RedirectUrlKind = 'https' | 'loopback' | 'custom_scheme'
+```
+
+**Example**
+
+```ts
+const kind: RedirectUrlKind = 'custom_scheme'
+```
+
 ### `RedirectUrlSchema`
 
 _constant_, defined in `packages/contract/src/environment-settings.ts`
 
-An absolute URL a flow may send the user back to. `https://` only, or `http://` for
-`localhost`, `127.0.0.1` and `[::1]`; no credentials, no fragment and no wildcard.
+A URL a flow may send the user back to ({@link redirectUrlKind }, ADR 0044): an absolute
+`https://` URL (a web page or an app link), `http://` for `localhost`, `127.0.0.1` and
+`[::1]`, or a custom scheme in reverse-domain form (`com.example.app:/oauth`). No
+credentials, no fragment and no wildcard in any of them; a custom-scheme URL has no query
+either. Compared exactly as written: nothing is normalised.
 
 ```ts
 const RedirectUrlSchema: z.ZodString
@@ -2364,6 +6047,28 @@ Result of revoking the user's other sessions.
 const RevokedSessionsSchema: z.ZodObject<{ revoked: z.ZodNumber; }, z.core.$strip>
 ```
 
+### `RotatedWebhookSecret`
+
+_type_, defined in `packages/contract/src/webhook.ts`
+
+An endpoint with its new signing secret, as a rotation answers.
+
+```ts
+export type RotatedWebhookSecret = z.infer<typeof RotatedWebhookSecretSchema>
+```
+
+### `RotatedWebhookSecretSchema`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+An endpoint whose signing secret was just replaced. `secret` is the **new** secret
+(`whsec_…`), in this response only. The previous secret is not returned (the receiver has
+it); it keeps signing beside the new one until `rotationOverlapEndsAt`.
+
+```ts
+const RotatedWebhookSecretSchema
+```
+
 ### `SECRET_KEY_PREFIX`
 
 _constant_, defined in `packages/contract/src/tokens.ts`
@@ -2400,6 +6105,271 @@ await fetch(`${api}/v1/client/sign-ins`, {
 })
 ```
 
+### `SIGN_IN_METHODS_WITHOUT_SIGN_UP`
+
+_constant_, defined in `packages/contract/src/environment-settings.ts`
+
+The sign-in methods no account can be created with, so that none of them may be an
+environment's only way in: `smsCode`. A phone number is added to an account that exists
+(ADR 0037); there is no sign-up by phone number.
+
+```ts
+const SIGN_IN_METHODS_WITHOUT_SIGN_UP: readonly string[]
+```
+
+### `SIGN_IN_TEST_CLEANUPS`
+
+_constant_, defined in `packages/contract/src/test-address.ts`
+
+What became of the throwaway user: `deleted`; `failed` (it exists and could not be deleted:
+the server's retention job removes it within minutes); `none` (no account was made).
+
+```ts
+const SIGN_IN_TEST_CLEANUPS: readonly ["deleted", "failed", "none"]
+```
+
+**Example**
+
+```ts
+const cleanup: SignInTestCleanup = 'deleted'
+```
+
+### `SIGN_IN_TEST_OUTCOMES`
+
+_constant_, defined in `packages/contract/src/test-address.ts`
+
+What a whole test came to: `passed` when every step did; `failed` when a step failed;
+`incomplete` when none failed and at least one was not run.
+
+```ts
+const SIGN_IN_TEST_OUTCOMES: readonly ["passed", "failed", "incomplete"]
+```
+
+**Example**
+
+```ts
+const outcome: SignInTestOutcome = 'incomplete'
+```
+
+### `SIGN_IN_TEST_REASONS`
+
+_constant_, defined in `packages/contract/src/test-address.ts`
+
+Why a step was not run, or why it failed where no error code says it.
+
+- `earlier_step`: a step it depends on did not pass.
+- `second_factor_required`: the attempt stopped at a second factor or at its enrolment; the
+  test proves no second factor and enrols none.
+- `email_cooldown`: the sign-in's only first factor the server could prove by itself is an
+  emailed code, and a second code for one address within a minute of the first (the
+  sign-up's) is refused for everyone. The test does not wait and does not go round it.
+- `no_provable_method`: the sign-in offers no first factor the server can prove by itself
+  (only a passkey, an emailed link, a texted code or a provider).
+- `no_session`: there is no session to end.
+- `timeout`: the step, or the whole test, ran out of time.
+- `cancelled`: the caller went away.
+
+```ts
+const SIGN_IN_TEST_REASONS
+```
+
+**Example**
+
+```ts
+const reason: SignInTestReason = 'second_factor_required'
+```
+
+### `SIGN_IN_TEST_REFUSALS`
+
+_constant_, defined in `packages/contract/src/test-address.ts`
+
+Why a sign-in test was refused before it began, as `params.reason` of the `auth.forbidden`
+answer says it: the environment does not allow one (`agents.testSignIn`).
+
+```ts
+const SIGN_IN_TEST_REFUSALS: readonly ["test_sign_in_disabled"]
+```
+
+**Example**
+
+```ts
+if (error.params?.reason === SIGN_IN_TEST_REFUSALS[0]) {
+  // Switch agents.testSignIn on for this environment.
+}
+```
+
+### `SIGN_IN_TEST_STEPS`
+
+_constant_, defined in `packages/contract/src/test-address.ts`
+
+The steps of a sign-in test, in the order they run and are reported.
+
+```ts
+const SIGN_IN_TEST_STEPS
+```
+
+**Example**
+
+```ts
+const step: SignInTestStep = 'verify_email'
+```
+
+### `SIGN_IN_TEST_STEP_OUTCOMES`
+
+_constant_, defined in `packages/contract/src/test-address.ts`
+
+What became of a step: it was carried out and worked, it was carried out and did not, or it
+was not carried out. A step that was not carried out is never `passed`.
+
+```ts
+const SIGN_IN_TEST_STEP_OUTCOMES: readonly ["passed", "failed", "not_run"]
+```
+
+**Example**
+
+```ts
+const outcome: SignInTestStepOutcome = 'not_run'
+```
+
+### `SMS_COUNTRIES`
+
+_constant_, defined in `packages/contract/src/phone.ts`
+
+Every country code of {@link COUNTRY_CALLING_PREFIXES}, in alphabetical order.
+
+```ts
+const SMS_COUNTRIES: readonly string[]
+```
+
+### `SMS_ENVIRONMENT_HOURLY_SHARE`
+
+_constant_, defined in `packages/contract/src/phone.ts`
+
+What share of the day's limit the whole environment may send in an hour: a quarter. A day's
+allowance then takes at least four hours to spend, which is time to notice.
+
+```ts
+const SMS_ENVIRONMENT_HOURLY_SHARE: 4
+```
+
+### `SMS_PREFIX_HOURLY_SHARE`
+
+_constant_, defined in `packages/contract/src/phone.ts`
+
+What share of the day's limit one destination prefix ({@link phoneNumberPrefix}) may take
+in an hour: a tenth. Numbers bought to be texted are numbers of one destination, and one
+destination must not be able to spend the day in less than ten hours. In an environment
+that texts one country this is the hourly limit that binds.
+
+```ts
+const SMS_PREFIX_HOURLY_SHARE: 10
+```
+
+### `SMS_PREFIX_MAX_DIGITS`
+
+_constant_, defined in `packages/contract/src/phone.ts`
+
+The most digits a destination prefix has ({@link phoneNumberPrefix}): the longest entry of
+{@link COUNTRY_CALLING_PREFIXES}. A test holds the two equal.
+
+```ts
+const SMS_PREFIX_MAX_DIGITS: 4
+```
+
+### `SMS_TEMPLATE_KINDS`
+
+_constant_, defined in `packages/contract/src/sms-template.ts`
+
+Every text message whose wording an environment can change (ADR 0042): one kind per
+reason the server texts a code.
+
+- `phone_verification`: the code that proves a phone number being added to an account.
+- `sign_in`: the code that signs someone in with a number their account has proven.
+- `second_factor`: the code of a texted second step (ADR 0025): at its enrolment, after a
+  sign-in's or a reset's first factor, and at a step-up. One kind for the three, because
+  to the reader they are one message: "prove it is you, with the phone on your account".
+
+A closed list. Later servers may add kinds: additive.
+
+```ts
+const SMS_TEMPLATE_KINDS: readonly ["phone_verification", "sign_in", "second_factor"]
+```
+
+**Example**
+
+```ts
+SMS_TEMPLATE_KINDS.includes('sign_in') // true
+```
+
+### `SMS_TEMPLATE_PLACEHOLDERS`
+
+_constant_, defined in `packages/contract/src/sms-template.ts`
+
+Every placeholder a text message's template can name, as `{{name}}`.
+
+- `appName`: the environment's app name, cleaned onto one line.
+- `code`: the 6-digit code.
+
+Deliberately absent: a phone number, an address of any kind, a host (the origin-bound last
+line is the server's to write) and anything a request said.
+
+```ts
+const SMS_TEMPLATE_PLACEHOLDERS: readonly ["appName", "code"]
+```
+
+**Example**
+
+```ts
+SMS_TEMPLATE_PLACEHOLDERS.includes('code') // true
+```
+
+### `SMS_TEMPLATE_RULES`
+
+_constant_, defined in `packages/contract/src/sms-template.ts`
+
+What each kind's template must and may name. Plain data: an editor draws its list of
+placeholders from it, and the server validates against the same table.
+
+```ts
+const SMS_TEMPLATE_RULES: Readonly<Record<SmsTemplateKind, SmsTemplateRules>>
+```
+
+**Example**
+
+```ts
+SMS_TEMPLATE_RULES.sign_in.required // ['code']
+```
+
+### `SMS_USAGE_DEFAULT_DAYS`
+
+_constant_, defined in `packages/contract/src/sms.ts`
+
+How many days back it reads when the request does not say.
+
+```ts
+const SMS_USAGE_DEFAULT_DAYS: 7
+```
+
+### `SMS_USAGE_MAX_DAYS`
+
+_constant_, defined in `packages/contract/src/sms.ts`
+
+How many days back `GET /v1/admin/sms/usage` reads at most.
+
+```ts
+const SMS_USAGE_MAX_DAYS: 30
+```
+
+### `SMS_USAGE_MAX_PREFIXES`
+
+_constant_, defined in `packages/contract/src/sms.ts`
+
+How many prefixes one answer of it lists at most.
+
+```ts
+const SMS_USAGE_MAX_PREFIXES: 100
+```
+
 ### `STEP_UP_MAX_AGE_SECONDS`
 
 _constant_, defined in `packages/contract/src/tokens.ts`
@@ -2428,8 +6398,36 @@ _constant_, defined in `packages/contract/src/flow.ts`
 
 Second-factor methods a flow can ask for.
 
+`sms_code` is a 6-digit code texted to the account's proven phone number (ADR 0025). It is
+the weakest of them and is listed **alone or not at all**: a user who has an authenticator
+app or a passkey is never offered it.
+
 ```ts
 const SecondFactorMethodSchema: z.ZodEnum<{}>
+```
+
+### `SecondFactorPrepareRequest`
+
+_type_, defined in `packages/contract/src/flow.ts`
+
+Body of `…/second-factor/prepare`.
+
+```ts
+export type SecondFactorPrepareRequest = z.infer<typeof SecondFactorPrepareRequestSchema>
+```
+
+### `SecondFactorPrepareRequestSchema`
+
+_constant_, defined in `packages/contract/src/flow.ts`
+
+Ask for the code of a second factor that is sent (`…/second-factor/prepare`), for an
+attempt waiting on `needs_second_factor` whose `options` include the method.
+
+- `sms_code`: a 6-digit code texted to the account's proven phone number. A message that
+  could not be sent is `sms.unavailable`; the earlier code keeps working.
+
+```ts
+const SecondFactorPrepareRequestSchema: z.ZodObject<{ method: z.ZodEnum<{}>; }, z.core.$strip>
 ```
 
 ### `SecondFactorRequest`
@@ -2452,9 +6450,30 @@ Prove a second factor for an attempt waiting on `needs_second_factor`.
 - `backup_code`: one of the user's unused backup codes. Case, spaces and dashes are ignored.
   Each works once.
 - `passkey`: an assertion for the options of `…/second-factor/passkey/options` (ADR 0027).
+- `sms_code`: the 6-digit code `…/second-factor/prepare` texted to the account's number.
 
 ```ts
 const SecondFactorRequestSchema
+```
+
+### `SendTestWebhookRequest`
+
+_type_, defined in `packages/contract/src/webhook.ts`
+
+Send-test-event request body.
+
+```ts
+export type SendTestWebhookRequest = z.infer<typeof SendTestWebhookRequestSchema>
+```
+
+### `SendTestWebhookRequestSchema`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+Body of `POST /v1/admin/webhook-endpoints/{id}/test`: the type of the example event to send.
+
+```ts
+const SendTestWebhookRequestSchema: z.ZodObject<{ eventType: z.ZodEnum<{}>; }, z.core.$strict>
 ```
 
 ### `Session`
@@ -2600,6 +6619,10 @@ The `sessions` section of an environment's settings, as `PUT /v1/admin/settings`
   take the defaults); up to {@link MAX_CUSTOM_SESSION_PROFILES} more may be added under
   kebab-case names.
 - `maxPerUser` and `onLimit`: the concurrent-session rule.
+- `jwtTemplates`: named sets of custom claims (ADR 0036), at most
+  {@link MAX_JWT_TEMPLATES}; a profile uses one by naming it in its `jwtTemplate`. A profile
+  that names a template the document does not have is refused, so a template in use cannot
+  be removed without first unsetting it on every profile that names it.
 
 ```ts
 const SessionSettingsSchema
@@ -2681,6 +6704,35 @@ Set a user's password from a server or the dashboard. Ends all of their sessions
 const SetPasswordRequestSchema: z.ZodObject<{ password: z.ZodString; }, z.core.$strip>
 ```
 
+### `SetUserEmailRequest`
+
+_type_, defined in `packages/contract/src/user.ts`
+
+The address an administrator gives a user who has none.
+
+```ts
+export type SetUserEmailRequest = z.infer<typeof SetUserEmailRequestSchema>
+```
+
+### `SetUserEmailRequestSchema`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+Give a user who has no email address one, from a server or the dashboard
+(`PUT /v1/admin/users/{userId}/email`; ADR 0059). The address is stored **unverified**:
+nobody has shown that they read mail sent to it, and the first emailed code its holder
+enters is what verifies it.
+
+```ts
+const SetUserEmailRequestSchema: z.ZodObject<{ email: z.ZodString; }, z.core.$strict>
+```
+
+**Example**
+
+```ts
+SetUserEmailRequestSchema.parse({ email: 'ada@example.com' })
+```
+
 ### `SettingsManagedBy`
 
 _type_, defined in `packages/contract/src/environment-settings.ts`
@@ -2736,10 +6788,122 @@ export type SignInStartRequest = z.infer<typeof SignInStartRequestSchema>
 
 _constant_, defined in `packages/contract/src/flow.ts`
 
-Start a sign-in by identifying the user.
+Start a sign-in by identifying the user: an email address, or, for a sign-in with a texted
+code (`sms_code`, ADR 0037), a phone number in international form (`+14155550100`; spaces,
+hyphens and parentheses are ignored).
 
 ```ts
 const SignInStartRequestSchema: z.ZodObject<{ identifier: z.ZodString; }, z.core.$strip>
+```
+
+### `SignInTestCleanup`
+
+_type_, defined in `packages/contract/src/test-address.ts`
+
+What became of a test's user.
+
+```ts
+export type SignInTestCleanup = (typeof SIGN_IN_TEST_CLEANUPS)[number]
+```
+
+### `SignInTestOutcome`
+
+_type_, defined in `packages/contract/src/test-address.ts`
+
+The outcome of a whole test.
+
+```ts
+export type SignInTestOutcome = (typeof SIGN_IN_TEST_OUTCOMES)[number]
+```
+
+### `SignInTestReason`
+
+_type_, defined in `packages/contract/src/test-address.ts`
+
+A fixed reason of a step: one of {@link SIGN_IN_TEST_REASONS}.
+
+```ts
+export type SignInTestReason = (typeof SIGN_IN_TEST_REASONS)[number]
+```
+
+### `SignInTestRefusal`
+
+_type_, defined in `packages/contract/src/test-address.ts`
+
+Why a sign-in test was refused.
+
+```ts
+export type SignInTestRefusal = (typeof SIGN_IN_TEST_REFUSALS)[number]
+```
+
+### `SignInTestReport`
+
+_type_, defined in `packages/contract/src/sign-in-test.ts`
+
+The report of a sign-in test.
+
+```ts
+export type SignInTestReport = z.infer<typeof SignInTestReportSchema>
+```
+
+### `SignInTestReportSchema`
+
+_constant_, defined in `packages/contract/src/sign-in-test.ts`
+
+The report of a sign-in test (ADR 0058): what `POST /v1/agent/sign-in-tests` answers.
+
+A throwaway user was signed up and in through the environment's real flow, by the server
+itself, and deleted. The report holds **nothing the flow handled**: no address, code,
+password, attempt secret or token. `userId` is the id the server gave the throwaway user
+(`null` when no account was made), there so that an operator can find the run's audit
+entries; the user itself is gone unless `cleanup` is `failed`.
+
+```ts
+const SignInTestReportSchema
+```
+
+### `SignInTestStep`
+
+_type_, defined in `packages/contract/src/test-address.ts`
+
+One step of a sign-in test: one of {@link SIGN_IN_TEST_STEPS}.
+
+```ts
+export type SignInTestStep = (typeof SIGN_IN_TEST_STEPS)[number]
+```
+
+### `SignInTestStepOutcome`
+
+_type_, defined in `packages/contract/src/test-address.ts`
+
+The outcome of one step.
+
+```ts
+export type SignInTestStepOutcome = (typeof SIGN_IN_TEST_STEP_OUTCOMES)[number]
+```
+
+### `SignInTestStepResult`
+
+_type_, defined in `packages/contract/src/sign-in-test.ts`
+
+One step of a sign-in test's report.
+
+```ts
+export type SignInTestStepResult = z.infer<typeof SignInTestStepResultSchema>
+```
+
+### `SignInTestStepResultSchema`
+
+_constant_, defined in `packages/contract/src/sign-in-test.ts`
+
+One step of a sign-in test's report: which step, what became of it and how long it took.
+Closed words and a number; never an address, a code, a token or any text of a message.
+
+`code` is the API's error code of a step that failed with one. `reason` is one of the
+server's fixed words: why a step was not run, or why it failed where no code says it.
+
+```ts
+const SignInTestStepResultSchema
 ```
 
 ### `SignUpPasswordMode`
@@ -2784,6 +6948,306 @@ password and signs in with an emailed code or link.
 const SignUpRequestSchema
 ```
 
+### `SmsCostLimits`
+
+_interface_, defined in `packages/contract/src/phone.ts`
+
+The limits one daily limit gives an environment ({@link smsCostLimits}).
+
+```ts
+export interface SmsCostLimits {
+  /** Messages an hour to the numbers of one destination prefix. */
+  prefixPerHour: number
+  /** Messages an hour, whatever the destination. */
+  environmentPerHour: number
+  /** Messages in one UTC day: the environment's `sms.dailyMessageLimit`. */
+  perDay: number
+}
+```
+
+### `SmsCountrySchema`
+
+_constant_, defined in `packages/contract/src/environment-settings.ts`
+
+A country SMS may be sent to: an ISO 3166-1 alpha-2 code in upper case that the contract's
+calling-prefix table knows (`COUNTRY_CALLING_PREFIXES`). A code the table does not have is
+refused rather than stored: it could never match a number.
+
+```ts
+const SmsCountrySchema: z.ZodString
+```
+
+### `SmsFactorCode`
+
+_type_, defined in `packages/contract/src/mfa.ts`
+
+A texted second-factor code's receipt.
+
+```ts
+export type SmsFactorCode = z.infer<typeof SmsFactorCodeSchema>
+```
+
+### `SmsFactorCodeSchema`
+
+_constant_, defined in `packages/contract/src/mfa.ts`
+
+A code was texted to the account's phone number, to enrol a texted code as the second
+factor (`POST /v1/client/me/factors/sms`) or to step up with one
+(`POST /v1/client/sessions/step-up/sms-code`). Never the code.
+
+```ts
+const SmsFactorCodeSchema
+```
+
+### `SmsFactorConfirmRequest`
+
+_type_, defined in `packages/contract/src/mfa.ts`
+
+Texted-code factor confirmation request body.
+
+```ts
+export type SmsFactorConfirmRequest = z.infer<typeof SmsFactorConfirmRequestSchema>
+```
+
+### `SmsFactorConfirmRequestSchema`
+
+_constant_, defined in `packages/contract/src/mfa.ts`
+
+Confirm a texted code as the second factor with the 6-digit code that was texted.
+
+```ts
+const SmsFactorConfirmRequestSchema: z.ZodObject<{ code: z.ZodString; }, z.core.$strip>
+```
+
+### `SmsPrefixUsage`
+
+_type_, defined in `packages/contract/src/sms.ts`
+
+The codes texted to one destination prefix, and how many were used.
+
+```ts
+export type SmsPrefixUsage = z.infer<typeof SmsPrefixUsageSchema>
+```
+
+### `SmsPrefixUsageSchema`
+
+_constant_, defined in `packages/contract/src/sms.ts`
+
+The codes texted to the numbers of one destination prefix, and how many of them were used.
+
+- `prefix`: the destination the numbers share (`phoneNumberPrefix`), with the `+`: a
+  country calling code, or a calling code and the digits that tell one country from another
+  inside a shared one (`+1242`). It names a destination, never a number.
+- `sent`: codes texted.
+- `used`: of those, the ones a user then entered correctly.
+- `unused`: `sent - used`. A prefix where nearly every code goes unused is what SMS pumping
+  looks like: messages are being bought, not read.
+
+```ts
+const SmsPrefixUsageSchema
+```
+
+### `SmsSegments`
+
+_interface_, defined in `packages/contract/src/sms-template.ts`
+
+How a carrier would encode and split a text message.
+
+```ts
+export interface SmsSegments {
+  /** `gsm7` when every character is in the GSM 7-bit alphabet, else `ucs2`. */
+  encoding: 'gsm7' | 'ucs2'
+  /** Septets (`gsm7`) or UTF-16 code units (`ucs2`) the text takes. */
+  units: number
+  /** How many segments it is sent, and billed, as. */
+  segments: number
+}
+```
+
+### `SmsTemplate`
+
+_interface_, defined in `packages/contract/src/sms-template.ts`
+
+One environment's wording of one kind of text message.
+
+```ts
+export interface SmsTemplate {
+  /**
+   * The sentence, on one line. The server puts its origin-bound last line (`@host #code`)
+   * after it; a template never holds that line.
+   */
+  text: string
+}
+```
+
+### `SmsTemplateKind`
+
+_type_, defined in `packages/contract/src/sms-template.ts`
+
+One of {@link SMS_TEMPLATE_KINDS}.
+
+```ts
+export type SmsTemplateKind = (typeof SMS_TEMPLATE_KINDS)[number]
+```
+
+### `SmsTemplatePlaceholder`
+
+_type_, defined in `packages/contract/src/sms-template.ts`
+
+One of {@link SMS_TEMPLATE_PLACEHOLDERS}.
+
+```ts
+export type SmsTemplatePlaceholder = (typeof SMS_TEMPLATE_PLACEHOLDERS)[number]
+```
+
+### `SmsTemplateProblem`
+
+_interface_, defined in `packages/contract/src/sms-template.ts`
+
+One reason a text message's template is refused.
+
+```ts
+export interface SmsTemplateProblem {
+  /** Which part: a template has one. */
+  field: 'text'
+  /** Why, as a fixed word. */
+  code: SmsTemplateProblemCode
+  /** The placeholder's name, where the reason is about one. */
+  placeholder?: string
+  /** The reason in words. It names a placeholder at most, never the template's text. */
+  message: string
+}
+```
+
+### `SmsTemplateProblemCode`
+
+_type_, defined in `packages/contract/src/sms-template.ts`
+
+Why a text message's template is refused, as a fixed word.
+
+- `empty`: nothing but white space and characters that draw nothing.
+- `too_long`: over {@link MAX_SMS_TEMPLATE_LENGTH}.
+- `control_character`: a control character or a line break. A template is one line.
+- `hidden_character`: what no email template may hold either (`hasHiddenCharacter`).
+- `malformed_braces`: a `{` or `}` that is not part of a `{{name}}`.
+- `unknown_placeholder`: a name this kind does not have.
+- `missing_placeholder`: the text lacks `{{code}}`.
+- `repeated_placeholder`: a placeholder is named twice.
+- `placeholder_touches_text`: a letter, a digit, a combining mark or another placeholder
+  directly before or after a placeholder, judged on the text without the characters that
+  draw nothing. A code must stand alone to be read, by a person and by a phone.
+- `digit_run`: four or more digits in a row, which could be read as the code.
+- `imitates_code_line`: an `@` or a `#` at the start of a word, which is how the
+  origin-bound line the server writes is recognised.
+- `reads_as_link`: something a phone would turn into a link (`readsAsLink`).
+- `leading_non_letter`: the text does not start with a letter of its own (a placeholder
+  first would let a code, or an app name that starts with a digit, lead the message).
+
+```ts
+export type SmsTemplateProblemCode =
+| 'empty'
+| 'too_long'
+| 'control_character'
+| 'hidden_character'
+| 'malformed_braces'
+| 'unknown_placeholder'
+| 'missing_placeholder'
+| 'repeated_placeholder'
+| 'placeholder_touches_text'
+| 'digit_run'
+| 'imitates_code_line'
+| 'reads_as_link'
+| 'leading_non_letter'
+```
+
+### `SmsTemplateRules`
+
+_interface_, defined in `packages/contract/src/sms-template.ts`
+
+The rules of one kind's template.
+
+```ts
+export interface SmsTemplateRules {
+  /** Placeholders the text must name, exactly once. */
+  required: readonly SmsTemplatePlaceholder[]
+  /** Placeholders the text may name besides, at most once each. */
+  optional: readonly SmsTemplatePlaceholder[]
+}
+```
+
+### `SmsTemplateSchema`
+
+_constant_, defined in `packages/contract/src/sms-template-schema.ts`
+
+An environment's wording for one kind of text message (ADR 0042): the sentence that
+carries the code.
+
+**Plain text on one line, with `{{name}}` placeholders and nothing else**, at most
+{@link MAX_SMS_TEMPLATE_LENGTH} characters. The origin-bound last line (`@host #code`) is
+the server's: it is added after the sentence and is never part of a template.
+
+```ts
+const SmsTemplateSchema: z.ZodObject<{ text: z.ZodString; }, z.core.$strict>
+```
+
+### `SmsTemplates`
+
+_type_, defined in `packages/contract/src/sms-template.ts`
+
+An environment's text message templates, by kind. A kind left out sends the built-in text.
+
+```ts
+export type SmsTemplates = { [Kind in SmsTemplateKind]?: SmsTemplate | undefined }
+```
+
+### `SmsTemplatesSchema`
+
+_constant_, defined in `packages/contract/src/sms-template-schema.ts`
+
+An environment's text message templates, by kind (`SMS_TEMPLATE_KINDS`). A kind left out
+sends the built-in text; a kind the server does not know is refused.
+
+A template is refused, with the path of its text, when it lacks `{{code}}` or names it
+(or the app) twice, names a placeholder its kind does not have, has a brace that is not
+part of a `{{name}}`, lets a letter, a digit or another placeholder touch a placeholder,
+holds four or more digits in a row, starts a word with `@` or `#`, does not start with a
+letter of its own, or holds a line break, a control character, a hidden character,
+nothing a reader can see, or anything that reads as a link, an address or a domain name.
+
+```ts
+const SmsTemplatesSchema
+```
+
+### `SmsUsage`
+
+_type_, defined in `packages/contract/src/sms.ts`
+
+An environment's texted codes over a span of days, by destination prefix.
+
+```ts
+export type SmsUsage = z.infer<typeof SmsUsageSchema>
+```
+
+### `SmsUsageSchema`
+
+_constant_, defined in `packages/contract/src/sms.ts`
+
+What `GET /v1/admin/sms/usage` returns: the codes an environment texted in a span of days,
+by destination prefix.
+
+- `since`: the first day (UTC) the counts cover, as `YYYY-MM-DD`; they run to today.
+- `days`: how many days that is, today included.
+- `sent`, `used`, `unused`: the totals over **every** prefix of the span.
+- `prefixes`: the prefixes with the most unused codes first, at most
+  {@link SMS_USAGE_MAX_PREFIXES} of them.
+- `truncated`: `true` when the span has more prefixes than are listed.
+
+Counts only. No phone number, and nothing about who asked.
+
+```ts
+const SmsUsageSchema
+```
+
 ### `StepUpEmailCode`
 
 _type_, defined in `packages/contract/src/mfa.ts`
@@ -2826,6 +7290,9 @@ What a step-up can be proven with.
 (`POST /v1/client/sessions/step-up/email-code`); it exists only for a user with a verified
 email address and **no** second factor. `passkey` is an assertion for the options of
 `POST /v1/client/sessions/step-up/passkey`, for a user who has a passkey (ADR 0027).
+`sms_code` is a 6-digit code texted on request
+(`POST /v1/client/sessions/step-up/sms-code`); it exists only for a user whose **only**
+second factor is a texted code, never beside an authenticator app or a passkey.
 
 ```ts
 const StepUpMethodSchema: z.ZodEnum<{}>
@@ -2847,12 +7314,30 @@ _constant_, defined in `packages/contract/src/mfa.ts`
 
 Prove a factor again for the current session (`POST /v1/client/sessions/step-up`).
 
-A user with two-step verification must use `totp`, `backup_code` or a `passkey`: their
+A user with two-step verification must use `totp`, `backup_code` or a `passkey` (or, where a
+texted code is their only second factor, the `sms_code` they asked for from this session): their
 password alone is refused. A user without it uses `password`, or an `email_code` they asked for from this
 session.
 
 ```ts
 const StepUpRequestSchema
+```
+
+### `StoredEmailTemplatesRead`
+
+_interface_, defined in `packages/contract/src/email-template.ts`
+
+Stored templates as read back.
+
+```ts
+export interface StoredEmailTemplatesRead {
+  /** The templates this version can send: of each, the parts that pass. */
+  templates: EmailTemplates
+  /** The known kinds with a stored subject or body that was left out: it no longer passes. */
+  dropped: EmailTemplateKind[]
+  /** How many entries were under a kind this version does not know. */
+  unknown: number
+}
 ```
 
 ### `StoredEnvironmentSettingsRead`
@@ -2866,6 +7351,20 @@ export interface StoredEnvironmentSettingsRead {
   settings: EnvironmentSettings
   /** How many list entries were left out because this version would not accept them. */
   dropped: number
+  /**
+   * The kinds whose stored email template was left out because it no longer passes; their
+   * messages are the built-in copy.
+   */
+  droppedEmailTemplates: EmailTemplateKind[]
+  /** How many stored email templates were under a kind this version does not know. */
+  unknownEmailTemplates: number
+  /**
+   * The kinds whose stored text message template was left out because it no longer passes;
+   * their messages are the built-in text.
+   */
+  droppedSmsTemplates: SmsTemplateKind[]
+  /** How many stored text message templates were under a kind this version does not know. */
+  unknownSmsTemplates: number
 }
 ```
 
@@ -2873,10 +7372,63 @@ export interface StoredEnvironmentSettingsRead {
 
 _constant_, defined in `packages/contract/src/session-profile.ts`
 
-The `sessions` section of a stored settings document: unknown keys are dropped.
+The `sessions` section of a stored settings document: unknown keys are dropped, and so is a
+template (or a claim of one) this version would not accept. A profile that names a template
+that is not there is read as stored and gets no custom claims (`jwtTemplateOfProfile`).
 
 ```ts
 const StoredSessionSettingsSchema
+```
+
+### `StoredSmsTemplatesRead`
+
+_interface_, defined in `packages/contract/src/sms-template.ts`
+
+Stored text message templates as read back.
+
+```ts
+export interface StoredSmsTemplatesRead {
+  /** The templates this version can send. */
+  templates: SmsTemplates
+  /** The known kinds whose stored template was left out: it no longer passes. */
+  dropped: SmsTemplateKind[]
+  /** How many entries were under a kind this version does not know. */
+  unknown: number
+}
+```
+
+### `TEST_ADDRESS_DOMAIN`
+
+_constant_, defined in `packages/contract/src/test-address.ts`
+
+The domain of every address a sign-in test makes. `.invalid` is reserved (RFC 2606, RFC
+6761): no name under it can be registered and no mail can be delivered to one, so no
+person has, or can come to have, such an address.
+
+```ts
+const TEST_ADDRESS_DOMAIN: "test.tula.invalid"
+```
+
+**Example**
+
+```ts
+`tula-test-${hex}@${TEST_ADDRESS_DOMAIN}`
+```
+
+### `TEST_ADDRESS_LOCAL_PREFIX`
+
+_constant_, defined in `packages/contract/src/test-address.ts`
+
+What the local part of a test's address starts with; 32 hexadecimal characters follow.
+
+```ts
+const TEST_ADDRESS_LOCAL_PREFIX: "tula-test-"
+```
+
+**Example**
+
+```ts
+TEST_ADDRESS_LOCAL_PREFIX // 'tula-test-'
 ```
 
 ### `THEME_TOKENS`
@@ -3109,6 +7661,106 @@ nothing until it is confirmed with a code, and expires after ten minutes.
 const TotpEnrolmentSchema: z.ZodObject<{ secret: z.ZodString; uri: z.ZodString; }, z.core.$strip>
 ```
 
+### `TulaEvent`
+
+_type_, defined in `packages/contract/src/events.ts`
+
+Any event: a union discriminated by `type`.
+
+```ts
+export type TulaEvent = { [T in ActivityType]: EventOf<T> }[ActivityType]
+```
+
+**Example**
+
+```ts
+function handle(event: TulaEvent) {
+  if (event.type === 'session.reuse_detected') {
+    alertSecurity(event.data.userId)
+  }
+}
+```
+
+### `TulaEventSchema`
+
+_constant_, defined in `packages/contract/src/events.ts`
+
+Any event, told apart by `type`: what a webhook receiver parses a delivery with.
+
+```ts
+const TulaEventSchema: z.ZodType<EventOf<any>, unknown, z.core.$ZodTypeInternals<EventOf<any>, unknown>>
+```
+
+**Example**
+
+```ts
+const event = TulaEventSchema.parse(JSON.parse(body))
+```
+
+### `UpdateHookRequest`
+
+_type_, defined in `packages/contract/src/hook.ts`
+
+Body of a hook's update.
+
+```ts
+export type UpdateHookRequest = z.infer<typeof UpdateHookRequestSchema>
+```
+
+### `UpdateHookRequestSchema`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+Body of `PATCH /v1/admin/hooks/{id}`: the fields to change, at least one. The point a hook
+was registered for and its secret cannot be changed.
+
+```ts
+const UpdateHookRequestSchema
+```
+
+### `UpdateNativeAppRequest`
+
+_type_, defined in `packages/contract/src/native-app.ts`
+
+Body of an app's update.
+
+```ts
+export type UpdateNativeAppRequest = z.infer<typeof UpdateNativeAppRequestSchema>
+```
+
+### `UpdateNativeAppRequestSchema`
+
+_constant_, defined in `packages/contract/src/native-app.ts`
+
+Body of `PATCH /v1/admin/native-apps/{id}`: an iOS app's `teamId`, or an Android app's
+`sha256CertFingerprints` (the whole set, replacing what is stored), and for either platform
+`appLinkPaths` (the whole set; `[]` takes every link back). Of the first two exactly the
+field of the app's own platform; the other is refused.
+
+```ts
+const UpdateNativeAppRequestSchema
+```
+
+### `UpdateWebhookEndpointRequest`
+
+_type_, defined in `packages/contract/src/webhook.ts`
+
+Update-endpoint request body.
+
+```ts
+export type UpdateWebhookEndpointRequest = z.infer<typeof UpdateWebhookEndpointRequestSchema>
+```
+
+### `UpdateWebhookEndpointRequestSchema`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+Body of `PATCH /v1/admin/webhook-endpoints/{id}`: the fields to change, at least one.
+
+```ts
+const UpdateWebhookEndpointRequestSchema
+```
+
 ### `User`
 
 _type_, defined in `packages/contract/src/user.ts`
@@ -3248,6 +7900,201 @@ Body of `POST /v1/admin/sessions/verify`: the value of a `stateful` session's co
 const VerifySessionRequestSchema: z.ZodObject<{ token: z.ZodString; }, z.core.$strip>
 ```
 
+### `WEBHOOK_DELIVERY_STATES`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+Where a delivery stands: `pending` (not yet delivered, and the server will try, or try
+again), `delivered` (the receiver answered 2xx) or `failed` (given up).
+
+```ts
+const WEBHOOK_DELIVERY_STATES: readonly ["pending", "delivered", "failed"]
+```
+
+**Example**
+
+```ts
+const state: (typeof WEBHOOK_DELIVERY_STATES)[number] = 'pending'
+```
+
+### `WEBHOOK_DISABLED_REASONS`
+
+_constant_, defined in `packages/contract/src/events.ts`
+
+Why the server switched a webhook endpoint off by itself, as `webhook_endpoint.disabled`
+says it: `failing` when every delivery to it has failed for days, `gone` when it answered
+`410 Gone`.
+
+```ts
+const WEBHOOK_DISABLED_REASONS: readonly ["failing", "gone"]
+```
+
+**Example**
+
+```ts
+const reason: (typeof WEBHOOK_DISABLED_REASONS)[number] = 'failing'
+```
+
+### `WEBHOOK_ENDPOINT_FIELDS`
+
+_constant_, defined in `packages/contract/src/events.ts`
+
+The fields of a webhook endpoint an update can change, as `webhook_endpoint.updated` names
+them. `url` says the address changed, never what it is or was.
+
+```ts
+const WEBHOOK_ENDPOINT_FIELDS: readonly ["url", "eventTypes", "enabled"]
+```
+
+**Example**
+
+```ts
+const changed: (typeof WEBHOOK_ENDPOINT_FIELDS)[number][] = ['url', 'enabled']
+```
+
+### `WEBHOOK_ID_HEADER`
+
+_constant_, defined in `packages/contract/src/webhook-signature.ts`
+
+Request header carrying the delivery's id: the event's id. A delivery that is repeated
+carries the same id, so a receiver drops duplicates by it.
+
+```ts
+const WEBHOOK_ID_HEADER: "webhook-id"
+```
+
+**Example**
+
+```ts
+const id = request.headers.get(WEBHOOK_ID_HEADER)
+```
+
+### `WEBHOOK_REDELIVER_REFUSALS`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+Why a delivery cannot be sent again, as `webhook.cannot_redeliver` says it in
+`params.reason`: the server is still retrying it, its endpoint is switched off, its
+event's payload is no longer kept (also: it was a test event, which never had one), or it
+has had as many requests as one delivery may have.
+
+```ts
+const WEBHOOK_REDELIVER_REFUSALS: readonly ["delivery_pending", "endpoint_disabled", "event_gone", "attempt_limit"]
+```
+
+**Example**
+
+```ts
+if (error.code === 'webhook.cannot_redeliver' && error.params?.reason === 'event_gone') {
+  // too late to send this one again
+}
+```
+
+### `WEBHOOK_ROTATION_REFUSALS`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+Why a signing secret cannot be replaced, or its overlap ended, as
+`webhook.rotation_refused` says it in `params.reason`: a rotation is already under way (two
+secrets sign, and there are never three), none is under way (there is no previous secret to
+revoke), or the server could not open the endpoint's current secret and so cannot keep it
+signing beside a new one.
+
+```ts
+const WEBHOOK_ROTATION_REFUSALS: readonly ["rotation_in_progress", "no_rotation_in_progress", "secret_unreadable"]
+```
+
+**Example**
+
+```ts
+if (error.code === 'webhook.rotation_refused' && error.params?.reason === 'rotation_in_progress') {
+  // wait for the overlap to end, or revoke the previous secret first
+}
+```
+
+### `WEBHOOK_SECRET_PREFIX`
+
+_constant_, defined in `packages/contract/src/webhook-signature.ts`
+
+What an endpoint's signing secret starts with. The rest is the base64 of the key's bytes.
+
+```ts
+const WEBHOOK_SECRET_PREFIX: "whsec_"
+```
+
+**Example**
+
+```ts
+secret.startsWith(WEBHOOK_SECRET_PREFIX) // 'whsec_…'
+```
+
+### `WEBHOOK_SIGNATURE_HEADER`
+
+_constant_, defined in `packages/contract/src/webhook-signature.ts`
+
+Request header carrying the signatures: one or more of `v1,<base64>`, separated by spaces.
+A receiver accepts the delivery when any one of them is right.
+
+```ts
+const WEBHOOK_SIGNATURE_HEADER: "webhook-signature"
+```
+
+**Example**
+
+```ts
+const signatures = (request.headers.get(WEBHOOK_SIGNATURE_HEADER) ?? '').split(' ')
+```
+
+### `WEBHOOK_SIGNATURE_VERSION`
+
+_constant_, defined in `packages/contract/src/webhook-signature.ts`
+
+The version label of an HMAC-SHA256 signature: what stands before the comma.
+
+```ts
+const WEBHOOK_SIGNATURE_VERSION: "v1"
+```
+
+**Example**
+
+```ts
+const [version, signature] = entry.split(',') // version === WEBHOOK_SIGNATURE_VERSION
+```
+
+### `WEBHOOK_TIMESTAMP_HEADER`
+
+_constant_, defined in `packages/contract/src/webhook-signature.ts`
+
+Request header carrying when the delivery was sent, in whole seconds since the Unix epoch.
+It is signed, and a receiver refuses one too far from its own clock.
+
+```ts
+const WEBHOOK_TIMESTAMP_HEADER: "webhook-timestamp"
+```
+
+**Example**
+
+```ts
+const sentAt = Number(request.headers.get(WEBHOOK_TIMESTAMP_HEADER)) * 1000
+```
+
+### `WEBHOOK_TOLERANCE_SECONDS`
+
+_constant_, defined in `packages/contract/src/webhook-signature.ts`
+
+How far a delivery's timestamp may be from the receiver's clock, either way, in seconds.
+Five minutes: what bounds the replay of a captured delivery.
+
+```ts
+const WEBHOOK_TOLERANCE_SECONDS: number
+```
+
+**Example**
+
+```ts
+const fresh = Math.abs(now - sentAt) <= WEBHOOK_TOLERANCE_SECONDS
+```
+
 ### `WebOriginSchema`
 
 _constant_, defined in `packages/contract/src/environment-settings.ts`
@@ -3258,6 +8105,298 @@ exact match. `http://` is accepted for `localhost`, `127.0.0.1` and `[::1]` only
 
 ```ts
 const WebOriginSchema: z.ZodString
+```
+
+### `WebSessionProfileSchema`
+
+_constant_, defined in `packages/contract/src/session-profile.ts`
+
+The built-in `web` profile: a {@link SessionProfileSchema} whose `deviceBinding` is `none`
+when left out, because the profile serves browsers only ({@link defaultDeviceBinding}).
+Every other field, rule and default is the same.
+
+```ts
+const WebSessionProfileSchema
+```
+
+### `WebhookDelivery`
+
+_type_, defined in `packages/contract/src/webhook.ts`
+
+The delivery of one event to one endpoint.
+
+```ts
+export type WebhookDelivery = z.infer<typeof WebhookDeliverySchema>
+```
+
+### `WebhookDeliveryAttempt`
+
+_type_, defined in `packages/contract/src/webhook.ts`
+
+One request made for a delivery.
+
+```ts
+export type WebhookDeliveryAttempt = z.infer<typeof WebhookDeliveryAttemptSchema>
+```
+
+### `WebhookDeliveryAttemptSchema`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+One request the server made for a delivery. **Nothing of the receiver's answer is here but
+its status code and how long it took**: no header and no body, which the server never keeps.
+
+```ts
+const WebhookDeliveryAttemptSchema
+```
+
+### `WebhookDeliveryDetail`
+
+_type_, defined in `packages/contract/src/webhook.ts`
+
+A delivery with its attempts.
+
+```ts
+export type WebhookDeliveryDetail = z.infer<typeof WebhookDeliveryDetailSchema>
+```
+
+### `WebhookDeliveryDetailSchema`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+One delivery with every request made for it, oldest first.
+
+```ts
+const WebhookDeliveryDetailSchema
+```
+
+### `WebhookDeliveryList`
+
+_type_, defined in `packages/contract/src/webhook.ts`
+
+A page of deliveries.
+
+```ts
+export type WebhookDeliveryList = z.infer<typeof WebhookDeliveryListSchema>
+```
+
+### `WebhookDeliveryListSchema`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+One page of an endpoint's deliveries, newest first.
+
+```ts
+const WebhookDeliveryListSchema
+```
+
+### `WebhookDeliverySchema`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+The delivery of one event to one endpoint: where it stands, and how its last try ended.
+
+`statusCode` and `failureReason` describe the latest thing that happened to it.
+`failureReason` can be a word for which **no request was made** (`endpoint_unresponsive`,
+`signing_failed`, `expired`, `event_gone`): those are not attempts and are not counted in
+`attemptCount`.
+
+```ts
+const WebhookDeliverySchema
+```
+
+### `WebhookDeliveryState`
+
+_type_, defined in `packages/contract/src/webhook.ts`
+
+Where a delivery stands.
+
+```ts
+export type WebhookDeliveryState = (typeof WEBHOOK_DELIVERY_STATES)[number]
+```
+
+### `WebhookEndpoint`
+
+_type_, defined in `packages/contract/src/webhook.ts`
+
+A listed webhook endpoint.
+
+```ts
+export type WebhookEndpoint = z.infer<typeof WebhookEndpointSchema>
+```
+
+### `WebhookEndpointList`
+
+_type_, defined in `packages/contract/src/webhook.ts`
+
+An environment's webhook endpoints.
+
+```ts
+export type WebhookEndpointList = z.infer<typeof WebhookEndpointListSchema>
+```
+
+### `WebhookEndpointListSchema`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+An environment's webhook endpoints, oldest first.
+
+```ts
+const WebhookEndpointListSchema
+```
+
+### `WebhookEndpointSchema`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+A webhook endpoint as listed. The signing secret is never part of it: it is returned once,
+by the call that created the endpoint.
+
+```ts
+const WebhookEndpointSchema
+```
+
+### `WebhookSendResult`
+
+_type_, defined in `packages/contract/src/webhook.ts`
+
+The outcome of a request made on demand.
+
+```ts
+export type WebhookSendResult = z.infer<typeof WebhookSendResultSchema>
+```
+
+### `WebhookSendResultSchema`
+
+_constant_, defined in `packages/contract/src/webhook.ts`
+
+What became of a request the server made on demand (a test event, or a delivery sent again).
+Of the receiver's answer only the status code and the duration: never a header or a body.
+
+```ts
+const WebhookSendResultSchema
+```
+
+### `androidApkKeyHashOrigin`
+
+_function_, defined in `packages/contract/src/native-app.ts`
+
+The origin Android's Credential Manager writes into a passkey response's client data for an
+app signed with a certificate: `android:apk-key-hash:` and the 32 bytes of the certificate's
+SHA-256 fingerprint as base64url with no padding.
+
+It is derived from a registered fingerprint and compared with what a response carries, as
+one string, exactly. It says which certificate signed the calling app, not which package:
+two apps signed with one certificate present the same origin.
+
+The function itself uses neither Zod nor a Node API. Its module does import Zod (the
+schemas above), so this is not one of the contract's Zod-free entry points: an SDK that
+must stay free of Zod cannot import it from here.
+
+```ts
+export function androidApkKeyHashOrigin(fingerprint: string): string | null
+```
+
+**Parameters**
+
+- `fingerprint`: A SHA-256 certificate fingerprint, in any spelling
+  {@link normalizeCertFingerprint} accepts.
+
+**Returns** The origin, or `null` when `fingerprint` is not a SHA-256 fingerprint.
+
+**Example**
+
+```ts
+androidApkKeyHashOrigin('00:'.repeat(31) + '00')
+// 'android:apk-key-hash:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+```
+
+### `appleAppSiteAssociation`
+
+_function_, defined in `packages/contract/src/native-app.ts`
+
+Build the `apple-app-site-association` document from an environment's apps.
+
+Only the iOS apps are in it. Each is under `webcredentials` as `<team id>.<bundle id>`,
+sorted. One that has app-link paths also has an entry under `applinks.details`, whose
+`components` name exactly those paths and nothing else: no `*`, no `?`, no exclusion, no
+query or fragment rule. Nothing else of an app, and nothing that is not an app, goes into
+the file.
+
+```ts
+export function appleAppSiteAssociation(
+  apps: readonly NativeAppIdentity[]
+): AppleAppSiteAssociation
+```
+
+**Parameters**
+
+- `apps`: The environment's registered apps, of any platform.
+
+**Returns** The document; `{}` when no iOS app is registered.
+
+**Example**
+
+```ts
+appleAppSiteAssociation([
+  { platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'com.example.app', appLinkPaths: ['/oauth'] },
+])
+// {
+//   webcredentials: { apps: ['A1B2C3D4E5.com.example.app'] },
+//   applinks: { details: [{ appIDs: ['A1B2C3D4E5.com.example.app'], components: [{ '/': '/oauth' }] }] },
+// }
+```
+
+### `assetLinks`
+
+_function_, defined in `packages/contract/src/native-app.ts`
+
+Build the `assetlinks.json` document from an environment's apps.
+
+One statement per Android app, sorted by package name, each with the relations of
+{@link ASSET_LINKS_RELATIONS} and the app's fingerprints. An app with at least one
+app-link path also gets {@link ASSET_LINKS_APP_LINK_RELATION}; the paths themselves are
+not in the file, which has no place for them.
+
+```ts
+export function assetLinks(apps: readonly NativeAppIdentity[]): AssetLinks
+```
+
+**Parameters**
+
+- `apps`: The environment's registered apps, of any platform.
+
+**Returns** The statements; `[]` when no Android app is registered.
+
+**Example**
+
+```ts
+assetLinks([{ platform: 'android', packageName: 'com.example.app', sha256CertFingerprints }])
+// [{ relation: ['delegate_permission/common.get_login_creds'], target: { … } }]
+```
+
+### `bindsCodeWithPkce`
+
+_function_, defined in `packages/contract/src/redirect-url.ts`
+
+Whether a provider's code is bound to the attempt with PKCE
+({@link OAUTH_PROVIDERS_WITH_PKCE}). The one place that says so.
+
+```ts
+export function bindsCodeWithPkce(provider: string): boolean
+```
+
+**Parameters**
+
+- `provider`: A provider's name.
+
+**Returns** `true` only for a provider on the list; `false` for any other string.
+
+**Example**
+
+```ts
+bindsCodeWithPkce('google') // true
+bindsCodeWithPkce('apple') // false
 ```
 
 ### `builtInSessionProfile`
@@ -3281,6 +8420,36 @@ export function builtInSessionProfile(client: SessionClient): BuiltInSessionProf
 
 ```ts
 builtInSessionProfile('ios') // 'mobile'
+```
+
+### `checkCustomClaims`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Judge claims that did not come from the environment's settings (a hook's answer), **whole**:
+either every one of them can be issued under the namespace claim, or none is.
+
+Nothing is repaired and nothing is left out: one bad key makes the whole value `invalid`.
+Give it the value as it was parsed (`JSON.parse`), not one a schema library has rebuilt:
+the keys are read as the object's **own** keys, so a `__proto__` key a parser kept is seen
+and refused, where a library that copies objects would have dropped it silently. An empty
+object is fine and means no claims.
+
+```ts
+export function checkCustomClaims(value: unknown): CustomClaimsCheck
+```
+
+**Parameters**
+
+- `value`: The candidate claims.
+
+**Returns** A copy of the claims (own keys only, no prototype reachable), or the problem.
+
+**Example**
+
+```ts
+checkCustomClaims({ role: 'admin' }) // { claims: { role: 'admin' } }
+checkCustomClaims({ sub: 'someone-else' }) // { problem: 'invalid' }
 ```
 
 ### `contrastRatio`
@@ -3309,6 +8478,101 @@ export function contrastRatio(foreground: string, background: string): number
 contrastRatio('#ffffff', '#5b4cf0') >= 4.5 // white text on the default primary passes AA
 ```
 
+### `createDpopProof`
+
+_function_, defined in `packages/contract/src/device-binding.ts`
+
+Make a proof for one request: a JWT of type `dpop+jwt`, signed by the device key, carrying
+the key's public half in its header and the request's method (`htm`), the API's address
+(`htu`), the time (`iat`), a unique id (`jti`) and the server's nonce.
+
+A proof is good for one request: make a new one every time, never keep or reuse one.
+
+```ts
+export async function createDpopProof(key: DeviceKey, input: DpopProofInput): Promise<string>
+```
+
+**Parameters**
+
+- `key`: The device key.
+- `input`: The request the proof is for, and the server's nonce.
+
+**Returns** The compact JWT for the {@link DPOP_HEADER} header.
+
+**Example**
+
+```ts
+const proof = await createDpopProof(key, {
+  method: 'POST',
+  url: 'https://auth.example.com/v1/client/sessions/refresh',
+  nonce,
+})
+```
+
+### `customClaimsBytes`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+How many bytes custom claims take in a token: the UTF-8 length of their JSON, which is what
+{@link MAX_CUSTOM_CLAIMS_BYTES} caps.
+
+```ts
+export function customClaimsBytes(claims: Readonly<Record<string, CustomClaimValue>>): number
+```
+
+**Parameters**
+
+- `claims`: The value of the namespace claim.
+
+**Returns** The byte count.
+
+**Example**
+
+```ts
+customClaimsBytes({ role: 'admin' }) // 16: {"role":"admin"}
+```
+
+### `customSchemeRedirectRefusal`
+
+_function_, defined in `packages/contract/src/redirect-url.ts`
+
+Why a redirect to `url` is refused for this use although the environment lists it, or
+`null` when it is not.
+
+Only a custom-scheme URL is ever refused here. Any app on the device can claim a scheme,
+so the app that receives the redirect may be another one. What then keeps a sign-in from
+being completed by it:
+
+- the provider's code is bound with PKCE, so a provider that is told to return to the
+  scheme's owner cannot be made to hand a usable code to someone else. Without PKCE the
+  redirect is refused, whatever else holds;
+- the attempt belongs to a native client. A browser page has no use for a custom scheme,
+  and a `web` attempt ends in cookies.
+
+It depends on the URL, the provider and the client kind, never on a user.
+
+```ts
+export function customSchemeRedirectRefusal(
+  url: string,
+  use: { client: string; provider?: string }
+): CustomSchemeRedirectRefusal | null
+```
+
+**Parameters**
+
+- `url`: A redirect URL the environment lists.
+- `use`: The client kind of the attempt, and the provider when it is a provider
+  sign-in.
+
+**Returns** The reason, or `null`.
+
+**Example**
+
+```ts
+customSchemeRedirectRefusal('com.example.app:/oauth', { client: 'ios', provider: 'apple' })
+// 'provider_without_pkce'
+```
+
 ### `darkCssVariable`
 
 _function_, defined in `packages/contract/src/theme.ts`
@@ -3334,6 +8598,35 @@ export function darkCssVariable(cssVariable: `--tula-${string}`): `--tula-dark-$
 darkCssVariable('--tula-color-primary') // '--tula-dark-color-primary'
 ```
 
+### `defaultDeviceBinding`
+
+_function_, defined in `packages/contract/src/session-profile.ts`
+
+The device-binding option of a profile that does not say: `none` for the built-in `web`
+profile, `optional` for every other one (`mobile` and every profile an environment adds).
+
+It is what every profile did before the option existed. `web` serves browsers only, and a
+browser's session is never bound. Every other profile can be the profile of a client that
+is not a browser (`mobile` always; an added one when a client may select it), and such a
+client could always choose to bind.
+
+```ts
+export function defaultDeviceBinding(name: string): DeviceBindingPolicy
+```
+
+**Parameters**
+
+- `name`: The profile's name.
+
+**Returns** The default for that profile.
+
+**Example**
+
+```ts
+defaultDeviceBinding('web') // 'none'
+defaultDeviceBinding('back-office') // 'optional'
+```
+
 ### `durationToMs`
 
 _function_, defined in `packages/contract/src/duration.ts`
@@ -3356,6 +8649,82 @@ export function durationToMs(duration: string): number
 
 ```ts
 durationToMs('7d') // 604800000
+```
+
+### `emailTemplateParagraphs`
+
+_function_, defined in `packages/contract/src/email-template.ts`
+
+The paragraphs of a body: what blank lines separate, with the space around each removed.
+
+```ts
+export function emailTemplateParagraphs(body: string): string[]
+```
+
+**Parameters**
+
+- `body`: A template's body.
+
+**Returns** The paragraphs that hold anything, in order.
+
+**Example**
+
+```ts
+emailTemplateParagraphs('One.\n\n\nTwo,\nstill two.') // ['One.', 'Two,\nstill two.']
+```
+
+### `emailTemplateProblems`
+
+_function_, defined in `packages/contract/src/email-template.ts`
+
+Everything that makes a template unusable for its kind. Empty means it can be saved and
+sent.
+
+The one definition: the settings schema refuses a document with a problem, and the server
+asks again before every send, so a template stored by another version is never sent
+half-understood.
+
+```ts
+export function emailTemplateProblems(
+  kind: EmailTemplateKind,
+  template: EmailTemplate
+): EmailTemplateProblem[]
+```
+
+**Parameters**
+
+- `kind`: The kind of message.
+- `template`: The subject and body as written.
+
+**Returns** The problems, subject first. Their messages name a placeholder at most.
+
+**Example**
+
+```ts
+emailTemplateProblems('sign_in', { body: 'Your code is {{code}}.' })
+// [{ field: 'body', code: 'missing_placeholder', placeholder: 'link', message: … }]
+```
+
+### `emailTemplatesBytes`
+
+_function_, defined in `packages/contract/src/email-template.ts`
+
+The bytes an environment's templates take: the UTF-8 of their JSON.
+
+```ts
+export function emailTemplatesBytes(templates: EmailTemplates): number
+```
+
+**Parameters**
+
+- `templates`: The templates, by kind.
+
+**Returns** The byte count; `2` for none.
+
+**Example**
+
+```ts
+emailTemplatesBytes({}) // 2
 ```
 
 ### `environmentIssuer`
@@ -3440,12 +8809,90 @@ export function evaluatePassword(
 const { ok, checks } = evaluatePassword(PASSWORD_POLICY_PRESETS.recommended, 'correct horse')
 ```
 
+### `formatWebhookSecret`
+
+_function_, defined in `packages/contract/src/webhook-signature.ts`
+
+Write a signing secret from its key bytes.
+
+```ts
+export function formatWebhookSecret(key: Uint8Array): string
+```
+
+**Parameters**
+
+- `key`: 24 to 64 random bytes.
+
+**Returns** `whsec_` and the base64 of the bytes.
+
+**Throws** RangeError when the key is shorter or longer than the scheme allows.
+
+**Example**
+
+```ts
+const secret = formatWebhookSecret(crypto.getRandomValues(new Uint8Array(32)))
+```
+
+### `generateSoftwareDeviceKey`
+
+_function_, defined in `packages/contract/src/device-binding.ts`
+
+Make a device key in software, with WebCrypto: a fresh P-256 key pair whose private half is
+**not extractable**, so the page or process that holds it can sign with it and cannot read
+it. It lives in memory only; a client that wants it to outlive the process keeps the
+`CryptoKey` where its platform allows (IndexedDB stores one without exposing it).
+
+This is what tests and the conformance runner bind with. It proves nothing about hardware:
+a native SDK supplies its own {@link DeviceKey} backed by the Secure Enclave or StrongBox.
+
+```ts
+export async function generateSoftwareDeviceKey(): Promise<DeviceKey>
+```
+
+**Returns** A key whose `sign` uses the private half.
+
+**Example**
+
+```ts
+const deviceKey = await generateSoftwareDeviceKey()
+const tula = createTulaClient({ publishableKey, baseUrl, client: 'ios', deviceKey })
+```
+
+### `givesNoAddress`
+
+_function_, defined in `packages/contract/src/oauth.ts`
+
+Whether a provider is one Tula takes no email address from
+({@link OAUTH_PROVIDERS_WITHOUT_ADDRESS}).
+
+```ts
+export function givesNoAddress(provider: string): boolean
+```
+
+**Parameters**
+
+- `provider`: A provider's name.
+
+**Returns** `true` for X and Facebook.
+
+**Example**
+
+```ts
+givesNoAddress('facebook') // true
+givesNoAddress('google') // false
+```
+
 ### `hasEnabledSignInMethod`
 
 _function_, defined in `packages/contract/src/environment-settings.ts`
 
-Whether a settings document enables at least one of its own sign-in methods (the password, the
-email code, the email link). OAuth providers are configured apart from it.
+Whether a settings document enables at least one of its own sign-in methods that an account
+can be made with (the password, the email code, the email link, a passkey). OAuth providers
+are configured apart from it.
+
+**The SMS code does not count** ({@link SIGN_IN_METHODS_WITHOUT_SIGN_UP}): nobody signs up
+with a phone number, so an environment whose only method is `smsCode` would let nobody in
+who is not in already (ADR 0037).
 
 ```ts
 export function hasEnabledSignInMethod(settings: {
@@ -3457,12 +8904,482 @@ export function hasEnabledSignInMethod(settings: {
 
 - `settings`: The document, or just its `signIn` section.
 
-**Returns** `true` when any method is enabled.
+**Returns** `true` when any such method is enabled.
 
 **Example**
 
 ```ts
 hasEnabledSignInMethod(DEFAULT_ENVIRONMENT_SETTINGS) // true: the password
+```
+
+### `hasForbiddenRedirectCharacter`
+
+_function_, defined in `packages/contract/src/redirect-url.ts`
+
+Whether `value` holds a character no redirect URL of any kind may hold:
+
+- whitespace (`\s`) or a wildcard (`*`);
+- a backslash or a control character (U+0000 to U+001F, U+007F to U+009F);
+- a character that draws nothing, which is what `hasInvisibleCharacter` says: the one
+  class `[\p{Cf}\p{Variation_Selector}\p{Default_Ignorable_Code_Point}]`, so every format
+  character (the zero-width space, joiner and non-joiner, the word joiner, the soft
+  hyphen, the Mongolian vowel separator, the text-direction controls, the tag
+  characters), the variation selectors (U+FE00 to U+FE0F, U+E0100 to U+E01EF) and whatever
+  else Unicode ignores by default (the combining grapheme joiner, the Hangul fillers);
+- what `hasHiddenCharacter` refuses beside those: a private-use character (`Co`), an
+  unassigned one (`Cn`), a lone surrogate.
+
+A `Location` header cannot carry the controls, and a reader cannot see the rest: two
+entries that differ by a zero-width space read the same on every screen. An entry is
+compared as the string it is, so it holds only what can be seen. A visible letter outside
+ASCII (`münchen.de`) and a percent-encoded octet (`%20`, `%E2%80%8B`) are not refused.
+
+The server asks this of every URL it is about to redirect to, listed or not, so that a
+stored entry from before a rule is refused when a sign-in starts and never at the
+provider's callback, where the state is already spent.
+
+```ts
+export function hasForbiddenRedirectCharacter(value: string): boolean
+```
+
+**Parameters**
+
+- `value`: A URL.
+
+**Returns** `true` when it holds such a character.
+
+**Example**
+
+```ts
+hasForbiddenRedirectCharacter('https://a.com/\u{202E}x') // true
+hasForbiddenRedirectCharacter('https://a.com/x\u{200B}y') // true
+hasForbiddenRedirectCharacter('https://a.com/cb?x=1') // false
+```
+
+### `hasHiddenCharacter`
+
+_function_, defined in `packages/contract/src/email-template.ts`
+
+Whether text holds a character no template, and no app name, may hold: a text-direction
+control (U+202A to U+202E, U+2066 to U+2069, U+200E, U+200F, U+061C), a private-use or
+unassigned code point, or half a surrogate pair.
+
+The zero-width joiner and non-joiner and the variation selectors are not among them:
+Persian, Arabic and Indic text and emoji are written with them.
+
+```ts
+export function hasHiddenCharacter(text: string): boolean
+```
+
+**Parameters**
+
+- `text`: Any text.
+
+**Returns** `true` when it holds one.
+
+**Example**
+
+```ts
+hasHiddenCharacter('abc\u{202E}def') // true
+hasHiddenCharacter('می\u{200C}خواهم') // false
+```
+
+### `hasInvisibleCharacter`
+
+_function_, defined in `packages/contract/src/email-template.ts`
+
+Whether `text` holds a character that draws nothing: a format character (Unicode class
+`Cf`: the zero-width space and joiners, the word joiner, the soft hyphen, the
+text-direction controls, the tag characters), a variation selector (U+FE00 to U+FE0F,
+U+E0100 to U+E01EF) or anything else that is `Default_Ignorable_Code_Point` (the
+combining grapheme joiner, the Hangul fillers).
+
+The same set {@link withoutInvisibleCharacters} removes, asked as a question: for a value
+that is compared as the string it is and must therefore be what a reader sees (a redirect
+URL). Text an operator writes for people to read is not refused by it: Persian, Arabic and
+Indic text and emoji need the joiners and the selectors.
+
+```ts
+export function hasInvisibleCharacter(text: string): boolean
+```
+
+**Parameters**
+
+- `text`: Any text.
+
+**Returns** `true` when it holds one.
+
+**Example**
+
+```ts
+hasInvisibleCharacter('a\u{200B}b') // true
+hasInvisibleCharacter('münchen') // false
+```
+
+### `hookFailureOutcome`
+
+_function_, defined in `packages/contract/src/hook.ts`
+
+The outcome a failed call is counted as: `timed_out` for the reason `timeout`, `failed`
+for every other.
+
+```ts
+export function hookFailureOutcome(reason: HookFailureReason): 'failed' | 'timed_out'
+```
+
+**Parameters**
+
+- `reason`: One of {@link HOOK_FAILURE_REASONS}.
+
+**Returns** `timed_out` or `failed`.
+
+**Example**
+
+```ts
+hookFailureOutcome('timeout') // 'timed_out'
+hookFailureOutcome('status_not_ok') // 'failed'
+```
+
+### `hookLastCallFailed`
+
+_function_, defined in `packages/contract/src/hook.ts`
+
+Whether a hook's most recent call got no usable answer: it failed or timed out. That is
+what the data shows and all it shows: **not that the hook is failing now**. The call may
+be up to a day old (`recentOutcomes.lastCallAt` says when it was), and a hook that has
+not been asked since has not been shown to be still broken, or mended. `null` (no call
+in the window) is `false`: a hook nobody asked has not been shown to be broken.
+
+```ts
+export function hookLastCallFailed(lastOutcome: string | null): boolean
+```
+
+**Parameters**
+
+- `lastOutcome`: A hook's `recentOutcomes.lastOutcome`.
+
+**Returns** Whether the most recent call of the window failed or timed out.
+
+**Example**
+
+```ts
+hookLastCallFailed('timed_out') // true
+hookLastCallFailed('denied') // false: a denial is an answer
+```
+
+### `hookWeakenings`
+
+_function_, defined in `packages/contract/src/hook.ts`
+
+Which fields of a hook were changed in a way that lets through what it used to stop: the
+same idea as `settingsWeakenings` for an environment's settings, and meant for the same
+uses (the audit entry's `weakened`; later, `tula apply --yes` and the dashboard's
+confirmation).
+
+- `failureMode` from `deny` to `allow`, or a hook registered with `allow`: a check that is
+  down no longer refuses. Whether the hook is on at that moment does not matter: the choice
+  is what is recorded, and it takes effect whenever the hook is on.
+- `enabled` to `false`, or the removal of a hook that was on: the check is gone.
+
+```ts
+export function hookWeakenings(
+  was: HookStrength | null,
+  is: HookStrength | null
+): ('enabled' | 'failureMode')[]
+```
+
+**Parameters**
+
+- `was`: The hook before; `null` when it is being registered.
+- `is`: The hook after; `null` when it is being removed.
+
+**Returns**
+
+The names of the weakened fields, in the order of {@link HOOK_FIELDS}; empty when
+the change weakens nothing.
+
+**Example**
+
+```ts
+hookWeakenings({ enabled: true, failureMode: 'deny' }, { enabled: true, failureMode: 'allow' })
+// ['failureMode']
+```
+
+### `isAppLinkPath`
+
+_function_, defined in `packages/contract/src/native-app.ts`
+
+Whether `path` is one exact path an app may be handed the links of.
+
+```ts
+export function isAppLinkPath(path: string): boolean
+```
+
+**Parameters**
+
+- `path`: A path as an operator wrote it.
+
+**Returns**
+
+`true` when it matches {@link APP_LINK_PATH_PATTERN}, is at most
+{@link MAX_APP_LINK_PATH_LENGTH} characters and has no `.` or `..` segment.
+
+**Example**
+
+```ts
+isAppLinkPath('/oauth/callback') // true
+isAppLinkPath('/') // false: that is the domain's front page, not a callback
+```
+
+### `isCustomClaimKey`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Whether a string can be the key of a custom claim: ASCII letters, digits and underscores,
+not starting with a digit, at most {@link MAX_CUSTOM_CLAIM_KEY_LENGTH} characters, and none
+of {@link RESERVED_CLAIM_NAMES}, `__proto__`, `constructor` or `prototype`.
+
+```ts
+export function isCustomClaimKey(key: unknown): key is string
+```
+
+**Parameters**
+
+- `key`: The candidate.
+
+**Returns** `true` when it can be a key.
+
+**Example**
+
+```ts
+isCustomClaimKey('role') // true
+isCustomClaimKey('sub') // false: reserved
+isCustomClaimKey('my-claim') // false: a hyphen
+```
+
+### `isCustomClaimValue`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Whether a value can be a custom claim's: a string, a boolean, or a number JSON can hold.
+
+```ts
+export function isCustomClaimValue(value: unknown): value is CustomClaimValue
+```
+
+**Parameters**
+
+- `value`: The candidate.
+
+**Returns** `true` for a string, a boolean and a finite number.
+
+**Example**
+
+```ts
+isCustomClaimValue('admin') // true
+isCustomClaimValue(['admin']) // false
+```
+
+### `isCustomSchemeRedirectUrl`
+
+_function_, defined in `packages/contract/src/redirect-url.ts`
+
+Whether `value` is a custom-scheme redirect URL ({@link redirectUrlKind}).
+
+```ts
+export function isCustomSchemeRedirectUrl(value: string): boolean
+```
+
+**Parameters**
+
+- `value`: A URL.
+
+**Returns** `true` only for the `custom_scheme` kind.
+
+**Example**
+
+```ts
+isCustomSchemeRedirectUrl('com.example.app:/oauth') // true
+isCustomSchemeRedirectUrl('https://app.example.com/oauth') // false
+```
+
+### `isDevicePublicJwk`
+
+_function_, defined in `packages/contract/src/device-binding.ts`
+
+Whether a value is the public half of a device key and nothing more: exactly the four
+members of {@link DevicePublicJwk}, each coordinate 32 bytes in its one canonical
+base64url spelling (so that a key has one thumbprint). A key with a private member
+(`d`) or any other field is refused: a client that sends its private key has none.
+
+It does not check that the point is on the curve; importing the key does.
+
+```ts
+export function isDevicePublicJwk(value: unknown): value is DevicePublicJwk
+```
+
+**Parameters**
+
+- `value`: What a proof's header holds under `jwk`.
+
+**Returns** `true` for a well-formed public P-256 key.
+
+**Example**
+
+```ts
+isDevicePublicJwk({ kty: 'EC', crv: 'P-256', x, y }) // true
+isDevicePublicJwk({ kty: 'EC', crv: 'P-256', x, y, d }) // false
+```
+
+### `isEmailTemplateKind`
+
+_function_, defined in `packages/contract/src/email-template.ts`
+
+Whether a string is one of {@link EMAIL_TEMPLATE_KINDS}.
+
+```ts
+export function isEmailTemplateKind(value: string): value is EmailTemplateKind
+```
+
+**Parameters**
+
+- `value`: The candidate.
+
+**Returns** `true` for a kind this version knows.
+
+**Example**
+
+```ts
+isEmailTemplateKind('sign_in') // true
+isEmailTemplateKind('constructor') // false
+```
+
+### `isGoogleClientId`
+
+_function_, defined in `packages/contract/src/oauth.ts`
+
+Whether a string has the shape of a Google OAuth client id
+(`<project number>-<opaque>.apps.googleusercontent.com`). Says nothing about whether
+Google has issued it.
+
+```ts
+export function isGoogleClientId(value: string): boolean
+```
+
+**Parameters**
+
+- `value`: The candidate.
+
+**Returns** `true` for the one spelling of a client id.
+
+**Example**
+
+```ts
+isGoogleClientId('1234567890-abc123def456.apps.googleusercontent.com') // true
+isGoogleClientId('com.example.app') // false
+```
+
+### `isKeyThumbprint`
+
+_function_, defined in `packages/contract/src/device-binding.ts`
+
+Whether a value has the shape of a key thumbprint: 43 base64url characters (a SHA-256).
+
+```ts
+export function isKeyThumbprint(value: unknown): value is string
+```
+
+**Parameters**
+
+- `value`: A stored or received thumbprint.
+
+**Returns** `true` for a well-formed one.
+
+**Example**
+
+```ts
+isKeyThumbprint(claims.cnf?.jkt)
+```
+
+### `isPhoneNumberAllowed`
+
+_function_, defined in `packages/contract/src/phone.ts`
+
+Whether an SMS allow-list lets a message go to a number: one of the countries the number
+may belong to is listed. An empty list allows nothing.
+
+```ts
+export function isPhoneNumberAllowed(
+  phoneNumber: string,
+  allowedCountries: readonly string[]
+): boolean
+```
+
+**Parameters**
+
+- `phoneNumber`: A number in E.164 form.
+- `allowedCountries`: The environment's `sms.allowedCountries`.
+
+**Returns** `true` when the number's destination is allowed.
+
+**Example**
+
+```ts
+isPhoneNumberAllowed('+4915112345678', ['DE', 'AT']) // true
+isPhoneNumberAllowed('+4915112345678', []) // false
+```
+
+### `isProposalTargetId`
+
+_function_, defined in `packages/contract/src/proposal.ts`
+
+Whether `id` is how a target of that kind is named: a user and a session by the server's
+own id (a UUID), an OAuth provider by its name from the closed list `OAUTH_PROVIDERS`
+(`google`), which is how the admin API names one everywhere. Never anything a person
+typed.
+
+```ts
+export function isProposalTargetId(
+  type: (typeof PROPOSAL_TARGET_TYPES)[number],
+  id: string
+): boolean
+```
+
+**Parameters**
+
+- `type`: The kind of target.
+- `id`: The candidate id.
+
+**Returns** Whether a proposal may name that target so.
+
+**Example**
+
+```ts
+isProposalTargetId('oauth_provider', 'google') // true
+isProposalTargetId('user', 'google') // false
+isProposalTargetId('user', '0199C2F4-7A10-7C3E-9B1A-5D2E8F4A6C01') // false: lower case only
+```
+
+### `isRedirectUrl`
+
+_function_, defined in `packages/contract/src/redirect-url.ts`
+
+Whether an environment may list `value` in `urls.allowedRedirectUrls`.
+
+```ts
+export function isRedirectUrl(value: string): boolean
+```
+
+**Parameters**
+
+- `value`: A URL as an operator wrote it.
+
+**Returns** `true` for any {@link RedirectUrlKind}.
+
+**Example**
+
+```ts
+isRedirectUrl('https://app.example.com/oauth/callback') // true
 ```
 
 ### `isRelyingPartyId`
@@ -3488,6 +9405,111 @@ export function isRelyingPartyId(value: string): boolean
 ```ts
 isRelyingPartyId('northline.app') // true
 isRelyingPartyId('https://northline.app') // false
+```
+
+### `isSessionProfileName`
+
+_function_, defined in `packages/contract/src/session-profile.ts`
+
+Whether a value is a valid name for a session profile, which is also the grammar of a JWT
+template's name: lowercase letters, digits and single hyphens, starting with a letter, at
+most {@link MAX_SESSION_PROFILE_NAME_LENGTH} characters.
+
+The one rule: {@link SessionProfileNameSchema} and the settings schema use it, and so does
+a form that asks for a name, so that nothing accepts a name a save then refuses.
+
+```ts
+export function isSessionProfileName(name: unknown): name is string
+```
+
+**Parameters**
+
+- `name`: The candidate.
+
+**Returns** Whether it is a valid name.
+
+**Example**
+
+```ts
+isSessionProfileName('back-office') // true
+isSessionProfileName('back_office') // false
+```
+
+### `isSmsCountry`
+
+_function_, defined in `packages/contract/src/phone.ts`
+
+Whether a string is a country code the SMS allow-list accepts: upper case, and a key of
+{@link COUNTRY_CALLING_PREFIXES}.
+
+```ts
+export function isSmsCountry(value: string): boolean
+```
+
+**Parameters**
+
+- `value`: The candidate.
+
+**Returns** `true` for a known country code.
+
+**Example**
+
+```ts
+isSmsCountry('DE') // true
+isSmsCountry('de') // false
+```
+
+### `isSmsTemplateKind`
+
+_function_, defined in `packages/contract/src/sms-template.ts`
+
+Whether a string is one of {@link SMS_TEMPLATE_KINDS}.
+
+```ts
+export function isSmsTemplateKind(value: string): value is SmsTemplateKind
+```
+
+**Parameters**
+
+- `value`: The candidate.
+
+**Returns** `true` for a kind this version knows.
+
+**Example**
+
+```ts
+isSmsTemplateKind('sign_in') // true
+isSmsTemplateKind('constructor') // false
+```
+
+### `isTestAddress`
+
+_function_, defined in `packages/contract/src/test-address.ts`
+
+Whether an address is one only a sign-in test may hold: any address whose domain is
+{@link TEST_ADDRESS_DOMAIN} or a name under it, whatever its local part and its case.
+
+It is deliberately wider than the addresses a test makes: the whole domain is kept away
+from people, so that no spelling of one is left for somebody to sign up with. The server
+refuses such an address wherever an address is taken for an account, and sends no mail to
+one. A receiver of `before_sign_up` can ask this of the question's `email`.
+
+```ts
+export function isTestAddress(address: string): boolean
+```
+
+**Parameters**
+
+- `address`: An email address, as typed or as stored.
+
+**Returns** `true` for an address in the reserved test domain.
+
+**Example**
+
+```ts
+isTestAddress('tula-test-0123456789abcdef0123456789abcdef@test.tula.invalid') // true
+isTestAddress('Someone@Sub.Test.Tula.Invalid') // true
+isTestAddress('maya@northline.app') // false
 ```
 
 ### `isValidThemeValue`
@@ -3531,6 +9553,30 @@ isValidThemeValue('color', '#0f766e') // true
 isValidThemeValue('color', 'red; background: url(https://evil.example/x)') // false
 ```
 
+### `jwkThumbprint`
+
+_function_, defined in `packages/contract/src/device-binding.ts`
+
+The thumbprint of a device key (RFC 7638, SHA-256, base64url): what a bound session stores
+and what its access token carries as `cnf.jkt`. Two keys have the same thumbprint only when
+they are the same key.
+
+```ts
+export async function jwkThumbprint(jwk: DevicePublicJwk): Promise<string>
+```
+
+**Parameters**
+
+- `jwk`: The public key.
+
+**Returns** 43 base64url characters.
+
+**Example**
+
+```ts
+const jkt = await jwkThumbprint(key.publicJwk)
+```
+
 ### `jwksUrl`
 
 _function_, defined in `packages/contract/src/issuer.ts`
@@ -3554,6 +9600,217 @@ jwksUrl('https://auth.example.com/v1/environments/env_1')
 // 'https://auth.example.com/v1/environments/env_1/.well-known/jwks.json'
 ```
 
+### `jwtTemplateMaxBytes`
+
+_function_, defined in `packages/contract/src/jwt-template.ts`
+
+The most bytes the namespace claim can take for a template, as JSON: constants as they are,
+and every other source at its own maximum (an address at {@link MAX_EMAIL_CLAIM_BYTES}).
+
+It is an upper bound over every user and session, which is what lets a template be refused
+when it is saved instead of a token going out without its claims later.
+
+```ts
+export function jwtTemplateMaxBytes(template: {
+  claims: Readonly<Record<string, JwtTemplateClaim>>
+}): number
+```
+
+**Parameters**
+
+- `template`: The template.
+
+**Returns** The byte count; `2` for a template with no claim.
+
+**Example**
+
+```ts
+jwtTemplateMaxBytes({ claims: { role: { value: 'admin' } } }) // 16
+```
+
+### `jwtTemplateOfProfile`
+
+_function_, defined in `packages/contract/src/jwt-template.ts`
+
+The template a profile's sessions use, as configured now.
+
+```ts
+export function jwtTemplateOfProfile(
+  settings: Pick<SessionSettings, 'jwtTemplates'>,
+  profile: Pick<SessionProfile, 'jwtTemplate'>
+): NamedJwtTemplate | null
+```
+
+**Parameters**
+
+- `settings`: The environment's `sessions` settings.
+- `profile`: The profile.
+
+**Returns**
+
+The template and its name; `null` when the profile names none, or names one that
+no longer exists (possible only in a stored document: a save is refused).
+
+**Example**
+
+```ts
+jwtTemplateOfProfile(settings.sessions, settings.sessions.profiles.web)?.name // 'app'
+```
+
+### `maskPhoneNumber`
+
+_function_, defined in `packages/contract/src/phone.ts`
+
+Mask a phone number for display: its last two digits behind a fixed-width mask.
+
+```ts
+export function maskPhoneNumber(phoneNumber: string): string
+```
+
+**Parameters**
+
+- `phoneNumber`: A number in E.164 form.
+
+**Returns** The mask, e.g. `***00`.
+
+**Example**
+
+```ts
+maskPhoneNumber('+14155550100') // '***00'
+```
+
+### `nativeAppIdentifier`
+
+_function_, defined in `packages/contract/src/native-app.ts`
+
+What an app is within its environment and platform: the bundle id or the package name.
+
+```ts
+export function nativeAppIdentifier(app: NativeAppIdentity): string
+```
+
+**Parameters**
+
+- `app`: A registered app, or the identity of one.
+
+**Returns** The bundle id of an iOS app, the package name of an Android app.
+
+**Example**
+
+```ts
+nativeAppIdentifier({ platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'com.example.app' })
+// 'com.example.app'
+```
+
+### `nativeAppWeakenings`
+
+_function_, defined in `packages/contract/src/native-app.ts`
+
+What of a change to an environment's native apps widens who the platforms will believe is
+the environment's own app, or what they hand it: the same idea as `settingsWeakenings` and
+`hookWeakenings`, and for the same uses (the audit entry's `weakened`, `tula apply --yes`,
+the dashboard's confirmation).
+
+- `app`: an app is registered. The served files name it from then on.
+- `teamId`: an iOS app is moved to another team. The app the files name is another app.
+- `sha256CertFingerprints`: an Android app gains a fingerprint. Whoever holds that
+  certificate's key can sign the app.
+- `appLinkPaths`: an app gains an app-link path, at its registration or later (ADR 0044).
+  The platform then opens links of the domain in the app instead of the browser: on iOS
+  the links of that path, **on Android, with the first path, every link of the domain**.
+
+Removing an app, a fingerprint or a path widens nothing and is not listed.
+
+```ts
+export function nativeAppWeakenings(
+  was: NativeAppIdentity | null,
+  is: NativeAppIdentity | null
+): ('app' | (typeof NATIVE_APP_FIELDS)[number])[]
+```
+
+**Parameters**
+
+- `was`: The app before; `null` when it is being registered.
+- `is`: The app after; `null` when it is being removed.
+
+**Returns** What was widened; empty when nothing was.
+
+**Example**
+
+```ts
+nativeAppWeakenings(null, { platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'com.example.app' })
+// ['app']
+```
+
+### `normalizeAppLinkPaths`
+
+_function_, defined in `packages/contract/src/native-app.ts`
+
+A list of app-link paths as the set it is: each once, sorted. Nothing is rewritten.
+
+```ts
+export function normalizeAppLinkPaths(paths: readonly string[]): string[]
+```
+
+**Parameters**
+
+- `paths`: Paths the request schema accepted.
+
+**Returns** The set, in a stable order. An entry that is no path is left out.
+
+**Example**
+
+```ts
+normalizeAppLinkPaths(['/b', '/a', '/b']) // ['/a', '/b']
+```
+
+### `normalizeCertFingerprint`
+
+_function_, defined in `packages/contract/src/native-app.ts`
+
+A fingerprint in the form the server stores: upper case, a colon between bytes.
+
+Accepted on input are that form in either case and 64 hex digits with no separator (what
+`apksigner` prints). Anything else is not a fingerprint and is not guessed at.
+
+```ts
+export function normalizeCertFingerprint(input: string): string | null
+```
+
+**Parameters**
+
+- `input`: A fingerprint as an operator pasted it.
+
+**Returns** The stored form, or `null` when `input` is not a SHA-256 fingerprint.
+
+**Example**
+
+```ts
+normalizeCertFingerprint('ab'.repeat(32)) // 'AB:AB:…:AB'
+```
+
+### `normalizeCertFingerprints`
+
+_function_, defined in `packages/contract/src/native-app.ts`
+
+A list of fingerprints as the set it is: each in the stored form, each once, sorted.
+
+```ts
+export function normalizeCertFingerprints(fingerprints: readonly string[]): string[]
+```
+
+**Parameters**
+
+- `fingerprints`: Fingerprints the request schema accepted.
+
+**Returns** The set, in a stable order. An entry that is no fingerprint is left out.
+
+**Example**
+
+```ts
+normalizeCertFingerprints([lower, UPPER]) // one entry when they are the same bytes
+```
+
 ### `normalizePassword`
 
 _function_, defined in `packages/contract/src/password-rules.ts`
@@ -3572,6 +9829,50 @@ export function normalizePassword(password: string): string
 - `password`: The raw password.
 
 **Returns** The NFC-normalized password.
+
+### `oauthProviderWeakenings`
+
+_function_, defined in `packages/contract/src/oauth.ts`
+
+The paths at which a change to a provider's record weakens something. Two things:
+
+- **`additionalClientIds`: a client id gained.** Every accepted client id is another app
+  whose ID tokens sign users in. An id taken away, and a reordering, are not.
+- **`enabled`: the provider switched off, or its credentials removed, while accounts depend
+  on it** (ADR 0059): `before.enabled` is `true`, `after` is `null` or not enabled, and
+  `before.dependents` counted at least one account, or could not look at all of them
+  (`more`). Those accounts are locked out until the provider is back; one with no email
+  address (made through X or Facebook) has no recovery of its own. Nothing is judged where
+  `before.enabled` or `before.dependents` is left out.
+
+A weakening in the sense of the settings' (`settingsWeakenings`): the audit entry says
+`weakened: true`, the dashboard asks before it saves, and `tula apply --yes` refuses it
+without `--allow-weaker`. A path names a field and never a client id or an account.
+
+```ts
+export function oauthProviderWeakenings(
+  before: OAuthProviderAudiences | null,
+  after: OAuthProviderAudiences | null
+): ('additionalClientIds' | 'enabled')[]
+```
+
+**Parameters**
+
+- `before`: The record as stored, or `null` when the provider was not configured.
+- `after`: The record as it will be stored, or `null` when it is being removed.
+
+**Returns** The weakened fields, of `additionalClientIds` and `enabled`, in that order.
+
+**Example**
+
+```ts
+oauthProviderWeakenings({ additionalClientIds: [] }, { additionalClientIds: [id] })
+// ['additionalClientIds']
+oauthProviderWeakenings(
+  { enabled: true, dependents: { accounts: 3, more: false } },
+  { enabled: false }
+) // ['enabled']
+```
 
 ### `originMatchesRelyingParty`
 
@@ -3599,6 +9900,94 @@ originMatchesRelyingParty('https://app.northline.app', 'northline.app') // true
 originMatchesRelyingParty('https://northline.app.evil.test', 'northline.app') // false
 ```
 
+### `ownClientIdAmong`
+
+_function_, defined in `packages/contract/src/oauth.ts`
+
+Where a list of additional client ids names the provider's **own** `clientId`, which is
+not an additional one: tokens for it are accepted already, and listed again it would be
+counted, shown and asked about as another app.
+
+The one statement of the rule, for the admin API (a validation error on the entry),
+`@tula/config` (the file is refused) and the dashboard (said at the field before a save).
+Compared exactly, as every client id is.
+
+```ts
+export function ownClientIdAmong(clientId: string, additionalClientIds: readonly string[]): number
+```
+
+**Parameters**
+
+- `clientId`: The provider's own client id.
+- `additionalClientIds`: The list beside it.
+
+**Returns** The position of the first entry equal to `clientId`, or `-1`.
+
+**Example**
+
+```ts
+ownClientIdAmong('1-web.apps.googleusercontent.com', ['1-ios.apps.googleusercontent.com']) // -1
+```
+
+### `parseEmailTemplate`
+
+_function_, defined in `packages/contract/src/email-template.ts`
+
+Split a template's text into literal text and `{{name}}` placeholders.
+
+The grammar is `{{name}}` and nothing else: a name is ASCII letters and digits starting
+with a letter, with no space inside the braces. There is no expression, no condition and
+no escape, so a brace that is not part of a placeholder has no meaning and is refused
+rather than passed through.
+
+```ts
+export function parseEmailTemplate(text: string): EmailTemplateToken[] | null
+```
+
+**Parameters**
+
+- `text`: A subject or a body.
+
+**Returns** The tokens in order, or `null` when a `{` or `}` is left over.
+
+**Example**
+
+```ts
+parseEmailTemplate('Hi {{appName}}') // [{ text: 'Hi ' }, { placeholder: 'appName' }]
+parseEmailTemplate('Hi {{ appName }}') // null
+```
+
+### `parsePhoneNumber`
+
+_function_, defined in `packages/contract/src/phone.ts`
+
+Read a phone number as a person typed it and return it in E.164 form.
+
+The only tidying is taking out spaces, hyphens and parentheses. What is left must be a `+`,
+then {@link MIN_PHONE_NUMBER_DIGITS} to {@link MAX_PHONE_NUMBER_DIGITS} digits, the first of
+which is not `0`. A national number (`0171 …`), a `00` prefix, letters and any other
+punctuation are refused rather than guessed at: guessing a country is how a code ends up on
+somebody else's phone.
+
+This says the input has the shape of a number, not that the number exists.
+
+```ts
+export function parsePhoneNumber(input: string): string | null
+```
+
+**Parameters**
+
+- `input`: The number as entered.
+
+**Returns** The number in E.164 form, or `null` when the input is not one.
+
+**Example**
+
+```ts
+parsePhoneNumber('+1 (415) 555-0100') // '+14155550100'
+parsePhoneNumber('0171 5550100') // null: no country calling code
+```
+
 ### `parseStoredEnvironmentSettings`
 
 _function_, defined in `packages/contract/src/environment-settings.ts`
@@ -3622,6 +10011,72 @@ export function parseStoredEnvironmentSettings(stored: unknown): EnvironmentSett
 
 ```ts
 parseStoredEnvironmentSettings({ app: { name: 'Acme' } }).password.minLength // 10
+```
+
+### `phoneNumberCountries`
+
+_function_, defined in `packages/contract/src/phone.ts`
+
+The countries a number may belong to, by the **longest** prefix of the table it starts with.
+
+Longest, so that `+1 242 …` is the Bahamas and never "the United States or Canada": the
+shorter prefix is the cheaper destination, and a match on it would let a number of the
+dearer one through an allow-list that names only the cheaper.
+
+```ts
+export function phoneNumberCountries(phoneNumber: string): readonly string[]
+```
+
+**Parameters**
+
+- `phoneNumber`: A number in E.164 form.
+
+**Returns**
+
+The country codes that share that prefix, or none for a calling code the table
+does not have.
+
+**Example**
+
+```ts
+phoneNumberCountries('+4915112345678') // ['DE']
+phoneNumberCountries('+14155550100') // ['CA', 'US']
+phoneNumberCountries('+12425550100') // ['BS']
+```
+
+### `phoneNumberPrefix`
+
+_function_, defined in `packages/contract/src/phone.ts`
+
+The destination prefix of a number: the **longest** entry of
+{@link COUNTRY_CALLING_PREFIXES} it starts with, with its `+`. It is the prefix the country
+allow-list matched the number by, so a destination that is limited and counted is exactly a
+destination that can be allowed or left out.
+
+It is what text messages are limited and counted by besides the number itself. A prefix is
+a country calling code, or a calling code and the digits that tell one country from another
+inside a shared one: it says where a message went and nothing about whose phone it reached,
+which is why an operator may be shown it where a number never is.
+
+```ts
+export function phoneNumberPrefix(phoneNumber: string): string | null
+```
+
+**Parameters**
+
+- `phoneNumber`: A number in E.164 form.
+
+**Returns**
+
+The prefix, or `null` for a calling code the table does not have (a number no
+allow-list lets a message go to).
+
+**Example**
+
+```ts
+phoneNumberPrefix('+14155550100') // '+1'
+phoneNumberPrefix('+12425550100') // '+1242'
+phoneNumberPrefix('+99912345678') // null
 ```
 
 ### `profileOfSession`
@@ -3654,6 +10109,134 @@ export function profileOfSession(
 profileOfSession(settings.sessions, { profile: 'deleted-one', client: 'web' }).name // 'web'
 ```
 
+### `proposalSummary`
+
+_function_, defined in `packages/contract/src/proposal.ts`
+
+What approving a proposal does, in plain words: the server's fixed sentence for the
+operation, with the target's id in it. The id must be how a target of that kind is named
+({@link isProposalTargetId}: a UUID, or a provider's name from the closed list) and the
+target of the operation's own kind; anything else is not written into the sentence.
+
+```ts
+export function proposalSummary(operation: ProposalOperation, target: ProposalTarget): string
+```
+
+**Parameters**
+
+- `operation`: The operation.
+- `target`: What it acts on.
+
+**Returns** The sentence.
+
+**Throws** TypeError when the target is not of the operation's kind or is not named by its id.
+
+**Example**
+
+```ts
+proposalSummary('ban_user', { type: 'user', id: '0199c2f4-7a10-7c3e-9b1a-5d2e8f4a6c01' })
+// 'Ban the user 0199c2f4-…: every session of theirs ends now, and they cannot sign in until …'
+```
+
+### `readCustomClaims`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Read the custom claims out of a session's claims, for an SDK to hand to an application.
+
+Call it only with claims that were **verified** (a token's signature and issuer, or the
+API's own answer): this checks a shape, not where the claims came from.
+
+The namespace claim is returned only when it is exactly what a Tula server issues: a plain
+object, not empty, at most {@link MAX_CUSTOM_CLAIMS_BYTES} as JSON, whose every key passes
+{@link isCustomClaimKey} and whose every value is a string, a boolean or a finite number.
+Anything else is **absent as a whole**, never passed through and never repaired: an
+application must not be handed an object of a shape it did not expect under a name it
+trusts. Treat an absent claim as "no".
+
+```ts
+export function readCustomClaims(claims: unknown): CustomClaims | null
+```
+
+**Parameters**
+
+- `claims`: A session's verified claims.
+
+**Returns** A frozen copy of the custom claims, or `null` when there are none.
+
+**Example**
+
+```ts
+readCustomClaims({ sub: 'u1', ext: { role: 'admin' } }) // { role: 'admin' }
+readCustomClaims({ sub: 'u1', ext: ['admin'] }) // null
+```
+
+### `readHookClaimsAnswer`
+
+_function_, defined in `packages/contract/src/hook.ts`
+
+Read a claims hook's answer from a parsed body, **as the server does**: the one definition
+of what such an answer is.
+
+- `answer_invalid`: not an object with exactly the one key `claims` holding a plain object.
+- `claims_invalid`: the shape is right and a claim is not: a reserved name, a key outside
+  the grammar (`__proto__` included), a value that is not one string, number or boolean.
+- `claims_too_large`: every claim is fine and together they are over the cap.
+
+Whole or nothing: no problem leaves some claims standing. Pass the value `JSON.parse`
+returned, not one a schema has rebuilt.
+
+```ts
+export function readHookClaimsAnswer(body: unknown): HookClaimsRead
+```
+
+**Parameters**
+
+- `body`: The parsed body.
+
+**Returns** A copy of the claims (possibly none), or the problem.
+
+**Example**
+
+```ts
+readHookClaimsAnswer({ claims: { role: 'admin' } }) // { claims: { role: 'admin' } }
+readHookClaimsAnswer({ claims: { sub: 'x' } }) // { problem: 'claims_invalid' }
+```
+
+### `readStoredEmailTemplates`
+
+_function_, defined in `packages/contract/src/email-template.ts`
+
+Read stored templates, leaving out what this version would not accept.
+
+Settings are read on the request path, so a stored document must never fail a read. A kind
+this version does not know (a newer server wrote it before a rollback) is dropped. A
+subject or a body that no longer passes {@link emailTemplateProblems} (a placeholder since
+removed) is dropped **whole and alone**: that part goes out as the built-in copy, never
+half-filled, and the other part of the same template, if it passes, is kept. Templates
+that together are over {@link MAX_EMAIL_TEMPLATES_BYTES} are all dropped: cutting the set
+down would choose which survive.
+
+What is left out here is absent from every read, the admin API's included, so the next
+save of the settings, which replaces the whole document, removes it for good.
+
+```ts
+export function readStoredEmailTemplates(stored: unknown): StoredEmailTemplatesRead
+```
+
+**Parameters**
+
+- `stored`: The stored `emails.templates` value.
+
+**Returns** The usable templates and what was left out.
+
+**Example**
+
+```ts
+readStoredEmailTemplates({ step_up: { body: 'No code here.' } })
+// { templates: {}, dropped: ['step_up'], unknown: 0 }
+```
+
 ### `readStoredEnvironmentSettings`
 
 _function_, defined in `packages/contract/src/environment-settings.ts`
@@ -3665,9 +10248,13 @@ Settings are read on the request path, so a stored document must not be able to 
 environment down:
 - fields added since it was written take their defaults;
 - keys this version does not know are dropped rather than refused (a rollback);
-- an entry of `urls.allowedOrigins` or `urls.allowedRedirectUrls` that this version would not
-  accept (not a valid origin or URL, a duplicate, or beyond the list's limit) is left out
-  rather than failing the read. Leaving an entry out of an allow-list only ever allows less.
+- an entry of `urls.allowedOrigins`, `urls.allowedRedirectUrls` or `sms.allowedCountries`
+  that this version would not accept (not a valid origin, URL or country, a duplicate, or
+  beyond the list's limit) is left out rather than failing the read. Leaving an entry out
+  of an allow-list only ever allows less;
+- an email template (`emails.templates`) of a kind this version does not know, or one that
+  no longer passes its kind's rules, is left out whole: its message is the built-in copy;
+- a text message template (`sms.templates`) likewise: its message is the built-in text.
 
 ```ts
 export function readStoredEnvironmentSettings(stored: unknown): StoredEnvironmentSettingsRead
@@ -3688,7 +10275,140 @@ stores can do that: every document is validated in full before it is written.
 
 ```ts
 readStoredEnvironmentSettings({ urls: { allowedOrigins: ['http://app.lan'] } })
-// { settings: { …, urls: { allowedOrigins: [], … } }, dropped: 1 }
+// { settings: { …, urls: { allowedOrigins: [], … } }, dropped: 1, … }
+```
+
+### `readStoredJwtTemplate`
+
+_function_, defined in `packages/contract/src/jwt-template.ts`
+
+Read one stored template, leaving out what this version does not accept.
+
+A stored document must never fail a read (settings are read on the request path), and a
+newer server may have stored a source this one does not know before a rollback. Such a claim
+is left out: to an application a missing claim is "no". A template that is over a cap even
+so is left out whole, because cutting it down would choose which claims survive.
+
+```ts
+export function readStoredJwtTemplate(stored: unknown): JwtTemplate | null
+```
+
+**Parameters**
+
+- `stored`: The stored value.
+
+**Returns** The template, or `null` when it is not one.
+
+**Example**
+
+```ts
+readStoredJwtTemplate({ claims: { a: { value: 1 }, b: { from: 'later.source' } } })
+// { claims: { a: { value: 1 } } }
+```
+
+### `readStoredSmsTemplates`
+
+_function_, defined in `packages/contract/src/sms-template.ts`
+
+Read stored text message templates, leaving out what this version would not accept.
+
+Settings are read on the request path, so a stored document must never fail a read, and a
+template must never fail a send: a kind this version does not know is dropped, and one
+that no longer passes {@link smsTemplateProblems} is dropped whole, so its message is the
+built-in text. What is left out here is absent from every read, the admin API's included,
+so the next save of the settings removes it for good.
+
+```ts
+export function readStoredSmsTemplates(stored: unknown): StoredSmsTemplatesRead
+```
+
+**Parameters**
+
+- `stored`: The stored `sms.templates` value.
+
+**Returns** The usable templates and what was left out.
+
+**Example**
+
+```ts
+readStoredSmsTemplates({ sign_in: { text: 'No code here.' } })
+// { templates: {}, dropped: ['sign_in'], unknown: 0 }
+```
+
+### `readsAsLink`
+
+_function_, defined in `packages/contract/src/email-template.ts`
+
+Whether text holds something a mail client would turn into a link, or that tells a reader
+where to go: a scheme (anything with `://`, or one of {@link EMAIL_LINK_SCHEMES} and a
+colon), `www.`, a bare domain name, or an IPv4 address.
+
+It errs towards refusing. The domain rule is "a letter or digit, a dot, two or more
+letters", after compatibility forms are folded (`ｅｘａｍｐｌｅ．ｃｏｍ`) and invisible characters
+removed, so it also catches an email address and a sentence with no space after its full
+stop (`changed.If`): mail clients link those too. Abbreviations with single letters
+(`e.g.`), numbers (`3.5`, `1.2.3`), a time (`10:30`) and a label (`Note: …`) pass.
+
+What it does not catch, on purpose: a name spelled so that no mail client links it
+(`example . com`, `example dot com`, a name broken across a line).
+
+```ts
+export function readsAsLink(text: string): boolean
+```
+
+**Parameters**
+
+- `text`: Text with its placeholders already replaced by a letter.
+
+**Returns** `true` when it reads as a link.
+
+**Example**
+
+```ts
+readsAsLink('Visit example.com') // true
+readsAsLink('It was changed. If this was you, relax.') // false
+```
+
+### `redirectUrlKind`
+
+_function_, defined in `packages/contract/src/redirect-url.ts`
+
+Which kind of redirect URL `value` is, or `null` when an environment may not list it.
+
+- `https`: any absolute URL that starts with `https://` (lower case) and has no
+  credentials, fragment, wildcard, whitespace, backslash, control character (U+0000 to
+  U+001F, U+007F to U+009F), character that draws nothing (`hasInvisibleCharacter`: `Cf`,
+  the variation selectors, `Default_Ignorable_Code_Point`) or character
+  `hasHiddenCharacter` refuses. A query is allowed.
+  An app link is one of these.
+- `loopback`: the same over `http://` for `localhost`, `127.0.0.1` and `[::1]`.
+- `custom_scheme`: `<scheme>:/<path>` or `<scheme>://<host>/<path>` where the scheme is in
+  reverse-domain form (lower case, **with a full stop**: `com.example.app`), is not one of
+  {@link REDIRECT_SCHEMES_NEVER_CUSTOM} nor in a family of
+  {@link REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM}, and what follows is slashes and the characters
+  `A-Z a-z 0-9 . _ ~ -` only. So: no user name or password, no port, **no query**, no
+  fragment (the server adds one), no wildcard, no percent-encoded octet, no `.` or `..`
+  segment, and no control or invisible character.
+
+Nothing is normalised, for any kind: the string that is listed is the string a request
+must send, character for character.
+
+```ts
+export function redirectUrlKind(value: string): RedirectUrlKind | null
+```
+
+**Parameters**
+
+- `value`: A URL as an operator wrote it.
+
+**Returns** Its kind, or `null`.
+
+**Example**
+
+```ts
+redirectUrlKind('com.example.app:/oauth') // 'custom_scheme'
+redirectUrlKind('myapp://callback') // null: no full stop in the scheme
+redirectUrlKind('javascript:alert(1)') // null
 ```
 
 ### `resolveSessionProfile`
@@ -3729,8 +10449,9 @@ resolveSessionProfile(settings.sessions, { client: 'web', requested: 'admin' }).
 
 _function_, defined in `packages/contract/src/settings-weakening.ts`
 
-Where replacing `before` with `after` makes an account easier to take over, or a takeover
-harder to notice. It is the one definition of "weakened": the server's audit entry carries
+Where replacing `before` with `after` makes an account easier to take over, a takeover
+harder to notice or to look into afterwards, or an attack on the environment dearer for
+its operator. It is the one definition of "weakened": the server's audit entry carries
 `weakened: true` exactly when this is not empty, and `tula diff` warns with these paths
 before anything is applied.
 
@@ -3740,16 +10461,60 @@ A path is listed when:
   was on (a required character kind, `disallowUserInfo`, `disallowCommon`,
   `blockSequences`), asks for fewer character classes, allows longer runs of one character
   (a higher `maxRepeatedChars`, or none), or remembers fewer previous passwords (`history`);
+- `audit.retentionDays`: a period is set where there was none, or is made shorter. The
+  server then deletes the audit entries older than it, for good: the record of what
+  happened gets shorter. A longer period, or none where there was one, is not listed;
+- `agents.proposalsInProduction`: switched on (ADR 0053). A production environment then
+  accepts changes an AI agent asks for, each still waiting for a person's approval. It is
+  listed whatever kind the environment is (this function sees the document alone), and
+  switching it off never is;
 - `notifications.*`: a security notice that was on is switched off (the owner would no
   longer be told);
 - `mfa.policy`: the policy moves towards `off` (`required` → `optional` → `off`);
+- `mfa.smsCode`: a texted code becomes a way to meet a `required` policy: the switch is
+  turned on where the policy is `required` after the change, or, under a switch that was
+  on, text messages are switched on or a first country is allowed. A texted code is
+  easier to take than an authenticator app. Under `optional` it is not listed (it adds a
+  second step where there was none, and is never used beside a stronger one), and
+  switching it off never is (nobody's factor is dropped; ADR 0025);
 - `sessions.maxPerUser`, `sessions.profiles.<name>`: sessions live longer or can be had
-  more freely (a raised or removed limit, a looser profile, one clients may now select).
+  more freely (a raised or removed limit, a looser profile, one clients may now select);
+- `sessions.profiles.<name>.jwtTemplate`: the profile's sessions lose a custom claim, or
+  one of their claims changes its source or its constant (ADR 0036). It is listed because
+  an application decides on those claims: taking one away can lock users out, and opens up
+  an application that reads a missing claim as permission;
+- `sessions.profiles.<name>.deviceBinding`: the profile asks less of a sign-in's device key
+  (`required` → `optional` → `none`; ADR 0043): a sign-in that had to bind its session to a
+  key no longer has to, or no longer can, so a copied refresh token of a new session works
+  without the key;
+- `sms.dailyMessageLimit`: more text messages can be sent in a day (ADR 0037). It makes no
+  account easier to take: it enlarges what someone abusing the environment's SMS can make
+  its operator pay, which is why a change that does it is asked about like the others;
+- `signIn.methods.smsCode`: a texted code can sign someone in where it could not before
+  (the method switched on; or, with the method already on, text messages switched on or a
+  first country allowed). A phone number is easier to take than an inbox;
+- `sms.allowedCountries`: a country is added while a texted code signs people in, or
+  while one may be the second step a `required` policy asks for (listed once);
+- `urls.allowedRedirectUrls`: a custom-scheme redirect URL (`com.example.app:/oauth`) is
+  listed that was not (ADR 0044). Any app on a device can claim a scheme. An `https` URL
+  added is not listed;
+- `agents.testSignIn`: `true` is written where it was not, or `false` is taken back to
+  `null` (ADR 0058): an AI agent may then sign a throwaway user up and in, which asks the
+  environment's hooks and delivers its events. `true` switches it on in a production
+  environment, and `null` over `false` in a development one (where the default is yes).
+  Each is listed in the other kind too, where it changes nothing: the documents do not
+  say which kind of environment they are for, so the rule errs towards asking. `false`,
+  and `null` where a run was allowed outright (`true`) or by default, are never listed.
 
 One of these is enough, whatever else became stricter. Not counted: `maxLength`,
 `specialChars`, the `preset` label and `expiryDays` (forced rotation is not a strength
 measure), and every other setting. Disabling a sign-in method removes a way in; it is not a
-weakening.
+weakening, and neither is switching on any method but the SMS code. Switching SMS on or
+off, or a wider or narrower country list, is not one **while no texted code signs anyone
+in and none can meet a required second step**: a phone number is then contact data that
+no account is signed in to or recovered with, or a second step added where there was none
+(ADR 0037, ADR 0025), and the daily limit bounds what the messages can cost wherever they
+go.
 
 ```ts
 export function settingsWeakenings(
@@ -3769,6 +10534,166 @@ export function settingsWeakenings(
 
 ```ts
 settingsWeakenings(current, { ...current, mfa: { policy: 'off' } }) // ['mfa.policy']
+```
+
+### `signWebhook`
+
+_function_, defined in `packages/contract/src/webhook-signature.ts`
+
+Sign one delivery: HMAC-SHA256 over `<id>.<timestamp>.<body>`, keyed with the secret's bytes.
+
+The body is the exact text that is sent. A receiver must verify the bytes it received, not
+a body it parsed and wrote out again.
+
+```ts
+export async function signWebhook(
+  key: Uint8Array<ArrayBuffer>,
+  id: string,
+  timestamp: number,
+  body: string
+): Promise<string>
+```
+
+**Parameters**
+
+- `key`: The key bytes ({@link webhookSecretBytes}).
+- `id`: The delivery's id (the `webhook-id` header). It has no `.` in it.
+- `timestamp`: Whole seconds since the Unix epoch (the `webhook-timestamp` header).
+- `body`: The request body, as sent.
+
+**Returns** The signature as it stands in the header: `v1,<base64>`.
+
+**Example**
+
+```ts
+const signature = await signWebhook(key, event.id, Math.floor(Date.now() / 1000), body)
+// 'v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE='
+```
+
+### `smsCostLimits`
+
+_function_, defined in `packages/contract/src/phone.ts`
+
+The limits that bound what an environment's text messages can cost, from its one setting
+(ADR 0037). The server enforces exactly these, and the dashboard shows them from here: one
+definition, so that what an operator reads is what is held.
+
+They count **messages**: not segments (a long message is billed as several) and not money.
+
+```ts
+export function smsCostLimits(dailyMessageLimit: number): SmsCostLimits
+```
+
+**Parameters**
+
+- `dailyMessageLimit`: The environment's `sms.dailyMessageLimit`.
+
+**Returns**
+
+The hourly limits per prefix and per environment (shares of the day's, rounded
+up, never below one) and the day's. A value that is not a whole number of at least one
+(nothing the API stores) reads as one: a broken setting must send less, never more.
+
+**Example**
+
+```ts
+smsCostLimits(500) // { prefixPerHour: 50, environmentPerHour: 125, perDay: 500 }
+```
+
+### `smsPrefixCountries`
+
+_function_, defined in `packages/contract/src/phone.ts`
+
+The countries one destination prefix covers: every country of
+{@link COUNTRY_CALLING_PREFIXES} that lists it. More than one for a shared prefix (`+1` is
+the United States and Canada), which this table cannot tell apart: a reader is shown all
+of them, never one picked out.
+
+It is the prefix exactly, not a number's: `+1` does not include the Bahamas, whose numbers
+are counted under `+1242` ({@link phoneNumberPrefix}).
+
+```ts
+export function smsPrefixCountries(prefix: string): readonly string[]
+```
+
+**Parameters**
+
+- `prefix`: A destination prefix, with or without its `+`.
+
+**Returns**
+
+The country codes, in alphabetical order; none for a prefix the table does not
+have.
+
+**Example**
+
+```ts
+smsPrefixCountries('+49') // ['DE']
+smsPrefixCountries('+1') // ['CA', 'US']
+smsPrefixCountries('+999') // []
+```
+
+### `smsSegments`
+
+_function_, defined in `packages/contract/src/sms-template.ts`
+
+How many segments a text takes: an estimate of what a carrier bills.
+
+One segment holds 160 characters of the GSM 7-bit alphabet (its extension characters
+count two), and 153 each once the text is split. A single character outside that alphabet
+makes the whole text UCS-2: 70 UTF-16 code units in one segment, 67 each once split. A
+provider may count differently at the edges (it does not split a two-septet character or
+a surrogate pair across segments), so this can be one short for a text at a boundary.
+
+```ts
+export function smsSegments(text: string): SmsSegments
+```
+
+**Parameters**
+
+- `text`: The whole message.
+
+**Returns** The encoding, the units and the segments.
+
+**Example**
+
+```ts
+smsSegments('Your Acme verification code is 123456.') // { encoding: 'gsm7', units: 38, segments: 1 }
+```
+
+### `smsTemplateProblems`
+
+_function_, defined in `packages/contract/src/sms-template.ts`
+
+Everything that makes a template unusable for its kind. Empty means it can be saved and
+sent.
+
+The one definition: the settings schema refuses a document with a problem, the tolerant
+read leaves such a template out, and the server asks again before every send.
+
+The checks that are about what is read (the digits, the first letter, what touches a
+placeholder) are made on the text without the characters that draw nothing, so that a
+zero-width joiner cannot split a run of digits or stand in front of the first letter.
+
+```ts
+export function smsTemplateProblems(
+  kind: SmsTemplateKind,
+  template: SmsTemplate
+): SmsTemplateProblem[]
+```
+
+**Parameters**
+
+- `kind`: The kind of message.
+- `template`: The text as written.
+
+**Returns** The problems. Their messages name a placeholder at most.
+
+**Example**
+
+```ts
+smsTemplateProblems('sign_in', { text: 'Your sign-in code.' })
+// [{ field: 'text', code: 'missing_placeholder', placeholder: 'code', message: … }]
 ```
 
 ### `stepUpWindowSeconds`
@@ -3799,6 +10724,89 @@ export function stepUpWindowSeconds(
 stepUpWindowSeconds(settings.sessions, claims.sp) // 600 unless the profile says otherwise
 ```
 
+### `takesAdditionalClientIds`
+
+_function_, defined in `packages/contract/src/oauth.ts`
+
+Whether a provider's record takes `additionalClientIds` (ADR 0045): Google alone. Apple's
+native audiences are not on its record: they are the bundle ids of the environment's
+registered iOS apps (ADR 0047).
+
+```ts
+export function takesAdditionalClientIds(provider: string): boolean
+```
+
+**Parameters**
+
+- `provider`: The provider.
+
+**Returns** `true` for Google.
+
+**Example**
+
+```ts
+takesAdditionalClientIds('google') // true
+takesAdditionalClientIds('apple') // false
+```
+
+### `testAddress`
+
+_function_, defined in `packages/contract/src/test-address.ts`
+
+Build the address of a test's throwaway user.
+
+```ts
+export function testAddress(hex: string): string
+```
+
+**Parameters**
+
+- `hex`: 32 hexadecimal characters from a CSPRNG.
+
+**Returns** The address, lower case.
+
+**Throws** Error when `hex` is not 32 hexadecimal characters.
+
+**Example**
+
+```ts
+testAddress('0123456789abcdef0123456789abcdef')
+// 'tula-test-0123456789abcdef0123456789abcdef@test.tula.invalid'
+```
+
+### `testSignInAllowed`
+
+_function_, defined in `packages/contract/src/test-address.ts`
+
+Whether an environment allows a sign-in test: what its `agents.testSignIn` says, and where
+that is `null` (the default) what its kind of environment does: **yes in a development
+environment, no in a production one**. The one place the default is decided.
+
+The kind is the environment's own, as the control plane stores it; never the deployment's
+tier.
+
+```ts
+export function testSignInAllowed(
+  setting: boolean | null,
+  kind: 'development' | 'production'
+): boolean
+```
+
+**Parameters**
+
+- `setting`: `agents.testSignIn`: `true`, `false` or `null`.
+- `kind`: The environment's kind.
+
+**Returns** Whether a test may run.
+
+**Example**
+
+```ts
+testSignInAllowed(null, 'development') // true
+testSignInAllowed(null, 'production') // false
+testSignInAllowed(true, 'production') // true
+```
+
 ### `themeToCssVariables`
 
 _function_, defined in `packages/contract/src/theme.ts`
@@ -3827,6 +10835,732 @@ export function themeToCssVariables(theme: ThemeOverrides): Record<string, strin
 ```ts
 themeToCssVariables({ light: { primary: '#0f766e' }, dark: { primary: '#5eead4' }, radius: '6px' })
 // { '--tula-color-primary': '#0f766e', '--tula-dark-color-primary': '#5eead4', '--tula-radius': '6px' }
+```
+
+### `visibleEmailText`
+
+_function_, defined in `packages/contract/src/email-template.ts`
+
+Text as a reader sees it, for the checks that are about what is seen: without the
+characters that draw nothing (format characters, variation selectors, and whatever else is
+ignorable by default) and without white space at its ends.
+
+Only ever for a check. What is stored and sent keeps every character it was given.
+
+```ts
+export function visibleEmailText(text: string): string
+```
+
+**Parameters**
+
+- `text`: Any text.
+
+**Returns** The text without what is invisible.
+
+**Example**
+
+```ts
+visibleEmailText('\u{200D}123 ') // '123'
+```
+
+### `webhookSecretBytes`
+
+_function_, defined in `packages/contract/src/webhook-signature.ts`
+
+The key bytes of a signing secret.
+
+```ts
+export function webhookSecretBytes(secret: string): Uint8Array<ArrayBuffer> | null
+```
+
+**Parameters**
+
+- `secret`: An endpoint's secret: `whsec_` and the base64 of 24 to 64 bytes.
+
+**Returns** The bytes, or `null` for anything else. Never throws, and says nothing of the value.
+
+**Example**
+
+```ts
+const key = webhookSecretBytes(process.env.TULA_WEBHOOK_SECRET ?? '')
+```
+
+### `withoutHiddenCharacters`
+
+_function_, defined in `packages/contract/src/email-template.ts`
+
+Text without the characters {@link hasHiddenCharacter} refuses.
+
+For a value that was stored before the rule and is still put into a message (an app's
+name): refused when it is set, removed when it is used. Never for a template's own text,
+which is sent as saved or not at all.
+
+```ts
+export function withoutHiddenCharacters(text: string): string
+```
+
+**Parameters**
+
+- `text`: Any text.
+
+**Returns**
+
+The text with every such character taken out; joiners, variation selectors and
+every other character are kept.
+
+**Example**
+
+```ts
+withoutHiddenCharacters('Acme\u{202E}moc') // 'Acmemoc'
+```
+
+### `withoutInvisibleCharacters`
+
+_function_, defined in `packages/contract/src/email-template.ts`
+
+Text without the characters that draw nothing (format characters, the joiners among them,
+variation selectors, and whatever else is ignorable by default), its white space kept.
+
+The one definition of "invisible" for every check that asks what a reader sees, in an
+email template and in a text message's ({@link visibleEmailText} is this and a trim).
+Only ever for a check: what is stored and sent keeps every character it was given.
+
+```ts
+export function withoutInvisibleCharacters(text: string): string
+```
+
+**Parameters**
+
+- `text`: Any text.
+
+**Returns** The text without what is invisible.
+
+**Example**
+
+```ts
+withoutInvisibleCharacters('12\u{200D}34 ') // '1234 '
+```
+
+## `@tula/contract/custom-claims`
+
+Source: `packages/contract/src/custom-claims.ts`
+
+### `CUSTOM_CLAIMS_CLAIM`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The one top-level claim every custom claim is nested under (ADR 0036).
+
+An operator's claims never sit beside Tula's own, so a claim Tula adds later cannot collide
+with a customer's, and a template cannot set a claim Tula's servers or SDKs act on. `ext`
+("extension") is three bytes in every token, and is not a registered claim name (IANA's
+"JSON Web Token Claims" registry, read in October 2026) nor one OpenID Connect defines.
+
+```ts
+const CUSTOM_CLAIMS_CLAIM: "ext"
+```
+
+**Example**
+
+```ts
+const role = payload[CUSTOM_CLAIMS_CLAIM]?.role // payload.ext.role
+```
+
+### `CustomClaimValue`
+
+_type_, defined in `packages/contract/src/custom-claims.ts`
+
+What a custom claim's value can be: one string, number or boolean. Never a list or an object.
+
+```ts
+export type CustomClaimValue = string | number | boolean
+```
+
+### `CustomClaims`
+
+_type_, defined in `packages/contract/src/custom-claims.ts`
+
+The custom claims of a verified session, as an SDK hands them to an application: a frozen
+map from claim key to value.
+
+The values are typed `unknown` because only the operator knows what their template puts
+under each key: narrow before use. At run time each is a string, a number or a boolean.
+
+```ts
+export type CustomClaims = Readonly<Record<string, unknown>>
+```
+
+**Example**
+
+```ts
+const { customClaims } = await auth()
+const isAdmin = customClaims.role === 'admin' // a missing claim is `undefined`: "no"
+```
+
+### `CustomClaimsCheck`
+
+_type_, defined in `packages/contract/src/custom-claims.ts`
+
+What {@link checkCustomClaims} found: the claims, or why they are not claims.
+
+- `invalid`: not a plain object, a key that fails {@link isCustomClaimKey} (a reserved
+  name and `__proto__` among them), or a value that is not one string, number or boolean.
+- `too_large`: every claim is fine and together they are over
+  {@link MAX_CUSTOM_CLAIMS_BYTES}.
+
+```ts
+export type CustomClaimsCheck =
+| { claims: Record<string, CustomClaimValue> }
+| { problem: 'invalid' | 'too_large' }
+```
+
+### `MAX_CUSTOM_CLAIMS_BYTES`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The most bytes the namespace claim's value may take as JSON (UTF-8), whatever puts claims
+in it.
+
+An access token is sent with every request and `@tula/nextjs` keeps it in a cookie, where a
+browser allows about 4,096 bytes for the name and the value together. A token without
+custom claims is about 700 bytes; this cap adds at most 1,366 (base64url), which leaves
+room for a long issuer URL.
+
+```ts
+const MAX_CUSTOM_CLAIMS_BYTES: 1024
+```
+
+### `MAX_CUSTOM_CLAIM_CONSTANT_LENGTH`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+Longest string a template may set as a constant, in characters.
+
+```ts
+const MAX_CUSTOM_CLAIM_CONSTANT_LENGTH: 256
+```
+
+### `MAX_CUSTOM_CLAIM_KEY_LENGTH`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+Longest custom claim key, in characters.
+
+```ts
+const MAX_CUSTOM_CLAIM_KEY_LENGTH: 32
+```
+
+### `MAX_JWT_TEMPLATES`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+Most JWT templates an environment may define.
+
+```ts
+const MAX_JWT_TEMPLATES: 10
+```
+
+### `MAX_JWT_TEMPLATE_CLAIMS`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+Most claims one JWT template may define.
+
+```ts
+const MAX_JWT_TEMPLATE_CLAIMS: 16
+```
+
+### `RESERVED_CLAIM_NAMES`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+Claim names a custom claim's key may never be: every claim Tula's tokens carry, the
+registered claims a verifier acts on, `cnf` (reserved for device binding) and the namespace
+claim itself.
+
+A custom claim lives inside {@link CUSTOM_CLAIMS_CLAIM}, so it could not overwrite one of
+these anyway. They are refused so that nobody reads `claims.ext.sub` as the subject.
+
+```ts
+const RESERVED_CLAIM_NAMES
+```
+
+**Example**
+
+```ts
+RESERVED_CLAIM_NAMES.includes('sub') // true
+```
+
+### `checkCustomClaims`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Judge claims that did not come from the environment's settings (a hook's answer), **whole**:
+either every one of them can be issued under the namespace claim, or none is.
+
+Nothing is repaired and nothing is left out: one bad key makes the whole value `invalid`.
+Give it the value as it was parsed (`JSON.parse`), not one a schema library has rebuilt:
+the keys are read as the object's **own** keys, so a `__proto__` key a parser kept is seen
+and refused, where a library that copies objects would have dropped it silently. An empty
+object is fine and means no claims.
+
+```ts
+export function checkCustomClaims(value: unknown): CustomClaimsCheck
+```
+
+**Parameters**
+
+- `value`: The candidate claims.
+
+**Returns** A copy of the claims (own keys only, no prototype reachable), or the problem.
+
+**Example**
+
+```ts
+checkCustomClaims({ role: 'admin' }) // { claims: { role: 'admin' } }
+checkCustomClaims({ sub: 'someone-else' }) // { problem: 'invalid' }
+```
+
+### `customClaimsBytes`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+How many bytes custom claims take in a token: the UTF-8 length of their JSON, which is what
+{@link MAX_CUSTOM_CLAIMS_BYTES} caps.
+
+```ts
+export function customClaimsBytes(claims: Readonly<Record<string, CustomClaimValue>>): number
+```
+
+**Parameters**
+
+- `claims`: The value of the namespace claim.
+
+**Returns** The byte count.
+
+**Example**
+
+```ts
+customClaimsBytes({ role: 'admin' }) // 16: {"role":"admin"}
+```
+
+### `isCustomClaimKey`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Whether a string can be the key of a custom claim: ASCII letters, digits and underscores,
+not starting with a digit, at most {@link MAX_CUSTOM_CLAIM_KEY_LENGTH} characters, and none
+of {@link RESERVED_CLAIM_NAMES}, `__proto__`, `constructor` or `prototype`.
+
+```ts
+export function isCustomClaimKey(key: unknown): key is string
+```
+
+**Parameters**
+
+- `key`: The candidate.
+
+**Returns** `true` when it can be a key.
+
+**Example**
+
+```ts
+isCustomClaimKey('role') // true
+isCustomClaimKey('sub') // false: reserved
+isCustomClaimKey('my-claim') // false: a hyphen
+```
+
+### `isCustomClaimValue`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Whether a value can be a custom claim's: a string, a boolean, or a number JSON can hold.
+
+```ts
+export function isCustomClaimValue(value: unknown): value is CustomClaimValue
+```
+
+**Parameters**
+
+- `value`: The candidate.
+
+**Returns** `true` for a string, a boolean and a finite number.
+
+**Example**
+
+```ts
+isCustomClaimValue('admin') // true
+isCustomClaimValue(['admin']) // false
+```
+
+### `readCustomClaims`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Read the custom claims out of a session's claims, for an SDK to hand to an application.
+
+Call it only with claims that were **verified** (a token's signature and issuer, or the
+API's own answer): this checks a shape, not where the claims came from.
+
+The namespace claim is returned only when it is exactly what a Tula server issues: a plain
+object, not empty, at most {@link MAX_CUSTOM_CLAIMS_BYTES} as JSON, whose every key passes
+{@link isCustomClaimKey} and whose every value is a string, a boolean or a finite number.
+Anything else is **absent as a whole**, never passed through and never repaired: an
+application must not be handed an object of a shape it did not expect under a name it
+trusts. Treat an absent claim as "no".
+
+```ts
+export function readCustomClaims(claims: unknown): CustomClaims | null
+```
+
+**Parameters**
+
+- `claims`: A session's verified claims.
+
+**Returns** A frozen copy of the custom claims, or `null` when there are none.
+
+**Example**
+
+```ts
+readCustomClaims({ sub: 'u1', ext: { role: 'admin' } }) // { role: 'admin' }
+readCustomClaims({ sub: 'u1', ext: ['admin'] }) // null
+```
+
+## `@tula/contract/device-binding`
+
+Source: `packages/contract/src/device-binding.ts`
+
+### `DPOP_ALGORITHMS`
+
+_constant_, defined in `packages/contract/src/device-binding.ts`
+
+The signature algorithms a proof may use: a closed list, and `ES256` alone. It is what the
+Secure Enclave and StrongBox sign with (ECDSA over P-256 with SHA-256); a later algorithm is
+added here on purpose, never accepted because a proof names it.
+
+```ts
+const DPOP_ALGORITHMS: readonly ["ES256"]
+```
+
+**Example**
+
+```ts
+DPOP_ALGORITHMS.includes(header.alg) // only 'ES256'
+```
+
+### `DPOP_HEADER`
+
+_constant_, defined in `packages/contract/src/device-binding.ts`
+
+Request header carrying the proof: one DPoP proof JWT (RFC 9449), made for this one request.
+Sent when an attempt starts, to bind the session it ends in, and on every refresh of a bound
+session.
+
+```ts
+const DPOP_HEADER: "DPoP"
+```
+
+**Example**
+
+```ts
+headers[DPOP_HEADER] = await createDpopProof(key, { method: 'POST', url, nonce })
+```
+
+### `DPOP_NONCE_HEADER`
+
+_constant_, defined in `packages/contract/src/device-binding.ts`
+
+Response header carrying the server's nonce: on the answer that asks for one
+(`device.nonce_required`), on every refresh of a bound session and on every start that
+brought a proof. A client keeps the newest one and puts it in its next proof.
+
+```ts
+const DPOP_NONCE_HEADER: "DPoP-Nonce"
+```
+
+**Example**
+
+```ts
+const nonce = response.headers.get(DPOP_NONCE_HEADER)
+```
+
+### `DPOP_PROOF_TYPE`
+
+_constant_, defined in `packages/contract/src/device-binding.ts`
+
+The `typ` of a proof's header. A token of any other type is not a proof.
+
+```ts
+const DPOP_PROOF_TYPE: "dpop+jwt"
+```
+
+**Example**
+
+```ts
+header.typ === DPOP_PROOF_TYPE // 'dpop+jwt'
+```
+
+### `DeviceKey`
+
+_interface_, defined in `packages/contract/src/device-binding.ts`
+
+A key a session can be bound to: its public half, and a way to sign with the private half
+that never hands the private half out. A native SDK backs it with the Secure Enclave or
+StrongBox; {@link generateSoftwareDeviceKey} backs it with WebCrypto, for tests and for
+platforms with no hardware key.
+
+```ts
+export interface DeviceKey {
+  /** The public key, sent in every proof's header. */
+  publicJwk: DevicePublicJwk
+  /**
+   * Sign with ECDSA over P-256 and SHA-256.
+   *
+   * @param data - The bytes to sign (a proof's `header.payload`).
+   * @returns The signature in the JWS form: `r` then `s`, 32 bytes each (64 bytes). A platform
+   *   that produces a DER signature converts it before returning.
+   */
+  sign(data: Uint8Array): Promise<Uint8Array>
+  /**
+   * A unique id for one proof (its `jti`), for a runtime whose `crypto.getRandomValues`
+   * cannot be counted on (a native app’s JavaScript engine). Left out, 16 random bytes of
+   * the runtime’s own. The id is not a secret: the server only refuses one it has seen, so
+   * it has to be new every time and need not be unguessable.
+   *
+   * @returns An id no other proof of this key carries.
+   */
+  proofId?(): string
+}
+```
+
+**Example**
+
+```ts
+const key: DeviceKey = await generateSoftwareDeviceKey()
+const proof = await createDpopProof(key, { method: 'POST', url, nonce })
+```
+
+### `DevicePublicJwk`
+
+_interface_, defined in `packages/contract/src/device-binding.ts`
+
+The public half of a device key, as a proof's header carries it: a P-256 point and nothing
+else. No private member (`d`), no key id, no other field.
+
+```ts
+export interface DevicePublicJwk {
+  kty: 'EC'
+  crv: 'P-256'
+  /** The point's x coordinate: 32 bytes, base64url without padding. */
+  x: string
+  /** The point's y coordinate: 32 bytes, base64url without padding. */
+  y: string
+}
+```
+
+**Example**
+
+```ts
+const jwk: DevicePublicJwk = { kty: 'EC', crv: 'P-256', x: '…', y: '…' }
+```
+
+### `DpopAlgorithm`
+
+_type_, defined in `packages/contract/src/device-binding.ts`
+
+One of {@link DPOP_ALGORITHMS}.
+
+```ts
+export type DpopAlgorithm = (typeof DPOP_ALGORITHMS)[number]
+```
+
+### `DpopProofInput`
+
+_interface_, defined in `packages/contract/src/device-binding.ts`
+
+What a proof is made for.
+
+```ts
+export interface DpopProofInput {
+  /** The request's method, e.g. `POST`: the proof's `htm`. */
+  method: string
+  /**
+   * The request's address **as the API knows itself**: its public URL and the route's
+   * path. The proof's `htu`. Never the address of a proxy or of an app's own route handler
+   * in front of the API.
+   *
+   * It has one spelling: `http` or `https`, `://`, the host, an optional `:port` in digits,
+   * then a path that starts with `/`, in printable ASCII. A host may hold letters, digits,
+   * dots, hyphens and underscores, or be an IPv6 address in brackets. The server compares
+   * it, as text, with what a URL parser makes of its own public URL, so write it that way:
+   * the host as the server's public URL is written once lower-cased (letters outside ASCII
+   * in their `xn--` form, no dot added or removed at the end); an IPv6 host compressed and
+   * in brackets (`[::1]`); the port without leading zeros and left out when it is the
+   * scheme's default; the path exactly as the route's. The server forgives the case of the
+   * scheme and of the host and a default port written out (`:443`, `:80`), and nothing
+   * else. It **refuses** an address with a backslash, a `.` or `..` path segment, a percent
+   * sign, a query or a fragment (an empty one too), user info (`user@`), or a space, a tab
+   * or a line break. It is signed as given: this module does not rewrite it, so a client
+   * with a URL parser passes the API's URL through it first.
+   */
+  url: string
+  /** The server's nonce, once the client has one ({@link DPOP_NONCE_HEADER}). */
+  nonce?: string
+  /**
+   * The proof's unique id. Left out, the key's own `proofId()`, or 16 random bytes where the
+   * key has none. A proof is accepted once.
+   */
+  jti?: string
+  /** When the proof is made, in milliseconds since the epoch. Left out, now. */
+  now?: number
+}
+```
+
+### `MAX_DPOP_PROOF_LENGTH`
+
+_constant_, defined in `packages/contract/src/device-binding.ts`
+
+Longest proof the server reads, in characters. A proof is a small header, six short claims
+and a 64-byte signature: about 500 characters. Anything longer is refused unread.
+
+```ts
+const MAX_DPOP_PROOF_LENGTH: 2048
+```
+
+**Example**
+
+```ts
+proof.length <= MAX_DPOP_PROOF_LENGTH
+```
+
+### `createDpopProof`
+
+_function_, defined in `packages/contract/src/device-binding.ts`
+
+Make a proof for one request: a JWT of type `dpop+jwt`, signed by the device key, carrying
+the key's public half in its header and the request's method (`htm`), the API's address
+(`htu`), the time (`iat`), a unique id (`jti`) and the server's nonce.
+
+A proof is good for one request: make a new one every time, never keep or reuse one.
+
+```ts
+export async function createDpopProof(key: DeviceKey, input: DpopProofInput): Promise<string>
+```
+
+**Parameters**
+
+- `key`: The device key.
+- `input`: The request the proof is for, and the server's nonce.
+
+**Returns** The compact JWT for the {@link DPOP_HEADER} header.
+
+**Example**
+
+```ts
+const proof = await createDpopProof(key, {
+  method: 'POST',
+  url: 'https://auth.example.com/v1/client/sessions/refresh',
+  nonce,
+})
+```
+
+### `generateSoftwareDeviceKey`
+
+_function_, defined in `packages/contract/src/device-binding.ts`
+
+Make a device key in software, with WebCrypto: a fresh P-256 key pair whose private half is
+**not extractable**, so the page or process that holds it can sign with it and cannot read
+it. It lives in memory only; a client that wants it to outlive the process keeps the
+`CryptoKey` where its platform allows (IndexedDB stores one without exposing it).
+
+This is what tests and the conformance runner bind with. It proves nothing about hardware:
+a native SDK supplies its own {@link DeviceKey} backed by the Secure Enclave or StrongBox.
+
+```ts
+export async function generateSoftwareDeviceKey(): Promise<DeviceKey>
+```
+
+**Returns** A key whose `sign` uses the private half.
+
+**Example**
+
+```ts
+const deviceKey = await generateSoftwareDeviceKey()
+const tula = createTulaClient({ publishableKey, baseUrl, client: 'ios', deviceKey })
+```
+
+### `isDevicePublicJwk`
+
+_function_, defined in `packages/contract/src/device-binding.ts`
+
+Whether a value is the public half of a device key and nothing more: exactly the four
+members of {@link DevicePublicJwk}, each coordinate 32 bytes in its one canonical
+base64url spelling (so that a key has one thumbprint). A key with a private member
+(`d`) or any other field is refused: a client that sends its private key has none.
+
+It does not check that the point is on the curve; importing the key does.
+
+```ts
+export function isDevicePublicJwk(value: unknown): value is DevicePublicJwk
+```
+
+**Parameters**
+
+- `value`: What a proof's header holds under `jwk`.
+
+**Returns** `true` for a well-formed public P-256 key.
+
+**Example**
+
+```ts
+isDevicePublicJwk({ kty: 'EC', crv: 'P-256', x, y }) // true
+isDevicePublicJwk({ kty: 'EC', crv: 'P-256', x, y, d }) // false
+```
+
+### `isKeyThumbprint`
+
+_function_, defined in `packages/contract/src/device-binding.ts`
+
+Whether a value has the shape of a key thumbprint: 43 base64url characters (a SHA-256).
+
+```ts
+export function isKeyThumbprint(value: unknown): value is string
+```
+
+**Parameters**
+
+- `value`: A stored or received thumbprint.
+
+**Returns** `true` for a well-formed one.
+
+**Example**
+
+```ts
+isKeyThumbprint(claims.cnf?.jkt)
+```
+
+### `jwkThumbprint`
+
+_function_, defined in `packages/contract/src/device-binding.ts`
+
+The thumbprint of a device key (RFC 7638, SHA-256, base64url): what a bound session stores
+and what its access token carries as `cnf.jkt`. Two keys have the same thumbprint only when
+they are the same key.
+
+```ts
+export async function jwkThumbprint(jwk: DevicePublicJwk): Promise<string>
+```
+
+**Parameters**
+
+- `jwk`: The public key.
+
+**Returns** 43 base64url characters.
+
+**Example**
+
+```ts
+const jkt = await jwkThumbprint(key.publicJwk)
 ```
 
 ## `@tula/contract/error-codes`
@@ -3904,6 +11638,102 @@ export function errorDefinition(code: ErrorCode): ErrorDefinition
 
 ```ts
 errorDefinition('password.too_short').status // 422
+```
+
+## `@tula/contract/event-types`
+
+Source: `packages/contract/src/event-types.ts`
+
+### `ACTIVITY_TYPES`
+
+_constant_, defined in `packages/contract/src/event-types.ts`
+
+Everything the API records. Each entry is written to the event outbox (for webhooks) and to
+the audit log, in the same database transaction as the change it describes.
+
+A session ends with exactly one of `session.revoked` (its `reason` says why) or
+`session.reuse_detected` (a rotated refresh token was replayed, so the session was revoked as
+possibly stolen).
+
+A new type needs three things, and a test fails for each one that is missing: its name here
+(and in {@link EVENT_TARGET_TYPES}), a `data` schema in `EVENT_DATA_SCHEMAS` and an example
+in `EVENT_FIXTURES`.
+
+```ts
+const ACTIVITY_TYPES
+```
+
+**Example**
+
+```ts
+import { ACTIVITY_TYPES, type ActivityType } from '@tula/contract/event-types'
+
+function isKnown(type: string): type is ActivityType {
+  return (ACTIVITY_TYPES as readonly string[]).includes(type)
+}
+```
+
+### `ActivityType`
+
+_type_, defined in `packages/contract/src/event-types.ts`
+
+A recorded action type: one of {@link ACTIVITY_TYPES}.
+
+```ts
+export type ActivityType = (typeof ACTIVITY_TYPES)[number]
+```
+
+### `EVENT_SCHEMA_VERSION`
+
+_constant_, defined in `packages/contract/src/event-types.ts`
+
+The version of the event payloads: the `schemaVersion` of every event.
+
+Within a version a payload only grows: a later server may add an event type, a field or an
+enum value, so a receiver ignores what it does not know. Removing or renaming a field, or
+changing what one means, is a new version.
+
+```ts
+const EVENT_SCHEMA_VERSION: 1
+```
+
+**Example**
+
+```ts
+if (event.schemaVersion !== EVENT_SCHEMA_VERSION) {
+  // Written by a server with a newer payload format than this code was built for.
+}
+```
+
+### `EVENT_TARGET_TYPES`
+
+_constant_, defined in `packages/contract/src/event-types.ts`
+
+What each event is about: the `target.type` of its payload. `target.id` is that thing's id.
+
+An event about a user's credentials targets the `user` (the passkey or session concerned
+is named in `data`); an OAuth provider's credentials belong to the `environment`. A webhook
+endpoint has an id of its own, as an API key does, so it is its own kind of target, and so
+are a hook, a native app and a proposal (what a proposal would change is in its `data`).
+
+```ts
+const EVENT_TARGET_TYPES: Record<any, any>
+```
+
+**Example**
+
+```ts
+EVENT_TARGET_TYPES['session.revoked'] // 'session'
+```
+
+### `EventTargetType`
+
+_type_, defined in `packages/contract/src/event-types.ts`
+
+What an event of type `T` is about.
+
+```ts
+export type EventTargetType<T extends ActivityType = ActivityType> = (typeof EVENT_TARGET_TYPES)[T]
 ```
 
 ## `@tula/contract/headers`
@@ -4425,6 +12255,342 @@ export function normalizePassword(password: string): string
 
 **Returns** The NFC-normalized password.
 
+## `@tula/contract/redirect-url`
+
+Source: `packages/contract/src/redirect-url.ts`
+
+### `CUSTOM_SCHEME_REDIRECT_REFUSALS`
+
+_constant_, defined in `packages/contract/src/redirect-url.ts`
+
+Why a listed custom-scheme redirect URL is still refused for one request, as the fixed word
+in `params.reason` of `request.redirect_not_allowed`:
+
+- `provider_without_pkce`: the provider's code is not bound with PKCE.
+- `client_not_native`: the attempt was not started as a native client (`x-tula-client: ios` or
+  `android`).
+- `not_a_provider_sign_in`: the redirect is not for a provider sign-in (an emailed link).
+
+```ts
+const CUSTOM_SCHEME_REDIRECT_REFUSALS: readonly ["provider_without_pkce", "client_not_native", "not_a_provider_sign_in"]
+```
+
+**Example**
+
+```ts
+const reason: CustomSchemeRedirectRefusal = CUSTOM_SCHEME_REDIRECT_REFUSALS[0]
+```
+
+### `CustomSchemeRedirectRefusal`
+
+_type_, defined in `packages/contract/src/redirect-url.ts`
+
+One of {@link CUSTOM_SCHEME_REDIRECT_REFUSALS}.
+
+```ts
+export type CustomSchemeRedirectRefusal = (typeof CUSTOM_SCHEME_REDIRECT_REFUSALS)[number]
+```
+
+### `OAUTH_PROVIDERS_WITHOUT_PKCE`
+
+_constant_, defined in `packages/contract/src/redirect-url.ts`
+
+The providers that do **not** bind their code with PKCE, as a fact about the provider and
+not a setting: Apple and LinkedIn document none, and Facebook's has it only in a flow that
+is not used (ADR 0026).
+
+A provider sign-in with one of them is never returned to a custom scheme
+({@link customSchemeRedirectRefusal}). A new provider is added to this list or to
+{@link OAUTH_PROVIDERS_WITH_PKCE}; a test fails for one that is in neither.
+
+```ts
+const OAUTH_PROVIDERS_WITHOUT_PKCE: ["apple", "linkedin", "facebook"]
+```
+
+**Example**
+
+```ts
+OAUTH_PROVIDERS_WITHOUT_PKCE.includes('apple') // true
+```
+
+### `OAUTH_PROVIDERS_WITH_PKCE`
+
+_constant_, defined in `packages/contract/src/redirect-url.ts`
+
+The providers whose authorization code Tula binds to the attempt with PKCE (ADR 0026): the
+code is redeemable only with the verifier the attempt holds.
+
+```ts
+const OAUTH_PROVIDERS_WITH_PKCE: ["google", "github", "microsoft", "discord", "x"]
+```
+
+**Example**
+
+```ts
+OAUTH_PROVIDERS_WITH_PKCE.includes('google') // true
+```
+
+### `REDIRECT_SCHEMES_NEVER_CUSTOM`
+
+_constant_, defined in `packages/contract/src/redirect-url.ts`
+
+Schemes that are never a custom-scheme redirect, whatever follows the colon: the two web
+schemes (which have rules of their own) and the ones a browser or an operating system
+handles itself, where a redirect would run script, open a file, start a call or hand the
+URL to something that is nobody's app.
+
+**Best effort, and no more.** The entries without a full stop are also refused by the
+rule that a custom scheme contains one; the ones with a full stop, and the families of
+{@link REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM}, are refused by this list alone, and a
+scheme an operating system handles that nobody put here passes. What bounds that is not
+the list: every entry of `urls.allowedRedirectUrls` is written by the operator by hand,
+and a redirect carries only a ticket that is useless without the binding (ADR 0044).
+
+```ts
+const REDIRECT_SCHEMES_NEVER_CUSTOM
+```
+
+**Example**
+
+```ts
+REDIRECT_SCHEMES_NEVER_CUSTOM.includes('javascript') // true
+```
+
+### `REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM`
+
+_constant_, defined in `packages/contract/src/redirect-url.ts`
+
+Families of schemes that are never a custom-scheme redirect: every scheme that starts
+with one of these. They are written with full stops, so the reverse-domain rule lets
+them through, and each belongs to a platform and to no operator's app: the schemes of
+Windows' built-in apps (`microsoft.windows.camera`, `microsoft.windows.photos.crop`, …),
+Apple's `x-apple.` schemes (`x-apple.systempreferences`) and Apple's own bundle-id space
+(`com.apple.`, which no third party's app can be in).
+
+Best effort, like {@link REDIRECT_SCHEMES_NEVER_CUSTOM}: a family that is not here passes.
+
+```ts
+const REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM: readonly ["microsoft.windows.", "x-apple.", "com.apple."]
+```
+
+**Example**
+
+```ts
+REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM.some((family) => 'com.apple.tv'.startsWith(family)) // true
+```
+
+### `RedirectUrlKind`
+
+_type_, defined in `packages/contract/src/redirect-url.ts`
+
+The kinds of redirect URL an environment may list.
+
+```ts
+export type RedirectUrlKind = 'https' | 'loopback' | 'custom_scheme'
+```
+
+**Example**
+
+```ts
+const kind: RedirectUrlKind = 'custom_scheme'
+```
+
+### `bindsCodeWithPkce`
+
+_function_, defined in `packages/contract/src/redirect-url.ts`
+
+Whether a provider's code is bound to the attempt with PKCE
+({@link OAUTH_PROVIDERS_WITH_PKCE}). The one place that says so.
+
+```ts
+export function bindsCodeWithPkce(provider: string): boolean
+```
+
+**Parameters**
+
+- `provider`: A provider's name.
+
+**Returns** `true` only for a provider on the list; `false` for any other string.
+
+**Example**
+
+```ts
+bindsCodeWithPkce('google') // true
+bindsCodeWithPkce('apple') // false
+```
+
+### `customSchemeRedirectRefusal`
+
+_function_, defined in `packages/contract/src/redirect-url.ts`
+
+Why a redirect to `url` is refused for this use although the environment lists it, or
+`null` when it is not.
+
+Only a custom-scheme URL is ever refused here. Any app on the device can claim a scheme,
+so the app that receives the redirect may be another one. What then keeps a sign-in from
+being completed by it:
+
+- the provider's code is bound with PKCE, so a provider that is told to return to the
+  scheme's owner cannot be made to hand a usable code to someone else. Without PKCE the
+  redirect is refused, whatever else holds;
+- the attempt belongs to a native client. A browser page has no use for a custom scheme,
+  and a `web` attempt ends in cookies.
+
+It depends on the URL, the provider and the client kind, never on a user.
+
+```ts
+export function customSchemeRedirectRefusal(
+  url: string,
+  use: { client: string; provider?: string }
+): CustomSchemeRedirectRefusal | null
+```
+
+**Parameters**
+
+- `url`: A redirect URL the environment lists.
+- `use`: The client kind of the attempt, and the provider when it is a provider
+  sign-in.
+
+**Returns** The reason, or `null`.
+
+**Example**
+
+```ts
+customSchemeRedirectRefusal('com.example.app:/oauth', { client: 'ios', provider: 'apple' })
+// 'provider_without_pkce'
+```
+
+### `hasForbiddenRedirectCharacter`
+
+_function_, defined in `packages/contract/src/redirect-url.ts`
+
+Whether `value` holds a character no redirect URL of any kind may hold:
+
+- whitespace (`\s`) or a wildcard (`*`);
+- a backslash or a control character (U+0000 to U+001F, U+007F to U+009F);
+- a character that draws nothing, which is what `hasInvisibleCharacter` says: the one
+  class `[\p{Cf}\p{Variation_Selector}\p{Default_Ignorable_Code_Point}]`, so every format
+  character (the zero-width space, joiner and non-joiner, the word joiner, the soft
+  hyphen, the Mongolian vowel separator, the text-direction controls, the tag
+  characters), the variation selectors (U+FE00 to U+FE0F, U+E0100 to U+E01EF) and whatever
+  else Unicode ignores by default (the combining grapheme joiner, the Hangul fillers);
+- what `hasHiddenCharacter` refuses beside those: a private-use character (`Co`), an
+  unassigned one (`Cn`), a lone surrogate.
+
+A `Location` header cannot carry the controls, and a reader cannot see the rest: two
+entries that differ by a zero-width space read the same on every screen. An entry is
+compared as the string it is, so it holds only what can be seen. A visible letter outside
+ASCII (`münchen.de`) and a percent-encoded octet (`%20`, `%E2%80%8B`) are not refused.
+
+The server asks this of every URL it is about to redirect to, listed or not, so that a
+stored entry from before a rule is refused when a sign-in starts and never at the
+provider's callback, where the state is already spent.
+
+```ts
+export function hasForbiddenRedirectCharacter(value: string): boolean
+```
+
+**Parameters**
+
+- `value`: A URL.
+
+**Returns** `true` when it holds such a character.
+
+**Example**
+
+```ts
+hasForbiddenRedirectCharacter('https://a.com/\u{202E}x') // true
+hasForbiddenRedirectCharacter('https://a.com/x\u{200B}y') // true
+hasForbiddenRedirectCharacter('https://a.com/cb?x=1') // false
+```
+
+### `isCustomSchemeRedirectUrl`
+
+_function_, defined in `packages/contract/src/redirect-url.ts`
+
+Whether `value` is a custom-scheme redirect URL ({@link redirectUrlKind}).
+
+```ts
+export function isCustomSchemeRedirectUrl(value: string): boolean
+```
+
+**Parameters**
+
+- `value`: A URL.
+
+**Returns** `true` only for the `custom_scheme` kind.
+
+**Example**
+
+```ts
+isCustomSchemeRedirectUrl('com.example.app:/oauth') // true
+isCustomSchemeRedirectUrl('https://app.example.com/oauth') // false
+```
+
+### `isRedirectUrl`
+
+_function_, defined in `packages/contract/src/redirect-url.ts`
+
+Whether an environment may list `value` in `urls.allowedRedirectUrls`.
+
+```ts
+export function isRedirectUrl(value: string): boolean
+```
+
+**Parameters**
+
+- `value`: A URL as an operator wrote it.
+
+**Returns** `true` for any {@link RedirectUrlKind}.
+
+**Example**
+
+```ts
+isRedirectUrl('https://app.example.com/oauth/callback') // true
+```
+
+### `redirectUrlKind`
+
+_function_, defined in `packages/contract/src/redirect-url.ts`
+
+Which kind of redirect URL `value` is, or `null` when an environment may not list it.
+
+- `https`: any absolute URL that starts with `https://` (lower case) and has no
+  credentials, fragment, wildcard, whitespace, backslash, control character (U+0000 to
+  U+001F, U+007F to U+009F), character that draws nothing (`hasInvisibleCharacter`: `Cf`,
+  the variation selectors, `Default_Ignorable_Code_Point`) or character
+  `hasHiddenCharacter` refuses. A query is allowed.
+  An app link is one of these.
+- `loopback`: the same over `http://` for `localhost`, `127.0.0.1` and `[::1]`.
+- `custom_scheme`: `<scheme>:/<path>` or `<scheme>://<host>/<path>` where the scheme is in
+  reverse-domain form (lower case, **with a full stop**: `com.example.app`), is not one of
+  {@link REDIRECT_SCHEMES_NEVER_CUSTOM} nor in a family of
+  {@link REDIRECT_SCHEME_FAMILIES_NEVER_CUSTOM}, and what follows is slashes and the characters
+  `A-Z a-z 0-9 . _ ~ -` only. So: no user name or password, no port, **no query**, no
+  fragment (the server adds one), no wildcard, no percent-encoded octet, no `.` or `..`
+  segment, and no control or invisible character.
+
+Nothing is normalised, for any kind: the string that is listed is the string a request
+must send, character for character.
+
+```ts
+export function redirectUrlKind(value: string): RedirectUrlKind | null
+```
+
+**Parameters**
+
+- `value`: A URL as an operator wrote it.
+
+**Returns** Its kind, or `null`.
+
+**Example**
+
+```ts
+redirectUrlKind('com.example.app:/oauth') // 'custom_scheme'
+redirectUrlKind('myapp://callback') // null: no full stop in the scheme
+redirectUrlKind('javascript:alert(1)') // null
+```
+
 ## `@tula/contract/theme`
 
 Source: `packages/contract/src/theme.ts`
@@ -4731,4 +12897,188 @@ export function themeToCssVariables(theme: ThemeOverrides): Record<string, strin
 ```ts
 themeToCssVariables({ light: { primary: '#0f766e' }, dark: { primary: '#5eead4' }, radius: '6px' })
 // { '--tula-color-primary': '#0f766e', '--tula-dark-color-primary': '#5eead4', '--tula-radius': '6px' }
+```
+
+## `@tula/contract/webhook-signature`
+
+Source: `packages/contract/src/webhook-signature.ts`
+
+### `WEBHOOK_ID_HEADER`
+
+_constant_, defined in `packages/contract/src/webhook-signature.ts`
+
+Request header carrying the delivery's id: the event's id. A delivery that is repeated
+carries the same id, so a receiver drops duplicates by it.
+
+```ts
+const WEBHOOK_ID_HEADER: "webhook-id"
+```
+
+**Example**
+
+```ts
+const id = request.headers.get(WEBHOOK_ID_HEADER)
+```
+
+### `WEBHOOK_SECRET_PREFIX`
+
+_constant_, defined in `packages/contract/src/webhook-signature.ts`
+
+What an endpoint's signing secret starts with. The rest is the base64 of the key's bytes.
+
+```ts
+const WEBHOOK_SECRET_PREFIX: "whsec_"
+```
+
+**Example**
+
+```ts
+secret.startsWith(WEBHOOK_SECRET_PREFIX) // 'whsec_…'
+```
+
+### `WEBHOOK_SIGNATURE_HEADER`
+
+_constant_, defined in `packages/contract/src/webhook-signature.ts`
+
+Request header carrying the signatures: one or more of `v1,<base64>`, separated by spaces.
+A receiver accepts the delivery when any one of them is right.
+
+```ts
+const WEBHOOK_SIGNATURE_HEADER: "webhook-signature"
+```
+
+**Example**
+
+```ts
+const signatures = (request.headers.get(WEBHOOK_SIGNATURE_HEADER) ?? '').split(' ')
+```
+
+### `WEBHOOK_SIGNATURE_VERSION`
+
+_constant_, defined in `packages/contract/src/webhook-signature.ts`
+
+The version label of an HMAC-SHA256 signature: what stands before the comma.
+
+```ts
+const WEBHOOK_SIGNATURE_VERSION: "v1"
+```
+
+**Example**
+
+```ts
+const [version, signature] = entry.split(',') // version === WEBHOOK_SIGNATURE_VERSION
+```
+
+### `WEBHOOK_TIMESTAMP_HEADER`
+
+_constant_, defined in `packages/contract/src/webhook-signature.ts`
+
+Request header carrying when the delivery was sent, in whole seconds since the Unix epoch.
+It is signed, and a receiver refuses one too far from its own clock.
+
+```ts
+const WEBHOOK_TIMESTAMP_HEADER: "webhook-timestamp"
+```
+
+**Example**
+
+```ts
+const sentAt = Number(request.headers.get(WEBHOOK_TIMESTAMP_HEADER)) * 1000
+```
+
+### `WEBHOOK_TOLERANCE_SECONDS`
+
+_constant_, defined in `packages/contract/src/webhook-signature.ts`
+
+How far a delivery's timestamp may be from the receiver's clock, either way, in seconds.
+Five minutes: what bounds the replay of a captured delivery.
+
+```ts
+const WEBHOOK_TOLERANCE_SECONDS: number
+```
+
+**Example**
+
+```ts
+const fresh = Math.abs(now - sentAt) <= WEBHOOK_TOLERANCE_SECONDS
+```
+
+### `formatWebhookSecret`
+
+_function_, defined in `packages/contract/src/webhook-signature.ts`
+
+Write a signing secret from its key bytes.
+
+```ts
+export function formatWebhookSecret(key: Uint8Array): string
+```
+
+**Parameters**
+
+- `key`: 24 to 64 random bytes.
+
+**Returns** `whsec_` and the base64 of the bytes.
+
+**Throws** RangeError when the key is shorter or longer than the scheme allows.
+
+**Example**
+
+```ts
+const secret = formatWebhookSecret(crypto.getRandomValues(new Uint8Array(32)))
+```
+
+### `signWebhook`
+
+_function_, defined in `packages/contract/src/webhook-signature.ts`
+
+Sign one delivery: HMAC-SHA256 over `<id>.<timestamp>.<body>`, keyed with the secret's bytes.
+
+The body is the exact text that is sent. A receiver must verify the bytes it received, not
+a body it parsed and wrote out again.
+
+```ts
+export async function signWebhook(
+  key: Uint8Array<ArrayBuffer>,
+  id: string,
+  timestamp: number,
+  body: string
+): Promise<string>
+```
+
+**Parameters**
+
+- `key`: The key bytes ({@link webhookSecretBytes}).
+- `id`: The delivery's id (the `webhook-id` header). It has no `.` in it.
+- `timestamp`: Whole seconds since the Unix epoch (the `webhook-timestamp` header).
+- `body`: The request body, as sent.
+
+**Returns** The signature as it stands in the header: `v1,<base64>`.
+
+**Example**
+
+```ts
+const signature = await signWebhook(key, event.id, Math.floor(Date.now() / 1000), body)
+// 'v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE='
+```
+
+### `webhookSecretBytes`
+
+_function_, defined in `packages/contract/src/webhook-signature.ts`
+
+The key bytes of a signing secret.
+
+```ts
+export function webhookSecretBytes(secret: string): Uint8Array<ArrayBuffer> | null
+```
+
+**Parameters**
+
+- `secret`: An endpoint's secret: `whsec_` and the base64 of 24 to 64 bytes.
+
+**Returns** The bytes, or `null` for anything else. Never throws, and says nothing of the value.
+
+**Example**
+
+```ts
+const key = webhookSecretBytes(process.env.TULA_WEBHOOK_SECRET ?? '')
 ```

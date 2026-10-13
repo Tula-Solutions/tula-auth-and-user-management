@@ -9,8 +9,23 @@ import { useStepUp } from '../hooks/use-step-up'
 import { formatText } from '../localization'
 import { go, safeUrl } from '../navigation'
 import { SignedInNotice, useCompletion, useEnrolmentCompletion } from './flow-screens'
-import { AppleMark, GitHubMark, GoogleMark } from './icons'
-import { canEnrolTotp, drawableFactors, FactorEnrolmentScreen, SecondFactorScreen } from './mfa'
+import {
+  AppleMark,
+  DiscordMark,
+  FacebookMark,
+  GitHubMark,
+  GoogleMark,
+  LinkedInMark,
+  MicrosoftMark,
+  XMark,
+} from './icons'
+import {
+  canEnrolTotp,
+  drawableFactors,
+  FactorEnrolmentScreen,
+  offersTextedCode,
+  SecondFactorScreen,
+} from './mfa'
 import { SwitchLink } from './sign-in'
 import {
   Button,
@@ -29,6 +44,11 @@ const PROVIDERS = {
   google: { name: 'Google', mark: <GoogleMark /> },
   github: { name: 'GitHub', mark: <GitHubMark /> },
   apple: { name: 'Apple', mark: <AppleMark /> },
+  microsoft: { name: 'Microsoft', mark: <MicrosoftMark /> },
+  discord: { name: 'Discord', mark: <DiscordMark /> },
+  linkedin: { name: 'LinkedIn', mark: <LinkedInMark /> },
+  x: { name: 'X', mark: <XMark /> },
+  facebook: { name: 'Facebook', mark: <FacebookMark /> },
 } as const satisfies Record<string, { name: string; mark: ReactNode }>
 
 type KnownProvider = keyof typeof PROVIDERS
@@ -67,7 +87,8 @@ function resolveCallbackUrl(url: string | undefined): string | null {
 }
 
 /**
- * "Continue with Google / GitHub / Apple": one button per provider the environment offers.
+ * "Continue with Google / GitHub / Apple / Microsoft / Discord / LinkedIn / X / Facebook": one
+ * button per provider the environment offers.
  *
  * Each is a neutral button with the provider's mark and its name as text, so the name is what
  * a screen reader announces. Choosing one asks the API for the provider's page and sends the
@@ -76,11 +97,19 @@ function resolveCallbackUrl(url: string | undefined): string | null {
  * binding.
  *
  * **Brand rules an app must check itself before shipping.** These buttons follow each
- * provider's basic rules as far as a neutral, themeable button can (Google's "G" in its own
- * colours on a neutral surface; GitHub's and Apple's marks in the text colour; "Continue with
- * …" wording). They are not the providers' own button artwork: Google's and Apple's review
- * guidelines (and the App Store's rule that an app offering other social sign-ins also offers
- * Sign in with Apple) apply to your app, with your theme, and are yours to verify.
+ * provider's basic rules as far as a neutral, themeable button can (Google's "G", Microsoft's
+ * four squares, Discord's mark and LinkedIn's "in" in their own colours on a neutral surface;
+ * GitHub's and Apple's marks in the text colour; "Continue with …" wording). They are not the providers' own
+ * button artwork: Google's, Apple's and Microsoft's guidelines (and the App Store's rule that
+ * an app offering other social sign-ins also offers Sign in with Apple) apply to your app,
+ * with your theme, and are yours to verify. Microsoft's own button says "Sign in with
+ * Microsoft" in a fixed size, font and pair of colours; this one keeps the wording, the
+ * surface and the type of the theme, as the other providers' do. **Discord's and LinkedIn's
+ * marks were drawn without their brand pages open**: neither their shapes, their colours nor
+ * the clear space around them were checked against Discord's or LinkedIn's brand guidelines,
+ * so check both before you ship. **The same holds for X's and Facebook's marks** (X's in the
+ * text colour, Facebook's "f" in its blue): neither was checked against X's or Meta's brand
+ * guidelines, and Meta has rules of its own for a "Continue with Facebook" button.
  *
  * @param props.callbackUrl - The page that renders `<OAuthCallback>`.
  * @param props.placement - Whether the divider is drawn `before` or `after` the buttons.
@@ -221,7 +250,8 @@ function CallbackScreens(props: OAuthCallbackProps) {
     // The same screens `<SignIn>` draws for these steps: the provider was only the first factor.
     if (step?.status === 'needs_second_factor') {
       const methods = drawableFactors(step.options)
-      if (methods.length > 0) {
+      const texted = offersTextedCode(step.options)
+      if (methods.length > 0 || texted) {
         return (
           <SecondFactorScreen
             key={screen}
@@ -232,6 +262,14 @@ function CallbackScreens(props: OAuthCallbackProps) {
             submit={(proof) => signIn.submitSecondFactor(proof).then(finish)}
             submitPasskey={(signal) =>
               signIn.submitSecondFactorWithPasskey({ signal }).then(finish)
+            }
+            texted={
+              texted
+                ? {
+                    destination: step.prepared?.destination ?? null,
+                    send: () => signIn.prepareSecondFactor({ method: 'sms_code' }),
+                  }
+                : undefined
             }
             onRestart={restart}
           />

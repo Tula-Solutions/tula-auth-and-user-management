@@ -5,6 +5,7 @@ import {
   attempt,
   CODE_STEP,
   completed,
+  expectAbsent,
   expectFocus,
   failure,
   ROUTE,
@@ -44,6 +45,9 @@ describe('<SignUp>', () => {
     // Nothing typed: every rule unmet, and no bar segment filled.
     expect(checklist().every((line) => line.startsWith('Not met: '))).toBe(true)
     expect(checklist()).toContain('Not met: 12 or more characters')
+    // The strict preset remembers five passwords; a new account has none to be compared with,
+    // so a sign-up never lists the rule.
+    expect(checklist().some((line) => line.includes('last 5 passwords'))).toBe(false)
     expect(
       document.querySelectorAll('[data-tula-element="strengthBar"] [data-filled]')
     ).toHaveLength(0)
@@ -230,7 +234,7 @@ describe('<SignUp>', () => {
       'That code is incorrect. 4 attempts left.'
     )
     // The confirmation of the resend does not linger next to the new error.
-    expect(screen.queryByText('A new code is on its way.')).toBeNull()
+    expectAbsent(screen.queryByText('A new code is on its way.'))
   })
 
   test('the sign-in link uses the provider’s URL', async () => {

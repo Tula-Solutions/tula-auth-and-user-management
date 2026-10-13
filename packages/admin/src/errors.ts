@@ -14,20 +14,39 @@ const CLIENT_MESSAGES = {
     'The admin token is not usable: it is the server’s TULA_ADMIN_TOKEN (at least 32 characters, no spaces), not an API key.',
   'client.publishable_key':
     'That is a publishable key (tula_pk_…). The admin API takes a secret key (tula_sk_…).',
+  'client.agent_key':
+    'That is an agent key (tula_ak_…). It reads, asks for changes and runs a sign-in test where the environment allows one: use createAgentClient for it, and a secret key (tula_sk_…) here.',
+  'client.invalid_agent_key': 'The agent key is not a Tula agent key (tula_ak_…).',
   'client.invalid_url':
     'The API URL must be an https URL without credentials (plain http only for localhost, or with allowInsecureHttp on a private network you trust).',
   'client.invalid_param':
     'A path parameter is missing or is not a single path segment (empty, ".", "..", or it has a slash or a control character).',
   'client.browser':
     '@tula/admin holds a secret key and must not run in a browser. Call it from your server.',
+  'webhook.invalid_secret': 'The webhook secret is not a signing secret (whsec_…).',
+  'webhook.invalid_headers':
+    'The webhook-id, webhook-timestamp or webhook-signature header is missing, repeated or malformed.',
+  'webhook.timestamp_out_of_tolerance':
+    'The delivery’s timestamp is more than five minutes from this server’s clock.',
+  'webhook.invalid_signature': 'No signature of the delivery matches the secret.',
+  'webhook.invalid_payload':
+    'The delivery is signed correctly but its body is not the event it names.',
+  'hook.invalid_secret': 'The hook secret is not a signing secret (whsec_…).',
+  'hook.invalid_headers':
+    'The webhook-id, webhook-timestamp or webhook-signature header is missing, repeated or malformed.',
+  'hook.timestamp_out_of_tolerance':
+    'The question’s timestamp is more than five minutes from this server’s clock.',
+  'hook.invalid_signature': 'No signature of the question matches the secret.',
+  'hook.invalid_payload':
+    'The request is signed correctly but its body is not a hook question this version knows.',
 } as const
 
 /**
  * A code the admin client itself raises: no answer (`network.failed`, `network.timeout`,
  * `network.aborted`), an answer that is not the API's (`response.invalid`), or a client that
  * was refused before any request (`client.invalid_key`, `client.publishable_key`,
- * `client.invalid_url`, `client.browser`), or a call refused before its request
- * (`client.invalid_param`).
+ * `client.agent_key`, `client.invalid_agent_key`, `client.invalid_url`, `client.browser`), or a call refused before its request
+ * (`client.invalid_param`), or a webhook delivery that `verifyWebhook` refused (`webhook.*`).
  *
  * @example
  * ```ts

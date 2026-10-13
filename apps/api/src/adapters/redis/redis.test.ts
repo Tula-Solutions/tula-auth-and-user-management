@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { describeLockout, SUITE_LOCKOUT_POLICY } from '~/adapters/lockout.suite'
 import { FixedClock } from '~/adapters/memory/clock'
+import { describeProofReplayGuard } from '~/adapters/proof-replay.suite'
 import { describeRateLimiter } from '~/adapters/rate-limiter.suite'
 import {
   CLOCK_SKEW_ALLOWANCE_MS,
@@ -12,6 +13,7 @@ import {
 } from '~/adapters/redis/commands'
 import { FakeRedis } from '~/adapters/redis/fake'
 import { lockoutSchedule, RedisLockout } from '~/adapters/redis/lockout'
+import { RedisProofReplayGuard } from '~/adapters/redis/proof-replay'
 import { RedisRateLimiter } from '~/adapters/redis/rate-limiter'
 import { RedisRevokedSessions } from '~/adapters/redis/revoked-sessions'
 import { RedisSigningKeyVersions } from '~/adapters/redis/signing-key-versions'
@@ -33,6 +35,7 @@ function setup() {
     limiter: new RedisRateLimiter(redis, clock, keyedHash),
     lockout: new RedisLockout(redis),
     list: new RedisRevokedSessions(redis, clock),
+    replay: new RedisProofReplayGuard(redis, clock),
     versions: new RedisSigningKeyVersions(redis),
   }
 }
@@ -66,7 +69,30 @@ describeRevokedSessions('redis (fake server)', async () => {
   return { clock, list, peer: new RedisRevokedSessions(redis, clock) }
 })
 
+describeProofReplayGuard('redis (fake server)', async () => {
+  const { clock, redis, replay } = setup()
+  return {
+    clock,
+    guard: replay,
+    peer: new RedisProofReplayGuard(redis, clock),
+    allowanceMs: CLOCK_SKEW_ALLOWANCE_MS,
+    movesTime: true,
+  }
+})
+
 describe('when Redis is unreachable', () => {
+  test('the proof replay guard cannot say a proof is new', async () => {
+    const { clock, redis, replay } = setup()
+    const until = new Date(clock.now().getTime() + 60_000)
+    redis.fail()
+    const error = await refusal(replay.remember('p1', until))
+    expect(error.internalMessage).toBe('redis SET failed: RedisError ERR_REDIS_CONNECTION_CLOSED')
+    redis.recover()
+    // What was refused during the outage was not remembered: the proof is still new.
+    expect(await replay.remember('p1', until)).toBe(true)
+    expect(await replay.remember('p1', until)).toBe(false)
+  })
+
   test('the rate limiter refuses instead of allowing', async () => {
     const { redis, limiter } = setup()
     await limiter.hit('sign_in:ip:203.0.113.7', 5, 60_000)
@@ -164,6 +190,15 @@ describe('when Redis sends a reply the adapters do not understand', () => {
     await refusal(list.add('s1', new Date()))
   })
 
+  test.each([
+    ['a number', 1],
+    ['other text', 'QUEUED'],
+    ['a list', ['OK']],
+  ] as [string, unknown][])('the proof replay guard refuses on %s', async (_label, reply) => {
+    const guard = new RedisProofReplayGuard(replying(reply), new FixedClock())
+    await refusal(guard.remember('p1', new Date()))
+  })
+
   test('the signing-key marker refuses', async () => {
     await refusal(new RedisSigningKeyVersions(replying(7)).current('e1'))
   })
@@ -232,6 +267,23 @@ describe('what is stored in Redis', () => {
       true
     )
     expect(redis.keys()).toEqual(['tula:rs:s1'])
+  })
+})
+
+describe('RedisProofReplayGuard', () => {
+  test('its key is namespaced, holds the id it was given and expires on its own', async () => {
+    const { clock, redis, replay } = setup()
+    await replay.remember('abc', new Date(clock.now().getTime() + 60_000))
+    expect(redis.keys()).toEqual(['tula:dp:abc'])
+    expect(await redis.send('PTTL', ['tula:dp:abc'])).toBe(60_000 + CLOCK_SKEW_ALLOWANCE_MS)
+    await new RedisProofReplayGuard(redis, clock, 'other').remember('abc', clock.now())
+    expect(redis.keys().sort()).toEqual(['other:dp:abc', 'tula:dp:abc'])
+  })
+
+  test('an id whose time has already passed is still kept for the allowance', async () => {
+    const { clock, redis, replay } = setup()
+    expect(await replay.remember('abc', new Date(clock.now().getTime() - 5_000))).toBe(true)
+    expect(await redis.send('PTTL', ['tula:dp:abc'])).toBe(CLOCK_SKEW_ALLOWANCE_MS)
   })
 })
 

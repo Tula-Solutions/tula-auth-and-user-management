@@ -16,11 +16,13 @@ import { useSession } from '../hooks/use-session'
 import { useStepUp } from '../hooks/use-step-up'
 import { useUser } from '../hooks/use-user'
 import { formatText } from '../localization'
+import { EmailAddressSection } from './email-address'
 import { useRetryAfter } from './flow-screens'
 import { fieldResolver, formatDuration, placeErrors } from './form-errors'
-import { BackupCodesPanel, EnrolmentConfirmForm } from './mfa'
+import { BackupCodesPanel, EnrolmentConfirmForm, TextedCodeForm } from './mfa'
 import { ConnectedAccountsSection } from './oauth'
-import { PasskeysSection } from './passkey'
+import { PasskeysSection, type SecondStepRead } from './passkey'
+import { PhoneSection } from './phone'
 import {
   Button,
   Form,
@@ -28,6 +30,7 @@ import {
   Heading,
   type HeadingLevel,
   PasswordField,
+  passwordHistoryRule,
   Root,
   Status,
   useUi,
@@ -73,12 +76,16 @@ function ProfileSection(props: { user: User }) {
         </span>
         <div className='tula-profile-text'>
           {name ? <p className='tula-profile-name'>{name}</p> : null}
-          <p className='tula-profile-email'>
-            <span>{user.email}</span>{' '}
-            <span {...el('badge', user.emailVerifiedAt ? 'tula-is-positive' : undefined)}>
-              {user.emailVerifiedAt ? t.userProfile.emailVerified : t.userProfile.emailUnverified}
-            </span>
-          </p>
+          {/* No address (an account made through X or Facebook): no line, and no badge
+              that would call an address nobody gave "not verified". */}
+          {user.email === null ? null : (
+            <p className='tula-profile-email'>
+              <span>{user.email}</span>{' '}
+              <span {...el('badge', user.emailVerifiedAt ? 'tula-is-positive' : undefined)}>
+                {user.emailVerifiedAt ? t.userProfile.emailVerified : t.userProfile.emailUnverified}
+              </span>
+            </p>
+          )}
         </div>
       </div>
     </section>
@@ -106,7 +113,24 @@ function NoPasswordSection() {
   )
 }
 
-function PasswordSection(props: { user: User; onChanged(): void }) {
+/**
+ * The password section a user gets. None at all for an account with no email address (one
+ * made through X or Facebook): a password signs in beside an address, the server refuses
+ * one for such an account, and "Forgot password?" would have nowhere to send its email.
+ */
+function passwordSection(user: User, sessionId: string | null, onChanged: () => void) {
+  if (user.email === null) {
+    return null
+  }
+  if (user.hasPassword === false) {
+    return <NoPasswordSection />
+  }
+  // Keyed by the session: half-typed passwords, a pending change and its messages belong to
+  // whoever was signed in when they began, and go with them.
+  return <PasswordSection key={sessionId} user={user} email={user.email} onChanged={onChanged} />
+}
+
+function PasswordSection(props: { user: User; email: string; onChanged(): void }) {
   const { el, t } = useUi()
   const { client } = useTulaContext()
   const withStepUp = useStepUp()
@@ -120,8 +144,10 @@ function PasswordSection(props: { user: User; onChanged(): void }) {
     null
   )
   const [changed, setChanged] = useState(false)
+  // Whether the new password was retyped since the last answer: a refusal is about what was sent.
+  const [edited, setEdited] = useState(false)
   const checklist = usePasswordChecklist(newPassword, {
-    email: user.email,
+    email: props.email,
     firstName: user.firstName ?? undefined,
     lastName: user.lastName ?? undefined,
   })
@@ -155,6 +181,7 @@ function PasswordSection(props: { user: User; onChanged(): void }) {
     }
     setLocal(null)
     setError(null)
+    setEdited(false)
     setPending(true)
     limits.mark('change')
     try {
@@ -195,7 +222,7 @@ function PasswordSection(props: { user: User; onChanged(): void }) {
           type='text'
           name='username'
           autoComplete='username'
-          value={user.email}
+          value={props.email}
           readOnly
           tabIndex={-1}
           aria-hidden='true'
@@ -220,9 +247,11 @@ function PasswordSection(props: { user: User; onChanged(): void }) {
           onValue={(value) => {
             setNewPassword(value)
             setLocal(null)
+            setEdited(true)
           }}
           errors={errorsOf('newPassword')}
           checks={checklist.checks}
+          history={passwordHistoryRule(checklist.policy, error, edited)}
           required
         />
         <Button type='submit' kind='secondary' pending={pending} disabled={wait > 0}>
@@ -239,19 +268,37 @@ function PasswordSection(props: { user: User; onChanged(): void }) {
  * codes once, make new ones, turn it off. Sensitive calls go through `useStepUp`, so the
  * provider's dialog appears when the server asks for one. The secret and the codes live in
  * this section's state only while their screen is shown.
+ *
+ * A code by text message (ADR 0025) is offered only where the server says this user could
+ * enrol it (`factors.sms.available`: the app has it on, the account has a proven number and
+ * nothing stronger), and the message is sent only when the user asks for it.
  */
-function TwoStepSection(props: { onChanged(): void }) {
+function TwoStepSection(props: {
+  phoneNumber: string | null
+  /** Changes when something outside this section changed what the server would answer. */
+  revision: number
+  onChanged(): void
+  /** Told what is known of the second step in use, from the first render on. */
+  onSecondStep(read: SecondStepRead): void
+}) {
   const { el, t } = useUi()
   const { client } = useTulaContext()
-  const policy = useClientConfig()?.mfa?.policy
+  const config = useClientConfig()
+  const policy = config?.mfa?.policy
   const withStepUp = useStepUp()
   const titleId = useId()
   const [factors, setFactors] = useState<Factors | null>(null)
   const [enrolment, setEnrolment] = useState<TotpEnrolment | null>(null)
   const [codes, setCodes] = useState<string[] | null>(null)
-  const [busy, setBusy] = useState<'on' | 'confirm' | 'off' | 'codes' | null>(null)
+  /** The masked number the enrolment's code was texted to, while its form is open. */
+  const [texted, setTexted] = useState<string | null>(null)
+  const [busy, setBusy] = useState<
+    'on' | 'confirm' | 'off' | 'codes' | 'sms' | 'smsConfirm' | 'smsOff' | null
+  >(null)
   const [error, setError] = useState<TulaError | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  /** Whether the last read of the factors failed. */
+  const [unread, setUnread] = useState(false)
   const mounted = useRef(true)
 
   const load = useCallback(async () => {
@@ -259,10 +306,12 @@ function TwoStepSection(props: { onChanged(): void }) {
       const next = await client.mfa.get()
       if (mounted.current) {
         setFactors(next)
+        setUnread(false)
       }
     } catch (caught) {
       if (mounted.current) {
         setError(toTulaError(caught))
+        setUnread(true)
       }
     }
   }, [client])
@@ -276,6 +325,37 @@ function TwoStepSection(props: { onChanged(): void }) {
       mounted.current = false
     }
   }, [load, policy])
+  // Whether a texted code can be the second step, and whether it still is one, follows the
+  // account's phone number (added, replaced or removed in the section above) and its
+  // passkeys (one added sets a texted code aside, the last one removed brings it back).
+  // Read again rather than guessed from either.
+  const loadedFor = useRef({ phoneNumber: props.phoneNumber, revision: props.revision })
+  useEffect(() => {
+    const seen = loadedFor.current
+    if (seen.phoneNumber !== props.phoneNumber || seen.revision !== props.revision) {
+      loadedFor.current = { phoneNumber: props.phoneNumber, revision: props.revision }
+      if (policy !== undefined) {
+        void load()
+      }
+    }
+  }, [props.phoneNumber, props.revision, policy, load])
+  // What the passkeys section may act on. Factors that were read once stay what is known
+  // when a later read fails; a configuration that names no two-step verification is an app
+  // without any, so there is nothing to read and nothing a passkey could replace.
+  const secondStep: SecondStepRead =
+    factors !== null
+      ? factors.sms?.inUse === true
+        ? 'texted_code'
+        : 'other'
+      : unread
+        ? 'unchecked'
+        : config !== null && policy === undefined
+          ? 'other'
+          : 'checking'
+  const { onSecondStep } = props
+  useEffect(() => {
+    onSecondStep(secondStep)
+  }, [secondStep, onSecondStep])
 
   /** Run one action; a step-up the user declined is their choice, not an error to show. */
   const run = async (name: NonNullable<typeof busy>, work: () => Promise<void>) => {
@@ -326,6 +406,32 @@ function TwoStepSection(props: { onChanged(): void }) {
         setMessage(t.mfa.turnedOff)
       }
     })
+  const textCode = () =>
+    run('sms', async () => {
+      const sent = await withStepUp(() => client.mfa.startSms())
+      if (mounted.current) {
+        setTexted(sent.destination)
+      }
+    })
+  const confirmSms = (code: string) =>
+    run('smsConfirm', async () => {
+      const next = await client.mfa.confirmSms({ code })
+      if (mounted.current) {
+        setTexted(null)
+        setFactors(next)
+        setMessage(t.mfa.smsTurnedOn)
+      }
+      // Turning it on ended the user's other sessions.
+      props.onChanged()
+    })
+  const stopSms = () =>
+    run('smsOff', async () => {
+      await withStepUp(() => client.mfa.disableSms())
+      await load()
+      if (mounted.current) {
+        setMessage(t.mfa.smsTurnedOff)
+      }
+    })
   const codesSaved = async () => {
     const wasOn = factors?.totp.enabled === true
     setCodes(null)
@@ -338,7 +444,12 @@ function TwoStepSection(props: { onChanged(): void }) {
   }
 
   const enabled = factors?.totp.enabled === true
-  if (policy === undefined || (policy === 'off' && factors !== null && !enabled && !codes)) {
+  const sms = factors?.sms
+  const smsOn = sms?.enabled === true
+  if (
+    policy === undefined ||
+    (policy === 'off' && factors !== null && !enabled && !smsOn && !codes)
+  ) {
     // Not offered by this app (or not known yet): there is nothing to show.
     return null
   }
@@ -364,9 +475,53 @@ function TwoStepSection(props: { onChanged(): void }) {
             setError(null)
           }}
         />
+      ) : texted !== null ? (
+        <>
+          <TextedCodeForm
+            destination={texted}
+            isPending={busy === 'smsConfirm'}
+            error={error}
+            prompt={t.mfa.smsSubtitle}
+            submitLabel={t.mfa.confirmSubmit}
+            send={textCode}
+            submit={confirmSms}
+          />
+          <Button
+            kind='link'
+            onClick={() => {
+              setTexted(null)
+              setError(null)
+            }}
+          >
+            {t.mfa.cancel}
+          </Button>
+        </>
       ) : (
         <>
           <FormError message={error?.message ?? null} />
+          {smsOn && sms ? (
+            <>
+              <p className='tula-text'>
+                <span {...el('badge', 'tula-is-positive')}>
+                  {formatText(t.mfa.smsStatusOn, {
+                    date: new Date(sms.enabledAt ?? 0).toLocaleDateString(t.locale, {
+                      dateStyle: 'medium',
+                    }),
+                  })}
+                </span>
+                {sms.inUse ? null : ` ${t.mfa.smsNotInUse}`}
+              </p>
+              {policy === 'required' && sms.inUse ? (
+                <p {...el('hint')}>{t.mfa.requiredByApp}</p>
+              ) : (
+                <div className='tula-button-row tula-is-compact'>
+                  <Button kind='danger' pending={busy === 'smsOff'} onClick={stopSms}>
+                    {t.mfa.smsTurnOff}
+                  </Button>
+                </div>
+              )}
+            </>
+          ) : null}
           {factors === null ? (
             <p className='tula-text'>{error ? null : t.mfa.statusLoading}</p>
           ) : enabled ? (
@@ -395,6 +550,13 @@ function TwoStepSection(props: { onChanged(): void }) {
               </div>
               {policy === 'required' ? <p {...el('hint')}>{t.mfa.requiredByApp}</p> : null}
             </>
+          ) : smsOn ? (
+            <>
+              <p className='tula-text'>{t.mfa.smsWeaker}</p>
+              <Button kind='secondary' pending={busy === 'on'} onClick={turnOn}>
+                {t.mfa.enrolStart}
+              </Button>
+            </>
           ) : (
             <>
               <p className='tula-text'>{t.mfa.statusOff}</p>
@@ -403,6 +565,14 @@ function TwoStepSection(props: { onChanged(): void }) {
               </Button>
             </>
           )}
+          {!smsOn && sms?.available ? (
+            <>
+              <p className='tula-text'>{t.mfa.smsOffer}</p>
+              <Button kind='secondary' pending={busy === 'sms'} onClick={textCode}>
+                {t.mfa.smsTurnOn}
+              </Button>
+            </>
+          ) : null}
           <Status message={message} />
         </>
       )}
@@ -420,6 +590,13 @@ function SessionRow(props: { session: Session; busy: boolean; onRevoke(): void }
         <p className='tula-session-device'>
           <span>{device}</span>{' '}
           {session.current ? <span {...el('badge')}>{t.userProfile.thisDevice}</span> : null}
+          {/* In words, like "This device": never a colour or an icon alone. */}
+          {session.deviceBound ? (
+            <>
+              {session.current ? ' ' : null}
+              <span {...el('badge')}>{t.userProfile.deviceBound}</span>
+            </>
+          ) : null}
         </p>
         <p className={session.current ? 'tula-session-meta tula-is-positive' : 'tula-session-meta'}>
           {session.current
@@ -510,6 +687,19 @@ export function UserProfileSections(props: {
   const titleId = useId()
   const signOutTitleId = useId()
   const [signingOut, setSigningOut] = useState(false)
+  // What the two-step section read, for the passkeys section's warning; and a count of the
+  // passkey changes, for the two-step section to read again. What was read belongs to the
+  // session it was read for: until that session's own section has reported, a passkey
+  // cannot be added (`checking`), so one user's answer is never another's.
+  const [secondStep, setSecondStep] = useState<{ sessionId: string; read: SecondStepRead } | null>(
+    null
+  )
+  const [passkeyChanges, setPasskeyChanges] = useState(0)
+  const sessionId = state.status === 'signed-in' ? state.sessionId : null
+  const reportSecondStep = useCallback(
+    (read: SecondStepRead) => setSecondStep(sessionId === null ? null : { sessionId, read }),
+    [sessionId]
+  )
 
   if (state.status !== 'signed-in') {
     return null
@@ -531,23 +721,27 @@ export function UserProfileSections(props: {
       {user ? (
         <>
           <ProfileSection user={user} />
+          <EmailAddressSection key={`email:${state.sessionId}`} user={user} />
           {/* Keyed by the session: half-typed passwords, a pending change and its messages
               belong to whoever was signed in when they began, and go with them. */}
-          {user.hasPassword === false ? (
-            <NoPasswordSection />
-          ) : (
-            <PasswordSection
-              key={state.sessionId}
-              user={user}
-              onChanged={() => void sessions.reload()}
-            />
-          )}
+          {passwordSection(user, state.sessionId, () => void sessions.reload())}
+          <PhoneSection key={`phone:${state.sessionId}`} user={user} />
         </>
       ) : (
         <p className='tula-text'>{t.common.loading}</p>
       )}
-      <TwoStepSection key={`mfa:${state.sessionId}`} onChanged={() => void sessions.reload()} />
-      <PasskeysSection key={`passkeys:${state.sessionId}`} />
+      <TwoStepSection
+        key={`mfa:${state.sessionId}`}
+        phoneNumber={user?.phoneNumber ?? null}
+        revision={passkeyChanges}
+        onChanged={() => void sessions.reload()}
+        onSecondStep={reportSecondStep}
+      />
+      <PasskeysSection
+        key={`passkeys:${state.sessionId}`}
+        secondStep={secondStep?.sessionId === state.sessionId ? secondStep.read : 'checking'}
+        onChanged={() => setPasskeyChanges((count) => count + 1)}
+      />
       <ConnectedAccountsSection
         key={`identities:${state.sessionId}`}
         callbackUrl={props.oauthCallbackUrl ?? navigation.oauthCallbackUrl}
@@ -566,7 +760,8 @@ export function UserProfileSections(props: {
 }
 
 /**
- * Account management for the signed-in user: who they are, change the password, two-step
+ * Account management for the signed-in user: who they are, change the password, a phone
+ * number (where the app sends text messages: add it with a texted code, remove it), two-step
  * verification, passkeys (where the environment has them on), connected accounts, and where
  * they are signed in, with "this device" marked, one device or all the others signed out, and
  * sign out. Renders nothing while signed out.

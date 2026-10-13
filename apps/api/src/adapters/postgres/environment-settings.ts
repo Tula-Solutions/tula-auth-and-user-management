@@ -1,8 +1,4 @@
-import {
-  type EnvironmentSettings,
-  readStoredEnvironmentSettings,
-  WebOriginSchema,
-} from '@tula/contract'
+import type { EnvironmentSettings } from '@tula/contract'
 import {
   type Database,
   environmentSettings,
@@ -12,8 +8,7 @@ import {
 } from '@tula/db'
 import { and, eq, sql } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
-import { readStoredManager } from '~/adapters/settings-manager'
-import * as logger from '~/lib/logger'
+import { readStoredRow, storedOrigins } from '~/adapters/stored-settings'
 import type { Activity } from '~/ports/activity-log'
 import type {
   EnvironmentSettingsStore,
@@ -25,33 +20,6 @@ const columns = {
   revision: environmentSettings.revision,
   settings: environmentSettings.settings,
   managedBy: environmentSettings.managedBy,
-}
-
-function toStored(
-  environmentId: string,
-  row: { revision: number; settings: unknown; managedBy: unknown }
-): StoredEnvironmentSettings {
-  // Parsed on the way out as well: the document may predate a field this version added, or
-  // hold a list entry this version would not accept. Settings are read on the request path,
-  // so such an entry is left out rather than allowed to fail every request of the environment.
-  const { settings, dropped } = readStoredEnvironmentSettings(row.settings)
-  if (dropped > 0) {
-    // The count only: an origin or URL is the tenant's data, not something for the log.
-    logger.warn(
-      'stored environment settings held list entries that are not valid; they were ignored',
-      { environmentId, dropped }
-    )
-  }
-  // The column is free-form JSON: only a record the answer's own schema accepts is passed on.
-  const managedBy = readStoredManager(environmentId, row.managedBy)
-  return { revision: row.revision, settings, ...(managedBy && { managedBy }) }
-}
-
-/** The usable origins of one stored document, whatever shape another version left it in. */
-function originsOf(settings: unknown): string[] {
-  const urls = (settings as { urls?: { allowedOrigins?: unknown } } | null)?.urls
-  const origins: unknown[] = Array.isArray(urls?.allowedOrigins) ? urls.allowedOrigins : []
-  return origins.filter((origin): origin is string => WebOriginSchema.safeParse(origin).success)
 }
 
 /**
@@ -71,7 +39,7 @@ export class PostgresEnvironmentSettingsStore implements EnvironmentSettingsStor
         .where(eq(environmentSettings.environmentId, environmentId))
         .limit(1)
     )
-    return row ? toStored(environmentId, row) : null
+    return row ? readStoredRow(environmentId, row) : null
   }
 
   /** @inheritdoc */
@@ -128,7 +96,7 @@ export class PostgresEnvironmentSettingsStore implements EnvironmentSettingsStor
         return null
       }
       await recordActivity(tx, [activity])
-      return toStored(environmentId, row)
+      return readStoredRow(environmentId, row)
     })
   }
 
@@ -145,7 +113,7 @@ export class PostgresEnvironmentSettingsStore implements EnvironmentSettingsStor
         const rows = await tx
           .select({ settings: environmentSettings.settings })
           .from(environmentSettings)
-        for (const origin of rows.flatMap((row) => originsOf(row.settings))) {
+        for (const origin of rows.flatMap((row) => storedOrigins(row.settings))) {
           origins.add(origin)
         }
       }

@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import {
   contrastRatio,
   DEFAULT_THEME,
@@ -6,6 +8,7 @@ import {
   isValidThemeValue,
   THEME_TOKENS,
   type ThemeScheme,
+  type ThemeTokenType,
   themeToCssVariables,
 } from './theme'
 
@@ -222,5 +225,36 @@ describe('theme values are untrusted: anything that is not a plain value of its 
 
   test('a non-string is never valid', () => {
     expect(isValidThemeValue('color', 7 as unknown as string)).toBe(false)
+  })
+})
+
+describe('the corpus of theme values every implementation of the grammar reads', () => {
+  // theme-cases.json is read by this test and by the Swift copy of the grammar
+  // (native/swift/Tests/TulaAuthUITests, ADR 0057). A verdict here is the contract's: change
+  // one only with the rule, and the Swift test then fails until its copy follows.
+  const cases = JSON.parse(readFileSync(join(import.meta.dir, 'theme-cases.json'), 'utf8')) as {
+    type: ThemeTokenType
+    value: string
+    valid: boolean
+  }[]
+
+  test('holds both verdicts for every type, in printable ASCII and the white space a value can hide', () => {
+    expect(cases.length).toBeGreaterThanOrEqual(60)
+    for (const type of ['color', 'length', 'fontFamily', 'shadow']) {
+      const verdicts = new Set(cases.filter((entry) => entry.type === type).map((e) => e.valid))
+      expect([type, [...verdicts].sort()]).toEqual([type, [false, true]])
+    }
+    // The Swift grammar refuses everything outside ASCII, so a value here stays inside it.
+    for (const entry of cases) {
+      expect([...entry.value].every((character) => character.charCodeAt(0) < 0x80)).toBe(true)
+    }
+  })
+
+  test('every value has the verdict the file says', () => {
+    const judged = cases.map((entry) => ({
+      ...entry,
+      valid: isValidThemeValue(entry.type, entry.value),
+    }))
+    expect(judged).toEqual(cases)
   })
 })

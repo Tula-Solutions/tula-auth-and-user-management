@@ -1,0 +1,440 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "app link or custom scheme that is not listed",
+  "description": "A redirect URL is allowed only when it is, character for character, an entry of the environment’s urls.allowedRedirectUrls, whatever kind of URL it is: nothing is normalised on either side. With one app link and one custom scheme listed, a provider sign-in asked to return to anything else is refused before an attempt is made: a trailing slash, another case of the host or the scheme, a percent-encoded letter, an added query, a longer path, two slashes where one is listed, another app’s scheme, and a scheme that only starts with the listed one. Each answers request.redirect_not_allowed with no reason: nothing is said about what an unlisted URL would have been. The two listed URLs are then accepted as written. Uses the server’s mock provider. Cleanup removes the credentials and restores the settings.",
+  "needsSecretKey": true,
+  "variables": {
+    "appLink": "https://app.conformance.example/oauth/callback",
+    "custom": "com.tula.conformance.app:/oauth/callback"
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "revision": "$any",
+          "settings": "$any"
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "app": "settings.app",
+        "passwordPolicy": "settings.password",
+        "origins": "settings.urls.allowedOrigins",
+        "audit": "settings.audit",
+        "notifications": "settings.notifications"
+      }
+    },
+    {
+      "name": "one app link and one custom scheme are listed",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{app}}"
+          },
+          "password": {
+            "$json": "{{passwordPolicy}}"
+          },
+          "urls": {
+            "allowedOrigins": {
+              "$json": "{{origins}}"
+            },
+            "allowedRedirectUrls": ["{{appLink}}", "{{custom}}"]
+          },
+          "audit": {
+            "$json": "{{audit}}"
+          },
+          "notifications": {
+            "$json": "{{notifications}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "an administrator sets the environment’s own Google credentials",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/google",
+        "auth": "secret",
+        "body": {
+          "clientId": "conformance-google-client",
+          "clientSecret": "conformance-google-secret"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "google",
+          "configured": true,
+          "enabled": true
+        }
+      }
+    },
+    {
+      "name": "an app link with a trailing slash is not the listed URL",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "{{appLink}}/"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "status": 400,
+          "code": "request.redirect_not_allowed",
+          "detail": "$any",
+          "params": "$absent"
+        },
+        "bodyExcludes": ["authorizationUrl", "binding", "attemptSecret"]
+      }
+    },
+    {
+      "name": "an app link whose host is in another case is not the listed URL",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "https://App.Conformance.example/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "status": 400,
+          "code": "request.redirect_not_allowed",
+          "detail": "$any",
+          "params": "$absent"
+        },
+        "bodyExcludes": ["authorizationUrl", "binding", "attemptSecret"]
+      }
+    },
+    {
+      "name": "an app link with an encoded letter in its path is not the listed URL",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "https://app.conformance.example/o%61uth/callback"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "status": 400,
+          "code": "request.redirect_not_allowed",
+          "detail": "$any",
+          "params": "$absent"
+        },
+        "bodyExcludes": ["authorizationUrl", "binding", "attemptSecret"]
+      }
+    },
+    {
+      "name": "an app link with a query is not the listed URL",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "{{appLink}}?next=1"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "status": 400,
+          "code": "request.redirect_not_allowed",
+          "detail": "$any",
+          "params": "$absent"
+        },
+        "bodyExcludes": ["authorizationUrl", "binding", "attemptSecret"]
+      }
+    },
+    {
+      "name": "a longer path under the app link is not the listed URL",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "{{appLink}}/more"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "status": 400,
+          "code": "request.redirect_not_allowed",
+          "detail": "$any",
+          "params": "$absent"
+        },
+        "bodyExcludes": ["authorizationUrl", "binding", "attemptSecret"]
+      }
+    },
+    {
+      "name": "the custom scheme with a trailing slash is not the listed URL",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "{{custom}}/"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "status": 400,
+          "code": "request.redirect_not_allowed",
+          "detail": "$any",
+          "params": "$absent"
+        },
+        "bodyExcludes": ["authorizationUrl", "binding", "attemptSecret"]
+      }
+    },
+    {
+      "name": "the custom scheme with two slashes is not the listed URL",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "com.tula.conformance.app://oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "status": 400,
+          "code": "request.redirect_not_allowed",
+          "detail": "$any",
+          "params": "$absent"
+        },
+        "bodyExcludes": ["authorizationUrl", "binding", "attemptSecret"]
+      }
+    },
+    {
+      "name": "the custom scheme with another path is not the listed URL",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "com.tula.conformance.app:/oauth/other"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "status": 400,
+          "code": "request.redirect_not_allowed",
+          "detail": "$any",
+          "params": "$absent"
+        },
+        "bodyExcludes": ["authorizationUrl", "binding", "attemptSecret"]
+      }
+    },
+    {
+      "name": "the custom scheme in another case is not the listed URL",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "com.tula.conformance.App:/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "status": 400,
+          "code": "request.redirect_not_allowed",
+          "detail": "$any",
+          "params": "$absent"
+        },
+        "bodyExcludes": ["authorizationUrl", "binding", "attemptSecret"]
+      }
+    },
+    {
+      "name": "another app’s scheme is not the listed URL",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "com.tula.conformance.other:/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "status": 400,
+          "code": "request.redirect_not_allowed",
+          "detail": "$any",
+          "params": "$absent"
+        },
+        "bodyExcludes": ["authorizationUrl", "binding", "attemptSecret"]
+      }
+    },
+    {
+      "name": "a longer scheme that starts with the listed one is not the listed URL",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "com.tula.conformance.app.evil:/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "status": 400,
+          "code": "request.redirect_not_allowed",
+          "detail": "$any",
+          "params": "$absent"
+        },
+        "bodyExcludes": ["authorizationUrl", "binding", "attemptSecret"]
+      }
+    },
+    {
+      "name": "the listed app link is accepted as it is written",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "{{appLink}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_google"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "aUrl": "authorizationUrl",
+        "aBinding": "binding"
+      }
+    },
+    {
+      "name": "and so is the listed custom scheme",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "{{custom}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_google"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "bUrl": "authorizationUrl",
+        "bBinding": "binding"
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "remove the google credentials",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/oauth-providers/google",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

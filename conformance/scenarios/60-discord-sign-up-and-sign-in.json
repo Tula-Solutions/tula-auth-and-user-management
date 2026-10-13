@@ -1,0 +1,333 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "Discord sign-up and sign-in",
+  "description": "An environment signs users in with Discord using its own client id and secret. An account is Discord’s user id (a snowflake: a decimal number in a string), never a username or an address: the same id signs the same user in whatever address Discord reports later. An address counts as verified only when Discord’s user object says so (verified: true); a new account whose address Discord does not vouch for is refused. Uses the server’s mock provider (OAUTH_MOCK_PROVIDER, local tier only), whose consent form takes the user id, the address and whether Discord has verified it. The provider’s credentials are removed afterwards, even when a step fails.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "renamed": {
+      "generate": "email"
+    },
+    "unvouched": {
+      "generate": "email"
+    },
+    "account": {
+      "generate": "snowflake"
+    },
+    "otherAccount": {
+      "generate": "snowflake"
+    }
+  },
+  "steps": [
+    {
+      "name": "an administrator sets the environment’s own Discord credentials",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/discord",
+        "auth": "secret",
+        "body": {
+          "clientId": "conformance-discord-client",
+          "clientSecret": "conformance-discord-secret"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "discord",
+          "configured": true,
+          "enabled": true,
+          "clientId": "conformance-discord-client",
+          "callbackUrl": "$any"
+        },
+        "bodyExcludes": ["conformance-discord-secret"]
+      }
+    },
+    {
+      "name": "the client configuration offers it",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/config"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "app": "$any",
+          "signIn": {
+            "methods": "$any",
+            "oauth": ["discord"]
+          },
+          "signUp": "$any",
+          "password": "$any",
+          "mfa": "$any"
+        }
+      }
+    },
+    {
+      "name": "start continuing with Discord",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "discord",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_discord"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "aUrl": "authorizationUrl",
+        "aBinding": "binding"
+      }
+    },
+    {
+      "name": "Discord vouches for the account’s address",
+      "oauth": {
+        "authorizationUrl": "{{aUrl}}",
+        "email": "{{email}}",
+        "subject": "{{account}}",
+        "captureTicket": "aTicket",
+        "captureAttempt": "aId"
+      }
+    },
+    {
+      "name": "the account is created and signed in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{aTicket}}",
+          "attemptId": "{{aId}}",
+          "binding": "{{aBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "$any",
+          "kind": "sign_in",
+          "expiresAt": "$any",
+          "step": {
+            "status": "complete",
+            "userId": "$any",
+            "sessionId": "$any"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": "$any"
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "amr": {
+              "$set": ["fed"]
+            }
+          }
+        }
+      },
+      "capture": {
+        "userId": "step.userId",
+        "accessToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "the new account has its Discord account connected",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/identities",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "id": "$any",
+              "provider": "discord",
+              "createdAt": "$any"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "start again",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "discord",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_discord"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "bUrl": "authorizationUrl",
+        "bBinding": "binding"
+      }
+    },
+    {
+      "name": "the same id, now with another address that the provider does not vouch for",
+      "oauth": {
+        "authorizationUrl": "{{bUrl}}",
+        "email": "{{renamed}}",
+        "subject": "{{account}}",
+        "unverified": true,
+        "captureTicket": "bTicket",
+        "captureAttempt": "bId"
+      }
+    },
+    {
+      "name": "sign the same user in: the account is the id, not the address",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{bTicket}}",
+          "attemptId": "{{bId}}",
+          "binding": "{{bBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "$any",
+          "kind": "sign_in",
+          "expiresAt": "$any",
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}",
+            "sessionId": "$any"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": "$any"
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "amr": {
+              "$set": ["fed"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "a new person starts, whose address the provider has not verified",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "discord",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_discord"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "cUrl": "authorizationUrl",
+        "cBinding": "binding"
+      }
+    },
+    {
+      "name": "Discord reports an address and does not say it is verified",
+      "oauth": {
+        "authorizationUrl": "{{cUrl}}",
+        "email": "{{unvouched}}",
+        "subject": "{{otherAccount}}",
+        "unverified": true,
+        "captureTicket": "cTicket",
+        "captureAttempt": "cId"
+      }
+    },
+    {
+      "name": "no account is created on an address nobody has proven",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{cTicket}}",
+          "attemptId": "{{cId}}",
+          "binding": "{{cBinding}}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "oauth.email_unverified",
+          "detail": "$any"
+        },
+        "bodyExcludes": ["accessToken", "refreshToken"]
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "remove the discord credentials",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/oauth-providers/discord",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    }
+  ]
+}

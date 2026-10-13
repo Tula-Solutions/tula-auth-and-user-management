@@ -7,6 +7,7 @@ import {
   attempt,
   CODE_STEP,
   completed,
+  expectAbsent,
   expectFocus,
   type FakeLinkStorage,
   type FakeTimers,
@@ -203,7 +204,7 @@ describe('<SignIn> with an emailed code', () => {
     await w.user.click(screen.getByRole('button', { name: 'Send a new email' }))
     const waiting = await screen.findByRole('button', { name: /Send a new email in (1m 0s|59s)/ })
     expect(waiting.getAttribute('aria-disabled')).toBe('true')
-    expect(screen.queryByText('A new email is on its way.')).toBeNull()
+    expectAbsent(screen.queryByText('A new email is on its way.'))
     // The code can still be submitted while a new email has to wait.
     expect(screen.getByRole('button', { name: 'Sign in' }).getAttribute('aria-disabled')).toBeNull()
   })
@@ -429,7 +430,7 @@ describe('<SignUp> where the password is optional', () => {
       screen.getByText('Leave it empty to sign in with a code we email you instead.').id
     )
     // No requirements are listed for a password nobody is typing.
-    expect(screen.queryByRole('list', { name: 'Password requirements' })).toBeNull()
+    expectAbsent(screen.queryByRole('list', { name: 'Password requirements' }))
 
     w.api.on(ROUTE.signUp, () => started('sign_up', CODE_STEP))
     await w.user.type(screen.getByLabelText('Email address'), EMAIL)
@@ -577,7 +578,7 @@ describe('<EmailLinkCallback>', () => {
     expect(await screen.findByRole('heading', { name: 'This link has expired' })).toBeTruthy()
     expect(screen.getByText(/works once, for ten minutes/)).toBeTruthy()
     // No sign-in page was given: no link is invented.
-    expect(screen.queryByRole('link')).toBeNull()
+    expectAbsent(screen.queryByRole('link'))
   })
 
   test('an address with no link in it says so and sends nothing', async () => {

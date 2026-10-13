@@ -15,6 +15,7 @@ import {
   CreateUserRequestSchema,
   CurrentUserSchema,
   SetPasswordRequestSchema,
+  SetUserEmailRequestSchema,
   UserAuthenticationSchema,
   UserIdParamSchema,
   UserListQuerySchema,
@@ -225,6 +226,48 @@ for (const [action, operationId, summary, description] of [
       )
   )
 }
+
+router.put(
+  '/admin/users/:userId/email',
+  describeRoute({
+    operationId: 'setUserEmail',
+    tags: ['Users'],
+    summary: 'Give a user who has no email address one',
+    description:
+      'For a user whose account has **no** email address (one made by a first sign-in with ' +
+      'X or Facebook): stores the address, **unverified**. Nobody has proven it, so it ' +
+      'signs nobody in by itself; its holder proves it with the first emailed sign-in code ' +
+      'or password reset they complete, as for a user an administrator created. A user who ' +
+      'has an address answers `email.already_set` (409): this route never replaces one. An ' +
+      'address another user of the environment has is a 409 conflict, as when creating a ' +
+      'user. No session is ended and nothing is emailed.',
+    security: openapi.security.admin,
+    responses: {
+      413: openapi.responses[413],
+      200: { description: 'The user, with the address.', content: json(UserSchema) },
+      409: openapi.responses[409],
+      422: openapi.responses[422],
+      ...adminErrors,
+      ...openapi.adminResponses,
+    },
+  }),
+  adminRateLimit(),
+  secretKey(),
+  validator('param', UserIdParamSchema, validationHook),
+  validator('json', SetUserEmailRequestSchema, validationHook),
+  async (c) =>
+    c.json(
+      UserSchema.parse(
+        await Users.setEmail(
+          c.get('deps'),
+          c.get('tenant'),
+          c.req.valid('param').userId,
+          c.req.valid('json').email,
+          adminActor(c)
+        )
+      )
+    )
+)
 
 router.put(
   '/admin/users/:userId/password',

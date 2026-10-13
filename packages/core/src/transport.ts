@@ -1,4 +1,10 @@
 import {
+  createDpopProof,
+  type DeviceKey,
+  DPOP_HEADER,
+  DPOP_NONCE_HEADER,
+} from '@tula/contract/device-binding'
+import {
   CLIENT_HEADER,
   FLOW_ATTEMPT_HEADER,
   PUBLISHABLE_KEY_HEADER,
@@ -8,6 +14,7 @@ import {
   clientError,
   type ErrorParams,
   formatMessage,
+  isTulaError,
   type Messages,
   ownString,
   TulaError,
@@ -70,9 +77,50 @@ export interface TransportOptions {
    * the API reads it when an attempt starts.
    */
   sessionProfile?: string
+  /**
+   * Where the key the client's sessions are bound to comes from (ADR 0043). When set, it is
+   * asked before every request that starts an attempt and before every refresh, and the
+   * request carries a proof signed by the key it answers with in the `DPoP` header. An
+   * answer of no key sends the request without one; a rejection is `device.key_failed`.
+   */
+  deviceKey?: DeviceKeySource
 }
 
+/**
+ * Where a client's device key comes from, for a runtime that cannot hand one over when the
+ * client is created: a key in a phone's secure hardware is found or made by a native call,
+ * which takes time and can fail (ADR 0052). Asked before every request a key proves.
+ *
+ * @param operation - The request about to be sent: the operation id of one of the starts,
+ *   or `refreshSession`.
+ * @returns The key to prove the request with, or `undefined` to send it without a proof.
+ *   A rejection sends nothing: the call fails with `device.key_failed`.
+ *
+ * @example
+ * ```ts
+ * const deviceKey: DeviceKeySource = async () => hardwareKey
+ * const environment = { ...runtimeEnvironment(), deviceKey }
+ * ```
+ */
+export type DeviceKeySource = (
+  operation: string
+) => DeviceKey | undefined | Promise<DeviceKey | undefined>
+
 type Json = Record<string, unknown>
+
+/**
+ * The requests a device key proves: the six that start an attempt, where the session it ends
+ * in is bound to the key, and the refresh of a session. The server reads a proof nowhere else.
+ */
+const PROVEN: ReadonlySet<string> = new Set<OperationId>([
+  'startSignUp',
+  'startSignIn',
+  'startPasswordReset',
+  'startPasskeySignIn',
+  'startOAuthSignIn',
+  'startIdTokenSignIn',
+  'refreshSession',
+])
 
 function isRecord(value: unknown): value is Json {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -174,6 +222,38 @@ function buildUrl(baseUrl: string, path: string, params: Record<string, string>)
  * @returns The transport.
  */
 export function createTransport(options: TransportOptions): Transport {
+  /** The server's newest nonce (`DPoP-Nonce`), for the next proof. Memory only. */
+  let nonce: string | undefined
+
+  async function prove(
+    source: DeviceKeySource,
+    id: string,
+    method: string,
+    url: string,
+    signal: AbortSignal
+  ): Promise<string | undefined> {
+    try {
+      // Finding the key and signing with it are calls into a key store, and one of those can
+      // be left unsettled: the call's deadline ends the wait for them as it ends a request.
+      // What they answer after it is dropped, a rejection included: it is handed to a
+      // promise that has settled, so a late rejection is nobody's unhandled one.
+      return await new Promise<string | undefined>((resolve, reject) => {
+        signal.addEventListener('abort', reject)
+        ;(async () => {
+          const key = await source(id)
+          return key && createDpopProof(key, { method, url, nonce })
+        })().then(resolve, reject)
+      })
+    } catch (cause) {
+      // After the deadline it is the deadline's failure, not the key's: `network.timeout`,
+      // as for a request nobody answered. Otherwise the key could not be had or could not
+      // sign (a hardware key that is locked, gone or refused). Nothing was sent, and it is
+      // not the network's failure. The key store's own error is dropped, not kept as
+      // `cause`: its text is the platform's, and an application logs what it catches.
+      throw signal.aborted ? cause : clientError('device.key_failed', options.messages())
+    }
+  }
+
   async function call<Id extends OperationId>(
     id: Id,
     input: CallInput<Id>
@@ -196,46 +276,74 @@ export function createTransport(options: TransportOptions): Transport {
     if (input.attemptSecret) {
       headers.set(FLOW_ATTEMPT_HEADER, input.attemptSecret)
     }
+    const url = buildUrl(options.baseUrl, route.path, input.params ?? {})
+    const source = PROVEN.has(id) ? options.deviceKey : undefined
 
+    // One deadline for the whole call, the repeat after a nonce challenge included: a refresh
+    // still gives up inside the grace window (`REFRESH_TIMEOUT_MS`).
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), input.timeoutMs ?? options.timeoutMs)
     let response: Response
     let payload: unknown
     try {
-      response = await options.fetch(
-        new Request(buildUrl(options.baseUrl, route.path, input.params ?? {}), {
-          method: route.method,
-          headers,
-          body: input.body === undefined ? undefined : JSON.stringify(input.body),
-          signal: controller.signal,
-          // Only a browser client has a cookie to send (and to receive, when a flow
-          // completes). The option is left out otherwise: some edge runtimes reject it.
-          ...(options.client === 'web' && { credentials: 'include' as const }),
-        })
-      )
-      // Read inside the timeout: a stalled body is the same failure as a stalled request.
-      if (response.status === 204) {
-        // Nothing to parse, but the (empty) body is still read to its end. A browser records a
-        // fetch whose body nobody consumed as cancelled (`net::ERR_ABORTED` in the network
-        // panel) when the response is collected, which made every successful sign-out and
-        // password change look like a failed request. This client never aborts a request
-        // that got its answer; the only abort is the timeout above.
-        await response.text().catch((cause: unknown) => {
-          if (controller.signal.aborted) {
-            throw cause
-          }
-        })
-        payload = undefined
-      } else {
-        payload = await response.json().catch((cause: unknown) => {
-          // Cut off by the timeout: that is a timeout, not an unreadable answer.
-          if (controller.signal.aborted) {
-            throw cause
-          }
-          return null
-        })
+      for (let challenged = false; ; challenged = true) {
+        // A new proof for every request: the server accepts one once.
+        const proof = source && (await prove(source, id, route.method, url, controller.signal))
+        if (proof) {
+          headers.set(DPOP_HEADER, proof)
+        }
+        response = await options.fetch(
+          new Request(url, {
+            method: route.method,
+            headers,
+            body: input.body === undefined ? undefined : JSON.stringify(input.body),
+            signal: controller.signal,
+            // Only a browser client has a cookie to send (and to receive, when a flow
+            // completes). The option is left out otherwise: some edge runtimes reject it.
+            ...(options.client === 'web' && { credentials: 'include' as const }),
+          })
+        )
+        if (options.deviceKey) {
+          nonce = response.headers.get(DPOP_NONCE_HEADER) ?? nonce
+        }
+        // Read inside the timeout: a stalled body is the same failure as a stalled request.
+        if (response.status === 204) {
+          // Nothing to parse, but the (empty) body is still read to its end. A browser records
+          // a fetch whose body nobody consumed as cancelled (`net::ERR_ABORTED` in the network
+          // panel) when the response is collected, which made every successful sign-out and
+          // password change look like a failed request. This client never aborts a request
+          // that got its answer; the only abort is the timeout above.
+          await response.text().catch((cause: unknown) => {
+            if (controller.signal.aborted) {
+              throw cause
+            }
+          })
+          payload = undefined
+        } else {
+          payload = await response.json().catch((cause: unknown) => {
+            // Cut off by the timeout: that is a timeout, not an unreadable answer.
+            if (controller.signal.aborted) {
+              throw cause
+            }
+            return null
+          })
+        }
+        // The server asked for its nonce (RFC 9449, section 8): the same request once more,
+        // with a new proof that carries it. Once: a second challenge is an error like another.
+        if (
+          !proof ||
+          challenged ||
+          response.status !== 400 ||
+          !isRecord(payload) ||
+          payload.code !== 'device.nonce_required'
+        ) {
+          break
+        }
       }
     } catch (cause) {
+      if (isTulaError(cause)) {
+        throw cause
+      }
       throw clientError(
         controller.signal.aborted ? 'network.timeout' : 'network.failed',
         options.messages(),

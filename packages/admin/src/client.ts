@@ -16,13 +16,16 @@ import {
 /** How long one request may take before it fails with `network.timeout`, by default. */
 export const DEFAULT_TIMEOUT_MS = 30_000
 
-// The contract's key prefixes (`@tula/contract`'s `SECRET_KEY_PREFIX` and
-// `PUBLISHABLE_KEY_PREFIX`). Repeated here because that module is not one of the contract's
-// Zod-free entry points; a test holds the two together.
+// The contract's key prefixes (`@tula/contract`'s `SECRET_KEY_PREFIX`,
+// `PUBLISHABLE_KEY_PREFIX` and `AGENT_KEY_PREFIX`). Repeated here because that module is not
+// one of the contract's Zod-free entry points; a test holds them together.
 const SECRET_KEY_PREFIX = 'tula_sk_'
 const PUBLISHABLE_KEY_PREFIX = 'tula_pk_'
+const AGENT_KEY_PREFIX = 'tula_ak_'
 /** After the prefix: the tier, then the key. Nothing a header value could be split with. */
 const SECRET_KEY_PATTERN = /^tula_sk_[a-z]+_[A-Za-z0-9_-]{16,}$/
+/** An agent key has a secret key's shape under its own prefix. */
+const AGENT_KEY_PATTERN = /^tula_ak_[a-z]+_[A-Za-z0-9_-]{16,}$/
 
 /**
  * Id of an admin operation in the OpenAPI document, e.g. `getEnvironmentSettings`.
@@ -261,6 +264,11 @@ function checkSecretKey(secretKey: string): void {
   if (typeof secretKey === 'string' && secretKey.startsWith(PUBLISHABLE_KEY_PREFIX)) {
     throw clientError('client.publishable_key')
   }
+  // An agent key would be refused by every write the admin client makes; said here, before
+  // any request, so that a tool handed the wrong key says which one it wants.
+  if (typeof secretKey === 'string' && secretKey.startsWith(AGENT_KEY_PREFIX)) {
+    throw clientError('client.agent_key')
+  }
   if (
     typeof secretKey !== 'string' ||
     !secretKey.startsWith(SECRET_KEY_PREFIX) ||
@@ -441,8 +449,8 @@ function createCaller(
  * @param options - The API's address, the secret key and, optionally, `fetch`, a timeout and a
  *   user agent.
  * @returns The client.
- * @throws TulaAdminError `client.publishable_key` for a publishable key, `client.invalid_key`
- *   for anything else that is not a secret key, `client.invalid_url` for a bad `baseUrl`
+ * @throws TulaAdminError `client.publishable_key` for a publishable key, `client.agent_key`
+ *   for an agent key, `client.invalid_key` for anything else that is not a secret key, `client.invalid_url` for a bad `baseUrl`
  *   (not http(s), with credentials, or plain http to a host other than this machine without
  *   `allowInsecureHttp`), `client.browser` in a browser.
  *
@@ -468,6 +476,77 @@ export function createAdminClient(options: AdminClientOptions): AdminClient {
   }
   checkSecretKey(options.secretKey)
   const send = createCaller(OPERATIONS, options.secretKey, options)
+  return {
+    call: <Id extends AdminOperationId>(id: Id, ...rest: CallArguments<Id>) =>
+      send(id, rest[0]) as Promise<AdminResponse<Id>>,
+  }
+}
+
+/**
+ * What an agent's client is built from: an {@link AdminClientOptions} with the agent key in
+ * the secret key's place.
+ *
+ * @example
+ * ```ts
+ * const options: AgentClientOptions = {
+ *   baseUrl: 'https://auth.example.com',
+ *   agentKey: process.env.TULA_AGENT_KEY ?? '',
+ * }
+ * ```
+ */
+export interface AgentClientOptions extends Omit<AdminClientOptions, 'secretKey'> {
+  /** The environment's agent key (`tula_ak_<env>_…`). It decides the environment. */
+  agentKey: string
+}
+
+/**
+ * Create the client of an AI agent's tooling: the admin API's operations, called with an
+ * **agent key** (`tula_ak_…`).
+ *
+ * The server decides what such a key may do, and it is little: every `GET` of the admin API
+ * (it reads what a secret key reads), `createProposal`, which asks for a change, and
+ * `runSignInTest`, which runs a sign-in test where the environment allows one (a throwaway
+ * user, made and deleted). It changes nothing else: every other operation is answered
+ * `auth.invalid_key`; a proposal is
+ * approved by a human with a secret key or in the dashboard, never with this client. The
+ * typed surface is the admin client's, so that a tool can read through it; what keeps a tool
+ * from calling a write is its own allow-list (`@tula/mcp`'s facades) and, whatever a tool
+ * does, the server.
+ *
+ * Like the admin client it is server-side only, holds its key in a closure, follows no
+ * redirect and never retries.
+ *
+ * @param options - The API's address, the agent key and, optionally, `fetch`, a timeout and a
+ *   user agent.
+ * @returns The client.
+ * @throws TulaAdminError `client.invalid_agent_key` for anything that is not an agent key (a
+ *   secret key included: a credential that can change things is never what an agent holds),
+ *   `client.invalid_url` for a bad `baseUrl`, `client.browser` in a browser.
+ *
+ * @example
+ * ```ts
+ * import { createAgentClient } from '@tula/admin'
+ *
+ * const agent = createAgentClient({
+ *   baseUrl: 'https://auth.example.com',
+ *   agentKey: process.env.TULA_AGENT_KEY ?? '',
+ * })
+ * const { data } = await agent.call('createProposal', {
+ *   body: { operation: 'ban_user', target: { type: 'user', id: userId } },
+ * })
+ * // data.status === 'pending': nothing has changed. A human runs `tula approve <data.id>`.
+ * ```
+ */
+export function createAgentClient(options: AgentClientOptions): AdminClient {
+  const globals = globalThis as { window?: unknown; document?: unknown }
+  if (globals.window !== undefined && globals.document !== undefined) {
+    throw clientError('client.browser')
+  }
+  const key = options.agentKey
+  if (typeof key !== 'string' || !AGENT_KEY_PATTERN.test(key)) {
+    throw clientError('client.invalid_agent_key')
+  }
+  const send = createCaller(OPERATIONS, key, options)
   return {
     call: <Id extends AdminOperationId>(id: Id, ...rest: CallArguments<Id>) =>
       send(id, rest[0]) as Promise<AdminResponse<Id>>,
@@ -568,7 +647,8 @@ export function createInstanceClient(options: InstanceClientOptions): InstanceCl
     // Printable ASCII without spaces: anything else cannot be a header value either.
     !/^[\x21-\x7e]+$/.test(token) ||
     token.startsWith(SECRET_KEY_PREFIX) ||
-    token.startsWith(PUBLISHABLE_KEY_PREFIX)
+    token.startsWith(PUBLISHABLE_KEY_PREFIX) ||
+    token.startsWith(AGENT_KEY_PREFIX)
   ) {
     throw clientError('client.invalid_token')
   }

@@ -23,6 +23,8 @@ interface Provider {
   clientId: string
   teamId: string | null
   keyId: string | null
+  /** Microsoft's tenant; absent for every other provider. */
+  tenant?: string | null
   enabled: boolean
   /** Kept so that a test can check which secret was stored. Never answered. */
   secret: string | undefined
@@ -39,6 +41,11 @@ export interface FakeApi {
   settings: EnvironmentSettings
   managedBy: Manager | null
   providers: Map<string, Provider>
+  /**
+   * The accounts that depend on a provider, as the count's route answers them. A provider
+   * with no entry has none.
+   */
+  dependents: Map<string, { accounts: number; more: boolean }>
   /** Answer a request in the fake's place. */
   intercept?: (method: string, path: string) => Response | undefined
   /** An older server: no `managedBy` in the answer. */
@@ -63,6 +70,7 @@ export function createFakeApi(baseUrl: string): FakeApi {
     settings: EnvironmentSettingsSchema.parse({}),
     managedBy: null,
     providers: new Map(),
+    dependents: new Map(),
     legacy: false,
     fetch: async (url, init) => {
       const method = init?.method ?? 'GET'
@@ -82,6 +90,13 @@ export function createFakeApi(baseUrl: string): FakeApi {
         return Response.json({ data: OAUTH_PROVIDERS.map(listed) })
       }
       const name = path.slice('/v1/admin/oauth-providers/'.length)
+      if (method === 'GET' && name.endsWith('/dependents')) {
+        const provider = name.slice(0, -'/dependents'.length)
+        return Response.json({
+          provider,
+          ...(api.dependents.get(provider) ?? { accounts: 0, more: false }),
+        })
+      }
       return method === 'DELETE' ? remove(name) : set(name, body as Record<string, unknown>)
     },
   }
@@ -142,6 +157,7 @@ export function createFakeApi(baseUrl: string): FakeApi {
       clientId: entry?.clientId ?? null,
       teamId: entry?.teamId ?? null,
       keyId: entry?.keyId ?? null,
+      tenant: entry?.tenant ?? null,
       callbackUrl: `${baseUrl}/v1/oauth/${name}/callback`,
       updatedAt: entry ? '2026-01-01T00:00:00.000Z' : null,
     }
@@ -153,6 +169,7 @@ export function createFakeApi(baseUrl: string): FakeApi {
       clientId: String(body.clientId),
       teamId: typeof body.teamId === 'string' ? body.teamId : null,
       keyId: typeof body.keyId === 'string' ? body.keyId : null,
+      ...(typeof body.tenant === 'string' && { tenant: body.tenant }),
       enabled: body.enabled !== false,
       secret:
         (body.clientSecret as string | undefined) ??

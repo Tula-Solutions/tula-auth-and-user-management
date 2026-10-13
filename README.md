@@ -5,7 +5,7 @@ and prebuilt UI, first-class native mobile, and data you own.
 
 > **Status: Phase 1 is built; nothing is published.** There is no package on npm and no image
 > in a registry: everything runs from a checkout of this repository. Sign-in with Google,
-> GitHub and Apple has only ever been run against a built-in mock provider, and passkeys only
+> GitHub, Apple and Microsoft has only ever been run against a built-in mock provider, and passkeys only
 > against a virtual authenticator ([everything that was not verified against the real
 > thing](docs/plans/phase-1-unverified.md)). Not ready for production.
 
@@ -13,7 +13,7 @@ and prebuilt UI, first-class native mobile, and data you own.
 
 - **Sign-in methods**, each switched on per environment: [password](docs/methods/password.md)
   (sign-up, reset, policy), [emailed code](docs/methods/email-code.md) and
-  [emailed link](docs/methods/email-link.md), [Google, GitHub and Apple](docs/methods/oauth.md),
+  [emailed link](docs/methods/email-link.md), a [texted code](docs/methods/sms-code.md), [Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X and Facebook](docs/methods/oauth.md),
   [passkeys](docs/methods/passkeys.md), and
   [two-step verification](docs/methods/two-step-verification.md) (authenticator app, backup
   codes, step-up).
@@ -21,15 +21,27 @@ and prebuilt UI, first-class native mobile, and data you own.
   session profiles, cookie-only stateful sessions, device list, a concurrent-session limit.
 - **SDKs for the web**: a headless client, React components, and a Next.js App Router SDK.
 - **Operations**: per-environment settings, settings as code (`tula diff`, `tula apply`), a
-  dashboard, `tula doctor`, an audit log, a read-only MCP server, and `create-tula` to scaffold
+  dashboard, `tula doctor`, an audit log, an MCP server for AI assistants, and `create-tula` to scaffold
   a project.
+- **Webhooks**: an environment's events posted to your backend, signed
+  ([Standard Webhooks](https://www.standardwebhooks.com/)), retried over a day on a fixed
+  schedule, with a delivery log, test events and a verifier in `@tula/admin`
+  ([docs/webhooks.md](docs/webhooks.md)).
+- **Hooks**: a signed question your backend answers before a sign-up creates an account:
+  allow, or deny with your own message code ([docs/hooks.md](docs/hooks.md)).
+- **Native app identity**: an environment's iOS and Android apps, and the
+  `apple-app-site-association` and `assetlinks.json` files built from them
+  ([docs/native-apps.md](docs/native-apps.md)). Of the native SDKs, the Swift client with no
+  screen is built and has not been run on a device ([docs/swift.md](docs/swift.md)), and
+  the Kotlin client with no UI is built and has not been run on Android
+  ([docs/kotlin.md](docs/kotlin.md)).
 - **Self-hosting**: one image, PostgreSQL, and Redis for more than one instance
   ([docs/self-host.md](docs/self-host.md)).
 - **A conformance suite** that the server passes in process, as two packaged instances, behind
   one address, and through the client SDK.
 
-Not built yet: native SDKs and Expo, webhooks, SMS, more providers, organizations and roles
-(see [Roadmap](#roadmap)).
+Not built yet: native SDKs and Expo, webhook retries and their dashboard screen, hooks, SMS,
+more providers, organizations and roles (see [Roadmap](#roadmap)).
 
 ## Try it
 
@@ -52,7 +64,7 @@ as the public contract that every SDK, the dashboard, the CLI and the MCP server
 | [`packages/react`](packages/react) | `@tula/react`: [provider, hooks and prebuilt components](packages/react/README.md) |
 | [`packages/nextjs`](packages/nextjs) | `@tula/nextjs`: the [Next.js App Router SDK](packages/nextjs/README.md) |
 | [`packages/admin`](packages/admin), [`packages/config`](packages/config), [`packages/cli`](packages/cli) | The typed admin client, `tula.config.ts`, and the [`tula` CLI](docs/cli.md) |
-| [`packages/mcp`](packages/mcp) | `@tula/mcp`: the read-only [MCP server](docs/mcp.md) |
+| [`packages/mcp`](packages/mcp) | `@tula/mcp`: the [MCP server](docs/mcp.md) for AI assistants |
 | [`packages/create-tula`](packages/create-tula) | `create-tula`: scaffolds a project |
 | [`packages/db`](packages/db) | `@tula/db`: Drizzle schema, migrations, row-level security, tenant helpers |
 | [`packages/conformance`](packages/conformance) | `@tula/conformance`: runs the conformance scenarios, in process or against a live server |
@@ -96,12 +108,16 @@ makes them unreadable.
 | `GET /v1/status`, `GET /v1/ready` | none | Liveness and readiness |
 | `GET /v1/openapi.json`, `GET /v1/docs` | none | The contract and its reference UI |
 | `GET /v1/environments/:id/.well-known/jwks.json` | none | Public keys that verify access tokens |
+| `GET /v1/environments/:id/.well-known/apple-app-site-association`, `…/assetlinks.json` | none | The files Apple and Android fetch, built from the environment's native apps ([docs/native-apps.md](docs/native-apps.md)) |
 | `GET /v1/admin/environments` | secret key | The project's environments |
 | `GET, POST /v1/admin/api-keys`, `DELETE /v1/admin/api-keys/:id` | secret key | Manage API keys |
 | `GET /v1/admin/signing-keys`, `POST /v1/admin/signing-keys/rotate` | secret key | Signing-key lifecycle |
 | `GET, POST /v1/admin/users`, `GET, DELETE /v1/admin/users/:id`, `POST …/ban`, `POST …/unban`, `PUT …/password` | secret key | Manage users |
 | `GET, PUT /v1/admin/settings` | secret key | The environment's settings: app name, password policy, sign-in methods, allowed origins (`If-Match` on the revision) |
 | `GET /v1/admin/audit-logs` | secret key | The record of auth events and admin actions |
+| `GET, POST /v1/admin/webhook-endpoints`, `GET, PATCH, DELETE /v1/admin/webhook-endpoints/:id` | secret key | Where an environment's events are delivered, signed ([docs/webhooks.md](docs/webhooks.md)) |
+| `GET, POST /v1/admin/hooks`, `GET, PATCH, DELETE /v1/admin/hooks/:id` | secret key | The endpoint the server asks before a sign-up creates an account ([docs/hooks.md](docs/hooks.md)) |
+| `GET, POST /v1/admin/native-apps`, `GET, PATCH, DELETE /v1/admin/native-apps/:id` | secret key | The environment's iOS and Android apps ([docs/native-apps.md](docs/native-apps.md)) |
 | `GET /v1/client/config` | publishable key | What a sign-in screen needs: app name, sign-in methods, password policy |
 | `GET /v1/client/password-policy` | publishable key | Password rules for the live checklist |
 | `POST /v1/client/sign-ups`, `…/sign-ups/:id/verify-email`, `…/sign-ups/:id/resend-code` | publishable key | Sign up with email and password, verified by an emailed code |
@@ -145,14 +161,31 @@ Phase 1 ([plan and exit-criteria evidence](docs/plans/phase-1.md)):
 - [x] `@tula/core`, `@tula/react`, `@tula/nextjs`
 - [x] Emailed codes and same-browser links; sign-up without a password
 - [x] Two-step verification: authenticator app, backup codes, step-up
-- [x] Google, GitHub and Apple (tested against a mock provider only)
+- [x] Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X and Facebook (tested against a mock provider only)
 - [x] Passkeys (tested against a virtual authenticator only)
 - [x] Session profiles, stateful sessions, the concurrent-session limit
 - [x] Settings as code, the CLI, `create-tula`, the dashboard, the MCP server
 - [ ] Published packages and image
 
-Phase 2 ([draft plan](docs/plans/phase-2.md)) adds native SDKs and Expo, webhooks, SMS codes
-and more providers; Phase 3 organizations, roles, invitations and importers.
+Phase 2 ([plan](docs/plans/phase-2.md), under way) adds native SDKs and Expo, webhooks, SMS
+codes and more providers; Phase 3 organizations, roles, invitations and importers.
+
+- [x] Typed, versioned event payloads; the outbound-request guard
+- [x] Webhooks: an endpoint, a signed delivery, `verifyWebhook` ([ADR 0034](docs/adr/0034-webhooks.md))
+- [x] The hook before sign-up: a signed question, allow or deny, `verifyHook` ([ADR 0035](docs/adr/0035-hooks.md))
+- [x] JWT templates: custom claims under `ext`, per session profile ([ADR 0036](docs/adr/0036-jwt-templates.md), [docs/jwt-templates.md](docs/jwt-templates.md))
+- [x] Email templates: an environment's own subject and wording for each email ([ADR 0039](docs/adr/0039-email-templates.md), [docs/email-templates.md](docs/email-templates.md))
+- [x] Native app identity: registered apps and their association files ([ADR 0040](docs/adr/0040-native-app-identity.md), [docs/native-apps.md](docs/native-apps.md))
+- [x] Text message wording, a preview of any message, and the dashboard's Messages screen ([ADR 0042](docs/adr/0042-message-wording-editor.md))
+- [x] Device binding on refresh: a session bound to a device key, refreshed with a DPoP proof ([ADR 0043](docs/adr/0043-device-binding.md), [docs/device-binding.md](docs/device-binding.md))
+- [x] App-link and custom-scheme redirects for native apps ([ADR 0044](docs/adr/0044-app-link-and-custom-scheme-redirects.md), [docs/native-apps.md](docs/native-apps.md))
+- [x] Native Google sign-in: an app's ID token exchanged for a session ([ADR 0045](docs/adr/0045-native-id-token-exchange.md), [docs/native-apps.md](docs/native-apps.md#signing-in-with-google-without-a-browser))
+- [x] Native Sign in with Apple: an iOS app's identity token exchanged for a session ([ADR 0047](docs/adr/0047-native-apple-sign-in.md), [docs/native-apps.md](docs/native-apps.md#signing-in-with-apple-without-a-browser))
+- [x] Generated Swift and Kotlin types, error codes and theme constants for the native SDKs ([ADR 0050](docs/adr/0050-native-type-generation.md))
+- [x] The Kotlin client with no UI: flows, the session, the second step and step-up, passkeys, Google's ID token, providers by app link and a session bound to a device key, with Keystore-backed storage; tested on the JVM against the real API (a software authenticator, a scripted browser and a software key in the system's places) and not yet run on Android ([docs/kotlin.md](docs/kotlin.md), [ADR 0054](docs/adr/0054-kotlin-client.md))
+- [ ] Hooks before a session and before a token, hooks in `tula.config.ts` and the dashboard
+- [ ] Webhook retries, the delivery log, secret rotation, endpoints in `tula.config.ts`, the
+      dashboard screen
 
 ## License
 

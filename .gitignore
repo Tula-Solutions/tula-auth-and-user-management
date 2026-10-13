@@ -7,6 +7,10 @@ out/
 coverage/
 *.tsbuildinfo
 
+# Swift Package Manager (swift build / swift test in native/swift)
+.build/
+.swiftpm/
+
 # Playwright (bun run e2e)
 e2e/test-results/
 e2e/playwright-report/
@@ -27,6 +31,21 @@ e2e/playwright-report/
 # a preview configuration the desktop app writes
 .claude/launch.json
 
+# Understand-Anything's working directory at the repo root; the shared copy is in docs/codebase-map/
+/.ua/
+
 # Next.js (examples/nextjs-app-router)
 .next/
 next-env.d.ts
+
+# The native SDKs' sources as @tula/expo-screens ships them: copied by its build
+# (packages/expo-screens/scripts/vendor-native.ts), never edited, never committed.
+packages/expo-screens/ios/vendor/
+packages/expo-screens/android/vendor/
+
+# Gradle and the IDEs that build with it (native/android, examples/compose, a scaffolded
+# Compose project). A build started from a module's own directory leaves a `.gradle/`
+# there, and an editor's Java support compiles into `bin/` beside each module's sources.
+.gradle/
+.kotlin/
+native/android/*/bin/

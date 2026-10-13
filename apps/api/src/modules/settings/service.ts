@@ -6,12 +6,16 @@ import {
   CONFIG_MANAGED_BY_HEADER,
   CONFIG_TOOL_PATTERN,
   CONFIG_UNMANAGED,
+  customSchemeRedirectRefusal,
   DEFAULT_ENVIRONMENT_SETTINGS,
   type EnvironmentSettings,
   type EnvironmentSettingsInput,
   EnvironmentSettingsSchema,
   hasEnabledSignInMethod,
+  hasForbiddenRedirectCharacter,
+  isPhoneNumberAllowed,
   type OAuthProvider,
+  type SessionClient,
   type SignInMethod,
   settingsWeakenings,
 } from '@tula/contract'
@@ -19,6 +23,7 @@ import type { AppConfig, Deps, Tenant } from '~/dependencies'
 import { AuthError, ServiceException, ValidationError } from '~/exceptions'
 import type { Actor } from '~/lib/actor'
 import * as Audit from '~/modules/audit/service'
+import { isSignInMethod } from '~/modules/oauth/provider-record'
 import type { EnvironmentSettingsState } from '~/modules/settings/schema'
 import type {
   SettingsManagerInput,
@@ -116,7 +121,34 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+/**
+ * The JWT templates are compared whole, like a list: "the templates changed", not which one
+ * or which claim. Their claims would otherwise be up to 160 names, more than an event's
+ * `changed` may hold together with the rest of the document. And a template's name, unlike a
+ * profile's, is also a **value** in the document (a profile's `jwtTemplate`), so naming it
+ * here would put a string an admin typed into an event's payload, which goes to third
+ * parties (ADR 0012). A profile that changes its template is named by its field.
+ */
+const WHOLE = /^sessions\.jwtTemplates$/
+
+/** A value whose keys are in a fixed order, so that two equal maps compare equal as text. */
+function ordered(value: unknown): unknown {
+  if (!isRecord(value)) {
+    return Array.isArray(value) ? value.map(ordered) : value
+  }
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .map((key) => [key, ordered(value[key])])
+  )
+}
+
 function flatten(value: unknown, path: string, into: Map<string, string>): void {
+  if (WHOLE.test(path)) {
+    // The order templates and their claims are written in means nothing.
+    into.set(path, JSON.stringify(ordered(value)))
+    return
+  }
   if (!isRecord(value)) {
     // Lists are compared whole: "the allowed origins changed", not which entry.
     into.set(path, JSON.stringify(value))
@@ -151,9 +183,10 @@ export function changedKeys(before: EnvironmentSettings, after: EnvironmentSetti
  * harder to notice: the definition behind the audit entry's `weakened` flag.
  *
  * The definition itself is the contract's `settingsWeakenings` (which lists what got weaker),
- * so that `tula diff` warns about exactly what this records: a weaker password policy, a
- * security notice switched off, an MFA policy moved towards `off`, or sessions that live
- * longer or can be had more freely.
+ * so that `tula diff` warns about exactly what this records: a weaker password policy, an
+ * audit retention period set or shortened (older entries are then deleted), a security
+ * notice switched off, an MFA policy moved towards `off`, or sessions that live longer or can
+ * be had more freely.
  *
  * @param before - The settings being replaced.
  * @param after - The new settings.
@@ -246,7 +279,8 @@ async function requireWayIn(
     return
   }
   const providers = await deps.oauthProviders.list(tenant.environmentId)
-  if (!providers.some((provider) => provider.enabled)) {
+  // The rule the OAuth service counts by: a row nobody can sign in through is no way in.
+  if (!providers.some(isSignInMethod)) {
     throw new ValidationError({
       errors: [
         {
@@ -338,8 +372,8 @@ function managerChanges(
  * Replace an environment's settings, if they are still at the revision the caller read.
  *
  * The change is recorded as `environment.settings_updated` in the same transaction, with the
- * keys that changed and never their values, and `weakened: true` when it made the password
- * policy weaker or switched a security notice off (see {@link weakened}). A document identical to the current one changes
+ * keys that changed and never their values, and `weakened: true` when it weakened anything
+ * the contract's `settingsWeakenings` lists (see {@link weakened}). A document identical to the current one changes
  * nothing: no new revision and no audit entry, unless the replace also changes which tool is
  * on record as managing the settings (`input.manager`), which is a write of its own.
  *
@@ -448,24 +482,39 @@ export function etag(revision: number): string {
  *
  * @param settings - The environment's settings.
  * @param oauth - The OAuth providers the environment has enabled.
+ * @param smsSender - Whether the deployment has a way to send a text message
+ *   (`deps.sms.configured`). Without one no phone number is offered, whatever the settings
+ *   say: every try would be refused.
  * @returns App name and support address, enabled sign-in methods and providers, whether a
- *   sign-up needs a password, and the password policy.
+ *   sign-up needs a password, the password policy and whether a phone number can be added.
+ *   `smsCode` is among the methods only while a texted code can really be had (the method
+ *   on, text messages on with a country, a sender): the same rule as the `sms_code` strategy
+ *   of a sign-in's start.
  */
 export function clientConfig(
   settings: EnvironmentSettings,
-  oauth: readonly OAuthProvider[] = []
+  oauth: readonly OAuthProvider[] = [],
+  smsSender = false
 ): ClientConfig {
+  const phone = smsSender && settings.sms.enabled && settings.sms.allowedCountries.length > 0
   return {
     app: { name: settings.app.name, supportEmail: settings.app.supportEmail },
     signIn: {
       methods: Object.entries(settings.signIn.methods)
-        .filter(([, method]) => method.enabled)
+        .filter(([name, method]) => method.enabled && (name !== 'smsCode' || phone))
         .map(([name]) => name),
       oauth: [...oauth],
     },
     signUp: { password: settings.signUp.password },
     password: settings.password,
-    mfa: { policy: settings.mfa.policy },
+    // Whether a texted code can be enrolled as a second factor at all. Whether **this** user
+    // may is theirs to ask (`GET /v1/client/me/factors`).
+    mfa: {
+      policy: settings.mfa.policy,
+      smsCode: phone && settings.mfa.smsCode.enabled && settings.mfa.policy !== 'off',
+    },
+    // Whether a number can be added at all, and nothing of which countries.
+    phone: { enabled: phone },
   }
 }
 
@@ -491,6 +540,39 @@ export async function requireMethod(
   }
 }
 
+/**
+ * Refuse a request that would send a text message the environment does not allow.
+ *
+ * The one place the `sms` settings are checked: every step that sends a code by SMS, or
+ * accepts one, calls this first, before anything is counted, spent or sent, so a code asked
+ * for before SMS was switched off (or its country taken off the list) is not honoured after.
+ *
+ * Off, and on with an empty country list, are the same answer: nothing can be sent. The two
+ * refusals are told apart on purpose: the caller is the signed-in owner of the request, and
+ * both say something about the environment and the number they typed, nothing about anyone
+ * else.
+ *
+ * @param deps - Settings store and config.
+ * @param tenant - The environment.
+ * @param phoneNumber - The destination in E.164 form. Left out where no number is known
+ *   yet: only the switch and "any country at all" are then checked.
+ * @throws AuthError `sms.disabled` (403) when SMS is off or no country is allowed, or
+ *   `sms.country_not_allowed` (422) when the number's country is not on the list.
+ */
+export async function requireSms(
+  deps: ReadDeps,
+  tenant: Pick<Tenant, 'environmentId'>,
+  phoneNumber?: string
+): Promise<void> {
+  const { sms } = await current(deps, tenant)
+  if (!sms.enabled || sms.allowedCountries.length === 0) {
+    throw new AuthError('sms.disabled')
+  }
+  if (phoneNumber !== undefined && !isPhoneNumberAllowed(phoneNumber, sms.allowedCountries)) {
+    throw new AuthError('sms.country_not_allowed')
+  }
+}
+
 const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '[::1]'])
 
 /** Whether `url` is a plain `http://` URL on this machine: no credentials and no fragment. */
@@ -511,31 +593,70 @@ function isLoopbackUrl(url: string): boolean {
 }
 
 /**
+ * What a redirect is for: the two things that decide whether a listed custom-scheme URL may
+ * be used (ADR 0044). Both are the server's own knowledge of the attempt, never of a user.
+ */
+export interface RedirectUse {
+  /** The client kind the attempt was started as. */
+  client: SessionClient
+  /** The provider, when the redirect is a provider sign-in's; left out for an emailed link. */
+  provider?: OAuthProvider
+}
+
+/**
  * Refuse a URL a flow is asked to send the user to unless the environment allows it.
  *
  * The match is **exact**: the URL must be, character for character, an entry of
  * `urls.allowedRedirectUrls`. No prefix, pattern or "same host" rule, because each of those has
- * turned an allow-list into an open redirect somewhere. In the `local` tier any `http://` URL on
- * a loopback host is allowed as well, mirroring the CORS rule, so local development needs no
- * setup. It depends only on the environment, never on an account.
+ * turned an allow-list into an open redirect somewhere, and nothing is normalised on either
+ * side (not the case of a host, not a trailing slash, not a percent-encoding). That holds for
+ * every kind of entry alike: a web page, an app link (an https URL an app opens) and a custom
+ * scheme. In the `local` tier any `http://` URL on a loopback host is allowed as well,
+ * mirroring the CORS rule, so local development needs no setup.
+ *
+ * **A listed custom-scheme URL is still refused where the redirect could be completed by
+ * another app** (the contract's `customSchemeRedirectRefusal`, the one rule): for a provider
+ * whose code is not bound with PKCE, for an attempt that was not started as a native client,
+ * and for anything that is not a provider sign-in. `params.reason` then holds the fixed word.
+ * An URL that is not listed is refused without one, whatever its kind: nothing is said about
+ * what would have happened to it.
+ *
+ * **A URL with a character no redirect URL may hold** (the contract's
+ * `hasForbiddenRedirectCharacter`: a control character, a backslash, whitespace, what a
+ * reader cannot see) is refused whether it is listed or not. No save accepts such an entry
+ * and the stores' tolerant read drops one; this is for a row that reached a store another way.
+ *
+ * It depends only on the environment and on what the attempt is, never on an account. This
+ * is the one place a redirect URL is judged: at an attempt's start and again wherever the
+ * stored URL is about to be used.
  *
  * @param deps - Settings store and config.
  * @param tenant - The environment.
  * @param url - The URL the request asked for, if any.
+ * @param use - What the redirect is for: the attempt's client kind and its provider, if any.
  * @returns The URL, now known to be allowed.
- * @throws AuthError `request.redirect_not_allowed` (400) when it is missing or not allowed.
+ * @throws AuthError `request.redirect_not_allowed` (400) when it is missing or not allowed,
+ *   with `params.reason` when it is a listed custom-scheme URL this use may not have.
  */
 export async function requireRedirectUrl(
   deps: ReadDeps,
   tenant: Pick<Tenant, 'environmentId'>,
-  url: string | undefined
+  url: string | undefined,
+  use: RedirectUse
 ): Promise<string> {
-  if (url !== undefined) {
+  // A URL no `Location` header can carry, or with something in it a reader cannot see, is
+  // never honoured, listed or not: a stored entry from before the contract refused them
+  // must fail here, at the start, and not at the provider's callback with the state spent.
+  if (url !== undefined && !hasForbiddenRedirectCharacter(url)) {
     const { urls } = await current(deps, tenant)
     if (
       urls.allowedRedirectUrls.includes(url) ||
       (deps.config.tier === 'local' && isLoopbackUrl(url))
     ) {
+      const reason = customSchemeRedirectRefusal(url, use)
+      if (reason) {
+        throw new AuthError('request.redirect_not_allowed', { reason })
+      }
       return url
     }
   }

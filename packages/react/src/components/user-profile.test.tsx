@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import { act, screen, waitFor, within } from '@testing-library/react'
+import { PASSWORD_POLICY_PRESETS } from '@tula/contract'
 import type { Session } from '@tula/core'
 import { StrictMode } from 'react'
 import {
   attempt,
+  expectAbsent,
   expectFocus,
   failure,
   json,
@@ -31,6 +33,7 @@ function session(id: string, overrides: Partial<Session> = {}): Session {
     lastActiveAt: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(),
     expiresAt: '2030-01-01T00:00:00.000Z',
     current: false,
+    deviceBound: false,
     ...overrides,
   }
 }
@@ -62,7 +65,7 @@ describe('<UserProfile>', () => {
     const w = world()
     const { container } = w.mount(<UserProfile />)
     await waitFor(() => expect(w.client.state.status).toBe('signed-out'))
-    expect(container.querySelector('[data-tula-element="card"]')).toBeNull()
+    expectAbsent(container.querySelector('[data-tula-element="card"]'))
   })
 
   test('profile, and the devices with this one marked', async () => {
@@ -86,11 +89,40 @@ describe('<UserProfile>', () => {
     expect(within(current).getByText('This device')).toBeTruthy()
     expect(within(current).getByText('Active now')).toBeTruthy()
     // This device has no sign-out button of its own.
-    expect(within(current).queryByRole('button')).toBeNull()
+    expectAbsent(within(current).queryByRole('button'))
     expect(within(phone).getByText('Safari on iPhone')).toBeTruthy()
     expect(within(phone).getByText('Last active 2 days ago')).toBeTruthy()
     expect(within(phone).getByRole('button', { name: 'Sign out Safari on iPhone' })).toBeTruthy()
     expect(within(unknown).getByText('Unknown device')).toBeTruthy()
+  })
+
+  test('a session bound to a device key is marked in words, and only that one', async () => {
+    const w = signedInWorld([
+      session('session_1', { current: true }),
+      session('session_2', { userAgent: SAFARI_IPHONE, deviceBound: true }),
+      session('session_3', { userAgent: SAFARI_IPHONE }),
+    ])
+    w.mount(<UserProfile />)
+    const rows = await screen.findAllByRole('listitem')
+    const [current, bound, plain] = rows.filter(
+      (row) => row.getAttribute('data-tula-element') === 'sessionItem'
+    ) as [HTMLElement, HTMLElement, HTMLElement]
+    // Text a screen reader reads with the row, in the same element as "This device".
+    const mark = within(bound).getByText('Bound to a device key')
+    expect(mark.getAttribute('data-tula-element')).toBe('badge')
+    expect(mark.closest('p')?.textContent).toBe('Safari on iPhone Bound to a device key')
+    expectAbsent(within(current).queryByText('Bound to a device key'))
+    expectAbsent(within(plain).queryByText('Bound to a device key'))
+    // The row's button is named for the device as before.
+    expect(within(bound).getByRole('button', { name: 'Sign out Safari on iPhone' })).toBeTruthy()
+  })
+
+  test('a session list from a server that does not say is drawn with no mark', async () => {
+    const { deviceBound: _left, ...older } = session('session_2')
+    const w = signedInWorld([session('session_1', { current: true }), older as Session])
+    w.mount(<UserProfile />)
+    await screen.findByText('This device')
+    expectAbsent(screen.queryByText('Bound to a device key'))
   })
 
   test('sign out one device, then all the others', async () => {
@@ -103,13 +135,13 @@ describe('<UserProfile>', () => {
     w.mount(<UserProfile />)
     await w.user.click(await screen.findByRole('button', { name: 'Sign out Safari on iPhone' }))
     expect(await screen.findByText('That device was signed out.')).toBeTruthy()
-    expect(screen.queryByText('Safari on iPhone')).toBeNull()
+    expectAbsent(screen.queryByText('Safari on iPhone'))
     expect(w.api.calls('DELETE /v1/client/sessions/session_2')).toHaveLength(1)
 
     await w.user.click(screen.getByRole('button', { name: 'Sign out of all other devices' }))
     expect(await screen.findByText('Signed out of 2 other devices.')).toBeTruthy()
     // Only this device is left, and with it nothing to sign out.
-    expect(screen.queryByRole('button', { name: 'Sign out of all other devices' })).toBeNull()
+    expectAbsent(screen.queryByRole('button', { name: 'Sign out of all other devices' }))
     expect(w.client.state.status).toBe('signed-in')
   })
 
@@ -120,7 +152,7 @@ describe('<UserProfile>', () => {
     expect((await screen.findByRole('alert')).textContent).toBe(
       'The service is temporarily unavailable. Try again shortly.'
     )
-    expect(screen.queryByText('Loading your devices…')).toBeNull()
+    expectAbsent(screen.queryByText('Loading your devices…'))
   })
 
   test('a revoke the server refuses leaves the list and shows why', async () => {
@@ -249,7 +281,7 @@ describe('<UserProfile>', () => {
     })
     expect(await screen.findByText('other@northline.app')).toBeTruthy()
     expect((screen.getByLabelText('Current password') as HTMLInputElement).value).toBe('')
-    expect(screen.queryByRole('alert')).toBeNull()
+    expectAbsent(screen.queryByRole('alert'))
   })
 
   test('the device list is fetched once, however often effects run', async () => {
@@ -295,9 +327,35 @@ describe('<UserProfile>', () => {
     expect(section.getAttribute('aria-labelledby')).toBe(heading.id)
     expect(section.textContent).toContain('This account has no password')
     expect(section.textContent).toContain('Forgot password?')
-    expect(screen.queryByLabelText('Current password')).toBeNull()
-    expect(screen.queryByLabelText('New password')).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Update password' })).toBeNull()
+    expectAbsent(screen.queryByLabelText('Current password'))
+    expectAbsent(screen.queryByLabelText('New password'))
+    expectAbsent(screen.queryByRole('button', { name: 'Update password' }))
+    expect(w.api.calls(ROUTE.changePassword)).toHaveLength(0)
+  })
+
+  test('a user with no email address: no address line, no badge and no password section', async () => {
+    const w = signedInWorld([session('session_1', { current: true })])
+    w.api.on(ROUTE.me, () =>
+      json(200, {
+        ...TEST_USER,
+        firstName: 'Nelly',
+        email: null,
+        emailVerifiedAt: null,
+        hasPassword: false,
+      })
+    )
+    const { container } = w.mount(<UserProfile />)
+    expect(await screen.findByText('Nelly')).toBeTruthy()
+    await screen.findByRole('heading', { level: 2, name: 'Where you’re signed in' })
+    expectAbsent(container.querySelector('.tula-profile-email'))
+    expectAbsent(screen.queryByText('Not verified'))
+    expectAbsent(screen.queryByText('Verified'))
+    // A password signs in beside an address: there is none to add one to, and "Forgot
+    // password?" would have nowhere to send its email.
+    expectAbsent(screen.queryByRole('heading', { name: 'Password' }))
+    expectAbsent(screen.queryByLabelText('Current password'))
+    expect(container.textContent).not.toContain('Forgot password?')
+    expect(container.textContent).not.toContain('null')
     expect(w.api.calls(ROUTE.changePassword)).toHaveLength(0)
   })
 
@@ -348,7 +406,7 @@ describe('<UserProfile>', () => {
     await w.user.click(buttons.at(-1) as HTMLElement)
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('/bye'))
     expect(w.client.state.status).toBe('signed-out')
-    expect(container.querySelector('[data-tula-element="card"]')).toBeNull()
+    expectAbsent(container.querySelector('[data-tula-element="card"]'))
     expect(openDialogs()).toBe(0)
   })
 
@@ -357,5 +415,151 @@ describe('<UserProfile>', () => {
     w.api.on(ROUTE.me, () => json(200, { ...TEST_USER, emailVerifiedAt: null, firstName: null }))
     w.mount(<UserProfile />)
     expect(await screen.findByText('Not verified')).toBeTruthy()
+  })
+})
+
+describe('<UserProfile> the password history rule (ADR 0038)', () => {
+  const REUSED = 'You have used this password recently. Choose a different one.'
+
+  function historyWorld(history: number): World {
+    const w = world({
+      signedIn: true,
+      policy: { ...PASSWORD_POLICY_PRESETS.recommended, preset: 'custom', history },
+    })
+    w.api.on(ROUTE.sessions, () => json(200, { data: [] }))
+    return w
+  }
+
+  /** The history line of the new password's checklist. */
+  const line = async (text: string) => {
+    const list = await screen.findByRole('list', { name: 'Password requirements' })
+    const item = within(list)
+      .getAllByRole('listitem')
+      .find((candidate) => candidate.textContent?.includes(text))
+    if (!item) {
+      throw new Error(`no line says "${text}"`)
+    }
+    return item
+  }
+
+  test('is listed with the policy’s number, waiting for the server, and never as met', async () => {
+    const w = historyWorld(5)
+    w.mount(<UserProfile />)
+    const item = await line('Not one of your last 5 passwords')
+    expect(item.getAttribute('data-state')).toBe('pending')
+    // The state in words, for a reader who cannot see the icon.
+    expect(item.textContent).toBe(
+      'Checked when you save: Not one of your last 5 passwords (Checked when you save)'
+    )
+    // Every rule the browser can judge is met; this one still is not drawn as met.
+    await w.user.type(screen.getByLabelText('New password'), 'quiet-Heron-wades-17-rivers')
+    const list = screen.getByRole('list', { name: 'Password requirements' })
+    const met = within(list)
+      .getAllByRole('listitem')
+      .filter((candidate) => candidate.getAttribute('data-met') === 'true')
+    expect(met.length).toBeGreaterThan(0)
+    expect(item.getAttribute('data-met')).toBe('false')
+    expect(item.className).not.toContain('tula-is-met')
+    expect(item.getAttribute('data-state')).toBe('pending')
+    // It is not one of the requirements the summary counts as met or unmet.
+    expect(list.parentElement?.querySelector('output')?.textContent).toBe(
+      `${met.length} of ${met.length} password requirements met`
+    )
+    // The field is described by the list the line is in.
+    const described = screen.getByLabelText('New password').getAttribute('aria-describedby') ?? ''
+    expect(described.split(' ')).toContain(list.parentElement?.id ?? 'no id')
+  })
+
+  test('a history of one names the current password', async () => {
+    historyWorld(1).mount(<UserProfile />)
+    const item = await line('Not your current password')
+    expect(item.getAttribute('data-state')).toBe('pending')
+  })
+
+  test('a history of zero lists nothing', async () => {
+    const w = historyWorld(0)
+    w.mount(<UserProfile />)
+    await screen.findByRole('list', { name: 'Password requirements' })
+    expectAbsent(screen.queryByText(/Checked when you save/))
+    expectAbsent(screen.queryByText(/current password$/))
+  })
+
+  test.each([
+    [
+      'as the error’s own code',
+      failure(422, 'password.reused', {
+        params: { history: 5 },
+        errors: [
+          { field: 'password', code: 'password.reused', message: REUSED, params: { history: 5 } },
+        ],
+      }),
+    ],
+    [
+      'among other refused rules',
+      failure(422, 'password.too_short', {
+        errors: [
+          { field: 'password', code: 'password.too_short', message: 'Password is too short.' },
+          { field: 'password', code: 'password.reused', message: REUSED },
+        ],
+      }),
+    ],
+  ] as [string, Response][])(
+    'a password the server refuses as reused (%s) fails the line, with the server’s message',
+    async (_name, response) => {
+      const w = historyWorld(5)
+      w.api.on(ROUTE.changePassword, () => response)
+      w.mount(<UserProfile />)
+      await w.user.type(await screen.findByLabelText('Current password'), 'old-password-123')
+      const field = screen.getByLabelText('New password') as HTMLInputElement
+      await w.user.type(field, 'quiet-Heron-wades-17-rivers')
+      await w.user.click(screen.getByRole('button', { name: 'Update password' }))
+
+      // Announced: the server's message, on the field.
+      expect((await screen.findByRole('alert')).textContent).toContain(REUSED)
+      expect(field.getAttribute('aria-invalid')).toBe('true')
+      await expectFocus(field)
+      const item = await line('Not one of your last 5 passwords')
+      expect(item.getAttribute('data-state')).toBe('failed')
+      expect(item.className).toContain('tula-is-failed')
+      expect(item.className).not.toContain('tula-is-met')
+      // In words too, and no longer "checked when you save".
+      expect(item.textContent).toBe('Not met: Not one of your last 5 passwords')
+
+      // The refusal was about the password that was sent: another one is undecided again.
+      await w.user.type(field, '-2')
+      expect((await line('Not one of your last 5 passwords')).getAttribute('data-state')).toBe(
+        'pending'
+      )
+    }
+  )
+
+  test('another refusal leaves the line waiting', async () => {
+    const w = historyWorld(5)
+    w.api.on(ROUTE.changePassword, () =>
+      failure(422, 'password.breached', {
+        errors: [{ field: 'password', code: 'password.breached', message: 'Breached.' }],
+      })
+    )
+    w.mount(<UserProfile />)
+    await w.user.type(await screen.findByLabelText('Current password'), 'old-password-123')
+    await w.user.type(screen.getByLabelText('New password'), 'quiet-Heron-wades-17-rivers')
+    await w.user.click(screen.getByRole('button', { name: 'Update password' }))
+    expect((await screen.findByRole('alert')).textContent).toBe('Breached.')
+    expect((await line('Not one of your last 5 passwords')).getAttribute('data-state')).toBe(
+      'pending'
+    )
+  })
+
+  test('once the change went through the line waits again, and was never drawn as met', async () => {
+    const w = historyWorld(5)
+    w.api.on(ROUTE.changePassword, () => new Response(null, { status: 204 }))
+    w.mount(<UserProfile />)
+    await w.user.type(await screen.findByLabelText('Current password'), 'old-password-123')
+    await w.user.type(screen.getByLabelText('New password'), 'quiet-Heron-wades-17-rivers')
+    await w.user.click(screen.getByRole('button', { name: 'Update password' }))
+    await screen.findByText('Your password was changed. Your other devices were signed out.')
+    const item = await line('Not one of your last 5 passwords')
+    expect(item.getAttribute('data-state')).toBe('pending')
+    expect(item.className).not.toContain('tula-is-met')
   })
 })

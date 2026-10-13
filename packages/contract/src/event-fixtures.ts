@@ -1,0 +1,553 @@
+import { type ActivityType, EVENT_SCHEMA_VERSION } from './event-types'
+import type { EventOf } from './events'
+
+// One example of every event, as plain data. The ids are made up (UUID v7, like the server's).
+// This module imports no Zod at run time: the schemas are imported as types only.
+
+const USER = '0199c2f4-7a10-7c3e-9b1a-5d2e8f4a6c01'
+const SESSION = '0199c2f4-7a11-7d42-8e0b-1c9a3b7d5e02'
+const API_KEY = '0199c2f4-7a12-7a55-b3c4-6f1e2d8a9b03'
+const ENVIRONMENT = '0199c2f4-7a13-7b66-a4d5-7e2f3c9b0a04'
+const PASSKEY = '0199c2f4-7a14-7c77-95e6-8f3a4d0c1b05'
+const SIGNING_KEY = '0199c2f4-7a15-7d88-86f7-9a4b5e1d2c06'
+const WEBHOOK_ENDPOINT = '0199c2f4-7a18-7abb-99ca-cd7e8b4a5f09'
+const HOOK = '0199c2f4-7a19-7bcc-8adb-de8f9c5b6a10'
+const NATIVE_APP = '0199c2f4-7a1a-7cdd-9bec-ef9a0d6c7b11'
+const PROPOSAL = '0199c2f4-7a1b-7dee-8cfd-f0ab1e7d8c12'
+const AGENT = '0199c2f4-7a1c-7eff-9d0e-01bc2f8e9d13'
+
+const schemaVersion = EVENT_SCHEMA_VERSION
+const occurredAt = '2026-10-08T09:30:00.000Z'
+
+// A signed-in user acting on their own account; a secret key (the id is the API key's); and
+// the server acting by itself.
+const user = { type: 'user', id: USER } as const
+const admin = { type: 'admin', id: API_KEY } as const
+const system = { type: 'system', id: null } as const
+// An AI agent (the id is its agent key's), whose proposal the `admin` above approved.
+const agent = { type: 'agent', id: AGENT } as const
+
+const aboutUser = { type: 'user', id: USER } as const
+const aboutSession = { type: 'session', id: SESSION } as const
+const aboutApiKey = { type: 'api_key', id: API_KEY } as const
+const aboutEnvironment = { type: 'environment', id: ENVIRONMENT } as const
+const aboutWebhookEndpoint = { type: 'webhook_endpoint', id: WEBHOOK_ENDPOINT } as const
+const aboutHook = { type: 'hook', id: HOOK } as const
+const aboutNativeApp = { type: 'native_app', id: NATIVE_APP } as const
+const aboutProposal = { type: 'proposal', id: PROPOSAL } as const
+const proposed = { operation: 'ban_user', targetType: 'user', targetId: USER } as const
+
+/** The id of the `n`th example event. */
+function eventId(n: number): string {
+  return `0199c2f5-0000-7000-8000-${String(n).padStart(12, '0')}`
+}
+
+/**
+ * A valid example of every event type, keyed by type: for documentation, for a receiver's
+ * tests and for sending a test delivery. Every optional field is present, so an example shows
+ * the whole shape (but for `user.passkey_removed`, whose fields depend on its `method`: the
+ * example is a removal by the owner). Typed so that a type without an example does not compile.
+ *
+ * Plain data: nothing here is a real id.
+ *
+ * @example
+ * ```ts
+ * test('handles a replayed refresh token', () => {
+ *   handle(EVENT_FIXTURES['session.reuse_detected'])
+ * })
+ * ```
+ */
+export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
+  'user.created': {
+    id: eventId(1),
+    type: 'user.created',
+    schemaVersion,
+    occurredAt,
+    actor: user,
+    target: aboutUser,
+    data: {
+      method: 'sign_up',
+      emailVerified: true,
+      passwordless: true,
+      hookBypassed: true,
+      test: true,
+    },
+  },
+  'user.email_verified': {
+    id: eventId(2),
+    type: 'user.email_verified',
+    schemaVersion,
+    occurredAt,
+    actor: user,
+    target: aboutUser,
+    data: {},
+  },
+  'user.banned': {
+    id: eventId(3),
+    type: 'user.banned',
+    schemaVersion,
+    occurredAt,
+    // A ban an agent proposed and an administrator approved; one an administrator made
+    // themselves has the `admin` as its actor and empty `data`.
+    actor: agent,
+    target: aboutUser,
+    data: { proposalId: PROPOSAL, approvedBy: admin },
+  },
+  'user.unbanned': {
+    id: eventId(4),
+    type: 'user.unbanned',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutUser,
+    data: {},
+  },
+  'user.deleted': {
+    id: eventId(5),
+    type: 'user.deleted',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutUser,
+    data: {},
+  },
+  'user.password_changed': {
+    id: eventId(6),
+    type: 'user.password_changed',
+    schemaVersion,
+    occurredAt,
+    actor: user,
+    target: aboutUser,
+    data: { method: 'email_verification', created: false, removed: true },
+  },
+  'user.mfa_enabled': {
+    id: eventId(7),
+    type: 'user.mfa_enabled',
+    schemaVersion,
+    occurredAt,
+    actor: user,
+    target: aboutUser,
+    data: { method: 'totp' },
+  },
+  'user.mfa_disabled': {
+    id: eventId(8),
+    type: 'user.mfa_disabled',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutUser,
+    data: { method: 'admin_reset' },
+  },
+  'user.backup_codes_regenerated': {
+    id: eventId(9),
+    type: 'user.backup_codes_regenerated',
+    schemaVersion,
+    occurredAt,
+    actor: user,
+    target: aboutUser,
+    data: {},
+  },
+  'user.backup_code_used': {
+    id: eventId(10),
+    type: 'user.backup_code_used',
+    schemaVersion,
+    occurredAt,
+    actor: user,
+    target: aboutUser,
+    data: {},
+  },
+  'user.identity_linked': {
+    id: eventId(11),
+    type: 'user.identity_linked',
+    schemaVersion,
+    occurredAt,
+    actor: user,
+    target: aboutUser,
+    data: { provider: 'google', method: 'auto' },
+  },
+  'user.identity_unlinked': {
+    id: eventId(12),
+    type: 'user.identity_unlinked',
+    schemaVersion,
+    occurredAt,
+    actor: user,
+    target: aboutUser,
+    data: { provider: 'github' },
+  },
+  'user.passkey_added': {
+    id: eventId(13),
+    type: 'user.passkey_added',
+    schemaVersion,
+    occurredAt,
+    actor: user,
+    target: aboutUser,
+    data: { passkeyId: PASSKEY, synced: true },
+  },
+  'user.passkey_renamed': {
+    id: eventId(14),
+    type: 'user.passkey_renamed',
+    schemaVersion,
+    occurredAt,
+    actor: user,
+    target: aboutUser,
+    data: { passkeyId: PASSKEY },
+  },
+  'user.passkey_removed': {
+    id: eventId(15),
+    type: 'user.passkey_removed',
+    schemaVersion,
+    occurredAt,
+    actor: user,
+    target: aboutUser,
+    data: { passkeyId: PASSKEY, method: 'user' },
+  },
+  'user.passkey_counter_regressed': {
+    id: eventId(16),
+    type: 'user.passkey_counter_regressed',
+    schemaVersion,
+    occurredAt,
+    actor: system,
+    target: aboutUser,
+    data: { passkeyId: PASSKEY },
+  },
+  'user.email_added': {
+    id: eventId(44),
+    type: 'user.email_added',
+    schemaVersion,
+    occurredAt,
+    actor: user,
+    target: aboutUser,
+    data: { method: 'self', verified: true },
+  },
+  'user.phone_number_added': {
+    id: eventId(36),
+    type: 'user.phone_number_added',
+    schemaVersion,
+    occurredAt,
+    actor: user,
+    target: aboutUser,
+    data: {},
+  },
+  'user.phone_number_removed': {
+    id: eventId(37),
+    type: 'user.phone_number_removed',
+    schemaVersion,
+    occurredAt,
+    actor: user,
+    target: aboutUser,
+    data: {},
+  },
+  'user.sms_factor_enabled': {
+    id: eventId(39),
+    type: 'user.sms_factor_enabled',
+    schemaVersion,
+    occurredAt,
+    actor: user,
+    target: aboutUser,
+    data: {},
+  },
+  'user.sms_factor_removed': {
+    id: eventId(40),
+    type: 'user.sms_factor_removed',
+    schemaVersion,
+    occurredAt,
+    actor: user,
+    target: aboutUser,
+    data: { method: 'phone_number_removed' },
+  },
+  'session.created': {
+    id: eventId(17),
+    type: 'session.created',
+    schemaVersion,
+    occurredAt,
+    actor: user,
+    target: aboutSession,
+    data: {
+      userId: USER,
+      client: 'web',
+      hookBypassed: true,
+      claimsHookBypassed: true,
+      deviceBound: true,
+    },
+  },
+  'session.revoked': {
+    id: eventId(18),
+    type: 'session.revoked',
+    schemaVersion,
+    occurredAt,
+    actor: user,
+    target: aboutSession,
+    data: { userId: USER, reason: 'sign_out' },
+  },
+  'session.reuse_detected': {
+    id: eventId(19),
+    type: 'session.reuse_detected',
+    schemaVersion,
+    occurredAt,
+    actor: system,
+    target: aboutSession,
+    data: { userId: USER, reason: 'reuse_detected' },
+  },
+  'session.stepped_up': {
+    id: eventId(20),
+    type: 'session.stepped_up',
+    schemaVersion,
+    occurredAt,
+    actor: user,
+    target: aboutSession,
+    data: { userId: USER, methods: ['otp', 'mfa'], claimsHookBypassed: true },
+  },
+  'api_key.created': {
+    id: eventId(21),
+    type: 'api_key.created',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutApiKey,
+    data: { kind: 'secret' },
+  },
+  'api_key.revoked': {
+    id: eventId(22),
+    type: 'api_key.revoked',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutApiKey,
+    data: {},
+  },
+  'signing_key.rotated': {
+    id: eventId(23),
+    type: 'signing_key.rotated',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: { type: 'signing_key', id: SIGNING_KEY },
+    data: {
+      retiredKeyId: '0199c2f4-7a16-7e99-97a8-ab5c6f2e3d07',
+      nextKeyId: '0199c2f4-7a17-7faa-88b9-bc6d7a3f4e08',
+    },
+  },
+  'environment.settings_updated': {
+    id: eventId(24),
+    type: 'environment.settings_updated',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutEnvironment,
+    data: {
+      revision: 4,
+      changed: ['password.minLength', 'urls.allowedOrigins'],
+      weakened: true,
+      managedBy: 'tula-apply',
+      outsideConfig: false,
+    },
+  },
+  'oauth_provider.updated': {
+    id: eventId(25),
+    type: 'oauth_provider.updated',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutEnvironment,
+    data: {
+      provider: 'google',
+      changed: ['clientId', 'secret', 'additionalClientIds', 'enabled'],
+      created: true,
+      additionalClientIdCount: 2,
+      weakened: true,
+      dependentAccounts: 12,
+      dependentAccountsIncomplete: true,
+    },
+  },
+  'oauth_provider.deleted': {
+    id: eventId(26),
+    type: 'oauth_provider.deleted',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutEnvironment,
+    data: {
+      provider: 'apple',
+      weakened: true,
+      dependentAccounts: 3,
+      dependentAccountsIncomplete: true,
+    },
+  },
+  'webhook_endpoint.created': {
+    id: eventId(27),
+    type: 'webhook_endpoint.created',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutWebhookEndpoint,
+    data: { eventTypes: 3, enabled: true },
+  },
+  'webhook_endpoint.updated': {
+    id: eventId(28),
+    type: 'webhook_endpoint.updated',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutWebhookEndpoint,
+    data: { changed: ['url', 'eventTypes', 'enabled'] },
+  },
+  'webhook_endpoint.deleted': {
+    id: eventId(29),
+    type: 'webhook_endpoint.deleted',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutWebhookEndpoint,
+    data: {},
+  },
+  'webhook_endpoint.disabled': {
+    id: eventId(30),
+    type: 'webhook_endpoint.disabled',
+    schemaVersion,
+    occurredAt,
+    actor: system,
+    target: aboutWebhookEndpoint,
+    data: { reason: 'failing' },
+  },
+  'webhook_endpoint.secret_rotated': {
+    id: eventId(31),
+    type: 'webhook_endpoint.secret_rotated',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutWebhookEndpoint,
+    data: { rotationOverlapEndsAt: '2026-10-09T09:30:00.000Z' },
+  },
+  'webhook_endpoint.previous_secret_revoked': {
+    id: eventId(32),
+    type: 'webhook_endpoint.previous_secret_revoked',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutWebhookEndpoint,
+    data: {},
+  },
+  'hook.created': {
+    id: eventId(33),
+    type: 'hook.created',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutHook,
+    data: { point: 'before_sign_up', enabled: true, failureMode: 'allow', weakened: true },
+  },
+  'hook.updated': {
+    id: eventId(34),
+    type: 'hook.updated',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutHook,
+    data: { point: 'before_sign_up', changed: ['enabled', 'failureMode'], weakened: true },
+  },
+  'hook.deleted': {
+    id: eventId(35),
+    type: 'hook.deleted',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutHook,
+    data: { point: 'before_sign_up', weakened: true },
+  },
+  'native_app.created': {
+    id: eventId(36),
+    type: 'native_app.created',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutNativeApp,
+    data: { platform: 'android', fingerprints: 1, appLinkPaths: 1, weakened: true },
+  },
+  'native_app.updated': {
+    id: eventId(37),
+    type: 'native_app.updated',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutNativeApp,
+    data: {
+      platform: 'android',
+      changed: ['sha256CertFingerprints'],
+      fingerprints: 2,
+      appLinkPaths: 1,
+      weakened: true,
+    },
+  },
+  'native_app.deleted': {
+    id: eventId(38),
+    type: 'native_app.deleted',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutNativeApp,
+    data: { platform: 'android' },
+  },
+  'session.refresh_proof_refused': {
+    id: eventId(39),
+    type: 'session.refresh_proof_refused',
+    schemaVersion,
+    occurredAt,
+    actor: system,
+    target: aboutSession,
+    data: { userId: USER, reason: 'wrong_key', suppressedInPreviousMinute: 3 },
+  },
+  'proposal.created': {
+    id: eventId(40),
+    type: 'proposal.created',
+    schemaVersion,
+    occurredAt,
+    actor: agent,
+    target: aboutProposal,
+    data: proposed,
+  },
+  'proposal.approved': {
+    id: eventId(41),
+    type: 'proposal.approved',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutProposal,
+    data: { ...proposed, proposedBy: AGENT },
+  },
+  'proposal.executed': {
+    id: eventId(42),
+    type: 'proposal.executed',
+    schemaVersion,
+    occurredAt,
+    actor: agent,
+    target: aboutProposal,
+    data: { ...proposed, approvedBy: admin, changed: true },
+  },
+  'proposal.failed': {
+    id: eventId(43),
+    type: 'proposal.failed',
+    schemaVersion,
+    occurredAt,
+    actor: agent,
+    target: aboutProposal,
+    data: { ...proposed, approvedBy: admin, reason: 'target_not_found' },
+  },
+  'sign_in_test.started': {
+    id: eventId(44),
+    type: 'sign_in_test.started',
+    schemaVersion,
+    occurredAt,
+    actor: agent,
+    target: aboutEnvironment,
+    data: {},
+  },
+  'sign_in_test.finished': {
+    id: eventId(45),
+    type: 'sign_in_test.finished',
+    schemaVersion,
+    occurredAt,
+    actor: agent,
+    target: aboutEnvironment,
+    data: { outcome: 'passed', cleanup: 'deleted', userId: USER },
+  },
+}

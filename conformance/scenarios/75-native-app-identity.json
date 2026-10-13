@@ -1,0 +1,426 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "native app identity",
+  "description": "An operator registers an iOS app (an Apple team and a bundle id) and an Android app (a package name and the SHA-256 fingerprints of its signing certificates) for an environment, and the server serves the two files the platforms fetch to believe it: Apple's apple-app-site-association and Android's assetlinks.json, at /v1/environments/<id>/.well-known/, public, as JSON, with no redirect. An identifier that is not one is refused before anything is stored; a fingerprint pasted in lower case without colons is stored and served upper case with colons; a second registration of the same app is a conflict. The files name the registered apps and nothing else (webcredentials for iOS, the get_login_creds relation for Android, no section or relation that hands an app a link), follow a change, and for an environment that does not exist answer 404 as its JWKS does. The audit entries say which platform and never the bundle id, the package name or a fingerprint. Expects an environment with no other native app; cleanup removes the two it registers. Whether iOS and Android accept the files cannot be shown here: they fetch them from the root of the app's own domain.",
+  "needsSecretKey": true,
+  "variables": {
+    "teamId": "TULAC0NF01",
+    "bundleId": "com.tula.conformance.ios-app",
+    "packageName": "com.tula.conformance.android_app",
+    "pastedFingerprint": "14b6c3a1e9d07f52886a4b0c3d9e1f20a7b8c9d0e1f2a3b4c5d6e7f8091a2b3c",
+    "storedFingerprint": "14:B6:C3:A1:E9:D0:7F:52:88:6A:4B:0C:3D:9E:1F:20:A7:B8:C9:D0:E1:F2:A3:B4:C5:D6:E7:F8:09:1A:2B:3C",
+    "secondFingerprint": "FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C"
+  },
+  "steps": [
+    {
+      "name": "find the environment the key belongs to",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/api-keys",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "environmentId": "data[0].environmentId"
+      }
+    },
+    {
+      "name": "with no app registered Apple's file has no section",
+      "request": {
+        "method": "GET",
+        "path": "/v1/environments/{{environmentId}}/.well-known/apple-app-site-association",
+        "auth": "none"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "webcredentials": "$absent",
+          "applinks": "$absent"
+        }
+      }
+    },
+    {
+      "name": "and Android's has no statement",
+      "request": {
+        "method": "GET",
+        "path": "/v1/environments/{{environmentId}}/.well-known/assetlinks.json",
+        "auth": "none"
+      },
+      "expect": {
+        "status": 200,
+        "body": []
+      }
+    },
+    {
+      "name": "a team id in lower case is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/native-apps",
+        "auth": "secret",
+        "body": {
+          "platform": "ios",
+          "teamId": "tulac0nf01",
+          "bundleId": "{{bundleId}}"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "validation.failed"
+        }
+      }
+    },
+    {
+      "name": "a package name of one segment is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/native-apps",
+        "auth": "secret",
+        "body": {
+          "platform": "android",
+          "packageName": "conformance",
+          "sha256CertFingerprints": ["{{storedFingerprint}}"]
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "validation.failed"
+        }
+      }
+    },
+    {
+      "name": "a fingerprint that is not 32 bytes is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/native-apps",
+        "auth": "secret",
+        "body": {
+          "platform": "android",
+          "packageName": "{{packageName}}",
+          "sha256CertFingerprints": ["14:B6:C3:A1:E9:D0:7F:52:88:6A:4B:0C:3D:9E:1F:20:A7:B8:C9:D0"]
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "validation.failed"
+        }
+      }
+    },
+    {
+      "name": "an app cannot bring a relation or a path of its own",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/native-apps",
+        "auth": "secret",
+        "body": {
+          "platform": "android",
+          "packageName": "{{packageName}}",
+          "sha256CertFingerprints": ["{{storedFingerprint}}"],
+          "relation": ["delegate_permission/common.handle_all_urls"]
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "validation.failed"
+        }
+      }
+    },
+    {
+      "name": "none of them was stored",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/native-apps",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": []
+        }
+      }
+    },
+    {
+      "name": "register the iOS app",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/native-apps",
+        "auth": "secret",
+        "body": {
+          "platform": "ios",
+          "teamId": "{{teamId}}",
+          "bundleId": "{{bundleId}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "platform": "ios",
+          "teamId": "{{teamId}}",
+          "bundleId": "{{bundleId}}",
+          "sha256CertFingerprints": "$absent"
+        }
+      },
+      "capture": {
+        "iosAppId": "id"
+      }
+    },
+    {
+      "name": "register the Android app with a fingerprint as apksigner prints it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/native-apps",
+        "auth": "secret",
+        "body": {
+          "platform": "android",
+          "packageName": "{{packageName}}",
+          "sha256CertFingerprints": ["{{pastedFingerprint}}"]
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "platform": "android",
+          "packageName": "{{packageName}}",
+          "sha256CertFingerprints": ["{{storedFingerprint}}"],
+          "teamId": "$absent"
+        }
+      },
+      "capture": {
+        "androidAppId": "id"
+      }
+    },
+    {
+      "name": "the same app a second time is a conflict",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/native-apps",
+        "auth": "secret",
+        "body": {
+          "platform": "ios",
+          "teamId": "ZZZZZZZZZZ",
+          "bundleId": "{{bundleId}}"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "resource.conflict"
+        }
+      }
+    },
+    {
+      "name": "Apple's file names the iOS app, without a key, as cacheable JSON",
+      "request": {
+        "method": "GET",
+        "path": "/v1/environments/{{environmentId}}/.well-known/apple-app-site-association",
+        "auth": "none"
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "content-type": {
+            "$matches": "^application/json\\b"
+          },
+          "cache-control": {
+            "$matches": "^public, max-age=\\d+$"
+          },
+          "x-content-type-options": "nosniff",
+          "location": "$absent",
+          "set-cookie": "$absent"
+        },
+        "body": {
+          "webcredentials": {
+            "apps": ["{{teamId}}.{{bundleId}}"]
+          },
+          "applinks": "$absent"
+        },
+        "bodyExcludes": ["{{packageName}}", "ZZZZZZZZZZ"]
+      }
+    },
+    {
+      "name": "Android's file names the Android app with the credentials relation only",
+      "request": {
+        "method": "GET",
+        "path": "/v1/environments/{{environmentId}}/.well-known/assetlinks.json",
+        "auth": "none"
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "content-type": {
+            "$matches": "^application/json\\b"
+          },
+          "cache-control": {
+            "$matches": "^public, max-age=\\d+$"
+          },
+          "x-content-type-options": "nosniff",
+          "location": "$absent"
+        },
+        "body": [
+          {
+            "relation": ["delegate_permission/common.get_login_creds"],
+            "target": {
+              "namespace": "android_app",
+              "package_name": "{{packageName}}",
+              "sha256_cert_fingerprints": ["{{storedFingerprint}}"]
+            }
+          }
+        ],
+        "bodyExcludes": ["handle_all_urls", "{{bundleId}}", "{{pastedFingerprint}}"]
+      }
+    },
+    {
+      "name": "an environment that does not exist has no file",
+      "request": {
+        "method": "GET",
+        "path": "/v1/environments/00000000-0000-7000-8000-00000000dead/.well-known/assetlinks.json",
+        "auth": "none"
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "code": "resource.not_found"
+        },
+        "bodyExcludes": ["{{packageName}}"]
+      }
+    },
+    {
+      "name": "nor does one whose id is not an id",
+      "request": {
+        "method": "GET",
+        "path": "/v1/environments/default/.well-known/apple-app-site-association",
+        "auth": "none"
+      },
+      "expect": {
+        "status": 422,
+        "bodyExcludes": ["{{bundleId}}"]
+      }
+    },
+    {
+      "name": "the registration is recorded by platform, never by name or fingerprint",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?targetId={{androidAppId}}&action=native_app.created",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1
+          }
+        },
+        "bodyExcludes": ["{{packageName}}", "{{storedFingerprint}}", "{{pastedFingerprint}}"]
+      }
+    },
+    {
+      "name": "an Android app has no team to change",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/native-apps/{{androidAppId}}",
+        "auth": "secret",
+        "body": {
+          "teamId": "{{teamId}}"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "validation.failed"
+        }
+      }
+    },
+    {
+      "name": "give the Android app a second fingerprint",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/native-apps/{{androidAppId}}",
+        "auth": "secret",
+        "body": {
+          "sha256CertFingerprints": ["{{secondFingerprint}}", "{{storedFingerprint}}"]
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "packageName": "{{packageName}}",
+          "sha256CertFingerprints": ["{{storedFingerprint}}", "{{secondFingerprint}}"]
+        }
+      }
+    },
+    {
+      "name": "the file follows the change",
+      "request": {
+        "method": "GET",
+        "path": "/v1/environments/{{environmentId}}/.well-known/assetlinks.json",
+        "auth": "none"
+      },
+      "expect": {
+        "status": 200,
+        "body": [
+          {
+            "target": {
+              "package_name": "{{packageName}}",
+              "sha256_cert_fingerprints": ["{{storedFingerprint}}", "{{secondFingerprint}}"]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "the files cannot be written through",
+      "request": {
+        "method": "POST",
+        "path": "/v1/environments/{{environmentId}}/.well-known/assetlinks.json",
+        "auth": "secret",
+        "body": []
+      },
+      "expect": {
+        "status": 404
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "remove the iOS app",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/native-apps/{{iosAppId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "remove the Android app",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/native-apps/{{androidAppId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "the files name nothing any more",
+      "request": {
+        "method": "GET",
+        "path": "/v1/environments/{{environmentId}}/.well-known/assetlinks.json",
+        "auth": "none"
+      },
+      "expect": {
+        "status": 200,
+        "body": []
+      }
+    }
+  ]
+}

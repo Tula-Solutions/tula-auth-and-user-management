@@ -6,6 +6,12 @@ export const TIERS = ['local', 'dev', 'staging', 'prod'] as const
 /** A deployment tier. */
 export type Tier = (typeof TIERS)[number]
 
+/** The values of `WEBHOOK_WORKER`: where a deployment makes its webhook deliveries. */
+export const WEBHOOK_WORKER_MODES = ['api', 'separate'] as const
+
+/** Where a deployment makes its webhook deliveries: in its API instances, or in a worker. */
+export type WebhookWorkerMode = (typeof WEBHOOK_WORKER_MODES)[number]
+
 /**
  * Tiers that face real users: they must send real email, check real breach data and share
  * rate-limit, lockout and revoked-session state through Redis.
@@ -96,6 +102,50 @@ export function looksTyped(value: string): boolean {
   )
 }
 
+/** The values of `SMS_PROVIDER`: what sends text messages (ADR 0037). */
+export const SMS_PROVIDERS = ['none', 'dev', 'twilio'] as const
+
+/** What sends a deployment's text messages. */
+export type SmsProvider = (typeof SMS_PROVIDERS)[number]
+
+/**
+ * A Twilio variable as it is read: any text, blank meaning unset. Its shape is judged only
+ * when `SMS_PROVIDER` is `twilio` (the cross-field rules below), so that a value left over
+ * from another deployment's file never stops a process that sends no text message, the
+ * webhook worker among them.
+ */
+const twilioVariable = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+  z.string().optional()
+)
+
+/**
+ * Twilio's identifiers: two letters and 32 hexadecimal digits (twilio.com/docs/glossary,
+ * "What is a SID"). `AC` an account, `SK` an API key, `MG` a Messaging Service.
+ */
+const TWILIO_SID = {
+  TWILIO_ACCOUNT_SID: /^AC[0-9a-fA-F]{32}$/,
+  TWILIO_API_KEY_SID: /^SK[0-9a-fA-F]{32}$/,
+  TWILIO_MESSAGING_SERVICE_SID: /^MG[0-9a-fA-F]{32}$/,
+} as const
+
+/** What the first two characters of each identifier are, for the message that refuses one. */
+const TWILIO_SID_PREFIX = {
+  TWILIO_ACCOUNT_SID: 'AC',
+  TWILIO_API_KEY_SID: 'SK',
+  TWILIO_MESSAGING_SERVICE_SID: 'MG',
+} as const
+
+/**
+ * A Twilio secret (an API key's secret, the account's auth token): printable ASCII with no
+ * space. Twilio documents no format for either, so nothing narrower is asked: what this
+ * catches is a value pasted with a space, a line break or a character a header cannot carry.
+ */
+const TWILIO_SECRET = /^[\x21-\x7e]{1,256}$/
+
+/** A phone number in E.164 form: `+`, then 8 to 15 digits, the first not a zero. */
+const E164 = /^\+[1-9][0-9]{7,14}$/
+
 const fields = z.object({
   /** Log formatting and third-party packages only. Behaviour is gated on `ENVIRONMENT`. */
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -129,7 +179,12 @@ const fields = z.object({
       /^[0-9a-fA-F]{64}$/,
       'must be 64 hex characters (32 bytes), e.g. `openssl rand -hex 32`'
     ),
-  /** Public base URL of this API. It is the `iss` claim of every access token. */
+  /**
+   * Public base URL of this API: a scheme, a host and at most a port and a path. It is the
+   * `iss` claim of every access token and the address the server requests to check itself
+   * (`public_url` and `native_app_files`, ADR 0031), so a user name, a password, a query or a
+   * fragment in it stops the boot, in every tier.
+   */
   PUBLIC_URL: z.url({ protocol: /^https?$/ }).default('http://localhost:3003'),
   /** `hibp` queries Have I Been Pwned (k-anonymity); `offline` uses the bundled common list. */
   BREACH_CHECK: z.enum(['hibp', 'offline']).default('offline'),
@@ -166,9 +221,51 @@ const fields = z.object({
    */
   OAUTH_MOCK_PROVIDER: flag,
   /**
+   * What sends text messages (ADR 0037).
+   *
+   * - `none` (the default): nothing does. An environment that switches SMS on in its settings
+   *   gets `sms.unavailable` for every send, and no message is written anywhere.
+   * - `dev`: the development inbox. Nothing is sent; the last messages are kept in the
+   *   process's memory and readable at `GET /v1/dev/sms/messages`. Refused outside
+   *   `ENVIRONMENT=local` and with a `PUBLIC_URL` that is not loopback: whoever can read the
+   *   inbox reads every code.
+   * - `twilio`: Twilio's Messages API, the one sender that really sends. Needs
+   *   `TWILIO_ACCOUNT_SID`, one way to authenticate (an API key, or the auth token) and one
+   *   sender (a Messaging Service, or a number). Allowed in every tier.
+   */
+  SMS_PROVIDER: z.enum(SMS_PROVIDERS).default('none'),
+  /**
+   * The Twilio account messages are sent from: `AC` and 32 hexadecimal digits. Read only
+   * when `SMS_PROVIDER` is `twilio`, like every `TWILIO_*` variable: otherwise they are
+   * ignored, whatever they hold.
+   */
+  TWILIO_ACCOUNT_SID: twilioVariable,
+  /**
+   * An API key of that account (`SK` and 32 hexadecimal digits), with its secret in
+   * `TWILIO_API_KEY_SECRET`. The preferred way to authenticate: a key can be revoked by
+   * itself, and is not the account's master credential. Set this pair **or**
+   * `TWILIO_AUTH_TOKEN`, never both.
+   */
+  TWILIO_API_KEY_SID: twilioVariable,
+  /** The secret of `TWILIO_API_KEY_SID`. Twilio shows it once, when the key is made. */
+  TWILIO_API_KEY_SECRET: twilioVariable,
+  /**
+   * The account's auth token: the other way to authenticate. It is the account's master
+   * credential (it can do everything the account can), so an API key is preferred.
+   */
+  TWILIO_AUTH_TOKEN: twilioVariable,
+  /**
+   * The Messaging Service messages are sent through (`MG` and 32 hexadecimal digits): Twilio
+   * picks the sender from the service's pool. Set this **or** `TWILIO_FROM_NUMBER`, never both.
+   */
+  TWILIO_MESSAGING_SERVICE_SID: twilioVariable,
+  /** The one Twilio number messages are sent from, in E.164 form (`+14155550100`). */
+  TWILIO_FROM_NUMBER: twilioVariable,
+  /**
    * Days an instance audit entry (dashboard sign-ins, workspaces, projects) is kept before the
    * retention job deletes it. At least 30: the log is what an operator reads after an
-   * incident. Environments' audit logs are not affected: they are never deleted (ADR 0017).
+   * incident. Environments' audit logs are not affected: each has its own period, the
+   * `audit.retentionDays` setting (ADR 0017).
    */
   INSTANCE_AUDIT_RETENTION_DAYS: z.preprocess(
     (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
@@ -238,6 +335,20 @@ const fields = z.object({
     (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
     z.url({ protocol: /^(rediss?|valkeys?)$/ }).optional()
   ),
+  /**
+   * Where webhook deliveries are made (ADR 0034, "The worker as its own service"). `api`, the
+   * default: inside every API instance. `separate`: only in a worker process (the same image
+   * started with `bun run src/worker.ts`), and an API instance then makes no request to a
+   * webhook endpoint at all. One value for the whole deployment, the same in every container:
+   * what a process is follows from the command it was started with, never from this.
+   *
+   * A closed set, matched exactly: a misspelling stops the boot, because falling back to
+   * either value would decide, silently, who delivers.
+   */
+  WEBHOOK_WORKER: z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+    z.enum(WEBHOOK_WORKER_MODES, 'must be `api` or `separate`').default('api')
+  ),
 })
 
 /** Host names that only ever mean this machine. */
@@ -253,7 +364,32 @@ const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '
  */
 export function isLoopbackUrl(url: string): boolean {
   const host = parsedUrl(url)?.hostname.toLowerCase()
-  return host !== undefined && (LOOPBACK_HOSTS.has(host) || host.endsWith('.localhost'))
+  return host !== undefined && isLoopbackName(host)
+}
+
+/** The one rule both functions here judge a host name by. Lower case, no port. */
+function isLoopbackName(name: string): boolean {
+  return LOOPBACK_HOSTS.has(name) || name.endsWith('.localhost')
+}
+
+// A `Host` header: a name or an IPv4 address, or an IPv6 address in brackets, then an
+// optional port. Nothing else: no user information, path, space or empty name.
+const HOST_HEADER = /^([a-z0-9.-]+|\[[0-9a-f:]+\])(:[0-9]{1,5})?$/
+
+/**
+ * Whether a request's `Host` header names this machine, by the rule of {@link isLoopbackUrl},
+ * on any port.
+ *
+ * What a development-only route asks before it answers: a page that reaches this port by DNS
+ * rebinding is same-origin with itself (no `Origin`, `Sec-Fetch-Site: same-origin`), but its
+ * `Host` header still names the attacker's domain.
+ *
+ * @param host - The header's value (`localhost:3003`), or `undefined` when there was none.
+ * @returns `true` only for a well-formed loopback host. Missing or malformed is `false`.
+ */
+export function isLoopbackHost(host: string | undefined): boolean {
+  const match = host === undefined ? null : HOST_HEADER.exec(host.toLowerCase())
+  return match?.[1] !== undefined && isLoopbackName(match[1])
 }
 
 /**
@@ -269,7 +405,126 @@ function parsedUrl(value: string): URL | null {
   }
 }
 
+/**
+ * Whether a URL's text has an `@` in its authority: between the `//` and the first `/`, `?`,
+ * `#` or a backslash (which the URL parser reads as `/` for http and https). An `@` there starts a
+ * host however little stands before it; one in the path is a character of the path.
+ *
+ * Two searches and a slice, each one pass over the text: no pattern that can start again.
+ */
+function namesUser(value: string): boolean {
+  const start = value.indexOf('//')
+  if (start === -1) {
+    return false
+  }
+  const rest = value.slice(start + 2)
+  const end = rest.search(/[/?#\\]/)
+  return (end === -1 ? rest : rest.slice(0, end)).includes('@')
+}
+
+/** The `TWILIO_*` variables: what {@link requireTwilio} reads. */
+type TwilioVariables = Pick<
+  z.infer<typeof fields>,
+  | 'TWILIO_ACCOUNT_SID'
+  | 'TWILIO_API_KEY_SID'
+  | 'TWILIO_API_KEY_SECRET'
+  | 'TWILIO_AUTH_TOKEN'
+  | 'TWILIO_MESSAGING_SERVICE_SID'
+  | 'TWILIO_FROM_NUMBER'
+>
+
+/**
+ * What `SMS_PROVIDER=twilio` needs: the account, exactly one way to authenticate and exactly
+ * one sender, each of the shape Twilio gives it. Every problem is reported, by the variable's
+ * name and a fixed sentence: never a value, which may be a secret pasted into the wrong line.
+ */
+function requireTwilio(env: TwilioVariables, ctx: z.RefinementCtx): void {
+  const issue = (name: keyof TwilioVariables, message: string) =>
+    ctx.addIssue({ code: 'custom', path: [name], message })
+  const sid = (name: keyof typeof TWILIO_SID) => {
+    const value = env[name]
+    if (value !== undefined && !TWILIO_SID[name].test(value)) {
+      issue(
+        name,
+        `must be ${TWILIO_SID_PREFIX[name]} followed by 32 hexadecimal characters, as Twilio shows it`
+      )
+    }
+  }
+  const secret = (name: 'TWILIO_API_KEY_SECRET' | 'TWILIO_AUTH_TOKEN') => {
+    const value = env[name]
+    if (value !== undefined && !TWILIO_SECRET.test(value)) {
+      issue(name, 'must be printable ASCII without spaces, at most 256 characters')
+    }
+  }
+  if (env.TWILIO_ACCOUNT_SID === undefined) {
+    issue('TWILIO_ACCOUNT_SID', 'is required when SMS_PROVIDER is twilio')
+  }
+  sid('TWILIO_ACCOUNT_SID')
+
+  const apiKey = env.TWILIO_API_KEY_SID !== undefined || env.TWILIO_API_KEY_SECRET !== undefined
+  const authToken = env.TWILIO_AUTH_TOKEN !== undefined
+  if (apiKey && authToken) {
+    issue(
+      'TWILIO_AUTH_TOKEN',
+      'must not be set together with TWILIO_API_KEY_SID and TWILIO_API_KEY_SECRET: choose one way to authenticate (the API key is preferred)'
+    )
+  } else if (!apiKey && !authToken) {
+    issue(
+      'TWILIO_API_KEY_SID',
+      'is required when SMS_PROVIDER is twilio, with TWILIO_API_KEY_SECRET (or set TWILIO_AUTH_TOKEN instead)'
+    )
+  } else if (apiKey && env.TWILIO_API_KEY_SID === undefined) {
+    issue('TWILIO_API_KEY_SID', 'is required with TWILIO_API_KEY_SECRET')
+  } else if (apiKey && env.TWILIO_API_KEY_SECRET === undefined) {
+    issue('TWILIO_API_KEY_SECRET', 'is required with TWILIO_API_KEY_SID')
+  }
+  sid('TWILIO_API_KEY_SID')
+  secret('TWILIO_API_KEY_SECRET')
+  secret('TWILIO_AUTH_TOKEN')
+
+  const service = env.TWILIO_MESSAGING_SERVICE_SID !== undefined
+  const number = env.TWILIO_FROM_NUMBER !== undefined
+  if (service && number) {
+    issue(
+      'TWILIO_FROM_NUMBER',
+      'must not be set together with TWILIO_MESSAGING_SERVICE_SID: choose one sender'
+    )
+  } else if (!service && !number) {
+    issue(
+      'TWILIO_MESSAGING_SERVICE_SID',
+      'is required when SMS_PROVIDER is twilio (or set TWILIO_FROM_NUMBER instead)'
+    )
+  }
+  sid('TWILIO_MESSAGING_SERVICE_SID')
+  if (env.TWILIO_FROM_NUMBER !== undefined && !E164.test(env.TWILIO_FROM_NUMBER)) {
+    issue(
+      'TWILIO_FROM_NUMBER',
+      'must be a phone number in E.164 form: + and 8 to 15 digits, no spaces (a short code or an alphanumeric sender goes in a Messaging Service)'
+    )
+  }
+}
+
 const schema = fields.superRefine((env, ctx) => {
+  if (env.SMS_PROVIDER === 'twilio') {
+    requireTwilio(env, ctx)
+  }
+  if (env.SMS_PROVIDER === 'dev' && env.ENVIRONMENT !== 'local') {
+    // As for the mock provider: the development inbox hands every code to whoever asks, so
+    // it must be impossible wherever other people can reach the API, `dev` included.
+    ctx.addIssue({
+      code: 'custom',
+      path: ['SMS_PROVIDER'],
+      message: `dev is only allowed with ENVIRONMENT=local, not ${env.ENVIRONMENT}: the development inbox shows every code to anyone who can reach this API`,
+    })
+  }
+  if (env.SMS_PROVIDER === 'dev' && !isLoopbackUrl(env.PUBLIC_URL)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['SMS_PROVIDER'],
+      message:
+        'dev is only allowed when PUBLIC_URL is a loopback address (localhost, 127.0.0.1, [::1] or a *.localhost name): the development inbox shows every code to anyone who can reach this API',
+    })
+  }
   if (env.OAUTH_MOCK_PROVIDER && env.ENVIRONMENT !== 'local') {
     // Not a "live tiers" rule: the mock provider signs anyone in as any address they type, so
     // it must be impossible in every deployment other people can reach, `dev` included.
@@ -287,6 +542,33 @@ const schema = fields.superRefine((env, ctx) => {
       path: ['OAUTH_MOCK_PROVIDER'],
       message:
         'is only allowed when PUBLIC_URL is a loopback address (localhost, 127.0.0.1, [::1] or a *.localhost name): the mock provider signs in anyone as any address',
+    })
+  }
+  const publicUrl = parsedUrl(env.PUBLIC_URL)
+  if (
+    publicUrl &&
+    (publicUrl.username !== '' || publicUrl.password !== '' || namesUser(env.PUBLIC_URL))
+  ) {
+    // In every tier. The value is published (it is the `iss` of every access token and the
+    // address of the JWKS) and it is what the server requests to check itself, where `fetch`
+    // would send the credentials as basic authentication. The text is asked too: the parser
+    // gives `https://@host` and `https://:@host` an empty user name and password, and the
+    // issuer is built from the value as typed, `@` included.
+    ctx.addIssue({
+      code: 'custom',
+      path: ['PUBLIC_URL'],
+      message:
+        'must not hold a user name or a password: it is the issuer of every access token and the address the server requests to check itself, so the credentials would be published in every token and sent with those requests',
+    })
+  }
+  if (publicUrl && /[?#]/.test(env.PUBLIC_URL)) {
+    // The text is asked, not the parsed `search` and `hash`: both are empty for a value that
+    // ends in a bare `?` or `#`, and a path added to it would still land in one.
+    ctx.addIssue({
+      code: 'custom',
+      path: ['PUBLIC_URL'],
+      message:
+        'must not have a query or a fragment: the issuer and every address the server builds are this value with a path added',
     })
   }
   if (!LIVE_TIERS.has(env.ENVIRONMENT)) {
@@ -341,7 +623,6 @@ const schema = fields.superRefine((env, ctx) => {
       message: `is required in ${env.ENVIRONMENT}: rate limits, lockout and revoked sessions must be shared between instances`,
     })
   }
-  const publicUrl = parsedUrl(env.PUBLIC_URL)
   if (publicUrl && publicUrl.protocol !== 'https:') {
     // Session cookies are `Secure`; a plain-http issuer would also leak tokens in transit.
     ctx.addIssue({

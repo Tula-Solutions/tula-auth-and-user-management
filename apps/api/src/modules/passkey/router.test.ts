@@ -24,8 +24,10 @@ import * as Flows from '~/modules/flow/service'
 import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
 import * as Passwords from '~/modules/password/service'
+import * as DeviceBinding from '~/modules/session/device-binding'
 import * as Sessions from '~/modules/session/service'
 import { createTestDeps, seedApiKey, TEST_TENANT, type TestDeps } from '~/testing'
+import { DPOP_HEADER, generateSoftwareDeviceKey, jwkThumbprint, proofFor } from '~/testing/proofs'
 
 const PK = 'tula_pk_dev_publishable0000000000000000000'
 const SK = 'tula_sk_dev_secret000000000000000000000000'
@@ -63,10 +65,11 @@ function configure(switches: Switches = {}, environmentId: string = TEST_TENANT.
         emailCode: { enabled: switches.emailCode ?? false },
         emailLink: { enabled: false },
         passkey: { enabled: switches.passkey ?? true },
+        smsCode: { enabled: false },
       },
     },
     urls: { allowedOrigins: [ORIGIN, OTHER_ALLOWED], allowedRedirectUrls: [] },
-    mfa: { policy: switches.policy ?? 'optional' },
+    mfa: { policy: switches.policy ?? 'optional', smsCode: { enabled: false } },
     passkeys: { rpId: switches.rpId === undefined ? RP_ID : switches.rpId },
   }
   deps.environmentSettings.seed(environmentId, { revision, settings })
@@ -103,6 +106,8 @@ interface CallOptions {
   client?: string
   secret?: string | null
   userAgent?: string
+  /** The `DPoP` header. */
+  dpop?: string
 }
 
 /** A native client (tokens in the body) on an allowed origin, remembering attempt secrets. */
@@ -120,6 +125,9 @@ async function call(method: string, path: string, body?: unknown, options: CallO
   }
   if (options.userAgent) {
     headers['user-agent'] = options.userAgent
+  }
+  if (options.dpop !== undefined) {
+    headers[DPOP_HEADER] = options.dpop
   }
   const secret =
     options.secret === undefined
@@ -1740,5 +1748,99 @@ describe('the admin reset', () => {
     await Notices.settled()
     expect(subjects()).toEqual([])
     expect(await auditTypes()).not.toContain('user.passkey_removed')
+  })
+})
+
+describe('a user with no email address (an account made through X or Facebook)', () => {
+  /** Such a user, signed in, with a fresh authenticator. */
+  async function addressless() {
+    const userId = deps.ids.next()
+    await deps.users.create(
+      {
+        id: userId,
+        projectId: TEST_TENANT.projectId,
+        environmentId: TEST_TENANT.environmentId,
+        email: null,
+        emailNormalized: null,
+        emailVerifiedAt: null,
+        firstName: 'Nelly',
+        lastName: null,
+        createdAt: deps.clock.now(),
+        identityId: deps.ids.next(),
+        credentialId: deps.ids.next(),
+        passwordHash: null,
+        oauthIdentity: { id: deps.ids.next(), provider: 'x', subject: '2244994945' },
+      },
+      Audit.none('fixture')
+    )
+    const session = await Sessions.create(deps, TEST_TENANT, {
+      userId,
+      client: 'ios',
+      userAgent: null,
+      ipAddress: null,
+      authMethods: ['fed'],
+    })
+    return {
+      userId,
+      token: session.accessToken as string,
+      authenticator: new VirtualAuthenticator(),
+    }
+  }
+
+  test('registers a passkey named by the account’s name, never "null" and never an address', async () => {
+    const { token } = await addressless()
+    const options = await json<PasskeyCreationOptions>(
+      await post('/me/passkeys/options', {}, { token })
+    )
+    expect(options.user.name).toBe('Nelly')
+    expect(options.user.displayName).toBe('Nelly')
+  })
+
+  test('signs in with the passkey and is never sent to prove an address it does not have', async () => {
+    const { userId, token, authenticator } = await addressless()
+    await register(token, authenticator)
+    await Notices.settled()
+    const sent = deps.mailer.outbox.length
+    const res = await passkeySignIn(authenticator)
+    expect(res.status).toBe(200)
+    const done = await json<FlowAttempt>(res)
+    expect(done.step).toMatchObject({ status: 'complete', userId })
+    await Notices.settled()
+    // No code and no notice: there is no address to send either to.
+    expect(deps.mailer.outbox.length).toBe(sent)
+    expect(sent).toBe(0)
+    expect(
+      (await deps.users.findById(TEST_TENANT.environmentId, userId))?.emailVerifiedAt
+    ).toBeNull()
+  })
+})
+
+describe('a passkey sign-in bound to a device key (ADR 0043)', () => {
+  test('the key the start proved is the session’s, whatever the last step carries', async () => {
+    const { authenticator } = await withPasskey()
+    const key = await generateSoftwareDeviceKey()
+    const dpop = await proofFor(key, {
+      now: deps.clock.now(),
+      path: '/v1/client/sign-ins/passkey',
+      nonce: await DeviceBinding.nonce(deps, TEST_TENANT),
+    })
+    // The same header rides on the step that completes: it is not read there.
+    const res = await passkeySignIn(authenticator, {}, { dpop })
+    expect(res.status).toBe(200)
+    const done = await json<FlowAttempt>(res)
+    const session = await deps.sessions.findById(
+      TEST_TENANT.environmentId,
+      done.session?.sessionId ?? ''
+    )
+    expect(session?.deviceThumbprint).toBe(await jwkThumbprint(key.publicJwk))
+    expect(claimsOf(done.session?.accessToken ?? '').cnf).toEqual({
+      jkt: session?.deviceThumbprint as string,
+    })
+  })
+
+  test('an invalid proof at the start is refused before a challenge is made', async () => {
+    const res = await post('/sign-ins/passkey', {}, { dpop: 'not.a.proof' })
+    expect(res.status).toBe(401)
+    expect(await codeOf(res)).toBe('device.proof_invalid')
   })
 })

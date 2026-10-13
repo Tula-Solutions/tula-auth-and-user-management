@@ -129,7 +129,159 @@ await signUp.verifyEmail({ code })
 ```
 <!-- /snippet -->
 
-Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/react.md).
+`@tula/expo`, in the example app's sign-in screen: the code is asked for with a button,
+never sent on arrival ([expo.md](../expo.md)).
+
+<!-- snippet: examples/expo/app/src/screens.tsx#sign-in -->
+```tsx
+/**
+ * Sign in with a password, or with a code or a link emailed to the address where the
+ * environment offers one.
+ */
+export function SignInScreen(props: { onSignUp(): void }) {
+  const signIn = useSignIn()
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [code, setCode] = useState('')
+  const step = signIn.step
+  // An emailed link the app is opened with finishes this sign-in, if this sign-in asked.
+  useEmailLinks(signIn)
+  const linkProblem = emailLinkProblem(signIn.error)
+
+  switch (signIn.screen) {
+    case null:
+      return (
+        <Screen title='Sign in'>
+          <Field kind='email' label='Email' value={email} onChangeText={setEmail} />
+          {linkProblem ? <Note>{linkProblem}</Note> : <Problem error={signIn.error} />}
+          <Action
+            label='Continue'
+            pending={signIn.isPending}
+            onPress={() => void signIn.start({ identifier: email })}
+          />
+          {/* A passkey needs no address: it is offered before one is typed. */}
+          <PasskeySignIn signIn={signIn} />
+          {/* Neither does Apple's or Google's own sheet. */}
+          <NativeProviderSignIn signIn={signIn} />
+          <Dismissed signIn={signIn} />
+          <Action quiet label='Create an account' onPress={props.onSignUp} />
+        </Screen>
+      )
+    case 'needs_password':
+      return (
+        <Screen title='Your password'>
+          <Field kind='password' label='Password' value={password} onChangeText={setPassword} />
+          <Problem error={signIn.error} />
+          <Action
+            label='Sign in'
+            pending={signIn.isPending}
+            onPress={() => void signIn.submitPassword({ password })}
+          />
+          <Action quiet label='Start again' onPress={signIn.reset} />
+        </Screen>
+      )
+    case 'needs_first_factor': {
+      // The server says which ways this environment offers; the app shows the ones it has.
+      const offered = step?.status === 'needs_first_factor' ? step.strategies : []
+      const emailed = step?.status === 'needs_first_factor' && step.prepared !== undefined
+      return (
+        <Screen title='Sign in'>
+          {offered.includes('password') && !emailed ? (
+            <>
+              <Field kind='password' label='Password' value={password} onChangeText={setPassword} />
+              <Action
+                label='Sign in'
+                pending={signIn.isPending}
+                onPress={() => void signIn.submitPassword({ password })}
+              />
+            </>
+          ) : null}
+          {offered.includes('email_code') && !emailed ? (
+            // Nothing is emailed on arrival: the user asks.
+            <Action
+              quiet
+              label='Email me a code instead'
+              onPress={() => void signIn.prepareFirstFactor({ strategy: 'email_code' })}
+            />
+          ) : null}
+          {emailed ? null : <EmailLinkSignIn signIn={signIn} offered={offered} />}
+          {emailed ? (
+            <>
+              {/* An email with a link carries the code too: the code works on any device. */}
+              <Note>
+                If {email} can sign in, an email is on its way: open its link on this phone, or type
+                its 6-digit code.
+              </Note>
+              <Field kind='code' label='Code' value={code} onChangeText={setCode} />
+              <Action
+                label='Sign in'
+                pending={signIn.isPending}
+                onPress={() => void signIn.attemptFirstFactor({ strategy: 'email_code', code })}
+              />
+              {/* A link whose answer was lost may have been taken: this asks once more. */}
+              <EmailLinkFinish signIn={signIn} />
+            </>
+          ) : null}
+          {offered.includes('passkey') && !emailed ? <PasskeySignIn signIn={signIn} /> : null}
+          {emailed ? null : <ProviderSignIn signIn={signIn} offered={offered} />}
+          <Dismissed signIn={signIn} />
+          {linkProblem ? <Note>{linkProblem}</Note> : <Problem error={signIn.error} />}
+          <Action quiet label='Start again' onPress={signIn.reset} />
+        </Screen>
+      )
+    }
+    case 'needs_email_verification':
+      return (
+        <Screen title='Check your email'>
+          <Field kind='code' label='Code' value={code} onChangeText={setCode} />
+          <Problem error={signIn.error} />
+          <Action
+            label='Verify'
+            pending={signIn.isPending}
+            onPress={() => void signIn.verifyEmail({ code })}
+          />
+        </Screen>
+      )
+    case 'complete':
+      return null
+    default:
+      // A second step, an expired password, or a step from a newer server: this small
+      // example has no screen for them and says so.
+      return <NotSupported onBack={signIn.reset} />
+  }
+}
+```
+<!-- /snippet -->
+
+The Swift client ([swift.md](../swift.md)): the code is asked for by a call of its own,
+never sent by arriving at the step.
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#email-code -->
+```swift
+let signIn = try await tula.startSignIn(identifier: email)
+if case .firstFactor = signIn.screen {
+    try await signIn.prepareEmailCode()  // nothing is emailed until this is called
+    try await signIn.attemptEmailCode(typed)
+}
+```
+<!-- /snippet -->
+
+The Kotlin client ([kotlin.md](../kotlin.md)):
+
+<!-- snippet: native/android/tula-auth/src/test/kotlin/dev/tula/auth/DocsSnippets.kt#email-code -->
+```kotlin
+val flow = tula.signIn(email)
+if (flow.screen == FlowScreen.NEEDS_FIRST_FACTOR) {
+    flow.prepareFirstFactor(CodeStrategy.EMAIL_CODE) // nothing is emailed until this is called
+    flow.attemptFirstFactor(CodeStrategy.EMAIL_CODE, code)
+}
+```
+<!-- /snippet -->
+
+Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/react.md),
+[`@tula/expo`](../reference/expo.md).
+
+Native: [Swift](../reference/swift.md), [Kotlin](../reference/kotlin.md).
 
 ## Troubleshooting
 

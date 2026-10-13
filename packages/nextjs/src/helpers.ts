@@ -1,9 +1,10 @@
+import type { CustomClaims } from '@tula/contract/custom-claims'
 import { CLIENT_HEADER } from '@tula/contract/headers'
 import type { User } from '@tula/core'
 import { configFor, type TulaServerOptions } from './config'
 import { readSession } from './session'
 import { apiHeaders, callApi, readRequestCookies } from './upstream'
-import type { SessionClaims } from './verify'
+import { NO_CUSTOM_CLAIMS, type SessionClaims } from './verify'
 
 // The server helpers without Next.js: they take the request. `server.ts` binds them to
 // `next/headers`; tests call them directly.
@@ -29,6 +30,21 @@ export type Auth =
       /** Every verified claim: `auth_time`, `amr` and the rest. */
       claims: SessionClaims
       /**
+       * The session's custom claims: what the JWT template of its profile defines, as a
+       * frozen record. Empty when the profile has no template. The values are `unknown`
+       * because only you know your template: narrow before use, and read a missing claim as
+       * "no". The same for a token session and a `stateful` one.
+       *
+       * @example
+       * ```ts
+       * const { customClaims } = await auth()
+       * if (customClaims?.role !== 'admin') {
+       *   notFound()
+       * }
+       * ```
+       */
+      customClaims: CustomClaims
+      /**
        * The access token, for calling your own backend. `null` for a `stateful` session,
        * which has none.
        */
@@ -39,6 +55,7 @@ export type Auth =
       userId: null
       sessionId: null
       claims: null
+      customClaims: null
       getToken(): Promise<null>
     }
 
@@ -73,6 +90,7 @@ const SIGNED_OUT: Auth = Object.freeze({
   userId: null,
   sessionId: null,
   claims: null,
+  customClaims: null,
   getToken: () => Promise.resolve(null),
 })
 
@@ -105,6 +123,7 @@ export async function authenticate(request: Request, options: TulaServerOptions)
     userId: claims.sub,
     sessionId: claims.sid,
     claims,
+    customClaims: claims.ext ?? NO_CUSTOM_CLAIMS,
     getToken: () => Promise.resolve(token),
   }
 }

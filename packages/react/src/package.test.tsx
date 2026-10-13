@@ -123,8 +123,63 @@ describe('what @tula/react costs a browser bundle', () => {
    * The phase-1 review fixes took it just past that, to about 45.6 kB, and the budget to
    * 46 kB: the provider's "sign-out did not finish" dialog with its retry and strings, the
    * refusal of a destination that names a host without a scheme, and `discard()` on every flow.
+   * A phone number on an account (ADR 0037) took it to 47,364 bytes and the budget to 47.8 kB:
+   * about 0.25 kB is the client's (three routes, `user.phone`, four error messages) and the
+   * rest the profile's section (the number form, the code form, the summary with change and
+   * remove, and their strings). No dependency was added, and the contract's phone number
+   * rules are not in the bundle: the server judges a number. Together with the Microsoft
+   * button (TULA-12, about 0.1 kB, which landed without a change to the budget) it measures
+   * 47,475 bytes, and the budget moved by those 111 bytes, to 47,911, so the room left is
+   * what it was.
+   * Discord's and LinkedIn's buttons (TULA-13) are two more marks, each one path, and two
+   * names: with them it measures 48,362 bytes, 887 more. The budget moved by exactly those
+   * bytes, to 48,798, so the 436 bytes of room there were are what is left.
+   * X's and Facebook's buttons (TULA-14) are two more one-path marks and two names, and a
+   * signed-in user may now have no email address (no address line, no badge, no password
+   * section): with both it measures 48,885 bytes, 523 more. The budget moved by exactly
+   * those bytes, to 49,321, so the 436 bytes of room are still what is left.
+   * The password history (ADR 0038) is one more line of the checklist, in two states
+   * (waiting for the server, refused by it), its three strings, and the rule that decides
+   * between them on the profile's and the reset's password field: with it the bundle
+   * measures 49,173 bytes, 288 more. The budget moved by exactly those bytes, to 49,609, so
+   * the 436 bytes of room are still what is left.
+   * Signing in with a texted code (TULA-27) is one more first-factor form (ask, then the
+   * code with its resend), the first field that also takes a phone number, their strings,
+   * and one error message in the client: with them it measures 49,879 bytes, 706 more. The
+   * budget moved by exactly those bytes, to 50,315, so the 436 bytes of room are still what
+   * is left.
+   * Password expiry (ADR 0041) is one more screen of the sign-in (one field with the
+   * checklist and its history line), four strings and the client's `submitNewPassword`:
+   * with them it measures 50,200 bytes, 321 more. The budget moved by exactly those bytes,
+   * to 50,636, so the 436 bytes of room are still what is left.
+   * A texted code as the second step (ADR 0025, TULA-46) is one form (ask, then the code,
+   * used by the sign-in and reset screen, the step-up dialog and the profile), the profile's
+   * lines for it, eleven strings, and 290 bytes in the client: with them it measures 51,645
+   * bytes, 1,445 more. The budget moved by exactly those bytes, to 52,081, so the 436 bytes
+   * of room are still what is left.
+   * Its review (TULA-46) added what a user is told: that a passkey replaces a texted code
+   * and has no backup codes, that a texted code set aside comes back, the form that takes
+   * its controls away when the app has switched the method off, and "Add a passkey" held
+   * until the second step has been read (four strings, one changed). The first three landed
+   * inside the room there was; with the fourth the bundle measures 52,272 bytes, 627 more
+   * than before the review. The budget moved by exactly those bytes, to 52,708, so the 436
+   * bytes of room are still what is left.
+   * Device binding (ADR 0043) adds no component and no string of this package: what grew is
+   * `@tula/core` inside the bundle (three error messages, making a proof and the
+   * transport's repeat after a nonce challenge; a `web` client, which is what these
+   * components run in, is refused a device key, but the code is the client's and is not
+   * split out). Measured on the tree that has both this and the texted second step, the
+   * bundle is 52,835 bytes, 563 more than the 52,272 before. The budget was set from that
+   * measurement, to 53,271, so the 436 bytes of room are still what is left.
+   * An email address for an account without one (ADR 0059, TULA-69) came in two parts. The
+   * client's two calls and the message of `email.already_set` are `@tula/core`'s and landed
+   * inside the room there was: the bundle then measured 53,175 bytes, 340 more, with 96
+   * bytes of room left. The profile's section (a form, the code step, "sign in again" for a
+   * user with nothing to step up with, ten strings) is this package's: with it the bundle
+   * measures 53,997 bytes, 822 more. The budget was set from that measurement, to 54,433,
+   * so the 436 bytes of room are what is left again.
    */
-  const GZIP_BUDGET_BYTES = 46_000
+  const GZIP_BUDGET_BYTES = 54_433
   /**
    * The QR encoder, in a chunk of its own: loaded when an enrolment is first drawn, so an app
    * that never shows one does not pay for it.

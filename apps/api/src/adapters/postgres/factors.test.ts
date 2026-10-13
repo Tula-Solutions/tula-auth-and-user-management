@@ -14,6 +14,7 @@ import { PostgresFactorStore } from '~/adapters/postgres/factors'
 import * as Audit from '~/modules/audit/service'
 import type { Activity } from '~/ports/activity-log'
 import type { NewBackupCode, NewFactor } from '~/ports/factor-store'
+import { comparable } from '~/testing/comparable'
 
 // PGlite: real Postgres with every migration, connected as the runtime role (RLS applies).
 let testDb: TestDatabase
@@ -178,11 +179,13 @@ describe('PostgresFactorStore', () => {
           activity: activity(userId, BROKEN),
         })
       ).rejects.toThrow()
-      expect(await store().findTotp(a.environmentId, userId)).toMatchObject({
-        confirmedAt: null,
-        lastUsedStep: null,
-        expiresAt: later(600_000),
-      })
+      expect(comparable(await store().findTotp(a.environmentId, userId))).toMatchObject(
+        comparable({
+          confirmedAt: null,
+          lastUsedStep: null,
+          expiresAt: later(600_000),
+        })
+      )
       expect(await rowsOf(userId)).toEqual({ factors: 1, codes: 0 })
       expect(await onRecord(userId)).toEqual({ audit: [], outbox: [] })
     })
@@ -263,18 +266,20 @@ describe('PostgresFactorStore', () => {
     const [row] = await withTenant(testDb.db, a.environmentId, (tx) =>
       tx.select().from(userFactors).where(eq(userFactors.userId, userId))
     )
-    expect(row).toMatchObject({
-      id: factor.id,
-      projectId: a.projectId,
-      environmentId: a.environmentId,
-      type: 'totp',
-      secret: factor.secret,
-      name: null,
-      confirmedAt: later(1_000),
-      expiresAt: null,
-      lastUsedStep: 100,
-      updatedAt: later(1_000),
-    })
+    expect(comparable(row)).toMatchObject(
+      comparable({
+        id: factor.id,
+        projectId: a.projectId,
+        environmentId: a.environmentId,
+        type: 'totp',
+        secret: factor.secret,
+        name: null,
+        confirmedAt: later(1_000),
+        expiresAt: null,
+        lastUsedStep: 100,
+        updatedAt: later(1_000),
+      })
+    )
     const stored = await withTenant(testDb.db, a.environmentId, (tx) =>
       tx.select().from(backupCodes).where(eq(backupCodes.userId, userId))
     )
@@ -282,12 +287,14 @@ describe('PostgresFactorStore', () => {
       backup.map((code) => code.codeHash).sort()
     )
     for (const code of stored) {
-      expect(code).toMatchObject({
-        projectId: a.projectId,
-        environmentId: a.environmentId,
-        usedAt: null,
-        createdAt: later(1_000),
-      })
+      expect(comparable(code)).toMatchObject(
+        comparable({
+          projectId: a.projectId,
+          environmentId: a.environmentId,
+          usedAt: null,
+          createdAt: later(1_000),
+        })
+      )
     }
   })
 

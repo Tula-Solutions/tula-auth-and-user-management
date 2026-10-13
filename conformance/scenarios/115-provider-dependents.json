@@ -1,0 +1,248 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "accounts that depend on a provider are counted before it is switched off",
+  "description": "Before a provider is switched off, an administrator can ask how many accounts have it connected and could not sign in without it: a number and nothing about who. An account made by a first sign-in with X is one of them (the count is not asserted exactly: a server that has run before holds earlier accounts). Switching the provider off is not refused. It is recorded as a weakening, with the count the server took at that moment, and from then on nobody starts a sign-in with X. The count of a provider is read by a secret key only. That a count stops at 1,000 accounts looked at, and what an account needs to stop counting, are API tests. Uses the server’s mock provider (OAUTH_MOCK_PROVIDER, local tier only). The provider’s credentials are removed afterwards, even when a step fails.",
+  "needsSecretKey": true,
+  "variables": {
+    "account": {
+      "generate": "snowflake"
+    }
+  },
+  "steps": [
+    {
+      "name": "an administrator sets the environment’s own X credentials",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/x",
+        "auth": "secret",
+        "body": {
+          "clientId": "conformance-x-client",
+          "clientSecret": "conformance-x-secret"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "x",
+          "configured": true,
+          "enabled": true
+        },
+        "bodyExcludes": ["conformance-x-secret"]
+      }
+    },
+    {
+      "name": "a person starts continuing with X",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "x",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_x"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "aUrl": "authorizationUrl",
+        "aBinding": "binding"
+      }
+    },
+    {
+      "name": "X names a person’s account by its id and says no address",
+      "oauth": {
+        "authorizationUrl": "{{aUrl}}",
+        "subject": "{{account}}",
+        "captureTicket": "aTicket",
+        "captureAttempt": "aAttempt"
+      }
+    },
+    {
+      "name": "a person is signed in to an account with no email address",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{aTicket}}",
+          "attemptId": "{{aAttempt}}",
+          "binding": "{{aBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "$any",
+          "kind": "sign_in",
+          "expiresAt": "$any",
+          "step": {
+            "status": "complete",
+            "userId": "$any",
+            "sessionId": "$any"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": "$any"
+          }
+        }
+      },
+      "capture": {
+        "aId": "step.userId",
+        "aToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "a publishable key does not read the count",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/oauth-providers/x/dependents"
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
+      "name": "what is not a provider has no count",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/oauth-providers/myspace/dependents",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 422
+      }
+    },
+    {
+      "name": "the administrator asks how many accounts could not sign in without X",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/oauth-providers/x/dependents",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "x",
+          "accounts": {
+            "$not": 0
+          },
+          "more": "$any"
+        },
+        "bodyExcludes": ["{{aId}}", "{{account}}"]
+      }
+    },
+    {
+      "name": "switching X off is not refused",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/x",
+        "auth": "secret",
+        "body": {
+          "clientId": "conformance-x-client",
+          "clientSecret": "conformance-x-secret",
+          "enabled": false
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "x",
+          "configured": true,
+          "enabled": false
+        }
+      }
+    },
+    {
+      "name": "it is recorded as a weakening, with the count and nobody’s id",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?action=oauth_provider.updated&size=1",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "action": "oauth_provider.updated",
+              "metadata": {
+                "provider": "x",
+                "weakened": true,
+                "dependentAccounts": {
+                  "$not": 0
+                }
+              }
+            }
+          ]
+        },
+        "bodyExcludes": ["{{aId}}", "{{account}}"]
+      }
+    },
+    {
+      "name": "nobody starts a sign-in with X now",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "x",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "auth.method_disabled"
+        }
+      }
+    },
+    {
+      "name": "the count is still there to read while the provider is off",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/oauth-providers/x/dependents",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "x",
+          "accounts": {
+            "$not": 0
+          },
+          "more": "$any"
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "remove the x credentials",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/oauth-providers/x",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    }
+  ]
+}

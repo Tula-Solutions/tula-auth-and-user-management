@@ -28,7 +28,9 @@
     "test": "bun test",
     "test:coverage": "bun test --coverage",
     "generate": "bun run scripts/generate.ts",
-    "generate:check": "bun run scripts/generate.ts --check"
+    "generate:native": "bun run scripts/generate-native.ts",
+    "generate:native:check": "bun run scripts/generate-native.ts --check",
+    "generate:check": "bun run scripts/generate.ts --check && bun run scripts/generate-native.ts --check"
   },
   "dependencies": {
     "@tula/contract": "workspace:*"

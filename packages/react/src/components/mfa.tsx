@@ -8,7 +8,7 @@ import type {
 import { useEffect, useId, useRef, useState } from 'react'
 import { formatText } from '../localization'
 import type { QrDrawing } from '../qr'
-import { CODE_LENGTH, digitsOnly, useRetryAfter } from './flow-screens'
+import { CODE_LENGTH, CodeField, digitsOnly, ResendButton, useRetryAfter } from './flow-screens'
 import { type FieldResolver, formatDuration, placeErrors } from './form-errors'
 import { PasskeyPanel, usePasskeySupport } from './passkey'
 import { Button, Card, Form, FormError, Status, TextField, useUi } from './ui'
@@ -414,9 +414,187 @@ export function SecondFactorForm(props: {
   )
 }
 
+/** Whether a step, or a step-up, offers a texted code: the one second factor the server sends. */
+export function offersTextedCode(options: unknown): boolean {
+  return Array.isArray(options) && options.includes('sms_code')
+}
+
+/**
+ * A texted code as the second step (ADR 0025): a button that asks for the message, then the
+ * field for its code. Used by the sign-in and reset screens, the step-up dialog and the
+ * profile's enrolment; it holds what was typed only while it is on screen.
+ *
+ * **Nothing is texted on arrival.** A message costs money and reaches a phone, so the form
+ * asks with a button, and the code field is drawn only once `destination` says a message of
+ * this attempt (or this dialog) went out: the form never claims a code it did not send.
+ *
+ * The caller owns `error` (one for both actions) and `destination`; the form remembers which
+ * of its two actions the error on screen answers.
+ */
+export function TextedCodeForm(props: {
+  /** The masked number the code went to (`***42`), once one was texted. */
+  destination: string | null
+  /** While the code is being checked. */
+  isPending: boolean
+  error: TulaError | null
+  /** Above the button that sends the message. */
+  prompt: string
+  submitLabel: string
+  /** Ask for the message. Resolves `true` once it was sent. */
+  send(): Promise<boolean>
+  /** Prove the code. Resolves `true` when it was accepted. */
+  submit(code: string): Promise<boolean>
+}) {
+  const { t } = useUi()
+  const { destination, error, isPending } = props
+  const [sending, setSending] = useState(false)
+  const [resent, setResent] = useState(false)
+  const [code, setCode] = useState('')
+  const [incomplete, setIncomplete] = useState(false)
+  const [action, setAction] = useState<'send' | 'verify' | null>(null)
+  const limits = useRetryAfter<'send' | 'verify'>(error)
+  const sendWait = limits.secondsLeft('send')
+  const verifyWait = limits.secondsLeft('verify')
+  const form = useRef<HTMLDivElement>(null)
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
+  const unavailable = error !== null && SWITCHED_OFF.has(error.code)
+  const closed = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    // The button that was pressed is gone with the rest: the focus goes to what replaced it.
+    if (unavailable) {
+      closed.current?.focus()
+    }
+  }, [unavailable])
+
+  const send = async (again: boolean) => {
+    limits.mark('send')
+    setAction('send')
+    setSending(true)
+    setResent(false)
+    setIncomplete(false)
+    const sent = await props.send()
+    if (mounted.current) {
+      setSending(false)
+      setResent(sent && again)
+    }
+  }
+
+  const hasCode = destination !== null
+  const arrived = useRef(hasCode)
+  useEffect(() => {
+    // The field arrives after the screen (the message had to be asked for first): put the
+    // focus on it. A form that opens with a code already sent leaves the focus where the
+    // screen put it.
+    if (hasCode && !arrived.current) {
+      form.current?.querySelector<HTMLElement>('input')?.focus()
+    }
+    arrived.current = hasCode
+  }, [hasCode])
+
+  const submit = async () => {
+    setResent(false)
+    if (code.length !== CODE_LENGTH) {
+      setIncomplete(true)
+      return
+    }
+    setIncomplete(false)
+    limits.mark('verify')
+    setAction('verify')
+    if (!(await props.submit(code)) && mounted.current) {
+      // A wrong code is retyped from scratch.
+      setCode('')
+    }
+  }
+  const retry = (seconds: number) =>
+    seconds > 0 ? formatText(t.common.retryIn, { time: formatDuration(seconds, t) }) : null
+
+  // The app has switched texted codes, text messages or the number's country off. The server
+  // goes on asking this user for the factor (it never falls open to "no second step": ADR
+  // 0025) and refuses every send and every code alike, so each control here could only be
+  // refused again. The reason stays and the controls go: a button that can only fail is a
+  // loop. What is left is the screen's own way out ("Back to sign in", the dialog's "Cancel").
+  if (unavailable) {
+    return (
+      <div ref={closed} tabIndex={-1}>
+        <FormError message={error?.message ?? null} />
+      </div>
+    )
+  }
+
+  if (destination === null) {
+    return (
+      <Form onSubmit={() => void send(false)} failure={error} blocked={sending || sendWait > 0}>
+        <p className='tula-text'>{props.prompt}</p>
+        <FormError message={error?.message ?? null} detail={retry(sendWait)} />
+        <Button type='submit' pending={sending} disabled={sendWait > 0}>
+          {t.mfa.smsSend}
+        </Button>
+      </Form>
+    )
+  }
+
+  const placed = placeErrors(action === 'send' ? null : error, codeField)
+  const codeErrors = incomplete ? [t.verification.codeIncomplete] : (placed.fields.code ?? [])
+  // A resend refused for being too soon is not a failure to announce: the resend button says it.
+  const formMessage =
+    action === 'send'
+      ? error?.code === 'rate_limited'
+        ? null
+        : (error?.message ?? null)
+      : placed.form
+  return (
+    <div ref={form}>
+      <Form
+        onSubmit={submit}
+        failure={incomplete || (action === 'send' ? null : error)}
+        blocked={isPending || verifyWait > 0}
+      >
+        <p className='tula-text'>
+          {formatText(t.phone.codeSent, { digits: destination.replace(/^\*+/, '') })}
+        </p>
+        <FormError message={formMessage} detail={retry(verifyWait)} />
+        <CodeField
+          value={code}
+          onValue={(value) => {
+            setCode(value)
+            setIncomplete(false)
+          }}
+          errors={codeErrors}
+        />
+        <Button type='submit' pending={isPending} disabled={verifyWait > 0}>
+          {props.submitLabel}
+        </Button>
+        <div className='tula-actions'>
+          <ResendButton secondsLeft={sendWait} pending={sending} onResend={() => void send(true)} />
+        </div>
+        <Status message={resent ? t.verification.resent : null} />
+      </Form>
+    </div>
+  )
+}
+
+/**
+ * What the server answers a texted second step with while an operator's setting rules it
+ * out: the switch (`mfa.smsCode`), text messages, the number's country. Each is the same
+ * answer on every later try, until the setting changes. `sms.unavailable` is not here: a
+ * message that could not be sent may be sent a moment later.
+ */
+const SWITCHED_OFF: ReadonlySet<string> = new Set([
+  'auth.method_disabled',
+  'sms.disabled',
+  'sms.country_not_allowed',
+])
+
 /**
  * The second factors this version can draw, of the ones a step offers. A method a newer
  * server adds is left out; with none left the caller draws the "not supported" screen.
+ * A texted code is asked about apart (`offersTextedCode`): it is never offered beside these.
  */
 export function drawableFactors(options: unknown): DrawableFactor[] {
   const offered: readonly unknown[] = Array.isArray(options) ? options : []
@@ -437,10 +615,17 @@ export function SecondFactorScreen(props: {
   submit(proof: SecondFactorProof): Promise<FlowStep | null>
   /** Proves the user's passkey instead of a code. */
   submitPasskey?(signal: AbortSignal): Promise<FlowStep | null>
+  /**
+   * Where the step offers a texted code: the masked number of the message already sent for
+   * this attempt (`step.prepared`), and the action that asks for one. Drawn only when the
+   * step offers nothing else this version knows: the server never offers it beside a
+   * stronger factor.
+   */
+  texted?: { destination: string | null; send(): Promise<FlowStep | null> }
   onRestart(): void
 }) {
   const { t } = useUi()
-  const { submitPasskey } = props
+  const { submitPasskey, texted } = props
   return (
     <Card
       title={t.mfa.secondFactorTitle}
@@ -451,18 +636,30 @@ export function SecondFactorScreen(props: {
         </Button>
       }
     >
-      <SecondFactorForm
-        methods={props.methods}
-        isPending={props.isPending}
-        error={props.error}
-        submitLabel={t.mfa.submit}
-        totpSubtitle={t.mfa.totpSubtitle}
-        backupSubtitle={t.mfa.backupSubtitle}
-        submit={async (proof) => (await props.submit(proof)) !== null}
-        submitPasskey={
-          submitPasskey ? async (signal) => (await submitPasskey(signal)) !== null : undefined
-        }
-      />
+      {props.methods.length === 0 && texted ? (
+        <TextedCodeForm
+          destination={texted.destination}
+          isPending={props.isPending}
+          error={props.error}
+          prompt={t.mfa.smsSubtitle}
+          submitLabel={t.mfa.submit}
+          send={async () => (await texted.send()) !== null}
+          submit={async (code) => (await props.submit({ method: 'sms_code', code })) !== null}
+        />
+      ) : (
+        <SecondFactorForm
+          methods={props.methods}
+          isPending={props.isPending}
+          error={props.error}
+          submitLabel={t.mfa.submit}
+          totpSubtitle={t.mfa.totpSubtitle}
+          backupSubtitle={t.mfa.backupSubtitle}
+          submit={async (proof) => (await props.submit(proof)) !== null}
+          submitPasskey={
+            submitPasskey ? async (signal) => (await submitPasskey(signal)) !== null : undefined
+          }
+        />
+      )}
     </Card>
   )
 }

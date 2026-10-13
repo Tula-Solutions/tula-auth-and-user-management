@@ -1,0 +1,806 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "passkey registration from a native app",
+  "description": "A signed-in user registers a passkey from a native app: the requests carry no Origin header and name their client kind, and the response’s client data carries the origin the platform writes. For an Android app that is android:apk-key-hash: and the SHA-256 of its signing certificate as base64url without padding, which the server derives from the fingerprint the operator registered; for an iOS app it is https:// and the relying-party id, which is also the origin of a page, so it is accepted only while an iOS app is registered and the environment allows that origin: before the operator allows it an iOS request has no ceremony (the answer of an environment with no iOS app). Before an app is registered such a request has no ceremony, and neither has one that says it is a browser or says nothing. A response from an app signed with another certificate, an iOS request whose response is for another origin, and a body that names an origin of its own are refused as a failed registration and store nothing. The software authenticator stands in for the platform: that a physical authenticator, an emulator or either platform accepts the association and writes these origins has not been shown here. Expects an environment with no other native app; cleanup removes the ones it registers and puts the settings back.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    },
+    "rpId": "native-passkeys.example",
+    "pageOrigin": "https://app.native-passkeys.example",
+    "teamId": "TULAC0NF02",
+    "bundleId": "com.tula.conformance.passkeys-ios",
+    "packageName": "com.tula.conformance.passkeys_android",
+    "fingerprint": "14:B6:C3:A1:E9:D0:7F:52:88:6A:4B:0C:3D:9E:1F:20:A7:B8:C9:D0:E1:F2:A3:B4:C5:D6:E7:F8:09:1A:2B:3C",
+    "secondFingerprint": "FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C",
+    "unregisteredFingerprint": "FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF"
+  },
+  "steps": [
+    {
+      "name": "start a sign-up from the app",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "android",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signUpId": "id",
+        "signUpSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "signUpCode"
+      }
+    },
+    {
+      "name": "verify the address: the account exists and is signed in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signUpSecret}}",
+        "body": {
+          "code": "{{signUpCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          }
+        }
+      },
+      "capture": {
+        "userId": "step.userId",
+        "accessToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "revision": "$any"
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "app": "settings.app",
+        "passwordPolicy": "settings.password",
+        "passwordMethod": "settings.signIn.methods.password",
+        "emailCodeMethod": "settings.signIn.methods.emailCode",
+        "emailLinkMethod": "settings.signIn.methods.emailLink",
+        "signUpSettings": "settings.signUp",
+        "redirects": "settings.urls.allowedRedirectUrls",
+        "audit": "settings.audit",
+        "notifications": "settings.notifications",
+        "mfaSettings": "settings.mfa"
+      }
+    },
+    {
+      "name": "switch passkeys on, with a relying-party id and a page that belongs to it",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{app}}"
+          },
+          "password": {
+            "$json": "{{passwordPolicy}}"
+          },
+          "signIn": {
+            "methods": {
+              "password": {
+                "$json": "{{passwordMethod}}"
+              },
+              "emailCode": {
+                "$json": "{{emailCodeMethod}}"
+              },
+              "emailLink": {
+                "$json": "{{emailLinkMethod}}"
+              },
+              "passkey": {
+                "enabled": true
+              }
+            }
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "allowedOrigins": ["{{pageOrigin}}"],
+            "allowedRedirectUrls": {
+              "$json": "{{redirects}}"
+            }
+          },
+          "audit": {
+            "$json": "{{audit}}"
+          },
+          "notifications": {
+            "$json": "{{notifications}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "rpId": "{{rpId}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "passkeys": {
+              "rpId": "{{rpId}}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "with no app registered, a request with no Origin has no passkey ceremony",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys/options",
+        "accessToken": "{{accessToken}}",
+        "client": "android",
+        "body": {}
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "request.origin_not_allowed"
+        }
+      }
+    },
+    {
+      "name": "register the Android app with its signing certificate",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/native-apps",
+        "auth": "secret",
+        "body": {
+          "platform": "android",
+          "packageName": "{{packageName}}",
+          "sha256CertFingerprints": ["{{fingerprint}}"]
+        }
+      },
+      "expect": {
+        "status": 201
+      },
+      "capture": {
+        "androidAppId": "id"
+      }
+    },
+    {
+      "name": "register the iOS app",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/native-apps",
+        "auth": "secret",
+        "body": {
+          "platform": "ios",
+          "teamId": "{{teamId}}",
+          "bundleId": "{{bundleId}}"
+        }
+      },
+      "expect": {
+        "status": 201
+      },
+      "capture": {
+        "iosAppId": "id"
+      }
+    },
+    {
+      "name": "a browser kind with no Origin is still refused: the apps are no way round the page rule",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys/options",
+        "accessToken": "{{accessToken}}",
+        "client": "web",
+        "body": {}
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "request.origin_not_allowed"
+        }
+      }
+    },
+    {
+      "name": "so is a request that names no client kind",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys/options",
+        "accessToken": "{{accessToken}}",
+        "body": {}
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "request.origin_not_allowed"
+        }
+      }
+    },
+    {
+      "name": "the Android app: ask for the options, with no Origin header",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys/options",
+        "accessToken": "{{accessToken}}",
+        "client": "android",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "rp": {
+            "id": "{{rpId}}",
+            "name": "$any"
+          },
+          "challenge": {
+            "$matches": "^[A-Za-z0-9_-]{43}$"
+          }
+        }
+      },
+      "captureJson": {
+        "androidCreation": ""
+      }
+    },
+    {
+      "name": "the Android app: the authenticator makes a passkey",
+      "passkey": {
+        "authenticator": "phone",
+        "create": "{{androidCreation}}",
+        "capture": "androidRegistration",
+        "androidCertFingerprint": "{{fingerprint}}"
+      }
+    },
+    {
+      "name": "the Android app: finish",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys",
+        "accessToken": "{{accessToken}}",
+        "client": "android",
+        "body": {
+          "credential": {
+            "$json": "{{androidRegistration}}"
+          },
+          "name": "Android phone"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "name": "Android phone",
+          "publicKey": "$absent",
+          "credentialId": "$absent"
+        }
+      }
+    },
+    {
+      "name": "the registration response cannot be presented again",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys",
+        "accessToken": "{{accessToken}}",
+        "client": "android",
+        "body": {
+          "credential": {
+            "$json": "{{androidRegistration}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "status": 422,
+          "code": "passkey.registration_failed"
+        }
+      }
+    },
+    {
+      "name": "an app signed with a certificate that is not registered: ask for the options, with no Origin header",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys/options",
+        "accessToken": "{{accessToken}}",
+        "client": "android",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "rp": {
+            "id": "{{rpId}}",
+            "name": "$any"
+          },
+          "challenge": {
+            "$matches": "^[A-Za-z0-9_-]{43}$"
+          }
+        }
+      },
+      "captureJson": {
+        "strangerCreation": ""
+      }
+    },
+    {
+      "name": "an app signed with a certificate that is not registered: the authenticator makes a passkey",
+      "passkey": {
+        "authenticator": "stranger",
+        "create": "{{strangerCreation}}",
+        "capture": "strangerRegistration",
+        "androidCertFingerprint": "{{unregisteredFingerprint}}"
+      }
+    },
+    {
+      "name": "an app signed with a certificate that is not registered: finish",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys",
+        "accessToken": "{{accessToken}}",
+        "client": "android",
+        "body": {
+          "credential": {
+            "$json": "{{strangerRegistration}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "status": 422,
+          "code": "passkey.registration_failed"
+        }
+      }
+    },
+    {
+      "name": "a body that names its own origin: ask for the options, with no Origin header",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys/options",
+        "accessToken": "{{accessToken}}",
+        "client": "android",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "rp": {
+            "id": "{{rpId}}",
+            "name": "$any"
+          },
+          "challenge": {
+            "$matches": "^[A-Za-z0-9_-]{43}$"
+          }
+        }
+      },
+      "captureJson": {
+        "chooserCreation": ""
+      }
+    },
+    {
+      "name": "a body that names its own origin: the authenticator makes a passkey",
+      "passkey": {
+        "authenticator": "chooser",
+        "create": "{{chooserCreation}}",
+        "capture": "chooserRegistration",
+        "androidCertFingerprint": "{{unregisteredFingerprint}}"
+      }
+    },
+    {
+      "name": "a body that names its own origin: finish",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys",
+        "accessToken": "{{accessToken}}",
+        "client": "android",
+        "body": {
+          "credential": {
+            "$json": "{{chooserRegistration}}"
+          },
+          "origin": "android:apk-key-hash:-_---_---_---_---_---_---_---_---_---_---_8",
+          "rpId": "{{rpId}}"
+        }
+      },
+      "expect": {
+        "status": 422
+      }
+    },
+    {
+      "name": "the iOS app is registered, the relying party’s own origin is not allowed: no ceremony, as with no iOS app",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys/options",
+        "accessToken": "{{accessToken}}",
+        "client": "ios",
+        "body": {}
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "request.origin_not_allowed"
+        }
+      }
+    },
+    {
+      "name": "read the revision the settings are at",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "allowEtag": "ETag"
+      }
+    },
+    {
+      "name": "the operator allows the relying party’s own origin, which is what an iOS app presents",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{allowEtag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{app}}"
+          },
+          "password": {
+            "$json": "{{passwordPolicy}}"
+          },
+          "signIn": {
+            "methods": {
+              "password": {
+                "$json": "{{passwordMethod}}"
+              },
+              "emailCode": {
+                "$json": "{{emailCodeMethod}}"
+              },
+              "emailLink": {
+                "$json": "{{emailLinkMethod}}"
+              },
+              "passkey": {
+                "enabled": true
+              }
+            }
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "allowedOrigins": ["{{pageOrigin}}", "https://{{rpId}}"],
+            "allowedRedirectUrls": {
+              "$json": "{{redirects}}"
+            }
+          },
+          "audit": {
+            "$json": "{{audit}}"
+          },
+          "notifications": {
+            "$json": "{{notifications}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "rpId": "{{rpId}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "urls": {
+              "allowedOrigins": ["{{pageOrigin}}", "https://{{rpId}}"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "the iOS app: ask for the options, with no Origin header",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys/options",
+        "accessToken": "{{accessToken}}",
+        "client": "ios",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "rp": {
+            "id": "{{rpId}}",
+            "name": "$any"
+          },
+          "challenge": {
+            "$matches": "^[A-Za-z0-9_-]{43}$"
+          }
+        }
+      },
+      "captureJson": {
+        "iosCreation": ""
+      }
+    },
+    {
+      "name": "the iOS app: the authenticator makes a passkey",
+      "passkey": {
+        "authenticator": "iphone",
+        "create": "{{iosCreation}}",
+        "capture": "iosRegistration",
+        "origin": "https://{{rpId}}"
+      }
+    },
+    {
+      "name": "the iOS app: finish",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys",
+        "accessToken": "{{accessToken}}",
+        "client": "ios",
+        "body": {
+          "credential": {
+            "$json": "{{iosRegistration}}"
+          },
+          "name": "iPhone"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "name": "iPhone"
+        }
+      }
+    },
+    {
+      "name": "an iOS request whose response is for a page of a subdomain: ask for the options, with no Origin header",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys/options",
+        "accessToken": "{{accessToken}}",
+        "client": "ios",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "rp": {
+            "id": "{{rpId}}",
+            "name": "$any"
+          },
+          "challenge": {
+            "$matches": "^[A-Za-z0-9_-]{43}$"
+          }
+        }
+      },
+      "captureJson": {
+        "subdomainCreation": ""
+      }
+    },
+    {
+      "name": "an iOS request whose response is for a page of a subdomain: the authenticator makes a passkey",
+      "passkey": {
+        "authenticator": "subdomain",
+        "create": "{{subdomainCreation}}",
+        "capture": "subdomainRegistration",
+        "origin": "{{pageOrigin}}"
+      }
+    },
+    {
+      "name": "an iOS request whose response is for a page of a subdomain: finish",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys",
+        "accessToken": "{{accessToken}}",
+        "client": "ios",
+        "body": {
+          "credential": {
+            "$json": "{{subdomainRegistration}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "status": 422,
+          "code": "passkey.registration_failed"
+        }
+      }
+    },
+    {
+      "name": "an iOS request carrying an Android app’s origin: ask for the options, with no Origin header",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys/options",
+        "accessToken": "{{accessToken}}",
+        "client": "ios",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "rp": {
+            "id": "{{rpId}}",
+            "name": "$any"
+          },
+          "challenge": {
+            "$matches": "^[A-Za-z0-9_-]{43}$"
+          }
+        }
+      },
+      "captureJson": {
+        "crossedCreation": ""
+      }
+    },
+    {
+      "name": "an iOS request carrying an Android app’s origin: the authenticator makes a passkey",
+      "passkey": {
+        "authenticator": "crossed",
+        "create": "{{crossedCreation}}",
+        "capture": "crossedRegistration",
+        "androidCertFingerprint": "{{fingerprint}}"
+      }
+    },
+    {
+      "name": "an iOS request carrying an Android app’s origin: finish",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys",
+        "accessToken": "{{accessToken}}",
+        "client": "ios",
+        "body": {
+          "credential": {
+            "$json": "{{crossedRegistration}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "status": 422,
+          "code": "passkey.registration_failed"
+        }
+      }
+    },
+    {
+      "name": "the account has the two passkeys and no other",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/passkeys",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "passkeys": [
+            {
+              "name": "Android phone"
+            },
+            {
+              "name": "iPhone"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "the record of them says nothing of an origin, a certificate or an app",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?action=user.passkey_added&targetId={{userId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 2
+          }
+        },
+        "bodyExcludes": [
+          "apk-key-hash",
+          "{{fingerprint}}",
+          "{{packageName}}",
+          "{{bundleId}}",
+          "{{rpId}}"
+        ]
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "remove the Android app",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/native-apps/{{androidAppId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "remove the iOS app",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/native-apps/{{iosAppId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    }
+  ]
+}

@@ -1,23 +1,33 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import type { ActivityType } from '@tula/contract'
-import { type Transaction, userFactors, users as usersTable } from '@tula/db'
+import {
+  apiKeys,
+  passwordHistory,
+  proposals as proposalsTable,
+  type Transaction,
+  userFactors,
+  users as usersTable,
+} from '@tula/db'
 import { eq } from 'drizzle-orm'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
+import { PostgresApiKeyRepository } from '~/adapters/postgres/api-keys'
 import { PostgresFactorStore } from '~/adapters/postgres/factors'
 import {
   type IntegrationTenant,
   openIntegrationDatabase,
 } from '~/adapters/postgres/integration-support'
+import { PostgresProposalStore } from '~/adapters/postgres/proposals'
 import { PostgresSessionStore } from '~/adapters/postgres/sessions'
 import { PostgresUserRepository } from '~/adapters/postgres/users'
 import * as Audit from '~/modules/audit/service'
 import type { Activity } from '~/ports/activity-log'
 import type { NewFactor } from '~/ports/factor-store'
+import type { NewProposalRecord, ProposalRecord } from '~/ports/proposal-store'
 import type { NewRefreshToken, NewSession } from '~/ports/session-store'
 import type { NewUser } from '~/ports/user-repository'
 
 /**
- * Three races between two API instances, each on its own pool of a real Postgres: what the
+ * Races between two API instances, each on its own pool of a real Postgres: what the
  * stores promise when two transactions meet, which one session (PGlite) cannot show.
  *
  * Two calls started together usually do not meet: the first has committed before the second
@@ -192,12 +202,13 @@ describe('an emailed sign-in verifies an address while a password is being set',
             user.id,
             '$argon2id$new',
             later(1_000),
-            activity('user.password_changed', target, { method: 'set' })
+            activity('user.password_changed', target, { method: 'set' }),
+            { keep: 0 }
           )
     )
     const found = await users
       .first()
-      .findByEmailWithPassword(tenant.environmentId, user.emailNormalized)
+      .findByEmailWithPassword(tenant.environmentId, user.emailNormalized ?? '')
     return {
       verification,
       outcome,
@@ -301,6 +312,136 @@ describe('an emailed sign-in verifies an address while a password is being set',
         'user.password_changed',
       ])
     }
+  })
+})
+
+describe('two instances change one user’s password (ADR 0038)', () => {
+  const users = {
+    first: () => new PostgresUserRepository(database.first.db),
+    second: () => new PostgresUserRepository(database.second.db),
+  }
+
+  async function seeded(): Promise<NewUser> {
+    const id = Bun.randomUUIDv7()
+    const user: NewUser = {
+      id,
+      projectId: tenant.projectId,
+      environmentId: tenant.environmentId,
+      email: `${id}@northline.app`,
+      emailNormalized: `${id}@northline.app`,
+      emailVerifiedAt: now,
+      firstName: null,
+      lastName: null,
+      createdAt: now,
+      identityId: Bun.randomUUIDv7(),
+      credentialId: Bun.randomUUIDv7(),
+      passwordHash: '$argon2id$old',
+    }
+    expect(await users.first().create(user, FIXTURE)).toBe(true)
+    return user
+  }
+
+  const change = (
+    repository: PostgresUserRepository,
+    userId: string,
+    hash: string,
+    ifCurrent?: string
+  ) =>
+    repository.setPasswordHash(
+      tenant.environmentId,
+      userId,
+      hash,
+      later(1_000),
+      activity('user.password_changed', { type: 'user', id: userId }, { method: 'self' }),
+      { keep: 5, ...(ifCurrent !== undefined && { ifCurrent }) }
+    )
+
+  // Both lock the user's row before they read the hash they replace, so the second reads the
+  // first's: each hash that was ever current is kept once, in the order they were replaced.
+  test('neither loses a previous password nor keeps one twice', async () => {
+    for (let round = 0; round < ROUNDS; round += 1) {
+      const user = await seeded()
+      const { results, order } = await overlapping(
+        round,
+        userRow(user.id),
+        () => change(users.first(), user.id, '$argon2id$a'),
+        () => change(users.second(), user.id, '$argon2id$b')
+      )
+      expect(results).toEqual(['replaced', 'replaced'])
+      const [last, first] = order === 'a-first' ? ['b', 'a'] : ['a', 'b']
+      expect(await users.first().storedPasswords(tenant.environmentId, user.id, 24)).toEqual({
+        current: `$argon2id$${last}`,
+        previous: [`$argon2id$${first}`, '$argon2id$old'],
+      })
+    }
+  })
+
+  // Each was compared with the same stored hash; only the first still finds it there.
+  test('of two changes judged against the same hash exactly one is stored', async () => {
+    for (let round = 0; round < ROUNDS; round += 1) {
+      const user = await seeded()
+      const { results, order } = await overlapping(
+        round,
+        userRow(user.id),
+        () => change(users.first(), user.id, '$argon2id$a', '$argon2id$old'),
+        () => change(users.second(), user.id, '$argon2id$b', '$argon2id$old')
+      )
+      expect(results).toEqual(order === 'a-first' ? ['replaced', 'stale'] : ['stale', 'replaced'])
+      expect(await users.first().storedPasswords(tenant.environmentId, user.id, 24)).toEqual({
+        current: order === 'a-first' ? '$argon2id$a' : '$argon2id$b',
+        previous: ['$argon2id$old'],
+      })
+      // The one that was stale recorded nothing.
+      expect(await recorded(user.id)).toEqual([
+        { type: 'user.password_changed', data: { method: 'self' } },
+      ])
+    }
+  })
+
+  // A password change holds its user's rows while it moves them. A purge that waited for them
+  // could deadlock with it; it passes them over (`FOR UPDATE SKIP LOCKED`) and takes them in a
+  // later round. Without that this test ends at the bound: the purge waits for the hold.
+  test('the retention purge passes over rows a password change holds, without waiting', async () => {
+    const BOUND_MS = 5_000
+    const user = await seeded()
+    for (const hash of ['$argon2id$a', '$argon2id$b', '$argon2id$c']) {
+      expect(await change(users.first(), user.id, hash)).toBe('replaced')
+    }
+    const previous = async () =>
+      (await users.first().storedPasswords(tenant.environmentId, user.id, 24)).previous
+    const kept = await previous()
+    expect(kept).toHaveLength(3)
+
+    await database.holding(async ({ tx }) => {
+      await tx
+        .select({ id: passwordHistory.id })
+        .from(passwordHistory)
+        .where(eq(passwordHistory.userId, user.id))
+        .for('update')
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const late = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`the purge waited more than ${BOUND_MS} ms for held rows`)),
+          BOUND_MS
+        )
+      })
+      try {
+        // Whatever it deleted is other users' (earlier rounds of this file): never these.
+        await Promise.race([
+          users.second().deletePasswordHistoryBeyond(tenant.environmentId, 0, 10_000),
+          late,
+        ])
+      } finally {
+        clearTimeout(timer)
+      }
+    })
+    expect(await previous()).toEqual(kept)
+
+    // The hold is gone: the next round takes them.
+    expect(await users.second().deletePasswordHistoryBeyond(tenant.environmentId, 0, 10_000)).toBe(
+      3
+    )
+    expect(await previous()).toEqual([])
   })
 })
 
@@ -498,6 +639,308 @@ describe('two instances sign one user in at the concurrent-session limit', () =>
       expect(await recorded(oldest.id)).toEqual([
         { type: 'session.revoked', data: { reason: 'session_limit' } },
       ])
+    }
+  })
+})
+
+describe('an approval of a proposal, against another approval and against the revocation of its agent key', () => {
+  const stores = {
+    first: () => new PostgresProposalStore(database.first.db),
+    second: () => new PostgresProposalStore(database.second.db),
+  }
+  const keys = {
+    first: () => new PostgresApiKeyRepository(database.first.db),
+    second: () => new PostgresApiKeyRepository(database.second.db),
+  }
+  const expiry = later(600_000)
+  const beforeExpiry = later(599_999)
+
+  /** Hold a proposal's row as a writer does: an approval's update waits. */
+  const proposalRow = (id: string) => (tx: Transaction) =>
+    tx
+      .select({ id: proposalsTable.id })
+      .from(proposalsTable)
+      .where(eq(proposalsTable.id, id))
+      .for('update')
+
+  /** Hold an agent key's row as a writer does: an approval's share lock and a revocation wait. */
+  const keyRow = (id: string) => (tx: Transaction) =>
+    tx.select({ id: apiKeys.id }).from(apiKeys).where(eq(apiKeys.id, id)).for('update')
+
+  /** A pending proposal of a new agent key, both stored as fixtures. */
+  async function seed(): Promise<{ proposal: ProposalRecord; agent: string }> {
+    const agent = Bun.randomUUIDv7()
+    await keys.first().insert(
+      {
+        id: agent,
+        kind: 'agent',
+        name: 'race',
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        keyHash: agent,
+        lastFour: '0000',
+        createdAt: now,
+      },
+      FIXTURE
+    )
+    const record: NewProposalRecord = {
+      id: Bun.randomUUIDv7(),
+      projectId: tenant.projectId,
+      environmentId: tenant.environmentId,
+      operation: 'ban_user',
+      targetType: 'user',
+      targetId: Bun.randomUUIDv7(),
+      proposedBy: agent,
+      status: 'pending',
+      expiresAt: expiry,
+      approvedByType: null,
+      approvedById: null,
+      approvedAt: null,
+      failureReason: null,
+      createdAt: now,
+      updatedAt: now,
+    }
+    return { proposal: await stores.first().insert(record, FIXTURE), agent }
+  }
+
+  /** One approval, by an administrator of its own id, with the entry an approval writes. */
+  function approve(
+    store: PostgresProposalStore,
+    proposal: ProposalRecord,
+    approver: string,
+    at: Date = beforeExpiry
+  ) {
+    const scope = { projectId: tenant.projectId, environmentId: tenant.environmentId }
+    return store.approve(
+      tenant.environmentId,
+      proposal.id,
+      { type: 'admin', id: approver },
+      at,
+      Audit.entry({ ids: { next: () => Bun.randomUUIDv7() }, clock: { now: () => at } }, scope, {
+        type: 'proposal.approved',
+        actor: { type: 'admin', id: approver, ipAddress: null, userAgent: null },
+        target: { type: 'proposal', id: proposal.id },
+        data: {
+          operation: 'ban_user',
+          targetType: 'user',
+          targetId: proposal.targetId,
+          proposedBy: proposal.proposedBy,
+        },
+      })
+    )
+  }
+
+  const revoke = (repository: PostgresApiKeyRepository, agent: string) =>
+    repository.revoke(tenant.environmentId, agent, later(1_000), FIXTURE)
+
+  const approvals = async (proposalId: string) =>
+    (await recorded(proposalId)).filter((entry) => entry.type === 'proposal.approved')
+
+  // Both approvals hold the key's row for share (compatible) and meet at the proposal's row.
+  // The one that waits judges "still pending" against the row as the first left it.
+  test('of two approvals at once exactly one wins, and one approval is recorded', async () => {
+    for (let round = 0; round < ROUNDS; round += 1) {
+      const { proposal } = await seed()
+      const [one, two] = [Bun.randomUUIDv7(), Bun.randomUUIDv7()]
+      const {
+        results: [first, second],
+        order,
+      } = await overlapping(
+        round,
+        proposalRow(proposal.id),
+        () => approve(stores.first(), proposal, one),
+        () => approve(stores.second(), proposal, two)
+      )
+      const [won, lost] = order === 'a-first' ? [first, second] : [second, first]
+      const winner = order === 'a-first' ? one : two
+      expect(lost).toBeNull()
+      expect(won).toMatchObject({
+        status: 'approved',
+        approvedByType: 'admin',
+        approvedById: winner,
+      })
+      expect(await stores.first().find(tenant.environmentId, proposal.id)).toMatchObject({
+        status: 'approved',
+        approvedById: winner,
+      })
+      expect(await approvals(proposal.id)).toHaveLength(1)
+    }
+  })
+
+  // "Not expired" is in the statement too, judged with each call's own time. An approval at
+  // the expiry matches no row, so it takes no row lock and never waits: it is refused while
+  // the row is held and while an approval that is in time is in flight on it. So this is not
+  // two waiters (`overlapping` would fail, rightly): the late one runs to its end inside the
+  // hold, before or after the other was started, and only the other is seen waiting.
+  test('an approval at the expiry is refused without waiting, beside one in time that then wins, in either order', async () => {
+    for (let round = 0; round < ROUNDS; round += 1) {
+      const { proposal } = await seed()
+      const [inTime, tooLate] = [Bun.randomUUIDv7(), Bun.randomUUIDv7()]
+      const lateFirst = round % 2 === 1
+      let early: ReturnType<typeof approve> | undefined
+      try {
+        await database.holding(async ({ tx, waiting }) => {
+          await proposalRow(proposal.id)(tx)
+          const late = () => approve(stores.second(), proposal, tooLate, expiry)
+          if (lateFirst) {
+            expect(await late()).toBeNull()
+          }
+          early = approve(stores.first(), proposal, inTime, beforeExpiry)
+          // Its failure is reported by the await below; until then it is not unhandled.
+          early.catch(() => undefined)
+          await waiting(1)
+          if (!lateFirst) {
+            expect(await late()).toBeNull()
+          }
+          // The late one came and went; the one in time is still the only waiter.
+          await waiting(1)
+          const [row] = await tx
+            .select({ status: proposalsTable.status })
+            .from(proposalsTable)
+            .where(eq(proposalsTable.id, proposal.id))
+          expect(row?.status).toBe('pending')
+        })
+      } catch (error) {
+        // The lock is gone: let what was started finish before the round fails.
+        await Promise.allSettled([early])
+        throw error
+      }
+      expect(await early).toMatchObject({ status: 'approved', approvedById: inTime })
+      expect(await approvals(proposal.id)).toHaveLength(1)
+      expect(await stores.first().find(tenant.environmentId, proposal.id)).toMatchObject({
+        status: 'approved',
+        approvedById: inTime,
+      })
+    }
+  })
+
+  test('alone, an approval at the expiry and one after it write nothing', async () => {
+    const { proposal } = await seed()
+    expect(await approve(stores.first(), proposal, Bun.randomUUIDv7(), expiry)).toBeNull()
+    expect(await approve(stores.second(), proposal, Bun.randomUUIDv7(), later(600_001))).toBeNull()
+    expect(await approvals(proposal.id)).toEqual([])
+    expect((await stores.first().find(tenant.environmentId, proposal.id))?.status).toBe('pending')
+  })
+
+  // What the share lock on the key's row gives, stated exactly: between the moment an
+  // approval's transaction holds it and that transaction's commit, no revocation of the key
+  // can commit. So a revocation is either wholly before the approval's statement (which then
+  // reads the key as revoked and writes nothing) or wholly after the approval's commit. It
+  // does not stop an operation that follows a committed approval.
+  //
+  // Both calls wait on the key's row here. Started first, the approval takes its share lock
+  // first and the revocation waits for its commit; started second, the approval waits for the
+  // revocation's commit and then finds no unrevoked key.
+  test('an approval and a revocation at once: approved only when the approval was first, and never after the revocation', async () => {
+    for (let round = 0; round < ROUNDS; round += 1) {
+      const { proposal, agent } = await seed()
+      const approver = Bun.randomUUIDv7()
+      const {
+        results: [approved, revoked],
+        order,
+      } = await overlapping(
+        round,
+        keyRow(agent),
+        () => approve(stores.first(), proposal, approver),
+        () => revoke(keys.second(), agent)
+      )
+      // The revocation always lands: nothing an approval does refuses it.
+      expect(revoked?.revokedAt).not.toBeNull()
+      const after = await stores.first().find(tenant.environmentId, proposal.id)
+      expect(after?.proposerActive).toBe(false)
+      if (order === 'a-first') {
+        expect(approved).toMatchObject({ status: 'approved', approvedById: approver })
+        // The record the approval returned was read while the key was still unrevoked.
+        expect(approved?.proposerActive).toBe(true)
+        expect(after?.status).toBe('approved')
+        expect(await approvals(proposal.id)).toHaveLength(1)
+      } else {
+        expect(approved).toBeNull()
+        expect(after).toMatchObject({ status: 'pending', approvedById: null, approvedAt: null })
+        expect(await approvals(proposal.id)).toEqual([])
+      }
+    }
+  })
+
+  // The lock itself. The proposal's row is held, so the approval stops after it has taken the
+  // key's row for share. A revocation started then has nothing of the holder's in its way: it
+  // can only be waiting for the approval. Two sessions waiting (the approval on the holder,
+  // the revocation behind the approval) is that; without the share lock the revocation would
+  // commit at once, only one session would wait, and the round would fail.
+  test('a revocation started while an approval holds the key’s row waits for that approval to commit', async () => {
+    for (let round = 0; round < ROUNDS; round += 1) {
+      const { proposal, agent } = await seed()
+      const approver = Bun.randomUUIDv7()
+      const calls: {
+        approval?: ReturnType<typeof approve>
+        revocation?: ReturnType<typeof revoke>
+      } = {}
+      try {
+        await database.holding(async ({ tx, waiting }) => {
+          await proposalRow(proposal.id)(tx)
+          calls.approval = approve(stores.first(), proposal, approver)
+          calls.approval.catch(() => undefined)
+          await waiting(1)
+          calls.revocation = revoke(keys.second(), agent)
+          calls.revocation.catch(() => undefined)
+          await waiting(2)
+          // Still unrevoked for everybody else: the revocation has not committed.
+          const [key] = await tx
+            .select({ revokedAt: apiKeys.revokedAt })
+            .from(apiKeys)
+            .where(eq(apiKeys.id, agent))
+          expect(key?.revokedAt).toBeNull()
+        })
+      } catch (error) {
+        await Promise.allSettled([calls.approval, calls.revocation])
+        throw error
+      }
+      const [approved, revoked] = await Promise.all([calls.approval, calls.revocation])
+      expect(approved).toMatchObject({ status: 'approved', approvedById: approver })
+      expect(approved?.proposerActive).toBe(true)
+      expect(revoked?.revokedAt).not.toBeNull()
+      expect(await approvals(proposal.id)).toHaveLength(1)
+      expect(await stores.first().find(tenant.environmentId, proposal.id)).toMatchObject({
+        status: 'approved',
+        proposerActive: false,
+      })
+    }
+  })
+
+  // The other order, with the lock that decides it held by the revocation itself: nothing
+  // here is arranged by a third session's row lock on the key.
+  test('an approval started while a revocation is in flight waits for it and then writes nothing', async () => {
+    for (let round = 0; round < ROUNDS; round += 1) {
+      const { proposal, agent } = await seed()
+      // The revocation's own audit entry needs no lock of the holder's; hold the key's row
+      // so that it is in flight, start the approval behind it, and let go.
+      const calls: {
+        approval?: ReturnType<typeof approve>
+        revocation?: ReturnType<typeof revoke>
+      } = {}
+      try {
+        await database.holding(async ({ tx, waiting }) => {
+          await keyRow(agent)(tx)
+          calls.revocation = revoke(keys.first(), agent)
+          calls.revocation.catch(() => undefined)
+          await waiting(1)
+          calls.approval = approve(stores.second(), proposal, Bun.randomUUIDv7())
+          calls.approval.catch(() => undefined)
+          await waiting(2)
+        })
+      } catch (error) {
+        await Promise.allSettled([calls.approval, calls.revocation])
+        throw error
+      }
+      const [approved, revoked] = await Promise.all([calls.approval, calls.revocation])
+      expect(revoked?.revokedAt).not.toBeNull()
+      expect(approved).toBeNull()
+      expect(await approvals(proposal.id)).toEqual([])
+      expect(await stores.first().find(tenant.environmentId, proposal.id)).toMatchObject({
+        status: 'pending',
+        proposerActive: false,
+        approvedById: null,
+      })
     }
   })
 })

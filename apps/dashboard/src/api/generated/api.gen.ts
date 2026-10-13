@@ -25,6 +25,2094 @@ import type {
 } from '@tanstack/react-query';
 
 import { dashboardFetch } from '../mutator.ts';
+export type EventActorType = typeof EventActorType[keyof typeof EventActorType];
+
+
+export const EventActorType = {
+  user: 'user',
+  admin: 'admin',
+  system: 'system',
+  agent: 'agent',
+  instance_admin: 'instance_admin',
+} as const;
+
+export interface EventActor {
+  type: EventActorType;
+  id: string | null;
+}
+
+export type UserCreatedEventDataMethod = typeof UserCreatedEventDataMethod[keyof typeof UserCreatedEventDataMethod];
+
+
+export const UserCreatedEventDataMethod = {
+  admin: 'admin',
+  sign_up: 'sign_up',
+  oauth_google: 'oauth_google',
+  oauth_github: 'oauth_github',
+  oauth_apple: 'oauth_apple',
+  oauth_microsoft: 'oauth_microsoft',
+  oauth_discord: 'oauth_discord',
+  oauth_linkedin: 'oauth_linkedin',
+  oauth_x: 'oauth_x',
+  oauth_facebook: 'oauth_facebook',
+} as const;
+
+/**
+ * A user account was created.
+ */
+export interface UserCreatedEventData {
+  method: UserCreatedEventDataMethod;
+  emailVerified: boolean;
+  passwordless?: boolean;
+  hookBypassed?: boolean;
+  test?: boolean;
+}
+
+export type UserCreatedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A user account was created.
+ */
+export interface UserCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserCreatedEventTarget;
+  data: UserCreatedEventData;
+  test?: true;
+}
+
+/**
+ * A user proved their email address.
+ */
+export interface UserEmailVerifiedEventData { [key: string]: unknown }
+
+export type UserEmailVerifiedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A user proved their email address.
+ */
+export interface UserEmailVerifiedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.email_verified';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserEmailVerifiedEventTarget;
+  data: UserEmailVerifiedEventData;
+  test?: true;
+}
+
+export type ProposalApproverType = typeof ProposalApproverType[keyof typeof ProposalApproverType];
+
+
+export const ProposalApproverType = {
+  admin: 'admin',
+  instance_admin: 'instance_admin',
+} as const;
+
+export interface ProposalApprover {
+  type: ProposalApproverType;
+  id: string | null;
+}
+
+/**
+ * A user was banned; their sessions end. With `proposalId` and `approvedBy` (both or neither) when the ban carried out an agent’s proposal a human approved.
+ */
+export interface UserBannedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  proposalId?: string;
+  approvedBy?: ProposalApprover;
+}
+
+export type UserBannedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A user was banned; their sessions end. With `proposalId` and `approvedBy` (both or neither) when the ban carried out an agent’s proposal a human approved.
+ */
+export interface UserBannedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.banned';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserBannedEventTarget;
+  data: UserBannedEventData;
+  test?: true;
+}
+
+/**
+ * A user’s ban was lifted. With `proposalId` and `approvedBy` (both or neither) when that carried out an agent’s proposal a human approved.
+ */
+export interface UserUnbannedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  proposalId?: string;
+  approvedBy?: ProposalApprover;
+}
+
+export type UserUnbannedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A user’s ban was lifted. With `proposalId` and `approvedBy` (both or neither) when that carried out an agent’s proposal a human approved.
+ */
+export interface UserUnbannedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.unbanned';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserUnbannedEventTarget;
+  data: UserUnbannedEventData;
+  test?: true;
+}
+
+/**
+ * A user account was deleted.
+ */
+export interface UserDeletedEventData { [key: string]: unknown }
+
+export type UserDeletedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A user account was deleted.
+ */
+export interface UserDeletedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.deleted';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserDeletedEventTarget;
+  data: UserDeletedEventData;
+  test?: true;
+}
+
+export type UserPasswordChangedEventDataMethod = typeof UserPasswordChangedEventDataMethod[keyof typeof UserPasswordChangedEventDataMethod];
+
+
+export const UserPasswordChangedEventDataMethod = {
+  admin_reset: 'admin_reset',
+  self: 'self',
+  reset: 'reset',
+  email_verification: 'email_verification',
+} as const;
+
+/**
+ * A user’s password was set, replaced or removed.
+ */
+export interface UserPasswordChangedEventData {
+  method: UserPasswordChangedEventDataMethod;
+  created?: boolean;
+  removed?: boolean;
+}
+
+export type UserPasswordChangedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A user’s password was set, replaced or removed.
+ */
+export interface UserPasswordChangedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.password_changed';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserPasswordChangedEventTarget;
+  data: UserPasswordChangedEventData;
+  test?: true;
+}
+
+export type UserMfaEnabledEventDataMethod = typeof UserMfaEnabledEventDataMethod[keyof typeof UserMfaEnabledEventDataMethod];
+
+
+export const UserMfaEnabledEventDataMethod = {
+  totp: 'totp',
+} as const;
+
+/**
+ * A user turned two-step verification on.
+ */
+export interface UserMfaEnabledEventData {
+  method: UserMfaEnabledEventDataMethod;
+}
+
+export type UserMfaEnabledEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A user turned two-step verification on.
+ */
+export interface UserMfaEnabledEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.mfa_enabled';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserMfaEnabledEventTarget;
+  data: UserMfaEnabledEventData;
+  test?: true;
+}
+
+export type UserMfaDisabledEventDataMethod = typeof UserMfaDisabledEventDataMethod[keyof typeof UserMfaDisabledEventDataMethod];
+
+
+export const UserMfaDisabledEventDataMethod = {
+  self: 'self',
+  admin_reset: 'admin_reset',
+  enrolment_incomplete: 'enrolment_incomplete',
+} as const;
+
+/**
+ * A user’s two-step verification was removed.
+ */
+export interface UserMfaDisabledEventData {
+  method: UserMfaDisabledEventDataMethod;
+}
+
+export type UserMfaDisabledEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A user’s two-step verification was removed.
+ */
+export interface UserMfaDisabledEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.mfa_disabled';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserMfaDisabledEventTarget;
+  data: UserMfaDisabledEventData;
+  test?: true;
+}
+
+/**
+ * A user replaced their backup codes; the earlier set no longer works.
+ */
+export interface UserBackupCodesRegeneratedEventData { [key: string]: unknown }
+
+export type UserBackupCodesRegeneratedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A user replaced their backup codes; the earlier set no longer works.
+ */
+export interface UserBackupCodesRegeneratedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.backup_codes_regenerated';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserBackupCodesRegeneratedEventTarget;
+  data: UserBackupCodesRegeneratedEventData;
+  test?: true;
+}
+
+/**
+ * A user proved their second factor with a backup code.
+ */
+export interface UserBackupCodeUsedEventData { [key: string]: unknown }
+
+export type UserBackupCodeUsedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A user proved their second factor with a backup code.
+ */
+export interface UserBackupCodeUsedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.backup_code_used';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserBackupCodeUsedEventTarget;
+  data: UserBackupCodeUsedEventData;
+  test?: true;
+}
+
+export type OAuthProvider = typeof OAuthProvider[keyof typeof OAuthProvider];
+
+
+export const OAuthProvider = {
+  google: 'google',
+  github: 'github',
+  apple: 'apple',
+  microsoft: 'microsoft',
+  discord: 'discord',
+  linkedin: 'linkedin',
+  x: 'x',
+  facebook: 'facebook',
+} as const;
+
+export type UserIdentityLinkedEventDataMethod = typeof UserIdentityLinkedEventDataMethod[keyof typeof UserIdentityLinkedEventDataMethod];
+
+
+export const UserIdentityLinkedEventDataMethod = {
+  auto: 'auto',
+  profile: 'profile',
+} as const;
+
+/**
+ * A provider account was connected to a user.
+ */
+export interface UserIdentityLinkedEventData {
+  provider: OAuthProvider;
+  method: UserIdentityLinkedEventDataMethod;
+}
+
+export type UserIdentityLinkedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A provider account was connected to a user.
+ */
+export interface UserIdentityLinkedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.identity_linked';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserIdentityLinkedEventTarget;
+  data: UserIdentityLinkedEventData;
+  test?: true;
+}
+
+/**
+ * A provider account was disconnected from a user.
+ */
+export interface UserIdentityUnlinkedEventData {
+  provider: OAuthProvider;
+}
+
+export type UserIdentityUnlinkedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A provider account was disconnected from a user.
+ */
+export interface UserIdentityUnlinkedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.identity_unlinked';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserIdentityUnlinkedEventTarget;
+  data: UserIdentityUnlinkedEventData;
+  test?: true;
+}
+
+export type UserEmailAddedEventDataMethod = typeof UserEmailAddedEventDataMethod[keyof typeof UserEmailAddedEventDataMethod];
+
+
+export const UserEmailAddedEventDataMethod = {
+  self: 'self',
+  admin: 'admin',
+} as const;
+
+/**
+ * An email address was stored on a user who had none. The address is not in the event.
+ */
+export interface UserEmailAddedEventData {
+  method: UserEmailAddedEventDataMethod;
+  verified: boolean;
+}
+
+export type UserEmailAddedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An email address was stored on a user who had none. The address is not in the event.
+ */
+export interface UserEmailAddedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.email_added';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserEmailAddedEventTarget;
+  data: UserEmailAddedEventData;
+  test?: true;
+}
+
+/**
+ * A user registered a passkey.
+ */
+export interface UserPasskeyAddedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  passkeyId: string;
+  synced: boolean;
+}
+
+export type UserPasskeyAddedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A user registered a passkey.
+ */
+export interface UserPasskeyAddedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.passkey_added';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserPasskeyAddedEventTarget;
+  data: UserPasskeyAddedEventData;
+  test?: true;
+}
+
+/**
+ * A user renamed a passkey.
+ */
+export interface UserPasskeyRenamedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  passkeyId: string;
+}
+
+export type UserPasskeyRenamedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A user renamed a passkey.
+ */
+export interface UserPasskeyRenamedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.passkey_renamed';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserPasskeyRenamedEventTarget;
+  data: UserPasskeyRenamedEventData;
+  test?: true;
+}
+
+export type UserPasskeyRemovedEventDataMethod = typeof UserPasskeyRemovedEventDataMethod[keyof typeof UserPasskeyRemovedEventDataMethod];
+
+
+export const UserPasskeyRemovedEventDataMethod = {
+  user: 'user',
+  admin_reset: 'admin_reset',
+} as const;
+
+/**
+ * A passkey was removed by its owner (`method: user`, with `passkeyId`), or every passkey of a user by an admin reset (`method: admin_reset`, with `canStillSignIn`).
+ */
+export interface UserPasskeyRemovedEventData {
+  method: UserPasskeyRemovedEventDataMethod;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  passkeyId?: string;
+  canStillSignIn?: boolean;
+}
+
+export type UserPasskeyRemovedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A passkey was removed by its owner (`method: user`, with `passkeyId`), or every passkey of a user by an admin reset (`method: admin_reset`, with `canStillSignIn`).
+ */
+export interface UserPasskeyRemovedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.passkey_removed';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserPasskeyRemovedEventTarget;
+  data: UserPasskeyRemovedEventData;
+  test?: true;
+}
+
+/**
+ * A passkey’s signature counter did not grow: it may have been cloned. The sign-in was refused.
+ */
+export interface UserPasskeyCounterRegressedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  passkeyId: string;
+}
+
+export type UserPasskeyCounterRegressedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A passkey’s signature counter did not grow: it may have been cloned. The sign-in was refused.
+ */
+export interface UserPasskeyCounterRegressedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.passkey_counter_regressed';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserPasskeyCounterRegressedEventTarget;
+  data: UserPasskeyCounterRegressedEventData;
+  test?: true;
+}
+
+/**
+ * A user verified a phone number, which is now the account’s (replacing an earlier one).
+ */
+export interface UserPhoneNumberAddedEventData { [key: string]: unknown }
+
+export type UserPhoneNumberAddedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A user verified a phone number, which is now the account’s (replacing an earlier one).
+ */
+export interface UserPhoneNumberAddedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.phone_number_added';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserPhoneNumberAddedEventTarget;
+  data: UserPhoneNumberAddedEventData;
+  test?: true;
+}
+
+/**
+ * A user took the phone number off their account.
+ */
+export interface UserPhoneNumberRemovedEventData { [key: string]: unknown }
+
+export type UserPhoneNumberRemovedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A user took the phone number off their account.
+ */
+export interface UserPhoneNumberRemovedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.phone_number_removed';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserPhoneNumberRemovedEventTarget;
+  data: UserPhoneNumberRemovedEventData;
+  test?: true;
+}
+
+/**
+ * A user made a code texted to their phone number their second factor.
+ */
+export interface UserSmsFactorEnabledEventData { [key: string]: unknown }
+
+export type UserSmsFactorEnabledEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A user made a code texted to their phone number their second factor.
+ */
+export interface UserSmsFactorEnabledEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.sms_factor_enabled';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserSmsFactorEnabledEventTarget;
+  data: UserSmsFactorEnabledEventData;
+  test?: true;
+}
+
+export type UserSmsFactorRemovedEventDataMethod = typeof UserSmsFactorRemovedEventDataMethod[keyof typeof UserSmsFactorRemovedEventDataMethod];
+
+
+export const UserSmsFactorRemovedEventDataMethod = {
+  self: 'self',
+  admin_reset: 'admin_reset',
+  phone_number_removed: 'phone_number_removed',
+  phone_number_changed: 'phone_number_changed',
+} as const;
+
+/**
+ * A texted code is no longer a user’s second factor.
+ */
+export interface UserSmsFactorRemovedEventData {
+  method: UserSmsFactorRemovedEventDataMethod;
+}
+
+export type UserSmsFactorRemovedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A texted code is no longer a user’s second factor.
+ */
+export interface UserSmsFactorRemovedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.sms_factor_removed';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserSmsFactorRemovedEventTarget;
+  data: UserSmsFactorRemovedEventData;
+  test?: true;
+}
+
+export type SessionClient = typeof SessionClient[keyof typeof SessionClient];
+
+
+export const SessionClient = {
+  web: 'web',
+  ios: 'ios',
+  android: 'android',
+  server: 'server',
+} as const;
+
+/**
+ * A user signed in.
+ */
+export interface SessionCreatedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  userId: string;
+  client: SessionClient;
+  hookBypassed?: boolean;
+  claimsHookBypassed?: boolean;
+  deviceBound?: boolean;
+}
+
+export type SessionCreatedEventTarget = {
+  type: 'session';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A user signed in.
+ */
+export interface SessionCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'session.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: SessionCreatedEventTarget;
+  data: SessionCreatedEventData;
+  test?: true;
+}
+
+export type SessionRevokedEventDataReason = typeof SessionRevokedEventDataReason[keyof typeof SessionRevokedEventDataReason];
+
+
+export const SessionRevokedEventDataReason = {
+  sign_out: 'sign_out',
+  revoked_by_user: 'revoked_by_user',
+  revoked_by_admin: 'revoked_by_admin',
+  password_changed: 'password_changed',
+  user_banned: 'user_banned',
+  mfa_changed: 'mfa_changed',
+  session_limit: 'session_limit',
+} as const;
+
+/**
+ * A session was ended before it expired. With `proposalId` and `approvedBy` (both or neither) when ending it carried out an agent’s proposal a human approved.
+ */
+export interface SessionRevokedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  userId: string;
+  reason: SessionRevokedEventDataReason;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  proposalId?: string;
+  approvedBy?: ProposalApprover;
+}
+
+export type SessionRevokedEventTarget = {
+  type: 'session';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A session was ended before it expired. With `proposalId` and `approvedBy` (both or neither) when ending it carried out an agent’s proposal a human approved.
+ */
+export interface SessionRevokedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'session.revoked';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: SessionRevokedEventTarget;
+  data: SessionRevokedEventData;
+  test?: true;
+}
+
+/**
+ * A rotated refresh token was presented again: the session was ended as possibly stolen.
+ */
+export interface SessionReuseDetectedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  userId: string;
+  reason: 'reuse_detected';
+}
+
+export type SessionReuseDetectedEventTarget = {
+  type: 'session';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A rotated refresh token was presented again: the session was ended as possibly stolen.
+ */
+export interface SessionReuseDetectedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'session.reuse_detected';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: SessionReuseDetectedEventTarget;
+  data: SessionReuseDetectedEventData;
+  test?: true;
+}
+
+export type SessionSteppedUpEventDataMethodsItem = typeof SessionSteppedUpEventDataMethodsItem[keyof typeof SessionSteppedUpEventDataMethodsItem];
+
+
+export const SessionSteppedUpEventDataMethodsItem = {
+  pwd: 'pwd',
+  email: 'email',
+  sms: 'sms',
+  otp: 'otp',
+  backup_code: 'backup_code',
+  mfa: 'mfa',
+  hwk: 'hwk',
+  swk: 'swk',
+  user: 'user',
+} as const;
+
+/**
+ * A signed-in user proved a factor again for a session.
+ */
+export interface SessionSteppedUpEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  userId: string;
+  /** @maxItems 9 */
+  methods: SessionSteppedUpEventDataMethodsItem[];
+  claimsHookBypassed?: boolean;
+}
+
+export type SessionSteppedUpEventTarget = {
+  type: 'session';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A signed-in user proved a factor again for a session.
+ */
+export interface SessionSteppedUpEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'session.stepped_up';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: SessionSteppedUpEventTarget;
+  data: SessionSteppedUpEventData;
+  test?: true;
+}
+
+export type SessionRefreshProofRefusedEventDataReason = typeof SessionRefreshProofRefusedEventDataReason[keyof typeof SessionRefreshProofRefusedEventDataReason];
+
+
+export const SessionRefreshProofRefusedEventDataReason = {
+  missing: 'missing',
+  invalid: 'invalid',
+  wrong_key: 'wrong_key',
+  replayed: 'replayed',
+} as const;
+
+/**
+ * A refresh of a device-bound session came without a valid proof of its key. The session was not ended and no token was rotated.
+ */
+export interface SessionRefreshProofRefusedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  userId: string;
+  reason: SessionRefreshProofRefusedEventDataReason;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  suppressedInPreviousMinute: number;
+}
+
+export type SessionRefreshProofRefusedEventTarget = {
+  type: 'session';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A refresh of a device-bound session came without a valid proof of its key. The session was not ended and no token was rotated.
+ */
+export interface SessionRefreshProofRefusedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'session.refresh_proof_refused';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: SessionRefreshProofRefusedEventTarget;
+  data: SessionRefreshProofRefusedEventData;
+  test?: true;
+}
+
+export type ApiKeyCreatedEventDataKind = typeof ApiKeyCreatedEventDataKind[keyof typeof ApiKeyCreatedEventDataKind];
+
+
+export const ApiKeyCreatedEventDataKind = {
+  publishable: 'publishable',
+  secret: 'secret',
+  agent: 'agent',
+} as const;
+
+/**
+ * An API key was created.
+ */
+export interface ApiKeyCreatedEventData {
+  kind: ApiKeyCreatedEventDataKind;
+}
+
+export type ApiKeyCreatedEventTarget = {
+  type: 'api_key';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An API key was created.
+ */
+export interface ApiKeyCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'api_key.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: ApiKeyCreatedEventTarget;
+  data: ApiKeyCreatedEventData;
+  test?: true;
+}
+
+/**
+ * An API key was revoked.
+ */
+export interface ApiKeyRevokedEventData { [key: string]: unknown }
+
+export type ApiKeyRevokedEventTarget = {
+  type: 'api_key';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An API key was revoked.
+ */
+export interface ApiKeyRevokedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'api_key.revoked';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: ApiKeyRevokedEventTarget;
+  data: ApiKeyRevokedEventData;
+  test?: true;
+}
+
+/**
+ * An environment’s access-token signing keys were rotated. The target is the new active key.
+ */
+export interface SigningKeyRotatedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  retiredKeyId: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  nextKeyId: string;
+}
+
+export type SigningKeyRotatedEventTarget = {
+  type: 'signing_key';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An environment’s access-token signing keys were rotated. The target is the new active key.
+ */
+export interface SigningKeyRotatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'signing_key.rotated';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: SigningKeyRotatedEventTarget;
+  data: SigningKeyRotatedEventData;
+  test?: true;
+}
+
+/**
+ * An environment’s settings were replaced.
+ */
+export interface EnvironmentSettingsUpdatedEventData {
+  /**
+     * @maximum 9007199254740991
+     * @exclusiveMinimum 0
+     */
+  revision: number;
+  /**
+     * @maxItems 256
+     * @items.maxLength 128
+     * @items.pattern ^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$
+     */
+  changed: string[];
+  weakened?: boolean;
+  managedBy?: string | null;
+  outsideConfig?: boolean;
+}
+
+export type EnvironmentSettingsUpdatedEventTarget = {
+  type: 'environment';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An environment’s settings were replaced.
+ */
+export interface EnvironmentSettingsUpdatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'environment.settings_updated';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: EnvironmentSettingsUpdatedEventTarget;
+  data: EnvironmentSettingsUpdatedEventData;
+  test?: true;
+}
+
+export type OAuthProviderUpdatedEventDataChangedItem = typeof OAuthProviderUpdatedEventDataChangedItem[keyof typeof OAuthProviderUpdatedEventDataChangedItem];
+
+
+export const OAuthProviderUpdatedEventDataChangedItem = {
+  clientId: 'clientId',
+  secret: 'secret',
+  teamId: 'teamId',
+  keyId: 'keyId',
+  tenant: 'tenant',
+  additionalClientIds: 'additionalClientIds',
+  enabled: 'enabled',
+} as const;
+
+/**
+ * An OAuth provider’s credentials were set or changed, or it was switched on or off. With `proposalId` and `approvedBy` (both or neither) when switching it off carried out an agent’s proposal a human approved.
+ */
+export interface OAuthProviderUpdatedEventData {
+  provider: OAuthProvider;
+  /** @maxItems 7 */
+  changed: OAuthProviderUpdatedEventDataChangedItem[];
+  created?: boolean;
+  /**
+     * @minimum 0
+     * @maximum 8
+     */
+  additionalClientIdCount?: number;
+  weakened?: boolean;
+  /**
+     * @minimum 0
+     * @maximum 1000
+     */
+  dependentAccounts?: number;
+  dependentAccountsIncomplete?: boolean;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  proposalId?: string;
+  approvedBy?: ProposalApprover;
+}
+
+export type OAuthProviderUpdatedEventTarget = {
+  type: 'environment';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An OAuth provider’s credentials were set or changed, or it was switched on or off. With `proposalId` and `approvedBy` (both or neither) when switching it off carried out an agent’s proposal a human approved.
+ */
+export interface OAuthProviderUpdatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'oauth_provider.updated';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OAuthProviderUpdatedEventTarget;
+  data: OAuthProviderUpdatedEventData;
+  test?: true;
+}
+
+/**
+ * An OAuth provider’s credentials were removed.
+ */
+export interface OAuthProviderDeletedEventData {
+  provider: OAuthProvider;
+  weakened?: boolean;
+  /**
+     * @minimum 0
+     * @maximum 1000
+     */
+  dependentAccounts?: number;
+  dependentAccountsIncomplete?: boolean;
+}
+
+export type OAuthProviderDeletedEventTarget = {
+  type: 'environment';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An OAuth provider’s credentials were removed.
+ */
+export interface OAuthProviderDeletedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'oauth_provider.deleted';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OAuthProviderDeletedEventTarget;
+  data: OAuthProviderDeletedEventData;
+  test?: true;
+}
+
+/**
+ * A webhook endpoint was registered. Its address and signing secret are not in the event.
+ */
+export interface WebhookEndpointCreatedEventData {
+  /**
+     * @minimum 1
+     * @maximum 50
+     */
+  eventTypes: number;
+  enabled: boolean;
+}
+
+export type WebhookEndpointCreatedEventTarget = {
+  type: 'webhook_endpoint';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A webhook endpoint was registered. Its address and signing secret are not in the event.
+ */
+export interface WebhookEndpointCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'webhook_endpoint.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: WebhookEndpointCreatedEventTarget;
+  data: WebhookEndpointCreatedEventData;
+  test?: true;
+}
+
+export type WebhookEndpointUpdatedEventDataChangedItem = typeof WebhookEndpointUpdatedEventDataChangedItem[keyof typeof WebhookEndpointUpdatedEventDataChangedItem];
+
+
+export const WebhookEndpointUpdatedEventDataChangedItem = {
+  url: 'url',
+  eventTypes: 'eventTypes',
+  enabled: 'enabled',
+} as const;
+
+/**
+ * A webhook endpoint was changed.
+ */
+export interface WebhookEndpointUpdatedEventData {
+  /**
+     * @minItems 1
+     * @maxItems 3
+     */
+  changed: WebhookEndpointUpdatedEventDataChangedItem[];
+}
+
+export type WebhookEndpointUpdatedEventTarget = {
+  type: 'webhook_endpoint';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A webhook endpoint was changed.
+ */
+export interface WebhookEndpointUpdatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'webhook_endpoint.updated';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: WebhookEndpointUpdatedEventTarget;
+  data: WebhookEndpointUpdatedEventData;
+  test?: true;
+}
+
+/**
+ * A webhook endpoint was removed; nothing more is delivered to it.
+ */
+export interface WebhookEndpointDeletedEventData { [key: string]: unknown }
+
+export type WebhookEndpointDeletedEventTarget = {
+  type: 'webhook_endpoint';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A webhook endpoint was removed; nothing more is delivered to it.
+ */
+export interface WebhookEndpointDeletedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'webhook_endpoint.deleted';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: WebhookEndpointDeletedEventTarget;
+  data: WebhookEndpointDeletedEventData;
+  test?: true;
+}
+
+export type WebhookEndpointDisabledEventDataReason = typeof WebhookEndpointDisabledEventDataReason[keyof typeof WebhookEndpointDisabledEventDataReason];
+
+
+export const WebhookEndpointDisabledEventDataReason = {
+  failing: 'failing',
+  gone: 'gone',
+} as const;
+
+/**
+ * The server switched a webhook endpoint off: its deliveries kept failing, or it answered 410 Gone. Nothing is delivered to it until it is switched on again.
+ */
+export interface WebhookEndpointDisabledEventData {
+  reason: WebhookEndpointDisabledEventDataReason;
+}
+
+export type WebhookEndpointDisabledEventTarget = {
+  type: 'webhook_endpoint';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * The server switched a webhook endpoint off: its deliveries kept failing, or it answered 410 Gone. Nothing is delivered to it until it is switched on again.
+ */
+export interface WebhookEndpointDisabledEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'webhook_endpoint.disabled';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: WebhookEndpointDisabledEventTarget;
+  data: WebhookEndpointDisabledEventData;
+  test?: true;
+}
+
+/**
+ * A webhook endpoint’s signing secret was replaced. Deliveries carry a signature for the new secret and one for the previous secret until the time given; after it, for the new one only. Neither secret, nor any part of one, is in the event.
+ */
+export interface WebhookEndpointSecretRotatedEventData {
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  rotationOverlapEndsAt: string;
+}
+
+export type WebhookEndpointSecretRotatedEventTarget = {
+  type: 'webhook_endpoint';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A webhook endpoint’s signing secret was replaced. Deliveries carry a signature for the new secret and one for the previous secret until the time given; after it, for the new one only. Neither secret, nor any part of one, is in the event.
+ */
+export interface WebhookEndpointSecretRotatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'webhook_endpoint.secret_rotated';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: WebhookEndpointSecretRotatedEventTarget;
+  data: WebhookEndpointSecretRotatedEventData;
+  test?: true;
+}
+
+/**
+ * An administrator ended the overlap of a secret rotation early: the endpoint’s previous signing secret stopped signing at once and was deleted. Deliveries carry a signature for the current secret only.
+ */
+export interface WebhookEndpointPreviousSecretRevokedEventData { [key: string]: unknown }
+
+export type WebhookEndpointPreviousSecretRevokedEventTarget = {
+  type: 'webhook_endpoint';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An administrator ended the overlap of a secret rotation early: the endpoint’s previous signing secret stopped signing at once and was deleted. Deliveries carry a signature for the current secret only.
+ */
+export interface WebhookEndpointPreviousSecretRevokedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'webhook_endpoint.previous_secret_revoked';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: WebhookEndpointPreviousSecretRevokedEventTarget;
+  data: WebhookEndpointPreviousSecretRevokedEventData;
+  test?: true;
+}
+
+export type HookCreatedEventDataPoint = typeof HookCreatedEventDataPoint[keyof typeof HookCreatedEventDataPoint];
+
+
+export const HookCreatedEventDataPoint = {
+  before_sign_up: 'before_sign_up',
+  before_session: 'before_session',
+  before_token: 'before_token',
+} as const;
+
+export type HookCreatedEventDataFailureMode = typeof HookCreatedEventDataFailureMode[keyof typeof HookCreatedEventDataFailureMode];
+
+
+export const HookCreatedEventDataFailureMode = {
+  deny: 'deny',
+  allow: 'allow',
+} as const;
+
+/**
+ * A hook was registered. Its address and signing secret are not in the event.
+ */
+export interface HookCreatedEventData {
+  point: HookCreatedEventDataPoint;
+  enabled: boolean;
+  failureMode: HookCreatedEventDataFailureMode;
+  weakened?: boolean;
+}
+
+export type HookCreatedEventTarget = {
+  type: 'hook';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A hook was registered. Its address and signing secret are not in the event.
+ */
+export interface HookCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'hook.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: HookCreatedEventTarget;
+  data: HookCreatedEventData;
+  test?: true;
+}
+
+export type HookUpdatedEventDataPoint = typeof HookUpdatedEventDataPoint[keyof typeof HookUpdatedEventDataPoint];
+
+
+export const HookUpdatedEventDataPoint = {
+  before_sign_up: 'before_sign_up',
+  before_session: 'before_session',
+  before_token: 'before_token',
+} as const;
+
+export type HookUpdatedEventDataChangedItem = typeof HookUpdatedEventDataChangedItem[keyof typeof HookUpdatedEventDataChangedItem];
+
+
+export const HookUpdatedEventDataChangedItem = {
+  url: 'url',
+  enabled: 'enabled',
+  deadlineMs: 'deadlineMs',
+  failureMode: 'failureMode',
+} as const;
+
+/**
+ * A hook was changed.
+ */
+export interface HookUpdatedEventData {
+  point: HookUpdatedEventDataPoint;
+  /**
+     * @minItems 1
+     * @maxItems 4
+     */
+  changed: HookUpdatedEventDataChangedItem[];
+  weakened?: boolean;
+}
+
+export type HookUpdatedEventTarget = {
+  type: 'hook';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A hook was changed.
+ */
+export interface HookUpdatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'hook.updated';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: HookUpdatedEventTarget;
+  data: HookUpdatedEventData;
+  test?: true;
+}
+
+export type HookDeletedEventDataPoint = typeof HookDeletedEventDataPoint[keyof typeof HookDeletedEventDataPoint];
+
+
+export const HookDeletedEventDataPoint = {
+  before_sign_up: 'before_sign_up',
+  before_session: 'before_session',
+  before_token: 'before_token',
+} as const;
+
+/**
+ * A hook was removed; it is not asked any more.
+ */
+export interface HookDeletedEventData {
+  point: HookDeletedEventDataPoint;
+  weakened?: boolean;
+}
+
+export type HookDeletedEventTarget = {
+  type: 'hook';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A hook was removed; it is not asked any more.
+ */
+export interface HookDeletedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'hook.deleted';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: HookDeletedEventTarget;
+  data: HookDeletedEventData;
+  test?: true;
+}
+
+export type NativeAppCreatedEventDataPlatform = typeof NativeAppCreatedEventDataPlatform[keyof typeof NativeAppCreatedEventDataPlatform];
+
+
+export const NativeAppCreatedEventDataPlatform = {
+  ios: 'ios',
+  android: 'android',
+} as const;
+
+/**
+ * A native app was registered: the association files served for the environment name it from now on. Its bundle id or package name, its team and its fingerprints are not in the event.
+ */
+export interface NativeAppCreatedEventData {
+  platform: NativeAppCreatedEventDataPlatform;
+  /**
+     * @minimum 0
+     * @maximum 10
+     */
+  fingerprints: number;
+  /**
+     * @minimum 0
+     * @maximum 10
+     */
+  appLinkPaths?: number;
+  weakened?: boolean;
+}
+
+export type NativeAppCreatedEventTarget = {
+  type: 'native_app';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A native app was registered: the association files served for the environment name it from now on. Its bundle id or package name, its team and its fingerprints are not in the event.
+ */
+export interface NativeAppCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'native_app.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: NativeAppCreatedEventTarget;
+  data: NativeAppCreatedEventData;
+  test?: true;
+}
+
+export type NativeAppUpdatedEventDataPlatform = typeof NativeAppUpdatedEventDataPlatform[keyof typeof NativeAppUpdatedEventDataPlatform];
+
+
+export const NativeAppUpdatedEventDataPlatform = {
+  ios: 'ios',
+  android: 'android',
+} as const;
+
+export type NativeAppUpdatedEventDataChangedItem = typeof NativeAppUpdatedEventDataChangedItem[keyof typeof NativeAppUpdatedEventDataChangedItem];
+
+
+export const NativeAppUpdatedEventDataChangedItem = {
+  teamId: 'teamId',
+  sha256CertFingerprints: 'sha256CertFingerprints',
+  appLinkPaths: 'appLinkPaths',
+} as const;
+
+/**
+ * A registered native app was changed.
+ */
+export interface NativeAppUpdatedEventData {
+  platform: NativeAppUpdatedEventDataPlatform;
+  /**
+     * @minItems 1
+     * @maxItems 3
+     */
+  changed: NativeAppUpdatedEventDataChangedItem[];
+  /**
+     * @minimum 0
+     * @maximum 10
+     */
+  fingerprints: number;
+  /**
+     * @minimum 0
+     * @maximum 10
+     */
+  appLinkPaths?: number;
+  weakened?: boolean;
+}
+
+export type NativeAppUpdatedEventTarget = {
+  type: 'native_app';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A registered native app was changed.
+ */
+export interface NativeAppUpdatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'native_app.updated';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: NativeAppUpdatedEventTarget;
+  data: NativeAppUpdatedEventData;
+  test?: true;
+}
+
+export type NativeAppDeletedEventDataPlatform = typeof NativeAppDeletedEventDataPlatform[keyof typeof NativeAppDeletedEventDataPlatform];
+
+
+export const NativeAppDeletedEventDataPlatform = {
+  ios: 'ios',
+  android: 'android',
+} as const;
+
+/**
+ * A registered native app was removed: the association files no longer name it.
+ */
+export interface NativeAppDeletedEventData {
+  platform: NativeAppDeletedEventDataPlatform;
+}
+
+export type NativeAppDeletedEventTarget = {
+  type: 'native_app';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A registered native app was removed: the association files no longer name it.
+ */
+export interface NativeAppDeletedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'native_app.deleted';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: NativeAppDeletedEventTarget;
+  data: NativeAppDeletedEventData;
+  test?: true;
+}
+
+export type ProposalCreatedEventDataOperation = typeof ProposalCreatedEventDataOperation[keyof typeof ProposalCreatedEventDataOperation];
+
+
+export const ProposalCreatedEventDataOperation = {
+  ban_user: 'ban_user',
+  unban_user: 'unban_user',
+  end_session: 'end_session',
+  disable_oauth_provider: 'disable_oauth_provider',
+} as const;
+
+export type ProposalCreatedEventDataTargetType = typeof ProposalCreatedEventDataTargetType[keyof typeof ProposalCreatedEventDataTargetType];
+
+
+export const ProposalCreatedEventDataTargetType = {
+  user: 'user',
+  session: 'session',
+  oauth_provider: 'oauth_provider',
+} as const;
+
+/**
+ * An agent asked for a change as a proposal. Nothing has changed: a human has to approve it.
+ */
+export interface ProposalCreatedEventData {
+  operation: ProposalCreatedEventDataOperation;
+  targetType: ProposalCreatedEventDataTargetType;
+  targetId: string | OAuthProvider;
+}
+
+export type ProposalCreatedEventTarget = {
+  type: 'proposal';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An agent asked for a change as a proposal. Nothing has changed: a human has to approve it.
+ */
+export interface ProposalCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'proposal.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: ProposalCreatedEventTarget;
+  data: ProposalCreatedEventData;
+  test?: true;
+}
+
+export type ProposalApprovedEventDataOperation = typeof ProposalApprovedEventDataOperation[keyof typeof ProposalApprovedEventDataOperation];
+
+
+export const ProposalApprovedEventDataOperation = {
+  ban_user: 'ban_user',
+  unban_user: 'unban_user',
+  end_session: 'end_session',
+  disable_oauth_provider: 'disable_oauth_provider',
+} as const;
+
+export type ProposalApprovedEventDataTargetType = typeof ProposalApprovedEventDataTargetType[keyof typeof ProposalApprovedEventDataTargetType];
+
+
+export const ProposalApprovedEventDataTargetType = {
+  user: 'user',
+  session: 'session',
+  oauth_provider: 'oauth_provider',
+} as const;
+
+/**
+ * A human approved an agent’s proposal. The actor is the human; the operation follows.
+ */
+export interface ProposalApprovedEventData {
+  operation: ProposalApprovedEventDataOperation;
+  targetType: ProposalApprovedEventDataTargetType;
+  targetId: string | OAuthProvider;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  proposedBy: string;
+}
+
+export type ProposalApprovedEventTarget = {
+  type: 'proposal';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A human approved an agent’s proposal. The actor is the human; the operation follows.
+ */
+export interface ProposalApprovedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'proposal.approved';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: ProposalApprovedEventTarget;
+  data: ProposalApprovedEventData;
+  test?: true;
+}
+
+export type ProposalExecutedEventDataOperation = typeof ProposalExecutedEventDataOperation[keyof typeof ProposalExecutedEventDataOperation];
+
+
+export const ProposalExecutedEventDataOperation = {
+  ban_user: 'ban_user',
+  unban_user: 'unban_user',
+  end_session: 'end_session',
+  disable_oauth_provider: 'disable_oauth_provider',
+} as const;
+
+export type ProposalExecutedEventDataTargetType = typeof ProposalExecutedEventDataTargetType[keyof typeof ProposalExecutedEventDataTargetType];
+
+
+export const ProposalExecutedEventDataTargetType = {
+  user: 'user',
+  session: 'session',
+  oauth_provider: 'oauth_provider',
+} as const;
+
+/**
+ * An approved proposal’s operation was carried out. The actor is the agent that asked.
+ */
+export interface ProposalExecutedEventData {
+  operation: ProposalExecutedEventDataOperation;
+  targetType: ProposalExecutedEventDataTargetType;
+  targetId: string | OAuthProvider;
+  approvedBy: ProposalApprover;
+  changed?: boolean;
+}
+
+export type ProposalExecutedEventTarget = {
+  type: 'proposal';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An approved proposal’s operation was carried out. The actor is the agent that asked.
+ */
+export interface ProposalExecutedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'proposal.executed';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: ProposalExecutedEventTarget;
+  data: ProposalExecutedEventData;
+  test?: true;
+}
+
+export type ProposalFailedEventDataOperation = typeof ProposalFailedEventDataOperation[keyof typeof ProposalFailedEventDataOperation];
+
+
+export const ProposalFailedEventDataOperation = {
+  ban_user: 'ban_user',
+  unban_user: 'unban_user',
+  end_session: 'end_session',
+  disable_oauth_provider: 'disable_oauth_provider',
+} as const;
+
+export type ProposalFailedEventDataTargetType = typeof ProposalFailedEventDataTargetType[keyof typeof ProposalFailedEventDataTargetType];
+
+
+export const ProposalFailedEventDataTargetType = {
+  user: 'user',
+  session: 'session',
+  oauth_provider: 'oauth_provider',
+} as const;
+
+export type ProposalFailedEventDataReason = typeof ProposalFailedEventDataReason[keyof typeof ProposalFailedEventDataReason];
+
+
+export const ProposalFailedEventDataReason = {
+  target_not_found: 'target_not_found',
+  error: 'error',
+  incomplete: 'incomplete',
+  last_sign_in_method: 'last_sign_in_method',
+} as const;
+
+/**
+ * An approved proposal’s operation was not carried out. The proposal is spent all the same.
+ */
+export interface ProposalFailedEventData {
+  operation: ProposalFailedEventDataOperation;
+  targetType: ProposalFailedEventDataTargetType;
+  targetId: string | OAuthProvider;
+  approvedBy: ProposalApprover;
+  reason: ProposalFailedEventDataReason;
+}
+
+export type ProposalFailedEventTarget = {
+  type: 'proposal';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An approved proposal’s operation was not carried out. The proposal is spent all the same.
+ */
+export interface ProposalFailedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'proposal.failed';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: ProposalFailedEventTarget;
+  data: ProposalFailedEventData;
+  test?: true;
+}
+
+/**
+ * A sign-in test began: the server is about to sign a throwaway user up and in through the environment’s flow, and delete it.
+ */
+export interface SignInTestStartedEventData { [key: string]: unknown }
+
+export type SignInTestStartedEventTarget = {
+  type: 'environment';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A sign-in test began: the server is about to sign a throwaway user up and in through the environment’s flow, and delete it.
+ */
+export interface SignInTestStartedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'sign_in_test.started';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: SignInTestStartedEventTarget;
+  data: SignInTestStartedEventData;
+  test?: true;
+}
+
+export type SignInTestFinishedEventDataOutcome = typeof SignInTestFinishedEventDataOutcome[keyof typeof SignInTestFinishedEventDataOutcome];
+
+
+export const SignInTestFinishedEventDataOutcome = {
+  passed: 'passed',
+  failed: 'failed',
+  incomplete: 'incomplete',
+} as const;
+
+export type SignInTestFinishedEventDataCleanup = typeof SignInTestFinishedEventDataCleanup[keyof typeof SignInTestFinishedEventDataCleanup];
+
+
+export const SignInTestFinishedEventDataCleanup = {
+  deleted: 'deleted',
+  failed: 'failed',
+  none: 'none',
+} as const;
+
+/**
+ * A sign-in test ended. `userId` is the throwaway user it made (absent when no account was made); `cleanup` says whether that user was deleted.
+ */
+export interface SignInTestFinishedEventData {
+  outcome: SignInTestFinishedEventDataOutcome;
+  cleanup: SignInTestFinishedEventDataCleanup;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  userId?: string;
+}
+
+export type SignInTestFinishedEventTarget = {
+  type: 'environment';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A sign-in test ended. `userId` is the throwaway user it made (absent when no account was made); `cleanup` says whether that user was deleted.
+ */
+export interface SignInTestFinishedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'sign_in_test.finished';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: SignInTestFinishedEventTarget;
+  data: SignInTestFinishedEventData;
+  test?: true;
+}
+
+export type TulaEvent = UserCreatedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserEmailAddedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
+
+export type HookBeforeSignUpDataMethod = typeof HookBeforeSignUpDataMethod[keyof typeof HookBeforeSignUpDataMethod];
+
+
+export const HookBeforeSignUpDataMethod = {
+  password: 'password',
+  passwordless: 'passwordless',
+  oauth_google: 'oauth_google',
+  oauth_github: 'oauth_github',
+  oauth_apple: 'oauth_apple',
+  oauth_microsoft: 'oauth_microsoft',
+  oauth_discord: 'oauth_discord',
+  oauth_linkedin: 'oauth_linkedin',
+  oauth_x: 'oauth_x',
+  oauth_facebook: 'oauth_facebook',
+} as const;
+
+/**
+ * What a hook is told about a sign-up before the account is created.
+ */
+export interface HookBeforeSignUpData {
+  email: string | null;
+  method: HookBeforeSignUpDataMethod;
+  client: SessionClient;
+  ipAddress: string | null;
+}
+
+/**
+ * What the server posts, signed, to the hook registered for `before_sign_up`, before it creates an account by a sign-up. Not an event: nothing has happened yet.
+ */
+export interface HookBeforeSignUpQuestion {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'hook.before_sign_up';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  data: HookBeforeSignUpData;
+}
+
+/**
+ * What a hook is told about a sign-in before its session is created.
+ */
+export interface HookBeforeSessionData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  userId: string;
+  client: SessionClient;
+  /**
+     * @minLength 1
+     * @maxLength 32
+     */
+  profile: string;
+  /**
+     * @maxItems 16
+     * @items.pattern ^[a-z][a-z0-9_]{0,31}$
+     */
+  amr: string[];
+  signUp: boolean;
+  ipAddress: string | null;
+}
+
+/**
+ * What the server posts, signed, to the hook registered for `before_session`, after every factor of a sign-in was proven and before it creates the session. Not an event: nothing has happened yet.
+ */
+export interface HookBeforeSessionQuestion {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'hook.before_session';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  data: HookBeforeSessionData;
+}
+
+/**
+ * What a hook is told about a session before its token is issued.
+ */
+export interface HookBeforeTokenData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  userId: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  sessionId: string;
+  client: SessionClient;
+  /**
+     * @minLength 1
+     * @maxLength 32
+     */
+  profile: string;
+  /**
+     * @maxItems 16
+     * @items.pattern ^[a-z][a-z0-9_]{0,31}$
+     */
+  amr: string[];
+}
+
+/**
+ * What the server posts, signed, to the hook registered for `before_token`, when a session is created and each time its user proves a factor again. The answer is the claims the session’s tokens carry until the next question. Not an event.
+ */
+export interface HookBeforeTokenQuestion {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'hook.before_token';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  data: HookBeforeTokenData;
+}
+
+export type HookQuestion = HookBeforeSignUpQuestion | HookBeforeSessionQuestion | HookBeforeTokenQuestion;
+
+export type HookAnswer = {
+  decision: 'allow';
+} | {
+  decision: 'deny';
+  /** @pattern ^[a-z0-9_]{1,64}$ */
+  code?: string;
+};
+
+export type HookClaimsAnswerClaims = {[key: string]: string | number | boolean};
+
+export interface HookClaimsAnswer {
+  claims: HookClaimsAnswerClaims;
+}
+
 export interface StatusResponse {
   status: 'ok';
   version: string;
@@ -44,6 +2132,7 @@ export const ErrorCode = {
   flownot_found: 'flow.not_found',
   flowinvalid_step: 'flow.invalid_step',
   emailinvalid: 'email.invalid',
+  emailalready_set: 'email.already_set',
   passwordtoo_short: 'password.too_short',
   passwordtoo_long: 'password.too_long',
   passwordmissing_lowercase: 'password.missing_lowercase',
@@ -56,6 +2145,7 @@ export const ErrorCode = {
   passwordbreached: 'password.breached',
   passwordrepeated_characters: 'password.repeated_characters',
   passwordsequence: 'password.sequence',
+  passwordreused: 'password.reused',
   passwordnot_set: 'password.not_set',
   verificationinvalid_code: 'verification.invalid_code',
   verificationexpired: 'verification.expired',
@@ -66,6 +2156,10 @@ export const ErrorCode = {
   mfanot_enabled: 'mfa.not_enabled',
   mfaenrolment_expired: 'mfa.enrolment_expired',
   mfanot_available: 'mfa.not_available',
+  mfaenrolment_needs_other_sign_in: 'mfa.enrolment_needs_other_sign_in',
+  mfaneeds_other_sign_in: 'mfa.needs_other_sign_in',
+  mfasms_not_allowed: 'mfa.sms_not_allowed',
+  mfaphone_number_required: 'mfa.phone_number_required',
   mfarequired_by_policy: 'mfa.required_by_policy',
   oauthaccess_denied: 'oauth.access_denied',
   oauthprovider_error: 'oauth.provider_error',
@@ -78,15 +2172,29 @@ export const ErrorCode = {
   oauthidentity_in_use: 'oauth.identity_in_use',
   oauthalready_linked: 'oauth.already_linked',
   identitylast_sign_in_method: 'identity.last_sign_in_method',
+  webhookurl_not_allowed: 'webhook.url_not_allowed',
+  webhookcannot_redeliver: 'webhook.cannot_redeliver',
+  webhookrotation_refused: 'webhook.rotation_refused',
+  hookdenied: 'hook.denied',
+  hookunavailable: 'hook.unavailable',
+  hookurl_not_allowed: 'hook.url_not_allowed',
   passkeyregistration_failed: 'passkey.registration_failed',
   passkeyalready_registered: 'passkey.already_registered',
   passkeylimit_reached: 'passkey.limit_reached',
   passkeylast_sign_in_method: 'passkey.last_sign_in_method',
+  phoneinvalid: 'phone.invalid',
+  smsdisabled: 'sms.disabled',
+  smscountry_not_allowed: 'sms.country_not_allowed',
+  smsunavailable: 'sms.unavailable',
   sessioninvalid_token: 'session.invalid_token',
   sessionexpired: 'session.expired',
   sessionrevoked: 'session.revoked',
   sessionreuse_detected: 'session.reuse_detected',
   sessionlimit_reached: 'session.limit_reached',
+  deviceproof_invalid: 'device.proof_invalid',
+  devicenonce_required: 'device.nonce_required',
+  devicebinding_not_supported: 'device.binding_not_supported',
+  devicebinding_required: 'device.binding_required',
   rate_limited: 'rate_limited',
   requestmalformed: 'request.malformed',
   requesttoo_large: 'request.too_large',
@@ -173,6 +2281,7 @@ export type ApiKeyKind = typeof ApiKeyKind[keyof typeof ApiKeyKind];
 export const ApiKeyKind = {
   publishable: 'publishable',
   secret: 'secret',
+  agent: 'agent',
 } as const;
 
 export interface ApiKey {
@@ -320,16 +2429,6 @@ export interface RefreshTokenRequest {
   refreshToken?: string;
 }
 
-export type SessionClient = typeof SessionClient[keyof typeof SessionClient];
-
-
-export const SessionClient = {
-  web: 'web',
-  ios: 'ios',
-  android: 'android',
-  server: 'server',
-} as const;
-
 export interface Session {
   id: string;
   client: SessionClient;
@@ -344,6 +2443,7 @@ export interface Session {
   /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
   expiresAt: string;
   current: boolean;
+  deviceBound: boolean;
 }
 
 export interface SessionList {
@@ -421,10 +2521,21 @@ export type StepUpRequest = {
 } | {
   method: 'passkey';
   credential: PasskeyAssertionCredential;
+} | {
+  method: 'sms_code';
+  /** @pattern ^\d{6}$ */
+  code: string;
 };
 
 export interface StepUpEmailCode {
   method: 'email_code';
+  destination: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  expiresAt: string;
+}
+
+export interface SmsFactorCode {
+  method: 'sms_code';
   destination: string;
   /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
   expiresAt: string;
@@ -447,6 +2558,12 @@ export interface PasskeyRequestOptions {
   userVerification: 'required';
   allowCredentials?: PasskeyRequestOptionsAllowCredentialsItem[];
 }
+
+export type AccessTokenClaimsCnf = {
+  jkt: string;
+};
+
+export type AccessTokenClaimsExt = {[key: string]: string | number | boolean};
 
 export interface AccessTokenClaims {
   iss: string;
@@ -473,6 +2590,8 @@ export interface AccessTokenClaims {
   auth_time?: number;
   amr?: string[];
   sp?: string;
+  cnf?: AccessTokenClaimsCnf;
+  ext?: AccessTokenClaimsExt;
 }
 
 export interface VerifySessionRequest {
@@ -481,6 +2600,25 @@ export interface VerifySessionRequest {
      * @maxLength 4096
      */
   token: string;
+}
+
+export interface AdminSession {
+  id: string;
+  client: SessionClient;
+  /** @nullable */
+  userAgent: string | null;
+  /** @nullable */
+  ipAddress: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  lastActiveAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  expiresAt: string;
+  current: boolean;
+  deviceBound: boolean;
+  userId: string;
+  active: boolean;
 }
 
 export type FlowKind = typeof FlowKind[keyof typeof FlowKind];
@@ -500,9 +2638,24 @@ export const FirstFactorStrategy = {
   email_code: 'email_code',
   email_link: 'email_link',
   passkey: 'passkey',
+  sms_code: 'sms_code',
   oauth_google: 'oauth_google',
   oauth_github: 'oauth_github',
   oauth_apple: 'oauth_apple',
+  oauth_microsoft: 'oauth_microsoft',
+  oauth_discord: 'oauth_discord',
+  oauth_linkedin: 'oauth_linkedin',
+  oauth_x: 'oauth_x',
+  oauth_facebook: 'oauth_facebook',
+} as const;
+
+export type PreparedFirstFactorStrategy = typeof PreparedFirstFactorStrategy[keyof typeof PreparedFirstFactorStrategy];
+
+
+export const PreparedFirstFactorStrategy = {
+  email_code: 'email_code',
+  email_link: 'email_link',
+  sms_code: 'sms_code',
 } as const;
 
 export type EmailVerificationStrategy = typeof EmailVerificationStrategy[keyof typeof EmailVerificationStrategy];
@@ -513,6 +2666,13 @@ export const EmailVerificationStrategy = {
   email_link: 'email_link',
 } as const;
 
+export type NewPasswordReason = typeof NewPasswordReason[keyof typeof NewPasswordReason];
+
+
+export const NewPasswordReason = {
+  expired: 'expired',
+} as const;
+
 export type SecondFactorMethod = typeof SecondFactorMethod[keyof typeof SecondFactorMethod];
 
 
@@ -520,6 +2680,13 @@ export const SecondFactorMethod = {
   totp: 'totp',
   passkey: 'passkey',
   backup_code: 'backup_code',
+  sms_code: 'sms_code',
+} as const;
+
+export type PreparedSecondFactorMethod = typeof PreparedSecondFactorMethod[keyof typeof PreparedSecondFactorMethod];
+
+
+export const PreparedSecondFactorMethod = {
   sms_code: 'sms_code',
 } as const;
 
@@ -539,7 +2706,7 @@ export type FlowStep = {
   /** @minItems 1 */
   strategies: FirstFactorStrategy[];
   prepared?: {
-  strategy: EmailVerificationStrategy;
+  strategy: PreparedFirstFactorStrategy;
   destination: string;
 };
 } | {
@@ -550,12 +2717,16 @@ export type FlowStep = {
 } | {
   status: 'needs_new_password';
   destination: string;
-  /** @minItems 1 */
   strategies: EmailVerificationStrategy[];
+  reason?: NewPasswordReason;
 } | {
   status: 'needs_second_factor';
   /** @minItems 1 */
   options: SecondFactorMethod[];
+  prepared?: {
+  method: PreparedSecondFactorMethod;
+  destination: string;
+};
 } | {
   status: 'needs_factor_enrolment';
   /** @minItems 1 */
@@ -584,7 +2755,6 @@ export interface FlowAttempt {
 }
 
 /**
- * The session profile the client would like. Honoured only when the environment marks that profile `clientSelectable`; any other name is ignored and the session gets the profile of its client kind (`web`, or `mobile` for every other client).
  * @maxLength 32
  * @pattern ^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$
  */
@@ -611,8 +2781,13 @@ export interface PasswordAttemptRequest {
   password: string;
 }
 
+export interface NewPasswordRequest {
+  /** @maxLength 1024 */
+  password: string;
+}
+
 export interface FirstFactorPrepareRequest {
-  strategy: EmailVerificationStrategy;
+  strategy: PreparedFirstFactorStrategy;
   /** @maxLength 2048 */
   redirectUrl?: string;
 }
@@ -623,6 +2798,10 @@ export type FirstFactorAttemptRequest = {
   code: string;
 } | {
   strategy: 'email_link';
+} | {
+  strategy: 'sms_code';
+  /** @pattern ^\d{6}$ */
+  code: string;
 };
 
 export const EmailLinkResultValue = {
@@ -651,20 +2830,40 @@ export interface PasskeySignInRequest {
   credential: PasskeyAssertionCredential;
 }
 
+export interface IdTokenStart {
+  attempt: FlowAttempt;
+  nonce: string;
+}
+
+export type IdTokenProvider = typeof IdTokenProvider[keyof typeof IdTokenProvider];
+
+
+export const IdTokenProvider = {
+  google: 'google',
+  apple: 'apple',
+} as const;
+
+export interface IdTokenStartRequest {
+  provider: IdTokenProvider;
+}
+
+export interface IdTokenExchangeRequest {
+  /**
+     * @minLength 1
+     * @maxLength 8192
+     */
+  idToken: string;
+  /** @maxLength 100 */
+  givenName?: string;
+  /** @maxLength 100 */
+  familyName?: string;
+}
+
 export interface OAuthStart {
   attempt: FlowAttempt;
   authorizationUrl: string;
   binding: string;
 }
-
-export type OAuthProvider = typeof OAuthProvider[keyof typeof OAuthProvider];
-
-
-export const OAuthProvider = {
-  google: 'google',
-  github: 'github',
-  apple: 'apple',
-} as const;
 
 export interface OAuthStartRequest {
   provider: OAuthProvider;
@@ -706,6 +2905,10 @@ export type SecondFactorRequest = {
   /** @pattern ^\d{6}$ */
   code: string;
 } | {
+  method: 'sms_code';
+  /** @pattern ^\d{6}$ */
+  code: string;
+} | {
   method: 'backup_code';
   /**
      * @minLength 1
@@ -716,6 +2919,10 @@ export type SecondFactorRequest = {
   method: 'passkey';
   credential: PasskeyAssertionCredential;
 };
+
+export interface SecondFactorPrepareRequest {
+  method: PreparedSecondFactorMethod;
+}
 
 export interface TotpEnrolment {
   secret: string;
@@ -752,7 +2959,8 @@ export interface PaginationMeta {
 
 export interface User {
   id: string;
-  email: string;
+  /** @nullable */
+  email: string | null;
   emailVerifiedAt: string | null;
   /** @nullable */
   firstName: string | null;
@@ -762,6 +2970,9 @@ export interface User {
   lastSignInAt: string | null;
   /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
   createdAt: string;
+  /** @nullable */
+  phoneNumber?: string | null;
+  phoneNumberVerifiedAt?: string | null;
 }
 
 export interface UserList {
@@ -844,6 +3055,11 @@ export interface UserAuthentication {
   canSignInWithoutPasskeys: boolean;
 }
 
+export interface SetUserEmailRequest {
+  /** @maxLength 320 */
+  email: string;
+}
+
 export interface SetPasswordRequest {
   /** @maxLength 1024 */
   password: string;
@@ -851,7 +3067,8 @@ export interface SetPasswordRequest {
 
 export interface CurrentUser {
   id: string;
-  email: string;
+  /** @nullable */
+  email: string | null;
   emailVerifiedAt: string | null;
   /** @nullable */
   firstName: string | null;
@@ -861,6 +3078,9 @@ export interface CurrentUser {
   lastSignInAt: string | null;
   /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
   createdAt: string;
+  /** @nullable */
+  phoneNumber?: string | null;
+  phoneNumberVerifiedAt?: string | null;
   hasPassword: boolean;
 }
 
@@ -884,13 +3104,26 @@ export type FactorsBackupCodes = {
   remaining: number;
 };
 
+export type FactorsSms = {
+  enabled: boolean;
+  enabledAt: string | null;
+  inUse: boolean;
+  available: boolean;
+};
+
 export interface Factors {
   totp: FactorsTotp;
   backupCodes: FactorsBackupCodes;
+  sms?: FactorsSms;
 }
 
 export interface BackupCodes {
   codes: string[];
+}
+
+export interface SmsFactorConfirmRequest {
+  /** @pattern ^\d{6}$ */
+  code: string;
 }
 
 export type AuditLogActor = {
@@ -941,20 +3174,44 @@ export const ActivityType = {
   userbackup_code_used: 'user.backup_code_used',
   useridentity_linked: 'user.identity_linked',
   useridentity_unlinked: 'user.identity_unlinked',
+  useremail_added: 'user.email_added',
   userpasskey_added: 'user.passkey_added',
   userpasskey_renamed: 'user.passkey_renamed',
   userpasskey_removed: 'user.passkey_removed',
   userpasskey_counter_regressed: 'user.passkey_counter_regressed',
+  userphone_number_added: 'user.phone_number_added',
+  userphone_number_removed: 'user.phone_number_removed',
+  usersms_factor_enabled: 'user.sms_factor_enabled',
+  usersms_factor_removed: 'user.sms_factor_removed',
   sessioncreated: 'session.created',
   sessionrevoked: 'session.revoked',
   sessionreuse_detected: 'session.reuse_detected',
   sessionstepped_up: 'session.stepped_up',
+  sessionrefresh_proof_refused: 'session.refresh_proof_refused',
   api_keycreated: 'api_key.created',
   api_keyrevoked: 'api_key.revoked',
   signing_keyrotated: 'signing_key.rotated',
   environmentsettings_updated: 'environment.settings_updated',
   oauth_providerupdated: 'oauth_provider.updated',
   oauth_providerdeleted: 'oauth_provider.deleted',
+  webhook_endpointcreated: 'webhook_endpoint.created',
+  webhook_endpointupdated: 'webhook_endpoint.updated',
+  webhook_endpointdeleted: 'webhook_endpoint.deleted',
+  webhook_endpointdisabled: 'webhook_endpoint.disabled',
+  webhook_endpointsecret_rotated: 'webhook_endpoint.secret_rotated',
+  webhook_endpointprevious_secret_revoked: 'webhook_endpoint.previous_secret_revoked',
+  hookcreated: 'hook.created',
+  hookupdated: 'hook.updated',
+  hookdeleted: 'hook.deleted',
+  native_appcreated: 'native_app.created',
+  native_appupdated: 'native_app.updated',
+  native_appdeleted: 'native_app.deleted',
+  proposalcreated: 'proposal.created',
+  proposalapproved: 'proposal.approved',
+  proposalexecuted: 'proposal.executed',
+  proposalfailed: 'proposal.failed',
+  sign_in_teststarted: 'sign_in_test.started',
+  sign_in_testfinished: 'sign_in_test.finished',
 } as const;
 
 export type AuditLogQueryActorType = typeof AuditLogQueryActorType[keyof typeof AuditLogQueryActorType];
@@ -1018,6 +3275,31 @@ export const SessionType = {
 
 export type Duration = string;
 
+export type DeviceBindingPolicy = typeof DeviceBindingPolicy[keyof typeof DeviceBindingPolicy];
+
+
+export const DeviceBindingPolicy = {
+  none: 'none',
+  optional: 'optional',
+  required: 'required',
+} as const;
+
+export type WebSessionProfileRefresh = {
+  reuseGracePeriod?: Duration | null;
+};
+
+export interface WebSessionProfile {
+  type?: SessionType;
+  accessTokenTtl?: Duration;
+  idleTimeout?: Duration;
+  absoluteTimeout?: Duration | null;
+  stepUpAfter?: Duration | null;
+  clientSelectable?: boolean;
+  jwtTemplate?: SessionProfileName | null;
+  deviceBinding?: DeviceBindingPolicy;
+  refresh?: WebSessionProfileRefresh;
+}
+
 export type SessionProfileRefresh = {
   reuseGracePeriod?: Duration | null;
 };
@@ -1029,6 +3311,8 @@ export interface SessionProfile {
   absoluteTimeout?: Duration | null;
   stepUpAfter?: Duration | null;
   clientSelectable?: boolean;
+  jwtTemplate?: SessionProfileName | null;
+  deviceBinding?: DeviceBindingPolicy;
   refresh?: SessionProfileRefresh;
 }
 
@@ -1040,16 +3324,97 @@ export const SessionLimitAction = {
   refuse_newest: 'refuse_newest',
 } as const;
 
+export type JwtTemplateSource = typeof JwtTemplateSource[keyof typeof JwtTemplateSource];
+
+
+export const JwtTemplateSource = {
+  useremail: 'user.email',
+  useremail_verified: 'user.email_verified',
+  usercreated_at: 'user.created_at',
+  sessionclient: 'session.client',
+  sessioncreated_at: 'session.created_at',
+} as const;
+
+export type JwtTemplateClaim = {
+  from: JwtTemplateSource;
+} | {
+  value: string | number | boolean;
+};
+
+export type JwtTemplateClaims = {[key: string]: JwtTemplateClaim};
+
+export interface JwtTemplate {
+  claims?: JwtTemplateClaims;
+}
+
 export type SessionSettingsProfiles = {
-  web?: SessionProfile;
+  web?: WebSessionProfile;
   mobile?: SessionProfile;
   [key: string]: unknown;
 };
+
+export type SessionSettingsJwtTemplates = {[key: string]: JwtTemplate};
 
 export interface SessionSettings {
   profiles?: SessionSettingsProfiles;
   maxPerUser?: number | null;
   onLimit?: SessionLimitAction;
+  jwtTemplates?: SessionSettingsJwtTemplates;
+}
+
+export type SmsCountry = string;
+
+export interface SmsTemplate {
+  /** @maxLength 140 */
+  text: string;
+}
+
+export interface SmsTemplates {
+  phone_verification?: SmsTemplate;
+  sign_in?: SmsTemplate;
+  second_factor?: SmsTemplate;
+}
+
+export interface EmailTemplate {
+  /** @maxLength 200 */
+  subject?: string;
+  /** @maxLength 2000 */
+  body?: string;
+}
+
+export interface EmailTemplates {
+  email_verification?: EmailTemplate;
+  password_reset?: EmailTemplate;
+  sign_in?: EmailTemplate;
+  step_up?: EmailTemplate;
+  account_exists?: EmailTemplate;
+  no_account?: EmailTemplate;
+  no_account_sign_in?: EmailTemplate;
+  password_changed?: EmailTemplate;
+  password_added?: EmailTemplate;
+  password_reset_completed?: EmailTemplate;
+  password_added_by_reset?: EmailTemplate;
+  password_set_by_admin?: EmailTemplate;
+  password_added_by_admin?: EmailTemplate;
+  password_removed?: EmailTemplate;
+  new_sign_in?: EmailTemplate;
+  mfa_enabled?: EmailTemplate;
+  mfa_disabled?: EmailTemplate;
+  mfa_reset_by_admin?: EmailTemplate;
+  backup_codes_regenerated?: EmailTemplate;
+  backup_code_used?: EmailTemplate;
+  sms_factor_enabled?: EmailTemplate;
+  sms_factor_removed?: EmailTemplate;
+  passkey_added?: EmailTemplate;
+  passkey_removed?: EmailTemplate;
+  identity_linked?: EmailTemplate;
+  identity_unlinked?: EmailTemplate;
+  email_in_use?: EmailTemplate;
+  email_added?: EmailTemplate;
+}
+
+export interface EmailSettings {
+  templates?: EmailTemplates;
 }
 
 export interface SettingsManagedBy {
@@ -1092,11 +3457,16 @@ export type EnvironmentSettingsStateSettingsSignInMethodsPasskey = {
   enabled?: boolean;
 };
 
+export type EnvironmentSettingsStateSettingsSignInMethodsSmsCode = {
+  enabled?: boolean;
+};
+
 export type EnvironmentSettingsStateSettingsSignInMethods = {
   password?: EnvironmentSettingsStateSettingsSignInMethodsPassword;
   emailCode?: EnvironmentSettingsStateSettingsSignInMethodsEmailCode;
   emailLink?: EnvironmentSettingsStateSettingsSignInMethodsEmailLink;
   passkey?: EnvironmentSettingsStateSettingsSignInMethodsPasskey;
+  smsCode?: EnvironmentSettingsStateSettingsSignInMethodsSmsCode;
 };
 
 export type EnvironmentSettingsStateSettingsSignIn = {
@@ -1116,6 +3486,12 @@ export type EnvironmentSettingsStateSettingsAudit = {
   retentionDays?: number | null;
 };
 
+export type EnvironmentSettingsStateSettingsAgents = {
+  proposalsInProduction?: boolean;
+  /** @nullable */
+  testSignIn?: boolean | null;
+};
+
 export type EnvironmentSettingsStateSettingsNotifications = {
   passwordChanged?: boolean;
   newSignIn?: boolean;
@@ -1123,13 +3499,30 @@ export type EnvironmentSettingsStateSettingsNotifications = {
   identityChanged?: boolean;
 };
 
+export type EnvironmentSettingsStateSettingsMfaSmsCode = {
+  enabled?: boolean;
+};
+
 export type EnvironmentSettingsStateSettingsMfa = {
   policy?: MfaPolicy;
+  smsCode?: EnvironmentSettingsStateSettingsMfaSmsCode;
 };
 
 export type EnvironmentSettingsStateSettingsPasskeys = {
   /** @nullable */
   rpId?: string | null;
+};
+
+export type EnvironmentSettingsStateSettingsSms = {
+  enabled?: boolean;
+  /** @maxItems 243 */
+  allowedCountries?: SmsCountry[];
+  /**
+     * @minimum 1
+     * @maximum 1000000
+     */
+  dailyMessageLimit?: number;
+  templates?: SmsTemplates;
 };
 
 export type EnvironmentSettingsStateSettings = {
@@ -1140,10 +3533,13 @@ export type EnvironmentSettingsStateSettings = {
   signUp?: EnvironmentSettingsStateSettingsSignUp;
   urls: EnvironmentSettingsStateSettingsUrls;
   audit?: EnvironmentSettingsStateSettingsAudit;
+  agents?: EnvironmentSettingsStateSettingsAgents;
   notifications?: EnvironmentSettingsStateSettingsNotifications;
   mfa?: EnvironmentSettingsStateSettingsMfa;
   passkeys?: EnvironmentSettingsStateSettingsPasskeys;
   sessions?: SessionSettings;
+  sms?: EnvironmentSettingsStateSettingsSms;
+  emails?: EmailSettings;
 };
 
 export interface EnvironmentSettingsState {
@@ -1191,11 +3587,16 @@ export type EnvironmentSettingsInputSignInMethodsPasskey = {
   enabled?: boolean;
 };
 
+export type EnvironmentSettingsInputSignInMethodsSmsCode = {
+  enabled?: boolean;
+};
+
 export type EnvironmentSettingsInputSignInMethods = {
   password?: EnvironmentSettingsInputSignInMethodsPassword;
   emailCode?: EnvironmentSettingsInputSignInMethodsEmailCode;
   emailLink?: EnvironmentSettingsInputSignInMethodsEmailLink;
   passkey?: EnvironmentSettingsInputSignInMethodsPasskey;
+  smsCode?: EnvironmentSettingsInputSignInMethodsSmsCode;
 };
 
 export type EnvironmentSettingsInputSignIn = {
@@ -1217,6 +3618,12 @@ export type EnvironmentSettingsInputAudit = {
   retentionDays?: number | null;
 };
 
+export type EnvironmentSettingsInputAgents = {
+  proposalsInProduction?: boolean;
+  /** @nullable */
+  testSignIn?: boolean | null;
+};
+
 export type EnvironmentSettingsInputNotifications = {
   passwordChanged?: boolean;
   newSignIn?: boolean;
@@ -1224,13 +3631,30 @@ export type EnvironmentSettingsInputNotifications = {
   identityChanged?: boolean;
 };
 
+export type EnvironmentSettingsInputMfaSmsCode = {
+  enabled?: boolean;
+};
+
 export type EnvironmentSettingsInputMfa = {
   policy?: MfaPolicy;
+  smsCode?: EnvironmentSettingsInputMfaSmsCode;
 };
 
 export type EnvironmentSettingsInputPasskeys = {
   /** @nullable */
   rpId?: string | null;
+};
+
+export type EnvironmentSettingsInputSms = {
+  enabled?: boolean;
+  /** @maxItems 243 */
+  allowedCountries?: SmsCountry[];
+  /**
+     * @minimum 1
+     * @maximum 1000000
+     */
+  dailyMessageLimit?: number;
+  templates?: SmsTemplates;
 };
 
 export interface EnvironmentSettingsInput {
@@ -1241,10 +3665,13 @@ export interface EnvironmentSettingsInput {
   signUp?: EnvironmentSettingsInputSignUp;
   urls?: EnvironmentSettingsInputUrls;
   audit?: EnvironmentSettingsInputAudit;
+  agents?: EnvironmentSettingsInputAgents;
   notifications?: EnvironmentSettingsInputNotifications;
   mfa?: EnvironmentSettingsInputMfa;
   passkeys?: EnvironmentSettingsInputPasskeys;
   sessions?: SessionSettings;
+  sms?: EnvironmentSettingsInputSms;
+  emails?: EmailSettings;
 }
 
 export type ClientConfigApp = {
@@ -1264,6 +3691,11 @@ export type ClientConfigSignUp = {
 
 export type ClientConfigMfa = {
   policy: MfaPolicy;
+  smsCode?: boolean;
+};
+
+export type ClientConfigPhone = {
+  enabled: boolean;
 };
 
 export interface ClientConfig {
@@ -1272,6 +3704,7 @@ export interface ClientConfig {
   signUp?: ClientConfigSignUp;
   password: PasswordPolicy;
   mfa?: ClientConfigMfa;
+  phone?: ClientConfigPhone;
 }
 
 export interface OAuthProviderSettings {
@@ -1284,6 +3717,9 @@ export interface OAuthProviderSettings {
   teamId: string | null;
   /** @nullable */
   keyId: string | null;
+  /** @nullable */
+  tenant: string | null;
+  additionalClientIds?: string[];
   callbackUrl: string;
   updatedAt: string | null;
 }
@@ -1291,6 +3727,13 @@ export interface OAuthProviderSettings {
 export interface OAuthProviderSettingsList {
   data: OAuthProviderSettings[];
 }
+
+export type MicrosoftTenant = string;
+
+/**
+ * @maxItems 8
+ */
+export type AdditionalClientIds = string[];
 
 export interface OAuthProviderUpdate {
   /**
@@ -1318,7 +3761,19 @@ export interface OAuthProviderUpdate {
      * @maxLength 8192
      */
   privateKey?: string;
+  tenant?: MicrosoftTenant;
+  additionalClientIds?: AdditionalClientIds;
   enabled?: boolean;
+}
+
+export interface OAuthProviderDependents {
+  provider: OAuthProvider;
+  /**
+     * @minimum 0
+     * @maximum 1000
+     */
+  accounts: number;
+  more: boolean;
 }
 
 export interface Identity {
@@ -1445,6 +3900,986 @@ export interface PasskeyRenameRequest {
      * @maxLength 64
      */
   name: string;
+}
+
+export interface PhoneCodeSent {
+  destination: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  expiresAt: string;
+}
+
+export interface PhoneNumberRequest {
+  /** @maxLength 64 */
+  phoneNumber: string;
+}
+
+export interface PhoneNumberVerifyRequest {
+  /** @pattern ^\d{6}$ */
+  code: string;
+}
+
+export interface EmailCodeSent {
+  destination: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  expiresAt: string;
+}
+
+export interface EmailAddressRequest {
+  /** @maxLength 320 */
+  email: string;
+}
+
+export interface EmailAddressVerifyRequest {
+  /** @pattern ^\d{6}$ */
+  code: string;
+}
+
+export interface WebhookEndpoint {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  url: string;
+  eventTypes: string[];
+  enabled: boolean;
+  /** @nullable */
+  disabledReason: string | null;
+  failingSince: string | null;
+  lastFailedAt: string | null;
+  rotationOverlapEndsAt: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  updatedAt: string;
+}
+
+export interface WebhookEndpointList {
+  data: WebhookEndpoint[];
+}
+
+export interface CreatedWebhookEndpoint {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  url: string;
+  eventTypes: string[];
+  enabled: boolean;
+  /** @nullable */
+  disabledReason: string | null;
+  failingSince: string | null;
+  lastFailedAt: string | null;
+  rotationOverlapEndsAt: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  updatedAt: string;
+  /** The signing secret. Store it now: it is shown only once. */
+  secret: string;
+}
+
+export type CreateWebhookEndpointRequestEventTypesItem = typeof CreateWebhookEndpointRequestEventTypesItem[keyof typeof CreateWebhookEndpointRequestEventTypesItem];
+
+
+export const CreateWebhookEndpointRequestEventTypesItem = {
+  usercreated: 'user.created',
+  useremail_verified: 'user.email_verified',
+  userbanned: 'user.banned',
+  userunbanned: 'user.unbanned',
+  userdeleted: 'user.deleted',
+  userpassword_changed: 'user.password_changed',
+  usermfa_enabled: 'user.mfa_enabled',
+  usermfa_disabled: 'user.mfa_disabled',
+  userbackup_codes_regenerated: 'user.backup_codes_regenerated',
+  userbackup_code_used: 'user.backup_code_used',
+  useridentity_linked: 'user.identity_linked',
+  useridentity_unlinked: 'user.identity_unlinked',
+  useremail_added: 'user.email_added',
+  userpasskey_added: 'user.passkey_added',
+  userpasskey_renamed: 'user.passkey_renamed',
+  userpasskey_removed: 'user.passkey_removed',
+  userpasskey_counter_regressed: 'user.passkey_counter_regressed',
+  userphone_number_added: 'user.phone_number_added',
+  userphone_number_removed: 'user.phone_number_removed',
+  usersms_factor_enabled: 'user.sms_factor_enabled',
+  usersms_factor_removed: 'user.sms_factor_removed',
+  sessioncreated: 'session.created',
+  sessionrevoked: 'session.revoked',
+  sessionreuse_detected: 'session.reuse_detected',
+  sessionstepped_up: 'session.stepped_up',
+  sessionrefresh_proof_refused: 'session.refresh_proof_refused',
+  api_keycreated: 'api_key.created',
+  api_keyrevoked: 'api_key.revoked',
+  signing_keyrotated: 'signing_key.rotated',
+  environmentsettings_updated: 'environment.settings_updated',
+  oauth_providerupdated: 'oauth_provider.updated',
+  oauth_providerdeleted: 'oauth_provider.deleted',
+  webhook_endpointcreated: 'webhook_endpoint.created',
+  webhook_endpointupdated: 'webhook_endpoint.updated',
+  webhook_endpointdeleted: 'webhook_endpoint.deleted',
+  webhook_endpointdisabled: 'webhook_endpoint.disabled',
+  webhook_endpointsecret_rotated: 'webhook_endpoint.secret_rotated',
+  webhook_endpointprevious_secret_revoked: 'webhook_endpoint.previous_secret_revoked',
+  hookcreated: 'hook.created',
+  hookupdated: 'hook.updated',
+  hookdeleted: 'hook.deleted',
+  native_appcreated: 'native_app.created',
+  native_appupdated: 'native_app.updated',
+  native_appdeleted: 'native_app.deleted',
+  proposalcreated: 'proposal.created',
+  proposalapproved: 'proposal.approved',
+  proposalexecuted: 'proposal.executed',
+  proposalfailed: 'proposal.failed',
+  sign_in_teststarted: 'sign_in_test.started',
+  sign_in_testfinished: 'sign_in_test.finished',
+} as const;
+
+export interface CreateWebhookEndpointRequest {
+  /**
+     * @minLength 1
+     * @maxLength 2048
+     * @pattern ^[^\s\u0000-\u001f\u007f]+$
+     */
+  url: string;
+  /**
+     * @minItems 1
+     * @maxItems 50
+     */
+  eventTypes: CreateWebhookEndpointRequestEventTypesItem[];
+  enabled?: boolean;
+}
+
+export type UpdateWebhookEndpointRequestEventTypesItem = typeof UpdateWebhookEndpointRequestEventTypesItem[keyof typeof UpdateWebhookEndpointRequestEventTypesItem];
+
+
+export const UpdateWebhookEndpointRequestEventTypesItem = {
+  usercreated: 'user.created',
+  useremail_verified: 'user.email_verified',
+  userbanned: 'user.banned',
+  userunbanned: 'user.unbanned',
+  userdeleted: 'user.deleted',
+  userpassword_changed: 'user.password_changed',
+  usermfa_enabled: 'user.mfa_enabled',
+  usermfa_disabled: 'user.mfa_disabled',
+  userbackup_codes_regenerated: 'user.backup_codes_regenerated',
+  userbackup_code_used: 'user.backup_code_used',
+  useridentity_linked: 'user.identity_linked',
+  useridentity_unlinked: 'user.identity_unlinked',
+  useremail_added: 'user.email_added',
+  userpasskey_added: 'user.passkey_added',
+  userpasskey_renamed: 'user.passkey_renamed',
+  userpasskey_removed: 'user.passkey_removed',
+  userpasskey_counter_regressed: 'user.passkey_counter_regressed',
+  userphone_number_added: 'user.phone_number_added',
+  userphone_number_removed: 'user.phone_number_removed',
+  usersms_factor_enabled: 'user.sms_factor_enabled',
+  usersms_factor_removed: 'user.sms_factor_removed',
+  sessioncreated: 'session.created',
+  sessionrevoked: 'session.revoked',
+  sessionreuse_detected: 'session.reuse_detected',
+  sessionstepped_up: 'session.stepped_up',
+  sessionrefresh_proof_refused: 'session.refresh_proof_refused',
+  api_keycreated: 'api_key.created',
+  api_keyrevoked: 'api_key.revoked',
+  signing_keyrotated: 'signing_key.rotated',
+  environmentsettings_updated: 'environment.settings_updated',
+  oauth_providerupdated: 'oauth_provider.updated',
+  oauth_providerdeleted: 'oauth_provider.deleted',
+  webhook_endpointcreated: 'webhook_endpoint.created',
+  webhook_endpointupdated: 'webhook_endpoint.updated',
+  webhook_endpointdeleted: 'webhook_endpoint.deleted',
+  webhook_endpointdisabled: 'webhook_endpoint.disabled',
+  webhook_endpointsecret_rotated: 'webhook_endpoint.secret_rotated',
+  webhook_endpointprevious_secret_revoked: 'webhook_endpoint.previous_secret_revoked',
+  hookcreated: 'hook.created',
+  hookupdated: 'hook.updated',
+  hookdeleted: 'hook.deleted',
+  native_appcreated: 'native_app.created',
+  native_appupdated: 'native_app.updated',
+  native_appdeleted: 'native_app.deleted',
+  proposalcreated: 'proposal.created',
+  proposalapproved: 'proposal.approved',
+  proposalexecuted: 'proposal.executed',
+  proposalfailed: 'proposal.failed',
+  sign_in_teststarted: 'sign_in_test.started',
+  sign_in_testfinished: 'sign_in_test.finished',
+} as const;
+
+export interface UpdateWebhookEndpointRequest {
+  /**
+     * @minLength 1
+     * @maxLength 2048
+     * @pattern ^[^\s\u0000-\u001f\u007f]+$
+     */
+  url?: string;
+  /**
+     * @minItems 1
+     * @maxItems 50
+     */
+  eventTypes?: UpdateWebhookEndpointRequestEventTypesItem[];
+  enabled?: boolean;
+}
+
+export interface WebhookDelivery {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  endpointId: string;
+  eventId: string | null;
+  eventType: string;
+  test: boolean;
+  state: string;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  attemptCount: number;
+  nextAttemptAt: string | null;
+  lastAttemptAt: string | null;
+  statusCode: number | null;
+  /** @nullable */
+  failureReason: string | null;
+  completedAt: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+}
+
+export interface WebhookDeliveryList {
+  meta: PaginationMeta;
+  data: WebhookDelivery[];
+}
+
+export type WebhookDeliveryQueryState = typeof WebhookDeliveryQueryState[keyof typeof WebhookDeliveryQueryState];
+
+
+export const WebhookDeliveryQueryState = {
+  pending: 'pending',
+  delivered: 'delivered',
+  failed: 'failed',
+} as const;
+
+export interface WebhookDeliveryQuery {
+  state?: WebhookDeliveryQueryState;
+  eventType?: ActivityType;
+  /**
+     * @minimum 1
+     * @maximum 1000000
+     */
+  page?: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  size?: number;
+}
+
+export interface WebhookDeliveryAttempt {
+  /**
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  attempt: number;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  attemptedAt: string;
+  statusCode: number | null;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  durationMs: number;
+  /** @nullable */
+  failureReason: string | null;
+}
+
+export interface WebhookDeliveryDetail {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  endpointId: string;
+  eventId: string | null;
+  eventType: string;
+  test: boolean;
+  state: string;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  attemptCount: number;
+  nextAttemptAt: string | null;
+  lastAttemptAt: string | null;
+  statusCode: number | null;
+  /** @nullable */
+  failureReason: string | null;
+  completedAt: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  attempts: WebhookDeliveryAttempt[];
+}
+
+export type WebhookSendResultOutcome = typeof WebhookSendResultOutcome[keyof typeof WebhookSendResultOutcome];
+
+
+export const WebhookSendResultOutcome = {
+  delivered: 'delivered',
+  failed: 'failed',
+} as const;
+
+export interface WebhookSendResult {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  deliveryId: string;
+  outcome: WebhookSendResultOutcome;
+  statusCode: number | null;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  durationMs: number;
+  /** @nullable */
+  failureReason: string | null;
+}
+
+export type SendTestWebhookRequestEventType = typeof SendTestWebhookRequestEventType[keyof typeof SendTestWebhookRequestEventType];
+
+
+export const SendTestWebhookRequestEventType = {
+  usercreated: 'user.created',
+  useremail_verified: 'user.email_verified',
+  userbanned: 'user.banned',
+  userunbanned: 'user.unbanned',
+  userdeleted: 'user.deleted',
+  userpassword_changed: 'user.password_changed',
+  usermfa_enabled: 'user.mfa_enabled',
+  usermfa_disabled: 'user.mfa_disabled',
+  userbackup_codes_regenerated: 'user.backup_codes_regenerated',
+  userbackup_code_used: 'user.backup_code_used',
+  useridentity_linked: 'user.identity_linked',
+  useridentity_unlinked: 'user.identity_unlinked',
+  useremail_added: 'user.email_added',
+  userpasskey_added: 'user.passkey_added',
+  userpasskey_renamed: 'user.passkey_renamed',
+  userpasskey_removed: 'user.passkey_removed',
+  userpasskey_counter_regressed: 'user.passkey_counter_regressed',
+  userphone_number_added: 'user.phone_number_added',
+  userphone_number_removed: 'user.phone_number_removed',
+  usersms_factor_enabled: 'user.sms_factor_enabled',
+  usersms_factor_removed: 'user.sms_factor_removed',
+  sessioncreated: 'session.created',
+  sessionrevoked: 'session.revoked',
+  sessionreuse_detected: 'session.reuse_detected',
+  sessionstepped_up: 'session.stepped_up',
+  sessionrefresh_proof_refused: 'session.refresh_proof_refused',
+  api_keycreated: 'api_key.created',
+  api_keyrevoked: 'api_key.revoked',
+  signing_keyrotated: 'signing_key.rotated',
+  environmentsettings_updated: 'environment.settings_updated',
+  oauth_providerupdated: 'oauth_provider.updated',
+  oauth_providerdeleted: 'oauth_provider.deleted',
+  webhook_endpointcreated: 'webhook_endpoint.created',
+  webhook_endpointupdated: 'webhook_endpoint.updated',
+  webhook_endpointdeleted: 'webhook_endpoint.deleted',
+  webhook_endpointdisabled: 'webhook_endpoint.disabled',
+  webhook_endpointsecret_rotated: 'webhook_endpoint.secret_rotated',
+  webhook_endpointprevious_secret_revoked: 'webhook_endpoint.previous_secret_revoked',
+  hookcreated: 'hook.created',
+  hookupdated: 'hook.updated',
+  hookdeleted: 'hook.deleted',
+  native_appcreated: 'native_app.created',
+  native_appupdated: 'native_app.updated',
+  native_appdeleted: 'native_app.deleted',
+  proposalcreated: 'proposal.created',
+  proposalapproved: 'proposal.approved',
+  proposalexecuted: 'proposal.executed',
+  proposalfailed: 'proposal.failed',
+  sign_in_teststarted: 'sign_in_test.started',
+  sign_in_testfinished: 'sign_in_test.finished',
+} as const;
+
+export interface SendTestWebhookRequest {
+  eventType: SendTestWebhookRequestEventType;
+}
+
+export interface RotatedWebhookSecret {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  url: string;
+  eventTypes: string[];
+  enabled: boolean;
+  /** @nullable */
+  disabledReason: string | null;
+  failingSince: string | null;
+  lastFailedAt: string | null;
+  /**
+     * When the previous secret stops signing. Until then deliveries carry both signatures.
+     * @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$
+     */
+  rotationOverlapEndsAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  updatedAt: string;
+  /** The new signing secret. Store it now: it is shown only once. */
+  secret: string;
+}
+
+export interface HookRecentOutcomes {
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  since: string;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  allowed: number;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  denied: number;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  failed: number;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  timedOut: number;
+  lastCallAt: string | null;
+  /** @nullable */
+  lastOutcome: string | null;
+}
+
+export interface Hook {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  point: string;
+  url: string;
+  enabled: boolean;
+  /**
+     * @minimum -9007199254740991
+     * @maximum 9007199254740991
+     */
+  deadlineMs: number;
+  failureMode: string;
+  lastFailedAt: string | null;
+  /** @nullable */
+  lastFailureReason: string | null;
+  recentOutcomes: HookRecentOutcomes;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  updatedAt: string;
+}
+
+export interface HookList {
+  data: Hook[];
+}
+
+export interface CreatedHook {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  point: string;
+  url: string;
+  enabled: boolean;
+  /**
+     * @minimum -9007199254740991
+     * @maximum 9007199254740991
+     */
+  deadlineMs: number;
+  failureMode: string;
+  lastFailedAt: string | null;
+  /** @nullable */
+  lastFailureReason: string | null;
+  recentOutcomes: HookRecentOutcomes;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  updatedAt: string;
+  /** The signing secret. Store it now: it is shown only once. */
+  secret: string;
+}
+
+export type CreateHookRequestPoint = typeof CreateHookRequestPoint[keyof typeof CreateHookRequestPoint];
+
+
+export const CreateHookRequestPoint = {
+  before_sign_up: 'before_sign_up',
+  before_session: 'before_session',
+  before_token: 'before_token',
+} as const;
+
+export type CreateHookRequestFailureMode = typeof CreateHookRequestFailureMode[keyof typeof CreateHookRequestFailureMode];
+
+
+export const CreateHookRequestFailureMode = {
+  deny: 'deny',
+  allow: 'allow',
+} as const;
+
+export interface CreateHookRequest {
+  point: CreateHookRequestPoint;
+  /**
+     * @minLength 1
+     * @maxLength 2048
+     * @pattern ^[^\s\u0000-\u001f\u007f]+$
+     */
+  url: string;
+  enabled?: boolean;
+  /**
+     * @minimum 100
+     * @maximum 5000
+     */
+  deadlineMs?: number;
+  failureMode?: CreateHookRequestFailureMode;
+}
+
+export type UpdateHookRequestFailureMode = typeof UpdateHookRequestFailureMode[keyof typeof UpdateHookRequestFailureMode];
+
+
+export const UpdateHookRequestFailureMode = {
+  deny: 'deny',
+  allow: 'allow',
+} as const;
+
+export interface UpdateHookRequest {
+  /**
+     * @minLength 1
+     * @maxLength 2048
+     * @pattern ^[^\s\u0000-\u001f\u007f]+$
+     */
+  url?: string;
+  enabled?: boolean;
+  /**
+     * @minimum 100
+     * @maximum 5000
+     */
+  deadlineMs?: number;
+  failureMode?: UpdateHookRequestFailureMode;
+}
+
+export type AppleAppSiteAssociationWebcredentials = {
+  /** @minItems 1 */
+  apps: string[];
+};
+
+export type AppleAppSiteAssociationApplinksDetailsItemComponentsItem = {
+  '/': string;
+};
+
+export type AppleAppSiteAssociationApplinksDetailsItem = {
+  /**
+     * @minItems 1
+     * @maxItems 1
+     */
+  appIDs: string[];
+  /** @minItems 1 */
+  components: AppleAppSiteAssociationApplinksDetailsItemComponentsItem[];
+};
+
+export type AppleAppSiteAssociationApplinks = {
+  /** @minItems 1 */
+  details: AppleAppSiteAssociationApplinksDetailsItem[];
+};
+
+export interface AppleAppSiteAssociation {
+  webcredentials?: AppleAppSiteAssociationWebcredentials;
+  applinks?: AppleAppSiteAssociationApplinks;
+}
+
+export type AssetLinksItemTarget = {
+  namespace: 'android_app';
+  package_name: string;
+  /** @minItems 1 */
+  sha256_cert_fingerprints: string[];
+};
+
+export type AssetLinksItem = {
+  /** @minItems 1 */
+  relation: string[];
+  target: AssetLinksItemTarget;
+};
+
+export type AssetLinks = AssetLinksItem[];
+
+export interface IosApp {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  updatedAt: string;
+  platform: 'ios';
+  teamId: string;
+  bundleId: string;
+  appLinkPaths: string[];
+}
+
+export interface AndroidApp {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  updatedAt: string;
+  platform: 'android';
+  packageName: string;
+  sha256CertFingerprints: string[];
+  appLinkPaths: string[];
+}
+
+export type NativeApp = IosApp | AndroidApp;
+
+export interface NativeAppList {
+  data: NativeApp[];
+}
+
+export interface IosAppIdentity {
+  platform: 'ios';
+  /** @pattern ^[A-Z0-9]{10}$ */
+  teamId: string;
+  /**
+     * @maxLength 155
+     * @pattern ^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$
+     */
+  bundleId: string;
+  /**
+     * @maxItems 10
+     * @items.maxLength 255
+     */
+  appLinkPaths?: string[];
+}
+
+export interface AndroidAppIdentity {
+  platform: 'android';
+  /**
+     * @maxLength 255
+     * @pattern ^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$
+     */
+  packageName: string;
+  /**
+     * @minItems 1
+     * @maxItems 10
+     * @items.maxLength 95
+     * @items.pattern ^(?:(?:[0-9A-Fa-f]{2}:){31}[0-9A-Fa-f]{2}|[0-9A-Fa-f]{64})$
+     */
+  sha256CertFingerprints: string[];
+  /**
+     * @maxItems 10
+     * @items.maxLength 255
+     */
+  appLinkPaths?: string[];
+}
+
+export type CreateNativeAppRequest = IosAppIdentity | AndroidAppIdentity;
+
+export interface UpdateNativeAppRequest {
+  /** @pattern ^[A-Z0-9]{10}$ */
+  teamId?: string;
+  /**
+     * @minItems 1
+     * @maxItems 10
+     * @items.maxLength 95
+     * @items.pattern ^(?:(?:[0-9A-Fa-f]{2}:){31}[0-9A-Fa-f]{2}|[0-9A-Fa-f]{64})$
+     */
+  sha256CertFingerprints?: string[];
+  /**
+     * @maxItems 10
+     * @items.maxLength 255
+     */
+  appLinkPaths?: string[];
+}
+
+export interface SmsPrefixUsage {
+  /** @pattern ^\+[0-9]{1,4}$ */
+  prefix: string;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  sent: number;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  used: number;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  unused: number;
+}
+
+export interface SmsUsage {
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))$ */
+  since: string;
+  /**
+     * @minimum 1
+     * @maximum 30
+     */
+  days: number;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  sent: number;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  used: number;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  unused: number;
+  /** @maxItems 100 */
+  prefixes: SmsPrefixUsage[];
+  truncated: boolean;
+}
+
+export type MessagePreviewChannel = typeof MessagePreviewChannel[keyof typeof MessagePreviewChannel];
+
+
+export const MessagePreviewChannel = {
+  email: 'email',
+  sms: 'sms',
+} as const;
+
+export type MessagePreviewUnusedItemPart = typeof MessagePreviewUnusedItemPart[keyof typeof MessagePreviewUnusedItemPart];
+
+
+export const MessagePreviewUnusedItemPart = {
+  subject: 'subject',
+  body: 'body',
+  text: 'text',
+} as const;
+
+export type MessagePreviewUnusedItemReason = typeof MessagePreviewUnusedItemReason[keyof typeof MessagePreviewUnusedItemReason];
+
+
+export const MessagePreviewUnusedItemReason = {
+  invalid: 'invalid',
+  missing_value: 'missing_value',
+  leading_digit: 'leading_digit',
+  empty: 'empty',
+  too_long: 'too_long',
+  code_not_last: 'code_not_last',
+} as const;
+
+export type MessagePreviewUnusedItem = {
+  part: MessagePreviewUnusedItemPart;
+  reason: MessagePreviewUnusedItemReason;
+};
+
+export type MessagePreviewSegmentsEncoding = typeof MessagePreviewSegmentsEncoding[keyof typeof MessagePreviewSegmentsEncoding];
+
+
+export const MessagePreviewSegmentsEncoding = {
+  gsm7: 'gsm7',
+  ucs2: 'ucs2',
+} as const;
+
+export type MessagePreviewSegments = {
+  encoding: MessagePreviewSegmentsEncoding;
+  /**
+     * @minimum -9007199254740991
+     * @maximum 9007199254740991
+     */
+  units: number;
+  /**
+     * @minimum -9007199254740991
+     * @maximum 9007199254740991
+     */
+  segments: number;
+} | null;
+
+export interface MessagePreview {
+  channel: MessagePreviewChannel;
+  kind: string;
+  /** @nullable */
+  subject: string | null;
+  text: string;
+  unused: MessagePreviewUnusedItem[];
+  segments: MessagePreviewSegments;
+}
+
+export type MessagePreviewRequest = {
+  channel: 'email';
+  kind: 'email_verification' | 'password_reset' | 'sign_in' | 'step_up' | 'account_exists' | 'no_account' | 'no_account_sign_in' | 'password_changed' | 'password_added' | 'password_reset_completed' | 'password_added_by_reset' | 'password_set_by_admin' | 'password_added_by_admin' | 'password_removed' | 'new_sign_in' | 'mfa_enabled' | 'mfa_disabled' | 'mfa_reset_by_admin' | 'backup_codes_regenerated' | 'backup_code_used' | 'sms_factor_enabled' | 'sms_factor_removed' | 'passkey_added' | 'passkey_removed' | 'identity_linked' | 'identity_unlinked' | 'email_in_use' | 'email_added';
+  template?: {
+  /** @maxLength 200 */
+  subject?: string;
+  /** @maxLength 2000 */
+  body?: string;
+};
+} | {
+  channel: 'sms';
+  kind: 'phone_verification' | 'sign_in' | 'second_factor';
+  template?: SmsTemplate;
+};
+
+export type ProposalOperation = typeof ProposalOperation[keyof typeof ProposalOperation];
+
+
+export const ProposalOperation = {
+  ban_user: 'ban_user',
+  unban_user: 'unban_user',
+  end_session: 'end_session',
+  disable_oauth_provider: 'disable_oauth_provider',
+} as const;
+
+export type ProposalTargetType = typeof ProposalTargetType[keyof typeof ProposalTargetType];
+
+
+export const ProposalTargetType = {
+  user: 'user',
+  session: 'session',
+  oauth_provider: 'oauth_provider',
+} as const;
+
+export interface ProposalTarget {
+  type: ProposalTargetType;
+  id: string | 'google' | 'github' | 'apple' | 'microsoft' | 'discord' | 'linkedin' | 'x' | 'facebook';
+}
+
+export type ProposalStatus = typeof ProposalStatus[keyof typeof ProposalStatus];
+
+
+export const ProposalStatus = {
+  pending: 'pending',
+  expired: 'expired',
+  approved: 'approved',
+  executed: 'executed',
+  failed: 'failed',
+} as const;
+
+export type ProposalProposedBy = {
+  type: 'agent';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+export type ProposalFailureReason = typeof ProposalFailureReason[keyof typeof ProposalFailureReason] | null;
+
+
+export const ProposalFailureReason = {
+  target_not_found: 'target_not_found',
+  error: 'error',
+  incomplete: 'incomplete',
+  last_sign_in_method: 'last_sign_in_method',
+} as const;
+
+export type ProposalExpiryReason = typeof ProposalExpiryReason[keyof typeof ProposalExpiryReason] | null;
+
+
+export const ProposalExpiryReason = {
+  time: 'time',
+  agent_key_revoked: 'agent_key_revoked',
+} as const;
+
+export interface Proposal {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  operation: ProposalOperation;
+  target: ProposalTarget;
+  summary: string;
+  status: ProposalStatus;
+  proposedBy: ProposalProposedBy;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  expiresAt: string;
+  approvedBy: ProposalApprover | null;
+  approvedAt: string | null;
+  failureReason: ProposalFailureReason;
+  expiryReason: ProposalExpiryReason;
+  changed?: boolean;
+}
+
+export interface CreateProposalRequest {
+  operation: ProposalOperation;
+  target: ProposalTarget;
+}
+
+export interface ProposalList {
+  data: Proposal[];
+}
+
+export interface ApproveProposalRequest {
+  operation: ProposalOperation;
+  target: ProposalTarget;
+}
+
+export type SignInTestStepResultStep = typeof SignInTestStepResultStep[keyof typeof SignInTestStepResultStep];
+
+
+export const SignInTestStepResultStep = {
+  sign_up: 'sign_up',
+  verify_email: 'verify_email',
+  sign_out: 'sign_out',
+  sign_in: 'sign_in',
+  first_factor: 'first_factor',
+  revoke_session: 'revoke_session',
+  delete_user: 'delete_user',
+} as const;
+
+export type SignInTestStepResultOutcome = typeof SignInTestStepResultOutcome[keyof typeof SignInTestStepResultOutcome];
+
+
+export const SignInTestStepResultOutcome = {
+  passed: 'passed',
+  failed: 'failed',
+  not_run: 'not_run',
+} as const;
+
+export type SignInTestStepResultReason = typeof SignInTestStepResultReason[keyof typeof SignInTestStepResultReason];
+
+
+export const SignInTestStepResultReason = {
+  earlier_step: 'earlier_step',
+  second_factor_required: 'second_factor_required',
+  email_cooldown: 'email_cooldown',
+  no_provable_method: 'no_provable_method',
+  no_session: 'no_session',
+  timeout: 'timeout',
+  cancelled: 'cancelled',
+} as const;
+
+export interface SignInTestStepResult {
+  step: SignInTestStepResultStep;
+  outcome: SignInTestStepResultOutcome;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  durationMs: number;
+  code?: ErrorCode;
+  reason?: SignInTestStepResultReason;
+}
+
+export type SignInTestReportOutcome = typeof SignInTestReportOutcome[keyof typeof SignInTestReportOutcome];
+
+
+export const SignInTestReportOutcome = {
+  passed: 'passed',
+  failed: 'failed',
+  incomplete: 'incomplete',
+} as const;
+
+export type SignInTestReportCleanup = typeof SignInTestReportCleanup[keyof typeof SignInTestReportCleanup];
+
+
+export const SignInTestReportCleanup = {
+  deleted: 'deleted',
+  failed: 'failed',
+  none: 'none',
+} as const;
+
+export interface SignInTestReport {
+  outcome: SignInTestReportOutcome;
+  /**
+     * @minItems 7
+     * @maxItems 7
+     */
+  steps: SignInTestStepResult[];
+  userId: string | null;
+  cleanup: SignInTestReportCleanup;
 }
 
 export type DiagnosticStatus = typeof DiagnosticStatus[keyof typeof DiagnosticStatus];
@@ -1712,6 +5147,38 @@ export const ListAuditLogsActorType = {
   agent: 'agent',
   instance_admin: 'instance_admin',
 } as const;
+
+export type ListWebhookDeliveriesParams = {
+state?: ListWebhookDeliveriesState;
+eventType?: ActivityType;
+/**
+ * @minimum 1
+ * @maximum 1000000
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+size?: number;
+};
+
+export type ListWebhookDeliveriesState = typeof ListWebhookDeliveriesState[keyof typeof ListWebhookDeliveriesState];
+
+
+export const ListWebhookDeliveriesState = {
+  pending: 'pending',
+  delivered: 'delivered',
+  failed: 'failed',
+} as const;
+
+export type GetSmsUsageParams = {
+/**
+ * @minimum 1
+ * @maximum 30
+ */
+days?: number;
+};
 
 export type ListWorkspacesParams = {
 /**
@@ -2625,6 +6092,108 @@ export function useListUserSessions<TData = Awaited<ReturnType<typeof listUserSe
 
 
 
+export const getGetSessionUrl = (sessionId: string,) => {
+
+
+
+
+  return `/v1/admin/sessions/${sessionId}`
+}
+
+/**
+ * One session of the environment by its own id: the user it belongs to, the client kind, user agent, IP address and times, and whether it is still active (`active`: not revoked and not past its stored expiry). An ended session is answered too, so that whoever is asked to end a session can see whose it is and that it is still there to end. Never token material. `current` is always `false`. A session that does not exist or belongs to another environment answers the same 404. A read: nothing is changed or recorded.
+ * @summary Read one session by its id
+ */
+export const getSession = async (sessionId: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<AdminSession> => {
+
+  return dashboardFetch<AdminSession>(getGetSessionUrl(sessionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSessionQueryKey = (sessionId: string,) => {
+    return [
+    `/v1/admin/sessions/${sessionId}`
+    ] as const;
+    }
+
+
+export const getGetSessionQueryOptions = <TData = Awaited<ReturnType<typeof getSession>>, TError = ErrorEnvelope>(sessionId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSession>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSessionQueryKey(sessionId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSession>>> = ({ signal }) => getSession(sessionId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: sessionId !== null && sessionId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSession>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSessionQueryResult = NonNullable<Awaited<ReturnType<typeof getSession>>>
+export type GetSessionQueryError = ErrorEnvelope
+
+
+export function useGetSession<TData = Awaited<ReturnType<typeof getSession>>, TError = ErrorEnvelope>(
+ sessionId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSession>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSession>>,
+          TError,
+          Awaited<ReturnType<typeof getSession>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSession<TData = Awaited<ReturnType<typeof getSession>>, TError = ErrorEnvelope>(
+ sessionId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSession>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSession>>,
+          TError,
+          Awaited<ReturnType<typeof getSession>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSession<TData = Awaited<ReturnType<typeof getSession>>, TError = ErrorEnvelope>(
+ sessionId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSession>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read one session by its id
+ */
+
+export function useGetSession<TData = Awaited<ReturnType<typeof getSession>>, TError = ErrorEnvelope>(
+ sessionId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSession>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetSessionQueryOptions(sessionId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getRevokeUserSessionUrl = (userId: string,
     sessionId: string,) => {
 
@@ -3330,6 +6899,96 @@ export const useUnbanUser = <TError = ErrorEnvelope,
       return useMutation(getUnbanUserMutationOptions(options), queryClient);
     }
 
+export const getSetUserEmailUrl = (userId: string,) => {
+
+
+
+
+  return `/v1/admin/users/${userId}/email`
+}
+
+/**
+ * For a user whose account has **no** email address (one made by a first sign-in with X or Facebook): stores the address, **unverified**. Nobody has proven it, so it signs nobody in by itself; its holder proves it with the first emailed sign-in code or password reset they complete, as for a user an administrator created. A user who has an address answers `email.already_set` (409): this route never replaces one. An address another user of the environment has is a 409 conflict, as when creating a user. No session is ended and nothing is emailed.
+ * @summary Give a user who has no email address one
+ */
+export const setUserEmail = async (userId: string,
+    setUserEmailRequest: SetUserEmailRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<User> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<User>(getSetUserEmailUrl(userId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(setUserEmailRequest)
+  }
+);}
+
+
+
+
+
+export const getSetUserEmailMutationKey = () => ['setUserEmail'] as const;
+
+export const getSetUserEmailMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setUserEmail>>, TError,SetUserEmailMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setUserEmail>>, TError,SetUserEmailMutationVariables, TContext> => {
+
+const mutationKey = getSetUserEmailMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setUserEmail>>, SetUserEmailMutationVariables> = (props) => {
+          const {userId,data} = props ?? {};
+
+          return  setUserEmail(userId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetUserEmailMutationResult = NonNullable<Awaited<ReturnType<typeof setUserEmail>>>
+    export type SetUserEmailMutationBody = SetUserEmailRequest
+    export type SetUserEmailMutationError = ErrorEnvelope
+    export type SetUserEmailMutationVariables = {userId: string;data: SetUserEmailRequest}
+
+    /**
+ * @summary Give a user who has no email address one
+ */
+export const useSetUserEmail = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setUserEmail>>, TError,SetUserEmailMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof setUserEmail>>,
+        TError,
+        SetUserEmailMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSetUserEmailMutationOptions(options), queryClient);
+    }
+
 export const getSetUserPasswordUrl = (userId: string,) => {
 
 
@@ -3717,7 +7376,7 @@ export const getReplaceEnvironmentSettingsUrl = () => {
 }
 
 /**
- * Replaces the whole document: a section or field left out takes its default, and an unknown key is refused. Two defaults are the deployment’s rather than the schema’s: a `password` section that is left out takes the deployment’s `PASSWORD_POLICY`, and a `urls.allowedOrigins` that is left out takes its `CORS_ORIGINS` (the values `GET` returns at revision 0), so a partial document never loosens the policy or locks browser apps out by accident; a value that is sent, an empty list included, is taken as sent. If the deployment’s default for a field that was left out is one settings cannot store (a plain-http origin in `CORS_ORIGINS`), the request is refused with a field error and that field has to be sent explicitly. `password.minLength` cannot be set below 8. `If-Match` must carry the revision that was read (the `ETag` of the last response), so two writers cannot silently overwrite each other: a missing header is `precondition.required`, a revision that is no longer current is `precondition.failed`. The change is recorded in the audit log as `environment.settings_updated` with the keys that changed, never their values, and `weakened: true` when it made the password policy weaker. A tool that applies a config file names itself in `x-tula-managed-by` with the config’s fingerprint in `x-tula-config-hash`; the answer’s `managedBy` then says so, and `managedBy.drifted` turns true when the settings are later replaced without them. Other API instances apply it within a few seconds.
+ * Replaces the whole document: a section or field left out takes its default, and an unknown key is refused. Two defaults are the deployment’s rather than the schema’s: a `password` section that is left out takes the deployment’s `PASSWORD_POLICY`, and a `urls.allowedOrigins` that is left out takes its `CORS_ORIGINS` (the values `GET` returns at revision 0), so a partial document never loosens the policy or locks browser apps out by accident; a value that is sent, an empty list included, is taken as sent. If the deployment’s default for a field that was left out is one settings cannot store (a plain-http origin in `CORS_ORIGINS`), the request is refused with a field error and that field has to be sent explicitly. `password.minLength` cannot be set below 8. `If-Match` must carry the revision that was read (the `ETag` of the last response), so two writers cannot silently overwrite each other: a missing header is `precondition.required`, a revision that is no longer current is `precondition.failed`. The change is recorded in the audit log as `environment.settings_updated` with the keys that changed, never their values, and `weakened: true` when it weakened a security setting or shortened what is kept (a weaker password policy, a security notice switched off, a looser MFA policy, longer sessions, an audit retention period set or shortened). A tool that applies a config file names itself in `x-tula-managed-by` with the config’s fingerprint in `x-tula-config-hash`; the answer’s `managedBy` then says so, and `managedBy.drifted` turns true when the settings are later replaced without them. Other API instances apply it within a few seconds.
  * @summary Replace the environment’s settings
  */
 export const replaceEnvironmentSettings = async (environmentSettingsInput: EnvironmentSettingsInput, options?: Parameters<typeof dashboardFetch>[1]): Promise<EnvironmentSettingsState> => {
@@ -3806,7 +7465,7 @@ export const getListOAuthProvidersUrl = () => {
 }
 
 /**
- * Every provider (Google, GitHub, Apple), configured or not: whether credentials are stored and sign-in offers it, the client id, and `callbackUrl`, the redirect URI to paste into the provider’s console exactly. Never a secret.
+ * Every provider (Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X, Facebook), configured or not: whether credentials are stored and sign-in offers it, the client id, and `callbackUrl`, the redirect URI to paste into the provider’s console exactly. Never a secret.
  * @summary List OAuth providers
  */
 export const listOAuthProviders = async ( options?: Parameters<typeof dashboardFetch>[1]): Promise<OAuthProviderSettingsList> => {
@@ -3908,7 +7567,7 @@ export const getUpdateOAuthProviderUrl = (provider: OAuthProvider,) => {
 }
 
 /**
- * Stores the environment’s own credentials for the provider and whether sign-in offers it. Google and GitHub take `clientId` and `clientSecret`; Apple takes `clientId` (the Services ID), `teamId`, `keyId` and `privateKey` (the `.p8` file’s PEM). The secret is stored encrypted and never returned; leave it out to keep the stored one. Recorded in the audit log by key, never by value. `enabled: false` is refused (422) when it would leave the environment with no way to sign in.
+ * Stores the environment’s own credentials for the provider and whether sign-in offers it. Google, GitHub, Discord, LinkedIn, X and Facebook take `clientId` and `clientSecret`; Apple takes `clientId` (the Services ID), `teamId`, `keyId` and `privateKey` (the `.p8` file’s PEM); Microsoft takes `clientId`, `clientSecret` and `tenant` (`common`, `organizations`, `consumers` or a tenant id: which accounts may sign in). The secret is stored encrypted and never returned; leave it out to keep the stored one. Recorded in the audit log by key, never by value. `enabled: false` is refused (422) when it would leave the environment with no way to sign in.
  * @summary Set an OAuth provider’s credentials
  */
 export const updateOAuthProvider = async (provider: OAuthProvider,
@@ -3998,7 +7657,7 @@ export const getDeleteOAuthProviderUrl = (provider: OAuthProvider,) => {
 }
 
 /**
- * Removes the stored credentials; sign-in stops offering the provider. Users keep their connected accounts of it, so configuring it again lets them back in. Refused (422) when it would leave the environment with no way to sign in. It is not refused because some user has no other way in: such a user sets a password through a password reset.
+ * Removes the stored credentials; sign-in stops offering the provider. Users keep their connected accounts of it, so configuring it again lets them back in. Refused (422) when it would leave the environment with no way to sign in. It is **not** refused because some user has no other way in: the accounts whose only way in is this provider are counted and, when there is one, the audit entry says `weakened: true` with the count. Read `GET /v1/admin/oauth-providers/{provider}/dependents` first. A user with an email address sets a password through a password reset; one with none is locked out until the provider is back or an administrator gives the account an address.
  * @summary Remove an OAuth provider’s credentials
  */
 export const deleteOAuthProvider = async (provider: OAuthProvider, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
@@ -4064,6 +7723,2593 @@ export const useDeleteOAuthProvider = <TError = ErrorEnvelope,
       return useMutation(getDeleteOAuthProviderMutationOptions(options), queryClient);
     }
 
+export const getGetOAuthProviderDependentsUrl = (provider: OAuthProvider,) => {
+
+
+
+
+  return `/v1/admin/oauth-providers/${provider}/dependents`
+}
+
+/**
+ * How many accounts have this provider connected and could not sign in without it, by the environment’s settings and its other providers as they are now: what to look at before switching the provider off or removing its credentials. A number and nothing about who. At most 1,000 accounts of the provider are looked at; past that `more` is `true` and `accounts` is a floor. Changes nothing. An account with an email address can be recovered (a password reset, an administrator’s password); one with none (a first sign-in with X or Facebook) cannot, until it is given an address.
+ * @summary Count the accounts that depend on a provider
+ */
+export const getOAuthProviderDependents = async (provider: OAuthProvider, options?: Parameters<typeof dashboardFetch>[1]): Promise<OAuthProviderDependents> => {
+
+  return dashboardFetch<OAuthProviderDependents>(getGetOAuthProviderDependentsUrl(provider),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetOAuthProviderDependentsQueryKey = (provider: OAuthProvider,) => {
+    return [
+    `/v1/admin/oauth-providers/${provider}/dependents`
+    ] as const;
+    }
+
+
+export const getGetOAuthProviderDependentsQueryOptions = <TData = Awaited<ReturnType<typeof getOAuthProviderDependents>>, TError = ErrorEnvelope>(provider: OAuthProvider, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOAuthProviderDependents>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetOAuthProviderDependentsQueryKey(provider);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOAuthProviderDependents>>> = ({ signal }) => getOAuthProviderDependents(provider, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: provider !== null && provider !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getOAuthProviderDependents>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetOAuthProviderDependentsQueryResult = NonNullable<Awaited<ReturnType<typeof getOAuthProviderDependents>>>
+export type GetOAuthProviderDependentsQueryError = ErrorEnvelope
+
+
+export function useGetOAuthProviderDependents<TData = Awaited<ReturnType<typeof getOAuthProviderDependents>>, TError = ErrorEnvelope>(
+ provider: OAuthProvider, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOAuthProviderDependents>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getOAuthProviderDependents>>,
+          TError,
+          Awaited<ReturnType<typeof getOAuthProviderDependents>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOAuthProviderDependents<TData = Awaited<ReturnType<typeof getOAuthProviderDependents>>, TError = ErrorEnvelope>(
+ provider: OAuthProvider, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOAuthProviderDependents>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getOAuthProviderDependents>>,
+          TError,
+          Awaited<ReturnType<typeof getOAuthProviderDependents>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOAuthProviderDependents<TData = Awaited<ReturnType<typeof getOAuthProviderDependents>>, TError = ErrorEnvelope>(
+ provider: OAuthProvider, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOAuthProviderDependents>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Count the accounts that depend on a provider
+ */
+
+export function useGetOAuthProviderDependents<TData = Awaited<ReturnType<typeof getOAuthProviderDependents>>, TError = ErrorEnvelope>(
+ provider: OAuthProvider, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOAuthProviderDependents>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetOAuthProviderDependentsQueryOptions(provider,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListWebhookEndpointsUrl = () => {
+
+
+
+
+  return `/v1/admin/webhook-endpoints`
+}
+
+/**
+ * The environment’s webhook endpoints, oldest first. A signing secret is never returned here: it is shown once, when its endpoint is created.
+ * @summary List webhook endpoints
+ */
+export const listWebhookEndpoints = async ( options?: Parameters<typeof dashboardFetch>[1]): Promise<WebhookEndpointList> => {
+
+  return dashboardFetch<WebhookEndpointList>(getListWebhookEndpointsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListWebhookEndpointsQueryKey = () => {
+    return [
+    `/v1/admin/webhook-endpoints`
+    ] as const;
+    }
+
+
+export const getListWebhookEndpointsQueryOptions = <TData = Awaited<ReturnType<typeof listWebhookEndpoints>>, TError = ErrorEnvelope>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listWebhookEndpoints>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListWebhookEndpointsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listWebhookEndpoints>>> = ({ signal }) => listWebhookEndpoints({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listWebhookEndpoints>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListWebhookEndpointsQueryResult = NonNullable<Awaited<ReturnType<typeof listWebhookEndpoints>>>
+export type ListWebhookEndpointsQueryError = ErrorEnvelope
+
+
+export function useListWebhookEndpoints<TData = Awaited<ReturnType<typeof listWebhookEndpoints>>, TError = ErrorEnvelope>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listWebhookEndpoints>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listWebhookEndpoints>>,
+          TError,
+          Awaited<ReturnType<typeof listWebhookEndpoints>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListWebhookEndpoints<TData = Awaited<ReturnType<typeof listWebhookEndpoints>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listWebhookEndpoints>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listWebhookEndpoints>>,
+          TError,
+          Awaited<ReturnType<typeof listWebhookEndpoints>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListWebhookEndpoints<TData = Awaited<ReturnType<typeof listWebhookEndpoints>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listWebhookEndpoints>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List webhook endpoints
+ */
+
+export function useListWebhookEndpoints<TData = Awaited<ReturnType<typeof listWebhookEndpoints>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listWebhookEndpoints>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListWebhookEndpointsQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateWebhookEndpointUrl = () => {
+
+
+
+
+  return `/v1/admin/webhook-endpoints`
+}
+
+/**
+ * Registers an address that events of the given types are delivered to, signed (Standard Webhooks: `webhook-id`, `webhook-timestamp`, `webhook-signature`). The server generates the signing secret (`whsec_…`) and returns it in this response only; it is stored encrypted and cannot be read again. Events that happened before the endpoint was registered are not sent to it. An address the server may not call is refused with `webhook.url_not_allowed` (422): it must be `https`, carry no credentials, and its host must resolve to public addresses only. `params.reason` is a fixed word for the rule that refused it, never the address.
+ * @summary Register a webhook endpoint
+ */
+export const createWebhookEndpoint = async (createWebhookEndpointRequest: CreateWebhookEndpointRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<CreatedWebhookEndpoint> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<CreatedWebhookEndpoint>(getCreateWebhookEndpointUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createWebhookEndpointRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateWebhookEndpointMutationKey = () => ['createWebhookEndpoint'] as const;
+
+export const getCreateWebhookEndpointMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createWebhookEndpoint>>, TError,CreateWebhookEndpointMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createWebhookEndpoint>>, TError,CreateWebhookEndpointMutationVariables, TContext> => {
+
+const mutationKey = getCreateWebhookEndpointMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createWebhookEndpoint>>, CreateWebhookEndpointMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createWebhookEndpoint(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateWebhookEndpointMutationResult = NonNullable<Awaited<ReturnType<typeof createWebhookEndpoint>>>
+    export type CreateWebhookEndpointMutationBody = CreateWebhookEndpointRequest
+    export type CreateWebhookEndpointMutationError = ErrorEnvelope
+    export type CreateWebhookEndpointMutationVariables = {data: CreateWebhookEndpointRequest}
+
+    /**
+ * @summary Register a webhook endpoint
+ */
+export const useCreateWebhookEndpoint = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createWebhookEndpoint>>, TError,CreateWebhookEndpointMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createWebhookEndpoint>>,
+        TError,
+        CreateWebhookEndpointMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateWebhookEndpointMutationOptions(options), queryClient);
+    }
+
+export const getGetWebhookEndpointUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/webhook-endpoints/${id}`
+}
+
+/**
+ * One webhook endpoint of the environment. Never its signing secret.
+ * @summary Get a webhook endpoint
+ */
+export const getWebhookEndpoint = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<WebhookEndpoint> => {
+
+  return dashboardFetch<WebhookEndpoint>(getGetWebhookEndpointUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetWebhookEndpointQueryKey = (id: string,) => {
+    return [
+    `/v1/admin/webhook-endpoints/${id}`
+    ] as const;
+    }
+
+
+export const getGetWebhookEndpointQueryOptions = <TData = Awaited<ReturnType<typeof getWebhookEndpoint>>, TError = ErrorEnvelope>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWebhookEndpoint>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetWebhookEndpointQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getWebhookEndpoint>>> = ({ signal }) => getWebhookEndpoint(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWebhookEndpoint>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetWebhookEndpointQueryResult = NonNullable<Awaited<ReturnType<typeof getWebhookEndpoint>>>
+export type GetWebhookEndpointQueryError = ErrorEnvelope
+
+
+export function useGetWebhookEndpoint<TData = Awaited<ReturnType<typeof getWebhookEndpoint>>, TError = ErrorEnvelope>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWebhookEndpoint>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getWebhookEndpoint>>,
+          TError,
+          Awaited<ReturnType<typeof getWebhookEndpoint>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetWebhookEndpoint<TData = Awaited<ReturnType<typeof getWebhookEndpoint>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWebhookEndpoint>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getWebhookEndpoint>>,
+          TError,
+          Awaited<ReturnType<typeof getWebhookEndpoint>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetWebhookEndpoint<TData = Awaited<ReturnType<typeof getWebhookEndpoint>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWebhookEndpoint>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get a webhook endpoint
+ */
+
+export function useGetWebhookEndpoint<TData = Awaited<ReturnType<typeof getWebhookEndpoint>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWebhookEndpoint>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetWebhookEndpointQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateWebhookEndpointUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/webhook-endpoints/${id}`
+}
+
+/**
+ * Changes the address, the event types or whether the endpoint is on; a field left out keeps its value. While an endpoint is off nothing is delivered to it, and the events of that time are not sent later. Switching it on (also after the server switched it off: see `disabledReason`) forgets why it was off and since when it was failing; deliveries that were pending are tried again unless they are more than three days old. The signing secret cannot be changed here. Recorded in the audit log by the names of the fields that changed, never their values. An address the server may not call is refused with `webhook.url_not_allowed` (422): it must be `https`, carry no credentials, and its host must resolve to public addresses only. `params.reason` is a fixed word for the rule that refused it, never the address.
+ * @summary Change a webhook endpoint
+ */
+export const updateWebhookEndpoint = async (id: string,
+    updateWebhookEndpointRequest: UpdateWebhookEndpointRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<WebhookEndpoint> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<WebhookEndpoint>(getUpdateWebhookEndpointUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateWebhookEndpointRequest)
+  }
+);}
+
+
+
+
+
+export const getUpdateWebhookEndpointMutationKey = () => ['updateWebhookEndpoint'] as const;
+
+export const getUpdateWebhookEndpointMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateWebhookEndpoint>>, TError,UpdateWebhookEndpointMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateWebhookEndpoint>>, TError,UpdateWebhookEndpointMutationVariables, TContext> => {
+
+const mutationKey = getUpdateWebhookEndpointMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateWebhookEndpoint>>, UpdateWebhookEndpointMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateWebhookEndpoint(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateWebhookEndpointMutationResult = NonNullable<Awaited<ReturnType<typeof updateWebhookEndpoint>>>
+    export type UpdateWebhookEndpointMutationBody = UpdateWebhookEndpointRequest
+    export type UpdateWebhookEndpointMutationError = ErrorEnvelope
+    export type UpdateWebhookEndpointMutationVariables = {id: string;data: UpdateWebhookEndpointRequest}
+
+    /**
+ * @summary Change a webhook endpoint
+ */
+export const useUpdateWebhookEndpoint = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateWebhookEndpoint>>, TError,UpdateWebhookEndpointMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateWebhookEndpoint>>,
+        TError,
+        UpdateWebhookEndpointMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateWebhookEndpointMutationOptions(options), queryClient);
+    }
+
+export const getDeleteWebhookEndpointUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/webhook-endpoints/${id}`
+}
+
+/**
+ * Removes the endpoint: nothing more is delivered to it, and its signing secret and the record of its deliveries are deleted with it.
+ * @summary Remove a webhook endpoint
+ */
+export const deleteWebhookEndpoint = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
+
+  return dashboardFetch<void>(getDeleteWebhookEndpointUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteWebhookEndpointMutationKey = () => ['deleteWebhookEndpoint'] as const;
+
+export const getDeleteWebhookEndpointMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteWebhookEndpoint>>, TError,DeleteWebhookEndpointMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteWebhookEndpoint>>, TError,DeleteWebhookEndpointMutationVariables, TContext> => {
+
+const mutationKey = getDeleteWebhookEndpointMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteWebhookEndpoint>>, DeleteWebhookEndpointMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteWebhookEndpoint(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteWebhookEndpointMutationResult = NonNullable<Awaited<ReturnType<typeof deleteWebhookEndpoint>>>
+
+    export type DeleteWebhookEndpointMutationError = ErrorEnvelope
+    export type DeleteWebhookEndpointMutationVariables = {id: string}
+
+    /**
+ * @summary Remove a webhook endpoint
+ */
+export const useDeleteWebhookEndpoint = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteWebhookEndpoint>>, TError,DeleteWebhookEndpointMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteWebhookEndpoint>>,
+        TError,
+        DeleteWebhookEndpointMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteWebhookEndpointMutationOptions(options), queryClient);
+    }
+
+export const getListWebhookDeliveriesUrl = (id: string,
+    params?: ListWebhookDeliveriesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/webhook-endpoints/${id}/deliveries?${stringifiedParams}` : `/v1/admin/webhook-endpoints/${id}/deliveries`
+}
+
+/**
+ * The deliveries of one endpoint, newest first: one per event it was owed, and one per test event. Each says where it stands (`pending`, `delivered`, `failed`), how many requests were made and how the latest ended. Filter by `state` and `eventType`. Deliveries are kept for 90 days. The list pages through the newest 10000 matching deliveries: a page past that (`page` × `size`) is refused with `validation.failed`, and `meta.totalCount` is counted no further.
+ * @summary List an endpoint’s deliveries
+ */
+export const listWebhookDeliveries = async (id: string,
+    params?: ListWebhookDeliveriesParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<WebhookDeliveryList> => {
+
+  return dashboardFetch<WebhookDeliveryList>(getListWebhookDeliveriesUrl(id,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListWebhookDeliveriesQueryKey = (id: string,
+    params?: ListWebhookDeliveriesParams,) => {
+    return [
+    `/v1/admin/webhook-endpoints/${id}/deliveries`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListWebhookDeliveriesQueryOptions = <TData = Awaited<ReturnType<typeof listWebhookDeliveries>>, TError = ErrorEnvelope>(id: string,
+    params?: ListWebhookDeliveriesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listWebhookDeliveries>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListWebhookDeliveriesQueryKey(id,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listWebhookDeliveries>>> = ({ signal }) => listWebhookDeliveries(id,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listWebhookDeliveries>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListWebhookDeliveriesQueryResult = NonNullable<Awaited<ReturnType<typeof listWebhookDeliveries>>>
+export type ListWebhookDeliveriesQueryError = ErrorEnvelope
+
+
+export function useListWebhookDeliveries<TData = Awaited<ReturnType<typeof listWebhookDeliveries>>, TError = ErrorEnvelope>(
+ id: string,
+    params: undefined |  ListWebhookDeliveriesParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listWebhookDeliveries>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listWebhookDeliveries>>,
+          TError,
+          Awaited<ReturnType<typeof listWebhookDeliveries>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListWebhookDeliveries<TData = Awaited<ReturnType<typeof listWebhookDeliveries>>, TError = ErrorEnvelope>(
+ id: string,
+    params?: ListWebhookDeliveriesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listWebhookDeliveries>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listWebhookDeliveries>>,
+          TError,
+          Awaited<ReturnType<typeof listWebhookDeliveries>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListWebhookDeliveries<TData = Awaited<ReturnType<typeof listWebhookDeliveries>>, TError = ErrorEnvelope>(
+ id: string,
+    params?: ListWebhookDeliveriesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listWebhookDeliveries>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List an endpoint’s deliveries
+ */
+
+export function useListWebhookDeliveries<TData = Awaited<ReturnType<typeof listWebhookDeliveries>>, TError = ErrorEnvelope>(
+ id: string,
+    params?: ListWebhookDeliveriesParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listWebhookDeliveries>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListWebhookDeliveriesQueryOptions(id,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetWebhookDeliveryUrl = (id: string,
+    deliveryId: string,) => {
+
+
+
+
+  return `/v1/admin/webhook-endpoints/${id}/deliveries/${deliveryId}`
+}
+
+/**
+ * One delivery with every request the server made for it, oldest first. An attempt is a time, a status code or one of the server’s fixed words, and a duration: never a header or a body of the receiver’s answer.
+ * @summary Get a delivery and its attempts
+ */
+export const getWebhookDelivery = async (id: string,
+    deliveryId: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<WebhookDeliveryDetail> => {
+
+  return dashboardFetch<WebhookDeliveryDetail>(getGetWebhookDeliveryUrl(id,deliveryId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetWebhookDeliveryQueryKey = (id: string,
+    deliveryId: string,) => {
+    return [
+    `/v1/admin/webhook-endpoints/${id}/deliveries/${deliveryId}`
+    ] as const;
+    }
+
+
+export const getGetWebhookDeliveryQueryOptions = <TData = Awaited<ReturnType<typeof getWebhookDelivery>>, TError = ErrorEnvelope>(id: string,
+    deliveryId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWebhookDelivery>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetWebhookDeliveryQueryKey(id,deliveryId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getWebhookDelivery>>> = ({ signal }) => getWebhookDelivery(id,deliveryId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined && deliveryId !== null && deliveryId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWebhookDelivery>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetWebhookDeliveryQueryResult = NonNullable<Awaited<ReturnType<typeof getWebhookDelivery>>>
+export type GetWebhookDeliveryQueryError = ErrorEnvelope
+
+
+export function useGetWebhookDelivery<TData = Awaited<ReturnType<typeof getWebhookDelivery>>, TError = ErrorEnvelope>(
+ id: string,
+    deliveryId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWebhookDelivery>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getWebhookDelivery>>,
+          TError,
+          Awaited<ReturnType<typeof getWebhookDelivery>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetWebhookDelivery<TData = Awaited<ReturnType<typeof getWebhookDelivery>>, TError = ErrorEnvelope>(
+ id: string,
+    deliveryId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWebhookDelivery>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getWebhookDelivery>>,
+          TError,
+          Awaited<ReturnType<typeof getWebhookDelivery>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetWebhookDelivery<TData = Awaited<ReturnType<typeof getWebhookDelivery>>, TError = ErrorEnvelope>(
+ id: string,
+    deliveryId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWebhookDelivery>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get a delivery and its attempts
+ */
+
+export function useGetWebhookDelivery<TData = Awaited<ReturnType<typeof getWebhookDelivery>>, TError = ErrorEnvelope>(
+ id: string,
+    deliveryId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getWebhookDelivery>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetWebhookDeliveryQueryOptions(id,deliveryId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSendTestWebhookUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/webhook-endpoints/${id}/test`
+}
+
+/**
+ * Sends one test event of the chosen type to the endpoint, now, signed like every delivery. The event is an example with a new id and **`"test": true`** inside the signed body, which no real event has: nothing it describes happened, and a receiver should check the field before acting. It is one request with no retry, recorded as a delivery flagged `test`; it is not written to the audit log and changes nothing about the endpoint: a failed test does not count towards switching it off, and one that gets through does not clear `failingSince`. An endpoint that is off can be tested. The answer is the outcome, the receiver’s status code and how long it took: nothing else of what the receiver said is read or kept. When there was no answer, `failureReason` is one of the server’s fixed words (`timeout`, `connection_failed`, `address_not_allowed`, …). Limited to 10 such requests a minute per environment. In a deployment whose webhook worker is its own service (`WEBHOOK_WORKER=separate`) an API instance calls no webhook endpoint, and this request is refused with `not_implemented` (501), `params.reason`: `worker_separate`.
+ * @summary Send a test event
+ */
+export const sendTestWebhook = async (id: string,
+    sendTestWebhookRequest: SendTestWebhookRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<WebhookSendResult> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<WebhookSendResult>(getSendTestWebhookUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(sendTestWebhookRequest)
+  }
+);}
+
+
+
+
+
+export const getSendTestWebhookMutationKey = () => ['sendTestWebhook'] as const;
+
+export const getSendTestWebhookMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendTestWebhook>>, TError,SendTestWebhookMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof sendTestWebhook>>, TError,SendTestWebhookMutationVariables, TContext> => {
+
+const mutationKey = getSendTestWebhookMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof sendTestWebhook>>, SendTestWebhookMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  sendTestWebhook(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SendTestWebhookMutationResult = NonNullable<Awaited<ReturnType<typeof sendTestWebhook>>>
+    export type SendTestWebhookMutationBody = SendTestWebhookRequest
+    export type SendTestWebhookMutationError = ErrorEnvelope
+    export type SendTestWebhookMutationVariables = {id: string;data: SendTestWebhookRequest}
+
+    /**
+ * @summary Send a test event
+ */
+export const useSendTestWebhook = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendTestWebhook>>, TError,SendTestWebhookMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof sendTestWebhook>>,
+        TError,
+        SendTestWebhookMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSendTestWebhookMutationOptions(options), queryClient);
+    }
+
+export const getRedeliverWebhookUrl = (id: string,
+    deliveryId: string,) => {
+
+
+
+
+  return `/v1/admin/webhook-endpoints/${id}/deliveries/${deliveryId}/redeliver`
+}
+
+/**
+ * Makes one more request for a past delivery, now: the event’s stored payload, to the endpoint it was owed to, with the same `webhook-id` (a receiver that drops repeats by id will drop it). The request is added to the delivery’s own attempts. A 2xx makes the delivery `delivered`; a failure leaves it as it was and is not retried. Refused with `webhook.cannot_redeliver` (409) and a fixed word in `params.reason`: `delivery_pending` while the server is still retrying the delivery, `endpoint_disabled` for an endpoint that is switched off, `event_gone` once the event is no longer kept (30 days) or for a test event, and `attempt_limit` once the delivery has had 20 requests in all. A request that gets through also ends the endpoint’s run of failures (`failingSince`). The answer is the outcome, the receiver’s status code and how long it took: nothing else of what the receiver said is read or kept. When there was no answer, `failureReason` is one of the server’s fixed words (`timeout`, `connection_failed`, `address_not_allowed`, …). Limited to 10 such requests a minute per environment. In a deployment whose webhook worker is its own service (`WEBHOOK_WORKER=separate`) an API instance calls no webhook endpoint, and this request is refused with `not_implemented` (501), `params.reason`: `worker_separate`.
+ * @summary Send a delivery again
+ */
+export const redeliverWebhook = async (id: string,
+    deliveryId: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<WebhookSendResult> => {
+
+  return dashboardFetch<WebhookSendResult>(getRedeliverWebhookUrl(id,deliveryId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRedeliverWebhookMutationKey = () => ['redeliverWebhook'] as const;
+
+export const getRedeliverWebhookMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof redeliverWebhook>>, TError,RedeliverWebhookMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof redeliverWebhook>>, TError,RedeliverWebhookMutationVariables, TContext> => {
+
+const mutationKey = getRedeliverWebhookMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof redeliverWebhook>>, RedeliverWebhookMutationVariables> = (props) => {
+          const {id,deliveryId} = props ?? {};
+
+          return  redeliverWebhook(id,deliveryId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RedeliverWebhookMutationResult = NonNullable<Awaited<ReturnType<typeof redeliverWebhook>>>
+
+    export type RedeliverWebhookMutationError = ErrorEnvelope
+    export type RedeliverWebhookMutationVariables = {id: string;deliveryId: string}
+
+    /**
+ * @summary Send a delivery again
+ */
+export const useRedeliverWebhook = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof redeliverWebhook>>, TError,RedeliverWebhookMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof redeliverWebhook>>,
+        TError,
+        RedeliverWebhookMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRedeliverWebhookMutationOptions(options), queryClient);
+    }
+
+export const getRotateWebhookSecretUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/webhook-endpoints/${id}/secret/rotate`
+}
+
+/**
+ * Makes a new signing secret (`whsec_…`) for the endpoint and returns it in this response only. The secret it replaces is not dropped: for 24h (until `rotationOverlapEndsAt`) every delivery carries **two** signatures in `webhook-signature`, the new secret’s first and the previous secret’s after a space, so a receiver verifies with whichever it holds. Deploy the new secret to the receiver inside that time; after it only the new secret signs, and the previous one is deleted. The request has no body and nothing in one is read: the server makes the secret. Refused with `webhook.rotation_refused` (409) and a fixed word in `params.reason`: `rotation_in_progress` while a previous secret is still signing (an endpoint never has three: end the overlap first with `DELETE …/secret/previous`), or `secret_unreadable` when the server cannot open the current secret and so could not keep it signing. An endpoint that is switched off can be rotated. Recorded in the audit log as `webhook_endpoint.secret_rotated`, with the time and nothing of either secret.
+ * @summary Replace an endpoint’s signing secret
+ */
+export const rotateWebhookSecret = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<RotatedWebhookSecret> => {
+
+  return dashboardFetch<RotatedWebhookSecret>(getRotateWebhookSecretUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRotateWebhookSecretMutationKey = () => ['rotateWebhookSecret'] as const;
+
+export const getRotateWebhookSecretMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rotateWebhookSecret>>, TError,RotateWebhookSecretMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof rotateWebhookSecret>>, TError,RotateWebhookSecretMutationVariables, TContext> => {
+
+const mutationKey = getRotateWebhookSecretMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof rotateWebhookSecret>>, RotateWebhookSecretMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  rotateWebhookSecret(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RotateWebhookSecretMutationResult = NonNullable<Awaited<ReturnType<typeof rotateWebhookSecret>>>
+
+    export type RotateWebhookSecretMutationError = ErrorEnvelope
+    export type RotateWebhookSecretMutationVariables = {id: string}
+
+    /**
+ * @summary Replace an endpoint’s signing secret
+ */
+export const useRotateWebhookSecret = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof rotateWebhookSecret>>, TError,RotateWebhookSecretMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof rotateWebhookSecret>>,
+        TError,
+        RotateWebhookSecretMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRotateWebhookSecretMutationOptions(options), queryClient);
+    }
+
+export const getRevokePreviousWebhookSecretUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/webhook-endpoints/${id}/secret/previous`
+}
+
+/**
+ * Ends the overlap of a rotation early: the endpoint’s previous signing secret stops signing and is deleted, and deliveries carry the current secret’s signature only. For a previous secret that has leaked, once the receiver verifies with the new one; and what makes another rotation possible at once. A round of deliveries under way when this is called may still add the previous secret’s signature, for a few seconds at most. Refused with `webhook.rotation_refused` (409, `params.reason`: `no_rotation_in_progress`) when no previous secret is signing. Recorded in the audit log as `webhook_endpoint.previous_secret_revoked`.
+ * @summary End a secret rotation’s overlap now
+ */
+export const revokePreviousWebhookSecret = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<WebhookEndpoint> => {
+
+  return dashboardFetch<WebhookEndpoint>(getRevokePreviousWebhookSecretUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRevokePreviousWebhookSecretMutationKey = () => ['revokePreviousWebhookSecret'] as const;
+
+export const getRevokePreviousWebhookSecretMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokePreviousWebhookSecret>>, TError,RevokePreviousWebhookSecretMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof revokePreviousWebhookSecret>>, TError,RevokePreviousWebhookSecretMutationVariables, TContext> => {
+
+const mutationKey = getRevokePreviousWebhookSecretMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokePreviousWebhookSecret>>, RevokePreviousWebhookSecretMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  revokePreviousWebhookSecret(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevokePreviousWebhookSecretMutationResult = NonNullable<Awaited<ReturnType<typeof revokePreviousWebhookSecret>>>
+
+    export type RevokePreviousWebhookSecretMutationError = ErrorEnvelope
+    export type RevokePreviousWebhookSecretMutationVariables = {id: string}
+
+    /**
+ * @summary End a secret rotation’s overlap now
+ */
+export const useRevokePreviousWebhookSecret = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokePreviousWebhookSecret>>, TError,RevokePreviousWebhookSecretMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof revokePreviousWebhookSecret>>,
+        TError,
+        RevokePreviousWebhookSecretMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRevokePreviousWebhookSecretMutationOptions(options), queryClient);
+    }
+
+export const getListHooksUrl = () => {
+
+
+
+
+  return `/v1/admin/hooks`
+}
+
+/**
+ * The environment’s hooks, oldest first: at most one per point. Each says when a call of it last failed (`lastFailedAt`) and why, in a fixed word (`lastFailureReason`). A signing secret is never returned here: it is shown once, when its hook is registered.
+ * @summary List hooks
+ */
+export const listHooks = async ( options?: Parameters<typeof dashboardFetch>[1]): Promise<HookList> => {
+
+  return dashboardFetch<HookList>(getListHooksUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListHooksQueryKey = () => {
+    return [
+    `/v1/admin/hooks`
+    ] as const;
+    }
+
+
+export const getListHooksQueryOptions = <TData = Awaited<ReturnType<typeof listHooks>>, TError = ErrorEnvelope>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listHooks>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListHooksQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listHooks>>> = ({ signal }) => listHooks({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listHooks>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListHooksQueryResult = NonNullable<Awaited<ReturnType<typeof listHooks>>>
+export type ListHooksQueryError = ErrorEnvelope
+
+
+export function useListHooks<TData = Awaited<ReturnType<typeof listHooks>>, TError = ErrorEnvelope>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listHooks>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listHooks>>,
+          TError,
+          Awaited<ReturnType<typeof listHooks>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListHooks<TData = Awaited<ReturnType<typeof listHooks>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listHooks>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listHooks>>,
+          TError,
+          Awaited<ReturnType<typeof listHooks>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListHooks<TData = Awaited<ReturnType<typeof listHooks>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listHooks>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List hooks
+ */
+
+export function useListHooks<TData = Awaited<ReturnType<typeof listHooks>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listHooks>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListHooksQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateHookUrl = () => {
+
+
+
+
+  return `/v1/admin/hooks`
+}
+
+/**
+ * Registers an address the server asks before it acts at `point`. For `before_sign_up` the question (`HookBeforeSignUpQuestion`) is posted, signed like a webhook delivery (Standard Webhooks: `webhook-id`, `webhook-timestamp`, `webhook-signature`), when a sign-up is about to create an account, and the answer (`HookAnswer`) allows or denies it. It is not asked when an administrator creates a user. The server generates the signing secret (`whsec_…`) and returns it in this response only; it is stored encrypted and cannot be read again. An environment has one hook per point: a second is refused with `resource.conflict` (409). `deadlineMs` is how long the server waits for the answer: 2000 unless given, at least 100 and never more than 5000. Switching a hook off, removing one that is on, and `failureMode: "allow"` (a sign-up is let through when the hook cannot be asked or does not answer as the contract says) each remove a check: the audit entry of such a change carries `weakened: true`. An address the server may not call is refused with `hook.url_not_allowed` (422): it must be `https`, carry no credentials, and its host must resolve to public addresses only. `params.reason` is a fixed word for the rule that refused it, never the address.
+ * @summary Register a hook
+ */
+export const createHook = async (createHookRequest: CreateHookRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<CreatedHook> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<CreatedHook>(getCreateHookUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createHookRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateHookMutationKey = () => ['createHook'] as const;
+
+export const getCreateHookMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createHook>>, TError,CreateHookMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createHook>>, TError,CreateHookMutationVariables, TContext> => {
+
+const mutationKey = getCreateHookMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createHook>>, CreateHookMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createHook(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateHookMutationResult = NonNullable<Awaited<ReturnType<typeof createHook>>>
+    export type CreateHookMutationBody = CreateHookRequest
+    export type CreateHookMutationError = ErrorEnvelope
+    export type CreateHookMutationVariables = {data: CreateHookRequest}
+
+    /**
+ * @summary Register a hook
+ */
+export const useCreateHook = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createHook>>, TError,CreateHookMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createHook>>,
+        TError,
+        CreateHookMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateHookMutationOptions(options), queryClient);
+    }
+
+export const getGetHookUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/hooks/${id}`
+}
+
+/**
+ * One hook of the environment. Never its signing secret.
+ * @summary Get a hook
+ */
+export const getHook = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<Hook> => {
+
+  return dashboardFetch<Hook>(getGetHookUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetHookQueryKey = (id: string,) => {
+    return [
+    `/v1/admin/hooks/${id}`
+    ] as const;
+    }
+
+
+export const getGetHookQueryOptions = <TData = Awaited<ReturnType<typeof getHook>>, TError = ErrorEnvelope>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHook>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetHookQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getHook>>> = ({ signal }) => getHook(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getHook>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetHookQueryResult = NonNullable<Awaited<ReturnType<typeof getHook>>>
+export type GetHookQueryError = ErrorEnvelope
+
+
+export function useGetHook<TData = Awaited<ReturnType<typeof getHook>>, TError = ErrorEnvelope>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHook>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getHook>>,
+          TError,
+          Awaited<ReturnType<typeof getHook>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetHook<TData = Awaited<ReturnType<typeof getHook>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHook>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getHook>>,
+          TError,
+          Awaited<ReturnType<typeof getHook>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetHook<TData = Awaited<ReturnType<typeof getHook>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHook>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get a hook
+ */
+
+export function useGetHook<TData = Awaited<ReturnType<typeof getHook>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getHook>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetHookQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateHookUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/hooks/${id}`
+}
+
+/**
+ * Changes the address, the deadline, the failure mode or whether the hook is on; a field left out keeps its value. A hook that is off is not asked: what it guards happens as if there were none. The point and the signing secret cannot be changed here. Recorded in the audit log by the names of the fields that changed, never their values. A hook that someone else changed meanwhile is not written over (`resource.conflict`, 409). `deadlineMs` is how long the server waits for the answer: 2000 unless given, at least 100 and never more than 5000. Switching a hook off, removing one that is on, and `failureMode: "allow"` (a sign-up is let through when the hook cannot be asked or does not answer as the contract says) each remove a check: the audit entry of such a change carries `weakened: true`. An address the server may not call is refused with `hook.url_not_allowed` (422): it must be `https`, carry no credentials, and its host must resolve to public addresses only. `params.reason` is a fixed word for the rule that refused it, never the address.
+ * @summary Change a hook
+ */
+export const updateHook = async (id: string,
+    updateHookRequest: UpdateHookRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<Hook> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<Hook>(getUpdateHookUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateHookRequest)
+  }
+);}
+
+
+
+
+
+export const getUpdateHookMutationKey = () => ['updateHook'] as const;
+
+export const getUpdateHookMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateHook>>, TError,UpdateHookMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateHook>>, TError,UpdateHookMutationVariables, TContext> => {
+
+const mutationKey = getUpdateHookMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateHook>>, UpdateHookMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateHook(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateHookMutationResult = NonNullable<Awaited<ReturnType<typeof updateHook>>>
+    export type UpdateHookMutationBody = UpdateHookRequest
+    export type UpdateHookMutationError = ErrorEnvelope
+    export type UpdateHookMutationVariables = {id: string;data: UpdateHookRequest}
+
+    /**
+ * @summary Change a hook
+ */
+export const useUpdateHook = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateHook>>, TError,UpdateHookMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateHook>>,
+        TError,
+        UpdateHookMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateHookMutationOptions(options), queryClient);
+    }
+
+export const getDeleteHookUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/hooks/${id}`
+}
+
+/**
+ * Removes the hook and its signing secret: it is asked no more, and what it guarded happens as if there had been none. Switching a hook off, removing one that is on, and `failureMode: "allow"` (a sign-up is let through when the hook cannot be asked or does not answer as the contract says) each remove a check: the audit entry of such a change carries `weakened: true`.
+ * @summary Remove a hook
+ */
+export const deleteHook = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
+
+  return dashboardFetch<void>(getDeleteHookUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteHookMutationKey = () => ['deleteHook'] as const;
+
+export const getDeleteHookMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteHook>>, TError,DeleteHookMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteHook>>, TError,DeleteHookMutationVariables, TContext> => {
+
+const mutationKey = getDeleteHookMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteHook>>, DeleteHookMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteHook(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteHookMutationResult = NonNullable<Awaited<ReturnType<typeof deleteHook>>>
+
+    export type DeleteHookMutationError = ErrorEnvelope
+    export type DeleteHookMutationVariables = {id: string}
+
+    /**
+ * @summary Remove a hook
+ */
+export const useDeleteHook = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteHook>>, TError,DeleteHookMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteHook>>,
+        TError,
+        DeleteHookMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteHookMutationOptions(options), queryClient);
+    }
+
+export const getListNativeAppsUrl = () => {
+
+
+
+
+  return `/v1/admin/native-apps`
+}
+
+/**
+ * The native apps registered for the environment, oldest first. They are what its two association files are built from.
+ * @summary List native apps
+ */
+export const listNativeApps = async ( options?: Parameters<typeof dashboardFetch>[1]): Promise<NativeAppList> => {
+
+  return dashboardFetch<NativeAppList>(getListNativeAppsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListNativeAppsQueryKey = () => {
+    return [
+    `/v1/admin/native-apps`
+    ] as const;
+    }
+
+
+export const getListNativeAppsQueryOptions = <TData = Awaited<ReturnType<typeof listNativeApps>>, TError = ErrorEnvelope>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNativeApps>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListNativeAppsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listNativeApps>>> = ({ signal }) => listNativeApps({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listNativeApps>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListNativeAppsQueryResult = NonNullable<Awaited<ReturnType<typeof listNativeApps>>>
+export type ListNativeAppsQueryError = ErrorEnvelope
+
+
+export function useListNativeApps<TData = Awaited<ReturnType<typeof listNativeApps>>, TError = ErrorEnvelope>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNativeApps>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listNativeApps>>,
+          TError,
+          Awaited<ReturnType<typeof listNativeApps>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListNativeApps<TData = Awaited<ReturnType<typeof listNativeApps>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNativeApps>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listNativeApps>>,
+          TError,
+          Awaited<ReturnType<typeof listNativeApps>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListNativeApps<TData = Awaited<ReturnType<typeof listNativeApps>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNativeApps>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List native apps
+ */
+
+export function useListNativeApps<TData = Awaited<ReturnType<typeof listNativeApps>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listNativeApps>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListNativeAppsQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateNativeAppUrl = () => {
+
+
+
+
+  return `/v1/admin/native-apps`
+}
+
+/**
+ * Registers an iOS app (its Apple team and bundle id) or an Android app (its package name and the fingerprints of its signing certificates) as the environment’s own. The environment’s association files name it from then on. An environment has one app per platform and bundle id or package name (a second is refused with `resource.conflict`, 409) and at most 20 apps (the same code, with `params.max`). A fingerprint is the SHA-256 of a signing certificate: 32 bytes as hex pairs joined by colons, in either case, or as 64 hex digits. It is stored and served upper case with colons. An app has between one and 10, each once. Registering an app, moving an iOS app to another team and giving an Android app a fingerprint more each widen which app the served files name: the audit entry of such a change carries `weakened: true`.
+ * @summary Register a native app
+ */
+export const createNativeApp = async (createNativeAppRequest: CreateNativeAppRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<NativeApp> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<NativeApp>(getCreateNativeAppUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createNativeAppRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateNativeAppMutationKey = () => ['createNativeApp'] as const;
+
+export const getCreateNativeAppMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createNativeApp>>, TError,CreateNativeAppMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createNativeApp>>, TError,CreateNativeAppMutationVariables, TContext> => {
+
+const mutationKey = getCreateNativeAppMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createNativeApp>>, CreateNativeAppMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createNativeApp(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateNativeAppMutationResult = NonNullable<Awaited<ReturnType<typeof createNativeApp>>>
+    export type CreateNativeAppMutationBody = CreateNativeAppRequest
+    export type CreateNativeAppMutationError = ErrorEnvelope
+    export type CreateNativeAppMutationVariables = {data: CreateNativeAppRequest}
+
+    /**
+ * @summary Register a native app
+ */
+export const useCreateNativeApp = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createNativeApp>>, TError,CreateNativeAppMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createNativeApp>>,
+        TError,
+        CreateNativeAppMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateNativeAppMutationOptions(options), queryClient);
+    }
+
+export const getGetNativeAppUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/native-apps/${id}`
+}
+
+/**
+ * One native app of the environment.
+ * @summary Get a native app
+ */
+export const getNativeApp = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<NativeApp> => {
+
+  return dashboardFetch<NativeApp>(getGetNativeAppUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetNativeAppQueryKey = (id: string,) => {
+    return [
+    `/v1/admin/native-apps/${id}`
+    ] as const;
+    }
+
+
+export const getGetNativeAppQueryOptions = <TData = Awaited<ReturnType<typeof getNativeApp>>, TError = ErrorEnvelope>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNativeApp>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetNativeAppQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getNativeApp>>> = ({ signal }) => getNativeApp(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getNativeApp>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetNativeAppQueryResult = NonNullable<Awaited<ReturnType<typeof getNativeApp>>>
+export type GetNativeAppQueryError = ErrorEnvelope
+
+
+export function useGetNativeApp<TData = Awaited<ReturnType<typeof getNativeApp>>, TError = ErrorEnvelope>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNativeApp>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getNativeApp>>,
+          TError,
+          Awaited<ReturnType<typeof getNativeApp>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetNativeApp<TData = Awaited<ReturnType<typeof getNativeApp>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNativeApp>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getNativeApp>>,
+          TError,
+          Awaited<ReturnType<typeof getNativeApp>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetNativeApp<TData = Awaited<ReturnType<typeof getNativeApp>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNativeApp>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get a native app
+ */
+
+export function useGetNativeApp<TData = Awaited<ReturnType<typeof getNativeApp>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getNativeApp>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetNativeAppQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateNativeAppUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/native-apps/${id}`
+}
+
+/**
+ * Changes an iOS app’s `teamId`, or replaces an Android app’s `sha256CertFingerprints` with the set given. A field of the other platform is refused (`validation.failed`, 422). The platform and the bundle id or package name cannot be changed: register the other app and remove this one. Recorded in the audit log by the names of the fields that changed, never their values. An app that someone else changed meanwhile is not written over (`resource.conflict`, 409). A fingerprint is the SHA-256 of a signing certificate: 32 bytes as hex pairs joined by colons, in either case, or as 64 hex digits. It is stored and served upper case with colons. An app has between one and 10, each once. Registering an app, moving an iOS app to another team and giving an Android app a fingerprint more each widen which app the served files name: the audit entry of such a change carries `weakened: true`.
+ * @summary Change a native app
+ */
+export const updateNativeApp = async (id: string,
+    updateNativeAppRequest: UpdateNativeAppRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<NativeApp> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<NativeApp>(getUpdateNativeAppUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateNativeAppRequest)
+  }
+);}
+
+
+
+
+
+export const getUpdateNativeAppMutationKey = () => ['updateNativeApp'] as const;
+
+export const getUpdateNativeAppMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateNativeApp>>, TError,UpdateNativeAppMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateNativeApp>>, TError,UpdateNativeAppMutationVariables, TContext> => {
+
+const mutationKey = getUpdateNativeAppMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateNativeApp>>, UpdateNativeAppMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateNativeApp(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateNativeAppMutationResult = NonNullable<Awaited<ReturnType<typeof updateNativeApp>>>
+    export type UpdateNativeAppMutationBody = UpdateNativeAppRequest
+    export type UpdateNativeAppMutationError = ErrorEnvelope
+    export type UpdateNativeAppMutationVariables = {id: string;data: UpdateNativeAppRequest}
+
+    /**
+ * @summary Change a native app
+ */
+export const useUpdateNativeApp = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateNativeApp>>, TError,UpdateNativeAppMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateNativeApp>>,
+        TError,
+        UpdateNativeAppMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateNativeAppMutationOptions(options), queryClient);
+    }
+
+export const getDeleteNativeAppUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/native-apps/${id}`
+}
+
+/**
+ * Removes the app: the environment’s association files no longer name it. A platform that already fetched a file keeps its copy for as long as it chooses to.
+ * @summary Remove a native app
+ */
+export const deleteNativeApp = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
+
+  return dashboardFetch<void>(getDeleteNativeAppUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteNativeAppMutationKey = () => ['deleteNativeApp'] as const;
+
+export const getDeleteNativeAppMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteNativeApp>>, TError,DeleteNativeAppMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteNativeApp>>, TError,DeleteNativeAppMutationVariables, TContext> => {
+
+const mutationKey = getDeleteNativeAppMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteNativeApp>>, DeleteNativeAppMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteNativeApp(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteNativeAppMutationResult = NonNullable<Awaited<ReturnType<typeof deleteNativeApp>>>
+
+    export type DeleteNativeAppMutationError = ErrorEnvelope
+    export type DeleteNativeAppMutationVariables = {id: string}
+
+    /**
+ * @summary Remove a native app
+ */
+export const useDeleteNativeApp = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteNativeApp>>, TError,DeleteNativeAppMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteNativeApp>>,
+        TError,
+        DeleteNativeAppMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteNativeAppMutationOptions(options), queryClient);
+    }
+
+export const getGetSmsUsageUrl = (params?: GetSmsUsageParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/sms/usage?${stringifiedParams}` : `/v1/admin/sms/usage`
+}
+
+/**
+ * How many verification codes the environment texted in the last `days` days (UTC, today included; 7 unless given, at most 30), and how many of them were then entered correctly, by **destination prefix**: the country calling prefix of the numbers (`+49`, or `+1242` where countries share a calling code), never more of a number. A prefix where nearly every code goes unused is what SMS pumping looks like. `prefixes` lists those with the most unused codes first, at most 100 (`truncated` says when there are more); `sent`, `used` and `unused` are the totals over every prefix. A send that a limit refused, or that the sender did not take, is not a code sent. The answer holds counts only: no phone number, and nothing about who asked.
+ * @summary Codes texted and used, by destination prefix
+ */
+export const getSmsUsage = async (params?: GetSmsUsageParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<SmsUsage> => {
+
+  return dashboardFetch<SmsUsage>(getGetSmsUsageUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSmsUsageQueryKey = (params?: GetSmsUsageParams,) => {
+    return [
+    `/v1/admin/sms/usage`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetSmsUsageQueryOptions = <TData = Awaited<ReturnType<typeof getSmsUsage>>, TError = ErrorEnvelope>(params?: GetSmsUsageParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSmsUsage>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSmsUsageQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSmsUsage>>> = ({ signal }) => getSmsUsage(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSmsUsage>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSmsUsageQueryResult = NonNullable<Awaited<ReturnType<typeof getSmsUsage>>>
+export type GetSmsUsageQueryError = ErrorEnvelope
+
+
+export function useGetSmsUsage<TData = Awaited<ReturnType<typeof getSmsUsage>>, TError = ErrorEnvelope>(
+ params: undefined |  GetSmsUsageParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSmsUsage>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSmsUsage>>,
+          TError,
+          Awaited<ReturnType<typeof getSmsUsage>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSmsUsage<TData = Awaited<ReturnType<typeof getSmsUsage>>, TError = ErrorEnvelope>(
+ params?: GetSmsUsageParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSmsUsage>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSmsUsage>>,
+          TError,
+          Awaited<ReturnType<typeof getSmsUsage>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSmsUsage<TData = Awaited<ReturnType<typeof getSmsUsage>>, TError = ErrorEnvelope>(
+ params?: GetSmsUsageParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSmsUsage>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Codes texted and used, by destination prefix
+ */
+
+export function useGetSmsUsage<TData = Awaited<ReturnType<typeof getSmsUsage>>, TError = ErrorEnvelope>(
+ params?: GetSmsUsageParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSmsUsage>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetSmsUsageQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getPreviewMessageUrl = () => {
+
+
+
+
+  return `/v1/admin/message-preview`
+}
+
+/**
+ * Draws one kind of email (`channel: "email"`) or text message (`channel: "sms"`) as the server would word it, from fixed sample values (the code is always `123456`), with the environment’s saved app name, support address and first allowed origin. `template` is a draft: it is held to exactly the rules a saved template is and refused the same way (422, under `template.<field>`), and it is not saved. Without one the answer is the built-in copy. The answer is **text**: an email’s subject and plain-text part, or the whole text message with the server’s own last line; never HTML. A part of the draft the server would not use for this message is listed in `unused` and drawn as the built-in copy. Nothing is sent, stored or recorded. Limited to 120 previews a minute per environment.
+ * @summary Preview an email or a text message in a draft wording
+ */
+export const previewMessage = async (messagePreviewRequest: MessagePreviewRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<MessagePreview> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<MessagePreview>(getPreviewMessageUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(messagePreviewRequest)
+  }
+);}
+
+
+
+
+
+export const getPreviewMessageMutationKey = () => ['previewMessage'] as const;
+
+export const getPreviewMessageMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewMessage>>, TError,PreviewMessageMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof previewMessage>>, TError,PreviewMessageMutationVariables, TContext> => {
+
+const mutationKey = getPreviewMessageMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof previewMessage>>, PreviewMessageMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  previewMessage(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PreviewMessageMutationResult = NonNullable<Awaited<ReturnType<typeof previewMessage>>>
+    export type PreviewMessageMutationBody = MessagePreviewRequest
+    export type PreviewMessageMutationError = ErrorEnvelope
+    export type PreviewMessageMutationVariables = {data: MessagePreviewRequest}
+
+    /**
+ * @summary Preview an email or a text message in a draft wording
+ */
+export const usePreviewMessage = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewMessage>>, TError,PreviewMessageMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof previewMessage>>,
+        TError,
+        PreviewMessageMutationVariables,
+        TContext
+      > => {
+      return useMutation(getPreviewMessageMutationOptions(options), queryClient);
+    }
+
+export const getListProposalsUrl = () => {
+
+
+
+
+  return `/v1/admin/proposals`
+}
+
+/**
+ * A proposal is a change an AI agent has asked for and that has **not happened**. It names one operation from a closed list and one target by id, holds no text anyone wrote, can be approved for 10 minutes and at most once. The newest 100, newest first, whatever became of them. An agent key may read this, like every other read of the admin API.
+ * @summary List proposals
+ */
+export const listProposals = async ( options?: Parameters<typeof dashboardFetch>[1]): Promise<ProposalList> => {
+
+  return dashboardFetch<ProposalList>(getListProposalsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListProposalsQueryKey = () => {
+    return [
+    `/v1/admin/proposals`
+    ] as const;
+    }
+
+
+export const getListProposalsQueryOptions = <TData = Awaited<ReturnType<typeof listProposals>>, TError = ErrorEnvelope>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProposals>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListProposalsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listProposals>>> = ({ signal }) => listProposals({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listProposals>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListProposalsQueryResult = NonNullable<Awaited<ReturnType<typeof listProposals>>>
+export type ListProposalsQueryError = ErrorEnvelope
+
+
+export function useListProposals<TData = Awaited<ReturnType<typeof listProposals>>, TError = ErrorEnvelope>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProposals>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listProposals>>,
+          TError,
+          Awaited<ReturnType<typeof listProposals>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListProposals<TData = Awaited<ReturnType<typeof listProposals>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProposals>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listProposals>>,
+          TError,
+          Awaited<ReturnType<typeof listProposals>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListProposals<TData = Awaited<ReturnType<typeof listProposals>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProposals>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List proposals
+ */
+
+export function useListProposals<TData = Awaited<ReturnType<typeof listProposals>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listProposals>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListProposalsQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetProposalUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/proposals/${id}`
+}
+
+/**
+ * One proposal: what it would do (`operation`, `target`, and `summary`, the server’s own sentence for it), who asked, until when it can be approved and what became of it.
+ * @summary Read a proposal
+ */
+export const getProposal = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<Proposal> => {
+
+  return dashboardFetch<Proposal>(getGetProposalUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetProposalQueryKey = (id: string,) => {
+    return [
+    `/v1/admin/proposals/${id}`
+    ] as const;
+    }
+
+
+export const getGetProposalQueryOptions = <TData = Awaited<ReturnType<typeof getProposal>>, TError = ErrorEnvelope>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProposal>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetProposalQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getProposal>>> = ({ signal }) => getProposal(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getProposal>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetProposalQueryResult = NonNullable<Awaited<ReturnType<typeof getProposal>>>
+export type GetProposalQueryError = ErrorEnvelope
+
+
+export function useGetProposal<TData = Awaited<ReturnType<typeof getProposal>>, TError = ErrorEnvelope>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProposal>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getProposal>>,
+          TError,
+          Awaited<ReturnType<typeof getProposal>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProposal<TData = Awaited<ReturnType<typeof getProposal>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProposal>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getProposal>>,
+          TError,
+          Awaited<ReturnType<typeof getProposal>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetProposal<TData = Awaited<ReturnType<typeof getProposal>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProposal>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read a proposal
+ */
+
+export function useGetProposal<TData = Awaited<ReturnType<typeof getProposal>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getProposal>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetProposalQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getApproveProposalUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/proposals/${id}/approve`
+}
+
+/**
+ * Approve a proposal and carry out its operation, now. It takes a secret key or a dashboard session, **never an agent key** (`auth.invalid_key`): the approval is a human’s. The body names the operation and the target the human was shown; what is carried out is what the proposal holds, and only when the two are the same. Refused with `resource.conflict` and a fixed `params.reason`: `mismatch` (the body names something else), `already_decided` (a proposal is approved at most once), `expired`, `agent_key_revoked` or `production_environment` (a production environment whose settings do not, or no longer, accept proposals). Nothing is changed by a refused approval. The answer is the proposal afterwards: `executed`, or `failed` with `failureReason` when the operation could not be carried out (the proposal is spent either way; `last_sign_in_method` when switching a provider off would have left no way to sign in). The operation is recorded with the agent as its actor and the approver beside it; the approval itself with the approver as its actor.
+ * @summary Approve a proposal
+ */
+export const approveProposal = async (id: string,
+    approveProposalRequest: ApproveProposalRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<Proposal> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<Proposal>(getApproveProposalUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(approveProposalRequest)
+  }
+);}
+
+
+
+
+
+export const getApproveProposalMutationKey = () => ['approveProposal'] as const;
+
+export const getApproveProposalMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof approveProposal>>, TError,ApproveProposalMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof approveProposal>>, TError,ApproveProposalMutationVariables, TContext> => {
+
+const mutationKey = getApproveProposalMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof approveProposal>>, ApproveProposalMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  approveProposal(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ApproveProposalMutationResult = NonNullable<Awaited<ReturnType<typeof approveProposal>>>
+    export type ApproveProposalMutationBody = ApproveProposalRequest
+    export type ApproveProposalMutationError = ErrorEnvelope
+    export type ApproveProposalMutationVariables = {id: string;data: ApproveProposalRequest}
+
+    /**
+ * @summary Approve a proposal
+ */
+export const useApproveProposal = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof approveProposal>>, TError,ApproveProposalMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof approveProposal>>,
+        TError,
+        ApproveProposalMutationVariables,
+        TContext
+      > => {
+      return useMutation(getApproveProposalMutationOptions(options), queryClient);
+    }
+
+export const getRunSignInTestAsAdminUrl = () => {
+
+
+
+
+  return `/v1/admin/sign-in-tests`
+}
+
+/**
+ * Sign a throwaway user up and in through the environment’s real flow, delete it, and answer a report of each step. There is no body. **It changes the environment while it runs**: a user exists for a few seconds, the environment’s hooks are asked and its events are recorded and delivered to its webhook endpoints (`user.created` carries `test: true`). The user’s address is in the reserved domain `test.tula.invalid`, which no account of a person can hold; the email with its code is read inside the server and never sent. The user is deleted whatever a step did; `cleanup` says `failed`, with `userId`, where that deletion did not go through (the server removes such a user later). The answer holds no token, code, secret or address: a step has an outcome (`passed`, `failed`, `not_run`), a duration and, where it did not pass, an error code of the API or a fixed reason. A step that could not be carried out is `not_run`, never `passed`. Allowed only where the environment’s `agents.testSignIn` says so: on by default in a development environment, off in a production one (`auth.forbidden`, `params.reason`: `test_sign_in_disabled`). Limited to 4 an hour per credential, 8 an hour per environment and one a minute per environment, so that two never run at once. With a secret key or a dashboard session; an agent key runs it on `POST /v1/agent/sign-in-tests`. The run, and the deletion of its user, are recorded with the caller as the actor.
+ * @summary Run a sign-in test
+ */
+export const runSignInTestAsAdmin = async ( options?: Parameters<typeof dashboardFetch>[1]): Promise<SignInTestReport> => {
+
+  return dashboardFetch<SignInTestReport>(getRunSignInTestAsAdminUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRunSignInTestAsAdminMutationKey = () => ['runSignInTestAsAdmin'] as const;
+
+export const getRunSignInTestAsAdminMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runSignInTestAsAdmin>>, TError,void, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof runSignInTestAsAdmin>>, TError,void, TContext> => {
+
+const mutationKey = getRunSignInTestAsAdminMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof runSignInTestAsAdmin>>, void> = () => {
+
+
+          return  runSignInTestAsAdmin(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RunSignInTestAsAdminMutationResult = NonNullable<Awaited<ReturnType<typeof runSignInTestAsAdmin>>>
+
+    export type RunSignInTestAsAdminMutationError = ErrorEnvelope
+
+
+    /**
+ * @summary Run a sign-in test
+ */
+export const useRunSignInTestAsAdmin = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runSignInTestAsAdmin>>, TError,void, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof runSignInTestAsAdmin>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getRunSignInTestAsAdminMutationOptions(options), queryClient);
+    }
+
 export const getGetInstanceDiagnosticsUrl = () => {
 
 
@@ -4073,7 +10319,7 @@ export const getGetInstanceDiagnosticsUrl = () => {
 }
 
 /**
- * Checks what actually goes wrong in a deployment, each with its fix: the database and its migrations, `TULA_MASTER_KEY` against the stored secrets, the mail relay, Redis, the clocks, `PUBLIC_URL`, and the redirect URI of each enabled OAuth provider. Nothing is changed and no email is sent. The text of a check is fixed: it never carries a connection string, a key or a driver’s message.
+ * Checks what actually goes wrong in a deployment, each with its fix: the database and its migrations, `TULA_MASTER_KEY` against the stored secrets, the mail relay, Redis, the clocks, `PUBLIC_URL`, the redirect URI of each enabled OAuth provider, whether webhook events wait with nothing delivering them, whether text messages can be sent, whether a session profile requires a device key where `PUBLIC_URL` is an address no device-binding proof can name (`device_binding`), and the native apps (`native_app_identities`, `native_app_files`, `native_app_passkeys`: each registered app is well formed, the association files name exactly the registered apps and are served at `PUBLIC_URL`, and the passkey relying party is a domain an app can be associated with; `skipped` when no app is registered). The server requests no address but its own `PUBLIC_URL`: whether a platform can reach the files at an operator’s own domain is not checked. Nothing is changed and no email is sent. The text of a check is fixed: it never carries a connection string, a key or a driver’s message.
  *
  * Takes the instance admin token (`TULA_ADMIN_TOKEN`). A deployment without one answers 404.
  * @summary Diagnose the deployment

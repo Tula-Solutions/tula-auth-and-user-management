@@ -8,6 +8,53 @@ Tula's config file: defineConfig() for tula.config.ts, validated with the contra
 
 Source: `packages/config/src/index.ts`
 
+### `AndroidAppConfig`
+
+_interface_, defined in `packages/config/src/config.ts`
+
+One Android app of an environment: its package name and the certificates it may be signed
+with.
+
+An app is named by its **platform and package name**, so changed fingerprints are the same
+app. Adding a fingerprint is a weakening (whoever holds that certificate's key can sign the
+app): `tula diff` flags it and `tula apply --yes` needs `--allow-weaker`.
+
+`appLinkPaths` are the paths the app is meant to open as App Links. **Android's file cannot
+name a path**: an app with at least one is served `handle_all_urls`, which lets it verify a
+claim on any link of the domain; which links it opens is the app's own manifest. A path
+more is a weakening.
+
+```ts
+export interface AndroidAppConfig {
+  /** The platform: what tells an Android entry from an iOS one. */
+  platform: 'android'
+  /** The app's package name, e.g. `app.northline.android`. Compared exactly. */
+  packageName: string
+  /**
+   * SHA-256 fingerprints of the app's signing certificates: a set, so order, case, colons and
+   * repeats mean nothing. One to ten.
+   */
+  sha256CertFingerprints: string[]
+  /**
+   * The exact paths of your domain the app opens as App Links: a set of at most ten. Left
+   * out, the paths are not managed: the server keeps what it has. Written, also as `[]`, the
+   * list is the whole set. With at least one the app is served the relation that covers
+   * every link of the domain.
+   */
+  appLinkPaths?: string[]
+}
+```
+
+**Example**
+
+```ts
+const app: AndroidAppConfig = {
+  platform: 'android',
+  packageName: 'app.northline.android',
+  sha256CertFingerprints: ['14:6D:E9:83:C5:73:06:50:D8:EE:B9:95:2F:34:FC:64:16:A0:83:42:E6:1D:BE:A8:8A:04:96:B2:3F:CF:44:E5'],
+}
+```
+
 ### `AppleProviderConfig`
 
 _interface_, defined in `packages/config/src/config.ts`
@@ -158,10 +205,32 @@ export interface EnvironmentConfig {
   settings: EnvironmentSettingsInput
   /** The providers the file manages. */
   providers: {
-    google?: Required<OAuthClientConfig>
+    /** Google; its `additionalClientIds` sorted, and absent when the file names none. */
+    google?: Required<OAuthClientConfig> & Pick<GoogleProviderConfig, 'additionalClientIds'>
     github?: Required<OAuthClientConfig>
     apple?: Required<AppleProviderConfig>
+    microsoft?: Required<MicrosoftProviderConfig>
+    discord?: Required<OAuthClientConfig>
+    linkedin?: Required<OAuthClientConfig>
+    x?: Required<OAuthClientConfig>
+    facebook?: Required<OAuthClientConfig>
   }
+  /**
+   * The webhook endpoints, when the file manages them: each address once, its event types
+   * sorted and without repeats. Absent when the file does not mention webhooks.
+   */
+  webhooks?: WebhookEndpointConfig[]
+  /**
+   * The hooks, by point, when the file manages them: every field of each filled in. Absent
+   * when the file does not mention hooks.
+   */
+  hooks?: Partial<Record<HookPoint, Required<HookConfig>>>
+  /**
+   * The native apps, when the file manages them: each app once, an Android app's fingerprints
+   * in the stored form (upper case, colons), sorted and without repeats. Absent when the file
+   * does not mention native apps.
+   */
+  nativeApps?: NativeAppConfig[]
 }
 ```
 
@@ -185,6 +254,27 @@ export interface EnvironmentConfigInput {
   settings?: EnvironmentSettingsConfig
   /** The OAuth providers the file manages. */
   providers?: ProvidersConfig
+  /**
+   * The webhook endpoints. Left out, webhooks are **not managed** by the file: `tula` neither
+   * reads nor changes them. Written (an empty list included), the list is what the
+   * environment should have; an endpoint the server has and the list does not is left alone
+   * and shown as unmanaged, and `tula apply --prune` removes it.
+   */
+  webhooks?: WebhookEndpointConfig[]
+  /**
+   * The hooks, by point. Left out, hooks are **not managed** by the file: `tula` neither reads
+   * nor changes them. Written (an empty object included), a point with an entry is made what
+   * the entry says; a hook the server has for a point without one is left alone and shown as
+   * unmanaged, and `tula apply --prune` removes it.
+   */
+  hooks?: HooksConfig
+  /**
+   * The native apps whose association files the server serves. Left out, native apps are
+   * **not managed** by the file: `tula` neither reads nor changes them. Written (an empty list
+   * included), the list is what the environment should have; an app the server has and the
+   * list does not is left alone and shown as unmanaged, and `tula apply --prune` removes it.
+   */
+  nativeApps?: NativeAppConfig[]
 }
 ```
 
@@ -228,6 +318,132 @@ export type EnvironmentSettingsConfig = z.input<typeof EnvironmentSettingsInputS
 const settings: EnvironmentSettingsConfig = { mfa: { policy: 'required' } }
 ```
 
+### `GoogleProviderConfig`
+
+_interface_, defined in `packages/config/src/config.ts`
+
+Google's credentials for one environment, and the client ids of the operator's native
+apps.
+
+```ts
+export interface GoogleProviderConfig extends OAuthClientConfig {
+  /**
+   * The OAuth client ids, beside `clientId`, whose ID tokens the server accepts in a native
+   * sign-in: the Android and iOS client ids of your apps. Not secrets. At most eight, each
+   * once, in any order. **Left out means none**: `tula apply` removes the ids the server has
+   * and the file does not name. Adding one widens who can sign in and is a weakening
+   * (`--allow-weaker` under `--yes`).
+   */
+  additionalClientIds?: string[]
+}
+```
+
+**Example**
+
+```ts
+const google: GoogleProviderConfig = {
+  clientId: '1234567890-web.apps.googleusercontent.com',
+  clientSecret: env('GOOGLE_CLIENT_SECRET'),
+  additionalClientIds: ['1234567890-android.apps.googleusercontent.com'],
+}
+```
+
+### `HookConfig`
+
+_interface_, defined in `packages/config/src/config.ts`
+
+One hook of an environment: the address the server asks at a point, and what a call that
+fails does.
+
+There is no field for the signing secret, on purpose: the server makes it and returns it
+once, when `tula apply` registers the hook (`--secrets-file`, `--show-secrets`). A `secret`
+key does not compile and is refused when the file is loaded.
+
+A hook is named by its **point** (the key it is written under), so a changed address is the
+same hook with the same secret.
+
+```ts
+export interface HookConfig {
+  /** Where the question is posted: `https`, no credentials, a host the server may call. */
+  url: string
+  /** Whether the hook is asked. Defaults to `true`. Switching one off is a weakening. */
+  enabled?: boolean
+  /** How long the server waits for the answer, in milliseconds: 100 to 5000. Defaults to 2000. */
+  deadlineMs?: number
+  /**
+   * What a call that fails does: `deny` (the default) refuses what was asked about, `allow`
+   * lets it happen as if there were no hook. `allow` is a weakening: `tula diff` flags it and
+   * `tula apply --yes` needs `--allow-weaker`.
+   */
+  failureMode?: HookFailureMode
+}
+```
+
+**Example**
+
+```ts
+const hook: HookConfig = { url: 'https://api.northline.app/hooks/sign-up', deadlineMs: 1500 }
+```
+
+### `HooksConfig`
+
+_type_, defined in `packages/config/src/config.ts`
+
+The hooks of one environment, by point. A point left out is not managed by the file:
+`tula apply` leaves the server's hook for it alone unless it is run with `--prune`.
+
+```ts
+export type HooksConfig = Partial<Record<HookPoint, HookConfig>>
+```
+
+**Example**
+
+```ts
+const hooks: HooksConfig = { before_sign_up: { url: 'https://api.northline.app/hooks/sign-up' } }
+```
+
+### `IosAppConfig`
+
+_interface_, defined in `packages/config/src/config.ts`
+
+One iOS app of an environment: its bundle id, under the Apple team that signs it.
+
+An app is named by its **platform and bundle id**, so a changed team is the same app.
+
+`appLinkPaths` hands the app links of your domain: the exact paths the association file
+names it for, so that iOS opens `https://<your domain><path>` in the app. Tula builds
+that file; it cannot check that your domain serves it, and none of it was tested on a
+device. A path more is a weakening.
+
+```ts
+export interface IosAppConfig {
+  /** The platform: what tells an iOS entry from an Android one. */
+  platform: 'ios'
+  /** The Apple team (the App ID prefix): ten upper-case letters and digits. */
+  teamId: string
+  /** The app's bundle id, e.g. `app.northline.ios`. Compared exactly. */
+  bundleId: string
+  /**
+   * The exact paths of your domain the app opens as universal links (`/oauth/callback`): a
+   * set of at most ten, with no wildcard, query or trailing slash. Left out, the paths are
+   * not managed: the server keeps what it has. Written, also as `[]`, the list is the whole
+   * set and what it leaves out is removed.
+   */
+  appLinkPaths?: string[]
+}
+```
+
+**Example**
+
+```ts
+const app: IosAppConfig = {
+  platform: 'ios',
+  teamId: 'A1B2C3D4E5',
+  bundleId: 'app.northline.ios',
+  appLinkPaths: ['/oauth/callback'],
+}
+```
+
 ### `LoadedConfig`
 
 _interface_, defined in `packages/config/src/load.ts`
@@ -249,11 +465,61 @@ export interface LoadedConfig {
 const loaded: LoadedConfig = await loadConfig('tula.config.ts')
 ```
 
+### `MicrosoftProviderConfig`
+
+_interface_, defined in `packages/config/src/config.ts`
+
+Microsoft's credentials for one environment.
+
+```ts
+export interface MicrosoftProviderConfig {
+  /** The application (client) id of the app registration. Not a secret. */
+  clientId: string
+  /** The client secret's value, by reference: `env('NAME')`. */
+  clientSecret: SecretRef
+  /**
+   * Which Microsoft accounts may sign in: `common` (any), `organizations` (work and school
+   * accounts), `consumers` (personal accounts) or one tenant's id. Not a secret. A domain
+   * name is refused: a token names its tenant by id.
+   */
+  tenant: MicrosoftTenant
+  /** Whether sign-in offers the provider. Defaults to `true`. */
+  enabled?: boolean
+}
+```
+
+**Example**
+
+```ts
+const microsoft: MicrosoftProviderConfig = {
+  clientId: '6731de76-14a6-49ae-97bc-6eba6914391e',
+  clientSecret: env('MICROSOFT_CLIENT_SECRET'),
+  tenant: 'organizations',
+}
+```
+
+### `NativeAppConfig`
+
+_type_, defined in `packages/config/src/config.ts`
+
+One native app of an environment, as a config file writes it.
+
+```ts
+export type NativeAppConfig = IosAppConfig | AndroidAppConfig
+```
+
+**Example**
+
+```ts
+const apps: NativeAppConfig[] = [{ platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'app.northline.ios' }]
+```
+
 ### `OAuthClientConfig`
 
 _interface_, defined in `packages/config/src/config.ts`
 
-Google's or GitHub's credentials for one environment.
+The credentials of a provider that takes a client id and a client secret and nothing else
+(Google, GitHub, Discord, LinkedIn, X, Facebook), for one environment.
 
 ```ts
 export interface OAuthClientConfig {
@@ -282,11 +548,27 @@ The OAuth providers of one environment. A provider left out is not managed by th
 ```ts
 export interface ProvidersConfig {
   /** Google. */
-  google?: OAuthClientConfig
+  google?: GoogleProviderConfig
   /** GitHub. */
   github?: OAuthClientConfig
   /** Sign in with Apple. */
   apple?: AppleProviderConfig
+  /** Microsoft (Entra ID and personal accounts). */
+  microsoft?: MicrosoftProviderConfig
+  /** Discord. */
+  discord?: OAuthClientConfig
+  /** LinkedIn (Sign In with LinkedIn using OpenID Connect). */
+  linkedin?: OAuthClientConfig
+  /**
+   * X. The client id and secret of an OAuth 2.0 app. An account made through X has no email
+   * address: none is asked of X.
+   */
+  x?: OAuthClientConfig
+  /**
+   * Facebook Login. The app id and the app secret. An account made through Facebook has no
+   * email address: none is asked of Facebook.
+   */
+  facebook?: OAuthClientConfig
 }
 ```
 
@@ -353,6 +635,44 @@ export interface TulaConfigInput {
 
 ```ts
 const config: TulaConfigInput = { environments: { dev: {}, prod: { kind: 'production' } } }
+```
+
+### `WebhookEndpointConfig`
+
+_interface_, defined in `packages/config/src/config.ts`
+
+One webhook endpoint of an environment: where its events are posted, and which.
+
+There is no field for the signing secret, on purpose: the server makes it and returns it
+once, when `tula apply` registers the endpoint (`--secrets-file`, `--show-secrets`). A
+`secret` key does not compile and is refused when the file is loaded.
+
+An endpoint has no name: it is **its address**. `tula` matches an entry to the server's
+endpoint with exactly the same `url`, so changing the address means a new endpoint (a new
+secret) and, with `--prune`, the removal of the old one.
+
+```ts
+export interface WebhookEndpointConfig {
+  /** Where events are posted: `https`, no credentials, a host the server may call. */
+  url: string
+  /** The event types delivered to it: a set, so order and repeats mean nothing. At least one. */
+  eventTypes: ActivityType[]
+  /**
+   * Whether events are delivered. Left out, the switch is **not managed**: a new endpoint
+   * starts switched on and an existing one is left as the server has it, including one the
+   * server switched off because it kept failing. Written, `tula apply` sets it.
+   */
+  enabled?: boolean
+}
+```
+
+**Example**
+
+```ts
+const endpoint: WebhookEndpointConfig = {
+  url: 'https://api.northline.app/webhooks/tula',
+  eventTypes: ['user.created', 'user.deleted'],
+}
 ```
 
 ### `defineConfig`
@@ -441,8 +761,19 @@ A fingerprint of one environment's config: what `tula apply` records with the se
 writes, so the dashboard and a later `tula diff` can say which version of the file is in
 force.
 
-It covers the settings and the providers as written, with each secret as the **name** of its
-variable: no secret value is hashed, so the fingerprint reveals nothing about one.
+It covers the settings, the providers, the webhook endpoints, the hooks and the native apps
+as written, with each secret as the **name** of its variable: no secret value is hashed, so
+the fingerprint reveals nothing about one. An endpoint's event types and an Android app's
+fingerprints count as sets, and an environment that does not mention webhooks, hooks or
+native apps hashes as it did before they could be written (a hook's defaults count as
+written). So does one
+that defines no JWT template and whose profiles name none, and one that leaves text messages
+(`sms`), their daily limit, the texted sign-in code (`signIn.methods.smsCode`) or a texted
+code as the second step (`mfa.smsCode`) at the default, one whose profiles leave
+`deviceBinding` at their default, and one that does not accept an agent's proposals in
+production (`agents.proposalsInProduction`) and does not say whether a sign-in test may
+run (`agents.testSignIn`); the order templates and their claims are written in
+never counts.
 
 ```ts
 export async function hashEnvironmentConfig(environment: EnvironmentConfig): Promise<string>
@@ -582,8 +913,8 @@ export function providerSecret(
 
 **Returns**
 
-Its `clientSecret` (Google, GitHub) or `privateKey` (Apple), or `undefined` when the
-file does not configure the provider.
+Its `privateKey` (Apple) or `clientSecret` (every other provider), or `undefined`
+when the file does not configure the provider.
 
 **Example**
 

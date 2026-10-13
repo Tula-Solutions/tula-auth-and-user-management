@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { render, screen, waitFor } from '@testing-library/react'
+import { PASSWORD_POLICY_PRESETS } from '@tula/contract'
 import { Activity } from 'react'
 import { TulaProvider } from '../context'
 import {
   attempt,
   CODE_STEP,
   completed,
+  EXPIRED_PASSWORD_STEP,
+  expectAbsent,
   expectFocus,
   failure,
   NEW_PASSWORD_STEP,
@@ -84,7 +87,7 @@ describe('<SignIn> draws the step the server answers with', () => {
     expect(w.api.calls(ROUTE.signIn)).toHaveLength(0)
     // Typing clears the message.
     await w.user.type(email, 'm')
-    expect(screen.queryByRole('alert')).toBeNull()
+    expectAbsent(screen.queryByRole('alert'))
   })
 
   test('a wrong password is shown on the password field, which is emptied and focused', async () => {
@@ -228,7 +231,18 @@ describe('<SignIn> first factors and steps it does not know', () => {
     ['a second-factor step with no options', { status: 'needs_second_factor' }],
     ['an enrolment of a method this version cannot enrol', { status: 'needs_factor_enrolment' }],
     ['a status from a newer server', { status: 'needs_retina_scan' }],
-    ['needs_new_password in a sign-in', NEW_PASSWORD_STEP],
+    // A sign-in draws a new-password screen for the one reason it knows (`expired`), never
+    // for the step as such: with no reason it is a reset's step, and a reason from a newer
+    // server is not this version's to guess at.
+    ['needs_new_password in a sign-in, with no reason', NEW_PASSWORD_STEP],
+    [
+      'needs_new_password in a sign-in, with no reason and nothing to send with it',
+      { status: 'needs_new_password', destination: 'm***@example.com', strategies: [] },
+    ],
+    [
+      'needs_new_password in a sign-in, for a reason from a newer server',
+      { ...EXPIRED_PASSWORD_STEP, reason: 'future' },
+    ],
   ] as [string, { status: string }][])(
     '%s renders the unsupported state, never a blank card',
     async (_name, step) => {
@@ -241,9 +255,169 @@ describe('<SignIn> first factors and steps it does not know', () => {
       expect(
         await screen.findByRole('heading', { name: 'This step is not supported' })
       ).toBeTruthy()
+      expectAbsent(screen.queryByRole('heading', { name: 'Your password has expired' }))
+      expectAbsent(screen.queryByLabelText('New password'))
       expect(w.client.state.status).toBe('signed-out')
     }
   )
+})
+
+describe('<SignIn> an expired password', () => {
+  const NEW_PASSWORD = 'quiet-Heron-reads-77-maps'
+  const reused = 'You have used this password recently. Choose a different one.'
+
+  /** Sign in with a right password that has expired, as far as the new-password screen. */
+  async function toExpired(w: World) {
+    w.mount(<SignIn />)
+    await toPassword(w)
+    w.api.on(ROUTE.signInPassword, () => attempt('sign_in', EXPIRED_PASSWORD_STEP))
+    await w.user.type(await screen.findByLabelText('Password'), PASSWORD)
+    await w.user.click(screen.getByRole('button', { name: 'Sign in' }))
+    return (await screen.findByLabelText('New password')) as HTMLInputElement
+  }
+  const line = (text: string) =>
+    screen.getByText(text, { exact: false }).closest('li') as HTMLElement
+
+  test('says the password has expired, asks for a new one and nothing else, and signs in', async () => {
+    const w = world()
+    const field = await toExpired(w)
+    const title = screen.getByRole('heading', { name: 'Your password has expired' })
+    // The title takes the focus, so the reason is what a screen reader says first.
+    await expectFocus(title)
+    expect(screen.getByText('Choose a new password to finish signing in.')).toBeTruthy()
+    expect(screen.getByText(EMAIL)).toBeTruthy()
+    expect(field.autocomplete).toBe('new-password')
+    expect(field.type).toBe('password')
+    // No emailed code belongs to this step, and nobody is signed in yet.
+    expectAbsent(screen.queryByLabelText('Verification code'))
+    expectAbsent(screen.queryByRole('button', { name: 'Send a new code' }))
+    expect(w.client.state.status).toBe('signed-out')
+    // The policy's checklist is drawn for the new password.
+    await waitFor(() =>
+      expect(line('Not your current password').getAttribute('data-state')).toBe('pending')
+    )
+
+    w.api.on(ROUTE.signInNewPassword, () => completed('sign_in'))
+    await w.user.type(field, NEW_PASSWORD)
+    await w.user.click(screen.getByRole('button', { name: 'Save password and sign in' }))
+    expect(await screen.findByRole('heading', { name: 'You are signed in.' })).toBeTruthy()
+    expect(w.client.state.status).toBe('signed-in')
+    const sent = w.api.calls(ROUTE.signInNewPassword)[0]
+    expect(sent?.body).toEqual({ password: NEW_PASSWORD })
+    expect(sent?.headers.get('x-tula-attempt')).toBe('tula_at_test_secret')
+    expect(document.body.innerHTML).not.toContain(NEW_PASSWORD)
+  })
+
+  test('with no history in the policy the line still says "not your current password"', async () => {
+    const w = world()
+    const field = await toExpired(w)
+    await waitFor(() =>
+      expect(line('Not your current password').getAttribute('data-state')).toBe('pending')
+    )
+    expect(line('Not your current password').textContent).toBe(
+      'Checked when you save: Not your current password (Checked when you save)'
+    )
+
+    w.api.on(ROUTE.signInNewPassword, () =>
+      failure(422, 'password.reused', {
+        params: { history: 1 },
+        errors: [
+          { field: 'password', code: 'password.reused', message: reused, params: { history: 1 } },
+        ],
+      })
+    )
+    await w.user.type(field, PASSWORD)
+    await w.user.click(screen.getByRole('button', { name: 'Save password and sign in' }))
+    expect((await screen.findByRole('alert')).textContent).toContain(reused)
+    expect(line('Not your current password').getAttribute('data-state')).toBe('failed')
+    expect(line('Not your current password').textContent).toBe('Not met: Not your current password')
+    // Still on the step, the field focused, nobody signed in.
+    await expectFocus(field)
+    expect(screen.getByRole('heading', { name: 'Your password has expired' })).toBeTruthy()
+    expect(w.client.state.status).toBe('signed-out')
+    // The refusal was about what was sent: the line waits again once the field is edited.
+    await w.user.type(field, '-again')
+    expect(line('Not your current password').getAttribute('data-state')).toBe('pending')
+  })
+
+  test('with a history in the policy the line names its number', async () => {
+    const w = world({
+      policy: { ...PASSWORD_POLICY_PRESETS.recommended, preset: 'custom', history: 3 },
+    })
+    await toExpired(w)
+    await waitFor(() =>
+      expect(line('Not one of your last 3 passwords').getAttribute('data-state')).toBe('pending')
+    )
+  })
+
+  test('an empty password is refused locally; the server’s rules land on the field', async () => {
+    const w = world()
+    const field = await toExpired(w)
+    await w.user.click(screen.getByRole('button', { name: 'Save password and sign in' }))
+    expect((await screen.findByRole('alert')).textContent).toContain('This field is required')
+    expect(w.api.calls(ROUTE.signInNewPassword)).toHaveLength(0)
+
+    const tooShort = 'Use at least 12 characters.'
+    w.api.on(ROUTE.signInNewPassword, () =>
+      failure(422, 'password.too_short', {
+        errors: [{ field: 'password', code: 'password.too_short', message: tooShort }],
+      })
+    )
+    await w.user.type(field, 'short')
+    await w.user.click(screen.getByRole('button', { name: 'Save password and sign in' }))
+    await waitFor(() => expect(field.getAttribute('aria-invalid')).toBe('true'))
+    expect(screen.getByRole('alert').textContent).toContain(tooShort)
+    await expectFocus(field)
+  })
+
+  test('a password replaced elsewhere meanwhile: the message, and "Change" starts again', async () => {
+    const w = world()
+    const field = await toExpired(w)
+    w.api.on(ROUTE.signInNewPassword, () => failure(409, 'flow.invalid_step'))
+    await w.user.type(field, NEW_PASSWORD)
+    await w.user.click(screen.getByRole('button', { name: 'Save password and sign in' }))
+    expect(await screen.findByRole('alert')).toBeTruthy()
+    expect(w.client.state.status).toBe('signed-out')
+    await w.user.click(screen.getByRole('button', { name: 'Change' }))
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeTruthy()
+    expect((screen.getByLabelText('Email address') as HTMLInputElement).value).toBe(EMAIL)
+  })
+
+  test('too many tries shows the server’s countdown and refuses to submit until it ends', async () => {
+    const w = world()
+    const field = await toExpired(w)
+    w.api.on(ROUTE.signInNewPassword, () =>
+      failure(429, 'rate_limited', { params: { retryAfter: 30 } }, { 'retry-after': '30' })
+    )
+    await w.user.type(field, NEW_PASSWORD)
+    const submit = screen.getByRole('button', { name: 'Save password and sign in' })
+    await w.user.click(submit)
+    const alert = await screen.findByRole('alert')
+    // The countdown is drawn one render after the alert (`useCountdown` starts in an effect).
+    await waitFor(() => expect(alert.textContent).toMatch(/Try again in (30|29)s\./))
+    expect(submit.getAttribute('aria-disabled')).toBe('true')
+    await w.user.click(submit)
+    expect(w.api.calls(ROUTE.signInNewPassword)).toHaveLength(1)
+  })
+
+  test('after a second factor the same screen is drawn', async () => {
+    const w = world()
+    w.mount(<SignIn />)
+    await toPassword(w)
+    w.api.on(ROUTE.signInPassword, () =>
+      attempt('sign_in', { status: 'needs_second_factor', options: ['totp'] })
+    )
+    await w.user.type(await screen.findByLabelText('Password'), PASSWORD)
+    await w.user.click(screen.getByRole('button', { name: 'Sign in' }))
+    w.api.on('POST /v1/client/sign-ins/attempt_1/second-factor', () =>
+      attempt('sign_in', EXPIRED_PASSWORD_STEP)
+    )
+    await w.user.type(await screen.findByLabelText('Authentication code'), '123456')
+    await w.user.click(screen.getByRole('button', { name: 'Verify' }))
+    const title = await screen.findByRole('heading', { name: 'Your password has expired' })
+    await expectFocus(title)
+    expect(w.client.state.status).toBe('signed-out')
+  })
 })
 
 describe('<SignIn> email verification', () => {
@@ -444,7 +618,10 @@ describe('<SignIn> forgotten password', () => {
     expect(await screen.findByText('A new code is on its way.')).toBeTruthy()
 
     w.api.on(ROUTE.resetSubmit, () =>
-      attempt('password_reset', { status: 'needs_second_factor', options: ['sms_code'] })
+      attempt('password_reset', {
+        status: 'needs_second_factor',
+        options: ['carrier_pigeon' as never],
+      })
     )
     await w.user.type(screen.getByLabelText('Verification code'), '123456')
     await w.user.type(screen.getByLabelText('New password'), PASSWORD)
@@ -452,6 +629,46 @@ describe('<SignIn> forgotten password', () => {
     expect(await screen.findByRole('heading', { name: 'This step is not supported' })).toBeTruthy()
     await w.user.click(screen.getByRole('button', { name: 'Start again' }))
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeTruthy()
+  })
+
+  test('reset: the history rule waits for the server, fails on `password.reused`, and waits again', async () => {
+    const reused = 'You have used this password recently. Choose a different one.'
+    const w = world({
+      policy: { ...PASSWORD_POLICY_PRESETS.recommended, preset: 'custom', history: 3 },
+    })
+    w.mount(<SignIn />)
+    await toReset(w)
+    w.api.on(ROUTE.reset, () => started('password_reset', NEW_PASSWORD_STEP))
+    await w.user.click(screen.getByRole('button', { name: 'Send code' }))
+    const password = (await screen.findByLabelText('New password')) as HTMLInputElement
+    const line = () => {
+      const item = screen.getByText('Not one of your last 3 passwords', { exact: false })
+      return item.closest('li') as HTMLElement
+    }
+    await waitFor(() => expect(line().getAttribute('data-state')).toBe('pending'))
+    expect(line().textContent).toBe(
+      'Checked when you save: Not one of your last 3 passwords (Checked when you save)'
+    )
+
+    w.api.on(ROUTE.resetSubmit, () =>
+      failure(422, 'password.reused', {
+        params: { history: 3 },
+        errors: [
+          { field: 'password', code: 'password.reused', message: reused, params: { history: 3 } },
+        ],
+      })
+    )
+    await w.user.type(screen.getByLabelText('Verification code'), '123456')
+    await w.user.type(password, PASSWORD)
+    expect(line().className).not.toContain('tula-is-met')
+    await w.user.click(screen.getByRole('button', { name: 'Reset password' }))
+    expect((await screen.findByRole('alert')).textContent).toContain(reused)
+    expect(line().getAttribute('data-state')).toBe('failed')
+    expect(line().textContent).toBe('Not met: Not one of your last 3 passwords')
+    await expectFocus(password)
+    // The code is still good: another password can be tried with it.
+    await w.user.type(password, '-again')
+    expect(line().getAttribute('data-state')).toBe('pending')
   })
 
   test('"Back to sign in" leaves the reset; an empty email is refused locally', async () => {
@@ -463,7 +680,7 @@ describe('<SignIn> forgotten password', () => {
     expect(screen.getByRole('alert').textContent).toBe('This field is required.')
     expect(w.api.calls(ROUTE.reset)).toHaveLength(0)
     await w.user.type(email, 'x')
-    expect(screen.queryByRole('alert')).toBeNull()
+    expectAbsent(screen.queryByRole('alert'))
     await w.user.click(screen.getByRole('button', { name: 'Back to sign in' }))
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeTruthy()
   })
@@ -504,7 +721,7 @@ describe('<SignIn> navigation', () => {
       { navigate }
     )
     await screen.findByRole('heading', { name: 'Sign in' })
-    expect(screen.queryByRole('link')).toBeNull()
+    expectAbsent(screen.queryByRole('link'))
     await toPassword(w)
     w.api.on(ROUTE.signInPassword, () => completed('sign_in'))
     await w.user.type(await screen.findByLabelText('Password'), PASSWORD)
@@ -520,7 +737,7 @@ describe('<SignIn> navigation', () => {
     w.mount(<SignIn />, { afterSignInUrl: '/app', navigate })
     expect(await screen.findByRole('heading', { name: 'You are signed in.' })).toBeTruthy()
     expect(navigate).toHaveBeenCalledWith('/app')
-    expect(screen.queryByLabelText('Email address')).toBeNull()
+    expectAbsent(screen.queryByLabelText('Email address'))
   })
 
   test('inside <SignedOut>, which unmounts it on sign-in, completion is still reported', async () => {
@@ -536,7 +753,7 @@ describe('<SignIn> navigation', () => {
     await w.user.type(await screen.findByLabelText('Password'), PASSWORD)
     await w.user.click(screen.getByRole('button', { name: 'Sign in' }))
     await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1))
-    expect(screen.queryByRole('heading')).toBeNull()
+    expectAbsent(screen.queryByRole('heading'))
   })
 
   test('the sign-up link: a real link with a URL, a button with a callback, nothing with neither', async () => {
@@ -564,7 +781,7 @@ describe('<SignIn> navigation', () => {
 
     w.mount(<SignIn />)
     await screen.findByRole('heading', { name: 'Sign in' })
-    expect(screen.queryByText('New here?')).toBeNull()
+    expectAbsent(screen.queryByText('New here?'))
   })
 
   test('initialEmail fills the field; headingLevel sets the title’s level', async () => {
@@ -600,7 +817,7 @@ describe('<SignIn> inside <Activity> (F3)', () => {
     await w.user.click(screen.getByRole('button', { name: 'Sign in' }))
     await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1))
     // The step on screen was acted on with the attempt it belongs to: no local refusal.
-    expect(screen.queryByText(/not valid at this step/)).toBeNull()
+    expectAbsent(screen.queryByText(/not valid at this step/))
     expect(w.api.calls(ROUTE.signInPassword)[0]?.headers.get('x-tula-attempt')).toBe(
       'tula_at_test_secret'
     )

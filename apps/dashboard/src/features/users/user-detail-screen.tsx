@@ -27,7 +27,7 @@ import { PageHeader, Section } from '~/components/page'
 import { EmptyState, QueryState } from '~/components/states'
 import { notify } from '~/components/toaster'
 import { useEnvironment, useEnvironmentRequest } from '~/features/shell/environment-context'
-import { formatDateTime, fullName } from '~/lib/format'
+import { formatDateTime, fullName, userLabel } from '~/lib/format'
 import { SignInMethods } from './sign-in-methods'
 import { type EnvironmentScope, UserStatus } from './users-screen'
 
@@ -49,10 +49,13 @@ function Detail({ label, children }: { label: string; children: ReactNode }) {
 
 function SetPasswordDialog({
   user,
+  email,
   open,
   onClose,
 }: {
   user: User
+  /** The user's address: a password signs in beside one, so there is no dialog without it. */
+  email: string
   open: boolean
   onClose: () => void
 }) {
@@ -67,6 +70,9 @@ function SetPasswordDialog({
   const [password, setPasswordValue] = useState('')
   const [typed, setTyped] = useState('')
   const [problem, setProblem] = useState<string>()
+  // From the click until the dialog closes, which is after the lists were read again: the
+  // request has succeeded before that, and a live button would send it a second time.
+  const [saving, setSaving] = useState(false)
   const production = environment.kind === 'production'
 
   useEffect(() => {
@@ -75,6 +81,7 @@ function SetPasswordDialog({
       setPasswordValue('')
       setTyped('')
       setProblem(undefined)
+      setSaving(false)
     }
   }, [open])
 
@@ -85,17 +92,22 @@ function SetPasswordDialog({
 
   function submit(event: FormEvent) {
     event.preventDefault()
+    if (saving) {
+      return
+    }
     if (password === '') {
       setProblem('Enter the new password.')
       return
     }
-    if (production && typed !== user.email) {
+    if (production && typed !== email) {
       return
     }
     setProblem(undefined)
+    setSaving(true)
     setPassword.mutate(
       { userId: user.id, data: { password } },
       {
+        onError: () => setSaving(false),
         onSuccess: async () => {
           await Promise.all([
             queryClient.invalidateQueries({ queryKey: [`/v1/admin/users/${user.id}/sessions`] }),
@@ -117,7 +129,7 @@ function SetPasswordDialog({
     <Modal
       open={open}
       onClose={close}
-      title={`Set a new password for ${user.email}?`}
+      title={`Set a new password for ${email}?`}
       description='The current password stops working and every session of this user is ended. The user is told by email. Their existing password is never shown.'
     >
       <form onSubmit={submit} className='flex flex-col gap-4' noValidate>
@@ -140,7 +152,7 @@ function SetPasswordDialog({
           <TextField
             label={
               <>
-                Type <span className='font-mono font-semibold'>{user.email}</span> to confirm
+                Type <span className='font-mono font-semibold'>{email}</span> to confirm
               </>
             }
             autoComplete='off'
@@ -161,10 +173,8 @@ function SetPasswordDialog({
           <ActionButton
             type='submit'
             variant='destructive'
-            pending={setPassword.isPending}
-            aria-disabled={
-              (production && typed !== user.email) || setPassword.isPending || undefined
-            }
+            pending={saving}
+            aria-disabled={(production && typed !== email) || saving || undefined}
           >
             Set password
           </ActionButton>
@@ -221,7 +231,8 @@ export interface UserDetailScreenProps {
  * One user: profile, state, sessions, and the actions an operator can take.
  *
  * Every action that cannot be taken back sits behind a confirmation that names the user, and
- * in a production environment asks for the email to be typed.
+ * in a production environment asks for the email to be typed (the user's id, for an account
+ * that has no email address).
  *
  * @param props - See {@link UserDetailScreenProps}.
  * @returns The screen.
@@ -250,7 +261,8 @@ export function UserDetailScreen({ scope, userId, onGone }: UserDetailScreenProp
   })
   const revokeAll = useRevokeUserSessions({ request })
   const revokeOne = useRevokeUserSession({ request })
-  const requireText = environment.kind === 'production' ? user.data?.email : undefined
+  const requireText =
+    environment.kind === 'production' ? (user.data?.email ?? user.data?.id) : undefined
 
   async function refresh() {
     await Promise.all([
@@ -325,6 +337,7 @@ export function UserDetailScreen({ scope, userId, onGone }: UserDetailScreenProp
       {backLink}
       <QueryState query={user} label='Loading the user'>
         {(account) => {
+          const label = userLabel(account)
           const dialogs: Record<
             Confirmation['kind'],
             {
@@ -337,14 +350,14 @@ export function UserDetailScreen({ scope, userId, onGone }: UserDetailScreenProp
             }
           > = {
             ban: {
-              title: `Ban ${account.email}?`,
+              title: `Ban ${label}?`,
               body: 'They are signed out everywhere and cannot sign in until unbanned. Their data is kept.',
               label: 'Ban user',
               pending: ban.isPending,
               error: ban.error,
             },
             unban: {
-              title: `Unban ${account.email}?`,
+              title: `Unban ${label}?`,
               body: 'They can sign in again.',
               label: 'Unban user',
               pending: unban.isPending,
@@ -352,11 +365,14 @@ export function UserDetailScreen({ scope, userId, onGone }: UserDetailScreenProp
               plain: true,
             },
             'reset-factors': {
-              title: `Reset two-step verification for ${account.email}?`,
+              title: `Reset two-step verification for ${label}?`,
               body: (
                 <>
-                  Their authenticator app, backup codes and passkeys are all taken off the account,
-                  and they are told by email. Use this when someone has lost their second factor.
+                  Their authenticator app, backup codes and passkeys are all taken off the account
+                  {account.email === null
+                    ? '. They are not told: this account has no email address.'
+                    : ', and they are told by email.'}{' '}
+                  Use this when someone has lost their second factor.
                   {/* Said before the reset, from what the account has now; the answer's header
                       is still what the screen reports afterwards. Unknown (loading, failed) is
                       not a warning: the header covers it. */}
@@ -374,21 +390,21 @@ export function UserDetailScreen({ scope, userId, onGone }: UserDetailScreenProp
               error: resetFactors.error,
             },
             'revoke-all': {
-              title: `Revoke every session of ${account.email}?`,
+              title: `Revoke every session of ${label}?`,
               body: 'They are signed out on every device and must sign in again.',
               label: 'Revoke all sessions',
               pending: revokeAll.isPending,
               error: revokeAll.error,
             },
             revoke: {
-              title: `Revoke this session of ${account.email}?`,
+              title: `Revoke this session of ${label}?`,
               body: 'That device is signed out within a minute; the others stay signed in.',
               label: 'Revoke session',
               pending: revokeOne.isPending,
               error: revokeOne.error,
             },
             delete: {
-              title: `Delete ${account.email}?`,
+              title: `Delete ${label}?`,
               body: 'The account, its sessions and its sign-in methods are deleted for good. This cannot be undone.',
               label: 'Delete user',
               pending: remove.isPending,
@@ -398,7 +414,10 @@ export function UserDetailScreen({ scope, userId, onGone }: UserDetailScreenProp
           const active = confirmation ? dialogs[confirmation.kind] : null
           return (
             <>
-              <PageHeader title={account.email} description={fullName(account) || undefined} />
+              <PageHeader
+                title={label}
+                description={account.email === null ? undefined : fullName(account) || undefined}
+              />
               {resetOutcome !== null ? (
                 <p
                   role='alert'
@@ -415,13 +434,25 @@ export function UserDetailScreen({ scope, userId, onGone }: UserDetailScreenProp
               ) : null}
               <Section title='Profile'>
                 <dl className='grid gap-4 sm:grid-cols-2 lg:grid-cols-3'>
-                  <Detail label='Email'>{account.email}</Detail>
+                  <Detail label='Email'>{account.email ?? 'None'}</Detail>
                   <Detail label='Name'>{fullName(account) || '—'}</Detail>
                   <Detail label='Status'>
                     <UserStatus user={account} />
                   </Detail>
                   <Detail label='Email verified'>
-                    {formatDateTime(account.emailVerifiedAt, 'Not verified')}
+                    {account.email === null
+                      ? 'No address to verify'
+                      : formatDateTime(account.emailVerifiedAt, 'Not verified')}
+                  </Detail>
+                  <Detail label='Phone number'>
+                    {account.phoneNumber ? (
+                      <>
+                        <span dir='ltr'>{account.phoneNumber}</span>
+                        {`, verified ${formatDateTime(account.phoneNumberVerifiedAt, 'at an unknown time')}`}
+                      </>
+                    ) : (
+                      'None'
+                    )}
                   </Detail>
                   <Detail label='Banned'>{formatDateTime(account.bannedAt, 'No')}</Detail>
                   <Detail label='Last sign-in'>{formatDateTime(account.lastSignInAt)}</Detail>
@@ -464,6 +495,12 @@ export function UserDetailScreen({ scope, userId, onGone }: UserDetailScreenProp
                           { header: 'Client', cell: (session) => session.client },
                           { header: 'Device', cell: (session) => session.userAgent ?? 'Unknown' },
                           {
+                            // Said in words, and only as a yes or no: the API returns
+                            // nothing of the key itself (ADR 0043).
+                            header: 'Device key',
+                            cell: (session) => (session.deviceBound ? 'Bound' : 'Not bound'),
+                          },
+                          {
                             header: 'IP address',
                             cell: (session) => session.ipAddress ?? 'Unknown',
                           },
@@ -499,9 +536,13 @@ export function UserDetailScreen({ scope, userId, onGone }: UserDetailScreenProp
 
               <Section title='Account actions' description='Each asks for confirmation first.'>
                 <div className='flex flex-wrap gap-2'>
-                  <ActionButton variant='outline' onClick={() => setSettingPassword(true)}>
-                    Set password
-                  </ActionButton>
+                  {/* A password signs in beside an address: the API refuses one for an account
+                      with none, so the action is not offered. */}
+                  {account.email === null ? null : (
+                    <ActionButton variant='outline' onClick={() => setSettingPassword(true)}>
+                      Set password
+                    </ActionButton>
+                  )}
                   <ActionButton
                     variant='outline'
                     onClick={() => setConfirmation({ kind: 'reset-factors' })}
@@ -545,11 +586,19 @@ export function UserDetailScreen({ scope, userId, onGone }: UserDetailScreenProp
               >
                 {active?.body}
               </ConfirmDialog>
-              <SetPasswordDialog
-                user={account}
-                open={settingPassword}
-                onClose={() => setSettingPassword(false)}
-              />
+              {account.email === null ? (
+                <p className='text-sm text-muted-foreground'>
+                  This account has no email address (it was made by signing in with X or Facebook,
+                  which are asked for none), so it has no password and none can be set.
+                </p>
+              ) : (
+                <SetPasswordDialog
+                  user={account}
+                  email={account.email}
+                  open={settingPassword}
+                  onClose={() => setSettingPassword(false)}
+                />
+              )}
             </>
           )
         }}

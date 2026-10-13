@@ -1,0 +1,3 @@
+ALTER TABLE "tula"."users" ALTER COLUMN "email" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "tula"."users" ALTER COLUMN "email_normalized" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "tula"."users" ADD CONSTRAINT "users_email_whole" CHECK (("tula"."users"."email" IS NULL) = ("tula"."users"."email_normalized" IS NULL) AND ("tula"."users"."email" IS NOT NULL OR "tula"."users"."email_verified_at" IS NULL));

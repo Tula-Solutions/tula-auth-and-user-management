@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { CUSTOM_CLAIMS_CLAIM } from './custom-claims'
 
 /** Version of the access-token claim layout. Bump only with a migration plan for SDKs. */
 export const ACCESS_TOKEN_VERSION = 1
@@ -13,11 +14,23 @@ export const PUBLISHABLE_KEY_PREFIX = 'tula_pk_'
 export const SECRET_KEY_PREFIX = 'tula_sk_'
 
 /**
+ * Prefix of agent keys, followed by `<env>_`: the key an operator gives an AI agent's MCP
+ * server (ADR 0053). It reads what a secret key reads and can ask for a change as a
+ * proposal; every route that changes anything refuses it.
+ */
+export const AGENT_KEY_PREFIX = 'tula_ak_'
+
+/**
  * What `amr` (RFC 8176, "authentication methods references") can hold in a Tula access token:
  *
  * - `pwd`: the password.
  * - `email`: an emailed code or link (a sign-in's email first factor, a verified sign-up, a
  *   password reset's code).
+ * - `sms`: a code texted to the account's phone number: as a sign-in's first factor
+ *   (ADR 0037), or as the second factor of a user who has nothing stronger (ADR 0025). It
+ *   **never brings `mfa`**: an application that wants an authenticator app or a passkey
+ *   tests for `mfa`, and one that accepts a texted second step tests for `sms` beside
+ *   another value. `sms` alone is never a recent authentication.
  * - `otp`: a code from an authenticator app (TOTP).
  * - `backup_code`: a single-use backup code.
  * - `hwk` / `swk`: a passkey, proven with user verification (ADR 0027). `hwk` for a credential
@@ -25,15 +38,17 @@ export const SECRET_KEY_PREFIX = 'tula_sk_'
  *   synced passkey). Always beside `user`.
  * - `user`: the authenticator tested that the user was present and verified them.
  * - `mfa`: more than one kind of factor was proven for this session: a password or email and
- *   then a second factor, or a passkey, which is possession and a verified user in one step.
+ *   then a second factor that is not a texted code (an authenticator app, a backup code, a
+ *   passkey), or a passkey, which is possession and a verified user in one step.
  *
- * `pwd`, `otp`, `hwk`, `swk`, `user` and `mfa` are RFC 8176 values; `email` and `backup_code`
+ * `pwd`, `sms`, `otp`, `hwk`, `swk`, `user` and `mfa` are RFC 8176 values; `email` and `backup_code`
  * are Tula's own. Later servers may add values (a social provider): treat unknown ones as
  * opaque.
  */
 export const AUTHENTICATION_METHODS = [
   'pwd',
   'email',
+  'sms',
   'otp',
   'backup_code',
   'mfa',
@@ -90,7 +105,8 @@ export const AccessTokenClaimsSchema = z
     /**
      * Every method proven for this session so far, at sign-in and in later step-ups
      * ({@link AUTHENTICATION_METHODS}), e.g. `["pwd"]`, `["pwd","otp","mfa"]`, `["email"]`.
-     * `mfa` is present exactly when a second factor was proven. Plain strings, so a later
+     * `mfa` is present exactly when a second factor other than a texted code was proven (a
+     * texted second factor is recorded as `sms`, never `mfa`). Plain strings, so a later
      * server's new method does not fail verification.
      *
      * **A set, not a sequence: the order means nothing.** Test membership
@@ -105,6 +121,29 @@ export const AccessTokenClaimsSchema = z
      * an ordinary one. Optional: tokens issued before profiles existed do not carry it.
      */
     sp: z.string().optional(),
+    /**
+     * The key a **device-bound** session is bound to (ADR 0043), in the shape of RFC 7800 and
+     * RFC 9449: `jkt` is the SHA-256 thumbprint (RFC 7638) of the public key the session's
+     * refreshes must be proven with. **Absent** for a session that is not bound.
+     *
+     * It says how the session is refreshed. It does not make this token a bound one: the API
+     * asks for no proof with an access token, and a resource server that wants one checks it
+     * itself.
+     */
+    cnf: z.object({ jkt: z.string() }).optional(),
+    /**
+     * The session's custom claims: what the JWT template of its profile defines (ADR 0036),
+     * each key holding one string, number or boolean. **Absent** when the profile uses no
+     * template or the template yields nothing for this user; never an empty object.
+     *
+     * Everything an operator adds lives under this one claim, so it can never be mistaken for
+     * one of Tula's. A constant in it is what the operator configured, not something the
+     * server checked. An application that authorizes on a custom claim must treat a missing
+     * claim as "no". Read it with `readCustomClaims`, which refuses any other shape.
+     */
+    [CUSTOM_CLAIMS_CLAIM]: z
+      .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
+      .optional(),
   })
   .meta({ ref: 'AccessTokenClaims' })
 

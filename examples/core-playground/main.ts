@@ -216,7 +216,8 @@ onClick('get-user', async () => {
   await attempt(
     'user.get()',
     () => client().user.get(),
-    (user) => user.email
+    // An account made through X or Facebook has no address: its id says who it is.
+    (user) => user.email ?? user.id
   )
 })
 onClick('sign-out', async () => {

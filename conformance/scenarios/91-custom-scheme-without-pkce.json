@@ -1,0 +1,377 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "custom scheme refused for a provider without PKCE",
+  "description": "Any app on a device can claim a custom scheme, so a provider’s code that is sent back through one must be useless to another app: that is what PKCE does. LinkedIn documents no PKCE and is sent none, so a provider sign-in with it is never returned to a custom scheme: with the scheme listed, the start answers request.redirect_not_allowed with the fixed reason provider_without_pkce, before an attempt is made, for a native client and a browser alike, and whoever would have signed in. The same provider returns to a listed app link as any sign-in does, and completes; and the same scheme is accepted for a provider that sends PKCE (Google). Which providers are which is a closed list in the contract, not a setting. Uses the server’s mock provider. Cleanup removes the user and the credentials and restores the settings.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "account": {
+      "generate": "uuid"
+    },
+    "appLink": "https://app.conformance.example/oauth/callback",
+    "custom": "com.tula.conformance.app:/oauth/callback"
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "revision": "$any",
+          "settings": "$any"
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "app": "settings.app",
+        "passwordPolicy": "settings.password",
+        "origins": "settings.urls.allowedOrigins",
+        "audit": "settings.audit",
+        "notifications": "settings.notifications"
+      }
+    },
+    {
+      "name": "one app link and one custom scheme are listed",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{app}}"
+          },
+          "password": {
+            "$json": "{{passwordPolicy}}"
+          },
+          "urls": {
+            "allowedOrigins": {
+              "$json": "{{origins}}"
+            },
+            "allowedRedirectUrls": ["{{appLink}}", "{{custom}}"]
+          },
+          "audit": {
+            "$json": "{{audit}}"
+          },
+          "notifications": {
+            "$json": "{{notifications}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "an administrator sets the environment’s own LinkedIn credentials",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/linkedin",
+        "auth": "secret",
+        "body": {
+          "clientId": "conformance-linkedin-client",
+          "clientSecret": "conformance-linkedin-secret"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "linkedin",
+          "configured": true,
+          "enabled": true
+        }
+      }
+    },
+    {
+      "name": "an administrator sets the environment’s own Google credentials",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/google",
+        "auth": "secret",
+        "body": {
+          "clientId": "conformance-google-client",
+          "clientSecret": "conformance-google-secret"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "google",
+          "configured": true,
+          "enabled": true
+        }
+      }
+    },
+    {
+      "name": "LinkedIn is refused the custom scheme, for a native client",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "linkedin",
+          "redirectUrl": "{{custom}}"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "status": 400,
+          "code": "request.redirect_not_allowed",
+          "detail": "$any",
+          "params": {
+            "reason": "provider_without_pkce"
+          }
+        },
+        "bodyExcludes": ["authorizationUrl", "binding", "attemptSecret"]
+      }
+    },
+    {
+      "name": "and for a browser, with the same reason: the provider’s rule is said first",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "web",
+        "body": {
+          "provider": "linkedin",
+          "redirectUrl": "{{custom}}"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "status": 400,
+          "code": "request.redirect_not_allowed",
+          "detail": "$any",
+          "params": {
+            "reason": "provider_without_pkce"
+          }
+        },
+        "bodyExcludes": ["authorizationUrl", "binding", "attemptSecret"]
+      }
+    },
+    {
+      "name": "the same scheme is accepted for a provider that sends PKCE",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "google",
+          "redirectUrl": "{{custom}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_google"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "gUrl": "authorizationUrl",
+        "gBinding": "binding"
+      }
+    },
+    {
+      "name": "LinkedIn starts a sign-in that returns to the app link",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "linkedin",
+          "redirectUrl": "{{appLink}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_linkedin"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "aUrl": "authorizationUrl",
+        "aBinding": "binding"
+      }
+    },
+    {
+      "name": "the provider vouches and the callback sends the ticket to exactly that URL, in the fragment",
+      "oauth": {
+        "authorizationUrl": "{{aUrl}}",
+        "email": "{{email}}",
+        "expectRedirectTo": "{{appLink}}",
+        "captureTicket": "aTicket",
+        "captureAttempt": "aId"
+      }
+    },
+    {
+      "name": "whoever received the redirect has the ticket and the attempt’s id, and completes nothing with them",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "client": "ios",
+        "body": {
+          "ticket": "{{aTicket}}",
+          "attemptId": "{{aId}}"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "status": 409,
+          "code": "oauth.different_browser",
+          "detail": "$any"
+        }
+      }
+    },
+    {
+      "name": "nor with a binding that is not the one the start returned",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "client": "ios",
+        "body": {
+          "ticket": "{{aTicket}}",
+          "attemptId": "{{aId}}",
+          "binding": "tula_ob_not-the-binding"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "status": 409,
+          "code": "oauth.different_browser",
+          "detail": "$any"
+        }
+      }
+    },
+    {
+      "name": "the app that started the sign-in holds the binding and is signed in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "client": "ios",
+        "body": {
+          "ticket": "{{aTicket}}",
+          "attemptId": "{{aId}}",
+          "binding": "{{aBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_in",
+          "step": {
+            "status": "complete",
+            "userId": "$any",
+            "sessionId": "$any"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "refreshToken": "$any"
+          }
+        }
+      },
+      "capture": {
+        "aUserId": "step.userId"
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "remove the user the sign-in created",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/users/{{aUserId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "remove the linkedin credentials",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/oauth-providers/linkedin",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "remove the google credentials",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/oauth-providers/google",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

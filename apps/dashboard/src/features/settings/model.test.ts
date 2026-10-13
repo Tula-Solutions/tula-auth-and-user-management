@@ -1,7 +1,14 @@
 import { describe, expect, test } from 'bun:test'
 import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula/contract'
 import { ApiError } from '~/api/errors'
-import { classifyFailure, describeWeakening, etag, planSave, type SettingsDocument } from './model'
+import {
+  classifyFailure,
+  confirmationTitle,
+  describeWeakening,
+  etag,
+  planSave,
+  type SettingsDocument,
+} from './model'
 
 const base = structuredClone(DEFAULT_ENVIRONMENT_SETTINGS) as SettingsDocument
 
@@ -88,12 +95,295 @@ describe('planSave', () => {
   })
 })
 
+describe('an audit retention period', () => {
+  const withPeriod = (retentionDays: number | null): SettingsDocument =>
+    ({ ...structuredClone(DEFAULT_ENVIRONMENT_SETTINGS), audit: { retentionDays } }) as never
+
+  test.each([
+    ['set where there was none', null, 30, true],
+    ['shortened', 365, 30, true],
+    ['lengthened', 30, 365, false],
+    ['removed', 30, null, false],
+  ] as [string, number | null, number | null, boolean][])(
+    '%s asks first: %p to %p is %p',
+    (_name, was, is, asks) => {
+      const plan = planSave(withPeriod(was), withPeriod(is), null)
+      expect(plan.weakenings).toEqual(asks ? ['audit.retentionDays'] : [])
+      expect(plan.needsConfirmation).toBe(asks)
+    }
+  )
+
+  test('is described as what it is: a deletion that cannot be undone', () => {
+    expect(describeWeakening('audit.retentionDays')).toBe(
+      'Audit entries older than the new period are deleted for good, starting with the next retention run'
+    )
+    expect(confirmationTitle(['audit.retentionDays'])).toBe(
+      'This deletes older audit entries for good. Save anyway?'
+    )
+    expect(confirmationTitle(['mfa.policy', 'audit.retentionDays'])).toBe(
+      'This weakens security and deletes older audit entries for good. Save anyway?'
+    )
+    expect(confirmationTitle(['mfa.policy'])).toBe('This weakens security. Save anyway?')
+    expect(confirmationTitle([])).toBe('Change settings managed by a config file?')
+  })
+})
+
+describe('the daily limit of text messages', () => {
+  const withLimit = (dailyMessageLimit: number): SettingsDocument =>
+    ({
+      ...structuredClone(DEFAULT_ENVIRONMENT_SETTINGS),
+      sms: { enabled: true, allowedCountries: ['US'], dailyMessageLimit },
+    }) as never
+
+  test.each([
+    ['raised', 500, 501, true],
+    ['lowered', 500, 100, false],
+  ] as [string, number, number, boolean][])(
+    '%s asks first: %p to %p is %p',
+    (_name, was, is, asks) => {
+      const plan = planSave(withLimit(was), withLimit(is), null)
+      expect(plan.weakenings).toEqual(asks ? ['sms.dailyMessageLimit'] : [])
+      expect(plan.needsConfirmation).toBe(asks)
+    }
+  )
+
+  test('left out of a draft is the default, and is judged as that', () => {
+    const lowered = withLimit(100)
+    const emptied = { ...lowered, sms: { enabled: true, allowedCountries: ['US'] } }
+    expect(planSave(lowered, emptied as SettingsDocument, null).weakenings).toEqual([
+      'sms.dailyMessageLimit',
+    ])
+  })
+
+  test('is described as what it costs', () => {
+    const words = describeWeakening('sms.dailyMessageLimit')
+    expect(words).toContain('More text messages may be sent in a day')
+    // Called a cost only with what it counts: messages, which a provider's prices price.
+    expect(words).toContain('what a day can cost at most (in messages')
+    expect(words).toContain('abuse of this environment’s SMS can cost more')
+    expect(words).toContain('a message that was sent cannot be un-sent')
+  })
+})
+
+describe('a texted code as the second step', () => {
+  const doc = (policy: 'off' | 'optional' | 'required', enabled: boolean): SettingsDocument => {
+    const settings = structuredClone(DEFAULT_ENVIRONMENT_SETTINGS)
+    settings.mfa = { policy, smsCode: { enabled } }
+    return settings as never
+  }
+
+  test.each([
+    [
+      'switched on where a second step is required',
+      doc('required', false),
+      doc('required', true),
+      ['mfa.smsCode'],
+    ],
+    ['switched on where it is optional', doc('optional', false), doc('optional', true), []],
+    ['switched off where it is required', doc('required', true), doc('required', false), []],
+  ] as [string, SettingsDocument, SettingsDocument, string[]][])(
+    '%s',
+    (_name, was, is, weakenings) => {
+      const plan = planSave(was, is, null)
+      expect(plan.weakenings).toEqual(weakenings)
+      expect(plan.needsConfirmation).toBe(weakenings.length > 0)
+    }
+  )
+
+  test('is described as what it lets through, in words and not as a path', () => {
+    const words = describeWeakening('mfa.smsCode')
+    expect(words).toContain('The second step this environment requires may be a texted code')
+    expect(words).toContain('whoever receives the messages of a user’s number passes it')
+    expect(words).not.toContain('mfa.smsCode')
+  })
+
+  // Where the switch is on and a second step is required, text messages and a country open
+  // what the switch opens: the contract's rule, read here as the editor reads it.
+  const reach = (
+    policy: 'optional' | 'required',
+    enabled: boolean,
+    allowedCountries: string[]
+  ): SettingsDocument => {
+    const settings = structuredClone(DEFAULT_ENVIRONMENT_SETTINGS)
+    settings.mfa = { policy, smsCode: { enabled: true } }
+    settings.sms = { ...settings.sms, enabled, allowedCountries }
+    return settings as never
+  }
+
+  test.each([
+    [
+      'text messages switched on where it is required',
+      reach('required', false, ['US']),
+      reach('required', true, ['US']),
+      ['mfa.smsCode'],
+    ],
+    [
+      'a country added where it is required',
+      reach('required', true, ['US']),
+      reach('required', true, ['US', 'DE']),
+      ['sms.allowedCountries'],
+    ],
+    [
+      'a country added where it is optional',
+      reach('optional', true, ['US']),
+      reach('optional', true, ['US', 'DE']),
+      [],
+    ],
+    [
+      'the countries in another order',
+      reach('required', true, ['US', 'DE']),
+      reach('required', true, ['DE', 'US']),
+      [],
+    ],
+    [
+      'a country taken out',
+      reach('required', true, ['US', 'DE']),
+      reach('required', true, ['US']),
+      [],
+    ],
+  ] as [string, SettingsDocument, SettingsDocument, string[]][])(
+    'where it may be sent: %s',
+    (_name, was, is, weakenings) => {
+      const plan = planSave(was, is, null)
+      expect(plan.weakenings).toEqual(weakenings)
+      expect(plan.needsConfirmation).toBe(weakenings.length > 0)
+    }
+  )
+})
+
+describe('signing in with a texted code', () => {
+  const doc = (
+    smsCode: boolean,
+    enabled: boolean,
+    allowedCountries: string[]
+  ): SettingsDocument => {
+    const settings = structuredClone(DEFAULT_ENVIRONMENT_SETTINGS)
+    settings.signIn.methods.smsCode.enabled = smsCode
+    settings.sms = { enabled, allowedCountries, dailyMessageLimit: 500 } as never
+    return settings as never
+  }
+
+  test.each([
+    [
+      'the method switched on where text messages are sent',
+      doc(false, true, ['US']),
+      doc(true, true, ['US']),
+      ['signIn.methods.smsCode'],
+    ],
+    [
+      'text messages switched on under the method',
+      doc(true, false, ['US']),
+      doc(true, true, ['US']),
+      ['signIn.methods.smsCode'],
+    ],
+    [
+      'a first country under the method',
+      doc(true, true, []),
+      doc(true, true, ['US']),
+      ['signIn.methods.smsCode'],
+    ],
+    [
+      'the method switched on where no text message is sent',
+      doc(false, false, []),
+      doc(true, false, []),
+      [],
+    ],
+    [
+      'a country added while a texted code signs in',
+      doc(true, true, ['US']),
+      doc(true, true, ['US', 'DE']),
+      ['sms.allowedCountries'],
+    ],
+    [
+      'a country added while it does not',
+      doc(false, true, ['US']),
+      doc(false, true, ['US', 'DE']),
+      [],
+    ],
+    ['the method switched off', doc(true, true, ['US']), doc(false, true, ['US']), []],
+  ] as [string, SettingsDocument, SettingsDocument, string[]][])(
+    '%s',
+    (_name, was, is, weakenings) => {
+      const plan = planSave(was, is, null)
+      expect(plan.weakenings).toEqual(weakenings)
+      expect(plan.needsConfirmation).toBe(weakenings.length > 0)
+    }
+  )
+
+  test('is described as what it opens, in words and not as a path', () => {
+    expect(describeWeakening('signIn.methods.smsCode')).toBe(
+      'A texted code can sign people in: whoever receives the messages of a number an account has proven can enter that account, with no password and no inbox'
+    )
+    // One path for both uses of a texted code: the sentence names both.
+    const countries = describeWeakening('sms.allowedCountries')
+    expect(countries).toContain('Text messages go to the countries added')
+    expect(countries).toContain('signs people in')
+    expect(countries).toContain('the second step this environment requires')
+    expect(countries).toContain('a message that was sent cannot be un-sent')
+  })
+})
+
 describe('describeWeakening', () => {
   test('says a known path in words and keeps an unknown one', () => {
     expect(describeWeakening('password.minLength')).toContain('shorter')
     expect(describeWeakening('sessions.profiles.admin')).toContain('admin')
+    // A profile's template is its own sentence, and names the profile alone.
+    expect(describeWeakening('sessions.profiles.admin.jwtTemplate')).toBe(
+      'Sessions of the “admin” profile lose custom claims, or get different ones: an application that reads them may refuse those users'
+    )
+    // So is its device binding (ADR 0043): never the general "last longer" sentence.
+    expect(describeWeakening('sessions.profiles.admin.deviceBinding')).toBe(
+      'Native apps that sign in under the “admin” profile are asked less for a device key: a refresh token copied from a device can then be used elsewhere. Sessions that exist are not changed'
+    )
     expect(describeWeakening('future.setting')).toBe('future.setting')
   })
+
+  // The sign-in test (ADR 0058): the editor has no control for it, but a document that
+  // gains `true` (pasted, or changed elsewhere and saved here) is asked about in words.
+  test.each([
+    [null, true, true],
+    [false, true, true],
+    [true, true, false],
+    [true, null, false],
+    [null, false, false],
+    [false, null, true],
+  ] as const)('the sign-in test from %p to %p: asks first is %p', (from, to, asks) => {
+    const doc = (testSignIn: boolean | null) =>
+      edited((draft) => {
+        draft.agents.testSignIn = testSignIn
+      })
+    const plan = planSave(doc(from), doc(to), null)
+    expect(plan.needsConfirmation).toBe(asks)
+    expect(plan.weakenings).toEqual(asks ? ['agents.testSignIn'] : [])
+  })
+
+  test('the sign-in test is said as what it lets happen, never as its path', () => {
+    const words = describeWeakening('agents.testSignIn')
+    expect(words).not.toBe('agents.testSignIn')
+    expect(words).toContain('a throwaway user')
+    expect(words).toContain('also if it is a production one')
+    expect(words).toContain('your hooks are asked')
+    expect(words).toContain('webhook endpoints')
+  })
+
+  test.each([
+    ['required', 'optional', true],
+    ['optional', 'none', true],
+    ['none', 'required', false],
+    ['optional', 'required', false],
+  ] as const)(
+    'device binding of the mobile profile from %s to %s: asks first is %p',
+    (from, to, asks) => {
+      const doc = (deviceBinding: string) =>
+        edited((draft) => {
+          ;(draft.sessions.profiles.mobile as { deviceBinding: string }).deviceBinding =
+            deviceBinding
+        })
+      const plan = planSave(doc(from), doc(to), null)
+      expect(plan.needsConfirmation).toBe(asks)
+      expect(plan.weakenings).toEqual(asks ? ['sessions.profiles.mobile.deviceBinding'] : [])
+    }
+  )
 })
 
 describe('classifyFailure', () => {
@@ -112,5 +402,34 @@ describe('classifyFailure', () => {
   })
   test('anything else just failed', () => {
     expect(classifyFailure(new Error('boom'))).toBe('failed')
+  })
+})
+
+describe('a custom-scheme redirect URL', () => {
+  const listing = (urls: string[]) =>
+    edited((draft) => {
+      draft.urls = { ...draft.urls, allowedRedirectUrls: urls }
+    })
+
+  test('is asked about when one is added, and only then', () => {
+    const web = listing(['https://app.example.com/cb'])
+    const custom = listing(['https://app.example.com/cb', 'com.example.app:/oauth'])
+    expect(planSave(base, web, null).weakenings).toEqual([])
+    expect(planSave(web, custom, null)).toMatchObject({
+      weakenings: ['urls.allowedRedirectUrls'],
+      needsConfirmation: true,
+    })
+    // Taking it away again, and an https link an app opens, widen nothing.
+    expect(planSave(custom, web, null).weakenings).toEqual([])
+    expect(
+      planSave(web, listing(['https://app.example.com/cb', 'https://example.com/oauth']), null)
+        .weakenings
+    ).toEqual([])
+  })
+
+  test('is described as what it risks, and never as the bare path', () => {
+    const said = describeWeakening('urls.allowedRedirectUrls')
+    expect(said).toContain('any app on a device can claim one')
+    expect(said).not.toBe('urls.allowedRedirectUrls')
   })
 })

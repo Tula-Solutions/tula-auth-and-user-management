@@ -56,23 +56,27 @@ describe('entry', () => {
       type: 'session.created',
       actor: { ...TEST_ACTOR, userAgent: 'x'.repeat(5_000), client: 'web' } as typeof TEST_ACTOR,
       target: { type: 'session', id: USER },
-      data: { client: 'web' },
+      data: { userId: USER, client: 'web' },
     })
     expect(entry.userAgent).toHaveLength(MAX_USER_AGENT_LENGTH)
     expect(entry.actor).toEqual({ type: 'admin', id: TEST_ACTOR.id })
-    expect(entry.data).toEqual({ client: 'web' })
+    expect(entry.data).toEqual({ userId: USER, client: 'web' })
   })
 })
 
 describe('list', () => {
   function record(type: 'user.banned' | 'user.unbanned', target = USER, tenant = scope) {
     deps.clock.advance(1_000)
-    const entry = Audit.entry(deps, tenant, {
-      type,
-      actor: TEST_ACTOR,
-      target: { type: 'user', id: target },
+    // The details are set on the activity, past the typed input: what the audit log keeps
+    // as `metadata` is whatever the activity carries, also from a store or an older version.
+    const entry = {
+      ...Audit.entry(deps, tenant, {
+        type,
+        actor: TEST_ACTOR,
+        target: { type: 'user', id: target },
+      }),
       data: { n: 1 },
-    })
+    }
     deps.activityLog.record([entry])
     return entry
   }

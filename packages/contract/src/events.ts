@@ -1,0 +1,840 @@
+import { z } from 'zod'
+import { AUDIT_ACTOR_TYPES, type AuditActorType } from './audit'
+import { CONFIG_TOOL_PATTERN } from './environment-settings'
+import {
+  ACTIVITY_TYPES,
+  type ActivityType,
+  EVENT_SCHEMA_VERSION,
+  EVENT_TARGET_TYPES,
+  type EventTargetType,
+} from './event-types'
+import { HOOK_FAILURE_MODES, HOOK_FIELDS, HOOK_POINTS } from './hook'
+import {
+  MAX_APP_LINK_PATHS,
+  MAX_CERT_FINGERPRINTS,
+  NATIVE_APP_FIELDS,
+  NATIVE_APP_PLATFORMS,
+} from './native-app'
+import {
+  DEPENDENT_ACCOUNTS_SCAN_LIMIT,
+  MAX_ADDITIONAL_CLIENT_IDS,
+  OAuthProviderSchema,
+} from './oauth'
+import {
+  PROPOSAL_FAILURE_REASONS,
+  PROPOSAL_OPERATIONS,
+  PROPOSAL_TARGET_TYPES,
+  ProposalApproverSchema,
+} from './proposal'
+import { SessionClientSchema } from './session'
+import { SIGN_IN_TEST_CLEANUPS, SIGN_IN_TEST_OUTCOMES } from './test-address'
+import { AUTHENTICATION_METHODS } from './tokens'
+
+// The payload of every event the API records: what a webhook delivers. Each type has a `data`
+// schema and an envelope around it, both published as OpenAPI components.
+//
+// A payload is an ALLOW-LIST. A field is here because someone decided a third party may see
+// it; nothing reaches a payload by being passed along. So, for every `data` schema:
+//
+//   - no email address, name, IP address, user agent, token, code, hash or key material, ever;
+//   - a value from a closed set is an enum, not a string;
+//   - a string is an id the server made (a UUID), with two exceptions, both in
+//     `environment.settings_updated`: the names of changed settings (`changed`) and the name
+//     of the managing tool (`managedBy`). Their patterns make them bounded names, NOT
+//     secret-proof: a token-shaped string fits either. What keeps a secret out is that each
+//     has one producer: `changed` is built by the API's `changedKeys` from the keys of the
+//     settings document, and `managedBy` is the `x-tula-managed-by` header, validated when
+//     the request is read. A new string field needs the same argument, not only a pattern.
+//
+// Within `EVENT_SCHEMA_VERSION` a payload only grows (see `./event-types`).
+
+/**
+ * An id the server generated (a UUID): a user, a session, a key, a passkey. Never client
+ * input, and never a string that could hold anything else.
+ */
+const id = () => z.uuid()
+
+/**
+ * A `data` schema and the description its event is published with.
+ *
+ * @param name - The event's name in the OpenAPI document, e.g. `UserCreated`.
+ * @param description - One sentence: when the event is recorded.
+ * @param shape - The fields. Exactly what the event carries, nothing optional "just in case".
+ */
+function data<Shape extends z.ZodRawShape>(name: string, description: string, shape: Shape) {
+  return z.object(shape).meta({ ref: `${name}EventData`, description })
+}
+
+/**
+ * A change names the proposal it carried out and who approved it together, or neither
+ * (`user.banned`, `user.unbanned`, `session.revoked`, `oauth_provider.updated`).
+ */
+function proposalIsWhole(change: { proposalId?: string; approvedBy?: unknown }): boolean {
+  return (change.proposalId === undefined) === (change.approvedBy === undefined)
+}
+
+const PROPOSAL_IS_WHOLE = { message: '`proposalId` and `approvedBy` go together' }
+
+/**
+ * What the entry of a change says when the change carried out an agent's proposal a human
+ * approved (ADR 0053): both fields, or neither for a change an administrator or a user made.
+ */
+const carriedOut = () => ({
+  /**
+   * The proposal this change carried out: present exactly when the actor is an `agent`,
+   * whose proposal a human approved. Absent otherwise.
+   */
+  proposalId: id().optional(),
+  /** The human who approved that proposal. Present exactly when `proposalId` is. */
+  approvedBy: ProposalApproverSchema.optional(),
+})
+
+/** Which passkey removal carries which fields; see `user.passkey_removed`. */
+function passkeyRemovalIsWhole(removal: {
+  method: 'user' | 'admin_reset'
+  passkeyId?: string
+  canStillSignIn?: boolean
+}): boolean {
+  const named = removal.passkeyId !== undefined
+  const outcome = removal.canStillSignIn !== undefined
+  return removal.method === 'user' ? named && !outcome : outcome && !named
+}
+
+const provider = OAuthProviderSchema
+
+/** How many accounts depended on a provider when it went (ADR 0059). A count and nothing else. */
+const dependentAccounts = z.number().int().min(0).max(DEPENDENT_ACCOUNTS_SCAN_LIMIT)
+
+/**
+ * What every proposal event says of the proposal: the operation, and the kind and id of what
+ * it would change. Ids and closed sets only: a proposal holds no text anyone wrote.
+ */
+const proposed = {
+  operation: z.enum(PROPOSAL_OPERATIONS),
+  targetType: z.enum(PROPOSAL_TARGET_TYPES),
+  // A user's or a session's id, or a provider's name: a UUID or a value of a closed list.
+  targetId: z.union([id(), provider]),
+}
+
+/**
+ * The fields of a webhook endpoint an update can change, as `webhook_endpoint.updated` names
+ * them. `url` says the address changed, never what it is or was.
+ *
+ * @example
+ * ```ts
+ * const changed: (typeof WEBHOOK_ENDPOINT_FIELDS)[number][] = ['url', 'enabled']
+ * ```
+ */
+export const WEBHOOK_ENDPOINT_FIELDS = ['url', 'eventTypes', 'enabled'] as const
+
+/**
+ * Why the server switched a webhook endpoint off by itself, as `webhook_endpoint.disabled`
+ * says it: `failing` when every delivery to it has failed for days, `gone` when it answered
+ * `410 Gone`.
+ *
+ * @example
+ * ```ts
+ * const reason: (typeof WEBHOOK_DISABLED_REASONS)[number] = 'failing'
+ * ```
+ */
+export const WEBHOOK_DISABLED_REASONS = ['failing', 'gone'] as const
+
+/**
+ * Most names an `environment.settings_updated` event lists in `changed`. Above what the
+ * settings document can hold; the API has a test that builds the largest one.
+ *
+ * @example
+ * ```ts
+ * names.slice(0, MAX_CHANGED_SETTINGS)
+ * ```
+ */
+export const MAX_CHANGED_SETTINGS = 256
+
+/**
+ * Longest name of a changed setting, e.g. `sessions.profiles.<name>.refresh.reuseGracePeriod`.
+ *
+ * @example
+ * ```ts
+ * name.length <= MAX_SETTING_NAME_LENGTH
+ * ```
+ */
+export const MAX_SETTING_NAME_LENGTH = 128
+
+/**
+ * The `data` of each event type: the details beyond who (`actor`) and what (`target`).
+ *
+ * Typed so that a type in {@link ACTIVITY_TYPES} without an entry does not compile; the
+ * contract's tests check the same at run time.
+ *
+ * @example
+ * ```ts
+ * EVENT_DATA_SCHEMAS['session.revoked'].parse({ userId: 'u_1', reason: 'sign_out' })
+ * ```
+ */
+export const EVENT_DATA_SCHEMAS = {
+  'user.created': data('UserCreated', 'A user account was created.', {
+    /** How: by an admin, by a completed sign-up, or by a first sign-in with a provider. */
+    method: z.enum([
+      'admin',
+      'sign_up',
+      'oauth_google',
+      'oauth_github',
+      'oauth_apple',
+      'oauth_microsoft',
+      'oauth_discord',
+      'oauth_linkedin',
+      'oauth_x',
+      'oauth_facebook',
+    ]),
+    /**
+     * Whether the account's email address was proven when it was created. `false` also for
+     * an account created with no address at all (a first sign-in with X or Facebook): read
+     * the user to tell the two apart (`email` is `null`).
+     */
+    emailVerified: z.boolean(),
+    /** `true` when the account was created without a password; absent otherwise. */
+    passwordless: z.boolean().optional(),
+    /**
+     * `true` when the environment's `before_sign_up` hook could not be asked, or did not
+     * answer as the contract says, and the account was created anyway because the hook's
+     * failure mode is `allow`. Absent otherwise: when the hook allowed it, when there is no
+     * hook, and for an account an administrator created (a hook is not asked about those).
+     */
+    hookBypassed: z.boolean().optional(),
+    /**
+     * `true` when the account is the throwaway user of a sign-in test (ADR 0058): its
+     * address is in the reserved test domain, nobody holds it, and the server deletes it
+     * within seconds. Absent otherwise. Every later event of that test names this user's id.
+     */
+    test: z.boolean().optional(),
+  }),
+  'user.email_verified': data('UserEmailVerified', 'A user proved their email address.', {}),
+  // Two shapes: an administrator's own ban (no field) and one that carried out an agent's
+  // proposal (both fields). The pairing is a check on the object, as for
+  // `user.passkey_removed`: a ban that names a proposal and nobody who approved it, or an
+  // approver and no proposal, is refused by the envelope's parse.
+  'user.banned': z
+    .object({
+      /**
+       * The proposal this ban carried out (ADR 0053): present exactly when the actor is an
+       * `agent`, whose proposal a human approved. Absent for a ban an administrator made.
+       */
+      proposalId: id().optional(),
+      /** The human who approved that proposal. Present exactly when `proposalId` is. */
+      approvedBy: ProposalApproverSchema.optional(),
+    })
+    .refine(proposalIsWhole, PROPOSAL_IS_WHOLE)
+    .meta({
+      ref: 'UserBannedEventData',
+      description:
+        'A user was banned; their sessions end. With `proposalId` and `approvedBy` (both or neither) when the ban carried out an agent’s proposal a human approved.',
+    }),
+  'user.unbanned': z.object(carriedOut()).refine(proposalIsWhole, PROPOSAL_IS_WHOLE).meta({
+    ref: 'UserUnbannedEventData',
+    description:
+      'A user’s ban was lifted. With `proposalId` and `approvedBy` (both or neither) when that carried out an agent’s proposal a human approved.',
+  }),
+  'user.deleted': data('UserDeleted', 'A user account was deleted.', {}),
+  'user.password_changed': data(
+    'UserPasswordChanged',
+    'A user’s password was set, replaced or removed.',
+    {
+      /**
+       * By whom: an admin (`admin_reset`), the signed-in user (`self`), a password reset
+       * (`reset`), or the address being proven by someone who did not prove the password
+       * (`email_verification`, always with `removed`).
+       */
+      method: z.enum(['admin_reset', 'self', 'reset', 'email_verification']),
+      /** `true` when the account had no password before; absent otherwise. */
+      created: z.boolean().optional(),
+      /** `true` when the password was removed and none was set; absent otherwise. */
+      removed: z.boolean().optional(),
+    }
+  ),
+  'user.mfa_enabled': data('UserMfaEnabled', 'A user turned two-step verification on.', {
+    /** The factor that was confirmed. */
+    method: z.enum(['totp']),
+  }),
+  'user.mfa_disabled': data('UserMfaDisabled', 'A user’s two-step verification was removed.', {
+    /**
+     * By the user (`self`), by an admin (`admin_reset`), or by the server undoing an enrolment
+     * that a sign-in could not finish (`enrolment_incomplete`).
+     */
+    method: z.enum(['self', 'admin_reset', 'enrolment_incomplete']),
+  }),
+  'user.backup_codes_regenerated': data(
+    'UserBackupCodesRegenerated',
+    'A user replaced their backup codes; the earlier set no longer works.',
+    {}
+  ),
+  'user.backup_code_used': data(
+    'UserBackupCodeUsed',
+    'A user proved their second factor with a backup code.',
+    {}
+  ),
+  'user.identity_linked': data(
+    'UserIdentityLinked',
+    'A provider account was connected to a user.',
+    {
+      provider,
+      /** `auto`: at a sign-in, by a verified address; `profile`: by the signed-in user. */
+      method: z.enum(['auto', 'profile']),
+    }
+  ),
+  'user.identity_unlinked': data(
+    'UserIdentityUnlinked',
+    'A provider account was disconnected from a user.',
+    { provider }
+  ),
+  'user.passkey_added': data('UserPasskeyAdded', 'A user registered a passkey.', {
+    passkeyId: id(),
+    /** Whether the authenticator reports the passkey as backed up (a synced passkey). */
+    synced: z.boolean(),
+  }),
+  'user.passkey_renamed': data('UserPasskeyRenamed', 'A user renamed a passkey.', {
+    passkeyId: id(),
+  }),
+  // One type, two shapes, told apart by `method`. The pairing is a check on the object (the
+  // envelope's parse refuses a mixed one), not two types: a receiver handles one event.
+  'user.passkey_removed': z
+    .object({
+      /**
+       * Who removed what:
+       *
+       * - `user`: the owner removed one passkey. `passkeyId` is present, `canStillSignIn` is
+       *   absent (the removal is refused when it would be the user's last way to sign in).
+       * - `admin_reset`: an admin reset removed **every** passkey of the user. `passkeyId`
+       *   is absent, `canStillSignIn` is present.
+       */
+      method: z.enum(['user', 'admin_reset']),
+      /** With `method: 'user'` only: the passkey that was removed. */
+      passkeyId: id().optional(),
+      /** With `method: 'admin_reset'` only: whether the user still has a way to sign in. */
+      canStillSignIn: z.boolean().optional(),
+    })
+    .refine(passkeyRemovalIsWhole, {
+      message: '`passkeyId` goes with `user`, `canStillSignIn` with `admin_reset`',
+    })
+    .meta({
+      ref: 'UserPasskeyRemovedEventData',
+      description:
+        'A passkey was removed by its owner (`method: user`, with `passkeyId`), or every passkey of a user by an admin reset (`method: admin_reset`, with `canStillSignIn`).',
+    }),
+  'user.passkey_counter_regressed': data(
+    'UserPasskeyCounterRegressed',
+    'A passkey’s signature counter did not grow: it may have been cloned. The sign-in was refused.',
+    { passkeyId: id() }
+  ),
+  // Neither phone event has a field, on purpose: a number is personal data, and its country
+  // or last digits narrow it down. The target says whose it is; that is all a receiver gets.
+  'user.email_added': data(
+    'UserEmailAdded',
+    'An email address was stored on a user who had none. The address is not in the event.',
+    {
+      /**
+       * Who stored it: the user, with a code emailed to the address (`self`), or an
+       * administrator (`admin`).
+       */
+      method: z.enum(['self', 'admin']),
+      /** Whether the address is verified: `true` for `self`, `false` for `admin`. */
+      verified: z.boolean(),
+    }
+  ),
+  'user.phone_number_added': data(
+    'UserPhoneNumberAdded',
+    'A user verified a phone number, which is now the account’s (replacing an earlier one).',
+    {}
+  ),
+  'user.phone_number_removed': data(
+    'UserPhoneNumberRemoved',
+    'A user took the phone number off their account.',
+    {}
+  ),
+  // No number, no country, no digits: the target says whose factor it is.
+  'user.sms_factor_enabled': data(
+    'UserSmsFactorEnabled',
+    'A user made a code texted to their phone number their second factor.',
+    {}
+  ),
+  'user.sms_factor_removed': data(
+    'UserSmsFactorRemoved',
+    'A texted code is no longer a user’s second factor.',
+    {
+      /**
+       * By the user (`self`), by an admin reset (`admin_reset`), or because the phone number
+       * it was texted to was taken off the account (`phone_number_removed`) or replaced by
+       * another (`phone_number_changed`).
+       */
+      method: z.enum(['self', 'admin_reset', 'phone_number_removed', 'phone_number_changed']),
+    }
+  ),
+  'session.created': data('SessionCreated', 'A user signed in.', {
+    userId: id(),
+    client: SessionClientSchema,
+    /**
+     * `true` when the environment's `before_session` hook could not be asked, or did not
+     * answer as the contract says, and the session was created anyway because the hook's
+     * failure mode is `allow`. Absent otherwise: when the hook allowed it and when there is
+     * none.
+     */
+    hookBypassed: z.boolean().optional(),
+    /**
+     * `true` when the environment's `before_token` hook failed in the same way and the
+     * session's tokens are issued **without** that hook's claims, because its failure mode is
+     * `allow`. Absent otherwise. Named for the claims and not for the token, so that nothing
+     * that flags a field by its name takes a boolean for a credential.
+     */
+    claimsHookBypassed: z.boolean().optional(),
+    /**
+     * `true` when the session is bound to a device key (ADR 0043): its refreshes need a proof
+     * signed by the key the client presented when the sign-in started. Absent otherwise.
+     * Nothing of the key is in an event.
+     */
+    deviceBound: z.boolean().optional(),
+  }),
+  'session.revoked': z
+    .object({
+      userId: id(),
+      reason: z.enum([
+        'sign_out',
+        'revoked_by_user',
+        'revoked_by_admin',
+        'password_changed',
+        'user_banned',
+        'mfa_changed',
+        'session_limit',
+      ]),
+      // Only for the one session an approved `end_session` proposal named: never for the
+      // sessions a ban or a lifted ban ended on the way (their own entry names the proposal).
+      ...carriedOut(),
+    })
+    .refine(proposalIsWhole, PROPOSAL_IS_WHOLE)
+    .meta({
+      ref: 'SessionRevokedEventData',
+      description:
+        'A session was ended before it expired. With `proposalId` and `approvedBy` (both or neither) when ending it carried out an agent’s proposal a human approved.',
+    }),
+  'session.reuse_detected': data(
+    'SessionReuseDetected',
+    'A rotated refresh token was presented again: the session was ended as possibly stolen.',
+    { userId: id(), reason: z.literal('reuse_detected') }
+  ),
+  'session.stepped_up': data(
+    'SessionSteppedUp',
+    'A signed-in user proved a factor again for a session.',
+    {
+      userId: id(),
+      /** What was proven, as the access token’s `amr` names it. A set: order means nothing. */
+      methods: z.array(z.enum(AUTHENTICATION_METHODS)).max(AUTHENTICATION_METHODS.length),
+      /**
+       * `true` when the environment's `before_token` hook failed at this step-up and the
+       * session's tokens are issued without that hook's claims from now on, because its
+       * failure mode is `allow`. Absent otherwise.
+       */
+      claimsHookBypassed: z.boolean().optional(),
+    }
+  ),
+  'session.refresh_proof_refused': data(
+    'SessionRefreshProofRefused',
+    'A refresh of a device-bound session came without a valid proof of its key. The session was not ended and no token was rotated.',
+    {
+      userId: id(),
+      /**
+       * Why the first refused refresh of this minute was refused: no proof at all
+       * (`missing`), one that is not a valid proof for this request (`invalid`), a valid one
+       * signed by another key (`wrong_key`), or one that was already used (`replayed`).
+       */
+      reason: z.enum(['missing', 'invalid', 'wrong_key', 'replayed']),
+      /**
+       * How many more refusals of this session, in the minute before this one, were not
+       * recorded one by one. At least this many: a burst that nothing follows is not
+       * counted afterwards.
+       */
+      suppressedInPreviousMinute: z.number().int().min(0),
+    }
+  ),
+  'api_key.created': data('ApiKeyCreated', 'An API key was created.', {
+    kind: z.enum(['publishable', 'secret', 'agent']),
+  }),
+  'api_key.revoked': data('ApiKeyRevoked', 'An API key was revoked.', {}),
+  'signing_key.rotated': data(
+    'SigningKeyRotated',
+    'An environment’s access-token signing keys were rotated. The target is the new active key.',
+    { retiredKeyId: id(), nextKeyId: id() }
+  ),
+  'environment.settings_updated': data(
+    'EnvironmentSettingsUpdated',
+    'An environment’s settings were replaced.',
+    {
+      /** The settings’ revision after this change. */
+      revision: z.number().int().positive(),
+      /**
+       * The dotted names of the settings that changed, e.g. `password.minLength`. Never a
+       * value.
+       *
+       * **The set of names is open**: it follows the settings document, so a later server
+       * lists settings this version does not know, and a name can hold what an operator
+       * chose (a session profile's name: `sessions.profiles.back-office.idleTimeout`).
+       * Treat each name as opaque text; do not switch on the whole list.
+       *
+       * Bounded (at most `MAX_CHANGED_SETTINGS` names of at most `MAX_SETTING_NAME_LENGTH`
+       * characters), not secret-proof: see the note at the top of this module.
+       */
+      changed: z
+        .array(
+          z
+            .string()
+            .max(MAX_SETTING_NAME_LENGTH)
+            .regex(/^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$/)
+        )
+        .max(MAX_CHANGED_SETTINGS),
+      /**
+       * `true` when the change weakened a security setting or shortened what is kept (a
+       * weaker password policy, a security notice switched off, a looser MFA policy, longer
+       * sessions, an audit retention period set or shortened), by the definition of
+       * `settingsWeakenings`; absent otherwise.
+       */
+      weakened: z.boolean().optional(),
+      /**
+       * The tool that applied a config file; `null` when its record was removed. The one
+       * value in any payload that a client supplied (the `x-tula-managed-by` header): a
+       * bounded name, not secret-proof.
+       */
+      managedBy: z.string().regex(CONFIG_TOOL_PATTERN).nullable().optional(),
+      /** `true` when settings a config file manages were changed around it. */
+      outsideConfig: z.boolean().optional(),
+    }
+  ),
+  'oauth_provider.updated': z
+    .object({
+      provider,
+      /** Which fields changed. Names only: `secret` says a secret changed, never what it is. */
+      changed: z
+        .array(
+          z.enum([
+            'clientId',
+            'secret',
+            'teamId',
+            'keyId',
+            'tenant',
+            'additionalClientIds',
+            'enabled',
+          ])
+        )
+        .max(7),
+      /** `true` when the provider was configured for the first time; absent otherwise. */
+      created: z.boolean().optional(),
+      /**
+       * How many client ids are accepted beside the provider's own after the change
+       * (`additionalClientIds`). A count, never an id; absent for a provider that takes none.
+       */
+      additionalClientIdCount: z.number().int().min(0).max(MAX_ADDITIONAL_CLIENT_IDS).optional(),
+      /**
+       * `true` when the change accepts ID tokens of a client id it did not accept before, or
+       * switches the provider off while accounts have no other way to sign in
+       * (`oauthProviderWeakenings`); absent otherwise.
+       */
+      weakened: z.boolean().optional(),
+      /**
+       * When the provider was switched off: how many accounts were found whose only way to
+       * sign in it was (ADR 0059). A count, never an id; absent when it was not switched off.
+       */
+      dependentAccounts: dependentAccounts.optional(),
+      /** `true` when not every account of the provider was looked at: the count is a floor. */
+      dependentAccountsIncomplete: z.boolean().optional(),
+      // Only for a provider switched off by an approved `disable_oauth_provider` proposal.
+      ...carriedOut(),
+    })
+    .refine(proposalIsWhole, PROPOSAL_IS_WHOLE)
+    .meta({
+      ref: 'OAuthProviderUpdatedEventData',
+      description:
+        'An OAuth provider’s credentials were set or changed, or it was switched on or off. With `proposalId` and `approvedBy` (both or neither) when switching it off carried out an agent’s proposal a human approved.',
+    }),
+  'oauth_provider.deleted': data(
+    'OAuthProviderDeleted',
+    'An OAuth provider’s credentials were removed.',
+    {
+      provider,
+      /**
+       * `true` when the provider was on and accounts had no other way to sign in
+       * (`oauthProviderWeakenings`); absent otherwise.
+       */
+      weakened: z.boolean().optional(),
+      /** As for `oauth_provider.updated`; absent when the provider was already off. */
+      dependentAccounts: dependentAccounts.optional(),
+      /** As for `oauth_provider.updated`. */
+      dependentAccountsIncomplete: z.boolean().optional(),
+    }
+  ),
+  'webhook_endpoint.created': data(
+    'WebhookEndpointCreated',
+    'A webhook endpoint was registered. Its address and signing secret are not in the event.',
+    {
+      /** How many event types the endpoint subscribed to. */
+      eventTypes: z.number().int().min(1).max(ACTIVITY_TYPES.length),
+      /** Whether the endpoint was registered switched on. */
+      enabled: z.boolean(),
+    }
+  ),
+  'webhook_endpoint.updated': data('WebhookEndpointUpdated', 'A webhook endpoint was changed.', {
+    /** Which fields changed. Names only: `url` says the address changed, never what it is. */
+    changed: z.array(z.enum(WEBHOOK_ENDPOINT_FIELDS)).min(1).max(WEBHOOK_ENDPOINT_FIELDS.length),
+  }),
+  'webhook_endpoint.deleted': data(
+    'WebhookEndpointDeleted',
+    'A webhook endpoint was removed; nothing more is delivered to it.',
+    {}
+  ),
+  'webhook_endpoint.disabled': data(
+    'WebhookEndpointDisabled',
+    'The server switched a webhook endpoint off: its deliveries kept failing, or it answered 410 Gone. Nothing is delivered to it until it is switched on again.',
+    {
+      /** Why: one of {@link WEBHOOK_DISABLED_REASONS}. */
+      reason: z.enum(WEBHOOK_DISABLED_REASONS),
+    }
+  ),
+  'webhook_endpoint.secret_rotated': data(
+    'WebhookEndpointSecretRotated',
+    'A webhook endpoint’s signing secret was replaced. Deliveries carry a signature for the new secret and one for the previous secret until the time given; after it, for the new one only. Neither secret, nor any part of one, is in the event.',
+    {
+      /** When the previous secret stops signing, unless an administrator ends the overlap sooner. */
+      rotationOverlapEndsAt: z.iso.datetime(),
+    }
+  ),
+  'webhook_endpoint.previous_secret_revoked': data(
+    'WebhookEndpointPreviousSecretRevoked',
+    'An administrator ended the overlap of a secret rotation early: the endpoint’s previous signing secret stopped signing at once and was deleted. Deliveries carry a signature for the current secret only.',
+    {}
+  ),
+  'hook.created': data(
+    'HookCreated',
+    'A hook was registered. Its address and signing secret are not in the event.',
+    {
+      /** When the server asks it. */
+      point: z.enum(HOOK_POINTS),
+      /** Whether it was registered switched on. */
+      enabled: z.boolean(),
+      /** What a failed call does: refuse (`deny`) or let through (`allow`). */
+      failureMode: z.enum(HOOK_FAILURE_MODES),
+      /** `true` when it was registered to let through on failure; absent otherwise. */
+      weakened: z.boolean().optional(),
+    }
+  ),
+  'hook.updated': data('HookUpdated', 'A hook was changed.', {
+    point: z.enum(HOOK_POINTS),
+    /** Which fields changed. Names only: `url` says the address changed, never what it is. */
+    changed: z.array(z.enum(HOOK_FIELDS)).min(1).max(HOOK_FIELDS.length),
+    /**
+     * `true` when the change lets through what the hook used to stop: it was switched off,
+     * or set to let through on failure. Absent otherwise.
+     */
+    weakened: z.boolean().optional(),
+  }),
+  'hook.deleted': data('HookDeleted', 'A hook was removed; it is not asked any more.', {
+    point: z.enum(HOOK_POINTS),
+    /** `true` when the hook was on when it was removed; absent otherwise. */
+    weakened: z.boolean().optional(),
+  }),
+  'native_app.created': data(
+    'NativeAppCreated',
+    'A native app was registered: the association files served for the environment name it from now on. Its bundle id or package name, its team and its fingerprints are not in the event.',
+    {
+      /** Which platform the app is for. */
+      platform: z.enum(NATIVE_APP_PLATFORMS),
+      /** How many signing-certificate fingerprints it was registered with; 0 for an iOS app. */
+      fingerprints: z.number().int().min(0).max(MAX_CERT_FINGERPRINTS),
+      /** How many app-link paths it was registered with (ADR 0044). A count, never a path. */
+      appLinkPaths: z.number().int().min(0).max(MAX_APP_LINK_PATHS).optional(),
+      /** Always `true`: registering an app widens which apps the served files name. */
+      weakened: z.boolean().optional(),
+    }
+  ),
+  'native_app.updated': data('NativeAppUpdated', 'A registered native app was changed.', {
+    platform: z.enum(NATIVE_APP_PLATFORMS),
+    /** Which fields changed. Names only, never a team id, a fingerprint or a path. */
+    changed: z.array(z.enum(NATIVE_APP_FIELDS)).min(1).max(NATIVE_APP_FIELDS.length),
+    /** How many fingerprints the app has after the change; 0 for an iOS app. */
+    fingerprints: z.number().int().min(0).max(MAX_CERT_FINGERPRINTS),
+    /** How many app-link paths the app has after the change (ADR 0044). A count. */
+    appLinkPaths: z.number().int().min(0).max(MAX_APP_LINK_PATHS).optional(),
+    /**
+     * `true` when the change widened what the files say: an iOS app moved to another team,
+     * an Android app gained a fingerprint, or an app gained an app-link path. Absent
+     * otherwise.
+     */
+    weakened: z.boolean().optional(),
+  }),
+  'native_app.deleted': data(
+    'NativeAppDeleted',
+    'A registered native app was removed: the association files no longer name it.',
+    { platform: z.enum(NATIVE_APP_PLATFORMS) }
+  ),
+  // Proposals (ADR 0053). The actor of `created`, `executed` and `failed` is the agent; the
+  // actor of `approved` is the human, and the agent is named in its `data`.
+  'proposal.created': data(
+    'ProposalCreated',
+    'An agent asked for a change as a proposal. Nothing has changed: a human has to approve it.',
+    proposed
+  ),
+  'proposal.approved': data(
+    'ProposalApproved',
+    'A human approved an agent’s proposal. The actor is the human; the operation follows.',
+    {
+      ...proposed,
+      /** The agent that asked: the id of the credential it holds. */
+      proposedBy: id(),
+    }
+  ),
+  'proposal.executed': data(
+    'ProposalExecuted',
+    'An approved proposal’s operation was carried out. The actor is the agent that asked.',
+    {
+      ...proposed,
+      approvedBy: ProposalApproverSchema,
+      /**
+       * Whether the operation changed its target. `false` when the target was already so
+       * when it ran: the operation's own entry (`user.unbanned`, …) was then not written.
+       * Absent from entries recorded before the field.
+       */
+      changed: z.boolean().optional(),
+    }
+  ),
+  'proposal.failed': data(
+    'ProposalFailed',
+    'An approved proposal’s operation was not carried out. The proposal is spent all the same.',
+    {
+      ...proposed,
+      approvedBy: ProposalApproverSchema,
+      /** Why, in one of the server’s fixed words. */
+      reason: z.enum(PROPOSAL_FAILURE_REASONS),
+    }
+  ),
+  // A sign-in test (ADR 0058). The actor is who asked for it: an agent, or an administrator
+  // (a secret key). The account's own events are the flow's, with their own actors.
+  'sign_in_test.started': data(
+    'SignInTestStarted',
+    'A sign-in test began: the server is about to sign a throwaway user up and in through the environment’s flow, and delete it.',
+    {}
+  ),
+  'sign_in_test.finished': data(
+    'SignInTestFinished',
+    'A sign-in test ended. `userId` is the throwaway user it made (absent when no account was made); `cleanup` says whether that user was deleted.',
+    {
+      outcome: z.enum(SIGN_IN_TEST_OUTCOMES),
+      cleanup: z.enum(SIGN_IN_TEST_CLEANUPS),
+      userId: id().optional(),
+    }
+  ),
+} as const satisfies Record<ActivityType, z.ZodObject>
+
+/**
+ * The `data` of an event of type `T`; without `T`, of any event.
+ *
+ * @example
+ * ```ts
+ * const data: EventData<'session.created'> = { userId: 'u_1', client: 'ios' }
+ * ```
+ */
+export type EventData<T extends ActivityType = ActivityType> = z.infer<
+  (typeof EVENT_DATA_SCHEMAS)[T]
+>
+
+/**
+ * Who did it. `id` is a user's id, an API key's (`admin`), a dashboard session's
+ * (`instance_admin`), or `null`: the server itself, or the instance admin token.
+ */
+export const EventActorSchema = z
+  .object({ type: z.enum(AUDIT_ACTOR_TYPES), id: z.string().min(1).max(128).nullable() })
+  .meta({ ref: 'EventActor' })
+
+/**
+ * An event of type `T`, as a webhook delivers it.
+ *
+ * - `id`: the event's id, the same as its audit log entry's. A delivery that is repeated
+ *   carries the same id: use it to drop duplicates.
+ * - `schemaVersion`: {@link EVENT_SCHEMA_VERSION}.
+ * - `occurredAt`: ISO 8601, UTC.
+ * - `actor`, `target`: who did it and what it was done to, by id.
+ * - `data`: the details, per type.
+ * - `test`: `true` on a test event (one an administrator asked the server to send, built from
+ *   an example: nothing it describes happened), and absent on every real event. Signed with
+ *   the rest of the body. Check it before acting on an event.
+ *
+ * There is no IP address and no user agent: those stay in the audit log.
+ */
+export interface EventOf<T extends ActivityType> {
+  id: string
+  type: T
+  schemaVersion: typeof EVENT_SCHEMA_VERSION
+  occurredAt: string
+  actor: { type: AuditActorType; id: string | null }
+  target: { type: EventTargetType<T>; id: string }
+  data: EventData<T>
+  test?: true
+}
+
+/**
+ * Any event: a union discriminated by `type`.
+ *
+ * @example
+ * ```ts
+ * function handle(event: TulaEvent) {
+ *   if (event.type === 'session.reuse_detected') {
+ *     alertSecurity(event.data.userId)
+ *   }
+ * }
+ * ```
+ */
+export type TulaEvent = { [T in ActivityType]: EventOf<T> }[ActivityType]
+
+function envelope<T extends ActivityType>(type: T) {
+  const details = EVENT_DATA_SCHEMAS[type]
+  const { ref, description } = z.globalRegistry.get(details) ?? {}
+  return z
+    .object({
+      id: id(),
+      type: z.literal(type),
+      schemaVersion: z.literal(EVENT_SCHEMA_VERSION),
+      occurredAt: z.iso.datetime(),
+      actor: EventActorSchema,
+      target: z.object({ type: z.literal(EVENT_TARGET_TYPES[type]), id: id() }),
+      data: details,
+      // Only ever `true`, and only on a test event: a real event has no such key.
+      test: z.literal(true).optional(),
+    })
+    .meta({ ref: String(ref).replace(/Data$/, ''), description })
+}
+
+const envelopes = ACTIVITY_TYPES.map((type) => [type, envelope(type)] as const)
+
+/**
+ * The schema of each event type: the envelope around its {@link EVENT_DATA_SCHEMAS} entry.
+ *
+ * Parsing strips every key a schema does not name, at each level.
+ *
+ * @example
+ * ```ts
+ * const event = EVENT_SCHEMAS['user.created'].parse(JSON.parse(body))
+ * ```
+ */
+export const EVENT_SCHEMAS = Object.fromEntries(envelopes) as unknown as {
+  readonly [T in ActivityType]: z.ZodType<EventOf<T>>
+}
+
+/**
+ * Any event, told apart by `type`: what a webhook receiver parses a delivery with.
+ *
+ * @example
+ * ```ts
+ * const event = TulaEventSchema.parse(JSON.parse(body))
+ * ```
+ */
+export const TulaEventSchema = z
+  .discriminatedUnion(
+    'type',
+    // Never empty: there is an envelope per activity type. The casts say what the mapped
+    // list cannot: its members are the object schemas of `EVENT_SCHEMAS`, one per type.
+    envelopes.map(([, schema]) => schema) as unknown as [z.ZodObject, ...z.ZodObject[]]
+  )
+  .meta({ ref: 'TulaEvent' }) as unknown as z.ZodType<TulaEvent>

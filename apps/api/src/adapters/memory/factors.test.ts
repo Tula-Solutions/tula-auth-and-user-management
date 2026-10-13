@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { describeFactorStore } from '~/adapters/factor-store.suite'
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import { MemoryFactorStore } from '~/adapters/memory/factors'
+import { MemoryUserRepository } from '~/adapters/memory/users'
 
 const tenant = (environmentId: string) => ({
   projectId: '00000000-0000-7000-8000-00000000a001',
@@ -12,22 +13,24 @@ const tenant = (environmentId: string) => ({
 describeFactorStore('MemoryFactorStore', async () => {
   const log = new MemoryActivityLog()
   return {
-    store: new MemoryFactorStore(log),
+    store: new MemoryFactorStore(log, new MemoryUserRepository(log)),
     log,
     a: tenant('00000000-0000-7000-8000-00000000e001'),
     b: tenant('00000000-0000-7000-8000-00000000e002'),
   }
 })
 
-test('a store built without a log keeps one of its own', async () => {
-  const store = new MemoryFactorStore()
-  expect(
-    await store.findTotp('00000000-0000-7000-8000-00000000e001', Bun.randomUUIDv7())
-  ).toBeNull()
+test('a store says which user repository it reports to, and no other', () => {
+  const log = new MemoryActivityLog()
+  const users = new MemoryUserRepository(log)
+  const store = new MemoryFactorStore(log, users)
+  expect(store.belongsTo(users)).toBe(true)
+  expect(store.belongsTo(new MemoryUserRepository(log))).toBe(false)
 })
 
 test('a record read from the store is a copy: changing it changes nothing stored', async () => {
-  const store = new MemoryFactorStore()
+  const log = new MemoryActivityLog()
+  const store = new MemoryFactorStore(log, new MemoryUserRepository(log))
   const environmentId = '00000000-0000-7000-8000-00000000e001'
   const userId = Bun.randomUUIDv7()
   await store.startTotp({

@@ -1,13 +1,24 @@
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client'
-import { type AdminClient, type AdminFetch, createAdminClient } from '@tula/admin'
+import {
+  type AdminClient,
+  type AdminFetch,
+  createAdminClient,
+  createAgentClient,
+} from '@tula/admin'
+import { type ProposalOperation, type ProposalTarget, proposalSummary } from '@tula/contract'
 import { createTulaMcpServer, type TulaMcpServerOptions } from '../server'
 
 /** A secret key no deployment has: the tests look for it in every output. */
 export const TEST_SECRET_KEY = `tula_sk_dev_${'s3cr3tKEY'.repeat(4)}`
+/** An agent key no deployment has: the tests look for it in every output too. */
+export const TEST_AGENT_KEY = `tula_ak_dev_${'ag3ntKEY'.repeat(4)}`
 /** An instance admin token no deployment has. */
 export const TEST_ADMIN_TOKEN = `adm1nT0KEN${'z'.repeat(40)}`
 
 const USER_ID = '0198c1de-0000-7000-8000-000000000001'
+
+/** The id of the proposal the fake API answers with. */
+export const TEST_PROPOSAL_ID = '0198c1de-0000-7000-8000-0000000000f1'
 
 /** A marker the canary tests look for: no output may ever contain it. */
 export const CANARY = 'CANARY-7f3a9c'
@@ -23,8 +34,43 @@ export interface Recorded {
   headers: Record<string, string>
 }
 
-/** What a fake answers for a path: a JSON body, or a whole `Response`. */
-export type Answers = Record<string, unknown | (() => Response)>
+/**
+ * What a fake answers for a path: a JSON body, or a function that makes the `Response`
+ * (handed the request's body, when it had one).
+ */
+export type Answers = Record<string, unknown | ((body?: string) => Response)>
+
+/** What the default proposal is about: a ban of the default user. */
+const DEFAULT_PROPOSAL = { operation: 'ban_user', target: { type: 'user', id: USER_ID } } as const
+
+/**
+ * A pending proposal as the real API answers it, for what was asked: the operation and the
+ * target of the request, and the server's own sentence for them.
+ *
+ * @param request - The operation and target; a ban of the default user when left out.
+ * @returns The proposal's JSON.
+ */
+export function proposalAnswer(
+  request: { operation: ProposalOperation; target: ProposalTarget } = DEFAULT_PROPOSAL
+): Record<string, unknown> {
+  return {
+    id: TEST_PROPOSAL_ID,
+    operation: request.operation,
+    target: request.target,
+    summary: proposalSummary(request.operation, request.target),
+    status: 'pending',
+    proposedBy: { type: 'agent', id: '0198c1de-0000-7000-8000-0000000000a9' },
+    createdAt: '2026-03-01T00:00:00.000Z',
+    expiresAt: '2026-03-01T00:10:00.000Z',
+    approvedBy: null,
+    approvedAt: null,
+    failureReason: null,
+    expiryReason: null,
+  }
+}
+
+/** A session of the default user. */
+export const TEST_SESSION_ID = '0198c1de-0000-7000-8000-0000000000c1'
 
 /** Add a canary under an unexpected key to every object of a value, at every depth. */
 export function withCanaries(value: unknown, path = 'root'): unknown {
@@ -43,12 +89,35 @@ export function withCanaries(value: unknown, path = 'root'): unknown {
   return value
 }
 
+/** The id of the throwaway user in the fake API's sign-in test report. */
+export const TEST_THROWAWAY_USER_ID = '0198c1de-0000-7000-8000-0000000000e7'
+
+/** A sign-in test's report, as the real API shapes one where the password is the method. */
+export function signInTestReport(): Record<string, unknown> {
+  return {
+    outcome: 'passed',
+    steps: [
+      { step: 'sign_up', outcome: 'passed', durationMs: 212 },
+      { step: 'verify_email', outcome: 'passed', durationMs: 31 },
+      { step: 'sign_out', outcome: 'passed', durationMs: 4 },
+      { step: 'sign_in', outcome: 'passed', durationMs: 3 },
+      { step: 'first_factor', outcome: 'passed', durationMs: 198 },
+      { step: 'revoke_session', outcome: 'passed', durationMs: 5 },
+      { step: 'delete_user', outcome: 'passed', durationMs: 6 },
+    ],
+    userId: TEST_THROWAWAY_USER_ID,
+    cleanup: 'deleted',
+  }
+}
+
 /** The admin API's answers, as the real one shapes them. */
 export function defaultAnswers(): Answers {
   const user = {
     id: USER_ID,
     email: 'maya@example.com',
     emailVerifiedAt: '2026-01-01T00:00:00.000Z',
+    phoneNumber: '+14155550142',
+    phoneNumberVerifiedAt: '2026-01-02T00:00:00.000Z',
     firstName: 'Maya',
     lastName: 'Lin',
     bannedAt: null,
@@ -56,6 +125,13 @@ export function defaultAnswers(): Answers {
     createdAt: '2026-01-01T00:00:00.000Z',
   }
   return {
+    // The proposal that was asked for, as the real API answers.
+    'POST /v1/agent/proposals': (body?: string) =>
+      Response.json(proposalAnswer(body === undefined ? undefined : JSON.parse(body)), {
+        status: 201,
+      }),
+    'POST /v1/agent/sign-in-tests': signInTestReport(),
+    'POST /v1/admin/sign-in-tests': signInTestReport(),
     'GET /v1/admin/users': {
       meta: { totalCount: 1, totalPages: 1, page: 1, perPage: 20 },
       data: [user],
@@ -112,15 +188,78 @@ export function defaultAnswers(): Answers {
       settings: {
         version: 1,
         app: { name: 'Northline', supportEmail: 'help@example.com' },
-        password: { preset: 'recommended', minLength: 12, maxLength: 128, breachCheck: 'block' },
-        signIn: { methods: { password: { enabled: true }, emailCode: { enabled: false } } },
+        // Whole, as the API answers it: a tool that judges a change reads every field.
+        password: {
+          preset: 'recommended',
+          minLength: 12,
+          maxLength: 128,
+          requireLowercase: false,
+          requireUppercase: false,
+          requireNumber: false,
+          requireSpecial: false,
+          minCharacterClasses: 0,
+          specialChars: '!@#$%^&*',
+          disallowUserInfo: true,
+          disallowCommon: true,
+          breachCheck: 'block',
+          maxRepeatedChars: null,
+          blockSequences: false,
+          history: 0,
+          expiryDays: null,
+        },
+        signIn: {
+          methods: {
+            password: { enabled: true },
+            emailCode: { enabled: false },
+            emailLink: { enabled: false },
+            passkey: { enabled: false },
+            smsCode: { enabled: true },
+          },
+        },
         signUp: { password: 'required' },
         urls: { allowedOrigins: ['https://app.example.com'], allowedRedirectUrls: [] },
         audit: { retentionDays: 90 },
-        notifications: { passwordChanged: true, newSignIn: true },
-        mfa: { policy: 'optional' },
+        notifications: {
+          passwordChanged: true,
+          newSignIn: true,
+          mfaChanged: true,
+          identityChanged: true,
+        },
+        mfa: { policy: 'optional', smsCode: { enabled: false } },
+        sms: {
+          enabled: true,
+          allowedCountries: ['US', 'DE'],
+          dailyMessageLimit: 500,
+          templates: { sign_in: { text: 'Texted-wording-canary: your code is {{code}}' } },
+        },
+        emails: {
+          templates: {
+            email_verification: {
+              subject: '{{code}} opens Northline',
+              body: 'Wording-canary: your code is {{code}}',
+            },
+          },
+        },
         passkeys: { rpId: null },
-        sessions: { profiles: { web: { type: 'hybrid', accessTokenTtl: '60s' } }, maxPerUser: 5 },
+        agents: { proposalsInProduction: false, testSignIn: null },
+        sessions: {
+          profiles: {
+            web: {
+              type: 'hybrid',
+              accessTokenTtl: '60s',
+              idleTimeout: '7d',
+              absoluteTimeout: '30d',
+              stepUpAfter: null,
+              clientSelectable: false,
+              jwtTemplate: null,
+              deviceBinding: 'none',
+              refresh: { reuseGracePeriod: '10s' },
+            },
+          },
+          maxPerUser: 5,
+          onLimit: 'end_oldest',
+          jwtTemplates: {},
+        },
       },
       managedBy: {
         tool: 'tula-cli',
@@ -139,6 +278,8 @@ export function defaultAnswers(): Answers {
           clientId: 'client-id.apps.example',
           teamId: null,
           keyId: null,
+          tenant: null,
+          additionalClientIds: ['1234567890-android.apps.googleusercontent.com'],
           callbackUrl: 'https://auth.example.com/v1/client/oauth/google/callback',
           updatedAt: '2026-01-01T00:00:00.000Z',
         },
@@ -183,7 +324,9 @@ export function fakeFetch(answers: Answers = defaultAnswers()): {
       })
     }
     if (typeof answer === 'function') {
-      return (answer as () => Response)()
+      return (answer as (body?: string) => Response)(
+        typeof init?.body === 'string' ? init.body : undefined
+      )
     }
     if (answer === undefined) {
       return Response.json(
@@ -210,6 +353,35 @@ export function fakeAdmin(answers?: Answers): {
       fetch,
     }),
     requests,
+    outstanding,
+  }
+}
+
+/**
+ * An admin client and an agent's client over one fake `fetch`, so that one list holds every
+ * request either made and each can be told by its `Authorization`.
+ */
+export function fakeClients(answers?: Answers): {
+  admin: AdminClient
+  agent: AdminClient
+  requests: Recorded[]
+  bodies: string[]
+  outstanding(): number
+} {
+  const { fetch, requests, outstanding } = fakeFetch(answers)
+  const bodies: string[] = []
+  const recording: AdminFetch = (url, init) => {
+    if (typeof init?.body === 'string') {
+      bodies.push(init.body)
+    }
+    return fetch(url, init)
+  }
+  const baseUrl = 'https://auth.example.com'
+  return {
+    admin: createAdminClient({ baseUrl, secretKey: TEST_SECRET_KEY, fetch: recording }),
+    agent: createAgentClient({ baseUrl, agentKey: TEST_AGENT_KEY, fetch: recording }),
+    requests,
+    bodies,
     outstanding,
   }
 }

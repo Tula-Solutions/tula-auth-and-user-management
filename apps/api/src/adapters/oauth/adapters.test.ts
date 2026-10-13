@@ -9,6 +9,8 @@ import {
   emailClaims,
   exchangeFailure,
   PROVIDER_TIMEOUT_MS,
+  remoteKeySet,
+  verifyIdToken,
   withDeadline,
 } from '~/adapters/oauth/id-token'
 import { createMockProvider, issueMockCode, type MockGrant, s256 } from '~/adapters/oauth/mock'
@@ -614,7 +616,8 @@ describe('the mock provider', () => {
     redirectUri: REDIRECT_URI,
     nonce: NONCE,
     codeChallenge: s256('the-verifier'),
-    profile: { subject: 'mock-1', email: 'maya@northline.app', emailVerified: true },
+    // Digits: an id every provider the mock stands in for can have (Discord's are snowflakes).
+    profile: { subject: '4815162342', email: 'maya@northline.app', emailVerified: true },
   }
 
   test('sends the browser to the consent page on the API with the standard parameters', () => {
@@ -662,7 +665,7 @@ describe('the mock provider', () => {
 
   // The conformance scenarios and SDK journeys sign in with GitHub through this adapter: the
   // verifier is checked for every provider it stands in for, not only Google.
-  test.each(['google', 'github', 'apple'] as const)(
+  test.each(['google', 'github', 'apple', 'discord', 'linkedin'] as const)(
     'standing in for %s: the URL carries the S256 challenge and only its verifier redeems the code',
     async (name) => {
       const standIn = createMockProvider(name, {
@@ -682,7 +685,15 @@ describe('the mock provider', () => {
       const codeChallenge = url.searchParams.get('code_challenge') as string
       expect(codeChallenge).toBe(s256('the-verifier'))
       const code = () =>
-        issueMockCode(secretBox, clock, { ...grant, provider: name, codeChallenge })
+        issueMockCode(secretBox, clock, {
+          ...grant,
+          provider: name,
+          codeChallenge,
+          // LinkedIn's profile is its userinfo answer, here one that says what the grant says.
+          ...(name === 'linkedin' && {
+            userinfo: { sub: '4815162342', email: 'maya@northline.app', email_verified: true },
+          }),
+        })
       expect(await standIn.exchange(credentials, { ...exchangeInput, code: await code() })).toEqual(
         grant.profile
       )
@@ -695,6 +706,117 @@ describe('the mock provider', () => {
       }
     }
   )
+
+  describe.each(['x', 'facebook'] as const)('standing in for %s', (name) => {
+    const standIn = () =>
+      createMockProvider(name, { secretBox, clock, publicUrl: 'http://localhost:3003' })
+    const codeFor = (profile: Partial<typeof grant.profile>) =>
+      issueMockCode(secretBox, clock, {
+        ...grant,
+        provider: name,
+        codeChallenge: s256(exchangeInput.codeVerifier),
+        profile: { ...grant.profile, subject: '2244994945', ...profile },
+      })
+
+    test('whatever address the code carries is dropped, as the real adapter reads none', async () => {
+      const profile = await standIn().exchange(credentials, {
+        ...exchangeInput,
+        code: await codeFor({ email: 'victim@northline.app', emailVerified: true }),
+      })
+      expect(profile).toMatchObject({ subject: '2244994945', email: null, emailVerified: false })
+      expect(JSON.stringify(profile)).not.toContain('victim')
+    })
+
+    test.each(['nelly', '02244994945', '-7', '2244994945:admin', ''])(
+      'the account id %j is not an id and is refused, as the real adapter refuses it',
+      async (subject) => {
+        expect(
+          await failureOf(
+            standIn().exchange(credentials, { ...exchangeInput, code: await codeFor({ subject }) })
+          )
+        ).toBe('invalid_profile')
+      }
+    )
+
+    test('only the verifier of its challenge redeems the code', async () => {
+      for (const codeVerifier of ['another-verifier', '']) {
+        expect(
+          await failureOf(
+            standIn().exchange(credentials, {
+              ...exchangeInput,
+              code: await codeFor({}),
+              codeVerifier,
+            })
+          )
+        ).toBe('invalid_grant')
+      }
+    })
+  })
+
+  describe('standing in for LinkedIn', () => {
+    const linkedin = () =>
+      createMockProvider('linkedin', { secretBox, clock, publicUrl: 'http://localhost:3003' })
+    const redeem = async (userinfo: unknown) =>
+      linkedin().exchange(credentials, {
+        ...exchangeInput,
+        code: await issueMockCode(secretBox, clock, {
+          ...grant,
+          provider: 'linkedin',
+          // What the "ID token" says beside its subject is never the profile.
+          profile: {
+            subject: 'member-1',
+            email: 'the-token-says@elsewhere.test',
+            emailVerified: true,
+          },
+          ...(userinfo !== undefined && { userinfo }),
+        }),
+      })
+
+    test('the profile is the userinfo answer, judged by the real adapter’s rule', async () => {
+      expect(
+        await redeem({
+          sub: 'member-1',
+          email: 'maya@northline.app',
+          email_verified: true,
+          given_name: 'Maya',
+          family_name: 'Okafor',
+        })
+      ).toEqual({
+        subject: 'member-1',
+        email: 'maya@northline.app',
+        emailVerified: true,
+        givenName: 'Maya',
+        familyName: 'Okafor',
+      })
+    })
+
+    test.each([
+      ['email_verified: false', { email_verified: false }],
+      ['no email_verified', {}],
+      ['the string "true"', { email_verified: 'true' }],
+      ['the number 1', { email_verified: 1 }],
+    ] as [string, Record<string, unknown>][])('%s is unverified', async (_name, fields) => {
+      expect(
+        await redeem({ sub: 'member-1', email: 'maya@northline.app', ...fields })
+      ).toMatchObject({ email: 'maya@northline.app', emailVerified: false })
+    })
+
+    test('an answer with no address proves none, whatever the grant’s profile says', async () => {
+      expect(await redeem({ sub: 'member-1' })).toMatchObject({ email: null, emailVerified: false })
+    })
+
+    test('an answer about another member is refused like an invalid token', async () => {
+      expect(
+        await failureOf(
+          redeem({ sub: 'member-2', email: 'maya@northline.app', email_verified: true })
+        )
+      ).toBe('invalid_token')
+    })
+
+    test('a code with no userinfo answer is refused: there is no other source', async () => {
+      expect(await failureOf(redeem(undefined))).toBe('invalid_profile')
+    })
+  })
 
   test('refuses a code after a minute, a forged code, and another provider’s code', async () => {
     const code = await issueMockCode(secretBox, clock, grant)
@@ -862,12 +984,83 @@ describe('a provider that never answers', () => {
   })
 })
 
+describe('who checks the issuer is said at every call', () => {
+  const JWKS_URL = 'https://keys.provider.test/jwks'
+  const expected = { audience: CLIENT_ID, nonce: NONCE }
+
+  function keySet() {
+    stubFetch({ [JWKS_URL]: () => jsonResponse({ keys: [provider.jwk] }) })
+    return remoteKeySet(JWKS_URL, 1000)
+  }
+
+  test('a call that does not say is refused, by the compiler and at run time', async () => {
+    const token = await idToken()
+    expect(
+      await failureOf(
+        // @ts-expect-error -- `issuers` is required: leaving it out must not turn the check off.
+        verifyIdToken(keySet(), token, expected, 1000)
+      )
+    ).toBe('invalid_token')
+  })
+
+  test('a list is checked here: an issuer that is not on it is refused', async () => {
+    const token = await idToken({ issuer: 'https://accounts.elsewhere.test' })
+    const issuers = ['https://accounts.google.com']
+    expect(await failureOf(verifyIdToken(keySet(), token, { ...expected, issuers }, 1000))).toBe(
+      'invalid_token'
+    )
+    fetchSpy?.mockRestore()
+    const listed = await idToken()
+    expect(await failureOf(verifyIdToken(keySet(), listed, { ...expected, issuers }, 1000))).toBe(
+      'resolved'
+    )
+  })
+
+  test('an empty list accepts no issuer', async () => {
+    const token = await idToken()
+    expect(
+      await failureOf(verifyIdToken(keySet(), token, { ...expected, issuers: [] }, 1000))
+    ).toBe('invalid_token')
+  })
+
+  test('a caller that says it verifies gets the claims with iss unjudged', async () => {
+    const token = await idToken({ issuer: 'https://accounts.elsewhere.test' })
+    const verified = await verifyIdToken(
+      keySet(),
+      token,
+      { ...expected, issuers: 'caller-verifies' },
+      1000
+    )
+    expect(verified.payload.iss).toBe('https://accounts.elsewhere.test')
+  })
+})
+
 describe('shared helpers', () => {
   test('a display name is trimmed, cut and cleared of control characters', () => {
     expect(displayName('  Maya\u0000\nOkafor ')).toBe('Maya  Okafor')
     expect(displayName('x'.repeat(300))).toHaveLength(100)
     expect(displayName('   ')).toBeUndefined()
     expect(displayName(42)).toBeUndefined()
+  })
+
+  // A name is drawn in the dashboard and in an operator's own pages: one that reorders the
+  // text around it, or holds what no reader can see, is kept without those characters.
+  test.each([
+    ['a right-to-left override', 'Maya\u{202E}afakO', 'MayaafakO'],
+    ['an embedding and its pop', '\u{202B}Maya\u{202C}', 'Maya'],
+    ['an isolate', 'Ma\u{2066}ya\u{2069}', 'Maya'],
+    ['direction marks', '\u{200E}Maya\u{200F}\u{061C}', 'Maya'],
+    ['a private-use character', 'Maya\u{E000}', 'Maya'],
+    ['an unassigned code point', 'Maya\u{0378}', 'Maya'],
+    ['a lone surrogate', 'Maya\uD800', 'Maya'],
+  ])('a display name is kept without %s', (_what, given, kept) => {
+    expect(displayName(given)).toBe(kept)
+  })
+
+  test('a display name of hidden characters alone is no name, and a joiner is kept', () => {
+    expect(displayName('\u{202E}\u{2066} \u{2069}')).toBeUndefined()
+    // Persian is written with the zero-width non-joiner: it stays.
+    expect(displayName('می\u{200C}خواهم')).toBe('می\u{200C}خواهم')
   })
 
   test('email claims: verified only when the provider says so about an address it gave', () => {

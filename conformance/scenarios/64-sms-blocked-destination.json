@@ -1,0 +1,338 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "text messages to a blocked destination",
+  "description": "A run of requests for codes to numbers the environment's country list does not allow sends nothing: every one is refused with `sms.country_not_allowed`, whether the number's calling prefix belongs to a country that is not listed or to none at all, and the refusals spend nothing of the user's own allowance (their first allowed number is texted at once). The operator's usage counts, read with a secret key, hold no code for the blocked prefix and never a phone number; a publishable key and no key cannot read them. The scenario raises the daily limit so that repeated runs against one server are not stopped by it; the last steps put the original settings back.",
+  "needsSecretKey": true,
+  "needsSmsInbox": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    },
+    "phone": {
+      "generate": "phone"
+    },
+    "blocked": "+37120000042",
+    "nowhere": "+99912345678"
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "revision": "$any",
+          "settings": {
+            "sms": {
+              "dailyMessageLimit": "$any"
+            }
+          }
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "s_app": "settings.app",
+        "s_password": "settings.password",
+        "s_signIn": "settings.signIn",
+        "s_signUp": "settings.signUp",
+        "s_urls": "settings.urls",
+        "s_audit": "settings.audit",
+        "s_notifications": "settings.notifications",
+        "s_mfa": "settings.mfa",
+        "s_passkeys": "settings.passkeys",
+        "s_sessions": "settings.sessions"
+      }
+    },
+    {
+      "name": "an administrator allows text messages to the United States only",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{s_app}}"
+          },
+          "password": {
+            "$json": "{{s_password}}"
+          },
+          "signIn": {
+            "$json": "{{s_signIn}}"
+          },
+          "signUp": {
+            "$json": "{{s_signUp}}"
+          },
+          "urls": {
+            "$json": "{{s_urls}}"
+          },
+          "audit": {
+            "$json": "{{s_audit}}"
+          },
+          "notifications": {
+            "$json": "{{s_notifications}}"
+          },
+          "mfa": {
+            "$json": "{{s_mfa}}"
+          },
+          "passkeys": {
+            "$json": "{{s_passkeys}}"
+          },
+          "sessions": {
+            "$json": "{{s_sessions}}"
+          },
+          "sms": {
+            "enabled": true,
+            "allowedCountries": ["US"],
+            "dailyMessageLimit": 100000
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "sms": {
+              "enabled": true,
+              "allowedCountries": ["US"],
+              "dailyMessageLimit": 100000
+            }
+          }
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      }
+    },
+    {
+      "name": "Maya starts a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "mayaSignUp": "id",
+        "mayaSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "Maya reads the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "mayaEmailCode"
+      }
+    },
+    {
+      "name": "Maya verifies the address and is signed in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{mayaSignUp}}/verify-email",
+        "attempt": "{{mayaSecret}}",
+        "body": {
+          "code": "{{mayaEmailCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "$any"
+          },
+          "session": {
+            "accessToken": "$any"
+          }
+        }
+      },
+      "capture": {
+        "maya": "session.accessToken",
+        "mayaId": "step.userId"
+      }
+    },
+    {
+      "name": "a run of requests for a number of a country that is not allowed is refused, every time",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/phone",
+        "body": {
+          "phoneNumber": "{{blocked}}"
+        },
+        "accessToken": "{{maya}}"
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "status": 422,
+          "code": "sms.country_not_allowed"
+        }
+      },
+      "times": 4
+    },
+    {
+      "name": "a number whose calling prefix is no country’s is refused the same way",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/phone",
+        "body": {
+          "phoneNumber": "{{nowhere}}"
+        },
+        "accessToken": "{{maya}}"
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "status": 422,
+          "code": "sms.country_not_allowed"
+        }
+      }
+    },
+    {
+      "name": "the refusals spent nothing: her own number is texted at once",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/phone",
+        "body": {
+          "phoneNumber": "{{phone}}"
+        },
+        "accessToken": "{{maya}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "expiresAt": "$any"
+        }
+      }
+    },
+    {
+      "name": "read the texted code",
+      "smsCode": {
+        "to": "{{phone}}",
+        "capture": "code"
+      }
+    },
+    {
+      "name": "the operator’s counts hold no code for the blocked prefix, and no number",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/sms/usage?days=1",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "days": 1,
+          "since": "$any",
+          "sent": "$any",
+          "used": "$any",
+          "unused": "$any",
+          "truncated": false
+        },
+        "bodyExcludes": ["+371", "+999", "{{phone}}", "{{blocked}}", "{{nowhere}}"]
+      }
+    },
+    {
+      "name": "a publishable key cannot read the counts",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/sms/usage?days=1",
+        "auth": "publishable"
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
+      "name": "and neither can a caller with no key",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/sms/usage?days=1",
+        "auth": "none"
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
+      "name": "the code makes the number the account’s",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/phone/verify",
+        "accessToken": "{{maya}}",
+        "body": {
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{mayaId}}",
+          "phoneNumber": "{{phone}}"
+        }
+      }
+    },
+    {
+      "name": "more than thirty days back is not read",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/sms/usage?days=31",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 422
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

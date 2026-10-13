@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from 'bun:test'
-import { DEFAULT_ENVIRONMENT_SETTINGS, durationToMs } from '@tula/contract'
+import { DEFAULT_ENVIRONMENT_SETTINGS, durationToMs, testAddress } from '@tula/contract'
 import type { Tenant } from '~/dependencies'
 import { ServiceException } from '~/exceptions'
 import * as logger from '~/lib/logger'
@@ -7,6 +7,8 @@ import * as Audit from '~/modules/audit/service'
 import * as Flows from '~/modules/flow/service'
 import * as Retention from '~/modules/retention/service'
 import * as Sessions from '~/modules/session/service'
+import * as Settings from '~/modules/settings/service'
+import * as Webhooks from '~/modules/webhook/service'
 import { createTestDeps, TEST_ACTOR, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
 
 const DAY = 86_400_000
@@ -129,6 +131,74 @@ const hasSession = async (scope: Tenant, id: string) =>
   (await deps.sessions.findById(scope.environmentId, id)) !== null
 
 describe('purge', () => {
+  test('removes the counts of texted codes of days more than ninety days ago, and none sooner', async () => {
+    // The test clock starts at midnight UTC: the counts are kept by day.
+    const day = (ms: number) => from(ms).toISOString().slice(0, 10)
+    const at = deps.clock.now()
+    await deps.smsUsage.takeFromDay(tenant, day(-91 * DAY), '+1', 1_000_000, at)
+    await deps.smsUsage.takeFromDay(tenant, day(-91 * DAY), '+49', 1_000_000, at)
+    await deps.smsUsage.takeFromDay(tenant, day(-90 * DAY), '+1', 1_000_000, at)
+    await deps.smsUsage.takeFromDay(tenant, day(0), '+1', 1_000_000, at)
+    await deps.smsUsage.takeFromDay(otherTenant, day(-200 * DAY), '+1', 1_000_000, at)
+    expect(await Retention.purge(deps)).toMatchObject({ smsCodeCounts: 3, failed: 0 })
+    // The ninetieth day back is the first that stays.
+    expect((await deps.smsUsage.summary(tenant.environmentId, day(-400 * DAY), 10)).sent).toBe(2)
+    expect((await deps.smsUsage.summary(otherTenant.environmentId, day(-400 * DAY), 10)).sent).toBe(
+      0
+    )
+    expect(await Retention.purge(deps)).toMatchObject({ smsCodeCounts: 0 })
+    deps.clock.advance('24h')
+    expect(await Retention.purge(deps)).toMatchObject({ smsCodeCounts: 1 })
+  })
+
+  test('removes the counts of a hook\u2019s calls of hours more than seven days ago, and none sooner', async () => {
+    const hook = async (scope: Tenant) => {
+      const id = deps.ids.next()
+      await deps.hooks.insert(
+        {
+          id,
+          projectId: scope.projectId,
+          environmentId: scope.environmentId,
+          point: 'before_sign_up',
+          url: 'https://app.example.com/tula/before-sign-up',
+          secret: 'sealed',
+          enabled: true,
+          deadlineMs: 2000,
+          failureMode: 'deny',
+          lastFailedAt: null,
+          lastFailureReason: null,
+          createdAt: deps.clock.now(),
+          updatedAt: deps.clock.now(),
+        },
+        Audit.none('fixture')
+      )
+      return id
+    }
+    const mine = await hook(tenant)
+    const theirs = await hook(otherTenant)
+    // The test clock starts on a whole hour: the counts are kept by hour.
+    await deps.hooks.countCall(tenant.environmentId, mine, from(-7 * DAY - 1), 'allowed')
+    await deps.hooks.countCall(tenant.environmentId, mine, from(-7 * DAY - 1), 'timed_out')
+    await deps.hooks.countCall(tenant.environmentId, mine, from(-7 * DAY), 'allowed')
+    await deps.hooks.countCall(tenant.environmentId, mine, from(0), 'denied')
+    await deps.hooks.countCall(otherTenant.environmentId, theirs, from(-30 * DAY), 'failed')
+    expect(await Retention.purge(deps)).toMatchObject({ hookCallCounts: 3, failed: 0 })
+    // The hour seven days back is the first that stays.
+    expect(
+      (await deps.hooks.callCounts(tenant.environmentId, new Date(0))).map((count) => [
+        count.hour.toISOString(),
+        count.outcome,
+      ])
+    ).toEqual([
+      [from(-7 * DAY).toISOString(), 'allowed'],
+      [from(0).toISOString(), 'denied'],
+    ])
+    expect(await deps.hooks.callCounts(otherTenant.environmentId, new Date(0))).toEqual([])
+    expect(await Retention.purge(deps)).toMatchObject({ hookCallCounts: 0 })
+    deps.clock.advance('1h')
+    expect(await Retention.purge(deps)).toMatchObject({ hookCallCounts: 1 })
+  })
+
   test('removes expired flow attempts in every environment, with their pending password hashes', async () => {
     const abandoned = await flowAttempt(tenant, from(10 * 60_000))
     const other = await flowAttempt(otherTenant, from(10 * 60_000))
@@ -146,6 +216,14 @@ describe('purge', () => {
       pendingFactors: 0,
       passkeyChallenges: 0,
       instanceAuditLogs: 0,
+      auditLogs: 0,
+      webhookDeliveries: 0,
+      events: 0,
+      smsCodeCounts: 0,
+      passwordHistory: 0,
+      proposals: 0,
+      hookCallCounts: 0,
+      testUsers: 0,
     })
     expect(await deps.flowAttempts.findById(tenant.environmentId, abandoned)).toBeNull()
     expect(await deps.flowAttempts.findById(otherTenant.environmentId, other)).toBeNull()
@@ -226,6 +304,14 @@ describe('purge', () => {
       pendingFactors: 2,
       passkeyChallenges: 0,
       instanceAuditLogs: 0,
+      auditLogs: 0,
+      webhookDeliveries: 0,
+      events: 0,
+      smsCodeCounts: 0,
+      passwordHistory: 0,
+      proposals: 0,
+      hookCallCounts: 0,
+      testUsers: 0,
     })
     expect(await has(tenant, abandoned)).toBe(false)
     expect(await has(otherTenant, foreign)).toBe(false)
@@ -270,6 +356,14 @@ describe('purge', () => {
           pendingFactors: 1,
           passkeyChallenges: 0,
           instanceAuditLogs: 0,
+          auditLogs: 0,
+          webhookDeliveries: 0,
+          events: 0,
+          smsCodeCounts: 0,
+          passwordHistory: 0,
+          proposals: 0,
+          hookCallCounts: 0,
+          testUsers: 0,
         },
       ],
     ])
@@ -289,6 +383,7 @@ describe('purge', () => {
             emailCode: { enabled: true },
             emailLink: { enabled: true },
             passkey: { enabled: false },
+            smsCode: { enabled: false },
           },
         },
       },
@@ -403,7 +498,7 @@ describe('purge', () => {
     expect((refused as ServiceException).status).toBe(401)
   })
 
-  test('never deletes an audit entry', async () => {
+  test('an environment that saved no settings keeps its audit entries: the default is for ever', async () => {
     const tokens = await Sessions.create(deps, tenant, {
       userId: USER,
       client: 'ios',
@@ -512,6 +607,14 @@ describe('purge', () => {
       pendingFactors: 0,
       passkeyChallenges: 0,
       instanceAuditLogs: 0,
+      auditLogs: 0,
+      webhookDeliveries: 0,
+      events: 0,
+      smsCodeCounts: 0,
+      passwordHistory: 0,
+      proposals: 0,
+      hookCallCounts: 0,
+      testUsers: 0,
     })
     expect(await deps.flowAttempts.findById(otherTenant.environmentId, other)).toBeNull()
     expect(await hasSession(otherTenant, stale.id)).toBe(false)
@@ -548,6 +651,364 @@ describe('purge', () => {
     expect(report.sessions).toBe(
       2 * Retention.RETENTION_MAX_BATCHES * Retention.RETENTION_BATCH_SIZE
     )
+  })
+})
+
+test('the retention job is the only code of the server that deletes audit entries', async () => {
+  // Deleting evidence has one door (AGENTS.md, ADR 0012): a second caller, with a cutoff of
+  // its own, would not be bound by the environment's period.
+  const callers: string[] = []
+  const source = new URL('../..', import.meta.url).pathname
+  for await (const file of new Bun.Glob('**/*.ts').scan(source)) {
+    const isTest = /\.(test|suite|integration)\.ts$/.test(file) || file === 'testing.ts'
+    // Where the method is declared and implemented, and the instance audit log's own purge
+    // of the same name (another port, reached only as `controlPlane.deleteAuditBefore`).
+    const declares = /^(ports|adapters\/[^/]+)\/(activity|control-plane)/.test(file)
+    if (isTest || declares) {
+      continue
+    }
+    const text = await Bun.file(`${source}${file}`).text()
+    if (/(?<!controlPlane\.)deleteAuditBefore\b/.test(text)) {
+      callers.push(file)
+    }
+  }
+  expect(callers).toEqual(['modules/retention/service.ts'])
+})
+
+describe('audit retention', () => {
+  /** Record one audit entry in an environment, at the test clock's current time. */
+  function auditEntry(scope: Tenant): string {
+    const id = deps.ids.next()
+    deps.activityLog.record([
+      {
+        id,
+        projectId: scope.projectId,
+        environmentId: scope.environmentId,
+        type: 'user.created',
+        actor: { type: 'system', id: null },
+        target: { type: 'user', id: USER },
+        ipAddress: null,
+        userAgent: null,
+        data: {},
+        occurredAt: deps.clock.now(),
+      },
+    ])
+    return id
+  }
+
+  /**
+   * Store an environment's settings with this audit retention period, as they would sit in
+   * the database: read back as a deployment's store reads them.
+   */
+  function keepAuditFor(scope: Tenant, retentionDays: unknown): void {
+    deps.environmentSettings.seedStored(scope.environmentId, {
+      revision: 1,
+      settings: { ...DEFAULT_ENVIRONMENT_SETTINGS, audit: { retentionDays } },
+    })
+  }
+
+  const auditIds = (scope: Tenant) =>
+    deps.activityLog.entries
+      .filter((entry) => entry.environmentId === scope.environmentId)
+      .map((entry) => entry.id)
+
+  test('deletes an environment’s entries older than its period, and none sooner', async () => {
+    keepAuditFor(tenant, 30)
+    const old = auditEntry(tenant)
+    deps.clock.advance(DAY)
+    const younger = auditEntry(tenant)
+
+    // Exactly as old as the period: kept. One millisecond older: gone.
+    deps.clock.advance(29 * DAY)
+    expect((await Retention.purge(deps)).auditLogs).toBe(0)
+    expect(auditIds(tenant)).toEqual([old, younger])
+    deps.clock.advance(1)
+    expect(await Retention.purge(deps)).toMatchObject({ auditLogs: 1, failed: 0 })
+    expect(auditIds(tenant)).toEqual([younger])
+  })
+
+  test('the period set through the admin API is the one applied', async () => {
+    const old = auditEntry(tenant)
+    await Settings.replace(
+      deps,
+      tenant,
+      {
+        expectedRevision: 0,
+        settings: { ...DEFAULT_ENVIRONMENT_SETTINGS, audit: { retentionDays: 7 } },
+      },
+      TEST_ACTOR
+    )
+    deps.clock.advance(7 * DAY + 1)
+    // The entry that says the period was set is as old as the one it dooms: both go.
+    expect((await Retention.purge(deps)).auditLogs).toBe(2)
+    expect(auditIds(tenant)).not.toContain(old)
+  })
+
+  test('an environment whose period is `null` keeps every entry, however old', async () => {
+    keepAuditFor(tenant, null)
+    const entry = auditEntry(tenant)
+    const deleteAudit = spyOn(deps.activityLog, 'deleteAuditBefore')
+    spies.push(deleteAudit)
+    deps.clock.advance(4_000 * DAY)
+    expect(await Retention.purge(deps)).toMatchObject({ auditLogs: 0, failed: 0 })
+    expect(auditIds(tenant)).toEqual([entry])
+    // Not "a delete that matched nothing": no delete is asked for at all.
+    expect(deleteAudit).not.toHaveBeenCalled()
+  })
+
+  test('two environments with different periods are each purged by their own', async () => {
+    keepAuditFor(tenant, 7)
+    keepAuditFor(otherTenant, 90)
+    auditEntry(tenant)
+    const long = auditEntry(otherTenant)
+
+    deps.clock.advance(8 * DAY)
+    expect((await Retention.purge(deps)).auditLogs).toBe(1)
+    expect(auditIds(tenant)).toEqual([])
+    expect(auditIds(otherTenant)).toEqual([long])
+
+    deps.clock.advance(83 * DAY)
+    expect((await Retention.purge(deps)).auditLogs).toBe(1)
+    expect(auditIds(otherTenant)).toEqual([])
+  })
+
+  test('one environment’s period never deletes another environment’s entries', async () => {
+    keepAuditFor(tenant, 1)
+    const mine = auditEntry(tenant)
+    const theirs = auditEntry(otherTenant)
+    const deleteAudit = spyOn(deps.activityLog, 'deleteAuditBefore')
+    spies.push(deleteAudit)
+    deps.clock.advance(400 * DAY)
+    expect((await Retention.purge(deps)).auditLogs).toBe(1)
+    expect(auditIds(tenant)).not.toContain(mine)
+    expect(auditIds(otherTenant)).toEqual([theirs])
+    expect(deleteAudit.mock.calls.map(([environmentId]) => environmentId)).toEqual([
+      tenant.environmentId,
+    ])
+  })
+
+  // A document changed by hand, or by another version: the admin API stores none of these.
+  // The store's read refuses a period that is not valid, as it refuses any scalar that is
+  // not (`readStoredRow`), so the environment's pass fails where the period is read and its
+  // entries are kept. The purges that come after the audit purge in the pass are not reached
+  // for that environment either, until the document is put right.
+  test.each([
+    ['zero', 0],
+    ['negative', -30],
+    ['a fraction of a day', 0.5],
+    ['a string', '30'],
+  ])(
+    'a stored period that is %s cannot be read: the environment’s pass fails and its entries are kept',
+    async (_, stored) => {
+      const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+      spies.push(warn)
+      keepAuditFor(tenant, stored)
+      keepAuditFor(otherTenant, 1)
+      const entry = auditEntry(tenant)
+      auditEntry(otherTenant)
+      // A count of texted codes in each environment: its purge comes after the audit purge.
+      const day = deps.clock.now().toISOString().slice(0, 10)
+      await deps.smsUsage.takeFromDay(tenant, day, '+1', 1_000_000, deps.clock.now())
+      await deps.smsUsage.takeFromDay(otherTenant, day, '+1', 1_000_000, deps.clock.now())
+      const deleteAudit = spyOn(deps.activityLog, 'deleteAuditBefore')
+      spies.push(deleteAudit)
+      deps.clock.advance(4_000 * DAY)
+      // The other environment is purged as ever.
+      expect(await Retention.purge(deps)).toMatchObject({
+        environments: 2,
+        failed: 1,
+        auditLogs: 1,
+        smsCodeCounts: 1,
+      })
+      expect(auditIds(tenant)).toEqual([entry])
+      expect(auditIds(otherTenant)).toEqual([])
+      // A known limitation, TULA-79: the purges after the audit purge are not reached for the
+      // environment whose settings cannot be read, so its old count is still there. When
+      // that is fixed this is 0 and `smsCodeCounts` above is 2.
+      expect((await deps.smsUsage.summary(tenant.environmentId, day, 10)).sent).toBe(1)
+      expect((await deps.smsUsage.summary(otherTenant.environmentId, day, 10)).sent).toBe(0)
+      expect(deleteAudit.mock.calls.map(([environmentId]) => environmentId)).toEqual([
+        otherTenant.environmentId,
+      ])
+      expect(warn).toHaveBeenCalledWith('retention failed in one environment', {
+        environmentId: tenant.environmentId,
+        err: expect.anything(),
+      })
+    }
+  )
+
+  // What JSON cannot hold is `null` once stored, and a key left out takes its default: both
+  // are "no period", which keeps every entry and is no failure.
+  test.each([
+    ['not a number', Number.NaN],
+    ['infinite', Number.POSITIVE_INFINITY],
+    ['missing', undefined],
+  ])(
+    'a period stored as %s reads as none: every entry is kept, and nothing fails',
+    async (_, stored) => {
+      keepAuditFor(tenant, stored)
+      const entry = auditEntry(tenant)
+      const deleteAudit = spyOn(deps.activityLog, 'deleteAuditBefore')
+      spies.push(deleteAudit)
+      deps.clock.advance(4_000 * DAY)
+      expect(await Retention.purge(deps)).toMatchObject({ auditLogs: 0, failed: 0 })
+      expect(auditIds(tenant)).toEqual([entry])
+      expect(deleteAudit).not.toHaveBeenCalled()
+    }
+  )
+
+  // The job's own defence, behind the store's: a period no store's read hands on (hence
+  // `seedUnread`) must still never be turned into a cutoff at or after now.
+  test.each([
+    ['zero', 0],
+    ['negative', -30],
+    ['a fraction of a day', 0.5],
+    ['not a number', Number.NaN],
+    ['infinite', Number.POSITIVE_INFINITY],
+    ['a string', '30'],
+    ['missing', undefined],
+  ])('a period that is %s, were a store to hand it on, deletes nothing', async (_, stored) => {
+    deps.environmentSettings.seedUnread(tenant.environmentId, {
+      revision: 1,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        audit: { retentionDays: stored as number | null },
+      },
+    })
+    const entry = auditEntry(tenant)
+    const deleteAudit = spyOn(deps.activityLog, 'deleteAuditBefore')
+    spies.push(deleteAudit)
+    deps.clock.advance(4_000 * DAY)
+    expect(await Retention.purge(deps)).toMatchObject({ auditLogs: 0, failed: 0 })
+    expect(auditIds(tenant)).toEqual([entry])
+    expect(deleteAudit).not.toHaveBeenCalled()
+  })
+
+  test('reads the period from the source, past this instance’s settings cache', async () => {
+    // A period lengthened on another instance must not be undercut by a stale copy here:
+    // unlike every other setting, acting on an old value destroys something.
+    const get = spyOn(deps.environmentSettings, 'get')
+    spies.push(get)
+    await Retention.purge(deps)
+    // The memory store declares one parameter (it has no cache to read past): widen the calls.
+    // Twice an environment: its audit period, and its password history (below).
+    expect(get.mock.calls as unknown[][]).toEqual([
+      [tenant.environmentId, true],
+      [tenant.environmentId, true],
+      [otherTenant.environmentId, true],
+      [otherTenant.environmentId, true],
+    ])
+  })
+
+  test('settings that cannot be read keep that environment’s entries; the others are purged', async () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    spies.push(warn)
+    keepAuditFor(tenant, 1)
+    keepAuditFor(otherTenant, 1)
+    const kept = auditEntry(tenant)
+    auditEntry(otherTenant)
+    deps.clock.advance(10 * DAY)
+    const get = deps.environmentSettings.get.bind(deps.environmentSettings)
+    spies.push(
+      spyOn(deps.environmentSettings, 'get').mockImplementation(async (environmentId) => {
+        if (environmentId === tenant.environmentId) {
+          throw new Error('settings store is down')
+        }
+        return get(environmentId)
+      })
+    )
+    const deleteAudit = spyOn(deps.activityLog, 'deleteAuditBefore')
+    spies.push(deleteAudit)
+    expect(await Retention.purge(deps)).toMatchObject({ environments: 2, failed: 1, auditLogs: 1 })
+    expect(auditIds(tenant)).toEqual([kept])
+    expect(auditIds(otherTenant)).toEqual([])
+    expect(deleteAudit.mock.calls.map(([environmentId]) => environmentId)).toEqual([
+      otherTenant.environmentId,
+    ])
+    expect(warn).toHaveBeenCalledWith('retention failed in one environment', {
+      environmentId: tenant.environmentId,
+      err: expect.anything(),
+    })
+  })
+
+  test('a failing audit purge in one environment does not stop the others', async () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    spies.push(warn)
+    keepAuditFor(tenant, 1)
+    keepAuditFor(otherTenant, 1)
+    const kept = auditEntry(tenant)
+    auditEntry(otherTenant)
+    deps.clock.advance(10 * DAY)
+    const deleteAudit = deps.activityLog.deleteAuditBefore.bind(deps.activityLog)
+    spies.push(
+      spyOn(deps.activityLog, 'deleteAuditBefore').mockImplementation(
+        async (environmentId, before, limit) => {
+          if (environmentId === tenant.environmentId) {
+            throw new Error('the audit store refused')
+          }
+          return deleteAudit(environmentId, before, limit)
+        }
+      )
+    )
+    expect(await Retention.purge(deps)).toMatchObject({ environments: 2, failed: 1, auditLogs: 1 })
+    expect(auditIds(tenant)).toEqual([kept])
+    expect(auditIds(otherTenant)).toEqual([])
+  })
+
+  test('an environment whose pass failed before its audit purge is finished by the next run', async () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    spies.push(warn)
+    keepAuditFor(tenant, 1)
+    auditEntry(tenant)
+    deps.clock.advance(10 * DAY)
+    spies.push(
+      spyOn(deps.sessions, 'deleteEnded').mockRejectedValueOnce(new Error('sessions store is down'))
+    )
+    expect(await Retention.purge(deps)).toMatchObject({ failed: 1, auditLogs: 0 })
+    expect(await Retention.purge(deps)).toMatchObject({ failed: 0, auditLogs: 1 })
+  })
+
+  test('deletes in batches, and stops at the run’s ceiling', async () => {
+    keepAuditFor(tenant, 1)
+    const total = Retention.RETENTION_BATCH_SIZE + 3
+    for (let index = 0; index < total; index++) {
+      auditEntry(tenant)
+    }
+    deps.clock.advance(2 * DAY)
+    const batches = spyOn(deps.activityLog, 'deleteAuditBefore')
+    spies.push(batches)
+    expect((await Retention.purge(deps)).auditLogs).toBe(total)
+    expect(batches.mock.calls.map(([, , limit]) => limit)).toEqual([
+      Retention.RETENTION_BATCH_SIZE,
+      Retention.RETENTION_BATCH_SIZE,
+    ])
+    const cutoff = new Date(deps.clock.now().getTime() - DAY)
+    expect(batches.mock.calls.map(([, before]) => before)).toEqual([cutoff, cutoff])
+
+    batches.mockImplementation(async (_environmentId, _before, limit) => limit)
+    expect((await Retention.purge(deps)).auditLogs).toBe(
+      Retention.RETENTION_MAX_BATCHES * Retention.RETENTION_BATCH_SIZE
+    )
+  })
+
+  test('says in the server log which environment lost entries, how many and under what period', async () => {
+    const info = spyOn(logger, 'info').mockImplementation(() => undefined)
+    const debug = spyOn(logger, 'debug').mockImplementation(() => undefined)
+    spies.push(info, debug)
+    keepAuditFor(tenant, 30)
+    keepAuditFor(otherTenant, 30)
+    auditEntry(tenant)
+    auditEntry(tenant)
+    deps.clock.advance(31 * DAY)
+    await Retention.run(deps)
+    // The deleted entries cannot say so themselves: this line is the record that they went.
+    expect(info.mock.calls).toEqual([
+      [
+        'audit entries past the retention period deleted',
+        { environmentId: tenant.environmentId, retentionDays: 30, deleted: 2 },
+      ],
+      ['retention run finished', expect.objectContaining({ auditLogs: 2 })],
+    ])
   })
 })
 
@@ -610,6 +1071,14 @@ describe('run', () => {
           pendingFactors: 0,
           passkeyChallenges: 0,
           instanceAuditLogs: 0,
+          auditLogs: 0,
+          webhookDeliveries: 0,
+          events: 0,
+          smsCodeCounts: 0,
+          passwordHistory: 0,
+          proposals: 0,
+          hookCallCounts: 0,
+          testUsers: 0,
         },
       ],
     ])
@@ -638,6 +1107,14 @@ describe('run', () => {
         pendingFactors: 0,
         passkeyChallenges: 0,
         instanceAuditLogs: 0,
+        auditLogs: 0,
+        webhookDeliveries: 0,
+        events: 0,
+        smsCodeCounts: 0,
+        passwordHistory: 0,
+        proposals: 0,
+        hookCallCounts: 0,
+        testUsers: 0,
       },
     ])
   })
@@ -648,5 +1125,583 @@ describe('run', () => {
     )
     await expect(Retention.run(deps)).rejects.toThrow('database unavailable')
     expect(await Retention.run(deps)).toMatchObject({ environments: 2 })
+  })
+})
+
+describe('the webhook worker’s leavings', () => {
+  /** Record that something happened. Returns the event's id. */
+  function happen(scope: Tenant = tenant): string {
+    const activity = Audit.entry(deps, scope, {
+      type: 'user.deleted',
+      actor: TEST_ACTOR,
+      target: { type: 'user', id: deps.ids.next() },
+    })
+    deps.activityLog.record([activity])
+    return activity.id
+  }
+
+  const exists = (eventId: string) => deps.activityLog.outbox.some((row) => row.id === eventId)
+
+  /** Mark an event settled, as the worker does, at the clock's time. */
+  const settle = (eventId: string, scope: Tenant = tenant) =>
+    deps.webhookDeliveries.markDelivered(scope.environmentId, [eventId], deps.clock.now())
+
+  /** An endpoint nothing is ever sent to here: the store only needs it to exist. */
+  async function endpoint(scope: Tenant = tenant): Promise<string> {
+    const id = deps.ids.next()
+    await deps.webhookEndpoints.insert(
+      {
+        id,
+        projectId: scope.projectId,
+        environmentId: scope.environmentId,
+        url: 'https://hooks.example.com/tula',
+        eventTypes: ['user.deleted'],
+        secret: 'sealed',
+        previousSecret: null,
+        previousSecretExpiresAt: null,
+        enabled: true,
+        disabledReason: null,
+        failingSince: null,
+        lastFailedAt: null,
+        createdAt: deps.clock.now(),
+        updatedAt: deps.clock.now(),
+      },
+      Audit.none('fixture')
+    )
+    return id
+  }
+
+  /** Queue a delivery of an event now, and end it or leave it pending. */
+  async function delivery(
+    endpointId: string,
+    eventId: string,
+    end: 'delivered' | 'failed' | null,
+    scope: Tenant = tenant
+  ): Promise<string> {
+    const id = deps.ids.next()
+    await deps.webhookDeliveries.enqueue([
+      {
+        id,
+        projectId: scope.projectId,
+        environmentId: scope.environmentId,
+        endpointId,
+        eventId,
+        eventType: 'user.deleted',
+        at: deps.clock.now(),
+      },
+    ])
+    if (end) {
+      await deps.webhookDeliveries.recordAttempt(
+        scope.environmentId,
+        id,
+        {
+          id: deps.ids.next(),
+          attemptedAt: deps.clock.now(),
+          statusCode: end === 'delivered' ? 204 : 500,
+          durationMs: 1,
+          failureReason: null,
+        },
+        { state: end, nextAttemptAt: null, completedAt: deps.clock.now() },
+        'pending'
+      )
+    }
+    return id
+  }
+
+  const deliveryExists = (id: string) => deps.webhookDeliveries.rows.some((row) => row.id === id)
+
+  test('a settled event is deleted thirty days after it was settled, not a moment sooner', async () => {
+    const eventId = happen()
+    deps.clock.advance('2d')
+    await settle(eventId)
+    deps.clock.advance(Retention.SETTLED_EVENT_RETENTION)
+    // Exactly thirty days after it was settled (thirty-two after it happened): kept.
+    expect(await Retention.purge(deps)).toMatchObject({ events: 0, failed: 0 })
+    expect(exists(eventId)).toBe(true)
+    deps.clock.advance(1)
+    expect(await Retention.purge(deps)).toMatchObject({ events: 1, failed: 0 })
+    expect(exists(eventId)).toBe(false)
+  })
+
+  test('an event no worker has settled is never deleted, however old', async () => {
+    const eventId = happen()
+    deps.clock.advance('400d')
+    expect(await Retention.purge(deps)).toMatchObject({ events: 0 })
+    expect(exists(eventId)).toBe(true)
+  })
+
+  test('deleting an event leaves its audit entry, and deleting an audit entry leaves its event', async () => {
+    const eventId = happen()
+    await settle(eventId)
+    deps.clock.advance('31d')
+    await Retention.purge(deps)
+    expect(exists(eventId)).toBe(false)
+    expect(deps.activityLog.entries.map((entry) => entry.id)).toContain(eventId)
+  })
+
+  test('an event is kept while a delivery of it is still pending, and goes once that delivery has ended', async () => {
+    const at = await endpoint()
+    const eventId = happen()
+    const pending = await delivery(at, eventId, null)
+    await settle(eventId)
+    deps.clock.advance('31d')
+    expect(await Retention.purge(deps)).toMatchObject({ events: 0 })
+    expect(exists(eventId)).toBe(true)
+    await deps.webhookDeliveries.giveUp(
+      tenant.environmentId,
+      [pending],
+      'expired',
+      deps.clock.now()
+    )
+    expect(await Retention.purge(deps)).toMatchObject({ events: 1 })
+    expect(exists(eventId)).toBe(false)
+  })
+
+  test('the record of a delivery outlives its event: it is read, with its attempts, until ninety days are up', async () => {
+    const at = await endpoint()
+    const eventId = happen()
+    const id = await delivery(at, eventId, 'failed')
+    await settle(eventId)
+    deps.clock.advance('31d')
+    expect(await Retention.purge(deps)).toMatchObject({ events: 1, webhookDeliveries: 0 })
+    expect(exists(eventId)).toBe(false)
+    // The log is whole: which event, what was tried, how it ended.
+    expect(await Webhooks.getDelivery(deps, tenant, at, id)).toMatchObject({
+      eventId,
+      eventType: 'user.deleted',
+      state: 'failed',
+      attempts: [{ attempt: 1, statusCode: 500 }],
+    })
+    // And "send it again" says plainly that there is nothing left to send.
+    const error = await Webhooks.redeliver(deps, tenant, at, id).then(
+      () => null,
+      (caught: unknown) => caught
+    )
+    expect(error).toBeInstanceOf(ServiceException)
+    expect(error).toMatchObject({
+      code: 'webhook.cannot_redeliver',
+      params: { reason: 'event_gone' },
+    })
+
+    deps.clock.advance('59d')
+    expect(await Retention.purge(deps)).toMatchObject({ webhookDeliveries: 0 })
+    expect(deliveryExists(id)).toBe(true)
+    deps.clock.advance(1)
+    expect(await Retention.purge(deps)).toMatchObject({ webhookDeliveries: 1 })
+    expect(deliveryExists(id)).toBe(false)
+    expect(deps.webhookDeliveries.attemptsOf(id)).toEqual([])
+  })
+
+  test('a delivery that is still pending is never deleted, however old', async () => {
+    const at = await endpoint()
+    const id = await delivery(at, happen(), null)
+    deps.clock.advance('400d')
+    expect(await Retention.purge(deps)).toMatchObject({ webhookDeliveries: 0 })
+    expect(deliveryExists(id)).toBe(true)
+  })
+
+  test('both purges go in bounded batches through the stores, one environment at a time', async () => {
+    const events = spyOn(deps.webhookDeliveries, 'deleteSettledEvents')
+    const deliveries = spyOn(deps.webhookDeliveries, 'deleteEndedBefore')
+    spies.push(events as never, deliveries as never)
+    await Retention.purge(deps)
+    for (const calls of [events.mock.calls, deliveries.mock.calls]) {
+      expect(calls.map(([environment]) => environment).sort()).toEqual(
+        [tenant.environmentId, otherTenant.environmentId].sort()
+      )
+      expect(calls.every(([, , limit]) => limit === Retention.RETENTION_BATCH_SIZE)).toBe(true)
+    }
+    const age = (calls: [string, Date, number][]) =>
+      calls.map(([, before]) => deps.clock.now().getTime() - before.getTime())
+    expect(new Set(age(events.mock.calls))).toEqual(
+      new Set([durationToMs(Retention.SETTLED_EVENT_RETENTION)])
+    )
+    expect(new Set(age(deliveries.mock.calls))).toEqual(
+      new Set([durationToMs(Retention.ENDED_DELIVERY_RETENTION)])
+    )
+  })
+
+  test('a backlog larger than a batch is drained in one run', async () => {
+    const at = await endpoint()
+    const count = Retention.RETENTION_BATCH_SIZE + 20
+    for (let index = 0; index < count; index++) {
+      const eventId = happen()
+      await delivery(at, eventId, 'delivered')
+      await settle(eventId)
+    }
+    deps.clock.advance('91d')
+    expect(await Retention.purge(deps)).toMatchObject({ events: count, webhookDeliveries: count })
+    expect(deps.activityLog.outbox).toEqual([])
+    expect(deps.webhookDeliveries.rows).toEqual([])
+  })
+
+  test('one environment’s purge never touches another’s events or deliveries', async () => {
+    const mine = happen(tenant)
+    const theirs = happen(otherTenant)
+    const theirDelivery = await delivery(
+      await endpoint(otherTenant),
+      theirs,
+      'delivered',
+      otherTenant
+    )
+    await settle(mine)
+    await settle(theirs, otherTenant)
+    deps.clock.advance('91d')
+    const purgeEvents = deps.webhookDeliveries.deleteSettledEvents.bind(deps.webhookDeliveries)
+    spies.push(
+      spyOn(deps.webhookDeliveries, 'deleteSettledEvents').mockImplementation(
+        async (environment, before, limit) =>
+          environment === otherTenant.environmentId ? 0 : purgeEvents(environment, before, limit)
+      ) as never
+    )
+    const purgeDeliveries = deps.webhookDeliveries.deleteEndedBefore.bind(deps.webhookDeliveries)
+    spies.push(
+      spyOn(deps.webhookDeliveries, 'deleteEndedBefore').mockImplementation(
+        async (environment, before, limit) =>
+          environment === otherTenant.environmentId
+            ? 0
+            : purgeDeliveries(environment, before, limit)
+      ) as never
+    )
+    await Retention.purge(deps)
+    expect(exists(mine)).toBe(false)
+    expect(exists(theirs)).toBe(true)
+    expect(deliveryExists(theirDelivery)).toBe(true)
+  })
+
+  test('the periods: a delivery can be sent again for a month, and its record is read for three', () => {
+    const events = durationToMs(Retention.SETTLED_EVENT_RETENTION)
+    const deliveries = durationToMs(Retention.ENDED_DELIVERY_RETENTION)
+    expect(events).toBe(30 * DAY)
+    expect(deliveries).toBe(90 * DAY)
+    // The log outlives the payload, and both outlive everything the worker itself still does.
+    expect(deliveries).toBeGreaterThan(events)
+    expect(events).toBeGreaterThan(durationToMs(Webhooks.WEBHOOK_DELIVERY_MAX_AGE))
+    // Above the floors the database keeps (migration 0019): a day for an event, a week for a
+    // delivery. The job never asks for less.
+    expect(events).toBeGreaterThan(DAY)
+    expect(deliveries).toBeGreaterThan(7 * DAY)
+  })
+
+  test('a run that removed only events and deliveries is worth a log line', async () => {
+    const info = spyOn(logger, 'info').mockImplementation(() => undefined)
+    spies.push(info as never)
+    const eventId = happen()
+    await settle(eventId)
+    deps.clock.advance('31d')
+    await Retention.run(deps)
+    expect(info.mock.calls).toEqual([
+      ['retention run finished', expect.objectContaining({ events: 1, webhookDeliveries: 0 })],
+    ])
+  })
+})
+
+describe('previous passwords beyond the password history (ADR 0038)', () => {
+  /**
+   * Store an environment's settings with this `password.history`, as they would sit in the
+   * database: read back as a deployment's store reads them.
+   */
+  function historyOf(scope: Tenant, history: unknown): void {
+    deps.environmentSettings.seedStored(scope.environmentId, {
+      revision: 1,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        password: { ...DEFAULT_ENVIRONMENT_SETTINGS.password, history },
+      },
+    })
+  }
+
+  /** A user who has had `changes + 1` passwords, every one of them kept. */
+  async function userWith(scope: Tenant, changes: number): Promise<string> {
+    const id = deps.ids.next()
+    await deps.users.create(
+      {
+        id,
+        projectId: scope.projectId,
+        environmentId: scope.environmentId,
+        email: `${id}@northline.app`,
+        emailNormalized: `${id}@northline.app`,
+        emailVerifiedAt: null,
+        firstName: null,
+        lastName: null,
+        createdAt: deps.clock.now(),
+        identityId: deps.ids.next(),
+        credentialId: deps.ids.next(),
+        passwordHash: '$argon2id$0',
+      },
+      Audit.none('fixture')
+    )
+    for (let n = 1; n <= changes; n++) {
+      await deps.users.setPasswordHash(
+        scope.environmentId,
+        id,
+        `$argon2id$${n}`,
+        deps.clock.now(),
+        Audit.none('fixture'),
+        { keep: 24 }
+      )
+    }
+    return id
+  }
+
+  const previous = async (scope: Tenant, userId: string) =>
+    (await deps.users.storedPasswords(scope.environmentId, userId, 24)).previous
+
+  test('a lowered history deletes what is beyond it for users who changed nothing since', async () => {
+    const user = await userWith(tenant, 6)
+    historyOf(tenant, 3)
+    expect(await Retention.purge(deps)).toMatchObject({ passwordHistory: 4, failed: 0 })
+    // The current password is one of the three; the two before it stay.
+    expect(await previous(tenant, user)).toEqual(['$argon2id$5', '$argon2id$4'])
+    expect(await Retention.purge(deps)).toMatchObject({ passwordHistory: 0 })
+  })
+
+  test.each([
+    [0, []],
+    [1, []],
+    [2, ['$argon2id$3']],
+    [24, ['$argon2id$3', '$argon2id$2', '$argon2id$1', '$argon2id$0']],
+  ])('a history of %d keeps the previous %j', async (history, kept) => {
+    const user = await userWith(tenant, 4)
+    historyOf(tenant, history)
+    await Retention.purge(deps)
+    expect(await previous(tenant, user)).toEqual(kept)
+  })
+
+  test('an environment that saved no settings uses the deployment’s number', async () => {
+    const user = await userWith(tenant, 4)
+    // The recommended preset keeps none.
+    expect(await Retention.purge(deps)).toMatchObject({ passwordHistory: 4 })
+    expect(await previous(tenant, user)).toEqual([])
+  })
+
+  test('each environment is purged by its own number', async () => {
+    const here = await userWith(tenant, 4)
+    const there = await userWith(otherTenant, 4)
+    historyOf(tenant, 5)
+    historyOf(otherTenant, 2)
+    expect(await Retention.purge(deps)).toMatchObject({ passwordHistory: 3 })
+    expect(await previous(tenant, here)).toHaveLength(4)
+    expect(await previous(otherTenant, there)).toEqual(['$argon2id$3'])
+  })
+
+  // A document changed by hand, or by another version: the admin API stores none of these.
+  // A deployment's store does not hand such a number on: its read refuses the document
+  // (`readStoredRow`; `null`, a key left out and what JSON turns into `null` included, since
+  // a stored password policy has no default for a field). The job reads the settings for the
+  // audit period first, so the environment's pass fails there: counted, logged, nothing of
+  // its history deleted, and the other environments purged as ever.
+  test.each([-1, 1.5, 25, '2', null, undefined, Number.NaN])(
+    'a stored history of %p cannot be read: the environment’s pass fails and nothing is deleted',
+    async (history) => {
+      const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+      spies.push(warn)
+      const user = await userWith(tenant, 4)
+      const purged = await userWith(otherTenant, 4)
+      historyOf(tenant, history)
+      await expect(deps.environmentSettings.get(tenant.environmentId)).rejects.toThrow()
+      const purge = spyOn(deps.users, 'deletePasswordHistoryBeyond')
+      spies.push(purge)
+      expect(await Retention.purge(deps)).toMatchObject({
+        environments: 2,
+        failed: 1,
+        passwordHistory: 4,
+      })
+      expect(purge.mock.calls.map(([environmentId]) => environmentId)).toEqual([
+        otherTenant.environmentId,
+      ])
+      expect(await previous(tenant, user)).toHaveLength(4)
+      expect(await previous(otherTenant, purged)).toEqual([])
+      expect(warn).toHaveBeenCalledWith('retention failed in one environment', {
+        environmentId: tenant.environmentId,
+        err: expect.anything(),
+      })
+    }
+  )
+
+  // The job's own defence, behind the store's: a number no store's read hands on (hence
+  // `seedUnread`) must still never be read as "keep none".
+  test.each([-1, 1.5, 25, '2', null, undefined, Number.NaN])(
+    'a history of %p, were a store to hand it on, deletes nothing',
+    async (history) => {
+      const user = await userWith(tenant, 4)
+      deps.environmentSettings.seedUnread(tenant.environmentId, {
+        revision: 1,
+        settings: {
+          ...DEFAULT_ENVIRONMENT_SETTINGS,
+          password: { ...DEFAULT_ENVIRONMENT_SETTINGS.password, history: history as number },
+        },
+      })
+      const purge = spyOn(deps.users, 'deletePasswordHistoryBeyond')
+      spies.push(purge)
+      expect(await Retention.purge(deps)).toMatchObject({ failed: 0 })
+      expect(
+        purge.mock.calls.filter(([environmentId]) => environmentId === tenant.environmentId)
+      ).toEqual([])
+      expect(await previous(tenant, user)).toHaveLength(4)
+    }
+  )
+
+  test('settings that cannot be read keep that environment’s rows; the others are purged', async () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    spies.push(warn)
+    const kept = await userWith(tenant, 3)
+    const purged = await userWith(otherTenant, 3)
+    const get = deps.environmentSettings.get.bind(deps.environmentSettings)
+    spies.push(
+      spyOn(deps.environmentSettings, 'get').mockImplementation(async (environmentId) => {
+        if (environmentId === tenant.environmentId) {
+          throw new Error('settings store is down')
+        }
+        return get(environmentId)
+      })
+    )
+    expect(await Retention.purge(deps)).toMatchObject({ failed: 1, passwordHistory: 3 })
+    expect(await previous(tenant, kept)).toHaveLength(3)
+    expect(await previous(otherTenant, purged)).toEqual([])
+  })
+
+  test('deletes in bounded batches through the store, one environment at a time', async () => {
+    await userWith(tenant, 3)
+    historyOf(tenant, 1)
+    historyOf(otherTenant, 4)
+    const purge = spyOn(deps.users, 'deletePasswordHistoryBeyond')
+    spies.push(purge)
+    await Retention.purge(deps)
+    expect(purge.mock.calls).toEqual([
+      [tenant.environmentId, 0, Retention.RETENTION_BATCH_SIZE],
+      [otherTenant.environmentId, 3, Retention.RETENTION_BATCH_SIZE],
+    ])
+  })
+
+  test('says in the server log which environment lost rows and how many, and nothing of them', async () => {
+    const info = spyOn(logger, 'info').mockImplementation(() => undefined)
+    spies.push(info)
+    const user = await userWith(tenant, 3)
+    historyOf(tenant, 2)
+    await Retention.run(deps)
+    expect(info.mock.calls).toEqual([
+      [
+        'previous passwords beyond the password history deleted',
+        { environmentId: tenant.environmentId, history: 2, deleted: 2 },
+      ],
+      ['retention run finished', expect.objectContaining({ passwordHistory: 2 })],
+    ])
+    const logged = JSON.stringify(info.mock.calls)
+    expect(logged).not.toContain('argon2')
+    expect(logged).not.toContain(user)
+  })
+})
+
+describe('what a sign-in test left behind (ADR 0058)', () => {
+  async function user(scope: Tenant, email: string): Promise<string> {
+    const id = deps.ids.next()
+    await deps.users.create(
+      {
+        id,
+        projectId: scope.projectId,
+        environmentId: scope.environmentId,
+        email,
+        emailNormalized: email,
+        emailVerifiedAt: deps.clock.now(),
+        firstName: null,
+        lastName: null,
+        createdAt: deps.clock.now(),
+        identityId: deps.ids.next(),
+        credentialId: deps.ids.next(),
+        passwordHash: '$argon2id$0',
+      },
+      Audit.none('fixture')
+    )
+    return id
+  }
+  let count = 0
+  const marked = () => {
+    count += 1
+    return testAddress(count.toString(16).padStart(32, '0'))
+  }
+  const exists = async (scope: Tenant, id: string) =>
+    (await deps.users.findById(scope.environmentId, id)) !== null
+
+  test('a throwaway user is deleted once a run could no longer be using it, and never a person', async () => {
+    const left = await user(tenant, marked())
+    const person = await user(tenant, 'maya@northline.app')
+    // Younger than the period: a run may still be signing it in.
+    deps.clock.advance(durationToMs(Retention.TEST_USER_RETENTION) - 1000)
+    expect((await Retention.purge(deps)).testUsers).toBe(0)
+    expect(await exists(tenant, left)).toBe(true)
+    deps.clock.advance(2000)
+    expect(await Retention.purge(deps)).toMatchObject({ testUsers: 1, failed: 0 })
+    expect(await exists(tenant, left)).toBe(false)
+    // However old a person's account is, it is not one of them.
+    deps.clock.advance(400 * DAY)
+    expect((await Retention.purge(deps)).testUsers).toBe(0)
+    expect(await exists(tenant, person)).toBe(true)
+  })
+
+  test('the deletion is recorded as the system’s, with the user as its target', async () => {
+    const left = await user(tenant, marked())
+    deps.clock.advance(durationToMs(Retention.TEST_USER_RETENTION) + 1000)
+    await Retention.purge(deps)
+    expect(deps.activityLog.ofType('user.deleted')).toMatchObject([
+      { actor: { type: 'system' }, target: { type: 'user', id: left } },
+    ])
+  })
+
+  test('each environment is purged through the store, in bounded batches, with one cutoff', async () => {
+    const here = await user(tenant, marked())
+    const there = await user(otherTenant, marked())
+    deps.clock.advance(durationToMs(Retention.TEST_USER_RETENTION) + 1000)
+    const purge = spyOn(deps.users, 'deleteTestUsersBefore')
+    spies.push(purge)
+    expect((await Retention.purge(deps)).testUsers).toBe(2)
+    const cutoff = from(-durationToMs(Retention.TEST_USER_RETENTION))
+    expect(
+      purge.mock.calls.map(([environmentId, before, limit]) => [
+        environmentId,
+        before.getTime(),
+        limit,
+      ])
+    ).toEqual([
+      [tenant.environmentId, cutoff.getTime(), Retention.RETENTION_BATCH_SIZE],
+      [otherTenant.environmentId, cutoff.getTime(), Retention.RETENTION_BATCH_SIZE],
+    ])
+    expect(await exists(tenant, here)).toBe(false)
+    expect(await exists(otherTenant, there)).toBe(false)
+  })
+
+  test('an earlier purge that throws does not take the test users’ purge with it', async () => {
+    const left = await user(tenant, marked())
+    deps.clock.advance(durationToMs(Retention.TEST_USER_RETENTION) + 1000)
+    // Every round, for as long as that store is broken: the safety net must still work.
+    spies.push(
+      spyOn(deps.hooks, 'deleteCallCountsBefore').mockRejectedValue(new Error('counts are gone'))
+    )
+    const report = await Retention.purge(deps)
+    expect(report.testUsers).toBe(1)
+    expect(report.failed).toBeGreaterThan(0)
+    expect(await exists(tenant, left)).toBe(false)
+  })
+
+  test('a test users’ purge that throws is logged by fixed words, the environment and the error’s name', async () => {
+    await user(tenant, marked())
+    deps.clock.advance(durationToMs(Retention.TEST_USER_RETENTION) + 1000)
+    const canary = 'Canary-store-text-91f0'
+    const warned = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    spies.push(
+      warned,
+      spyOn(deps.users, 'deleteTestUsersBefore').mockRejectedValue(new RangeError(canary))
+    )
+    const report = await Retention.purge(deps)
+    expect(report).toMatchObject({ testUsers: 0 })
+    expect(report.failed).toBeGreaterThan(0)
+    const lines = warned.mock.calls.filter(
+      ([words]) => words === 'retention could not purge the test users of one environment'
+    )
+    expect(lines.map(([, fields]) => fields)).toContainEqual({
+      environmentId: tenant.environmentId,
+      error: 'RangeError',
+    })
+    expect(JSON.stringify(warned.mock.calls)).not.toContain(canary)
   })
 })

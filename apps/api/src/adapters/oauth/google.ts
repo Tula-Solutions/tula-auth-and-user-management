@@ -3,6 +3,7 @@ import type {
   OAuthAuthorizationRequest,
   OAuthCodeExchange,
   OAuthCredentials,
+  OAuthIdTokenExchange,
   OAuthProfile,
   OAuthProvider,
 } from '~/ports/oauth-provider'
@@ -12,6 +13,7 @@ import {
   emailClaims,
   exchangeFailure,
   idTokenOf,
+  nativeIdTokenProfile,
   PROVIDER_TIMEOUT_MS,
   type ProviderOptions,
   withDeadline,
@@ -37,6 +39,11 @@ function client(credentials: OAuthCredentials, redirectUri: string): Google {
  * with `jose` (signature against Google's keys, issuer, audience, expiry, nonce). The subject is
  * the token's `sub`, the email its `email`, and `emailVerified` its `email_verified`. Google's
  * access token is dropped as soon as the exchange returns.
+ *
+ * `verifyIdToken` is the native path (ADR 0045): the token comes from the app, which got it
+ * from Credential Manager on Android or Google Sign-In on iOS, and no request is made to
+ * Google but the fetch of its keys. It is verified by the same verifier, against the
+ * environment's own client id and the client ids of its native apps.
  *
  * Every outbound call has a deadline (`options.timeoutMs`, ten seconds by default); a provider
  * that does not answer in time is `unavailable`.
@@ -86,6 +93,23 @@ export function createGoogleProvider(options: ProviderOptions = {}): OAuthProvid
         givenName: displayName(payload.given_name),
         familyName: displayName(payload.family_name),
       }
+    },
+
+    async verifyIdToken(
+      _credentials: OAuthCredentials,
+      exchange: OAuthIdTokenExchange
+    ): Promise<OAuthProfile> {
+      // The same verifier as the code flow's: Google's keys, `RS256` only, its two issuers,
+      // the expiry. The audience is one of several here, and what else a native app's token
+      // must satisfy (`aud` one string, `azp`, the nonce) is `nativeIdTokenProfile`'s.
+      // `handedOver`: keys that could not be had are `unavailable` however they failed, and
+      // a token that names no key is refused before they are asked for.
+      const payload = await verify(exchange.idToken, {
+        audience: exchange.audiences,
+        nonce: exchange.nonce,
+        handedOver: true,
+      })
+      return nativeIdTokenProfile(payload, exchange)
     },
   }
 }

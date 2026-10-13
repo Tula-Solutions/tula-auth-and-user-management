@@ -1,0 +1,466 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "Facebook never links by address",
+  "description": "Facebook is asked for no email address, so nothing it says can connect a Facebook account to an account that has one. A member has a verified address and a password; someone continues with Facebook while the consent form names the member’s address: a new account with no address is created, the member’s account is untouched and nothing is connected to it. That new account’s Facebook account is its only way to sign in, so removing it is refused. A signed-in user can still connect a Facebook account from their profile (the session is the proof), and that account then signs them in. Uses the server’s mock provider (OAUTH_MOCK_PROVIDER, local tier only). The provider’s credentials are removed afterwards, even when a step fails.",
+  "needsSecretKey": true,
+  "variables": {
+    "member": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    },
+    "strangerAccount": {
+      "generate": "snowflake"
+    },
+    "memberAccount": {
+      "generate": "snowflake"
+    }
+  },
+  "steps": [
+    {
+      "name": "an administrator sets the environment’s own Facebook credentials",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/facebook",
+        "auth": "secret",
+        "body": {
+          "clientId": "conformance-facebook-client",
+          "clientSecret": "conformance-facebook-secret"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "facebook",
+          "configured": true,
+          "enabled": true,
+          "clientId": "conformance-facebook-client",
+          "callbackUrl": "$any"
+        },
+        "bodyExcludes": ["conformance-facebook-secret"]
+      }
+    },
+    {
+      "name": "a member with a verified address and a password",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users",
+        "auth": "secret",
+        "body": {
+          "email": "{{member}}",
+          "password": "{{password}}",
+          "emailVerified": true
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": "$any"
+      },
+      "capture": {
+        "memberId": "id"
+      }
+    },
+    {
+      "name": "a stranger continues with Facebook",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "facebook",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_facebook"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "aUrl": "authorizationUrl",
+        "aBinding": "binding"
+      }
+    },
+    {
+      "name": "their consent form names the member’s address",
+      "oauth": {
+        "authorizationUrl": "{{aUrl}}",
+        "email": "{{member}}",
+        "subject": "{{strangerAccount}}",
+        "captureTicket": "aTicket",
+        "captureAttempt": "aId"
+      }
+    },
+    {
+      "name": "a new account is made: the member’s is not signed in to",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{aTicket}}",
+          "attemptId": "{{aId}}",
+          "binding": "{{aBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "$any",
+          "kind": "sign_in",
+          "expiresAt": "$any",
+          "step": {
+            "status": "complete",
+            "userId": {
+              "$not": "{{memberId}}"
+            },
+            "sessionId": "$any"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": "$any"
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "amr": {
+              "$set": ["fed"]
+            }
+          }
+        },
+        "bodyExcludes": ["{{member}}"]
+      },
+      "capture": {
+        "strangerId": "step.userId",
+        "strangerToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "the new account has no address, least of all the member’s",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "accessToken": "{{strangerToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{strangerId}}",
+          "email": "$absent",
+          "emailVerifiedAt": "$absent",
+          "hasPassword": false
+        },
+        "bodyExcludes": ["{{member}}"]
+      }
+    },
+    {
+      "name": "nothing was connected to the member’s account",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?action=user.identity_linked&targetId={{memberId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": "$any",
+          "data": []
+        }
+      }
+    },
+    {
+      "name": "the new account signs in with Facebook and nothing else",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/identities",
+        "accessToken": "{{strangerToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "id": "$any",
+              "provider": "facebook",
+              "createdAt": "$any"
+            }
+          ]
+        }
+      },
+      "capture": {
+        "strangerIdentity": "data.0.id"
+      }
+    },
+    {
+      "name": "so its only way to sign in cannot be removed",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/client/me/identities/{{strangerIdentity}}",
+        "accessToken": "{{strangerToken}}"
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "status": 409,
+          "code": "identity.last_sign_in_method",
+          "detail": "$any"
+        }
+      }
+    },
+    {
+      "name": "and is still there",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/identities",
+        "accessToken": "{{strangerToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "id": "$any",
+              "provider": "facebook",
+              "createdAt": "$any"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "the member starts a sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{member}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "pId": "id",
+        "pSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "and completes it with the password",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{pId}}/password",
+        "attempt": "{{pSecret}}",
+        "body": {
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          }
+        }
+      },
+      "capture": {
+        "memberToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "the member has no connected account",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/identities",
+        "accessToken": "{{memberToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": []
+        }
+      }
+    },
+    {
+      "name": "the member starts connecting a Facebook account from their profile",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/identities/oauth",
+        "accessToken": "{{memberToken}}",
+        "body": {
+          "provider": "facebook",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attemptId": "$any",
+          "expiresAt": "$any",
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "eUrl": "authorizationUrl",
+        "eBinding": "binding"
+      }
+    },
+    {
+      "name": "Facebook names the account by its id",
+      "oauth": {
+        "authorizationUrl": "{{eUrl}}",
+        "subject": "{{memberAccount}}",
+        "captureTicket": "eTicket",
+        "captureAttempt": "eId"
+      }
+    },
+    {
+      "name": "the signed-in user connects it: the session is the proof",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/identities/oauth/exchange",
+        "accessToken": "{{memberToken}}",
+        "body": {
+          "ticket": "{{eTicket}}",
+          "attemptId": "{{eId}}",
+          "binding": "{{eBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "$any",
+          "provider": "facebook",
+          "createdAt": "$any"
+        }
+      }
+    },
+    {
+      "name": "that Facebook account continues with Facebook",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth",
+        "client": "ios",
+        "body": {
+          "provider": "facebook",
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "kind": "sign_in",
+            "expiresAt": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_facebook"]
+            }
+          },
+          "authorizationUrl": "$any",
+          "binding": "$any"
+        }
+      },
+      "capture": {
+        "fUrl": "authorizationUrl",
+        "fBinding": "binding"
+      }
+    },
+    {
+      "name": "the same id",
+      "oauth": {
+        "authorizationUrl": "{{fUrl}}",
+        "subject": "{{memberAccount}}",
+        "captureTicket": "fTicket",
+        "captureAttempt": "fId"
+      }
+    },
+    {
+      "name": "and signs the member in, who still has their address",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/oauth/exchange",
+        "body": {
+          "ticket": "{{fTicket}}",
+          "attemptId": "{{fId}}",
+          "binding": "{{fBinding}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "$any",
+          "kind": "sign_in",
+          "expiresAt": "$any",
+          "step": {
+            "status": "complete",
+            "userId": "{{memberId}}",
+            "sessionId": "$any"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "accessTokenExpiresAt": "$any",
+            "refreshToken": "$any"
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "amr": {
+              "$set": ["fed"]
+            }
+          }
+        }
+      },
+      "capture": {
+        "linkedToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "the member’s address is what it was",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "accessToken": "{{linkedToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{memberId}}",
+          "email": "{{member}}",
+          "emailVerifiedAt": "$any"
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "remove the facebook credentials",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/oauth-providers/facebook",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    }
+  ]
+}

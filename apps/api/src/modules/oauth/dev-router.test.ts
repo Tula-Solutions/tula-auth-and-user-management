@@ -56,10 +56,22 @@ async function start() {
 
 const pathOf = (url: string) => url.slice(new URL(url).origin.length)
 
-function consent(authorizationUrl: string, fields: Record<string, string>) {
+/** What a browser on this machine sends. A `host` of the test's own replaces it. */
+const LOCAL = { host: 'localhost:3003' }
+
+/** The consent page, asked for the way a browser on this machine asks. */
+function shown(path: string, headers: Record<string, string> = LOCAL) {
+  return app.request(path, { headers })
+}
+
+function consent(
+  authorizationUrl: string,
+  fields: Record<string, string>,
+  headers: Record<string, string> = LOCAL
+) {
   return app.request('/v1/dev/oauth/authorize', {
     method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    headers: { 'content-type': 'application/x-www-form-urlencoded', ...headers },
     body: new URLSearchParams({
       ...Object.fromEntries(new URL(authorizationUrl).searchParams),
       ...fields,
@@ -70,7 +82,7 @@ function consent(authorizationUrl: string, fields: Record<string, string>) {
 describe('the mock provider’s consent page', () => {
   test('shows a form that posts back the request’s parameters, escaped, and is not cacheable', async () => {
     const started = await start()
-    const res = await app.request(pathOf(started.authorizationUrl))
+    const res = await shown(pathOf(started.authorizationUrl))
     expect(res.status).toBe(200)
     expect(res.headers.get('cache-control')).toBe('no-store')
     expect(res.headers.get('content-security-policy')).toContain("default-src 'none'")
@@ -84,13 +96,13 @@ describe('the mock provider’s consent page', () => {
     const started = await start()
     const url = new URL(started.authorizationUrl)
     url.searchParams.set('redirect_uri', 'https://evil.test/cb"><script>alert(1)</script>')
-    const page = await app.request(pathOf(url.toString()))
+    const page = await shown(pathOf(url.toString()))
     expect(page.status).toBe(400)
     expect(await page.text()).not.toContain('evil.test')
     const posted = await consent(url.toString(), { email: 'maya@northline.app' })
     expect(posted.status).toBe(400)
     expect(posted.headers.get('location')).toBeNull()
-    expect((await app.request('/v1/dev/oauth/authorize?provider=facebook')).status).toBe(400)
+    expect((await shown('/v1/dev/oauth/authorize?provider=twitch')).status).toBe(400)
     expect((await consent(started.authorizationUrl, {})).status).toBe(400)
   })
 
@@ -150,10 +162,450 @@ describe('the mock provider’s consent page', () => {
   test('a form that cannot be read is refused', async () => {
     const res = await app.request('/v1/dev/oauth/authorize', {
       method: 'POST',
-      headers: { 'content-type': 'multipart/form-data; boundary=x' },
+      headers: { 'content-type': 'multipart/form-data; boundary=x', ...LOCAL },
       body: 'nope',
     })
     expect(res.status).toBe(400)
+  })
+})
+
+// A tunnel (`tula dev --tunnel`, ADR 0049) and a DNS-rebinding page both deliver a request
+// whose `Host` is not this machine's. The mock signs anyone in as any address, so neither
+// of its routes may answer one: the same rule, and the same table, as the SMS inbox's.
+const FOREIGN_HOSTS: [string, string][] = [
+  ['a tunnel’s public name', 'laptop.tail1234.ts.net'],
+  ['a tunnel’s public name, with a port', 'laptop.tail1234.ts.net:443'],
+  ['a rebinding page’s', 'attacker.example'],
+  ['a rebinding page’s, with a port', 'attacker.example:3003'],
+  ['a name that only starts like loopback', 'localhost.attacker.example'],
+  ['a name that only ends like loopback', 'attacker-localhost'],
+  ['an address that embeds loopback', '127.0.0.1.attacker.example'],
+  ['every interface', '0.0.0.0:3003'],
+  ['a LAN address', '192.168.1.10:3003'],
+  ['user information before a loopback name', 'attacker.example@localhost'],
+  ['a path', 'localhost/attacker.example'],
+  ['an empty one', ''],
+  ['one that is only a port', ':3003'],
+  ['one with a space', 'localhost attacker.example'],
+  // Spellings of this machine that `isLoopbackHost` does not take, as it does not for
+  // `PUBLIC_URL`: the rule is a closed list of names, and what is not on it is refused.
+  ['loopback with a trailing dot', 'localhost.'],
+  ['loopback with a trailing dot and a port', 'localhost.:3003'],
+  ['IPv6 loopback without brackets', '::1'],
+  ['an IPv4 loopback address mapped into IPv6', '[::ffff:127.0.0.1]'],
+  ['IPv6 loopback written out in full', '[0:0:0:0:0:0:0:1]'],
+]
+
+const LOOPBACK_HOSTS = [
+  'localhost:3003',
+  'localhost',
+  'LOCALHOST:3004',
+  '127.0.0.1:3003',
+  '[::1]',
+  '[::1]:3003',
+  'api.localhost:3003',
+]
+
+describe('the mock provider’s consent page answers this machine only', () => {
+  test.each(FOREIGN_HOSTS)(
+    'refuses a Host that is not this machine (%s): 403, an empty body, nothing issued',
+    async (_name, host) => {
+      const started = await start()
+      const page = await shown(pathOf(started.authorizationUrl), { host })
+      expect(page.status).toBe(403)
+      expect(await page.text()).toBe('')
+      const posted = await consent(
+        started.authorizationUrl,
+        { email: 'maya@northline.app' },
+        { host }
+      )
+      expect(posted.status).toBe(403)
+      expect(await posted.text()).toBe('')
+      // No redirect: a code travels in one.
+      expect(posted.headers.get('location')).toBeNull()
+    }
+  )
+
+  test('refuses a request with no Host at all', async () => {
+    const started = await start()
+    expect((await shown(pathOf(started.authorizationUrl), {})).status).toBe(403)
+    const posted = await consent(started.authorizationUrl, { email: 'maya@northline.app' }, {})
+    expect(posted.status).toBe(403)
+    expect(posted.headers.get('location')).toBeNull()
+  })
+
+  // What a tunnel adds to a request says nothing: the name the request was sent to decides.
+  test('a tunnel’s request is refused whatever else it carries', async () => {
+    const started = await start()
+    const tunnelled = {
+      host: 'laptop.tail1234.ts.net',
+      'x-forwarded-host': 'localhost:3003',
+      'x-forwarded-for': '127.0.0.1',
+      forwarded: 'host=localhost',
+      'tailscale-funnel-request': '?1',
+    }
+    expect((await shown(pathOf(started.authorizationUrl), tunnelled)).status).toBe(403)
+    const posted = await consent(
+      started.authorizationUrl,
+      { email: 'maya@northline.app' },
+      tunnelled
+    )
+    expect(posted.status).toBe(403)
+    expect(posted.headers.get('location')).toBeNull()
+  })
+
+  test.each(LOOPBACK_HOSTS)('answers on a loopback Host, any port: %s', async (host) => {
+    const started = await start()
+    expect((await shown(pathOf(started.authorizationUrl), { host })).status).toBe(200)
+    const posted = await consent(
+      started.authorizationUrl,
+      { email: 'maya@northline.app' },
+      { host }
+    )
+    expect(posted.status).toBe(302)
+  })
+
+  test('the Host is asked before the request is read: a refusal says nothing of it', async () => {
+    const res = await shown('/v1/dev/oauth/authorize?provider=twitch', { host: 'attacker.example' })
+    expect(res.status).toBe(403)
+    expect(await res.text()).toBe('')
+  })
+})
+
+/** This API's own origin in these tests: the origin of `config.publicUrl`. */
+const OWN_ORIGIN = 'http://localhost:3003'
+
+// TULA-68: the form's post issues a code for whatever address it is told, so it is taken
+// only from the page this API served, or from a tool that is no browser.
+describe('the mock provider’s consent form is posted by its own page only', () => {
+  test.each([
+    ['a foreign page', { origin: 'https://evil.example' }],
+    [
+      'a foreign page, marked cross-site',
+      { origin: 'https://evil.example', 'sec-fetch-site': 'cross-site' },
+    ],
+    ['the app under development, on another port', { origin: 'http://localhost:5174' }],
+    ['this origin by another loopback name', { origin: 'http://127.0.0.1:3003' }],
+    ['this origin over another scheme', { origin: 'https://localhost:3003' }],
+    ['this origin with a trailing slash', { origin: 'http://localhost:3003/' }],
+    ['this origin in another case', { origin: 'HTTP://LOCALHOST:3003' }],
+    ['an opaque origin and no fetch metadata', { origin: 'null' }],
+    ['an opaque origin, marked cross-site', { origin: 'null', 'sec-fetch-site': 'cross-site' }],
+    ['an opaque origin, marked same-site', { origin: 'null', 'sec-fetch-site': 'same-site' }],
+    ['an opaque origin, marked as no site’s', { origin: 'null', 'sec-fetch-site': 'none' }],
+    [
+      'a foreign origin, marked same-origin',
+      { origin: 'https://evil.example', 'sec-fetch-site': 'same-origin' },
+    ],
+    ['an empty Origin', { origin: '' }],
+    ['a cross-site request with no Origin', { 'sec-fetch-site': 'cross-site' }],
+    ['a same-site request with no Origin', { 'sec-fetch-site': 'same-site' }],
+    ['its own Origin, marked cross-site', { origin: OWN_ORIGIN, 'sec-fetch-site': 'cross-site' }],
+    ['its own Origin, marked same-site', { origin: OWN_ORIGIN, 'sec-fetch-site': 'same-site' }],
+    ['a Sec-Fetch-Site it does not know', { origin: OWN_ORIGIN, 'sec-fetch-site': 'elsewhere' }],
+    // The rule is an allow-list of what the header may say, not a deny-list of `cross-site`
+    // and `same-site`: a value that is none of the two it takes is refused, an empty one
+    // included, whatever stands beside it.
+    ['an empty Sec-Fetch-Site', { 'sec-fetch-site': '' }],
+    ['a Sec-Fetch-Site it does not know and no Origin', { 'sec-fetch-site': 'elsewhere' }],
+    [
+      'an opaque origin beside a Sec-Fetch-Site it does not know',
+      { origin: 'null', 'sec-fetch-site': 'elsewhere' },
+    ],
+    [
+      'an opaque origin beside same-origin in another case',
+      { origin: 'null', 'sec-fetch-site': 'Same-Origin' },
+    ],
+  ])('refuses %s: 403, an empty body, no code', async (_name, headers) => {
+    const started = await start()
+    for (const action of ['allow', 'deny']) {
+      const posted = await consent(
+        started.authorizationUrl,
+        { email: 'maya@northline.app', action },
+        { ...LOCAL, ...headers }
+      )
+      expect(posted.status).toBe(403)
+      expect(await posted.text()).toBe('')
+      // No redirect: a code travels in one, and one to the callback spends the attempt's state.
+      expect(posted.headers.get('location')).toBeNull()
+    }
+  })
+
+  test.each([
+    [
+      'its own page, as a browser posts a form',
+      { origin: OWN_ORIGIN, 'sec-fetch-site': 'same-origin' },
+    ],
+    // What Chromium really sends for this page's form: the API's `Referrer-Policy:
+    // no-referrer` makes a form post's `Origin` opaque (seen in the browser tests).
+    [
+      'its own page, under the API’s no-referrer policy',
+      { origin: 'null', 'sec-fetch-site': 'same-origin' },
+    ],
+    ['its own page, from a browser that sends no fetch metadata', { origin: OWN_ORIGIN }],
+    ['a tool that is no browser', {}],
+    // `none` is the browser's word for "no page caused this" (typed, a bookmark, an
+    // extension's own request): no site is behind it, so it is taken like a tool's. A page
+    // cannot make a browser say it of a form it posts.
+    ['a request the browser says no site caused', { 'sec-fetch-site': 'none' }],
+    [
+      'its own Origin on a request no site caused',
+      { origin: OWN_ORIGIN, 'sec-fetch-site': 'none' },
+    ],
+  ])('takes the post of %s', async (_name, headers) => {
+    const started = await start()
+    const posted = await consent(
+      started.authorizationUrl,
+      { email: 'maya@northline.app' },
+      { ...LOCAL, ...headers }
+    )
+    expect(posted.status).toBe(302)
+    expect(posted.headers.get('location')).toContain('code=')
+  })
+
+  test('the Host is judged first: a foreign Host with this API’s own Origin is still refused', async () => {
+    const started = await start()
+    const posted = await consent(
+      started.authorizationUrl,
+      { email: 'maya@northline.app' },
+      { host: 'attacker.example', origin: OWN_ORIGIN, 'sec-fetch-site': 'same-origin' }
+    )
+    expect(posted.status).toBe(403)
+  })
+
+  test('the origin is asked before the form is read: a refusal says nothing of it', async () => {
+    const res = await app.request('/v1/dev/oauth/authorize', {
+      method: 'POST',
+      headers: { ...LOCAL, origin: 'https://evil.example', 'content-type': 'text/plain' },
+      body: 'nope',
+    })
+    expect(res.status).toBe(403)
+    expect(await res.text()).toBe('')
+  })
+
+  // A GET changes nothing and issues nothing, and the page is reached the way a real
+  // provider's is: by a navigation from the app, which is another site.
+  test('showing the page is not held to an origin, and the page may not be framed', async () => {
+    const started = await start()
+    const page = await shown(pathOf(started.authorizationUrl), {
+      ...LOCAL,
+      'sec-fetch-site': 'cross-site',
+    })
+    expect(page.status).toBe(200)
+    expect(page.headers.get('content-security-policy')).toContain("frame-ancestors 'none'")
+    // Why the form's own post arrives with `Origin: null`: the query of this page's address
+    // holds the attempt's `state`, and no request it causes may carry that as a referrer.
+    expect(page.headers.get('referrer-policy')).toBe('no-referrer')
+  })
+})
+
+const AUDIENCE = '1234567890-webclient.apps.googleusercontent.com'
+
+function mint(body: unknown, headers: Record<string, string> = { host: 'localhost:3003' }) {
+  return app.request('/v1/dev/oauth/id-token', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...headers },
+    body: typeof body === 'string' ? body : JSON.stringify(body),
+  })
+}
+
+describe('the mock provider’s ID tokens (ADR 0045)', () => {
+  const asked = {
+    provider: 'google',
+    audience: AUDIENCE,
+    nonce: 'n-1',
+    email: 'Maya@Northline.app',
+  }
+
+  test('mints a token the mock’s own verifier accepts, for the nonce and the audience asked for', async () => {
+    const res = await mint({ ...asked, givenName: 'Maya' })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    const { idToken } = (await res.json()) as { idToken: string }
+    const profile = await deps.oauth.google.verifyIdToken?.(
+      { clientId: AUDIENCE, clientSecret: 'x' },
+      { idToken, audiences: [AUDIENCE], nonce: 'n-1' }
+    )
+    expect(profile).toMatchObject({
+      email: 'Maya@Northline.app',
+      emailVerified: true,
+      givenName: 'Maya',
+    })
+    // Derived from the address, as the consent page's is: the same account every time.
+    expect(profile?.subject).toMatch(/^mock-[0-9a-f]{24}$/)
+  })
+
+  test.each([
+    ['another nonce', { nonce: 'n-2' }, {}],
+    ['no nonce', { nonce: undefined }, {}],
+    ['another audience', { audience: 'other.apps.googleusercontent.com' }, {}],
+    [
+      'an authorized party that is not accepted',
+      { authorizedParty: 'app.apps.googleusercontent.com' },
+      {},
+    ],
+    ['expired', { expired: true }, {}],
+  ])('what it is asked to get wrong, it gets wrong: %s', async (_name, change) => {
+    const res = await mint({ ...asked, ...change })
+    const { idToken } = (await res.json()) as { idToken: string }
+    await expect(
+      deps.oauth.google.verifyIdToken?.(
+        { clientId: AUDIENCE, clientSecret: 'x' },
+        { idToken, audiences: [AUDIENCE], nonce: 'n-1' }
+      )
+    ).rejects.toMatchObject({ failure: 'invalid_token' })
+  })
+
+  test('“unverified” and an account id of its own reach the profile', async () => {
+    const res = await mint({ ...asked, unverified: true, subject: 'acct-9' })
+    const { idToken } = (await res.json()) as { idToken: string }
+    const profile = await deps.oauth.google.verifyIdToken?.(
+      { clientId: AUDIENCE, clientSecret: 'x' },
+      { idToken, audiences: [AUDIENCE], nonce: 'n-1' }
+    )
+    expect(profile).toMatchObject({ subject: 'acct-9', emailVerified: false })
+  })
+
+  test.each([
+    ['no Host', {}],
+    ['a Host that is not loopback', { host: 'api.example.com' }],
+    ['a rebinding page’s Host', { host: 'attacker.test:3003' }],
+    ['a loopback look-alike', { host: 'localhost.attacker.test' }],
+  ])('refused with an empty 403 for %s', async (_name, headers) => {
+    const res = await mint(asked, headers)
+    expect(res.status).toBe(403)
+    expect(await res.text()).toBe('')
+  })
+
+  test.each([
+    ['an Origin, even this API’s own', { origin: 'http://localhost:3003' }],
+    ['a foreign Origin', { origin: 'https://evil.example' }],
+    ['a cross-site request', { 'sec-fetch-site': 'cross-site' }],
+    ['a same-site request', { 'sec-fetch-site': 'same-site' }],
+  ])('refused for a browser’s page: %s', async (_name, headers) => {
+    const res = await mint(asked, { host: 'localhost:3003', ...headers })
+    expect(res.status).toBe(403)
+    expect(await res.text()).not.toContain('idToken')
+  })
+
+  test.each([
+    ['not JSON', 'nope'],
+    ['a provider with no ID-token exchange', { ...asked, provider: 'github' }],
+    ['no audience', { provider: 'google', email: 'a@b.test' }],
+    ['neither an address nor an account id', { provider: 'google', audience: AUDIENCE }],
+    ['a key it does not know', { ...asked, clientSecret: 'x' }],
+  ])('a request it cannot read is a 400: %s', async (_name, body) => {
+    const res = await mint(body)
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'invalid request' })
+  })
+
+  test.each([
+    ['the flag is off', { oauthMock: false }],
+    ['the tier is not local', { tier: 'dev' as const }],
+    ['the tier is production', { tier: 'prod' as const }],
+  ])('is not mounted when %s', async (_name, config) => {
+    await mockApp(config)
+    const res = await mint(asked)
+    expect(res.status).toBe(404)
+    expect(await res.text()).not.toContain('idToken')
+  })
+})
+
+describe('the mock provider’s Apple ID tokens (ADR 0047)', () => {
+  const BUNDLE = 'app.northline.ios'
+  const HASHED = 'a'.repeat(64)
+  const asked = { provider: 'apple', audience: BUNDLE, nonce: HASHED, email: 'maya@northline.app' }
+
+  async function claimsOf(body: unknown): Promise<Record<string, unknown>> {
+    const res = await mint(body)
+    expect(res.status).toBe(200)
+    const { idToken } = (await res.json()) as { idToken: string }
+    return JSON.parse(
+      new TextDecoder().decode(await deps.secretBox.open('oauth-mock-id-tokens', idToken, 'apple'))
+    )
+  }
+
+  test('a token has Apple’s shape: the bundle id, the nonce as given, booleans as strings, no name', async () => {
+    const claims = await claimsOf({ ...asked, givenName: 'Maya', familyName: 'Okafor' })
+    expect(claims).toEqual({
+      iss: expect.any(String),
+      exp: expect.any(Number),
+      aud: BUNDLE,
+      sub: expect.stringMatching(/^mock-[0-9a-f]{24}$/),
+      nonce: HASHED,
+      nonce_supported: true,
+      email: 'maya@northline.app',
+      email_verified: 'true',
+      is_private_email: 'false',
+    })
+  })
+
+  test('an unverified address, a private relay address, and no address at all', async () => {
+    expect(await claimsOf({ ...asked, unverified: true })).toMatchObject({
+      email_verified: 'false',
+    })
+    expect(await claimsOf({ ...asked, email: 'x7k2@privaterelay.appleid.com' })).toMatchObject({
+      is_private_email: 'true',
+      email_verified: 'true',
+    })
+    const bare = await claimsOf({
+      provider: 'apple',
+      audience: BUNDLE,
+      nonce: HASHED,
+      subject: 'apple-sub-1',
+    })
+    expect(Object.keys(bare).sort()).toEqual(
+      ['aud', 'exp', 'iss', 'nonce', 'nonce_supported', 'sub'].sort()
+    )
+  })
+
+  test('the nonce is echoed as given, never hashed by the mock', async () => {
+    expect((await claimsOf({ ...asked, nonce: 'raw-nonce' })).nonce).toBe('raw-nonce')
+  })
+
+  test('a Google token keeps Google’s shape', async () => {
+    const res = await mint({ ...asked, provider: 'google', givenName: 'Maya' })
+    const { idToken } = (await res.json()) as { idToken: string }
+    const claims = JSON.parse(
+      new TextDecoder().decode(await deps.secretBox.open('oauth-mock-id-tokens', idToken, 'google'))
+    )
+    expect(claims).toMatchObject({ email_verified: true, given_name: 'Maya' })
+    expect(claims).not.toHaveProperty('nonce_supported')
+    expect(claims).not.toHaveProperty('is_private_email')
+  })
+
+  test.each(FOREIGN_HOSTS)(
+    'refuses a Host that is not this machine (%s): 403, an empty body',
+    async (_name, host) => {
+      const res = await mint(asked, { host })
+      expect(res.status).toBe(403)
+      expect(await res.text()).toBe('')
+    }
+  )
+
+  test('refuses a request with no Host at all, and a tunnel’s whatever else it carries', async () => {
+    expect((await mint(asked, {})).status).toBe(403)
+    const res = await mint(asked, {
+      host: 'laptop.tail1234.ts.net',
+      'x-forwarded-host': 'localhost:3003',
+      'tailscale-funnel-request': '?1',
+    })
+    expect(res.status).toBe(403)
+    expect(await res.text()).toBe('')
+  })
+
+  test.each(LOOPBACK_HOSTS)('answers on a loopback Host, any port: %s', async (host) => {
+    expect((await mint(asked, { host })).status).toBe(200)
+  })
+
+  test('the guards are the route’s, whatever the provider', async () => {
+    expect((await mint(asked, { host: 'api.example.com' })).status).toBe(403)
+    expect(
+      (await mint(asked, { host: 'localhost:3003', origin: 'http://localhost:3003' })).status
+    ).toBe(403)
+    await mockApp({ oauthMock: false })
+    expect((await mint(asked)).status).toBe(404)
   })
 })
 
@@ -165,7 +617,10 @@ describe('the mock provider exists only where it was asked for', () => {
   ])('the routes are not mounted when %s', async (_name, config) => {
     await mockApp(config)
     for (const method of ['GET', 'POST']) {
-      const res = await app.request('/v1/dev/oauth/authorize?provider=google', { method })
+      const res = await app.request('/v1/dev/oauth/authorize?provider=google', {
+        method,
+        headers: LOCAL,
+      })
       expect(res.status).toBe(404)
       expect(await res.text()).not.toContain('Mock')
     }

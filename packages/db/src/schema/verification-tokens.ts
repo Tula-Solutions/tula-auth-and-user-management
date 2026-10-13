@@ -8,13 +8,26 @@ import { users } from './users'
 /**
  * What a verification token proves. The column is plain `text`, so a new purpose needs no
  * migration; `sign_in` is the emailed code or link that is a sign-in's first factor, `step_up`
- * the emailed code a signed-in user without a second factor steps up with.
+ * the emailed code a signed-in user without a second factor steps up with,
+ * `phone_verification` the texted code that proves a phone number a signed-in user is adding
+ * (its `destination` is that number: the pending number lives nowhere else), `sms_sign_in`
+ * the texted code that is a sign-in's first factor (ADR 0037). Three more are a texted code
+ * as a **second** factor (ADR 0025), each honoured for its own step only:
+ * `sms_factor_enrolment` (a signed-in user making it their second factor),
+ * `sms_second_factor` (the second factor of a sign-in or reset, bound to the attempt) and
+ * `sms_step_up` (a step-up, bound to the session).
  */
 export const VERIFICATION_PURPOSES = [
   'email_verification',
   'password_reset',
   'sign_in',
   'step_up',
+  'email_addition',
+  'phone_verification',
+  'sms_sign_in',
+  'sms_factor_enrolment',
+  'sms_second_factor',
+  'sms_step_up',
 ] as const
 
 /**
@@ -33,7 +46,7 @@ export const verificationTokens = tula.table(
     userId: uuid('user_id'),
     flowAttemptId: uuid('flow_attempt_id'),
     purpose: text('purpose', { enum: VERIFICATION_PURPOSES }).notNull(),
-    /** Where it was sent (normalized email). */
+    /** Where it was sent: a normalized email, or for `phone_verification` an E.164 number. */
     destination: text('destination').notNull(),
     codeHash: text('code_hash').notNull(),
     linkTokenHash: text('link_token_hash'),

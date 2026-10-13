@@ -7,8 +7,25 @@ import { createQueryClient } from '~/app'
 import { useSettingsEditor } from '~/features/settings/settings-editor'
 import { EnvironmentProvider } from '~/features/shell/environment-context'
 import { useScope } from '~/state/scope'
-import { type FakeApi, IDS, installFakeApi } from '~/testing/fake-api'
-import { DEV_PATH, openDialogs, PROD_PATH, renderApp, type World } from '~/testing/harness'
+import {
+  type FakeApi,
+  fakeHook,
+  fakeIosApp,
+  fakeProposal,
+  fakeWebhookDelivery,
+  fakeWebhookEndpoint,
+  IDS,
+  installFakeApi,
+} from '~/testing/fake-api'
+import {
+  DEV_PATH,
+  expectNothingKept,
+  holdAnswers,
+  openDialogs,
+  PROD_PATH,
+  renderApp,
+  type World,
+} from '~/testing/harness'
 
 // What an operator typed or opened for one environment must never act on another: a route
 // whose only change is `$environmentId` is not remounted by the router, so the screens are.
@@ -56,47 +73,6 @@ function goOffline(): () => void {
   }
 }
 
-/**
- * Hold back the answers to some requests (they are still received and recorded by the fake).
- *
- * @param slow - Which calls to hold.
- * @returns `held`: how many answers are being held. `release`: let them through; it resolves
- *   once each has been handed to the code that asked and that code has had its turn, so what
- *   a test checks next is checked after the answer, not after a pause.
- */
-function holdAnswers(slow: (path: string, headers: Headers, method: string) => boolean) {
-  const answer = globalThis.fetch
-  let open: () => void = () => undefined
-  const gate = new Promise<void>((resolve) => {
-    open = resolve
-  })
-  const handedBack: Promise<void>[] = []
-  globalThis.fetch = (async (input: string | URL | Request, init: RequestInit = {}) => {
-    const response = await answer(input, init)
-    const path = new URL(String(input), 'http://localhost:3003').pathname
-    // The request's `signal` is deliberately not honoured: the worst case is an answer that
-    // arrives although nobody is waiting for it any more.
-    if (slow(path, new Headers(init.headers), (init.method ?? 'GET').toUpperCase())) {
-      const handed = Promise.withResolvers<void>()
-      handedBack.push(handed.promise)
-      await gate
-      queueMicrotask(handed.resolve)
-    }
-    return response
-  }) as typeof fetch
-  return {
-    held: () => handedBack.length,
-    async release() {
-      open()
-      await Promise.all(handedBack)
-      // The caller reads the answer and the query client tells its observers on a zero
-      // timer. Two turns of the timer queue come after both, however slow the machine.
-      await new Promise((resolve) => setTimeout(resolve, 0))
-      await new Promise((resolve) => setTimeout(resolve, 0))
-    },
-  }
-}
-
 /** Put TanStack's default back for mutations: one started offline waits for the network. */
 function queueMutationsWhileOffline(current: World) {
   current.queryClient.setDefaultOptions({
@@ -106,6 +82,8 @@ function queueMutationsWhileOffline(current: World) {
 }
 
 const ENVIRONMENT = 'x-tula-environment'
+const WEBHOOK_ADDRESS = 'https://api.example.com/webhooks/tula'
+const HOOK_ADDRESS = 'https://api.example.com/hooks/tula/sign-up'
 
 /**
  * Give the fake one settings document per environment, with the same revision in both: the
@@ -177,6 +155,210 @@ describe('switching environment', () => {
     expect(puts[0]?.body).toEqual(expected)
   })
 
+  test('a drafted wording, its preview and the chosen message do not follow the operator to another environment', async () => {
+    const api = installFakeApi()
+    const { puts, documents } = settingsPerEnvironment(api)
+    const production = documents[IDS.production]?.settings as unknown as {
+      emails: { templates: Record<string, { subject?: string; body?: string }> }
+    }
+    production.emails = { templates: { email_verification: { subject: 'Production subject' } } }
+    const current = start(`${DEV_PATH}/messages`, { api })
+    const { user } = current
+    const previews = () => api.callsTo('POST', '/v1/admin/message-preview')
+    const drawn = () => document.querySelector('[data-preview="subject"]')?.textContent ?? null
+
+    // A draft, its preview, and a message other than the first one, all in development.
+    await user.click(await screen.findByLabelText('Subject'))
+    await user.paste('Development draft')
+    await waitFor(() => expect(drawn()).toBe('Development draft'))
+    await screen.findByText('You have unsaved changes.')
+    const list = screen.getByRole('navigation', { name: 'Messages' })
+    await user.click(within(list).getByRole('button', { name: /^Password changed/ }))
+    await screen.findByText('The user changed their password.')
+    expect(previews().every((call) => call.headers.get(ENVIRONMENT) === IDS.development)).toBe(true)
+    const before = previews().length
+
+    await switchToProduction(current, '/messages')
+
+    // Production's own wording of the first message, its preview, and nothing to save.
+    await waitFor(() =>
+      expect((screen.getByLabelText('Subject') as HTMLInputElement).value).toBe(
+        'Production subject'
+      )
+    )
+    await waitFor(() => expect(drawn()).toBe('Production subject'))
+    await screen.findByText('No unsaved changes.')
+    expect(document.body.textContent?.includes('Development draft')).toBe(false)
+    // What was asked since the switch was asked of production, and never held the draft.
+    const after = previews().slice(before)
+    expect(after.length).toBeGreaterThan(0)
+    expect(after.every((call) => call.headers.get(ENVIRONMENT) === IDS.production)).toBe(true)
+    expect(JSON.stringify(after.map((call) => call.body)).includes('Development draft')).toBe(false)
+
+    // A save from here is production's document, for production.
+    await user.click(screen.getByLabelText('Body'))
+    await user.paste('Code {{code}}')
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    await screen.findByText('Settings saved')
+    expect(puts.map((put) => put.environment)).toEqual([IDS.production])
+    const sent = puts[0]?.body as unknown as typeof production | undefined
+    expect(sent?.emails.templates).toEqual({
+      email_verification: { subject: 'Production subject', body: 'Code {{code}}' },
+    })
+  })
+
+  test('drafted text message settings, a half-chosen country, the question about them and the counts do not follow the operator to another environment', async () => {
+    const api = installFakeApi()
+    const { puts, documents } = settingsPerEnvironment(api)
+    const production = documents[IDS.production]?.settings
+    if (production) {
+      production.sms = {
+        ...production.sms,
+        enabled: true,
+        allowedCountries: ['FR'],
+        dailyMessageLimit: 40,
+        // Wording this screen does not show: it must come back in a save untouched.
+        templates: { sign_in: { text: 'Production code {{code}}' } },
+      }
+      ;(production as { emails: unknown }).emails = {
+        templates: { email_verification: { subject: 'Production subject' } },
+      }
+    }
+    // Each environment has its own counts, told apart by the header a request carries.
+    const usage = (prefix: string, sent: number) => ({
+      since: '2026-09-28',
+      days: 7,
+      sent,
+      used: 0,
+      unused: sent,
+      prefixes: [{ prefix, sent, used: 0, unused: sent }],
+      truncated: false,
+    })
+    const asked: { environment: string | null; days: string | null }[] = []
+    api.override('GET', /^\/v1\/admin\/sms\/usage$/, (call) => {
+      asked.push({ environment: call.headers.get(ENVIRONMENT), days: call.search.get('days') })
+      return call.headers.get(ENVIRONMENT) === IDS.production ? usage('+33', 2) : usage('+49', 9)
+    })
+    const current = start(`${DEV_PATH}/text-messages`, { api })
+    const { user } = current
+    const usageText = () => document.querySelector('[data-usage="totals"]')?.textContent ?? ''
+    const picker = () => screen.getByLabelText('Add a country') as HTMLSelectElement
+    const limit = () => screen.getByLabelText('Most text messages in a day') as HTMLInputElement
+
+    // A draft: a country added, another only chosen, a raised limit, another span of days.
+    await user.selectOptions(await screen.findByLabelText('Add a country'), 'DE')
+    await user.click(screen.getByRole('button', { name: 'Add country' }))
+    await user.selectOptions(picker(), 'US')
+    await user.clear(limit())
+    await user.type(limit(), '5000')
+    await user.selectOptions(screen.getByLabelText('Days'), '30')
+    await waitFor(() => expect(asked.at(-1)?.days).toBe('30'))
+    await waitFor(() => expect(usageText()).toContain('9 codes sent'))
+    // And the question a raised limit asks, left open.
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    expect((await screen.findByRole('dialog')).textContent).toContain(
+      'More text messages may be sent in a day'
+    )
+
+    await switchToProduction(current, '/text-messages')
+
+    // Production's own document, nothing chosen, nothing asked, nothing to save.
+    await waitFor(() => expect(limit().value).toBe('40'))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    const list = screen.getByRole('list', { name: 'Countries text messages may go to' })
+    expect(within(list).getAllByRole('listitem')).toHaveLength(1)
+    expect(list.textContent).toContain('France')
+    expect(list.textContent).not.toContain('Germany')
+    expect(picker().value).toBe('')
+    await screen.findByText('No unsaved changes.')
+    // Production's own counts, for the default span again.
+    await waitFor(() => expect(usageText()).toContain('2 codes sent'))
+    expect((screen.getByLabelText('Days') as HTMLSelectElement).value).toBe('7')
+    expect(screen.getByRole('table').textContent).toContain('+33')
+    expect(screen.getByRole('table').textContent).not.toContain('+49')
+    expect(asked.at(-1)).toEqual({ environment: IDS.production, days: '7' })
+    expect(puts).toHaveLength(0)
+
+    // A save from here is made from production's document, for production.
+    await user.selectOptions(picker(), 'DE')
+    await user.click(screen.getByRole('button', { name: 'Add country' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    await screen.findByText('Settings saved')
+    expect(puts).toHaveLength(1)
+    expect(puts[0]?.environment).toBe(IDS.production)
+    expect(puts[0]?.ifMatch).toBe('"3"')
+    expect(puts[0]?.body.sms).toEqual({
+      enabled: true,
+      allowedCountries: ['FR', 'DE'],
+      dailyMessageLimit: 40,
+      templates: { sign_in: { text: 'Production code {{code}}' } },
+    })
+    expect((puts[0]?.body as { emails?: unknown } | undefined)?.emails).toEqual({
+      templates: { email_verification: { subject: 'Production subject' } },
+    })
+    expect(documents[IDS.development]?.settings.sms.allowedCountries).toEqual([])
+  })
+
+  test('a drafted JWT template and a half-typed name do not follow the operator to another environment', async () => {
+    const api = installFakeApi()
+    const { puts } = settingsPerEnvironment(api)
+    const current = start(`${DEV_PATH}/sessions`, { api })
+    const { user } = current
+    await user.type(await screen.findByLabelText('New template name'), 'app')
+    await user.click(screen.getByRole('button', { name: 'Add template' }))
+    await user.type(screen.getByLabelText('New claim name'), 'half_typed')
+    await user.type(screen.getByLabelText('New template name'), 'second')
+    await screen.findByText('You have unsaved changes.')
+
+    await switchToProduction(current, '/sessions')
+
+    // Production has no template, no typed name, and nothing to save.
+    await screen.findByText('No templates yet.')
+    await screen.findByText('No unsaved changes.')
+    expect((screen.getByLabelText('New template name') as HTMLInputElement).value).toBe('')
+    expect(screen.queryByLabelText('New claim name') === null).toBe(true)
+
+    // A template made from here is production's, on production's document.
+    await user.type(screen.getByLabelText('New template name'), 'prod')
+    await user.click(screen.getByRole('button', { name: 'Add template' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    await screen.findByText('Settings saved')
+    expect(puts).toHaveLength(1)
+    expect(puts[0]?.environment).toBe(IDS.production)
+    expect(puts[0]?.body.sessions).toMatchObject({ jwtTemplates: { prod: { claims: {} } } })
+  })
+
+  test('a half-typed Microsoft tenant and secret do not follow the operator to another environment', async () => {
+    const current = start(`${DEV_PATH}/sign-in-methods`)
+    const { user, api } = current
+    const card = () =>
+      screen.getByRole('heading', { name: 'Microsoft' }).closest('li') as HTMLElement
+    const select = () => within(card()).getByLabelText('Who can sign in') as HTMLSelectElement
+    await screen.findByRole('heading', { name: 'Microsoft' })
+    await user.type(within(card()).getByLabelText('Application (client) ID'), 'dev-ms-client')
+    await user.selectOptions(select(), 'tenant')
+    await user.type(within(card()).getByLabelText('Directory (tenant) ID'), 'dev-tenant-half')
+    await user.type(within(card()).getByLabelText('Client secret'), 'dev-ms-secret-half')
+
+    await switchToProduction(current, '/sign-in-methods')
+    await waitFor(() =>
+      expect(api.callsTo('GET', '/v1/admin/oauth-providers').at(-1)?.headers.get(ENVIRONMENT)).toBe(
+        IDS.production
+      )
+    )
+    await screen.findByRole('heading', { name: 'Microsoft' })
+
+    await waitFor(() => expect(select().value).toBe(''))
+    expect(within(card()).queryByLabelText('Directory (tenant) ID') === null).toBe(true)
+    expect(
+      (within(card()).getByLabelText('Application (client) ID') as HTMLInputElement).value
+    ).toBe('')
+    const page = document.documentElement.outerHTML
+    expect(page.includes('dev-ms-secret-half')).toBe(false)
+    expect(page.includes('dev-tenant-half')).toBe(false)
+    expect(api.callsTo('PUT', '/v1/admin/oauth-providers/microsoft')).toHaveLength(0)
+  })
+
   test('a half-typed provider secret does not follow the operator to another environment', async () => {
     const current = start(`${DEV_PATH}/sign-in-methods`)
     const { user, api } = current
@@ -202,6 +384,137 @@ describe('switching environment', () => {
     expect(api.callsTo('PUT', '/v1/admin/oauth-providers/github')).toHaveLength(0)
   })
 
+  // This holds the end state: after a switch nothing typed, no question and nothing kept
+  // follows the operator. Three layers each unmount the card, so it pins none of the three
+  // alone: `syncScope` (`state/scope.ts`) drops the cached admin answers, and the list is
+  // gone while it loads again; the card's key holds the environment id
+  // (`oauth-providers.tsx`); and `EnvironmentGate` keys the screens by the environment.
+  // Seen by mutation: without the card's key, or without the gate's, it passes; without
+  // all three the question is still open. The one line that is `syncScope`'s alone is the
+  // wait for production's own read of the list: with the cached answers kept, no such
+  // request is made and the test stops there.
+  test('Google’s typed native client ids, its secret and the question about them do not follow the operator', async () => {
+    const WEB = '1234567890-devweb.apps.googleusercontent.com'
+    const ANDROID = '1234567890-devandroid.apps.googleusercontent.com'
+    const SECRET = 'GOCSPX-dev-secret-half-typed'
+    const current = start(`${DEV_PATH}/sign-in-methods`)
+    const { user, router, location, api } = current
+    const card = () => screen.getByRole('heading', { name: 'Google' }).closest('li') as HTMLElement
+    const clients = () =>
+      within(card()).getByLabelText(
+        'OAuth clients of your Android and iOS apps'
+      ) as HTMLTextAreaElement
+    await screen.findByRole('heading', { name: 'Google' })
+    await user.type(within(card()).getByLabelText('Client ID'), WEB)
+    await user.type(within(card()).getByLabelText('Client secret'), SECRET)
+    await user.type(clients(), ANDROID)
+    await user.click(within(card()).getByRole('button', { name: 'Save Google' }))
+    // A gained client id is asked about first: the question is open and nothing was sent.
+    await screen.findByRole('heading', { name: /^Accept Google ID tokens from 1 more app/ })
+    await waitFor(() => expect(openDialogs()).toBe(1))
+    expect(api.callsTo('PUT', '/v1/admin/oauth-providers/google')).toHaveLength(0)
+
+    // The question is modal: the address changes by the browser's own buttons.
+    await act(() => router.navigate({ href: `${PROD_PATH}/sign-in-methods` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/sign-in-methods`))
+    await waitFor(() =>
+      expect(api.callsTo('GET', '/v1/admin/oauth-providers').at(-1)?.headers.get(ENVIRONMENT)).toBe(
+        IDS.production
+      )
+    )
+    await screen.findByRole('heading', { name: 'Google' })
+
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    await waitFor(() => expect(clients().value).toBe(''))
+    expect((within(card()).getByLabelText('Client ID') as HTMLInputElement).value).toBe('')
+    expect((within(card()).getByLabelText('Client secret') as HTMLInputElement).value).toBe('')
+    // Not in the document, either storage, the address or what the query client keeps.
+    expectNothingKept(current, [SECRET, ANDROID, WEB])
+    expect(api.callsTo('PUT', '/v1/admin/oauth-providers/google')).toHaveLength(0)
+
+    // Production's own save asks its own question, and is sent to production only once
+    // that one is answered: nothing confirmed for development is remembered.
+    await user.type(within(card()).getByLabelText('Client ID'), WEB)
+    await user.type(within(card()).getByLabelText('Client secret'), 'GOCSPX-prod-secret')
+    await user.type(clients(), ANDROID)
+    await user.click(within(card()).getByRole('button', { name: 'Save Google' }))
+    await screen.findByRole('heading', { name: /^Accept Google ID tokens from 1 more app/ })
+    expect(api.callsTo('PUT', '/v1/admin/oauth-providers/google')).toHaveLength(0)
+  })
+
+  // ADR 0059: the question about the accounts that depend on a provider holds a count that
+  // is one environment's. Like the question above it, it is gone after a switch, nothing
+  // it would have sent is sent, and the other environment counts for itself.
+  test('the question about switching a provider off, and its count, do not follow the operator', async () => {
+    const api = installFakeApi()
+    api.override('GET', /^\/v1\/admin\/oauth-providers$/, () => ({
+      data: [
+        {
+          provider: 'x',
+          configured: true,
+          enabled: true,
+          clientId: 'x-client',
+          teamId: null,
+          keyId: null,
+          tenant: null,
+          callbackUrl: 'http://localhost:3003/v1/client/oauth/x/callback',
+          updatedAt: '2026-03-01T09:00:00.000Z',
+        },
+      ],
+    }))
+    api.override('GET', /^\/v1\/admin\/oauth-providers\/x\/dependents$/, (call) => ({
+      provider: 'x',
+      accounts: call.headers.get(ENVIRONMENT) === IDS.production ? 7 : 3,
+      more: false,
+    }))
+    const current = start(`${DEV_PATH}/sign-in-methods`, { api })
+    const { user, router, location } = current
+    const card = () => screen.getByRole('heading', { name: 'X' }).closest('li') as HTMLElement
+    const saveOff = async () => {
+      await user.click(within(card()).getByRole('switch', { name: 'Let users sign in with X' }))
+      await user.click(within(card()).getByRole('button', { name: 'Save X' }))
+    }
+    await screen.findByRole('heading', { name: 'X' })
+    await saveOff()
+    const asked = (await screen.findByRole('heading', { name: 'Switch X off?' })).closest(
+      'dialog'
+    ) as HTMLElement
+    expect(asked.textContent).toContain('3 accounts can sign in only with X.')
+    await waitFor(() => expect(openDialogs()).toBe(1))
+
+    // The question is modal: the address changes by the browser's own buttons.
+    await act(() => router.navigate({ href: `${PROD_PATH}/sign-in-methods` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/sign-in-methods`))
+    await waitFor(() =>
+      expect(api.callsTo('GET', '/v1/admin/oauth-providers').at(-1)?.headers.get(ENVIRONMENT)).toBe(
+        IDS.production
+      )
+    )
+    await screen.findByRole('heading', { name: 'X' })
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(api.callsTo('PUT', '/v1/admin/oauth-providers/x')).toHaveLength(0)
+    // The switch is as production's record has it, not as it was left in development.
+    expect(
+      within(card())
+        .getByRole('switch', { name: 'Let users sign in with X' })
+        .getAttribute('aria-checked')
+    ).toBe('true')
+
+    // Production counts its own accounts and asks its own question; nothing is sent before.
+    await saveOff()
+    const again = (await screen.findByRole('heading', { name: 'Switch X off?' })).closest(
+      'dialog'
+    ) as HTMLElement
+    expect(again.textContent).toContain('7 accounts can sign in only with X.')
+    expect((again.textContent ?? '').includes('3 accounts')).toBe(false)
+    expect(
+      api
+        .callsTo('GET', '/v1/admin/oauth-providers/x/dependents')
+        .map((call) => call.headers.get(ENVIRONMENT))
+    ).toEqual([IDS.development, IDS.production])
+    expect(api.callsTo('PUT', '/v1/admin/oauth-providers/x')).toHaveLength(0)
+  })
+
   test('an open destructive confirmation does not survive a switch', async () => {
     const current = start(`${DEV_PATH}/api-keys`)
     const { user, router, location } = current
@@ -222,6 +535,213 @@ describe('switching environment', () => {
 
     await waitFor(() => expect(openDialogs()).toBe(0))
     expect(current.api.calls.filter((call) => call.method === 'DELETE')).toHaveLength(0)
+  })
+
+  test('a webhook signing secret on screen and a typed address do not follow the operator', async () => {
+    const current = start(`${DEV_PATH}/webhooks`)
+    const { user, router, location, api } = current
+    await screen.findByRole('heading', { level: 1, name: 'Webhooks' })
+    await user.click(screen.getByRole('button', { name: 'Add endpoint' }))
+    const adding = screen.getByRole('dialog')
+    await user.type(within(adding).getByLabelText('Address'), WEBHOOK_ADDRESS)
+    await user.click(within(adding).getByRole('checkbox', { name: 'user.created' }))
+    await user.click(within(adding).getByRole('button', { name: 'Add endpoint' }))
+    const secret = (await screen.findByTestId('webhook-secret')).textContent ?? ''
+    expect(secret).toStartWith('whsec_')
+
+    // The secret's dialog is modal: the address changes by the browser's own buttons.
+    await act(() => router.navigate({ href: `${PROD_PATH}/webhooks` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/webhooks`))
+    await screen.findByText('No webhook endpoints yet')
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(document.documentElement.outerHTML.includes(secret)).toBe(false)
+    expect(document.documentElement.outerHTML.includes(WEBHOOK_ADDRESS)).toBe(false)
+
+    // A half-typed address for production is not there when development is opened again.
+    await user.click(screen.getByRole('button', { name: 'Add endpoint' }))
+    await user.type(
+      within(screen.getByRole('dialog')).getByLabelText('Address'),
+      'https://prod.example.com/half'
+    )
+    await act(() => router.navigate({ href: `${DEV_PATH}/webhooks` }))
+    await screen.findByRole('heading', { level: 2, name: WEBHOOK_ADDRESS })
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    await user.click(screen.getByRole('button', { name: 'Add endpoint' }))
+    expect(
+      (within(screen.getByRole('dialog')).getByLabelText('Address') as HTMLInputElement).value
+    ).toBe('')
+    expect(
+      api
+        .callsTo('POST', '/v1/admin/webhook-endpoints')
+        .map((call) => call.headers.get(ENVIRONMENT))
+    ).toEqual([IDS.development])
+  })
+
+  test('an open deletion of a webhook endpoint does not survive a switch', async () => {
+    const api = installFakeApi()
+    // The worst case: production has an endpoint of the same address, and (which no real
+    // server does) of the same id. A card that was kept would be this one's, with the
+    // confirmation still open on it; an empty production list would close it by itself.
+    // (Three things each close it, and this test passes while any one holds: the screens'
+    // key on the environment, the list item's, and the list being read again from nothing
+    // after a switch. The first is what the tests of the signing secret and of the users'
+    // confirmation fail without.)
+    const development = fakeWebhookEndpoint({ url: WEBHOOK_ADDRESS })
+    api.state.webhookEndpoints.push(development, {
+      ...development,
+      environmentId: IDS.production,
+    })
+    const current = start(`${DEV_PATH}/webhooks`, { api })
+    const { user, router, location } = current
+    // Production's list is already known, so nothing has to load on the way there.
+    await act(() => router.navigate({ href: `${PROD_PATH}/webhooks` }))
+    await screen.findByRole('button', { name: `Delete ${WEBHOOK_ADDRESS}` })
+    await act(() => router.navigate({ href: `${DEV_PATH}/webhooks` }))
+    await waitFor(() => expect(location()).toBe(`${DEV_PATH}/webhooks`))
+    await waitFor(() =>
+      expect(
+        api.callsTo('GET', '/v1/admin/webhook-endpoints').at(-1)?.headers.get(ENVIRONMENT)
+      ).toBe(IDS.development)
+    )
+    await user.click(await screen.findByRole('button', { name: `Delete ${WEBHOOK_ADDRESS}` }))
+    await waitFor(() => expect(openDialogs()).toBe(1))
+
+    await act(() => router.navigate({ href: `${PROD_PATH}/webhooks` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/webhooks`))
+    await waitFor(() =>
+      expect(
+        api.callsTo('GET', '/v1/admin/webhook-endpoints').at(-1)?.headers.get(ENVIRONMENT)
+      ).toBe(IDS.production)
+    )
+    await screen.findByRole('button', { name: `Delete ${WEBHOOK_ADDRESS}` })
+    expect(openDialogs()).toBe(0)
+    expect(api.calls.filter((call) => call.method === 'DELETE')).toHaveLength(0)
+    expect(api.state.webhookEndpoints).toHaveLength(2)
+  })
+
+  test('a hook’s signing secret on screen and a typed address do not follow the operator', async () => {
+    const current = start(`${DEV_PATH}/hooks`)
+    const { user, router, location, api } = current
+    await user.click(await screen.findByRole('button', { name: 'Add a hook for before_sign_up' }))
+    await user.type(within(screen.getByRole('dialog')).getByLabelText('Address'), HOOK_ADDRESS)
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Add hook' }))
+    const secret = (await screen.findByTestId('hook-secret')).textContent ?? ''
+    expect(secret).toStartWith('whsec_')
+
+    // The secret's dialog is modal: the address changes by the browser's own buttons.
+    await act(() => router.navigate({ href: `${PROD_PATH}/hooks` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/hooks`))
+    await waitFor(() => expect(screen.queryAllByTestId('hook-none')).toHaveLength(3))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(document.documentElement.outerHTML.includes(secret)).toBe(false)
+    expect(document.documentElement.outerHTML.includes(HOOK_ADDRESS)).toBe(false)
+
+    // A half-typed address and a question opened for production are not there when
+    // development is opened again.
+    await user.click(screen.getByRole('button', { name: 'Add a hook for before_session' }))
+    await user.type(
+      within(screen.getByRole('dialog')).getByLabelText('Address'),
+      'https://prod.example.com/half'
+    )
+    await user.selectOptions(
+      within(screen.getByRole('dialog')).getByLabelText('When a call fails'),
+      'allow'
+    )
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Add hook' }))
+    await screen.findByRole('heading', { name: 'Let it through when a call fails?' })
+    await act(() => router.navigate({ href: `${DEV_PATH}/hooks` }))
+    await screen.findByText(HOOK_ADDRESS)
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    await user.click(screen.getByRole('button', { name: 'Add a hook for before_session' }))
+    const form = within(screen.getByRole('dialog'))
+    expect((form.getByLabelText('Address') as HTMLInputElement).value).toBe('')
+    expect((form.getByLabelText('When a call fails') as HTMLSelectElement).value).toBe('deny')
+    expect(
+      api.callsTo('POST', '/v1/admin/hooks').map((call) => call.headers.get(ENVIRONMENT))
+    ).toEqual([IDS.development])
+  })
+
+  test.each([
+    ['removal', 'Remove the hook for before_sign_up'],
+    ['switching off', 'Switch off the hook for before_sign_up'],
+  ])('an open %s of a hook does not survive a switch', async (_name, opener) => {
+    const api = installFakeApi()
+    // The worst case: production has a hook at the same point and (which no real server
+    // does) of the same id. A card that was kept would be this one's, with the confirmation
+    // still open on it.
+    const development = fakeHook({ url: HOOK_ADDRESS })
+    api.state.hooks.push(development, { ...development, environmentId: IDS.production })
+    const current = start(`${DEV_PATH}/hooks`, { api })
+    const { user, router, location } = current
+    const listed = () => api.callsTo('GET', '/v1/admin/hooks').at(-1)?.headers.get(ENVIRONMENT)
+    // Production's list is already known, so nothing has to load on the way there.
+    await act(() => router.navigate({ href: `${PROD_PATH}/hooks` }))
+    await screen.findByRole('button', { name: opener })
+    await act(() => router.navigate({ href: `${DEV_PATH}/hooks` }))
+    await waitFor(() => expect(location()).toBe(`${DEV_PATH}/hooks`))
+    await waitFor(() => expect(listed()).toBe(IDS.development))
+    await user.click(await screen.findByRole('button', { name: opener }))
+    await waitFor(() => expect(openDialogs()).toBe(1))
+
+    await act(() => router.navigate({ href: `${PROD_PATH}/hooks` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/hooks`))
+    await waitFor(() => expect(listed()).toBe(IDS.production))
+    await screen.findByRole('button', { name: opener })
+    expect(openDialogs()).toBe(0)
+    expect(
+      api.calls.filter((call) => call.method === 'DELETE' || call.method === 'PATCH')
+    ).toHaveLength(0)
+    expect(api.state.hooks.map((hook) => hook.enabled)).toEqual([true, true])
+  })
+})
+
+// The router keeps a route's component when only `$endpointId` or `$deliveryId` changes, and
+// a query that is already cached draws at once: without a key, what was opened or shown for
+// one endpoint or delivery would be on the screen of the next.
+describe('what was opened for one endpoint or delivery is not on the screen of the next', () => {
+  test('a deletion opened on one endpoint’s screen is not open on another’s', async () => {
+    const api = installFakeApi()
+    const first = fakeWebhookEndpoint({ url: 'https://one.example.com/webhooks' })
+    const second = fakeWebhookEndpoint({ url: 'https://two.example.com/webhooks' })
+    api.state.webhookEndpoints.push(first, second)
+    const { user, router, location } = start(`${DEV_PATH}/webhooks/${second.id}`, { api })
+    // The second endpoint is read first, so that it is drawn at once when it is come back to.
+    await screen.findByRole('button', { name: `Delete ${second.url}` })
+    await act(() => router.navigate({ href: `${DEV_PATH}/webhooks/${first.id}` }))
+    await user.click(await screen.findByRole('button', { name: `Delete ${first.url}` }))
+    await waitFor(() => expect(openDialogs()).toBe(1))
+
+    await act(() => router.navigate({ href: `${DEV_PATH}/webhooks/${second.id}` }))
+    await waitFor(() => expect(location()).toBe(`${DEV_PATH}/webhooks/${second.id}`))
+    await screen.findByRole('button', { name: `Delete ${second.url}` })
+    expect(openDialogs()).toBe(0)
+    expect(api.calls.filter((call) => call.method === 'DELETE')).toHaveLength(0)
+    expect(api.state.webhookEndpoints).toHaveLength(2)
+  })
+
+  test('the result of sending one delivery again is not shown on another delivery', async () => {
+    const api = installFakeApi()
+    const endpoint = fakeWebhookEndpoint({ url: WEBHOOK_ADDRESS })
+    const first = fakeWebhookDelivery(endpoint.id, { eventType: 'user.created' })
+    const second = fakeWebhookDelivery(endpoint.id, { eventType: 'session.revoked' })
+    api.state.webhookEndpoints.push(endpoint)
+    api.state.webhookDeliveries.push(first, second)
+    const at = (delivery: { id: string }) =>
+      `${DEV_PATH}/webhooks/${endpoint.id}/deliveries/${delivery.id}`
+    const { user, router, location } = start(at(second), { api })
+    await screen.findByText('session.revoked')
+    await act(() => router.navigate({ href: at(first) }))
+    await screen.findByText('user.created')
+    await user.click(screen.getByRole('button', { name: 'Send again' }))
+    expect((await screen.findByTestId('send-result')).textContent).toBe(
+      'Delivered: the endpoint answered 204 in 41 ms.'
+    )
+
+    await act(() => router.navigate({ href: at(second) }))
+    await waitFor(() => expect(location()).toBe(at(second)))
+    await screen.findByText('session.revoked')
+    expect(screen.queryAllByTestId('send-result')).toHaveLength(0)
+    expect(api.calls.filter((call) => call.path.endsWith('/redeliver'))).toHaveLength(1)
   })
 })
 
@@ -300,6 +820,82 @@ describe.each([
       expect((within(card()).getByLabelText('Client ID') as HTMLInputElement).value).toBe('')
     )
     expect(document.documentElement.outerHTML.includes('dev-secret-whole')).toBe(false)
+  })
+
+  test('a webhook endpoint is never registered in production', async () => {
+    const current = start(`${DEV_PATH}/webhooks`)
+    if (queued) {
+      queueMutationsWhileOffline(current)
+    }
+    const { user, api, router, location } = current
+    await screen.findByRole('heading', { level: 1, name: 'Webhooks' })
+    await user.click(screen.getByRole('button', { name: 'Add endpoint' }))
+    const adding = screen.getByRole('dialog')
+    await user.type(within(adding).getByLabelText('Address'), WEBHOOK_ADDRESS)
+    await user.click(within(adding).getByRole('checkbox', { name: 'user.created' }))
+
+    const online = goOffline()
+    await user.click(within(adding).getByRole('button', { name: 'Add endpoint' }))
+    if (!queued) {
+      await within(adding).findByText(/The API did not answer/)
+    }
+    await act(() => router.navigate({ href: `${PROD_PATH}/webhooks` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/webhooks`))
+    online()
+
+    await waitFor(() =>
+      expect(
+        api.callsTo('GET', '/v1/admin/webhook-endpoints').at(-1)?.headers.get(ENVIRONMENT)
+      ).toBe(IDS.production)
+    )
+    await screen.findByText('No webhook endpoints yet')
+    const sent = api
+      .callsTo('POST', '/v1/admin/webhook-endpoints')
+      .map((call) => call.headers.get(ENVIRONMENT))
+    expect(sent.filter((environment) => environment !== IDS.development)).toEqual([])
+    expect(
+      api.state.webhookEndpoints.filter((endpoint) => endpoint.environmentId === IDS.production)
+    ).toEqual([])
+    expect(screen.queryAllByTestId('webhook-secret')).toHaveLength(0)
+  })
+
+  test.each([
+    ['refusing on failure', 'deny'],
+    ['letting through on failure, confirmed', 'allow'],
+  ])('a hook (%s) is never registered in production', async (_name, mode) => {
+    const current = start(`${DEV_PATH}/hooks`)
+    if (queued) {
+      queueMutationsWhileOffline(current)
+    }
+    const { user, api, router, location } = current
+    await user.click(await screen.findByRole('button', { name: 'Add a hook for before_sign_up' }))
+    const adding = screen.getByRole('dialog')
+    await user.type(within(adding).getByLabelText('Address'), HOOK_ADDRESS)
+    await user.selectOptions(within(adding).getByLabelText('When a call fails'), mode)
+    if (mode === 'allow') {
+      await user.click(within(adding).getByRole('button', { name: 'Add hook' }))
+      await within(adding).findByRole('heading', { name: 'Let it through when a call fails?' })
+    }
+
+    const online = goOffline()
+    await user.click(within(adding).getByRole('button', { name: 'Add hook' }))
+    if (!queued) {
+      await within(adding).findByText(/The API did not answer/)
+    }
+    await act(() => router.navigate({ href: `${PROD_PATH}/hooks` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/hooks`))
+    online()
+
+    await waitFor(() =>
+      expect(api.callsTo('GET', '/v1/admin/hooks').at(-1)?.headers.get(ENVIRONMENT)).toBe(
+        IDS.production
+      )
+    )
+    await waitFor(() => expect(screen.queryAllByTestId('hook-none')).toHaveLength(3))
+    const sent = api.callsTo('POST', '/v1/admin/hooks').map((call) => call.headers.get(ENVIRONMENT))
+    expect(sent.filter((environment) => environment !== IDS.development)).toEqual([])
+    expect(api.state.hooks.filter((hook) => hook.environmentId === IDS.production)).toEqual([])
+    expect(screen.queryAllByTestId('hook-secret')).toHaveLength(0)
   })
 })
 
@@ -527,4 +1123,187 @@ describe('the settings editor without a remount', () => {
     expect(puts).toHaveLength(0)
     expect(lone.callsTo('PUT', '/v1/admin/settings')).toHaveLength(0)
   })
+})
+
+describe('native apps', () => {
+  const listed = (api: FakeApi) =>
+    api.callsTo('GET', '/v1/admin/native-apps').at(-1)?.headers.get(ENVIRONMENT)
+
+  test('a typed app and the question about it do not follow the operator', async () => {
+    const current = start(`${DEV_PATH}/native-apps`)
+    const { user, router, location, api } = current
+    await user.click(await screen.findByRole('button', { name: 'Register app' }))
+    await user.type(within(screen.getByRole('dialog')).getByLabelText('Team ID'), 'A1B2C3D4E5')
+    await user.type(
+      within(screen.getByRole('dialog')).getByLabelText('Bundle ID'),
+      'app.northline.half'
+    )
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Continue' }))
+    await screen.findByRole('heading', { name: 'Register this app?' })
+
+    // The question is modal: the address changes by the browser's own buttons.
+    await act(() => router.navigate({ href: `${PROD_PATH}/native-apps` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/native-apps`))
+    await waitFor(() => expect(listed(api)).toBe(IDS.production))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(document.documentElement.outerHTML.includes('app.northline.half')).toBe(false)
+    // The files shown are production's.
+    await waitFor(() =>
+      expect(
+        screen
+          .getAllByTestId('association-file')
+          .every((file) => (file.textContent ?? '').includes(IDS.production))
+      ).toBe(true)
+    )
+    await user.click(screen.getByRole('button', { name: 'Register app' }))
+    const form = within(screen.getByRole('dialog'))
+    expect((form.getByLabelText('Team ID') as HTMLInputElement).value).toBe('')
+    expect((form.getByLabelText('Bundle ID') as HTMLInputElement).value).toBe('')
+    expect(api.callsTo('POST', '/v1/admin/native-apps')).toHaveLength(0)
+  })
+
+  test.each([
+    ['removal', 'Remove app.northline.ios'],
+    ['edit', 'Edit app.northline.ios'],
+  ])('an open %s of an app does not survive a switch', async (_name, opener) => {
+    const api = installFakeApi()
+    // The worst case: production has the same app and (which no real server does) under the
+    // same id. A card that was kept would be this one's, with the dialog still open on it.
+    const development = fakeIosApp()
+    api.state.nativeApps.push(development, { ...development, environmentId: IDS.production })
+    const current = start(`${DEV_PATH}/native-apps`, { api })
+    const { user, router, location } = current
+    // Production's list is already known, so nothing has to load on the way there.
+    await act(() => router.navigate({ href: `${PROD_PATH}/native-apps` }))
+    await screen.findByRole('button', { name: opener })
+    await act(() => router.navigate({ href: `${DEV_PATH}/native-apps` }))
+    await waitFor(() => expect(location()).toBe(`${DEV_PATH}/native-apps`))
+    await waitFor(() => expect(listed(api)).toBe(IDS.development))
+    await user.click(await screen.findByRole('button', { name: opener }))
+    await waitFor(() => expect(openDialogs()).toBe(1))
+
+    await act(() => router.navigate({ href: `${PROD_PATH}/native-apps` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/native-apps`))
+    await waitFor(() => expect(listed(api)).toBe(IDS.production))
+    await screen.findByRole('button', { name: opener })
+    expect(openDialogs()).toBe(0)
+    expect(
+      api.calls.filter((call) => call.method !== 'GET' && call.path.includes('native-apps'))
+    ).toHaveLength(0)
+    expect(api.state.nativeApps).toHaveLength(2)
+  })
+})
+
+describe('proposals', () => {
+  const APPROVE = /^\/v1\/admin\/proposals\/[^/]+\/approve$/
+  const OPENER = `Approve ban_user for user ${IDS.user}`
+
+  function approvals(api: FakeApi) {
+    return api.calls.filter((call) => call.method === 'POST' && APPROVE.test(call.path))
+  }
+
+  function listed(api: FakeApi) {
+    return api.callsTo('GET', '/v1/admin/proposals').at(-1)?.headers.get(ENVIRONMENT)
+  }
+
+  /**
+   * The worst case: production has a proposal of the same operation and target and (which
+   * no real server does) of the same id. A card or a question that was kept would be this
+   * one's, and what it sent would be accepted there.
+   */
+  function sameProposalInBoth(): FakeApi {
+    const api = installFakeApi()
+    const development = fakeProposal({
+      expiresAt: new Date(Date.now() + 9 * 60_000).toISOString(),
+    })
+    api.state.proposals.push(development, { ...development, environmentId: IDS.production })
+    return api
+  }
+
+  test('an open approval does not survive a switch, and nothing of one environment is approved under another', async () => {
+    const api = sameProposalInBoth()
+    const current = start(`${DEV_PATH}/proposals`, { api })
+    const { user, router, location } = current
+    await user.click(await screen.findByRole('button', { name: OPENER }))
+    await waitFor(() => expect(openDialogs()).toBe(1))
+
+    // A modal dialog blocks the switcher; the browser's back and forward buttons still move.
+    await act(() => router.navigate({ href: `${PROD_PATH}/proposals` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/proposals`))
+    await waitFor(() => expect(listed(api)).toBe(IDS.production))
+    await screen.findByRole('button', { name: OPENER })
+    expect(openDialogs()).toBe(0)
+    expect(approvals(api)).toHaveLength(0)
+
+    // Production asks again, from the start, and for its own typed confirmation.
+    await user.click(screen.getByRole('button', { name: OPENER }))
+    const dialog = screen.getByRole('dialog')
+    const confirm = within(dialog).getByRole('button', { name: 'Approve' })
+    expect(confirm.getAttribute('aria-disabled')).toBe('true')
+    await user.click(confirm)
+    expect(approvals(api)).toHaveLength(0)
+    expect(api.state.proposals.map((proposal) => proposal.status)).toEqual(['pending', 'pending'])
+  })
+
+  test('what a development approval came to is not shown under production, and production’s proposal is untouched', async () => {
+    const api = sameProposalInBoth()
+    const current = start(`${DEV_PATH}/proposals`, { api })
+    const { user, router, location } = current
+    await user.click(await screen.findByRole('button', { name: OPENER }))
+    const hold = holdAnswers((path, _headers, method) => method === 'POST' && APPROVE.test(path))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Approve' }))
+    await waitFor(() => expect(hold.held()).toBe(1))
+
+    await act(() => router.navigate({ href: `${PROD_PATH}/proposals` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/proposals`))
+    await act(() => hold.release())
+    await waitFor(() => expect(listed(api)).toBe(IDS.production))
+    await screen.findByRole('button', { name: OPENER })
+
+    expect(openDialogs()).toBe(0)
+    expect(screen.queryAllByTestId('approval-result')).toHaveLength(0)
+    // The one approval was made under the environment it was confirmed in.
+    expect(approvals(api).map((call) => call.headers.get(ENVIRONMENT))).toEqual([IDS.development])
+    expect(
+      api.state.proposals.map((proposal) => [proposal.environmentId, proposal.status])
+    ).toEqual([
+      [IDS.development, 'executed'],
+      [IDS.production, 'pending'],
+    ])
+  })
+
+  test.each([
+    ['as shipped', false],
+    ['even with mutations queued while offline', true],
+  ] as const)(
+    'an approval made offline is never sent to production (%s)',
+    async (_name, queued) => {
+      const api = sameProposalInBoth()
+      const current = start(`${DEV_PATH}/proposals`, { api })
+      if (queued) {
+        queueMutationsWhileOffline(current)
+      }
+      const { user, router, location } = current
+      await user.click(await screen.findByRole('button', { name: OPENER }))
+      const online = goOffline()
+      await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Approve' }))
+      if (!queued) {
+        // Not kept for later: it failed, and the question says so.
+        await screen.findByText(/The API did not answer/)
+      }
+      await act(() => router.navigate({ href: `${PROD_PATH}/proposals` }))
+      await waitFor(() => expect(location()).toBe(`${PROD_PATH}/proposals`))
+      online()
+      await waitFor(() => expect(listed(api)).toBe(IDS.production))
+      await screen.findByRole('button', { name: OPENER })
+
+      expect(openDialogs()).toBe(0)
+      expect(
+        approvals(api).filter((call) => call.headers.get(ENVIRONMENT) !== IDS.development)
+      ).toEqual([])
+      expect(
+        api.state.proposals.find((entry) => entry.environmentId === IDS.production)?.status
+      ).toBe('pending')
+    }
+  )
 })

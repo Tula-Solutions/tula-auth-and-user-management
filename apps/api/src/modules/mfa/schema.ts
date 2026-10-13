@@ -2,6 +2,8 @@
 export {
   BackupCodesSchema,
   FactorsSchema,
+  SmsFactorCodeSchema,
+  SmsFactorConfirmRequestSchema,
   TotpConfirmRequestSchema,
   TotpEnrolmentSchema,
 } from '@tula/contract'

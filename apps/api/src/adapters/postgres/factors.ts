@@ -1,4 +1,11 @@
-import { backupCodes, type Database, type Transaction, userFactors, withTenant } from '@tula/db'
+import {
+  backupCodes,
+  type Database,
+  type Transaction,
+  userFactors,
+  users,
+  withTenant,
+} from '@tula/db'
 import { and, count, eq, gt, inArray, isNotNull, isNull, lt, lte, or, sql } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
@@ -113,6 +120,25 @@ export class PostgresFactorStore implements FactorStore {
   ): Promise<boolean> {
     const { at } = confirmation
     return withTenant(this.db, environmentId, async (tx) => {
+      // The owner's row is held first, as `users.enableSmsFactor` holds it: a texted second
+      // factor is turned on only for a user with no confirmed authenticator, and that write
+      // reads this table under the same lock. With it, a confirmation runs wholly before
+      // that write (which then refuses) or wholly after it (and the texted code is dormant
+      // from then on): never in between. `FOR NO KEY UPDATE`, so that the backup codes'
+      // foreign key (a `FOR KEY SHARE` on this row) is not waited for by itself.
+      const [pending] = await tx
+        .select({ userId: userFactors.userId })
+        .from(userFactors)
+        .where(and(eq(userFactors.id, id), eq(userFactors.environmentId, environmentId)))
+        .limit(1)
+      if (!pending) {
+        return false
+      }
+      await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.id, pending.userId), eq(users.environmentId, environmentId)))
+        .for('no key update')
       const [confirmed] = await tx
         .update(userFactors)
         .set({ confirmedAt: at, expiresAt: null, lastUsedStep: confirmation.step, updatedAt: at })

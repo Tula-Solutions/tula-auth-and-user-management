@@ -122,3 +122,57 @@ export function mailpitLinks(
     throw new Error(`no email with a link arrived for ${to}`)
   }
 }
+
+/**
+ * Read whole emails from a Mailpit inbox, for `emailMessage` steps.
+ *
+ * @param baseUrl - Mailpit's web address, e.g. `http://localhost:8025`.
+ * @param options - Injectable `fetch` and `sleep`, for tests.
+ * @returns A function that returns the subject and the plain-text part of the newest email
+ *   to an address whose subject contains a marker. Line ends are `\n`, whatever the relay
+ *   made of them.
+ *
+ * @example
+ * ```ts
+ * const emailMessage = mailpitMessages('http://localhost:8025')
+ * const { subject, text } = await emailMessage('maya@example.com', 'password was changed')
+ * ```
+ */
+export function mailpitMessages(
+  baseUrl: string,
+  options: { fetch?: typeof fetch; sleep?: (ms: number) => Promise<void> } = {}
+): (to: string, subjectContains: string) => Promise<{ subject: string; text: string }> {
+  const send = options.fetch ?? fetch
+  const sleep = options.sleep ?? Bun.sleep
+  const read = async (url: string): Promise<unknown> => {
+    const response = await send(url, { signal: AbortSignal.timeout(MAILPIT_REQUEST_TIMEOUT_MS) })
+    if (!response.ok) {
+      throw new Error(`Mailpit answered ${response.status}`)
+    }
+    return response.json()
+  }
+  return async (to, subjectContains) => {
+    if (/["\\\s]/.test(to)) {
+      throw new Error('not an address the runner can search for')
+    }
+    const search = `${baseUrl}/api/v1/search?query=${encodeURIComponent(`to:"${to}"`)}&limit=${MAILPIT_SEARCH_LIMIT}`
+    for (let waited = 0; waited <= MAILPIT_TIMEOUT_MS; waited += 100) {
+      const { messages } = (await read(search)) as MailpitSearch
+      // Mailpit lists the newest first.
+      const found = (messages ?? []).find((message) =>
+        (message.Subject ?? '').includes(subjectContains)
+      )
+      if (found?.ID) {
+        const message = (await read(
+          `${baseUrl}/api/v1/message/${encodeURIComponent(found.ID)}`
+        )) as { Text?: string }
+        return {
+          subject: found.Subject ?? '',
+          text: (message.Text ?? '').replaceAll('\r\n', '\n'),
+        }
+      }
+      await sleep(100)
+    }
+    throw new Error(`no email with that subject arrived for ${to}`)
+  }
+}

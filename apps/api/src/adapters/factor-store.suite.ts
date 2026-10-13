@@ -3,6 +3,7 @@ import type { ActivityType } from '@tula/contract'
 import * as Audit from '~/modules/audit/service'
 import type { Activity, ActivityLog } from '~/ports/activity-log'
 import type { FactorStore, NewBackupCode, NewFactor } from '~/ports/factor-store'
+import { comparable } from '~/testing/comparable'
 
 /** A tenant plus the rows the store's foreign keys need. */
 export interface FactorSuiteTenant {
@@ -219,11 +220,13 @@ export function describeFactorStore(name: string, setup: () => Promise<FactorSui
         expect(await attempt(later(TTL + 1))).toBe(false)
         expect(await attempt(later(TTL))).toBe(false)
         // Nothing was written by the refusals.
-        expect(await ctx.store.findTotp(ctx.a.environmentId, userId)).toMatchObject({
-          confirmedAt: null,
-          lastUsedStep: null,
-          expiresAt: later(TTL),
-        })
+        expect(comparable(await ctx.store.findTotp(ctx.a.environmentId, userId))).toMatchObject(
+          comparable({
+            confirmedAt: null,
+            lastUsedStep: null,
+            expiresAt: later(TTL),
+          })
+        )
         expect(await ctx.store.countBackupCodes(ctx.a.environmentId, userId)).toBe(0)
         expect(await recorded(ctx.a, userId)).toEqual([])
 
@@ -241,10 +244,12 @@ export function describeFactorStore(name: string, setup: () => Promise<FactorSui
             activity: activity(ctx.a, 'user.mfa_enabled', userId),
           })
         ).toBe(false)
-        expect(await ctx.store.findTotp(ctx.a.environmentId, userId)).toMatchObject({
-          confirmedAt: later(1_000),
-          lastUsedStep: 100,
-        })
+        expect(comparable(await ctx.store.findTotp(ctx.a.environmentId, userId))).toMatchObject(
+          comparable({
+            confirmedAt: later(1_000),
+            lastUsedStep: 100,
+          })
+        )
         expect(await ctx.store.countBackupCodes(ctx.a.environmentId, userId)).toBe(backup.length)
         // The first set of codes still works: it was not replaced.
         expect(
@@ -645,9 +650,11 @@ export function describeFactorStore(name: string, setup: () => Promise<FactorSui
       test('a confirmed factor is never purged, however far the cutoff', async () => {
         const { userId } = await confirmed(ctx.a)
         await ctx.store.deleteExpiredPending(ctx.a.environmentId, later(3_650 * DAY), 1_000)
-        expect(await ctx.store.findTotp(ctx.a.environmentId, userId)).toMatchObject({
-          confirmedAt: later(1_000),
-        })
+        expect(comparable(await ctx.store.findTotp(ctx.a.environmentId, userId))).toMatchObject(
+          comparable({
+            confirmedAt: later(1_000),
+          })
+        )
         expect(await ctx.store.countBackupCodes(ctx.a.environmentId, userId)).toBe(3)
       })
     })
@@ -694,11 +701,13 @@ export function describeFactorStore(name: string, setup: () => Promise<FactorSui
       expect(await ctx.store.deleteExpiredPending(foreign, later(TTL * 10), 100)).toBe(0)
 
       // Everything in environment A is as it was, and nothing was recorded in either.
-      expect(await ctx.store.findTotp(ctx.a.environmentId, userId)).toMatchObject({
-        id: factor.id,
-        confirmedAt: later(1_000),
-        lastUsedStep: 100,
-      })
+      expect(comparable(await ctx.store.findTotp(ctx.a.environmentId, userId))).toMatchObject(
+        comparable({
+          id: factor.id,
+          confirmedAt: later(1_000),
+          lastUsedStep: 100,
+        })
+      )
       expect(await ctx.store.findTotp(ctx.a.environmentId, enrolling.userId)).toMatchObject({
         confirmedAt: null,
       })

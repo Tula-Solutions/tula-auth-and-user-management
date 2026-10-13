@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit -p .",
     "test": "bun test --timeout 20000",
     "test:coverage": "bun test --timeout 20000 --coverage",
-    "test:integration": "bun test --timeout 30000 ./src/adapters/redis/redis.integration.ts ./src/adapters/postgres/job-lock.integration.ts ./src/adapters/postgres/environment-lock.integration.ts ./src/adapters/postgres/stores.integration.ts ./src/adapters/postgres/races.integration.ts",
+    "test:integration": "bun test --timeout 30000 ./src/adapters/redis/redis.integration.ts ./src/adapters/postgres/job-lock.integration.ts ./src/adapters/postgres/environment-lock.integration.ts ./src/adapters/postgres/stores.integration.ts ./src/adapters/postgres/races.integration.ts ./src/adapters/postgres/sms-usage.integration.ts",
     "contract:generate": "bun run src/scripts/generate-openapi.ts",
     "contract:check": "bun run src/scripts/generate-openapi.ts --check"
   },

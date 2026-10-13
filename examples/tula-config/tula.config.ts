@@ -115,7 +115,65 @@ export default defineConfig({
           // The whole .p8 file's contents, in a variable.
           privateKey: env('APPLE_PRIVATE_KEY'),
         },
+        microsoft: {
+          clientId: '6731de76-14a6-49ae-97bc-6eba6914391e',
+          clientSecret: env('MICROSOFT_CLIENT_SECRET'),
+          // Which accounts may sign in: 'common', 'organizations', 'consumers' or a tenant id.
+          tenant: 'organizations',
+        },
+        discord: {
+          clientId: '1198765432101234567',
+          clientSecret: env('DISCORD_CLIENT_SECRET'),
+        },
+        linkedin: { clientId: '86abcdefgh1234', clientSecret: env('LINKEDIN_CLIENT_SECRET') },
+        // X and Facebook are asked for no email address: an account made through either has
+        // none, and is never joined to an account with one.
+        x: { clientId: 'bEx4bXBsZUNsaWVudElk', clientSecret: env('X_CLIENT_SECRET') },
+        // Facebook calls them the app id and the app secret.
+        facebook: { clientId: '1234567890123456', clientSecret: env('FACEBOOK_APP_SECRET') },
       },
+      // #endregion
+      // #region webhooks
+      // The endpoints this environment's events are posted to. An endpoint is its address;
+      // there is no secret to write: the server makes it when `tula apply` registers the
+      // endpoint (`--secrets-file <path>` keeps it). `enabled` is left out, so the switch
+      // stays as the server has it. `dev` has no `webhooks` key: its endpoints are not
+      // managed by this file.
+      webhooks: [
+        {
+          url: 'https://api.northline.app/webhooks/tula',
+          eventTypes: ['user.created', 'user.deleted'],
+        },
+      ],
+      // #endregion
+      // #region hooks
+      // The questions this environment asks before it acts, by point: at most one hook per
+      // point. There is no secret to write here either. What an entry leaves out is the
+      // API's default: on, a deadline of two seconds, and `failureMode: 'deny'` (a call that
+      // fails refuses what was asked about). `dev` has no `hooks` key: its hooks are not
+      // managed by this file.
+      hooks: {
+        before_sign_up: { url: 'https://api.northline.app/hooks/tula/sign-up' },
+        before_token: { url: 'https://api.northline.app/hooks/tula/claims', deadlineMs: 1000 },
+      },
+      // #endregion
+      // #region native-apps
+      // The native apps the server names in the two files Apple and Android fetch
+      // (docs/native-apps.md). An app is its platform and its bundle id or package name.
+      // Nothing here is a secret: a team id and a certificate's fingerprint are public.
+      // Registering an app, and adding a fingerprint, widen who the platforms believe, so
+      // `tula apply --yes` asks for `--allow-weaker`. `dev` has no `nativeApps` key: its apps
+      // are not managed by this file.
+      nativeApps: [
+        { platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'app.northline.ios' },
+        {
+          platform: 'android',
+          packageName: 'app.northline.android',
+          sha256CertFingerprints: [
+            '14:6D:E9:83:C5:73:06:50:D8:EE:B9:95:2F:34:FC:64:16:A0:83:42:E6:1D:BE:A8:8A:04:96:B2:3F:CF:44:E5',
+          ],
+        },
+      ],
       // #endregion
     },
   },

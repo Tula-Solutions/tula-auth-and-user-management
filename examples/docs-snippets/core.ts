@@ -24,6 +24,20 @@ export async function passwordSignUp(email: string, password: string, code: stri
   return step
 }
 
+/** Sign in with a 6-digit code texted to a phone number the account has proven. */
+export async function smsCode(phoneNumber: string, code: string) {
+  // #region sms-code
+  // The identifier is the number with its country code: '+1 415 555 0142'.
+  const flow = await tula.signIn.start({ identifier: phoneNumber })
+  // flow.step.strategies includes 'sms_code' where the method is on, whatever the number
+  await flow.prepareFirstFactor({ strategy: 'sms_code' })
+  // The same answer for every number; a message goes only to one that signs in.
+  const step = await flow.attemptFirstFactor({ strategy: 'sms_code', code })
+  // A wrong code, and a number that cannot sign in, are both `auth.invalid_credentials`.
+  // #endregion
+  return step
+}
+
 /** Sign in with a password. */
 export async function passwordSignIn(email: string, password: string) {
   // #region password-sign-in
@@ -37,6 +51,19 @@ export async function passwordSignIn(email: string, password: string) {
       // The same answer for a wrong password and an unknown address.
     }
     throw error
+  }
+  // #endregion
+}
+
+/** Finish a sign-in whose password has expired. */
+export async function passwordExpired(email: string, password: string, newPassword: string) {
+  // #region password-expired
+  const flow = await tula.signIn.start({ identifier: email })
+  const step = await flow.submitPassword({ password })
+  if (step.status === 'needs_new_password' && step.reason === 'expired') {
+    // The password was right and is older than the environment allows. Nobody is signed in
+    // until a new one is accepted; a refused one (`password.*`) can be tried again.
+    await flow.submitNewPassword({ password: newPassword })
   }
   // #endregion
 }
@@ -133,6 +160,72 @@ export async function oauth() {
   return identities
 }
 
+/**
+ * A native app's sign-in with the ID token Google's own SDK hands it (ADR 0045).
+ *
+ * @param askGoogle - The app's call to the platform's Google sign-in, given the nonce.
+ */
+export async function nativeIdToken(askGoogle: (nonce: string) => Promise<string>) {
+  // #region id-token-sign-in
+  // A native client: `ios` or `android`. A `web` client is refused this sign-in.
+  const app = createTulaClient({
+    publishableKey: 'tula_pk_dev_…',
+    baseUrl: 'https://auth.example.com',
+    client: 'android',
+  })
+  // 1. Start: the server makes the nonce. It is good for this one sign-in.
+  const pending = await app.signIn.withIdToken({ provider: 'google' })
+  // 2. Ask Google's SDK for an ID token that carries that nonce, as it is
+  //    (Credential Manager's `setNonce`, GoogleSignIn-iOS's `nonce:`).
+  const idToken = await askGoogle(pending.nonce)
+  // 3. Hand the token over. It is sent once, in a request body, and not kept.
+  const flow = await pending.exchange(idToken)
+  // flow.step.status is 'complete' (signed in), or 'needs_second_factor' /
+  // 'needs_factor_enrolment', answered on the same flow as after any sign-in.
+  // #endregion
+  return flow
+}
+
+/**
+ * Sign in with Apple from an iOS app, by the identity token the system's sheet hands it
+ * (ADR 0047).
+ *
+ * @param sha256Hex - The platform's SHA-256 of a string's UTF-8 bytes, as lowercase
+ *   hexadecimal (CryptoKit in Swift, `expo-crypto` in Expo).
+ * @param askApple - The app's call to the Sign in with Apple sheet, given the request's
+ *   nonce; answers the identity token and the name the sheet gave, if any.
+ */
+export async function nativeAppleIdToken(
+  sha256Hex: (text: string) => Promise<string>,
+  askApple: (
+    nonce: string
+  ) => Promise<{ identityToken: string; givenName?: string; familyName?: string }>
+) {
+  // #region apple-id-token-sign-in
+  // Apple's identity token is an iOS app's: only an `ios` client may start this.
+  const app = createTulaClient({
+    publishableKey: 'tula_pk_dev_…',
+    baseUrl: 'https://auth.example.com',
+    client: 'ios',
+  })
+  // 1. Start: the server makes the nonce. It is good for this one sign-in.
+  const pending = await app.signIn.withIdToken({ provider: 'apple' })
+  // 2. Hand the sheet the SHA-256 of that nonce, in lowercase hexadecimal, as
+  //    `ASAuthorizationAppleIDRequest.nonce`. The client does not hash it for you, and a
+  //    token that carries the nonce itself is refused.
+  const apple = await askApple(await sha256Hex(pending.nonce))
+  // 3. Hand the token over, with the name the sheet gave: Apple's token carries none, and
+  //    the sheet gives one on the first authorization only. It names a new account.
+  const flow = await pending.exchange(apple.identityToken, {
+    givenName: apple.givenName,
+    familyName: apple.familyName,
+  })
+  // flow.step.status is 'complete' (signed in), or 'needs_second_factor' /
+  // 'needs_factor_enrolment', answered on the same flow as after any sign-in.
+  // #endregion
+  return flow
+}
+
 /** Sign in with a passkey, and manage the signed-in user's passkeys. */
 export async function passkeys(signal: AbortSignal) {
   // #region passkey-sign-in
@@ -207,6 +300,19 @@ export async function stepUp(code: string) {
     await tula.mfa.regenerateBackupCodes() // repeat the call
   }
   // #endregion
+}
+
+/** A phone number on the account, proven with a texted code (ADR 0037). */
+export async function phoneNumber(code: string) {
+  // #region phone-number
+  // Both calls need a recent authentication: handle `auth.step_up_required` as above.
+  const sent = await tula.user.phone.request({ phoneNumber: '+1 (415) 555-0142' })
+  // sent.destination === '***42'; the code is in the text message, never in an answer
+  const user = await tula.user.phone.verify({ code })
+  // user.phoneNumber === '+14155550142', user.phoneNumberVerifiedAt is when
+  await tula.user.phone.remove()
+  // #endregion
+  return { sent, user }
 }
 
 /** Tokens, devices and sign-out. */

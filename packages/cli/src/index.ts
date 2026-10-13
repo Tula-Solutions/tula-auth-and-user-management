@@ -1,4 +1,5 @@
 import { applyCommand } from './commands/apply'
+import { approveCommand } from './commands/approve'
 import { devCommand } from './commands/dev'
 import { diffCommand } from './commands/diff'
 import { doctorCommand } from './commands/doctor'
@@ -9,6 +10,7 @@ import { processIo } from './process-io'
 
 export { type OptionSpec, type ParsedArgs, parseArgs, UsageError } from './args'
 export { applyCommand } from './commands/apply'
+export { approveCommand } from './commands/approve'
 export { devCommand } from './commands/dev'
 export { diffCommand } from './commands/diff'
 export { doctorCommand } from './commands/doctor'
@@ -26,7 +28,10 @@ export {
 export {
   buildPlan,
   type Change,
+  DEPENDENTS_UNREAD,
+  type DependentCount,
   diffValues,
+  type KnownDependents,
   MANAGING_TOOL,
   type MarkerPlan,
   type Operation,
@@ -35,8 +40,11 @@ export {
   type PlanOptions,
   type ProviderChange,
   planProviders,
+  providersGoingOff,
+  type RemoteDependents,
   type RemoteProvider,
   type RemoteState,
+  readDependentCount,
   SET_PATHS,
 } from './diff'
 export {
@@ -68,6 +76,7 @@ export {
 } from './render'
 export {
   readSecretFile,
+  resolveAgent,
   resolveApiUrl,
   resolveInstance,
   resolveTarget,
@@ -90,6 +99,7 @@ export const COMMANDS: readonly Command[] = [
   policyCommand,
   devCommand,
   mcpCommand,
+  approveCommand,
 ]
 
 /**

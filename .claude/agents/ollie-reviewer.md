@@ -23,9 +23,12 @@ skill exactly as it specifies, with these repository-specific settings:
 ## Repository policy to apply as review requirements
 
 - Read `AGENTS.md` (Security rules, Errors, Testing, Definition of done) and any
-  `.claude/rules/*.md` whose `paths` match the changed files. `security.md` is mandatory for
+  `.claude/rules/*.md` whose `paths` match the changed files (nothing loads them for you: the
+  "Area rules" table of `AGENTS.md` says which file holds which area). `security.md` is mandatory for
   anything under `apps/api/src/modules/{flow,session,password,jwks,verification}` or
-  `apps/api/src/lib/crypto.ts`.
+  `apps/api/src/lib/crypto.ts`. It is the general checklist; the failure paths of one area
+  are the "What to test" section of that area's file, which `security.md` lists and which is
+  mandatory with it.
 - Treat these as blockers when evidenced: secrets or tokens logged or returned; non-constant-time
   comparison of secrets; account enumeration through errors or timing; refresh-token reuse not
   revoking the family; tenant data readable across environments; unvalidated input reaching the

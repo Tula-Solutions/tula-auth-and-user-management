@@ -6,7 +6,13 @@ import { useAuthState } from '../hooks/use-auth-state'
 import { formatText } from '../localization'
 import { CODE_LENGTH, CodeField, ResendButton, useRetryAfter } from './flow-screens'
 import { attemptsLeft, formatDuration } from './form-errors'
-import { BackupCodesPanel, drawableFactors, SecondFactorForm } from './mfa'
+import {
+  BackupCodesPanel,
+  drawableFactors,
+  offersTextedCode,
+  SecondFactorForm,
+  TextedCodeForm,
+} from './mfa'
 import { PasskeyPanel, usePasskeySupport } from './passkey'
 import { Button, Form, FormError, Heading, PasswordField, Root, Status, useUi } from './ui'
 
@@ -323,7 +329,8 @@ function EmailCodeStepUp(props: {
  * lives in the dialog's state and goes when it closes.
  *
  * A user with a second factor is asked for it and nothing else (their passkey is one of the
- * ways, where they have one). Without one: their passkey when they have one and the browser
+ * ways, where they have one). A user whose second step is a texted code is asked for one,
+ * and the message is sent only when they press the button. Without one: their passkey when they have one and the browser
  * can use it, else the password, with the other ways the server lists one click away (a code
  * by email is sent only when they choose it, or at once when it is all they have).
  */
@@ -337,19 +344,22 @@ function StepUpDialog(props: { methods: readonly StepUpMethod[]; onDone(proven: 
   const second = drawableFactors(methods)
   // A code factor means the user has two-step verification: nothing weaker is offered.
   const strong = second.some((method) => method !== 'passkey')
+  // A texted code is the user's second step and all they have: the server lists it alone.
+  const texted = !strong && offersTextedCode(methods)
   const signedIn = state.status === 'signed-in'
   const passkeySupported = usePasskeySupport()
   type View = 'passkey' | 'password' | 'email'
-  const views: View[] = strong
-    ? []
-    : [
-        // Not ruled out until the browser has been asked; then only where it can.
-        ...(methods.includes('passkey') && passkeySupported !== false
-          ? (['passkey'] as const)
-          : []),
-        ...(methods.includes('password') ? (['password'] as const) : []),
-        ...(methods.includes('email_code') ? (['email'] as const) : []),
-      ]
+  const views: View[] =
+    strong || texted
+      ? []
+      : [
+          // Not ruled out until the browser has been asked; then only where it can.
+          ...(methods.includes('passkey') && passkeySupported !== false
+            ? (['passkey'] as const)
+            : []),
+          ...(methods.includes('password') ? (['password'] as const) : []),
+          ...(methods.includes('email_code') ? (['email'] as const) : []),
+        ]
   const [chosen, setChosen] = useState<View | null>(null)
   const view: View | undefined = chosen && views.includes(chosen) ? chosen : views[0]
   // The receipt of the code this dialog sent. Held here, not in the form, so that looking at
@@ -404,6 +414,22 @@ function StepUpDialog(props: { methods: readonly StepUpMethod[]; onDone(proven: 
     onDone(true)
     return true
   }
+  const sendText = async (): Promise<boolean> => {
+    setError(null)
+    try {
+      const value = await client.session.prepareStepUp({ method: 'sms_code' })
+      // A receipt belongs to the session that asked for it.
+      const now = client.state
+      if (now.status !== 'signed-in' || now.sessionId !== sessionId) {
+        return false
+      }
+      setReceipt({ sessionId, value })
+      return true
+    } catch (caught) {
+      setError(toTulaError(caught))
+      return false
+    }
+  }
   const cancel = () => onDone(false)
   const labels: Record<View, string> = {
     passkey: t.passkey.useInstead,
@@ -414,7 +440,7 @@ function StepUpDialog(props: { methods: readonly StepUpMethod[]; onDone(proven: 
     (other) => other !== view && (other !== 'passkey' || passkeySupported === true)
   )
   // A passkey is all this user could step up with, and this browser cannot use one.
-  const passkeyOnly = !strong && views.length === 0 && methods.includes('passkey')
+  const passkeyOnly = !strong && !texted && views.length === 0 && methods.includes('passkey')
   return (
     <Modal title={t.stepUp.title} onCancel={cancel}>
       {strong ? (
@@ -428,6 +454,16 @@ function StepUpDialog(props: { methods: readonly StepUpMethod[]; onDone(proven: 
           passkeySubtitle={t.passkey.stepUpSubtitle}
           submit={submit}
           submitPasskey={submitPasskey}
+        />
+      ) : texted ? (
+        <TextedCodeForm
+          destination={receipt?.sessionId === sessionId ? receipt.value.destination : null}
+          isPending={isPending}
+          error={error}
+          prompt={t.stepUp.smsSubtitle}
+          submitLabel={t.stepUp.submit}
+          send={sendText}
+          submit={(code) => submit({ method: 'sms_code', code })}
         />
       ) : view !== undefined ? (
         <div ref={body}>
@@ -464,7 +500,7 @@ function StepUpDialog(props: { methods: readonly StepUpMethod[]; onDone(proven: 
         <p className='tula-text'>{passkeyOnly ? t.passkey.unsupported : t.stepUp.noMethod}</p>
       )}
       <Button kind='secondary' onClick={cancel}>
-        {strong || view !== undefined ? t.stepUp.cancel : t.stepUp.close}
+        {strong || texted || view !== undefined ? t.stepUp.cancel : t.stepUp.close}
       </Button>
     </Modal>
   )

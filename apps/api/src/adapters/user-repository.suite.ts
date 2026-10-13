@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
+import { type ActivityType, testAddress } from '@tula/contract'
 import * as Audit from '~/modules/audit/service'
-import type { NewUser, UserRepository } from '~/ports/user-repository'
+import type { Activity, ActivityLog } from '~/ports/activity-log'
+import type { FactorStore } from '~/ports/factor-store'
+import type { PasskeyStore } from '~/ports/passkey-store'
+import type { NewUser, StrongerFactorsHeld, UserRepository } from '~/ports/user-repository'
+import { comparable } from '~/testing/comparable'
 
 /** A tenant for the suite. */
 export interface UserSuiteTenant {
@@ -11,6 +16,14 @@ export interface UserSuiteTenant {
 /** What a repository under test provides. */
 export interface UserSuiteContext {
   users: UserRepository
+  /**
+   * The factor and passkey stores over the same data: turning a texted second factor on
+   * reads what they hold, inside the repository's own write.
+   */
+  factors: FactorStore
+  passkeys: PasskeyStore
+  /** Reads back what the repository recorded. */
+  log: ActivityLog
   a: UserSuiteTenant
   b: UserSuiteTenant
 }
@@ -32,7 +45,10 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
       ctx = await setup()
     })
 
-    function user(tenant: UserSuiteTenant, overrides: Partial<NewUser> = {}): NewUser {
+    /** A user with an address: what every test here means unless it says otherwise. */
+    type Addressed = NewUser & { email: string; emailNormalized: string }
+
+    function user(tenant: UserSuiteTenant, overrides: Partial<Addressed> = {}): Addressed {
       const id = Bun.randomUUIDv7()
       return {
         id,
@@ -53,8 +69,569 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
 
     function record(input: NewUser) {
       const { identityId: _i, credentialId: _c, passwordHash: _p, ...rest } = input
-      return { ...rest, bannedAt: null, lastSignInAt: null }
+      return {
+        ...rest,
+        bannedAt: null,
+        lastSignInAt: null,
+        phoneNumber: null,
+        phoneNumberVerifiedAt: null,
+        smsFactorEnabledAt: null,
+      }
     }
+
+    function activity(tenant: UserSuiteTenant, type: ActivityType, userId: string): Activity {
+      return {
+        id: Bun.randomUUIDv7(),
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        type,
+        actor: { type: 'user', id: userId },
+        target: { type: 'user', id: userId },
+        ipAddress: '203.0.113.7',
+        userAgent: 'suite/1.0',
+        data: {},
+        occurredAt: now,
+      }
+    }
+
+    const auditOf = async (tenant: UserSuiteTenant, userId: string) =>
+      (
+        await ctx.log.listAudit(tenant.environmentId, { targetId: userId, page: 1, size: 50 })
+      ).entries.map((entry) => entry.type)
+
+    describe('a texted code as the second factor', () => {
+      const NUMBER = '+14155550100'
+      const OTHER = '+4915112345678'
+
+      /** A user with a proven number. */
+      async function withNumber(tenant: UserSuiteTenant = ctx.a) {
+        const input = user(tenant)
+        await ctx.users.create(input, Audit.none('fixture'))
+        await ctx.users.setPhoneNumber(
+          tenant.environmentId,
+          input.id,
+          NUMBER,
+          later(1_000),
+          Audit.none('fixture'),
+          Audit.none('fixture')
+        )
+        return input
+      }
+      /** The service's rule with passkeys on: nothing stronger may be held. */
+      const nothingStronger = (held: StrongerFactorsHeld) =>
+        !held.confirmedTotp && held.passkeys === 0
+      const enable = (
+        tenant: UserSuiteTenant,
+        id: string,
+        number = NUMBER,
+        at = later(2_000),
+        allowed: (held: StrongerFactorsHeld) => boolean = nothingStronger
+      ) =>
+        ctx.users.enableSmsFactor(
+          tenant.environmentId,
+          id,
+          number,
+          at,
+          allowed,
+          activity(tenant, 'user.sms_factor_enabled', id)
+        )
+
+      /** An authenticator app for a user: pending, and confirmed when asked. */
+      async function authenticator(tenant: UserSuiteTenant, userId: string, confirmed: boolean) {
+        const id = Bun.randomUUIDv7()
+        expect(
+          await ctx.factors.startTotp({
+            id,
+            ...tenant,
+            userId,
+            type: 'totp',
+            secret: 'sealed',
+            expiresAt: later(600_000),
+            createdAt: now,
+          })
+        ).toBe(true)
+        if (confirmed) {
+          expect(
+            await ctx.factors.confirmTotp(tenant.environmentId, id, {
+              step: 1,
+              at: later(1_500),
+              backupCodes: [],
+              activity: Audit.none('fixture'),
+            })
+          ).toBe(true)
+        }
+      }
+
+      async function passkey(tenant: UserSuiteTenant, userId: string) {
+        expect(
+          await ctx.passkeys.create(
+            {
+              id: Bun.randomUUIDv7(),
+              ...tenant,
+              userId,
+              credentialId: `credential-${Bun.randomUUIDv7()}`,
+              publicKey: new TextEncoder().encode('key'),
+              signCount: 0,
+              transports: ['internal'],
+              aaguid: '00000000-0000-0000-0000-000000000000',
+              backupEligible: true,
+              backedUp: true,
+              userHandle: `handle-${Bun.randomUUIDv7()}`,
+              name: 'Laptop',
+              lastUsedAt: null,
+              createdAt: now,
+            },
+            10,
+            Audit.none('fixture')
+          )
+        ).toBe('created')
+      }
+      const disable = (tenant: UserSuiteTenant, id: string) =>
+        ctx.users.disableSmsFactor(
+          tenant.environmentId,
+          id,
+          later(3_000),
+          activity(tenant, 'user.sms_factor_removed', id)
+        )
+      const enabledAt = async (tenant: UserSuiteTenant, id: string) =>
+        (await ctx.users.findById(tenant.environmentId, id))?.smsFactorEnabledAt ?? null
+
+      test('a new user has none, and a number alone is not a factor', async () => {
+        const input = await withNumber()
+        expect(await enabledAt(ctx.a, input.id)).toBeNull()
+      })
+
+      test('is turned on once, for the number the account holds, and recorded once', async () => {
+        const input = await withNumber()
+        expect(await enable(ctx.a, input.id)).toBe('enabled')
+        expect((await enabledAt(ctx.a, input.id))?.toISOString()).toBe(later(2_000).toISOString())
+        // On already: nothing written, nothing recorded, the time not moved.
+        expect(await enable(ctx.a, input.id, NUMBER, later(9_000))).toBe('stale')
+        expect((await enabledAt(ctx.a, input.id))?.toISOString()).toBe(later(2_000).toISOString())
+        expect(await auditOf(ctx.a, input.id)).toEqual(['user.sms_factor_enabled'])
+      })
+
+      test('two confirmations at once turn it on once', async () => {
+        const input = await withNumber()
+        const outcomes = await Promise.all([enable(ctx.a, input.id), enable(ctx.a, input.id)])
+        expect(outcomes.sort()).toEqual(['enabled', 'stale'])
+        expect(await auditOf(ctx.a, input.id)).toEqual(['user.sms_factor_enabled'])
+      })
+
+      test('is not turned on for a number the account does not hold, or holds no longer', async () => {
+        const input = await withNumber()
+        expect(await enable(ctx.a, input.id, OTHER)).toBe('stale')
+        const bare = user(ctx.a)
+        await ctx.users.create(bare, Audit.none('fixture'))
+        expect(await enable(ctx.a, bare.id)).toBe('stale')
+        expect(await enable(ctx.a, Bun.randomUUIDv7())).toBe('stale')
+        expect(await enabledAt(ctx.a, input.id)).toBeNull()
+        expect(await auditOf(ctx.a, input.id)).toEqual([])
+        expect(await auditOf(ctx.a, bare.id)).toEqual([])
+      })
+
+      // Review round 1, F2: the rule is asked inside the write, with what the user holds then.
+      test.each<
+        [string, (tenant: UserSuiteTenant, id: string) => Promise<void>, StrongerFactorsHeld]
+      >([
+        [
+          'a confirmed authenticator app',
+          (tenant, id) => authenticator(tenant, id, true),
+          { confirmedTotp: true, passkeys: 0 },
+        ],
+        ['a passkey', passkey, { confirmedTotp: false, passkeys: 1 }],
+      ])('is refused beside %s: nothing written, nothing recorded', async (_name, give, held) => {
+        const input = await withNumber()
+        await give(ctx.a, input.id)
+        const seen: StrongerFactorsHeld[] = []
+        const outcome = await enable(ctx.a, input.id, NUMBER, later(2_000), (now) => {
+          seen.push(now)
+          return nothingStronger(now)
+        })
+        expect(outcome).toBe('stronger_factor')
+        expect(seen).toEqual([held])
+        expect(await enabledAt(ctx.a, input.id)).toBeNull()
+        expect(await auditOf(ctx.a, input.id)).not.toContain('user.sms_factor_enabled')
+      })
+
+      test('the rule is the caller’s: what is held is reported, and a rule that allows it writes', async () => {
+        const input = await withNumber()
+        await passkey(ctx.a, input.id)
+        await passkey(ctx.a, input.id)
+        const seen: StrongerFactorsHeld[] = []
+        // As where an environment has switched passkeys off: they do not stand in the way.
+        const outcome = await enable(ctx.a, input.id, NUMBER, later(2_000), (held) => {
+          seen.push(held)
+          return !held.confirmedTotp
+        })
+        expect(outcome).toBe('enabled')
+        expect(seen).toEqual([{ confirmedTotp: false, passkeys: 2 }])
+      })
+
+      test('an authenticator that was never confirmed is not one', async () => {
+        const input = await withNumber()
+        await authenticator(ctx.a, input.id, false)
+        expect(await enable(ctx.a, input.id)).toBe('enabled')
+      })
+
+      test('another user’s factors, and the same user’s in another environment, do not count', async () => {
+        const input = await withNumber()
+        const other = await withNumber()
+        await authenticator(ctx.a, other.id, true)
+        await passkey(ctx.a, other.id)
+        const elsewhere = await withNumber(ctx.b)
+        await passkey(ctx.b, elsewhere.id)
+        expect(await enable(ctx.a, input.id)).toBe('enabled')
+        expect(await enable(ctx.b, elsewhere.id)).toBe('stronger_factor')
+      })
+
+      test('the rule is not asked for a number the account does not hold', async () => {
+        const input = await withNumber()
+        let asked = 0
+        const outcome = await enable(ctx.a, input.id, OTHER, later(2_000), () => {
+          asked += 1
+          return true
+        })
+        expect([outcome, asked]).toEqual(['stale', 0])
+      })
+
+      test('is turned off once, keeps the number, and records only a real removal', async () => {
+        const input = await withNumber()
+        expect(await disable(ctx.a, input.id)).toBe(false)
+        await enable(ctx.a, input.id)
+        expect(await disable(ctx.a, input.id)).toBe(true)
+        expect(await disable(ctx.a, input.id)).toBe(false)
+        expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toMatchObject({
+          phoneNumber: NUMBER,
+          smsFactorEnabledAt: null,
+        })
+        expect((await auditOf(ctx.a, input.id)).sort()).toEqual([
+          'user.sms_factor_enabled',
+          'user.sms_factor_removed',
+        ])
+      })
+
+      test('goes with the number when the number is removed, in the same write', async () => {
+        const input = await withNumber()
+        await enable(ctx.a, input.id)
+        expect(
+          await ctx.users.removePhoneNumber(
+            ctx.a.environmentId,
+            input.id,
+            later(3_000),
+            activity(ctx.a, 'user.phone_number_removed', input.id),
+            activity(ctx.a, 'user.sms_factor_removed', input.id)
+          )
+        ).toBe(true)
+        expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toMatchObject({
+          phoneNumber: null,
+          smsFactorEnabledAt: null,
+        })
+        expect((await auditOf(ctx.a, input.id)).sort()).toEqual([
+          'user.phone_number_removed',
+          'user.sms_factor_enabled',
+          'user.sms_factor_removed',
+        ])
+      })
+
+      test('a number removed from a user without the factor records no factor removal', async () => {
+        const input = await withNumber()
+        await ctx.users.removePhoneNumber(
+          ctx.a.environmentId,
+          input.id,
+          later(3_000),
+          activity(ctx.a, 'user.phone_number_removed', input.id),
+          activity(ctx.a, 'user.sms_factor_removed', input.id)
+        )
+        expect(await auditOf(ctx.a, input.id)).toEqual(['user.phone_number_removed'])
+      })
+
+      test('goes when another number replaces its own; the same number proven again keeps it', async () => {
+        const input = await withNumber()
+        await enable(ctx.a, input.id)
+        const set = (number: string, at: Date) =>
+          ctx.users.setPhoneNumber(
+            ctx.a.environmentId,
+            input.id,
+            number,
+            at,
+            activity(ctx.a, 'user.phone_number_added', input.id),
+            activity(ctx.a, 'user.sms_factor_removed', input.id)
+          )
+        expect((await set(NUMBER, later(4_000)))?.smsFactorEnabledAt?.toISOString()).toBe(
+          later(2_000).toISOString()
+        )
+        expect(await auditOf(ctx.a, input.id)).not.toContain('user.sms_factor_removed')
+        expect(await set(OTHER, later(5_000))).toMatchObject({
+          phoneNumber: OTHER,
+          smsFactorEnabledAt: null,
+        })
+        expect(
+          (await auditOf(ctx.a, input.id)).filter((type) => type === 'user.sms_factor_removed')
+        ).toHaveLength(1)
+        // A new number is not a factor until it is enrolled again.
+        expect(await enabledAt(ctx.a, input.id)).toBeNull()
+      })
+
+      test('an unknown user and another environment’s user are never touched', async () => {
+        const input = await withNumber()
+        await enable(ctx.a, input.id)
+        for (const [tenant, id] of [
+          [ctx.a, Bun.randomUUIDv7()],
+          [ctx.b, input.id],
+        ] as const) {
+          expect(await enable(tenant, id)).toBe('stale')
+          expect(await disable(tenant, id)).toBe(false)
+        }
+        expect(await auditOf(ctx.b, input.id)).toEqual([])
+        expect(await enabledAt(ctx.a, input.id)).not.toBeNull()
+      })
+    })
+
+    describe('a phone number', () => {
+      test('a new user has none', async () => {
+        const input = user(ctx.a)
+        await ctx.users.create(input, Audit.none('fixture'))
+        expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toMatchObject({
+          phoneNumber: null,
+          phoneNumberVerifiedAt: null,
+        })
+      })
+
+      test('is stored with the time it was proven, and recorded', async () => {
+        const input = user(ctx.a)
+        await ctx.users.create(input, Audit.none('fixture'))
+        const stored = await ctx.users.setPhoneNumber(
+          ctx.a.environmentId,
+          input.id,
+          '+14155550100',
+          later(1_000),
+          activity(ctx.a, 'user.phone_number_added', input.id),
+          Audit.none('fixture')
+        )
+        const expected = {
+          ...record(input),
+          phoneNumber: '+14155550100',
+          phoneNumberVerifiedAt: later(1_000),
+        }
+        expect(stored).toEqual(expected)
+        expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toEqual(expected)
+        expect(await auditOf(ctx.a, input.id)).toEqual(['user.phone_number_added'])
+      })
+
+      test('a second number replaces the first, and proving one again moves its time', async () => {
+        const input = user(ctx.a)
+        await ctx.users.create(input, Audit.none('fixture'))
+        const set = (phoneNumber: string, at: Date) =>
+          ctx.users.setPhoneNumber(
+            ctx.a.environmentId,
+            input.id,
+            phoneNumber,
+            at,
+            activity(ctx.a, 'user.phone_number_added', input.id),
+            Audit.none('fixture')
+          )
+        await set('+14155550100', later(1_000))
+        expect(await set('+4915112345678', later(2_000))).toEqual({
+          ...record(input),
+          phoneNumber: '+4915112345678',
+          phoneNumberVerifiedAt: later(2_000),
+        })
+        expect((await set('+4915112345678', later(3_000)))?.phoneNumberVerifiedAt).toEqual(
+          later(3_000)
+        )
+        expect(await auditOf(ctx.a, input.id)).toHaveLength(3)
+      })
+
+      test('two users may have the same number: it is not an identifier', async () => {
+        const first = user(ctx.a)
+        const second = user(ctx.a)
+        await ctx.users.create(first, Audit.none('fixture'))
+        await ctx.users.create(second, Audit.none('fixture'))
+        for (const { id } of [first, second]) {
+          expect(
+            (
+              await ctx.users.setPhoneNumber(
+                ctx.a.environmentId,
+                id,
+                '+14155550100',
+                later(1),
+                Audit.none('fixture'),
+                Audit.none('fixture')
+              )
+            )?.phoneNumber
+          ).toBe('+14155550100')
+        }
+      })
+
+      test('removing takes the number and its time, once, and records only a real removal', async () => {
+        const input = user(ctx.a)
+        await ctx.users.create(input, Audit.none('fixture'))
+        const remove = () =>
+          ctx.users.removePhoneNumber(
+            ctx.a.environmentId,
+            input.id,
+            later(2_000),
+            activity(ctx.a, 'user.phone_number_removed', input.id),
+            Audit.none('fixture')
+          )
+        // Nothing to remove: nothing recorded.
+        expect(await remove()).toBe(false)
+        expect(await auditOf(ctx.a, input.id)).toEqual([])
+        await ctx.users.setPhoneNumber(
+          ctx.a.environmentId,
+          input.id,
+          '+14155550100',
+          later(1_000),
+          Audit.none('fixture'),
+          Audit.none('fixture')
+        )
+        expect(await remove()).toBe(true)
+        expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toEqual(record(input))
+        expect(await remove()).toBe(false)
+        expect(await auditOf(ctx.a, input.id)).toEqual(['user.phone_number_removed'])
+      })
+
+      test('an unknown user and another environment’s user get nothing, and nothing is recorded', async () => {
+        const input = user(ctx.a)
+        await ctx.users.create(input, Audit.none('fixture'))
+        await ctx.users.setPhoneNumber(
+          ctx.a.environmentId,
+          input.id,
+          '+14155550100',
+          later(1),
+          Audit.none('fixture'),
+          Audit.none('fixture')
+        )
+        for (const [environmentId, id] of [
+          [ctx.a.environmentId, Bun.randomUUIDv7()],
+          [ctx.b.environmentId, input.id],
+        ] as const) {
+          expect(
+            await ctx.users.setPhoneNumber(
+              environmentId,
+              id,
+              '+4915112345678',
+              later(2),
+              activity(ctx.b, 'user.phone_number_added', id),
+              Audit.none('fixture')
+            )
+          ).toBeNull()
+          expect(
+            await ctx.users.removePhoneNumber(
+              environmentId,
+              id,
+              later(2),
+              activity(ctx.b, 'user.phone_number_removed', id),
+              Audit.none('fixture')
+            )
+          ).toBe(false)
+        }
+        expect(await auditOf(ctx.b, input.id)).toEqual([])
+        expect((await ctx.users.findById(ctx.a.environmentId, input.id))?.phoneNumber).toBe(
+          '+14155550100'
+        )
+      })
+
+      test('the list carries it', async () => {
+        const input = user(ctx.a)
+        await ctx.users.create(input, Audit.none('fixture'))
+        await ctx.users.setPhoneNumber(
+          ctx.a.environmentId,
+          input.id,
+          '+14155550100',
+          later(1),
+          Audit.none('fixture'),
+          Audit.none('fixture')
+        )
+        const listed = await ctx.users.list(ctx.a.environmentId, {
+          q: input.emailNormalized,
+          sort: 'email',
+          page: 1,
+          size: 10,
+        })
+        expect(listed.users[0]?.phoneNumber).toBe('+14155550100')
+      })
+
+      /** A number no other test of the run has used: adapters may share a database. */
+      const unused = () => `+1415${String(Math.floor(Math.random() * 10_000_000)).padStart(7, '0')}`
+
+      /** A user of `tenant` holding `phoneNumber`, proven at `at`. */
+      async function holder(tenant: UserSuiteTenant, phoneNumber: string, at: Date) {
+        const input = user(tenant)
+        await ctx.users.create(input, Audit.none('fixture'))
+        await ctx.users.setPhoneNumber(
+          tenant.environmentId,
+          input.id,
+          phoneNumber,
+          at,
+          Audit.none('fixture'),
+          Audit.none('fixture')
+        )
+        return input.id
+      }
+
+      test('the users of an environment who hold a number are found by it, up to a limit', async () => {
+        const number = unused()
+        expect(await ctx.users.findByPhoneNumber(ctx.a.environmentId, number, 2)).toEqual([])
+        const first = await holder(ctx.a, number, later(1))
+        await holder(ctx.a, unused(), later(1))
+        // Another environment's holder is never found from here.
+        await holder(ctx.b, number, later(1))
+        const one = await ctx.users.findByPhoneNumber(ctx.a.environmentId, number, 2)
+        expect(one.map(({ id }) => id)).toEqual([first])
+        expect(one[0]).toMatchObject({ phoneNumber: number })
+        expect(one[0]?.phoneNumberVerifiedAt).toEqual(later(1))
+        const second = await holder(ctx.a, number, later(2))
+        const third = await holder(ctx.a, number, later(3))
+        const two = await ctx.users.findByPhoneNumber(ctx.a.environmentId, number, 2)
+        expect(two).toHaveLength(2)
+        const all = await ctx.users.findByPhoneNumber(ctx.a.environmentId, number, 10)
+        expect(new Set(all.map(({ id }) => id))).toEqual(new Set([first, second, third]))
+        // A number that was removed finds nobody.
+        await ctx.users.removePhoneNumber(
+          ctx.a.environmentId,
+          first,
+          later(4),
+          Audit.none('fixture'),
+          Audit.none('fixture')
+        )
+        expect(
+          (await ctx.users.findByPhoneNumber(ctx.a.environmentId, number, 10)).map(({ id }) => id)
+        ).not.toContain(first)
+      })
+
+      test('a proof moves the time the number was proven, forward only, and records nothing', async () => {
+        const number = unused()
+        const id = await holder(ctx.a, number, later(1_000))
+        const provenAt = async () =>
+          (await ctx.users.findById(ctx.a.environmentId, id))?.phoneNumberVerifiedAt
+        await ctx.users.recordPhoneNumberProof(ctx.a.environmentId, id, number, later(5_000))
+        expect(await provenAt()).toEqual(later(5_000))
+        // Never backwards.
+        await ctx.users.recordPhoneNumberProof(ctx.a.environmentId, id, number, later(2_000))
+        expect(await provenAt()).toEqual(later(5_000))
+        // Not for a number the user no longer holds, and not from another environment.
+        await ctx.users.recordPhoneNumberProof(
+          ctx.a.environmentId,
+          id,
+          '+14155550199',
+          later(9_000)
+        )
+        await ctx.users.recordPhoneNumberProof(ctx.b.environmentId, id, number, later(9_000))
+        expect(await provenAt()).toEqual(later(5_000))
+        expect((await ctx.users.findById(ctx.a.environmentId, id))?.phoneNumber).toBe(number)
+        // Bookkeeping: no audit entry of its own.
+        expect(await auditOf(ctx.a, id)).toEqual([])
+        // An unknown user is not an error.
+        await ctx.users.recordPhoneNumberProof(
+          ctx.a.environmentId,
+          Bun.randomUUIDv7(),
+          number,
+          later(9_000)
+        )
+      })
+    })
 
     test('creates a user and finds them by id and by normalized email', async () => {
       const input = user(ctx.a)
@@ -82,10 +659,122 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
       await ctx.users.create(input, Audit.none('fixture'))
       expect(
         await ctx.users.findByEmailWithPassword(ctx.a.environmentId, input.emailNormalized)
-      ).toEqual({ user: record(input), passwordHash: '$argon2id$original' })
+      ).toEqual({
+        user: record(input),
+        passwordHash: '$argon2id$original',
+        // A password an account is created with was set when the account was made.
+        passwordChangedAt: input.createdAt,
+      })
       expect(
         await ctx.users.findByEmailWithPassword(ctx.a.environmentId, 'nobody@northline.app')
       ).toBeNull()
+    })
+
+    describe('when a password was set (ADR 0041)', () => {
+      const env = () => ctx.a.environmentId
+      const changedAt = async (input: Addressed) =>
+        (await ctx.users.findByEmailWithPassword(env(), input.emailNormalized))?.passwordChangedAt
+
+      test('a replaced password is as old as the write that replaced it', async () => {
+        const input = user(ctx.a, { passwordHash: '$argon2id$first' })
+        await ctx.users.create(input, Audit.none('fixture'))
+        await ctx.users.setPasswordHash(
+          env(),
+          input.id,
+          '$argon2id$second',
+          later(90_000),
+          Audit.none('fixture'),
+          { keep: 0 }
+        )
+        expect(await changedAt(input)).toEqual(later(90_000))
+      })
+
+      test('a replacement stamped with the instant the password before it was set is still newer', async () => {
+        // What the expired-password step rests on (ADR 0041): a hash upgrade leaves the time
+        // alone and a replacement always moves it, also when the writer's clock was put back.
+        const input = user(ctx.a, { passwordHash: '$argon2id$first' })
+        await ctx.users.create(input, Audit.none('fixture'))
+        const before = (await changedAt(input)) as Date
+        for (const [hash, at] of [
+          ['$argon2id$second', new Date(before)],
+          ['$argon2id$third', new Date(before.getTime() - 86_400_000)],
+        ] as const) {
+          const earlier = (await changedAt(input)) as Date
+          await ctx.users.setPasswordHash(env(), input.id, hash, at, Audit.none('fixture'), {
+            keep: 0,
+          })
+          expect(((await changedAt(input)) as Date).getTime()).toBe(earlier.getTime() + 1)
+        }
+      })
+
+      test('a first password is as old as the write that created it', async () => {
+        const input = user(ctx.a, { passwordHash: null })
+        await ctx.users.create(input, Audit.none('fixture'))
+        expect(await changedAt(input)).toBeNull()
+        await ctx.users.setPasswordHash(
+          env(),
+          input.id,
+          '$argon2id$first',
+          later(5_000),
+          Audit.none('fixture'),
+          { keep: 0 }
+        )
+        expect(await changedAt(input)).toEqual(later(5_000))
+      })
+
+      test('a hash upgrade does not make the password newer', async () => {
+        const input = user(ctx.a, { passwordHash: '$argon2id$weak' })
+        await ctx.users.create(input, Audit.none('fixture'))
+        expect(
+          await ctx.users.upgradePasswordHash(
+            env(),
+            input.id,
+            '$argon2id$weak',
+            '$argon2id$strong',
+            later(777_000)
+          )
+        ).toBe(true)
+        expect(
+          (await ctx.users.findByEmailWithPassword(env(), input.emailNormalized))?.passwordHash
+        ).toBe('$argon2id$strong')
+        expect(await changedAt(input)).toEqual(input.createdAt)
+      })
+
+      test('a write that stores nothing moves nothing', async () => {
+        const input = user(ctx.a, { passwordHash: '$argon2id$first' })
+        await ctx.users.create(input, Audit.none('fixture'))
+        expect(
+          await ctx.users.setPasswordHash(
+            env(),
+            input.id,
+            '$argon2id$second',
+            later(1_000),
+            Audit.none('fixture'),
+            { keep: 0, ifCurrent: '$argon2id$not-the-current-one' }
+          )
+        ).toBe('stale')
+        // Another environment's write does not reach the user either.
+        await ctx.users.setPasswordHash(
+          ctx.b.environmentId,
+          input.id,
+          '$argon2id$foreign',
+          later(2_000),
+          Audit.none('fixture'),
+          { keep: 0 }
+        )
+        expect(await changedAt(input)).toEqual(input.createdAt)
+      })
+
+      test('a removed password leaves no time behind', async () => {
+        const input = user(ctx.a, { passwordHash: '$argon2id$first', emailVerifiedAt: null })
+        await ctx.users.create(input, Audit.none('fixture'))
+        await ctx.users.markEmailVerified(env(), input.id, later(1_000), Audit.none('fixture'), {
+          activity: Audit.none('fixture'),
+        })
+        expect(await ctx.users.findByEmailWithPassword(env(), input.emailNormalized)).toMatchObject(
+          { passwordHash: null, passwordChangedAt: null }
+        )
+      })
     })
 
     test('refuses a duplicate email in the same environment and writes nothing', async () => {
@@ -123,7 +812,8 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
           input.id,
           '$argon2id$new',
           later(1_000),
-          Audit.none('fixture')
+          Audit.none('fixture'),
+          { keep: 0 }
         )
       ).toBe('replaced')
       expect(
@@ -132,7 +822,8 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
           Bun.randomUUIDv7(),
           'x',
           later(1),
-          Audit.none('fixture')
+          Audit.none('fixture'),
+          { keep: 0 }
         )
       ).toBeNull()
       expect(
@@ -147,7 +838,7 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
       expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toEqual(record(input))
       expect(
         await ctx.users.findByEmailWithPassword(ctx.a.environmentId, input.emailNormalized)
-      ).toEqual({ user: record(input), passwordHash: null })
+      ).toEqual({ user: record(input), passwordHash: null, passwordChangedAt: null })
       // Nothing to upgrade: a hash upgrade never creates a password.
       expect(
         await ctx.users.upgradePasswordHash(ctx.a.environmentId, input.id, 'a', 'b', later(1))
@@ -167,7 +858,8 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
           input.id,
           '$argon2id$x',
           later(1),
-          Audit.none('fixture')
+          Audit.none('fixture'),
+          { keep: 0 }
         )
       ).toBeNull()
       expect(await stored()).toBeNull()
@@ -178,7 +870,8 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
           input.id,
           '$argon2id$first',
           later(1),
-          Audit.none('fixture')
+          Audit.none('fixture'),
+          { keep: 0 }
         )
       ).toBe('created')
       expect(await stored()).toBe('$argon2id$first')
@@ -188,7 +881,8 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
           input.id,
           '$argon2id$second',
           later(2),
-          Audit.none('fixture')
+          Audit.none('fixture'),
+          { keep: 0 }
         )
       ).toBe('replaced')
       expect(await stored()).toBe('$argon2id$second')
@@ -204,7 +898,8 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
             input.id,
             `$argon2id$${n}`,
             later(n),
-            Audit.none('fixture')
+            Audit.none('fixture'),
+            { keep: 0 }
           )
         )
       )
@@ -214,6 +909,294 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         (await ctx.users.findByEmailWithPassword(ctx.a.environmentId, input.emailNormalized))
           ?.passwordHash
       ).toMatch(/^\$argon2id\$[1-4]$/)
+    })
+
+    describe('previous passwords (ADR 0038)', () => {
+      const hashOf = (n: number | string) => `$argon2id$${n}`
+
+      // An adapter's tests may share one database: what an earlier test kept is not the next
+      // one's to count.
+      beforeEach(async () => {
+        for (const tenant of [ctx.a, ctx.b]) {
+          await ctx.users.deletePasswordHistoryBeyond(tenant.environmentId, 0, 10_000)
+        }
+      })
+
+      /** Store a password; the history rule defaults to "keep five, compare nothing". */
+      const change = (
+        tenant: UserSuiteTenant,
+        userId: string,
+        n: number | string,
+        history: { keep: number; ifCurrent?: string | null } = { keep: 5 }
+      ) =>
+        ctx.users.setPasswordHash(
+          tenant.environmentId,
+          userId,
+          hashOf(n),
+          later(1),
+          Audit.none('fixture'),
+          history
+        )
+
+      /** A user whose password is `$argon2id$0`. */
+      async function seeded(tenant: UserSuiteTenant = ctx.a): Promise<Addressed> {
+        const input = user(tenant, { passwordHash: hashOf(0) })
+        await ctx.users.create(input, Audit.none('fixture'))
+        return input
+      }
+
+      const stored = (tenant: UserSuiteTenant, userId: string, previous = 24) =>
+        ctx.users.storedPasswords(tenant.environmentId, userId, previous)
+
+      test('a new user has a current password and none before it', async () => {
+        const input = await seeded()
+        expect(await stored(ctx.a, input.id)).toEqual({ current: hashOf(0), previous: [] })
+        const none = user(ctx.a, { passwordHash: null })
+        await ctx.users.create(none, Audit.none('fixture'))
+        expect(await stored(ctx.a, none.id)).toEqual({ current: null, previous: [] })
+        expect(await stored(ctx.a, Bun.randomUUIDv7())).toEqual({ current: null, previous: [] })
+      })
+
+      test('the replaced hash becomes the newest previous one, newest first', async () => {
+        const input = await seeded()
+        expect(await change(ctx.a, input.id, 1)).toBe('replaced')
+        expect(await change(ctx.a, input.id, 2)).toBe('replaced')
+        expect(await change(ctx.a, input.id, 3)).toBe('replaced')
+        expect(await stored(ctx.a, input.id)).toEqual({
+          current: hashOf(3),
+          previous: [hashOf(2), hashOf(1), hashOf(0)],
+        })
+        // Only as many as were asked for, and none when none are.
+        expect((await stored(ctx.a, input.id, 2)).previous).toEqual([hashOf(2), hashOf(1)])
+        expect(await stored(ctx.a, input.id, 0)).toEqual({ current: hashOf(3), previous: [] })
+      })
+
+      test('what is beyond `keep` is deleted by the write that pushes it there', async () => {
+        const input = await seeded()
+        for (const n of [1, 2, 3, 4]) {
+          await change(ctx.a, input.id, n, { keep: 2 })
+        }
+        expect(await stored(ctx.a, input.id)).toEqual({
+          current: hashOf(4),
+          previous: [hashOf(3), hashOf(2)],
+        })
+      })
+
+      test('a lowered `keep` deletes the surplus at the next write', async () => {
+        const input = await seeded()
+        for (const n of [1, 2, 3, 4]) {
+          await change(ctx.a, input.id, n)
+        }
+        await change(ctx.a, input.id, 5, { keep: 1 })
+        expect(await stored(ctx.a, input.id)).toEqual({ current: hashOf(5), previous: [hashOf(4)] })
+      })
+
+      test('`keep: 0` keeps nothing, and deletes what was kept before', async () => {
+        const input = await seeded()
+        await change(ctx.a, input.id, 1, { keep: 0 })
+        expect(await stored(ctx.a, input.id)).toEqual({ current: hashOf(1), previous: [] })
+        await change(ctx.a, input.id, 2)
+        await change(ctx.a, input.id, 3)
+        expect((await stored(ctx.a, input.id)).previous).toHaveLength(2)
+        await change(ctx.a, input.id, 4, { keep: 0 })
+        expect(await stored(ctx.a, input.id)).toEqual({ current: hashOf(4), previous: [] })
+        // Nothing is left for the retention job either.
+        expect(await ctx.users.deletePasswordHistoryBeyond(ctx.a.environmentId, 0, 100)).toBe(0)
+      })
+
+      test('a first password keeps nothing: there was none before it', async () => {
+        const input = user(ctx.a, { passwordHash: null })
+        await ctx.users.create(input, Audit.none('fixture'))
+        expect(await change(ctx.a, input.id, 1, { keep: 5, ifCurrent: null })).toBe('created')
+        expect(await stored(ctx.a, input.id)).toEqual({ current: hashOf(1), previous: [] })
+      })
+
+      test('a write judged against a hash that is no longer stored is stale and writes nothing', async () => {
+        const input = await seeded()
+        await change(ctx.a, input.id, 1)
+        const before = await stored(ctx.a, input.id)
+        const entries = await auditOf(ctx.a, input.id)
+        for (const ifCurrent of [hashOf(0), hashOf('other'), null]) {
+          expect(
+            await ctx.users.setPasswordHash(
+              ctx.a.environmentId,
+              input.id,
+              hashOf(9),
+              later(5),
+              activity(ctx.a, 'user.password_changed', input.id),
+              { keep: 5, ifCurrent }
+            )
+          ).toBe('stale')
+        }
+        expect(await stored(ctx.a, input.id)).toEqual(before)
+        expect(await auditOf(ctx.a, input.id)).toEqual(entries)
+        // The hash it was really judged against goes through.
+        expect(await change(ctx.a, input.id, 9, { keep: 5, ifCurrent: hashOf(1) })).toBe('replaced')
+      })
+
+      test('two concurrent changes neither lose nor duplicate a previous password', async () => {
+        const input = await seeded()
+        const outcomes = await Promise.all([
+          change(ctx.a, input.id, 'a'),
+          change(ctx.a, input.id, 'b'),
+          change(ctx.a, input.id, 'c'),
+        ])
+        expect(outcomes).toEqual(['replaced', 'replaced', 'replaced'])
+        const after = await stored(ctx.a, input.id)
+        // Every hash that was ever current is there exactly once: one as the current password,
+        // the others, with the one they all replaced, before it.
+        expect([after.current, ...after.previous].sort()).toEqual(
+          [hashOf(0), hashOf('a'), hashOf('b'), hashOf('c')].sort()
+        )
+        expect(after.previous.at(-1)).toBe(hashOf(0))
+      })
+
+      test('of concurrent changes judged against the same hash exactly one is stored', async () => {
+        const input = await seeded()
+        const outcomes = await Promise.all(
+          ['a', 'b', 'c', 'd'].map((n) =>
+            change(ctx.a, input.id, n, { keep: 5, ifCurrent: hashOf(0) })
+          )
+        )
+        expect(outcomes.filter((outcome) => outcome === 'replaced')).toHaveLength(1)
+        expect(outcomes.filter((outcome) => outcome === 'stale')).toHaveLength(3)
+        const after = await stored(ctx.a, input.id)
+        expect(after.current).toMatch(/^\$argon2id\$[abcd]$/)
+        expect(after.previous).toEqual([hashOf(0)])
+      })
+
+      test('previous passwords belong to one user of one environment', async () => {
+        const mine = await seeded()
+        const theirs = await seeded()
+        const twin = await seeded(ctx.b)
+        await change(ctx.a, mine.id, 1)
+        await change(ctx.a, mine.id, 2)
+        expect(await stored(ctx.a, theirs.id)).toEqual({ current: hashOf(0), previous: [] })
+        expect(await stored(ctx.b, twin.id)).toEqual({ current: hashOf(0), previous: [] })
+        // Asked under the other environment, the user has nothing at all.
+        expect(await stored(ctx.b, mine.id)).toEqual({ current: null, previous: [] })
+        // And the other environment can neither change the password nor move the history.
+        expect(await change(ctx.b, mine.id, 9)).toBeNull()
+        expect(await stored(ctx.a, mine.id)).toEqual({
+          current: hashOf(2),
+          previous: [hashOf(1), hashOf(0)],
+        })
+      })
+
+      test('a hash upgrade is not a new password: no previous password is added', async () => {
+        const input = await seeded()
+        await change(ctx.a, input.id, 1)
+        expect(
+          await ctx.users.upgradePasswordHash(
+            ctx.a.environmentId,
+            input.id,
+            hashOf(1),
+            hashOf('1-upgraded'),
+            later(9)
+          )
+        ).toBe(true)
+        expect(await stored(ctx.a, input.id)).toEqual({
+          current: hashOf('1-upgraded'),
+          previous: [hashOf(0)],
+        })
+      })
+
+      test('removing the password of an unproven address removes the ones before it', async () => {
+        const input = user(ctx.a, { emailVerifiedAt: null, passwordHash: hashOf(0) })
+        await ctx.users.create(input, Audit.none('fixture'))
+        await change(ctx.a, input.id, 1)
+        await change(ctx.a, input.id, 2)
+        expect(
+          await ctx.users.markEmailVerified(
+            ctx.a.environmentId,
+            input.id,
+            later(10),
+            Audit.none('fixture'),
+            { activity: Audit.none('fixture') }
+          )
+        ).toEqual({ passwordRemoved: true })
+        expect(await stored(ctx.a, input.id)).toEqual({ current: null, previous: [] })
+        expect(await ctx.users.deletePasswordHistoryBeyond(ctx.a.environmentId, 0, 100)).toBe(0)
+        // The owner's first password starts a history of its own.
+        expect(await change(ctx.a, input.id, 'owner', { keep: 5, ifCurrent: null })).toBe('created')
+        expect(await stored(ctx.a, input.id)).toEqual({ current: hashOf('owner'), previous: [] })
+      })
+
+      test('verifying an address without removing the password keeps the history', async () => {
+        const input = user(ctx.a, { emailVerifiedAt: null, passwordHash: hashOf(0) })
+        await ctx.users.create(input, Audit.none('fixture'))
+        await change(ctx.a, input.id, 1)
+        await ctx.users.markEmailVerified(
+          ctx.a.environmentId,
+          input.id,
+          later(10),
+          Audit.none('fixture')
+        )
+        expect(await stored(ctx.a, input.id)).toEqual({ current: hashOf(1), previous: [hashOf(0)] })
+      })
+
+      test('an address that was already proven keeps its password and its history', async () => {
+        const input = await seeded()
+        await change(ctx.a, input.id, 1)
+        expect(
+          await ctx.users.markEmailVerified(
+            ctx.a.environmentId,
+            input.id,
+            later(10),
+            Audit.none('fixture'),
+            { activity: Audit.none('fixture') }
+          )
+        ).toEqual({ passwordRemoved: false })
+        expect(await stored(ctx.a, input.id)).toEqual({ current: hashOf(1), previous: [hashOf(0)] })
+      })
+
+      test('deleting a user deletes their previous passwords', async () => {
+        const input = await seeded()
+        const other = await seeded()
+        await change(ctx.a, input.id, 1)
+        await change(ctx.a, input.id, 2)
+        await change(ctx.a, other.id, 1)
+        expect(await ctx.users.delete(ctx.a.environmentId, input.id, Audit.none('fixture'))).toBe(
+          true
+        )
+        expect(await stored(ctx.a, input.id)).toEqual({ current: null, previous: [] })
+        // Only the other user's one row is left for a purge to find.
+        expect(await ctx.users.deletePasswordHistoryBeyond(ctx.a.environmentId, 0, 100)).toBe(1)
+      })
+
+      test('the purge deletes what is beyond `keep`, in batches, in one environment', async () => {
+        const first = await seeded()
+        const second = await seeded()
+        const twin = await seeded(ctx.b)
+        for (const n of [1, 2, 3, 4]) {
+          await change(ctx.a, first.id, n)
+          await change(ctx.a, second.id, n)
+          await change(ctx.b, twin.id, n)
+        }
+        const purge = (keep: number, limit: number) =>
+          ctx.users.deletePasswordHistoryBeyond(ctx.a.environmentId, keep, limit)
+        // Nothing is beyond four.
+        expect(await purge(4, 100)).toBe(0)
+        // Two users with two rows too many each: three now, the fourth in the next batch.
+        expect(await purge(2, 3)).toBe(3)
+        expect(await purge(2, 3)).toBe(1)
+        expect(await purge(2, 3)).toBe(0)
+        for (const input of [first, second]) {
+          expect(await stored(ctx.a, input.id)).toEqual({
+            current: hashOf(4),
+            previous: [hashOf(3), hashOf(2)],
+          })
+        }
+        expect(await purge(0, 100)).toBe(4)
+        expect((await stored(ctx.a, first.id)).previous).toEqual([])
+        // The other environment's rows were never in reach.
+        expect((await stored(ctx.b, twin.id)).previous).toEqual([
+          hashOf(3),
+          hashOf(2),
+          hashOf(1),
+          hashOf(0),
+        ])
+      })
     })
 
     test('marks the email verified once and records sign-ins', async () => {
@@ -232,14 +1215,16 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         Audit.none('fixture')
       )
       await ctx.users.recordSignIn(ctx.a.environmentId, input.id, later(2_000))
-      expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toMatchObject({
-        emailVerifiedAt: later(1_000),
-        lastSignInAt: later(2_000),
-      })
+      expect(comparable(await ctx.users.findById(ctx.a.environmentId, input.id))).toMatchObject(
+        comparable({
+          emailVerifiedAt: later(1_000),
+          lastSignInAt: later(2_000),
+        })
+      )
     })
 
     describe('verifying an address nobody had proven, with the password removed', () => {
-      const hashOf = async (input: NewUser) =>
+      const hashOf = async (input: Addressed) =>
         (await ctx.users.findByEmailWithPassword(ctx.a.environmentId, input.emailNormalized))
           ?.passwordHash
 
@@ -336,7 +1321,8 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
           input.id,
           '$argon2id$own',
           later(2),
-          Audit.none('fixture')
+          Audit.none('fixture'),
+          { keep: 0 }
         )
         expect(
           await ctx.users.markEmailVerified(
@@ -538,13 +1524,18 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         input.id,
         '$argon2id$stolen',
         later(1),
-        Audit.none('fixture')
+        Audit.none('fixture'),
+        { keep: 0 }
       )
       await ctx.users.markEmailVerified(foreign, input.id, later(1), Audit.none('fixture'))
       await ctx.users.recordSignIn(foreign, input.id, later(1))
       expect(
         await ctx.users.findByEmailWithPassword(ctx.a.environmentId, input.emailNormalized)
-      ).toEqual({ user: record(input), passwordHash: '$argon2id$hash' })
+      ).toEqual({
+        user: record(input),
+        passwordHash: '$argon2id$hash',
+        passwordChangedAt: input.createdAt,
+      })
     })
 
     test('a hash upgrade replaces the hash only if it is still the one that was verified', async () => {
@@ -565,7 +1556,8 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         input.id,
         '$argon2id$changed',
         later(2),
-        Audit.none('fixture')
+        Audit.none('fixture'),
+        { keep: 0 }
       )
       expect(await upgrade('$argon2id$strong', '$argon2id$stale')).toBe(false)
       expect(await stored()).toBe('$argon2id$changed')
@@ -866,6 +1858,529 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         expect(await ctx.users.listIdentities(ctx.a.environmentId, maya.id)).toHaveLength(1)
       })
 
+      describe('a user with no email address (made through X or Facebook)', () => {
+        /** A provider's id nobody has yet: the suite's tenants are shared between tests. */
+        const freshSubject = () =>
+          String(BigInt(`0x${Bun.randomUUIDv7().replaceAll('-', '').slice(-15)}`) + 1n)
+        let SUBJECT: string
+
+        beforeEach(() => {
+          SUBJECT = freshSubject()
+        })
+
+        function addressless(overrides: Partial<NewUser> = {}): NewUser {
+          return {
+            ...user(ctx.a),
+            email: null,
+            emailNormalized: null,
+            emailVerifiedAt: null,
+            passwordHash: null,
+            oauthIdentity: { id: Bun.randomUUIDv7(), provider: 'x', subject: SUBJECT },
+            ...overrides,
+          }
+        }
+
+        test('is created with its provider identity and nothing else, and found by it', async () => {
+          const nelly = addressless()
+          expect(await ctx.users.create(nelly, activity(ctx.a, 'user.created', nelly.id))).toBe(
+            true
+          )
+          const found = await ctx.users.findByIdentity(ctx.a.environmentId, 'x', SUBJECT)
+          expect(found).toMatchObject({
+            id: nelly.id,
+            email: null,
+            emailNormalized: null,
+            emailVerifiedAt: null,
+          })
+          expect(await ctx.users.findById(ctx.a.environmentId, nelly.id)).toEqual(found)
+          expect(
+            (await ctx.users.listIdentities(ctx.a.environmentId, nelly.id)).map(
+              (entry) => entry.provider
+            )
+          ).toEqual(['x'])
+          expect(await auditOf(ctx.a, nelly.id)).toEqual(['user.created'])
+          // No address finds it: not an empty one, not the word.
+          for (const address of ['', 'null', 'undefined']) {
+            expect(await ctx.users.findByEmail(ctx.a.environmentId, address)).toBeNull()
+            expect(await ctx.users.findByEmailWithPassword(ctx.a.environmentId, address)).toBeNull()
+          }
+        })
+
+        test('any number of them coexist: having no address is not a conflict', async () => {
+          const one = addressless()
+          const two = addressless({
+            id: Bun.randomUUIDv7(),
+            oauthIdentity: { id: Bun.randomUUIDv7(), provider: 'facebook', subject: SUBJECT },
+          })
+          const three = addressless({
+            id: Bun.randomUUIDv7(),
+            oauthIdentity: { id: Bun.randomUUIDv7(), provider: 'x', subject: freshSubject() },
+          })
+          for (const input of [one, two, three]) {
+            expect(await ctx.users.create(input, Audit.none('fixture'))).toBe(true)
+            expect((await ctx.users.findById(ctx.a.environmentId, input.id))?.email).toBeNull()
+          }
+        })
+
+        test('two creations for one new provider account at once make one user', async () => {
+          const outcomes = await Promise.all(
+            [0, 1, 2].map(() =>
+              ctx.users.create(addressless({ id: Bun.randomUUIDv7() }), Audit.none('fixture'))
+            )
+          )
+          expect(outcomes.filter(Boolean)).toHaveLength(1)
+          expect(await ctx.users.findByIdentity(ctx.a.environmentId, 'x', SUBJECT)).not.toBeNull()
+        })
+
+        test('sorts after every address both ways, and a search by address passes it by', async () => {
+          // A family name only these two have: the suite's tenants are shared between tests.
+          const family = `Fam${SUBJECT}`
+          const nelly = addressless({ firstName: `Nelly${SUBJECT}`, lastName: family })
+          const maya = user(ctx.a, { lastName: family })
+          await ctx.users.create(nelly, Audit.none('fixture'))
+          await ctx.users.create(maya, Audit.none('fixture'))
+          const ids = async (q: string, sort: 'email' | '-email' = 'email') =>
+            (await ctx.users.list(ctx.a.environmentId, { q, page: 1, size: 10, sort })).users.map(
+              (entry) => entry.id
+            )
+          expect(await ids(family, 'email')).toEqual([maya.id, nelly.id])
+          expect(await ids(family, '-email')).toEqual([maya.id, nelly.id])
+          expect(await ids(maya.emailNormalized)).toEqual([maya.id])
+          expect(await ids(`nelly${SUBJECT}`)).toEqual([nelly.id])
+        })
+
+        test('has no address to verify: verifying changes nothing and records nothing', async () => {
+          const nelly = addressless()
+          await ctx.users.create(nelly, Audit.none('fixture'))
+          expect(
+            await ctx.users.markEmailVerified(
+              ctx.a.environmentId,
+              nelly.id,
+              later(1),
+              activity(ctx.a, 'user.email_verified', nelly.id),
+              { activity: activity(ctx.a, 'user.password_changed', nelly.id) }
+            )
+          ).toEqual({ passwordRemoved: false })
+          expect(
+            (await ctx.users.findById(ctx.a.environmentId, nelly.id))?.emailVerifiedAt
+          ).toBeNull()
+          expect(await auditOf(ctx.a, nelly.id)).toEqual([])
+        })
+
+        describe('given an email address (ADR 0059)', () => {
+          const address = (verifiedAt: Date | null = later(5)) => {
+            const tag = Bun.randomUUIDv7()
+            return {
+              email: `Nelly-${tag}@Northline.app`,
+              normalized: `nelly-${tag}@northline.app`,
+              verifiedAt,
+              identityId: Bun.randomUUIDv7(),
+            }
+          }
+
+          test('stores the address with its verification time, recorded once, and is found by it', async () => {
+            const nelly = addressless()
+            await ctx.users.create(nelly, Audit.none('fixture'))
+            const added = address()
+            const stored = await ctx.users.addEmail(
+              ctx.a.environmentId,
+              nelly.id,
+              added,
+              later(5),
+              activity(ctx.a, 'user.email_added', nelly.id)
+            )
+            expect(stored).toMatchObject({
+              id: nelly.id,
+              email: added.email,
+              emailNormalized: added.normalized,
+            })
+            expect(typeof stored === 'string' ? null : stored.emailVerifiedAt).toEqual(later(5))
+            expect(await ctx.users.findByEmail(ctx.a.environmentId, added.normalized)).toEqual(
+              typeof stored === 'string' ? null : stored
+            )
+            expect(await auditOf(ctx.a, nelly.id)).toEqual(['user.email_added'])
+            // The provider identity is still the user's, and still the only one listed.
+            expect(
+              (await ctx.users.listIdentities(ctx.a.environmentId, nelly.id)).map(
+                (entry) => entry.provider
+              )
+            ).toEqual(['x'])
+          })
+
+          test('an address nobody proved is stored unverified', async () => {
+            const nelly = addressless()
+            await ctx.users.create(nelly, Audit.none('fixture'))
+            const stored = await ctx.users.addEmail(
+              ctx.a.environmentId,
+              nelly.id,
+              address(null),
+              later(5),
+              activity(ctx.a, 'user.email_added', nelly.id)
+            )
+            expect(typeof stored === 'string' ? stored : stored.emailVerifiedAt).toBeNull()
+          })
+
+          test('an address another user has is refused, with nothing written or recorded', async () => {
+            const maya = user(ctx.a)
+            const nelly = addressless()
+            await ctx.users.create(maya, Audit.none('fixture'))
+            await ctx.users.create(nelly, Audit.none('fixture'))
+            expect(
+              await ctx.users.addEmail(
+                ctx.a.environmentId,
+                nelly.id,
+                { ...address(), email: maya.email, normalized: maya.emailNormalized },
+                later(5),
+                activity(ctx.a, 'user.email_added', nelly.id)
+              )
+            ).toBe('taken')
+            expect((await ctx.users.findById(ctx.a.environmentId, nelly.id))?.email).toBeNull()
+            expect(await auditOf(ctx.a, nelly.id)).toEqual([])
+            expect(
+              (await ctx.users.findByEmail(ctx.a.environmentId, maya.emailNormalized))?.id
+            ).toBe(maya.id)
+            // And the user is not left half-written: a free address still goes on.
+            expect(
+              typeof (await ctx.users.addEmail(
+                ctx.a.environmentId,
+                nelly.id,
+                address(),
+                later(6),
+                activity(ctx.a, 'user.email_added', nelly.id)
+              ))
+            ).toBe('object')
+          })
+
+          test('the same address in another environment is no conflict', async () => {
+            const maya = user(ctx.b)
+            const nelly = addressless()
+            await ctx.users.create(maya, Audit.none('fixture'))
+            await ctx.users.create(nelly, Audit.none('fixture'))
+            expect(
+              typeof (await ctx.users.addEmail(
+                ctx.a.environmentId,
+                nelly.id,
+                { ...address(), email: maya.email, normalized: maya.emailNormalized },
+                later(5),
+                Audit.none('fixture')
+              ))
+            ).toBe('object')
+          })
+
+          test('a user who has an address is refused, the same one and another alike', async () => {
+            const maya = user(ctx.a)
+            await ctx.users.create(maya, Audit.none('fixture'))
+            for (const next of [
+              address(),
+              { ...address(), email: maya.email, normalized: maya.emailNormalized },
+            ]) {
+              expect(
+                await ctx.users.addEmail(
+                  ctx.a.environmentId,
+                  maya.id,
+                  next,
+                  later(5),
+                  activity(ctx.a, 'user.email_added', maya.id)
+                )
+              ).toBe('has_email')
+            }
+            expect((await ctx.users.findById(ctx.a.environmentId, maya.id))?.email).toBe(maya.email)
+            expect(await auditOf(ctx.a, maya.id)).toEqual([])
+          })
+
+          test('an unknown user, and one of another environment, is not found', async () => {
+            const nelly = addressless()
+            await ctx.users.create(nelly, Audit.none('fixture'))
+            for (const [environmentId, userId] of [
+              [ctx.a.environmentId, Bun.randomUUIDv7()],
+              [ctx.b.environmentId, nelly.id],
+            ] as const) {
+              expect(
+                await ctx.users.addEmail(
+                  environmentId,
+                  userId,
+                  address(),
+                  later(5),
+                  Audit.none('fixture')
+                )
+              ).toBe('not_found')
+            }
+            expect((await ctx.users.findById(ctx.a.environmentId, nelly.id))?.email).toBeNull()
+          })
+
+          test('two users adding one address at once: exactly one gets it', async () => {
+            const one = addressless()
+            const two = addressless({
+              id: Bun.randomUUIDv7(),
+              oauthIdentity: { id: Bun.randomUUIDv7(), provider: 'x', subject: freshSubject() },
+            })
+            await ctx.users.create(one, Audit.none('fixture'))
+            await ctx.users.create(two, Audit.none('fixture'))
+            const wanted = address()
+            const outcomes = await Promise.all(
+              [one, two].map((who) =>
+                ctx.users.addEmail(
+                  ctx.a.environmentId,
+                  who.id,
+                  { ...wanted, identityId: Bun.randomUUIDv7() },
+                  later(5),
+                  activity(ctx.a, 'user.email_added', who.id)
+                )
+              )
+            )
+            expect(outcomes.filter((outcome) => typeof outcome === 'object')).toHaveLength(1)
+            expect(outcomes.filter((outcome) => outcome === 'taken')).toHaveLength(1)
+            expect([...(await auditOf(ctx.a, one.id)), ...(await auditOf(ctx.a, two.id))]).toEqual([
+              'user.email_added',
+            ])
+          })
+
+          test('two additions to one user at once: one address, recorded once', async () => {
+            const nelly = addressless()
+            await ctx.users.create(nelly, Audit.none('fixture'))
+            const outcomes = await Promise.all(
+              [0, 1].map(() =>
+                ctx.users.addEmail(
+                  ctx.a.environmentId,
+                  nelly.id,
+                  address(),
+                  later(5),
+                  activity(ctx.a, 'user.email_added', nelly.id)
+                )
+              )
+            )
+            expect(outcomes.filter((outcome) => typeof outcome === 'object')).toHaveLength(1)
+            expect(outcomes.filter((outcome) => outcome === 'has_email')).toHaveLength(1)
+            expect(await auditOf(ctx.a, nelly.id)).toEqual(['user.email_added'])
+          })
+
+          test('afterwards the account is an ordinary one: its address verifies a link guard', async () => {
+            const nelly = addressless()
+            await ctx.users.create(nelly, Audit.none('fixture'))
+            const added = address()
+            await ctx.users.addEmail(
+              ctx.a.environmentId,
+              nelly.id,
+              added,
+              later(5),
+              Audit.none('fixture')
+            )
+            expect(
+              await ctx.users.linkIdentity(
+                { ...identity(ctx.a, nelly.id), provider: 'google' },
+                Audit.none('fixture'),
+                { emailNormalized: added.normalized }
+              )
+            ).toBe('linked')
+          })
+        })
+
+        describe('counted as depending on its provider (ADR 0059)', () => {
+          /** A way to sign in, by the caller's rule: here, anything but the provider itself. */
+          const without =
+            (provider: string) =>
+            (means: {
+              hasPassword: boolean
+              emailVerified: boolean
+              providers: string[]
+              passkeys: number
+            }) =>
+              means.hasPassword ||
+              means.emailVerified ||
+              means.passkeys > 0 ||
+              means.providers.some((other) => other !== provider)
+
+          /** A provider nothing else in the shared tenant uses is counted from zero. */
+          async function discordOnly(tenant = ctx.a, overrides: Partial<NewUser> = {}) {
+            const input = {
+              ...addressless(),
+              projectId: tenant.projectId,
+              environmentId: tenant.environmentId,
+              id: Bun.randomUUIDv7(),
+              oauthIdentity: {
+                id: Bun.randomUUIDv7(),
+                provider: 'discord' as const,
+                subject: freshSubject(),
+              },
+              ...overrides,
+            }
+            expect(await ctx.users.create(input, Audit.none('fixture'))).toBe(true)
+            return input
+          }
+
+          const count = (limit = 1000, environmentId = ctx.a.environmentId) =>
+            ctx.users.countDependentOn(environmentId, 'discord', without('discord'), limit)
+
+          test('counts the users whose only way in is the provider, and nobody else', async () => {
+            const before = await count()
+            // Depends on it: nothing but the provider's identity.
+            await discordOnly()
+            await discordOnly()
+            // Does not: a password, a verified address, or another provider's identity.
+            const withPassword = user(ctx.a, {
+              emailVerifiedAt: null,
+              oauthIdentity: {
+                id: Bun.randomUUIDv7(),
+                provider: 'discord',
+                subject: freshSubject(),
+              },
+            })
+            const verified = user(ctx.a, {
+              passwordHash: null,
+              oauthIdentity: {
+                id: Bun.randomUUIDv7(),
+                provider: 'discord',
+                subject: freshSubject(),
+              },
+            })
+            await ctx.users.create(withPassword, Audit.none('fixture'))
+            await ctx.users.create(verified, Audit.none('fixture'))
+            const both = await discordOnly()
+            expect(
+              await ctx.users.linkIdentity(
+                { ...identity(ctx.a, both.id), provider: 'github' },
+                Audit.none('fixture')
+              )
+            ).toBe('linked')
+            // Has no account of the provider at all.
+            await ctx.users.create(addressless(), Audit.none('fixture'))
+            expect(await count()).toEqual({ accounts: before.accounts + 2, more: false })
+          })
+
+          test('the rule is the caller’s, asked with everything the user has', async () => {
+            const nelly = await discordOnly()
+            const seen: unknown[] = []
+            await ctx.users.countDependentOn(
+              ctx.a.environmentId,
+              'discord',
+              (means) => {
+                seen.push(means)
+                return true
+              },
+              1000
+            )
+            expect(seen).toContainEqual({
+              hasPassword: false,
+              emailVerified: false,
+              providers: ['discord'],
+              passkeys: 0,
+            })
+            // A rule that lets everyone in counts nobody.
+            expect(
+              (await ctx.users.countDependentOn(ctx.a.environmentId, 'discord', () => true, 1000))
+                .accounts
+            ).toBe(0)
+            expect(nelly.id).toBeString()
+          })
+
+          test('an unverified address is no way in, and one given and proven is', async () => {
+            const nelly = await discordOnly()
+            const before = await count()
+            await ctx.users.addEmail(
+              ctx.a.environmentId,
+              nelly.id,
+              {
+                email: `n-${nelly.id}@northline.app`,
+                normalized: `n-${nelly.id}@northline.app`,
+                verifiedAt: later(5),
+                identityId: Bun.randomUUIDv7(),
+              },
+              later(5),
+              Audit.none('fixture')
+            )
+            expect((await count()).accounts).toBe(before.accounts - 1)
+          })
+
+          test('looks at no more users than the limit, and says when some were left out', async () => {
+            // LinkedIn: a provider no other test of the shared tenants counts.
+            const linkedInOnly = async () =>
+              ctx.users.create(
+                {
+                  ...addressless(),
+                  id: Bun.randomUUIDv7(),
+                  oauthIdentity: {
+                    id: Bun.randomUUIDv7(),
+                    provider: 'linkedin',
+                    subject: freshSubject(),
+                  },
+                },
+                Audit.none('fixture')
+              )
+            const asked: unknown[] = []
+            const counted = (limit: number) =>
+              ctx.users.countDependentOn(
+                ctx.a.environmentId,
+                'linkedin',
+                (means) => {
+                  asked.push(means)
+                  return false
+                },
+                limit
+              )
+            const had = (await counted(1000)).accounts
+            for (let made = 0; made < 3; made += 1) {
+              await linkedInOnly()
+            }
+            asked.length = 0
+            expect(await counted(had + 2)).toEqual({ accounts: had + 2, more: true })
+            expect(asked).toHaveLength(had + 2)
+            expect(await counted(had + 3)).toEqual({ accounts: had + 3, more: false })
+          })
+
+          test('another environment’s users are never counted', async () => {
+            const before = await count(1000, ctx.b.environmentId)
+            await discordOnly(ctx.a)
+            expect(await count(1000, ctx.b.environmentId)).toEqual(before)
+            await discordOnly(ctx.b)
+            expect((await count(1000, ctx.b.environmentId)).accounts).toBe(before.accounts + 1)
+          })
+
+          test('a provider nobody has is nobody’s way in', async () => {
+            expect(
+              await ctx.users.countDependentOn(ctx.a.environmentId, 'apple', () => false, 1000)
+            ).toEqual({ accounts: 0, more: false })
+          })
+        })
+
+        test('is never the target of an automatic link, whatever the guard says', async () => {
+          const nelly = addressless()
+          await ctx.users.create(nelly, Audit.none('fixture'))
+          for (const emailNormalized of ['', 'null', 'maya@northline.app']) {
+            expect(
+              await ctx.users.linkIdentity(identity(ctx.a, nelly.id), Audit.none('fixture'), {
+                emailNormalized,
+              })
+            ).toBe('user_changed')
+          }
+        })
+
+        test('removing its only identity is asked about with nothing left, and refused', async () => {
+          const nelly = addressless()
+          await ctx.users.create(nelly, Audit.none('fixture'))
+          const seen: unknown[] = []
+          const outcome = await ctx.users.unlinkIdentity(
+            ctx.a.environmentId,
+            nelly.id,
+            nelly.oauthIdentity?.id ?? '',
+            (remaining) => {
+              seen.push(remaining)
+              return (
+                remaining.hasPassword ||
+                remaining.emailVerified ||
+                remaining.providers.length > 0 ||
+                remaining.passkeys > 0
+              )
+            },
+            Audit.none('fixture')
+          )
+          expect(outcome).toBe('last_method')
+          expect(seen).toEqual([
+            { hasPassword: false, emailVerified: false, providers: [], passkeys: 0 },
+          ])
+          expect(await ctx.users.listIdentities(ctx.a.environmentId, nelly.id)).toHaveLength(1)
+        })
+      })
+
       test('deleting a user frees their provider accounts', async () => {
         const maya = user(ctx.a)
         await ctx.users.create(maya, Audit.none('fixture'))
@@ -883,6 +2398,130 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
             Audit.none('fixture')
           )
         ).toBe('linked')
+      })
+    })
+
+    describe('sign-in tests (ADR 0058)', () => {
+      // The tenants outlive a test in the Postgres run: start from no marked user at all.
+      beforeEach(async () => {
+        for (const tenant of [ctx.a, ctx.b]) {
+          await ctx.users.deleteTestUsersBefore(
+            tenant.environmentId,
+            later(10 * 365 * 86_400_000),
+            10_000,
+            deleted(tenant)
+          )
+        }
+      })
+
+      /** A throwaway user of a test, made at `createdAt`. */
+      function marked(tenant: UserSuiteTenant, createdAt: Date): Addressed {
+        const address = testAddress(Bun.randomUUIDv7().replaceAll('-', ''))
+        return user(tenant, { email: address, emailNormalized: address, createdAt })
+      }
+      const deleted = (tenant: UserSuiteTenant) => (userId: string) =>
+        activity(tenant, 'user.deleted', userId)
+      const exists = async (tenant: UserSuiteTenant, id: string) =>
+        (await ctx.users.findById(tenant.environmentId, id)) !== null
+
+      test('an entry of a test is recorded, and nothing else is written', async () => {
+        const entry: Activity = {
+          ...activity(ctx.a, 'sign_in_test.started', Bun.randomUUIDv7()),
+          actor: { type: 'agent', id: Bun.randomUUIDv7() },
+          target: { type: 'environment', id: ctx.a.environmentId },
+        }
+        await ctx.users.reportSignInTest(ctx.a.environmentId, entry)
+        const { entries } = await ctx.log.listAudit(ctx.a.environmentId, {
+          targetId: ctx.a.environmentId,
+          page: 1,
+          size: 50,
+        })
+        expect(entries.map((found) => [found.type, found.actor.type])).toEqual([
+          ['sign_in_test.started', 'agent'],
+        ])
+        const other = await ctx.log.listAudit(ctx.b.environmentId, {
+          targetId: ctx.a.environmentId,
+          page: 1,
+          size: 50,
+        })
+        expect(other.entries).toEqual([])
+      })
+
+      test('marked users from strictly before the cutoff are deleted, each recorded', async () => {
+        const old = marked(ctx.a, later(0))
+        const atCutoff = marked(ctx.a, later(1000))
+        const fresh = marked(ctx.a, later(2000))
+        for (const input of [old, atCutoff, fresh]) {
+          await ctx.users.create(input, Audit.none('fixture'))
+        }
+        expect(
+          await ctx.users.deleteTestUsersBefore(
+            ctx.a.environmentId,
+            later(1000),
+            100,
+            deleted(ctx.a)
+          )
+        ).toBe(1)
+        expect(await exists(ctx.a, old.id)).toBe(false)
+        expect(await exists(ctx.a, atCutoff.id)).toBe(true)
+        expect(await exists(ctx.a, fresh.id)).toBe(true)
+        expect(await auditOf(ctx.a, old.id)).toEqual(['user.deleted'])
+        expect(await auditOf(ctx.a, atCutoff.id)).toEqual([])
+      })
+
+      test('a person’s account is never deleted, however old and whatever it looks like', async () => {
+        const people = [
+          user(ctx.a),
+          user(ctx.a, {
+            email: 'tula-test-me@northline.app',
+            emailNormalized: 'tula-test-me@northline.app',
+          }),
+          user(ctx.a, {
+            email: 'tula-test-x@test.tula.invalid.example.com',
+            emailNormalized: 'tula-test-x@test.tula.invalid.example.com',
+          }),
+          {
+            ...user(ctx.a),
+            email: null,
+            emailNormalized: null,
+            emailVerifiedAt: null,
+            passwordHash: null,
+          },
+        ]
+        for (const input of people) {
+          await ctx.users.create(input as NewUser, Audit.none('fixture'))
+        }
+        expect(
+          await ctx.users.deleteTestUsersBefore(
+            ctx.a.environmentId,
+            later(86_400_000),
+            100,
+            deleted(ctx.a)
+          )
+        ).toBe(0)
+        for (const input of people) {
+          expect(await exists(ctx.a, input.id)).toBe(true)
+        }
+      })
+
+      test('the batch is bounded, oldest first, and another environment’s users are left', async () => {
+        const mine = [marked(ctx.a, later(0)), marked(ctx.a, later(1)), marked(ctx.a, later(2))]
+        const theirs = marked(ctx.b, later(0))
+        for (const input of [...mine, theirs]) {
+          await ctx.users.create(input, Audit.none('fixture'))
+        }
+        const purge = (limit: number) =>
+          ctx.users.deleteTestUsersBefore(ctx.a.environmentId, later(1000), limit, deleted(ctx.a))
+        expect(await purge(2)).toBe(2)
+        expect(await Promise.all(mine.map((input) => exists(ctx.a, input.id)))).toEqual([
+          false,
+          false,
+          true,
+        ])
+        expect(await purge(2)).toBe(1)
+        expect(await purge(2)).toBe(0)
+        expect(await exists(ctx.b, theirs.id)).toBe(true)
+        expect(await auditOf(ctx.b, theirs.id)).toEqual([])
       })
     })
   })

@@ -1,13 +1,19 @@
 import type { LucideIcon } from 'lucide-react'
 import {
+  Bot,
   FileKey2,
   KeyRound,
   LogIn,
+  Mail,
+  MessageCircleQuestionMark,
+  MessageSquareText,
   ScrollText,
   Settings,
   ShieldCheck,
+  Smartphone,
   Timer,
   Users,
+  Webhook,
 } from 'lucide-react'
 
 /** The base path of everything that belongs to one environment. */
@@ -22,8 +28,14 @@ export interface EnvironmentSection {
     | '/w/$workspaceId/p/$projectId/e/$environmentId/sign-in-methods'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/password-policy'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/sessions'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/messages'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/text-messages'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/api-keys'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/signing-keys'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/webhooks'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/hooks'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/native-apps'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/proposals'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/audit-log'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/settings'
   label: string
@@ -51,12 +63,38 @@ export const ENVIRONMENT_SECTIONS: readonly EnvironmentSection[] = [
     label: 'Session profiles',
     icon: Timer,
   },
+  { segment: 'messages', to: `${ENVIRONMENT_PATH}/messages`, label: 'Messages', icon: Mail },
+  {
+    segment: 'text-messages',
+    to: `${ENVIRONMENT_PATH}/text-messages`,
+    label: 'Text messages',
+    icon: MessageSquareText,
+  },
   { segment: 'api-keys', to: `${ENVIRONMENT_PATH}/api-keys`, label: 'API keys', icon: KeyRound },
   {
     segment: 'signing-keys',
     to: `${ENVIRONMENT_PATH}/signing-keys`,
     label: 'Signing keys',
     icon: FileKey2,
+  },
+  { segment: 'webhooks', to: `${ENVIRONMENT_PATH}/webhooks`, label: 'Webhooks', icon: Webhook },
+  {
+    segment: 'hooks',
+    to: `${ENVIRONMENT_PATH}/hooks`,
+    label: 'Hooks',
+    icon: MessageCircleQuestionMark,
+  },
+  {
+    segment: 'native-apps',
+    to: `${ENVIRONMENT_PATH}/native-apps`,
+    label: 'Native apps',
+    icon: Smartphone,
+  },
+  {
+    segment: 'proposals',
+    to: `${ENVIRONMENT_PATH}/proposals`,
+    label: 'Proposals',
+    icon: Bot,
   },
   {
     segment: 'audit-log',

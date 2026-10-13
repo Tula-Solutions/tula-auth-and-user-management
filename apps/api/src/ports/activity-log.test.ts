@@ -14,11 +14,18 @@ import {
 import type { ApiKeyRepository, NewApiKey } from '~/ports/api-key-repository'
 import type { EnvironmentSettingsStore } from '~/ports/environment-settings-store'
 import type { FactorStore } from '~/ports/factor-store'
+import type { HookRecord, HookStore } from '~/ports/hook-store'
+import type { NativeAppRecord, NativeAppStore } from '~/ports/native-app-store'
 import type { OAuthProviderRecord, OAuthProviderStore } from '~/ports/oauth-provider-store'
 import type { PasskeyRecord, PasskeyStore } from '~/ports/passkey-store'
 import type { NewRefreshToken, NewSession, SessionStore } from '~/ports/session-store'
 import type { RotationPlan, SigningKeyStore } from '~/ports/signing-key-store'
 import type { NewIdentity, NewUser, UserRepository } from '~/ports/user-repository'
+import type {
+  WebhookEndpointRecord,
+  WebhookEndpointStore,
+  WebhookSecretRotation,
+} from '~/ports/webhook-endpoint-store'
 import { createTestDeps, TEST_TENANT, type TestDeps } from '~/testing'
 
 // AGENTS.md: "every change to who can do what is recorded, in the same transaction". The
@@ -39,6 +46,10 @@ declare const passkey: PasskeyRecord
 declare const apiKey: NewApiKey
 declare const provider: OAuthProviderRecord
 declare const plan: RotationPlan
+declare const endpoint: WebhookEndpointRecord
+declare const rotation: WebhookSecretRotation
+declare const hook: HookRecord
+declare const nativeApp: NativeAppRecord
 declare const settings: Parameters<EnvironmentSettingsStore['replace']>[2]
 
 async function _users(users: UserRepository): Promise<void> {
@@ -51,7 +62,9 @@ async function _users(users: UserRepository): Promise<void> {
   // @ts-expect-error
   await users.unlinkIdentity(ENV, 'user', 'identity', allowed)
   // @ts-expect-error
-  await users.setPasswordHash(ENV, 'user', 'hash', AT)
+  await users.setPasswordHash(ENV, 'user', 'hash', AT, { keep: 0 })
+  // @ts-expect-error what becomes of the previous passwords is said by every write too
+  await users.setPasswordHash(ENV, 'user', 'hash', AT, activity)
   // @ts-expect-error
   await users.markEmailVerified(ENV, 'user', AT)
   // @ts-expect-error removing the password is a change of its own, with its own entry
@@ -59,9 +72,30 @@ async function _users(users: UserRepository): Promise<void> {
   // @ts-expect-error
   await users.setBanned(ENV, 'user', AT, AT)
   // @ts-expect-error
+  await users.setPhoneNumber(ENV, 'user', '+14155550100', AT)
+  // @ts-expect-error
+  await users.removePhoneNumber(ENV, 'user', AT)
+  // @ts-expect-error the texted second factor that goes with the number is recorded too
+  await users.setPhoneNumber(ENV, 'user', '+14155550100', AT, activity)
+  // @ts-expect-error
+  await users.removePhoneNumber(ENV, 'user', AT, activity)
+  // @ts-expect-error
+  await users.enableSmsFactor(ENV, 'user', '+14155550100', AT, () => true)
+  // @ts-expect-error
+  await users.disableSmsFactor(ENV, 'user', AT)
+  // @ts-expect-error
   await users.delete(ENV, 'user')
+  // @ts-expect-error a sign-in test's entry is the whole write: there is nothing to leave out
+  await users.reportSignInTest(ENV)
+  // @ts-expect-error nor to leave unrecorded
+  await users.reportSignInTest(ENV, Audit.none('fixture'))
+  // @ts-expect-error the purge of a test's leftover users records each deletion
+  await users.deleteTestUsersBefore(ENV, AT, 10)
+  // @ts-expect-error and never as "not recorded"
+  await users.deleteTestUsersBefore(ENV, AT, 10, () => Audit.none('fixture'))
   // The two that are never recorded (ADR 0012) are methods of their own and take none.
   await users.upgradePasswordHash(ENV, 'user', 'old', 'new', AT)
+  await users.recordPhoneNumberProof(ENV, 'user', '+14155550100', AT)
 }
 
 async function _sessions(sessions: SessionStore): Promise<void> {
@@ -77,6 +111,8 @@ async function _sessions(sessions: SessionStore): Promise<void> {
   await sessions.revokeByUser(ENV, 'user', 'sign_out', AT)
   // @ts-expect-error
   await sessions.revokeByUser(ENV, 'user', 'sign_out', AT, { exceptSessionId: 'session' })
+  // @ts-expect-error an entry with no write beside it: there is nothing to leave unrecorded
+  await sessions.reportRefusedProof(ENV, 'session', Audit.none('fixture'))
 }
 
 async function _passkeys(passkeys: PasskeyStore): Promise<void> {
@@ -127,6 +163,35 @@ async function _keysAndSettings(
   await signingKeys.insert(ENV, [])
 }
 
+async function _webhookEndpoints(endpoints: WebhookEndpointStore): Promise<void> {
+  // @ts-expect-error an endpoint decides where an environment's events are sent
+  await endpoints.insert(endpoint)
+  // @ts-expect-error
+  await endpoints.insert(endpoint, undefined)
+  // @ts-expect-error
+  await endpoints.update(ENV, 'endpoint', { enabled: false }, AT)
+  // @ts-expect-error
+  await endpoints.delete(ENV, 'endpoint')
+  // @ts-expect-error the server switching an endpoint off changes where events are sent
+  await endpoints.disable(ENV, 'endpoint', 'failing', AT)
+  // @ts-expect-error
+  await endpoints.disable(ENV, 'endpoint', 'gone', AT, undefined)
+  // @ts-expect-error a new signing secret changes who can sign an environment's events
+  await endpoints.rotateSecret(ENV, 'endpoint', rotation, AT)
+  // @ts-expect-error
+  await endpoints.rotateSecret(ENV, 'endpoint', rotation, AT, undefined)
+  // @ts-expect-error ending an overlap early takes a secret away before its time
+  await endpoints.revokePreviousSecret(ENV, 'endpoint', AT)
+  // @ts-expect-error
+  await endpoints.revokePreviousSecret(ENV, 'endpoint', AT, undefined)
+  // Since when an endpoint has been failing is the worker's bookkeeping: a method of its own
+  // that takes none (ADR 0012).
+  await endpoints.setHealth(ENV, 'endpoint', null, { failingSince: AT, lastFailedAt: AT })
+  // So is deleting a previous secret whose overlap has ended: it stopped signing at that end,
+  // by the clock, and the rotation that set the end is what was recorded (ADR 0012).
+  await endpoints.clearExpiredPreviousSecrets(ENV, AT, 10)
+}
+
 /** The memory adapters are what tests hold (`TestDeps`): they are as strict as the ports. */
 async function _memoryAdapters(deps: TestDeps): Promise<void> {
   // @ts-expect-error
@@ -147,6 +212,16 @@ async function _memoryAdapters(deps: TestDeps): Promise<void> {
   await deps.signingKeys.rotate(ENV, plan, AT)
   // @ts-expect-error
   await deps.oauthProviders.upsert(provider)
+  // @ts-expect-error
+  await deps.webhookEndpoints.insert(endpoint)
+  // @ts-expect-error
+  await deps.webhookEndpoints.delete(ENV, 'endpoint')
+  // @ts-expect-error
+  await deps.webhookEndpoints.disable(ENV, 'endpoint', 'failing', AT)
+  // @ts-expect-error
+  await deps.webhookEndpoints.rotateSecret(ENV, 'endpoint', rotation, AT)
+  // @ts-expect-error
+  await deps.webhookEndpoints.revokePreviousSecret(ENV, 'endpoint', AT)
 }
 
 function _reasons(): Recorded[] {
@@ -307,6 +382,40 @@ function withoutComments(source: string): { code: string; bare: string } {
   return { code, bare: bare.replace(/\b(?:import|export)\b[^;\n]*?\bfrom\s*['"]{2}/gs, '') }
 }
 
+async function _hooks(hooks: HookStore): Promise<void> {
+  const strict = { enabled: true, failureMode: 'deny' } as const
+  // @ts-expect-error a hook decides who may sign up
+  await hooks.insert(hook)
+  // @ts-expect-error
+  await hooks.insert(hook, undefined)
+  // @ts-expect-error switching a hook off, or letting it allow on failure, removes a check
+  await hooks.update(ENV, 'hook', strict, { enabled: false }, AT)
+  // @ts-expect-error
+  await hooks.update(ENV, 'hook', strict, { failureMode: 'allow' }, AT, undefined)
+  // @ts-expect-error
+  await hooks.delete(ENV, 'hook', strict)
+  // @ts-expect-error
+  await hooks.delete(ENV, 'hook', strict, undefined)
+  // When a call last failed is the server's own bookkeeping: a method of its own, taking none.
+  await hooks.noteFailure(ENV, 'hook', AT, 'timeout')
+}
+
+async function _nativeApps(apps: NativeAppStore): Promise<void> {
+  const read = { teamId: null, sha256CertFingerprints: [] }
+  // @ts-expect-error a registered app is named in the environment's public association files
+  await apps.insert(nativeApp)
+  // @ts-expect-error
+  await apps.insert(nativeApp, undefined)
+  // @ts-expect-error a new team or fingerprint changes which app the files name
+  await apps.update(ENV, 'app', read, { teamId: 'A1B2C3D4E5' }, AT)
+  // @ts-expect-error
+  await apps.update(ENV, 'app', read, { sha256CertFingerprints: [] }, AT, undefined)
+  // @ts-expect-error
+  await apps.delete(ENV, 'app')
+  // @ts-expect-error
+  await apps.delete(ENV, 'app', undefined)
+}
+
 describe('what a store is told about the audit entry of a write', () => {
   test('the type-level assertions above are compiled, not run', () => {
     for (const unused of [
@@ -315,6 +424,9 @@ describe('what a store is told about the audit entry of a write', () => {
       _passkeys,
       _factors,
       _keysAndSettings,
+      _webhookEndpoints,
+      _hooks,
+      _nativeApps,
       _memoryAdapters,
       _reasons,
     ]) {
@@ -328,6 +440,7 @@ describe('what a store is told about the audit entry of a write', () => {
       type: 'user.created',
       actor: { type: 'system', id: null, ipAddress: null, userAgent: null },
       target: { type: 'user', id: 'user' },
+      data: { method: 'admin', emailVerified: false },
     })
     const none = Audit.none('fixture')
     expect(isUnrecorded(none)).toBe(true)

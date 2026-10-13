@@ -92,6 +92,22 @@ export class AuthError extends ServiceException {
   }
 }
 
+/**
+ * 400 `device.nonce_required`: a device-binding proof needs the server's nonce (ADR 0043).
+ * `nonce` is sent in the `DPoP-Nonce` response header, never in the body.
+ */
+export class NonceRequiredError extends AuthError {
+  /** The nonce the client puts in its next proof. */
+  readonly nonce: string
+
+  /** @param nonce - The server's nonce for the environment now. */
+  constructor(nonce: string) {
+    super('device.nonce_required')
+    this.name = 'NonceRequiredError'
+    this.nonce = nonce
+  }
+}
+
 /** 400: the request body or headers could not be parsed. */
 export class BadRequestError extends ServiceException {
   /** @param options - Message and log-only details. */

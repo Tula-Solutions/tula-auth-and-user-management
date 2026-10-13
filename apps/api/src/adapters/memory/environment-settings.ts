@@ -1,17 +1,43 @@
 import type { EnvironmentSettings } from '@tula/contract'
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import { readStoredManager } from '~/adapters/settings-manager'
+import { readStoredRow, type StoredSettingsRow, storedOrigins } from '~/adapters/stored-settings'
 import type { Activity } from '~/ports/activity-log'
 import type {
   EnvironmentSettingsStore,
   SettingsManagerInput,
   StoredEnvironmentSettings,
-  StoredSettingsManager,
 } from '~/ports/environment-settings-store'
 
-/** In-memory environment settings. */
+/**
+ * A document as a JSON column would hold it: `undefined` keys gone, `NaN` and the infinities
+ * `null`. What a test seeds is then what a database would have kept of it.
+ */
+function asJson(value: unknown): unknown {
+  return JSON.parse(JSON.stringify(value ?? null))
+}
+
+/** A row as the memory store keeps it. */
+interface MemorySettingsRow extends StoredSettingsRow {
+  /** Seeded through `seedUnread`: handed on as it is, past the tolerant read. */
+  unread: boolean
+}
+
+/**
+ * In-memory environment settings.
+ *
+ * It keeps a row as a database would (free-form JSON) and **reads it as the Postgres adapter
+ * does**, through `readStoredRow`: fields added since take their defaults, a list entry or a
+ * wording this version would not accept is left out and said in the log, and a scalar that is
+ * not valid makes the read throw. The shared suite holds the two adapters to the same answer
+ * for the same stored document. The one exception is
+ * {@link MemoryEnvironmentSettingsStore.seedUnread}.
+ *
+ * Unlike `jsonb`, it keeps a document's keys in insertion order and does not de-duplicate
+ * them: nothing may rest on either.
+ */
 export class MemoryEnvironmentSettingsStore implements EnvironmentSettingsStore {
-  readonly #documents: Map<string, StoredEnvironmentSettings>
+  readonly #documents: Map<string, MemorySettingsRow>
   readonly #activityLog: MemoryActivityLog
 
   // Assigned in the constructor for Bun coverage; see MemoryApiKeyRepository.
@@ -22,14 +48,68 @@ export class MemoryEnvironmentSettingsStore implements EnvironmentSettingsStore 
   }
 
   /**
-   * Store a document directly, without a revision check or an audit entry. Tests use it to put
-   * an environment in a state the admin API refuses to create.
+   * Put a settings document in the store directly, without a revision check or an audit
+   * entry: the way a test sets an environment up. It is typed, so that a misspelled key does
+   * not compile (the tolerant read would drop it in silence), kept as a JSON column would keep
+   * it and **read as a real store reads it**.
+   *
+   * The three ways in: `seed` (a typed document), {@link seedStored} (any document, read
+   * tolerantly) and {@link seedUnread} (past the read).
    *
    * @param environmentId - The environment.
-   * @param stored - The document and its revision.
+   * @param stored - The document, its revision and, optionally, the managing tool's record.
    */
   seed(environmentId: string, stored: StoredEnvironmentSettings): void {
-    this.#documents.set(environmentId, structuredClone(stored))
+    this.seedStored(environmentId, stored)
+  }
+
+  /**
+   * Put a row in the store as some older or foreign writer left it in the column: another
+   * version's document, a hand's, one this version would refuse to save. Anything JSON holds
+   * is taken, and it is **read as a real store reads it**, through `readStoredRow`: what the
+   * tolerant read leaves out or defaults is left out or defaulted, and a document it cannot
+   * read makes {@link get} throw.
+   *
+   * For a test of what a deployment does with such a document, and for the shared suite. A
+   * test that sets up a valid document uses {@link seed}, which the compiler checks.
+   *
+   * @param environmentId - The environment.
+   * @param stored - The row: its revision, the document as it would sit in the column
+   *   (anything JSON holds) and, optionally, the managing tool's record.
+   */
+  seedStored(
+    environmentId: string,
+    stored: { revision: number; settings: unknown; managedBy?: unknown }
+  ): void {
+    this.#documents.set(environmentId, {
+      revision: stored.revision,
+      settings: asJson(stored.settings),
+      managedBy: asJson(stored.managedBy),
+      unread: false,
+    })
+  }
+
+  /**
+   * Put a document in the store that {@link get} hands on **as it is, past the tolerant
+   * read**. No real store can do this: Postgres passes every row through `readStoredRow`,
+   * which would have left out, defaulted or refused what this hands on.
+   *
+   * It exists for one kind of test: one whose subject is a service's **own** defence against
+   * a document the store's read should already have cleaned (the renderer replacing a
+   * wording that no longer passes with the built-in copy, say), which only a raw document can
+   * reach. A test of what a deployment does with a stored document uses {@link seed} or
+   * {@link seedStored}.
+   *
+   * @param environmentId - The environment.
+   * @param stored - The document and its revision, handed on unjudged.
+   */
+  seedUnread(environmentId: string, stored: StoredEnvironmentSettings): void {
+    this.#documents.set(environmentId, {
+      revision: stored.revision,
+      settings: structuredClone(stored.settings),
+      managedBy: structuredClone(stored.managedBy),
+      unread: true,
+    })
   }
 
   /**
@@ -42,10 +122,7 @@ export class MemoryEnvironmentSettingsStore implements EnvironmentSettingsStore 
   seedManager(environmentId: string, manager: unknown): void {
     const stored = this.#documents.get(environmentId)
     if (stored) {
-      this.#documents.set(environmentId, {
-        ...stored,
-        managedBy: structuredClone(manager) as StoredSettingsManager,
-      })
+      this.#documents.set(environmentId, { ...stored, managedBy: structuredClone(manager) })
     }
   }
 
@@ -56,16 +133,19 @@ export class MemoryEnvironmentSettingsStore implements EnvironmentSettingsStore 
   }
 
   /**
-   * A stored document as the store answers it: a copy, with the managing tool only when its
-   * record is one the API would answer (the same rule as the Postgres adapter's read).
+   * A stored row as the store answers it: read as the Postgres adapter reads one, and a copy,
+   * so that a caller cannot change what is stored through what it was given.
    */
-  #read(environmentId: string, stored: StoredEnvironmentSettings): StoredEnvironmentSettings {
-    const managedBy = readStoredManager(environmentId, stored.managedBy)
-    return {
-      revision: stored.revision,
-      settings: structuredClone(stored.settings),
-      ...(managedBy && { managedBy }),
+  #read(environmentId: string, stored: MemorySettingsRow): StoredEnvironmentSettings {
+    if (stored.unread) {
+      const managedBy = readStoredManager(environmentId, stored.managedBy)
+      return {
+        revision: stored.revision,
+        settings: structuredClone(stored.settings) as EnvironmentSettings,
+        ...(managedBy && { managedBy }),
+      }
     }
+    return structuredClone(readStoredRow(environmentId, stored))
   }
 
   /** @inheritdoc */
@@ -88,10 +168,11 @@ export class MemoryEnvironmentSettingsStore implements EnvironmentSettingsStore 
         : manager === null
           ? undefined
           : { ...manager, at: at.toISOString(), revision }
-    const stored: StoredEnvironmentSettings = {
+    const stored: MemorySettingsRow = {
       revision,
-      settings: structuredClone(settings),
-      ...(managedBy && { managedBy: { ...managedBy } }),
+      settings: asJson(settings),
+      managedBy: managedBy === undefined ? null : structuredClone(managedBy),
+      unread: false,
     }
     this.#documents.set(environmentId, stored)
     this.#activityLog.record([activity])
@@ -102,7 +183,7 @@ export class MemoryEnvironmentSettingsStore implements EnvironmentSettingsStore 
   async allowedOrigins(): Promise<string[]> {
     const origins = new Set<string>()
     for (const { settings } of this.#documents.values()) {
-      for (const origin of settings.urls.allowedOrigins) {
+      for (const origin of storedOrigins(settings)) {
         origins.add(origin)
       }
     }

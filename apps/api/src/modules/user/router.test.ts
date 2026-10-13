@@ -63,10 +63,13 @@ function client(method: string, path: string, accessToken?: string, body?: unkno
 const json = async <T>(res: Response) => (await res.json()) as T
 const code = async (res: Response) => (await json<{ code: string }>(res)).code
 
+/** A user an admin created: they always have an address. */
+type Addressed = User & { email: string }
+
 async function createUser(email = 'maya@northline.app', extra: object = {}) {
   const res = await admin('POST', '', { email, password: PASSWORD, ...extra })
   expect(res.status).toBe(201)
-  return json<User>(res)
+  return json<Addressed>(res)
 }
 
 const signIn = (userId: string) =>
@@ -118,7 +121,7 @@ describe('admin: /v1/admin/users', () => {
   test('creates a user without a password, who then gets one from the admin', async () => {
     const created = await admin('POST', '', { email: 'social@northline.app', emailVerified: true })
     expect(created.status).toBe(201)
-    const user = await json<User>(created)
+    const user = await json<Addressed>(created)
     expect(JSON.stringify(user)).not.toContain('password')
     const lookup = () => deps.users.findByEmailWithPassword(tenant.environmentId, user.email)
     expect((await lookup())?.passwordHash).toBeNull()
@@ -230,7 +233,7 @@ describe('client: /v1/client/me', () => {
 
   test('an account with no password answers 409 password.not_set, only to its own signed-in user', async () => {
     const created = await admin('POST', '', { email: 'social@northline.app', emailVerified: true })
-    const user = await json<User>(created)
+    const user = await json<Addressed>(created)
     const tokens = await signIn(user.id)
     const body = { currentPassword: 'anything', newPassword: NEW_PASSWORD }
     const res = await client('POST', '/me/password', tokens.accessToken, body)

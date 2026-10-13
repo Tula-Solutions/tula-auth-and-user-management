@@ -31,6 +31,7 @@ import * as Verification from '~/modules/verification/service'
 import { CREDENTIAL_LOCKOUT } from '~/ports/lockout'
 import type { UserRecord } from '~/ports/user-repository'
 import { createTestDeps, TEST_ACTOR, TEST_TENANT, type TestDeps } from '~/testing'
+import { comparable } from '~/testing/comparable'
 
 const tenant: Tenant = {
   projectId: TEST_TENANT.projectId,
@@ -152,7 +153,7 @@ function configure(change: Partial<EnvironmentSettings>, scope = tenant) {
   })
 }
 const policy = (value: EnvironmentSettings['mfa']['policy']) =>
-  configure({ mfa: { policy: value } })
+  configure({ mfa: { policy: value, smsCode: { enabled: false } } })
 
 const stepUp = (userId: string, sessionId: string, proof: Parameters<typeof Mfa.stepUp>[3]) =>
   Mfa.stepUp(deps, tenant, { userId, sessionId }, proof, {
@@ -173,13 +174,15 @@ describe('startTotp', () => {
         '&issuer=Tula&algorithm=SHA1&digits=6&period=30'
     )
     const stored = await deps.factors.findTotp(tenant.environmentId, user.id)
-    expect(stored).toMatchObject({
-      userId: user.id,
-      type: 'totp',
-      confirmedAt: null,
-      lastUsedStep: null,
-      expiresAt: new Date(deps.clock.now().getTime() + 600_000),
-    })
+    expect(comparable(stored)).toMatchObject(
+      comparable({
+        userId: user.id,
+        type: 'totp',
+        confirmedAt: null,
+        lastUsedStep: null,
+        expiresAt: new Date(deps.clock.now().getTime() + 600_000),
+      })
+    )
     expect(stored?.secret).toMatch(/^v1\./)
     expect(JSON.stringify(stored)).not.toContain(enrolment.secret)
     // Nothing is recorded or sent for an enrolment that was only started.
@@ -208,6 +211,7 @@ describe('startTotp', () => {
     expect(await Mfa.status(deps, tenant, user.id)).toEqual({
       totp: { enabled: false, confirmedAt: null },
       backupCodes: { remaining: 0 },
+      sms: { enabled: false, enabledAt: null, inUse: false, available: false },
     })
     expect(await Mfa.stepUpMethods(deps, tenant, user.id)).toEqual(['password', 'email_code'])
     // The right code of a factor that was never confirmed proves nothing.
@@ -288,6 +292,7 @@ describe('confirmTotp', () => {
     expect(await Mfa.status(deps, tenant, user.id)).toEqual({
       totp: { enabled: true, confirmedAt: deps.clock.now().toISOString() },
       backupCodes: { remaining: 10 },
+      sms: { enabled: false, enabledAt: null, inUse: false, available: false },
     })
     expect(await Factors.requiredFor(deps, tenant, user.id)).toEqual(['totp', 'backup_code'])
     expect(await deps.factors.findTotp(tenant.environmentId, user.id)).toMatchObject({
@@ -357,6 +362,7 @@ describe('confirmTotp', () => {
     expect(await Mfa.status(deps, tenant, user.id)).toEqual({
       totp: { enabled: false, confirmedAt: null },
       backupCodes: { remaining: 0 },
+      sms: { enabled: false, enabledAt: null, inUse: false, available: false },
     })
     expect(deps.activityLog.ofType('user.mfa_enabled')).toEqual([])
     expect(await liveSessions(user.id)).toHaveLength(1)
@@ -379,6 +385,7 @@ describe('confirmTotp', () => {
     expect(err.toJSON()).toMatchObject({ status: 409, code: 'mfa.already_enabled' })
     expect(await Mfa.status(deps, tenant, user.id)).toMatchObject({
       backupCodes: { remaining: 10 },
+      sms: { enabled: false, enabledAt: null, inUse: false, available: false },
     })
   })
 
@@ -425,19 +432,27 @@ describe('confirmTotp', () => {
     const now = deps.clock.now()
 
     expect((await liveSessions(user.id)).map((session) => session.id)).toEqual([current.sessionId])
-    expect(await deps.sessions.findById(tenant.environmentId, other.sessionId)).toMatchObject({
-      revokedAt: now,
-      revokeReason: 'mfa_changed',
-    })
+    expect(
+      comparable(await deps.sessions.findById(tenant.environmentId, other.sessionId))
+    ).toMatchObject(
+      comparable({
+        revokedAt: now,
+        revokeReason: 'mfa_changed',
+      })
+    )
     // Denylisted, so the other session's access token stops working at once.
     expect(await deps.revokedSessions.has(other.sessionId, now)).toBe(true)
     expect(await deps.revokedSessions.has(current.sessionId, now)).toBe(false)
     expect(await deps.revokedSessions.has(theirs.sessionId, now)).toBe(false)
-    expect(await deps.sessions.findById(tenant.environmentId, current.sessionId)).toMatchObject({
-      factorVerifiedAt: now,
-      authMethods: ['pwd', 'otp', 'mfa'],
-      revokedAt: null,
-    })
+    expect(
+      comparable(await deps.sessions.findById(tenant.environmentId, current.sessionId))
+    ).toMatchObject(
+      comparable({
+        factorVerifiedAt: now,
+        authMethods: ['pwd', 'otp', 'mfa'],
+        revokedAt: null,
+      })
+    )
     expect(deps.activityLog.ofType('session.stepped_up')).toEqual([
       expect.objectContaining({
         target: { type: 'session', id: current.sessionId },
@@ -803,6 +818,7 @@ describe('verifyBackupCode', () => {
     expect(await spend(other.id, codes[0])).toBeNull()
     expect(await Mfa.status(deps, tenant, other.id)).toMatchObject({
       backupCodes: { remaining: 10 },
+      sms: { enabled: false, enabledAt: null, inUse: false, available: false },
     })
     // Nor does it work for the same user id in another environment.
     expect(await spend(owner.id, codes[0], otherTenant)).toBeNull()
@@ -823,6 +839,7 @@ describe('verifyBackupCode', () => {
     expect(await spend(user.id, submitted)).toBeNull()
     expect(await Mfa.status(deps, tenant, user.id)).toMatchObject({
       backupCodes: { remaining: 10 },
+      sms: { enabled: false, enabledAt: null, inUse: false, available: false },
     })
     expect(deps.activityLog.ofType('user.backup_code_used')).toEqual([])
     await Notices.settled()
@@ -1159,6 +1176,7 @@ describe('disableTotp', () => {
     expect(await Mfa.status(deps, tenant, user.id)).toEqual({
       totp: { enabled: false, confirmedAt: null },
       backupCodes: { remaining: 0 },
+      sms: { enabled: false, enabledAt: null, inUse: false, available: false },
     })
     expect(await Factors.requiredFor(deps, tenant, user.id)).toEqual([])
     expect(await deps.factors.findTotp(tenant.environmentId, user.id)).toBeNull()
@@ -1185,6 +1203,7 @@ describe('disableTotp', () => {
     expect(await Mfa.status(deps, tenant, user.id)).toMatchObject({
       totp: { enabled: true },
       backupCodes: { remaining: 10 },
+      sms: { enabled: false, enabledAt: null, inUse: false, available: false },
     })
     expect(deps.activityLog.ofType('user.mfa_disabled')).toEqual([])
   })
@@ -1228,6 +1247,7 @@ describe('regenerateBackupCodes', () => {
     expect(new Set([...old, ...fresh]).size).toBe(20)
     expect(await Mfa.status(deps, tenant, user.id)).toMatchObject({
       backupCodes: { remaining: 10 },
+      sms: { enabled: false, enabledAt: null, inUse: false, available: false },
     })
     for (const code of old) {
       expect(await Mfa.verifyBackupCode(deps, tenant, user.id, code, actorOf(user.id))).toBeNull()
@@ -1326,6 +1346,7 @@ describe('reset (admin)', () => {
     expect(await Mfa.status(deps, tenant, user.id)).toEqual({
       totp: { enabled: false, confirmedAt: null },
       backupCodes: { remaining: 0 },
+      sms: { enabled: false, enabledAt: null, inUse: false, available: false },
     })
     expect(await Mfa.verifyTotp(deps, tenant, user.id, codeFor(secret))).toBe(false)
     expect(await Mfa.verifyBackupCode(deps, tenant, user.id, codes[0], actorOf(user.id))).toBeNull()

@@ -3,8 +3,9 @@ import {
   type AuditActorType,
   type AuditLog,
   type AuditLogList,
-  type AuditTargetType,
   DEFAULT_PAGE_SIZE,
+  type EventData,
+  type EventTargetType,
 } from '@tula/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { type Actor, cleanOrigin } from '~/lib/actor'
@@ -16,14 +17,29 @@ import {
   unrecordedFor,
 } from '~/ports/activity-log'
 
-/** What happened, to build an {@link Activity} from. */
-export interface EntryInput {
-  type: ActivityType
-  actor: Actor
-  target: { type: AuditTargetType; id: string }
-  /** Details of the action. Never a password, token, code, key or email address. */
-  data?: Record<string, unknown>
-}
+/**
+ * The details of one action: the `data` the type's event schema in `@tula/contract` names.
+ * Optional where every field of it is (or it has none), required otherwise.
+ */
+type EntryData<T extends ActivityType> =
+  Record<string, never> extends EventData<T> ? { data?: EventData<T> } : { data: EventData<T> }
+
+/**
+ * What happened, to build an {@link Activity} from: a union discriminated by `type`.
+ *
+ * Each type fixes what the action is about (`target.type`) and which details it carries
+ * (`data`), both taken from the event contract (`EVENT_TARGET_TYPES`, `EVENT_DATA_SCHEMAS`).
+ * A call site that records a detail the contract does not name does not compile: a field
+ * reaches a webhook payload by a decision in the contract, never by being passed along.
+ * Never a password, token, code, key or email address.
+ */
+export type EntryInput = {
+  [T in ActivityType]: {
+    type: T
+    actor: Actor
+    target: { type: EventTargetType<T>; id: string }
+  } & EntryData<T>
+}[ActivityType]
 
 /**
  * Build the record of an action, ready to hand to the store method that performs it.

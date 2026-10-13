@@ -1,0 +1,322 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "native Google sign-in and existing accounts",
+  "description": "Which account an ID token signs in to is decided exactly as after the browser round trip. A Google account is connected automatically to an existing account only when Google says the address is verified and the account's own address is verified; an account whose address was never verified is never connected (oauth.account_exists), and an address Google does not vouch for creates nothing (oauth.email_unverified). Uses the server's mock provider. The provider's credentials are removed afterwards.",
+  "needsSecretKey": true,
+  "variables": {
+    "member": {
+      "generate": "email"
+    },
+    "squatted": {
+      "generate": "email"
+    },
+    "unvouched": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    },
+    "webClient": "1234567890-conformanceweb.apps.googleusercontent.com",
+    "androidClient": "1234567890-conformanceandroid.apps.googleusercontent.com"
+  },
+  "steps": [
+    {
+      "name": "an administrator sets the google credentials and lists the app's client id",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/google",
+        "auth": "secret",
+        "body": {
+          "clientId": "{{webClient}}",
+          "clientSecret": "conformance-client-secret",
+          "additionalClientIds": ["{{androidClient}}"]
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "google",
+          "enabled": true,
+          "additionalClientIds": ["{{androidClient}}"]
+        }
+      }
+    },
+    {
+      "name": "an account with a verified address and a password",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users",
+        "auth": "secret",
+        "body": {
+          "email": "{{member}}",
+          "password": "{{password}}",
+          "emailVerified": true
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": "$any"
+      },
+      "capture": {
+        "memberId": "id"
+      }
+    },
+    {
+      "name": "the member's app asks for an attempt",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "android",
+        "body": {
+          "provider": "google"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": "$any",
+          "nonce": "$any"
+        }
+      },
+      "capture": {
+        "aId": "attempt.id",
+        "aSecret": "attempt.attemptSecret",
+        "aNonce": "nonce"
+      }
+    },
+    {
+      "name": "Google vouches for the member's address",
+      "idToken": {
+        "audience": "{{webClient}}",
+        "authorizedParty": "{{androidClient}}",
+        "nonce": "{{aNonce}}",
+        "email": "{{member}}",
+        "capture": "aToken"
+      }
+    },
+    {
+      "name": "both sides have verified the address: the Google account is connected and the member signed in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{aId}}/id-token",
+        "client": "android",
+        "attempt": "{{aSecret}}",
+        "body": {
+          "idToken": "{{aToken}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "{{memberId}}",
+            "sessionId": "$any"
+          },
+          "session": "$any"
+        }
+      },
+      "capture": {
+        "memberToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "the member has a connected account and still has the password",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "accessToken": "{{memberToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{memberId}}",
+          "hasPassword": true
+        }
+      }
+    },
+    {
+      "name": "the connected account is listed",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/identities",
+        "accessToken": "{{memberToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "provider": "google"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "the link is recorded",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?targetId={{memberId}}&action=user.identity_linked",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "action": "user.identity_linked"
+            }
+          ]
+        },
+        "bodyExcludes": ["{{aToken}}", "{{aNonce}}"]
+      }
+    },
+    {
+      "name": "an account someone made for an address they never proved",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users",
+        "auth": "secret",
+        "body": {
+          "email": "{{squatted}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": "$any"
+      }
+    },
+    {
+      "name": "the address's owner asks for an attempt",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "android",
+        "body": {
+          "provider": "google"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": "$any"
+      },
+      "capture": {
+        "bId": "attempt.id",
+        "bSecret": "attempt.attemptSecret",
+        "bNonce": "nonce"
+      }
+    },
+    {
+      "name": "Google vouches for the squatted address",
+      "idToken": {
+        "audience": "{{webClient}}",
+        "authorizedParty": "{{androidClient}}",
+        "nonce": "{{bNonce}}",
+        "email": "{{squatted}}",
+        "capture": "bToken"
+      }
+    },
+    {
+      "name": "an unverified account is never connected: nobody is signed in to it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{bId}}/id-token",
+        "client": "android",
+        "attempt": "{{bSecret}}",
+        "body": {
+          "idToken": "{{bToken}}"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "status": 409,
+          "code": "oauth.account_exists",
+          "detail": "$any"
+        },
+        "bodyExcludes": ["accessToken", "refreshToken"]
+      }
+    },
+    {
+      "name": "someone asks for an attempt",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "android",
+        "body": {
+          "provider": "google"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": "$any"
+      },
+      "capture": {
+        "cId": "attempt.id",
+        "cSecret": "attempt.attemptSecret",
+        "cNonce": "nonce"
+      }
+    },
+    {
+      "name": "Google reports an address it does not vouch for",
+      "idToken": {
+        "audience": "{{webClient}}",
+        "authorizedParty": "{{androidClient}}",
+        "nonce": "{{cNonce}}",
+        "email": "{{unvouched}}",
+        "unverified": true,
+        "capture": "cToken"
+      }
+    },
+    {
+      "name": "an unverified provider address creates no account",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{cId}}/id-token",
+        "client": "android",
+        "attempt": "{{cSecret}}",
+        "body": {
+          "idToken": "{{cToken}}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "oauth.email_unverified",
+          "detail": "$any"
+        },
+        "bodyExcludes": ["accessToken", "refreshToken"]
+      }
+    },
+    {
+      "name": "no user was made for that address",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users?q={{unvouched}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": []
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "remove the google credentials",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/oauth-providers/google",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    }
+  ]
+}

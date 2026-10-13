@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from 'bun:test'
 import * as Audit from '~/modules/audit/service'
 import type { Activity, ActivityLog } from '~/ports/activity-log'
 import type { NewRefreshToken, NewSession, SessionStore } from '~/ports/session-store'
+import { comparable } from '~/testing/comparable'
 
 /** A tenant plus the rows the store's foreign keys need. */
 export interface SessionSuiteTenant {
@@ -35,6 +36,8 @@ export function describeSessionStore(
     const now = new Date('2026-01-01T00:00:00.000Z')
     const later = (ms: number) => new Date(now.getTime() + ms)
     const DAY = 86_400_000
+    /** An authentication that leaves the session without a hook's claims. */
+    const NO_CLAIMS = { claims: null }
     let ctx: SessionSuiteContext
     let counter = 0
 
@@ -92,6 +95,8 @@ export function describeSessionStore(
         type: 'hybrid',
         factorVerifiedAt: null,
         authMethods: [],
+        hookClaims: null,
+        deviceThumbprint: null,
         revokedAt: null,
         revokeReason: null,
       })
@@ -135,10 +140,12 @@ export function describeSessionStore(
         factorVerifiedAt: later(-5_000),
         authMethods: ['pwd', 'otp', 'mfa'],
       })
-      expect(await ctx.store.findById(ctx.a.environmentId, s.id)).toMatchObject({
-        factorVerifiedAt: later(-5_000),
-        authMethods: ['pwd', 'otp', 'mfa'],
-      })
+      expect(comparable(await ctx.store.findById(ctx.a.environmentId, s.id))).toMatchObject(
+        comparable({
+          factorVerifiedAt: later(-5_000),
+          authMethods: ['pwd', 'otp', 'mfa'],
+        })
+      )
       // A session stored without them has proven nothing.
       const { session: bare } = await seed(ctx.a)
       expect(await ctx.store.findById(ctx.a.environmentId, bare.id)).toMatchObject({
@@ -155,7 +162,7 @@ export function describeSessionStore(
       const updated = await ctx.store.recordAuthentication(
         ctx.a.environmentId,
         s.id,
-        { at: later(60_000), methods: ['otp', 'mfa'] },
+        { at: later(60_000), methods: ['otp', 'mfa'], hookClaims: NO_CLAIMS },
         steppedUp(ctx.a, s.id)
       )
       expect(updated).toEqual({
@@ -163,6 +170,8 @@ export function describeSessionStore(
         type: 'hybrid',
         factorVerifiedAt: later(60_000),
         authMethods: ['pwd', 'otp', 'mfa'],
+        hookClaims: null,
+        deviceThumbprint: null,
         revokedAt: null,
         revokeReason: null,
       })
@@ -183,6 +192,7 @@ export function describeSessionStore(
         {
           at: later(1_000),
           methods: ['otp', 'mfa'],
+          hookClaims: NO_CLAIMS,
         },
         Audit.none('fixture')
       )
@@ -193,13 +203,16 @@ export function describeSessionStore(
         {
           at: later(2_000),
           methods: ['backup_code', 'mfa', 'backup_code'],
+          hookClaims: NO_CLAIMS,
         },
         Audit.none('fixture')
       )
-      expect(second).toMatchObject({
-        factorVerifiedAt: later(2_000),
-        authMethods: ['pwd', 'otp', 'backup_code', 'mfa'],
-      })
+      expect(comparable(second)).toMatchObject(
+        comparable({
+          factorVerifiedAt: later(2_000),
+          authMethods: ['pwd', 'otp', 'backup_code', 'mfa'],
+        })
+      )
       // Without an activity nothing is recorded.
       expect(await recorded(ctx.a, s.id)).toEqual([])
     })
@@ -211,7 +224,7 @@ export function describeSessionStore(
           ctx.store.recordAuthentication(
             ctx.a.environmentId,
             s.id,
-            { at: later(1_000), methods },
+            { at: later(1_000), methods, hookClaims: NO_CLAIMS },
             Audit.none('fixture')
           )
         )
@@ -236,7 +249,7 @@ export function describeSessionStore(
         ctx.store.recordAuthentication(
           tenant.environmentId,
           id,
-          { at, methods: ['otp', 'mfa'] },
+          { at, methods: ['otp', 'mfa'], hookClaims: NO_CLAIMS },
           steppedUp(tenant, id)
         )
 
@@ -257,11 +270,255 @@ export function describeSessionStore(
         expect(await recorded(ctx.b, untouched.session.id)).toEqual([])
       }
       // One millisecond before its expiry a session can still be stepped up.
-      expect(await record(ctx.a, idle.session.id, later(9_999))).toMatchObject({
-        factorVerifiedAt: later(9_999),
-        authMethods: ['pwd', 'otp', 'mfa'],
-      })
+      expect(comparable(await record(ctx.a, idle.session.id, later(9_999)))).toMatchObject(
+        comparable({
+          factorVerifiedAt: later(9_999),
+          authMethods: ['pwd', 'otp', 'mfa'],
+        })
+      )
       expect(await recorded(ctx.a, idle.session.id)).toEqual(['session.stepped_up'])
+    })
+
+    describe('the claims a hook gave a session', () => {
+      const CLAIMS = { role: 'admin', seats: 3, staff: false }
+
+      test('a session is stored with them and has none otherwise', async () => {
+        const plain = await seed(ctx.a)
+        const withClaims = await seed(ctx.a, { hookClaims: CLAIMS })
+        expect((await ctx.store.findById(ctx.a.environmentId, plain.session.id))?.hookClaims).toBe(
+          null
+        )
+        const read = await ctx.store.findById(ctx.a.environmentId, withClaims.session.id)
+        expect(read?.hookClaims).toEqual({ role: 'admin', seats: 3, staff: false })
+        // A refresh reads them from here: the token lookup returns them too.
+        const found = await ctx.store.findToken(ctx.a.environmentId, withClaims.root.tokenHash)
+        expect(found?.session.hookClaims).toEqual({ role: 'admin', seats: 3, staff: false })
+        const [listed] = await ctx.store.listActiveByUser(
+          ctx.a.environmentId,
+          withClaims.userId,
+          now
+        )
+        expect(listed?.hookClaims).toEqual({ role: 'admin', seats: 3, staff: false })
+      })
+
+      test('what a caller is handed is not the store’s own copy', async () => {
+        const given = { role: 'admin' }
+        const { session: s } = await seed(ctx.a, { hookClaims: given })
+        given.role = 'owner'
+        const read = await ctx.store.findById(ctx.a.environmentId, s.id)
+        expect(read?.hookClaims).toEqual({ role: 'admin' })
+        ;(read?.hookClaims as Record<string, unknown>).role = 'owner'
+        expect((await ctx.store.findById(ctx.a.environmentId, s.id))?.hookClaims).toEqual({
+          role: 'admin',
+        })
+      })
+
+      test('an authentication replaces them: with new ones, or with none', async () => {
+        const { session: s } = await seed(ctx.a, { authMethods: ['pwd'], hookClaims: CLAIMS })
+        const replaced = await ctx.store.recordAuthentication(
+          ctx.a.environmentId,
+          s.id,
+          { at: later(1_000), methods: ['otp', 'mfa'], hookClaims: { claims: { role: 'owner' } } },
+          Audit.none('fixture')
+        )
+        expect(replaced?.hookClaims).toEqual({ role: 'owner' })
+        expect((await ctx.store.findById(ctx.a.environmentId, s.id))?.hookClaims).toEqual({
+          role: 'owner',
+        })
+        const cleared = await ctx.store.recordAuthentication(
+          ctx.a.environmentId,
+          s.id,
+          { at: later(2_000), methods: ['pwd'], hookClaims: { claims: null } },
+          Audit.none('fixture')
+        )
+        expect(cleared?.hookClaims).toBeNull()
+        expect((await ctx.store.findById(ctx.a.environmentId, s.id))?.hookClaims).toBeNull()
+      })
+
+      test('they are written only over the methods they were asked about', async () => {
+        const { session: s } = await seed(ctx.a, {
+          factorVerifiedAt: now,
+          authMethods: ['pwd'],
+          hookClaims: CLAIMS,
+        })
+        // Another step-up got in between: the session has proven more than the hook was told.
+        await ctx.store.recordAuthentication(
+          ctx.a.environmentId,
+          s.id,
+          { at: later(1_000), methods: ['email'], hookClaims: { claims: { role: 'member' } } },
+          Audit.none('fixture')
+        )
+        const stale = await ctx.store.recordAuthentication(
+          ctx.a.environmentId,
+          s.id,
+          {
+            at: later(2_000),
+            methods: ['otp', 'mfa'],
+            hookClaims: { claims: { role: 'owner' }, ifAuthMethods: ['pwd'] },
+          },
+          steppedUp(ctx.a, s.id)
+        )
+        expect(stale).toBeNull()
+        // Nothing of it was written: not the claims, not the methods, not the time, no entry.
+        const untouched = await ctx.store.findById(ctx.a.environmentId, s.id)
+        expect(untouched?.hookClaims).toEqual({ role: 'member' })
+        expect(untouched?.authMethods).toEqual(['pwd', 'email'])
+        expect(untouched?.factorVerifiedAt).toEqual(later(1_000))
+        expect(await recorded(ctx.a, s.id)).toEqual([])
+
+        // Over the methods as they are, in any order (a set), it is written.
+        const fresh = await ctx.store.recordAuthentication(
+          ctx.a.environmentId,
+          s.id,
+          {
+            at: later(3_000),
+            methods: ['otp', 'mfa'],
+            hookClaims: { claims: { role: 'owner' }, ifAuthMethods: ['email', 'pwd'] },
+          },
+          steppedUp(ctx.a, s.id)
+        )
+        expect(fresh?.hookClaims).toEqual({ role: 'owner' })
+        expect(fresh?.authMethods).toEqual(['pwd', 'email', 'otp', 'mfa'])
+        expect(fresh?.factorVerifiedAt).toEqual(later(3_000))
+        expect(await recorded(ctx.a, s.id)).toEqual(['session.stepped_up'])
+      })
+
+      test('a subset or a superset of the methods is not the methods', async () => {
+        const { session: s } = await seed(ctx.a, { authMethods: ['pwd', 'email'] })
+        for (const ifAuthMethods of [['pwd'], ['pwd', 'email', 'otp'], []]) {
+          expect(
+            await ctx.store.recordAuthentication(
+              ctx.a.environmentId,
+              s.id,
+              {
+                at: later(1_000),
+                methods: ['otp'],
+                hookClaims: { claims: { role: 'owner' }, ifAuthMethods },
+              },
+              Audit.none('fixture')
+            )
+          ).toBeNull()
+        }
+        expect((await ctx.store.findById(ctx.a.environmentId, s.id))?.hookClaims).toBeNull()
+      })
+
+      test('a refresh and a touch leave them as they are', async () => {
+        const { session: s, root } = await seed(ctx.a, { hookClaims: CLAIMS })
+        expect(
+          await ctx.store.rotate(ctx.a.environmentId, {
+            parentId: root.id,
+            child: token(s.id, { parentId: root.id }),
+            at: later(1_000),
+            idleExpiresAt: later(8 * DAY),
+          })
+        ).toBe(true)
+        expect(await ctx.store.touch(ctx.a.environmentId, s.id, later(2_000), later(8 * DAY))).toBe(
+          true
+        )
+        expect((await ctx.store.findById(ctx.a.environmentId, s.id))?.hookClaims).toEqual({
+          role: 'admin',
+          seats: 3,
+          staff: false,
+        })
+      })
+
+      test('another environment neither reads nor replaces them', async () => {
+        const { session: s } = await seed(ctx.a, { authMethods: ['pwd'], hookClaims: CLAIMS })
+        expect(await ctx.store.findById(ctx.b.environmentId, s.id)).toBeNull()
+        expect(
+          await ctx.store.recordAuthentication(
+            ctx.b.environmentId,
+            s.id,
+            { at: later(1_000), methods: ['otp'], hookClaims: { claims: { role: 'owner' } } },
+            Audit.none('fixture')
+          )
+        ).toBeNull()
+        expect((await ctx.store.findById(ctx.a.environmentId, s.id))?.hookClaims).toEqual({
+          role: 'admin',
+          seats: 3,
+          staff: false,
+        })
+      })
+    })
+
+    describe('the key a session is bound to', () => {
+      const THUMBPRINT = 'NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs'
+
+      function refused(tenant: SessionSuiteTenant, sessionId: string): Activity {
+        return {
+          id: Bun.randomUUIDv7(),
+          projectId: tenant.projectId,
+          environmentId: tenant.environmentId,
+          type: 'session.refresh_proof_refused',
+          actor: { type: 'system', id: null },
+          target: { type: 'session', id: sessionId },
+          ipAddress: '203.0.113.7',
+          userAgent: 'suite/1.0',
+          data: { reason: 'missing', suppressedInPreviousMinute: 0 },
+          occurredAt: now,
+        }
+      }
+
+      test('is stored with the session and read back by every read', async () => {
+        const plain = await seed(ctx.a)
+        const bound = await seed(ctx.a, { client: 'ios', deviceThumbprint: THUMBPRINT })
+        const env = ctx.a.environmentId
+        expect((await ctx.store.findById(env, plain.session.id))?.deviceThumbprint).toBeNull()
+        expect((await ctx.store.findById(env, bound.session.id))?.deviceThumbprint).toBe(THUMBPRINT)
+        const found = await ctx.store.findToken(env, bound.root.tokenHash)
+        expect(found?.session.deviceThumbprint).toBe(THUMBPRINT)
+        const [listed] = await ctx.store.listActiveByUser(env, bound.userId, later(1))
+        expect(listed?.deviceThumbprint).toBe(THUMBPRINT)
+      })
+
+      test('a refresh, a touch, a step-up and a revocation leave it as it is', async () => {
+        const { session: s, root } = await seed(ctx.a, {
+          client: 'ios',
+          authMethods: ['pwd'],
+          deviceThumbprint: THUMBPRINT,
+        })
+        const env = ctx.a.environmentId
+        await ctx.store.rotate(env, {
+          parentId: root.id,
+          child: token(s.id, { parentId: root.id }),
+          at: later(1_000),
+          idleExpiresAt: later(8 * DAY),
+        })
+        await ctx.store.touch(env, s.id, later(2_000), later(8 * DAY))
+        const stepped = await ctx.store.recordAuthentication(
+          env,
+          s.id,
+          { at: later(3_000), methods: ['otp', 'mfa'], hookClaims: NO_CLAIMS },
+          Audit.none('fixture')
+        )
+        expect(stepped?.deviceThumbprint).toBe(THUMBPRINT)
+        await ctx.store.revoke(env, s.id, 'sign_out', later(4_000), Audit.none('fixture'))
+        expect((await ctx.store.findById(env, s.id))?.deviceThumbprint).toBe(THUMBPRINT)
+      })
+
+      test('a refused proof is put on record and changes nothing about the session', async () => {
+        const { session: s, root } = await seed(ctx.a, {
+          client: 'ios',
+          deviceThumbprint: THUMBPRINT,
+        })
+        const env = ctx.a.environmentId
+        const before = await ctx.store.findToken(env, root.tokenHash)
+        await ctx.store.reportRefusedProof(env, s.id, refused(ctx.a, s.id))
+        expect(await recorded(ctx.a, s.id)).toEqual(['session.refresh_proof_refused'])
+        expect(await ctx.store.findToken(env, root.tokenHash)).toEqual(before)
+        expect(before?.token.usedAt).toBeNull()
+        expect(before?.session.revokedAt).toBeNull()
+      })
+
+      test('nothing is recorded for a session of another environment, or for none', async () => {
+        const { session: s } = await seed(ctx.a, { client: 'ios', deviceThumbprint: THUMBPRINT })
+        await ctx.store.reportRefusedProof(ctx.b.environmentId, s.id, refused(ctx.b, s.id))
+        const unknown = Bun.randomUUIDv7()
+        await ctx.store.reportRefusedProof(ctx.a.environmentId, unknown, refused(ctx.a, unknown))
+        expect(await recorded(ctx.a, s.id)).toEqual([])
+        expect(await recorded(ctx.b, s.id)).toEqual([])
+        expect(await recorded(ctx.a, unknown)).toEqual([])
+      })
     })
 
     test('stores sessions with no absolute limit, user agent or IP', async () => {
@@ -289,19 +546,23 @@ export function describeSessionStore(
         idleExpiresAt: later(60_000 + 7 * DAY),
       })
       expect(rotated).toBe(true)
-      expect(await ctx.store.findTokenById(ctx.a.environmentId, root.id)).toMatchObject({
-        usedAt: later(60_000),
-        replacedById: child.id,
-      })
+      expect(comparable(await ctx.store.findTokenById(ctx.a.environmentId, root.id))).toMatchObject(
+        comparable({
+          usedAt: later(60_000),
+          replacedById: child.id,
+        })
+      )
       expect((await ctx.store.findToken(ctx.a.environmentId, child.tokenHash))?.token).toEqual({
         ...child,
         replacedById: null,
         usedAt: null,
       })
-      expect(await ctx.store.findById(ctx.a.environmentId, s.id)).toMatchObject({
-        lastActiveAt: later(60_000),
-        idleExpiresAt: later(60_000 + 7 * DAY),
-      })
+      expect(comparable(await ctx.store.findById(ctx.a.environmentId, s.id))).toMatchObject(
+        comparable({
+          lastActiveAt: later(60_000),
+          idleExpiresAt: later(60_000 + 7 * DAY),
+        })
+      )
     })
 
     test('a token rotates once: a second rotation writes nothing', async () => {
@@ -384,10 +645,12 @@ export function describeSessionStore(
           Audit.none('fixture')
         )
       ).toBe(false)
-      expect(await ctx.store.findById(ctx.a.environmentId, s.id)).toMatchObject({
-        revokedAt: later(5_000),
-        revokeReason: 'reuse_detected',
-      })
+      expect(comparable(await ctx.store.findById(ctx.a.environmentId, s.id))).toMatchObject(
+        comparable({
+          revokedAt: later(5_000),
+          revokeReason: 'reuse_detected',
+        })
+      )
       expect(
         await ctx.store.revoke(
           ctx.a.environmentId,
@@ -473,6 +736,80 @@ export function describeSessionStore(
       expect(await ctx.store.listDevicesBefore(ctx.a.environmentId, userId, y.session, 10)).toEqual(
         [{ client: 'web', userAgent: 'x' }]
       )
+    })
+
+    describe('whether an earlier session was bound to a key (ADR 0043)', () => {
+      const KEY = 'K'.repeat(43)
+      const OTHER_KEY = 'O'.repeat(43)
+      const before = (
+        tenant: SessionSuiteTenant,
+        userId: string,
+        from: Pick<NewSession, 'id' | 'createdAt'>,
+        thumbprint = KEY
+      ) => ctx.store.hasBoundSessionBefore(tenant.environmentId, userId, from, thumbprint)
+
+      test('an earlier session of the same key counts, active or ended; a later one and itself do not', async () => {
+        const userId = await ctx.a.user()
+        const first = await seed(ctx.a, {
+          userId,
+          client: 'ios',
+          deviceThumbprint: KEY,
+          createdAt: later(1_000),
+        })
+        const second = await seed(ctx.a, {
+          userId,
+          client: 'ios',
+          deviceThumbprint: KEY,
+          createdAt: later(2_000),
+        })
+        // Nothing began before the first: a session never counts itself, nor a later one.
+        expect(await before(ctx.a, userId, first.session)).toBe(false)
+        expect(await before(ctx.a, userId, second.session)).toBe(true)
+        // Ended, and still in the table: it counts, as an ended session's device does.
+        await ctx.store.revoke(
+          ctx.a.environmentId,
+          first.session.id,
+          'sign_out',
+          later(2_500),
+          Audit.none('fixture')
+        )
+        expect(await before(ctx.a, userId, second.session)).toBe(true)
+      })
+
+      test('another key, an unbound session, another user and another environment never count', async () => {
+        const userId = await ctx.a.user()
+        await seed(ctx.a, {
+          userId,
+          client: 'ios',
+          deviceThumbprint: OTHER_KEY,
+          createdAt: later(1_000),
+        })
+        await seed(ctx.a, { userId, client: 'ios', createdAt: later(1_100) })
+        // Someone else's session with the very key, and the same in another environment.
+        await seed(ctx.a, { client: 'ios', deviceThumbprint: KEY, createdAt: later(1_200) })
+        await seed(ctx.b, { client: 'ios', deviceThumbprint: KEY, createdAt: later(1_300) })
+        const newest = await seed(ctx.a, {
+          userId,
+          client: 'ios',
+          deviceThumbprint: KEY,
+          createdAt: later(5_000),
+        })
+        expect(await before(ctx.a, userId, newest.session)).toBe(false)
+        expect(await before(ctx.a, userId, newest.session, OTHER_KEY)).toBe(true)
+        expect(await before(ctx.b, userId, newest.session)).toBe(false)
+      })
+
+      test('of two sessions of one key created in the same instant, only the later sees the other', async () => {
+        const userId = await ctx.a.user()
+        const [low, high] = [
+          '00000000-0000-7000-8000-0000000000b1',
+          '00000000-0000-7000-8000-0000000000b2',
+        ]
+        const x = await seed(ctx.a, { userId, id: low, client: 'ios', deviceThumbprint: KEY })
+        const y = await seed(ctx.a, { userId, id: high, client: 'ios', deviceThumbprint: KEY })
+        expect(await before(ctx.a, userId, x.session)).toBe(false)
+        expect(await before(ctx.a, userId, y.session)).toBe(true)
+      })
     })
 
     test('revokes all of a user’s sessions except one', async () => {

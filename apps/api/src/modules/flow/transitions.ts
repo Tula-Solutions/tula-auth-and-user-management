@@ -8,6 +8,7 @@ export const FLOW_EVENT_TYPES = [
   'password_reset',
   'second_factor_verified',
   'factor_enrolled',
+  'expired_password_replaced',
 ] as const
 
 /** The kind of a {@link FlowEvent}. */
@@ -20,6 +21,7 @@ export type FlowEvent =
   | { type: 'password_reset' }
   | { type: 'second_factor_verified' }
   | { type: 'factor_enrolled' }
+  | { type: 'expired_password_replaced' }
 
 /** What the next step depends on besides the attempt's kind, its step and the event. */
 export interface FlowContext {
@@ -34,6 +36,13 @@ export interface FlowContext {
    * the attempt completes. Never true together with a non-empty `secondFactors`.
    */
   enrolmentRequired: boolean
+  /**
+   * The attempt is a sign-in that proved a password older than the environment's
+   * `password.expiryDays` allows (ADR 0041): it must set a new one before it completes. Only
+   * a sign-in **with the password** is ever held to it: for another first factor, and for a
+   * sign-up or a reset, it changes nothing.
+   */
+  passwordExpired: boolean
 }
 
 /** Whether an attempt on `status` accepts a first factor proven with `strategy`. */
@@ -59,13 +68,18 @@ function offers(
  * - `sign_in`: `needs_password` or `needs_first_factor` → (`needs_email_verification` when the
  *   user's email is not verified) → (`needs_second_factor` when the user has one, or
  *   `needs_factor_enrolment` when the environment requires one and they have none) →
- *   `complete`. A first factor is accepted on `needs_password` only if it is the password, and
- *   on `needs_first_factor` only if it is one of the strategies the attempt was offered.
+ *   (`needs_new_password` when the password that was proven has expired) → `complete`. A
+ *   first factor is accepted on `needs_password` only if it is the password, and on
+ *   `needs_first_factor` only if it is one of the strategies the attempt was offered.
+ *   **An expired password comes last**, after the second factor or the enrolment: whoever
+ *   holds only an old password must not get to replace the password of an account that has
+ *   a second factor (ADR 0041).
  * - `password_reset`: `needs_new_password` → (`needs_second_factor` or
  *   `needs_factor_enrolment`) → `complete`. An inbox alone never bypasses a second factor.
  *
  * Nothing leads from `needs_second_factor` to `needs_factor_enrolment` or back: a user either
- * has a factor to prove or has one to enrol.
+ * has a factor to prove or has one to enrol. Nothing leads back from `needs_new_password`
+ * either, and on a sign-in only a replaced password leaves it.
  *
  * Adding a sign-in method does not change this function: a new first factor is one more
  * `strategy` (registered in `~/modules/factor/service`), a new second factor one more option.
@@ -83,29 +97,42 @@ export function nextStatus(
   event: FlowEvent,
   context: FlowContext
 ): FlowStatus {
-  const enrolOrComplete = context.enrolmentRequired ? 'needs_factor_enrolment' : 'complete'
-  const afterFactors = context.secondFactors.length > 0 ? 'needs_second_factor' : enrolOrComplete
+  // What a sign-in still owes once its factors are proven: a new password, if the one it
+  // proved has expired. A password event carries its own strategy; every later event of a
+  // sign-in is told by the caller, who kept what the attempt proved.
+  const renewOrComplete =
+    kind === 'sign_in' && context.passwordExpired ? 'needs_new_password' : 'complete'
+  const enrolOr = (last: FlowStatus) =>
+    context.enrolmentRequired ? 'needs_factor_enrolment' : last
+  const afterFactors = (last: FlowStatus) =>
+    context.secondFactors.length > 0 ? 'needs_second_factor' : enrolOr(last)
   if (event.type === 'first_factor_verified') {
     if (kind === 'sign_in' && offers(status, event.strategy, context)) {
-      return context.emailVerified ? afterFactors : 'needs_email_verification'
+      // Only the password can be too old: another first factor never stops for it.
+      const last = event.strategy === 'password' ? renewOrComplete : 'complete'
+      return context.emailVerified ? afterFactors(last) : 'needs_email_verification'
     }
   } else if (event.type === 'email_verified') {
     if (kind === 'sign_up' && status === 'needs_email_verification') {
       // The account is created by this event: it cannot have a factor yet, only need one.
-      return enrolOrComplete
+      return enrolOr('complete')
     }
     if (kind === 'sign_in' && status === 'needs_email_verification') {
-      return afterFactors
+      return afterFactors(renewOrComplete)
     }
   } else if (event.type === 'password_reset') {
     if (kind === 'password_reset' && status === 'needs_new_password') {
-      return afterFactors
+      return afterFactors('complete')
     }
   } else if (event.type === 'second_factor_verified') {
     if (kind !== 'sign_up' && status === 'needs_second_factor') {
-      return 'complete'
+      return renewOrComplete
     }
-  } else if (status === 'needs_factor_enrolment') {
+  } else if (event.type === 'factor_enrolled') {
+    if (status === 'needs_factor_enrolment') {
+      return renewOrComplete
+    }
+  } else if (kind === 'sign_in' && status === 'needs_new_password') {
     return 'complete'
   }
   throw new AuthError('flow.invalid_step')
@@ -134,5 +161,6 @@ export function assertAccepts(
     emailVerified: false,
     secondFactors: [],
     enrolmentRequired: false,
+    passwordExpired: false,
   })
 }

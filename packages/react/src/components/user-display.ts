@@ -12,13 +12,15 @@ export function fullName(user: User): string | null {
 
 /**
  * @param user - The user.
- * @returns One or two capital letters for an avatar: from the name, else from the email.
+ * @returns One or two capital letters for an avatar: from the name, else from the email, else
+ *   a question mark (an account made through X or Facebook has no address, and may have no
+ *   name either).
  */
 export function initials(user: User): string {
   const letters = [user.firstName, user.lastName]
     .map((part) => [...(part ?? '').trim()][0])
     .filter((letter): letter is string => letter !== undefined)
-  const chosen = letters.length > 0 ? letters : [[...user.email][0] ?? '?']
+  const chosen = letters.length > 0 ? letters : [[...(user.email ?? '')][0] ?? '?']
   return chosen.join('').toUpperCase()
 }
 

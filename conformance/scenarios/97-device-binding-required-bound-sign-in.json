@@ -1,0 +1,323 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "a profile that requires a device key lets a bound native sign-in through",
+  "description": "Device binding (ADR 0043). Under `deviceBinding: \"required\"` a native app that brings a DPoP proof signs up as it does under `optional`: the start is asked for the server's nonce, the repeated start binds the session the attempt will end in, the access token carries the key's thumbprint as cnf.jkt, the session list says `deviceBound: true` (and nothing of the key), and a refresh needs a proof by the same key. The settings are put back afterwards, even when a step fails.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    }
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "appSettings": "settings.app",
+        "passwordSettings": "settings.password",
+        "signInSettings": "settings.signIn",
+        "signUpSettings": "settings.signUp",
+        "urlsSettings": "settings.urls",
+        "auditSettings": "settings.audit",
+        "notificationsSettings": "settings.notifications",
+        "mfaSettings": "settings.mfa",
+        "passkeysSettings": "settings.passkeys",
+        "smsSettings": "settings.sms",
+        "emailsSettings": "settings.emails"
+      }
+    },
+    {
+      "name": "the mobile profile requires a device key",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{appSettings}}"
+          },
+          "password": {
+            "$json": "{{passwordSettings}}"
+          },
+          "signIn": {
+            "$json": "{{signInSettings}}"
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "$json": "{{urlsSettings}}"
+          },
+          "audit": {
+            "$json": "{{auditSettings}}"
+          },
+          "notifications": {
+            "$json": "{{notificationsSettings}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "$json": "{{passkeysSettings}}"
+          },
+          "sms": {
+            "$json": "{{smsSettings}}"
+          },
+          "emails": {
+            "$json": "{{emailsSettings}}"
+          },
+          "sessions": {
+            "profiles": {
+              "mobile": {
+                "deviceBinding": "required"
+              }
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "sessions": {
+              "profiles": {
+                "web": {
+                  "deviceBinding": "none"
+                },
+                "mobile": {
+                  "deviceBinding": "required"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "a start that brings a proof with no nonce is asked for the nonce",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        },
+        "proof": {
+          "key": "device"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "code": "device.nonce_required"
+        },
+        "headers": {
+          "DPoP-Nonce": "$any"
+        }
+      },
+      "captureHeaders": {
+        "nonce": "DPoP-Nonce"
+      }
+    },
+    {
+      "name": "the start, repeated with the nonce, is accepted",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        },
+        "proof": {
+          "key": "device",
+          "nonce": "{{nonce}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_up",
+          "step": {
+            "status": "needs_email_verification"
+          }
+        },
+        "headers": {
+          "DPoP-Nonce": "$any"
+        }
+      },
+      "capture": {
+        "signUpId": "id",
+        "signUpSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "code"
+      }
+    },
+    {
+      "name": "the code completes the sign-up; the access token names the key by its thumbprint",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signUpSecret}}",
+        "body": {
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          },
+          "session": {
+            "sessionId": "$any"
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "cnf": {
+              "jkt": {
+                "$matches": "^[A-Za-z0-9_-]{43}$"
+              }
+            }
+          }
+        },
+        "headers": {
+          "DPoP-Nonce": "$any"
+        }
+      },
+      "capture": {
+        "sessionId": "session.sessionId",
+        "accessToken": "session.accessToken",
+        "refreshToken": "session.refreshToken"
+      },
+      "captureHeaders": {
+        "nonce": "DPoP-Nonce"
+      }
+    },
+    {
+      "name": "the session list marks the session as bound to a device key, with a yes and nothing more",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/sessions",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "id": "{{sessionId}}",
+              "current": true,
+              "deviceBound": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "a refresh with no proof is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/refresh",
+        "body": {
+          "refreshToken": "{{refreshToken}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "device.proof_invalid"
+        }
+      }
+    },
+    {
+      "name": "a refresh with a proof of the session's key rotates the token",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/refresh",
+        "body": {
+          "refreshToken": "{{refreshToken}}"
+        },
+        "proof": {
+          "key": "device",
+          "nonce": "{{nonce}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "sessionId": "{{sessionId}}",
+          "refreshToken": {
+            "$not": "{{refreshToken}}"
+          }
+        },
+        "claims": {
+          "accessToken": {
+            "cnf": {
+              "jkt": {
+                "$matches": "^[A-Za-z0-9_-]{43}$"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

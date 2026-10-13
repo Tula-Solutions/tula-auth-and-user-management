@@ -1,5 +1,5 @@
 import { AUTHENTICATION_METHODS, type SessionClient } from '@tula/contract'
-import type { Recorded } from '~/ports/activity-log'
+import type { Activity, Recorded } from '~/ports/activity-log'
 
 /** Why a session ended early. */
 export type SessionRevokeReason =
@@ -43,6 +43,23 @@ export interface SessionRecord {
   factorVerifiedAt: Date | null
   /** Every method proven for this session so far (the access token's `amr`). */
   authMethods: string[]
+  /**
+   * What the environment's `before_token` hook last answered for this session (ADR 0035), or
+   * `null` for none. Asked when the session is created and at each authentication after it,
+   * and issued from here in between: a refresh asks nobody.
+   *
+   * **Untrusted when read**: `unknown` values on purpose. The service checked them when it
+   * wrote them and checks them again before it issues them (`CustomClaims.stored`), because a
+   * row is not only what this version of the service wrote.
+   */
+  hookClaims: Record<string, unknown> | null
+  /**
+   * The key the session is bound to (ADR 0043): the RFC 7638 thumbprint of the public key its
+   * client presented when the sign-in started, or `null` for a session that is not bound. A
+   * refresh of a bound session needs a proof signed by that key. **Fixed at creation**: no
+   * method of the store changes it, and the database refuses a statement that would.
+   */
+  deviceThumbprint: string | null
   revokedAt: Date | null
   revokeReason: SessionRevokeReason | null
   createdAt: Date
@@ -63,13 +80,25 @@ export interface RefreshTokenRecord {
 
 /**
  * A session to store. Without `factorVerifiedAt` and `authMethods` it has proven nothing;
- * without a `type` it is `hybrid`.
+ * without a `type` it is `hybrid`; without `hookClaims` it has none; without a
+ * `deviceThumbprint` it is not bound to a key.
  */
 export type NewSession = Omit<
   SessionRecord,
-  'revokedAt' | 'revokeReason' | 'factorVerifiedAt' | 'authMethods' | 'type'
+  | 'revokedAt'
+  | 'revokeReason'
+  | 'factorVerifiedAt'
+  | 'authMethods'
+  | 'type'
+  | 'hookClaims'
+  | 'deviceThumbprint'
 > &
-  Partial<Pick<SessionRecord, 'factorVerifiedAt' | 'authMethods' | 'type'>>
+  Partial<
+    Pick<
+      SessionRecord,
+      'factorVerifiedAt' | 'authMethods' | 'type' | 'hookClaims' | 'deviceThumbprint'
+    >
+  >
 
 /**
  * The concurrent-session rule a new session is created under (ADR 0028).
@@ -106,6 +135,39 @@ export interface Authentication {
   at: Date
   /** What was proven; added to the session's `authMethods` (no duplicates, order kept). */
   methods: readonly string[]
+  /**
+   * The session's hook claims from now on. **Required**: an authentication always replaces
+   * what was stored (the claims were answered for what the session had proven before), so
+   * every caller says what with, even when that is nothing.
+   */
+  hookClaims: HookClaimsWrite
+}
+
+/** What an authentication stores as the session's hook claims. */
+export interface HookClaimsWrite {
+  /** The claims the hook answered just now; `null` for none. */
+  claims: Record<string, unknown> | null
+  /**
+   * The methods the session had proven when the hook was asked (before this authentication's
+   * are added). When given, **nothing at all is written** unless the session's methods are
+   * still exactly these, as a set: another authentication got in between, and the claims
+   * would be for a session that no longer is what the hook was told. Left out when no hook
+   * was asked: "none" is right whatever the session has proven.
+   */
+  ifAuthMethods?: readonly string[]
+}
+
+/**
+ * Whether two lists of methods are the same set. Shared by every adapter so they agree on
+ * when {@link HookClaimsWrite.ifAuthMethods} holds.
+ *
+ * @param x - One list.
+ * @param y - The other.
+ * @returns `true` when each holds exactly the other's members, in any order.
+ */
+export function sameMethods(x: readonly string[], y: readonly string[]): boolean {
+  const [left, right] = [new Set(x), new Set(y)]
+  return left.size === right.size && [...left].every((method) => right.has(method))
 }
 
 /**
@@ -318,6 +380,29 @@ export interface SessionStore {
   ): Promise<SessionDevice[]>
 
   /**
+   * Whether a session of the user that began before `session` (see {@link beganBefore}),
+   * **active or ended** and still in the table, was bound to the device key with this
+   * thumbprint. The same horizon as {@link listDevicesBefore}: it is what decides whether a
+   * sign-in bound to a key is announced as coming from a new device (ADR 0023, ADR 0043).
+   *
+   * It answers a boolean on purpose: no thumbprint ever leaves the store through it, and
+   * nothing may be built on it that a key earns (a skipped factor, a longer session). It
+   * decides whether an email is sent, and nothing else.
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @param session - The session to look back from; it never counts itself.
+   * @param thumbprint - The key's thumbprint, as the session row holds it.
+   * @returns `true` when an earlier session of the user was bound to that key.
+   */
+  hasBoundSessionBefore(
+    environmentId: string,
+    userId: string,
+    session: Pick<SessionRecord, 'id' | 'createdAt'>,
+    thumbprint: string
+  ): Promise<boolean>
+
+  /**
    * Revoke one session. Revoking the session invalidates its whole refresh-token chain.
    *
    * @param environmentId - The session's environment.
@@ -337,14 +422,17 @@ export interface SessionStore {
 
   /**
    * Record that the user proved a factor again for a session: move `factorVerifiedAt` to
-   * `authentication.at` and add its methods ({@link mergeAuthMethods}). Guarded: only a session
-   * that is still active at that moment is changed.
+   * `authentication.at`, add its methods ({@link mergeAuthMethods}) and replace the session's
+   * hook claims, all in one write. Guarded: only a session that is still active at that
+   * moment is changed, and, when `authentication.hookClaims.ifAuthMethods` is given, only one
+   * whose methods are still those ({@link sameMethods}).
    *
    * @param environmentId - The session's environment.
    * @param id - Session id.
-   * @param authentication - When, and what was proven.
+   * @param authentication - When, what was proven, and the hook claims from now on.
    * @param activity - Recorded in the same transaction, only if the session was changed.
-   * @returns The updated session, or `null` when it does not exist or has ended.
+   * @returns The updated session, or `null` when nothing was written: it does not exist, has
+   *   ended, or has proven something else than `ifAuthMethods` says.
    */
   recordAuthentication(
     environmentId: string,
@@ -352,6 +440,18 @@ export interface SessionStore {
     authentication: Authentication,
     activity: Recorded
   ): Promise<SessionRecord | null>
+
+  /**
+   * Put on record that a refresh of a device-bound session was refused for its proof
+   * (ADR 0043). **Nothing about the session changes**: it is not ended, not touched and no
+   * token of it is marked. The caller decides how often this is called (at most once a minute
+   * per session); the store writes what it is given.
+   *
+   * @param environmentId - The session's environment.
+   * @param id - Session id.
+   * @param activity - Recorded only if the session exists in that environment.
+   */
+  reportRefusedProof(environmentId: string, id: string, activity: Activity): Promise<void>
 
   /**
    * Record activity on a session that is checked on every request (a `stateful` one): move

@@ -147,10 +147,45 @@ const CLIMBERS: Record<string, string[]> = {
   'packages/create-tula/scripts/sync-templates.ts': [
     'examples/react-vite',
     'examples/nextjs-app-router',
+    // The native examples are no workspace packages, and two files of the Kotlin SDK's build
+    // go into the Compose template: named in the package's turbo.json.
+    'examples/expo/app',
+    'examples/swiftui',
+    'examples/compose',
+    'native/android/build.gradle.kts',
+    'native/android/gradle.properties',
     'package.json',
   ],
+  // It scaffolds against this checkout: that the Swift package is there, the Kotlin build's
+  // properties, and that each module the Compose template includes has a build file.
+  'packages/create-tula/src/native.test.ts': [
+    'examples/swiftui',
+    'native/swift/Package.swift',
+    'native/android/gradle.properties',
+    'native/android/tula-auth/build.gradle.kts',
+    'native/android/tula-auth-ui/build.gradle.kts',
+    'native/android/tula-auth-android/build.gradle.kts',
+    'native/android/tula-auth-compose/build.gradle.kts',
+  ],
   'packages/mcp/scripts/sync-scaffolds.ts': ['packages/create-tula/templates'],
-  'packages/mcp/src/scaffold.test.ts': ['examples/react-vite', 'examples/nextjs-app-router'],
+  // Copies the native SDKs' sources into the package when it is built (ADR 0063).
+  'packages/expo-screens/scripts/vendor-native.ts': [
+    'native/swift/Sources/TulaAuth',
+    'native/swift/Sources/TulaAuthUI',
+    'native/android/tula-auth/src/main/kotlin',
+    'native/android/tula-auth-ui/src/main/kotlin',
+    'native/android/tula-auth-android/src/main/kotlin',
+    'native/android/tula-auth-compose/src/main/kotlin',
+  ],
+  // Holds that the copies made by that script are ignored by git.
+  'packages/expo-screens/src/native-screens-sources.test.ts': ['.gitignore'],
+  'packages/mcp/src/scaffold.test.ts': [
+    'examples/react-vite',
+    'examples/nextjs-app-router',
+    'examples/expo/app',
+    'examples/swiftui',
+    'examples/compose',
+  ],
   // Points the bundler at the workspace root; reads nothing through it itself.
   'examples/nextjs-app-router/next.config.ts': [],
 }
@@ -295,6 +330,38 @@ describe('a cached task is invalidated by every file it reaches', () => {
       }
     }
   )
+
+  // `conformance/client-journeys.json` is in no package, and a suite reaches it through
+  // `@tula/conformance`'s loader, not by a path of its own that the scan above could follow.
+  // A change to a decision must still run every suite that is held to it again.
+  test('the client-journey list is in the cache key of every package that reads it', async () => {
+    const list = 'conformance/client-journeys.json'
+    const owner = 'packages/conformance'
+    const readers: string[] = []
+    for (const workspace of all) {
+      let reads = false
+      for await (const file of new Glob('**/*.{ts,tsx}').scan({ cwd: join(root, workspace.dir) })) {
+        if (!SKIPPED.test(`/${file}`)) {
+          const source = await Bun.file(join(root, workspace.dir, file)).text()
+          reads ||= /\bloadClientJourneys\b|client-journeys\.json/.test(source)
+        }
+      }
+      if (!reads) {
+        continue
+      }
+      readers.push(workspace.dir)
+      const throughOwner = workspace.dir !== owner && dependenciesOf(workspace, all).has(owner)
+      for (const task of cachedTasksOf(workspace)) {
+        expect({
+          reader: workspace.dir,
+          task,
+          covered: throughOwner || inputsCover(workspace.turbo?.tasks?.[task]?.inputs, list),
+        }).toEqual({ reader: workspace.dir, task, covered: true })
+      }
+    }
+    // The package that owns the loader, and the suite of `@tula/core`.
+    expect(readers).toEqual(expect.arrayContaining([owner, 'apps/api']))
+  })
 
   // The check itself, on a package that is not on disk: what it must and must not accept.
   describe('the check', () => {

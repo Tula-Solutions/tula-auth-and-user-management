@@ -1,4 +1,5 @@
 export {
+  type AndroidAppConfig,
   type AppleProviderConfig,
   defineConfig,
   type EnvironmentConfig,
@@ -6,8 +7,14 @@ export {
   type EnvironmentKind,
   type EnvironmentSettingsConfig,
   env,
+  type GoogleProviderConfig,
+  type HookConfig,
+  type HooksConfig,
   hashEnvironmentConfig,
+  type IosAppConfig,
   isSecretRef,
+  type MicrosoftProviderConfig,
+  type NativeAppConfig,
   type OAuthClientConfig,
   type ProvidersConfig,
   parseConfig,
@@ -19,6 +26,7 @@ export {
   selectEnvironment,
   type TulaConfig,
   type TulaConfigInput,
+  type WebhookEndpointConfig,
 } from './config'
 export {
   ConfigError,

@@ -1,86 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { formatResult, loadScenarios, runScenario, type Target } from '@tula/conformance'
-import { mockOAuthProviders } from '~/adapters/oauth/mock'
-import { createApp } from '~/index'
+import { formatResult, loadScenarios, runScenario } from '@tula/conformance'
+import { EVENT_SCHEMAS } from '@tula/contract'
 import * as Settings from '~/modules/settings/service'
-import { createTestDeps, seedApiKey, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
-
-const PUBLISHABLE_KEY = 'tula_pk_dev_conformance00000000000000000000'
-const SECRET_KEY = 'tula_sk_dev_conformance00000000000000000000'
-/** A subject that leads with a 6-digit code, as every code email's does. */
-const CODE_SUBJECT = /^(\d{6})\b/
-/** A sign-in link as it appears in an email's text: a URL with the link token in its fragment. */
-const EMAIL_LINK = /https?:\/\/\S+#\S*tula_link=\S+/
-
-/**
- * A fresh in-process server per scenario: memory adapters, a clock that `wait` steps advance,
- * and an outbox the email steps read. The requests are the same ones `bun run conformance`
- * sends to a live server.
- */
-async function inProcessTarget(): Promise<Target & { deps: TestDeps }> {
-  // The runner gives each scenario its own client address through X-Forwarded-For.
-  // The OAuth scenarios need a provider that answers without a network: the mock provider, wired
-  // as `container.ts` wires it for `OAUTH_MOCK_PROVIDER=true`.
-  const deps = createTestDeps({ config: { ...TEST_CONFIG, trustProxy: true, oauthMock: true } })
-  Object.assign(deps, {
-    oauth: mockOAuthProviders({
-      secretBox: deps.secretBox,
-      clock: deps.clock,
-      publicUrl: deps.config.publicUrl,
-    }),
-  })
-  deps.environments.add({
-    id: TEST_TENANT.environmentId,
-    projectId: TEST_TENANT.projectId,
-    kind: 'development',
-    createdAt: deps.clock.now(),
-  })
-  await seedApiKey(deps, PUBLISHABLE_KEY)
-  await seedApiKey(deps, SECRET_KEY)
-  const app = createApp(deps)
-  // A second instance of the same deployment: its own app over the same stores, as two
-  // processes share one Postgres and one Redis. `multi-instance.test.ts` covers the Redis
-  // adapters themselves; here the point is that the shared scenario runs in process too.
-  const second = createApp(deps)
-  return {
-    baseUrl: 'http://tula.test',
-    publishableKey: PUBLISHABLE_KEY,
-    secretKey: SECRET_KEY,
-    fetch: async (request) => app.request(request),
-    second: {
-      baseUrl: 'http://second.tula.test',
-      fetch: async (request) => second.request(request),
-    },
-    emailCode: async (to) => {
-      // The newest email that carries a code: a security notice (ADR 0023) can follow it.
-      const message = deps.mailer.outbox.findLast(
-        (sent) => sent.to === to && CODE_SUBJECT.test(sent.subject)
-      )
-      const code = CODE_SUBJECT.exec(message?.subject ?? '')?.[1]
-      if (!code) {
-        throw new Error(`no email with a code was sent to ${to}`)
-      }
-      return code
-    },
-    emailLink: async (to) => {
-      // The link travels in the email that carries the code.
-      const message = deps.mailer.outbox.findLast(
-        (sent) => sent.to === to && CODE_SUBJECT.test(sent.subject)
-      )
-      const link = EMAIL_LINK.exec(message?.text ?? '')?.[0]
-      if (!link) {
-        throw new Error(`no email with a link was sent to ${to}`)
-      }
-      return link
-    },
-    wait: async (ms) => {
-      deps.clock.advance(ms)
-    },
-    // Authenticator codes are computed for the clock the server reads, not the wall clock.
-    now: () => deps.clock.now().getTime(),
-    deps,
-  }
-}
+import { TEST_TENANT } from '~/testing'
+import { inProcessTarget } from '~/testing/in-process-target'
 
 const scenarios = await loadScenarios()
 
@@ -97,7 +20,25 @@ describe('conformance scenarios, in process', () => {
       'sign-up for an existing address',
       'verification code attempts',
       'password reset',
+      // Files 100 to 109: the loader sorts file names as text, so they run here, and 110
+      // to 115 after file 11.
+      'native Google sign-up and sign-in',
+      'native Google sign-in and existing accounts',
+      'native Google ID token refused',
+      'native Google ID token used once',
+      'native Apple sign-up and sign-in',
+      'native Apple sign-in and existing accounts',
+      'native Apple ID token refused',
+      'native Apple ID token used once',
+      'an agent proposes a ban and a person approves it',
+      'an agent proposes lifting a ban and a person approves it',
       'two instances',
+      'an agent proposes ending a session and a person approves it',
+      'an agent proposes switching a provider off and a person approves it',
+      'a sign-in test runs where the environment allows it',
+      'an email address for an account without one',
+      'an administrator gives an account an email address',
+      'accounts that depend on a provider are counted before it is switched off',
       'environment settings',
       'attempt binding',
       'email code sign-in',
@@ -133,6 +74,59 @@ describe('conformance scenarios, in process', () => {
       'admin user sessions',
       'dashboard credential rules',
       'admin user authentication',
+      'webhook delivered and signed',
+      'webhook endpoint on a refused address',
+      'webhook retried after a 500',
+      'webhook secret rotated with an overlap',
+      'sign-up denied by a hook',
+      'hook that times out',
+      'jwt template custom claims',
+      'sign-in denied by a hook',
+      'claims added by a hook',
+      'sign-in hook that times out',
+      'Microsoft sign-up and sign-in',
+      'Microsoft account linking',
+      'phone number on an account',
+      'Discord sign-up and sign-in',
+      'Discord account linking',
+      'LinkedIn sign-up and sign-in',
+      'LinkedIn account linking',
+      'text messages to a blocked destination',
+      'text messages past the daily limit',
+      'X sign-up and sign-in',
+      'X never links by address',
+      'Facebook sign-up and sign-in',
+      'Facebook never links by address',
+      'password history',
+      'email wording',
+      'sign in with a texted code',
+      'a texted sign-in code for an unknown number',
+      'a texted sign-in code after the method is switched off',
+      'native app identity',
+      'password expiry',
+      'text message wording',
+      'a texted code as the second factor',
+      'a texted code is never used beside an authenticator app',
+      'a texted sign-in code is not completed by a texted second step',
+      'a session bound to a device key is refreshed with a proof',
+      "a bound session's refresh without a proof is refused and changes nothing",
+      "a bound session's refresh with a proof of another key is refused",
+      'a proof is accepted once',
+      'a proof with a stale nonce is asked for a fresh one',
+      'the reuse grace window still requires a proof',
+      'a session that is not bound behaves as before',
+      'provider sign-in returned to an app link',
+      'provider sign-in returned to a custom scheme',
+      'app link or custom scheme that is not listed',
+      'custom scheme refused for a provider without PKCE',
+      'passkey registration from a native app',
+      'passkey sign-in from a native app',
+      'passkey sign-in from an unregistered app',
+      'passkey sign-in with a fingerprint that is not the registered one',
+      'a profile that requires a device key refuses a native sign-in without one',
+      'a profile that requires a device key lets a bound native sign-in through',
+      'a profile that requires a device key leaves a browser alone',
+      'a profile with no device binding refuses a proof',
     ])
   })
 
@@ -152,6 +146,14 @@ describe('conformance scenarios, in process', () => {
       // A live environment is shared by every scenario that follows: whatever a scenario
       // changed in the settings, its cleanup has put back.
       expect(await Settings.current(target.deps, TEST_TENANT)).toEqual(before)
+      // Everything the scenario recorded is a valid event of its type (ADR 0012), and the
+      // payload lost nothing on the way: a detail a call site records and the contract does
+      // not name would be missing from `events` and fail here.
+      const { entries, events } = target.deps.activityLog
+      for (const event of events) {
+        expect(EVENT_SCHEMAS[event.type].parse(event)).toEqual(event as never)
+      }
+      expect(events.map((event) => event.data)).toEqual(entries.map((entry) => entry.data))
     }
   )
 
@@ -182,6 +184,38 @@ describe('conformance scenarios, in process', () => {
     expect(two && (await runScenario(two.scenario, counted))).toMatchObject({ status: 'passed' })
     expect(counts.first).toBeGreaterThan(5)
     expect(counts.second).toBeGreaterThan(5)
+  })
+
+  test('a scenario that needs a webhook receiver is skipped, not failed, by a target without one', async () => {
+    const webhook = scenarios.find(({ scenario }) => scenario.needsWebhookReceiver)
+    const target = { ...(await inProcessTarget()), webhooks: undefined }
+    expect(webhook && (await runScenario(webhook.scenario, target))).toMatchObject({
+      status: 'skipped',
+      steps: [],
+      reason: 'needs a webhook receiver the server can reach',
+    })
+    expect(target.deps.activityLog.entries).toEqual([])
+  })
+
+  test('the webhook scenario’s delivery left the server through the outbound guard and was recorded', async () => {
+    const webhook = scenarios.find(
+      ({ scenario }) => scenario.name === 'webhook delivered and signed'
+    )
+    const target = await inProcessTarget()
+    expect(webhook && (await runScenario(webhook.scenario, target))).toMatchObject({
+      status: 'passed',
+    })
+    // Every event of the run is settled: the outbox does not grow.
+    expect(target.deps.activityLog.outbox.length).toBeGreaterThan(0)
+    const waiting = await target.deps.webhookDeliveries.pendingEvents(
+      TEST_TENANT.environmentId,
+      100
+    )
+    // What was recorded after the last round (the switch-off and the removal) still waits.
+    expect(waiting.map((event) => event.type)).toEqual([
+      'webhook_endpoint.updated',
+      'webhook_endpoint.deleted',
+    ])
   })
 
   test('a scenario that needs a secret key is skipped, not failed, without one', async () => {

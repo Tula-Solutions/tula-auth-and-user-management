@@ -5,7 +5,9 @@ export {
   type AdminFetch,
   type AdminOperationId,
   type AdminResponse,
+  type AgentClientOptions,
   createAdminClient,
+  createAgentClient,
   createInstanceClient,
   DEFAULT_TIMEOUT_MS,
   etagRevision,
@@ -32,3 +34,19 @@ export {
   type Operations as AdminOperations,
   type Schemas as AdminSchemas,
 } from './generated/api.gen'
+export {
+  HOOK_QUESTION_TYPE_NAMES,
+  type TulaHookAnswer,
+  type TulaHookClaimsAnswer,
+  type TulaHookQuestion,
+  verifyHook,
+} from './hook'
+export {
+  type TulaWebhookEvent,
+  type VerifyWebhookOptions,
+  verifyWebhook,
+  WEBHOOK_MAX_SECRETS,
+  WEBHOOK_MAX_SIGNATURES,
+  type WebhookHeaders,
+  type WebhookSecrets,
+} from './webhook'

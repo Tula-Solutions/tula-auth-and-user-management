@@ -1,0 +1,252 @@
+import type { Recorded } from '~/ports/activity-log'
+
+/** A webhook endpoint as stored (ADR 0034). */
+export interface WebhookEndpointRecord {
+  id: string
+  projectId: string
+  environmentId: string
+  /** Where events are posted. Judged by the outbound guard when saved and at every delivery. */
+  url: string
+  /** Names from the contract's `ACTIVITY_TYPES`. */
+  eventTypes: string[]
+  /**
+   * The signing secret, sealed (`~/lib/secret-box`, bound to environment and endpoint id).
+   * Never leaves the API after the response that created the endpoint.
+   */
+  secret: string
+  /**
+   * The secret a rotation replaced, sealed for the previous slot (bound to environment,
+   * endpoint id **and** the slot, so a ciphertext moved between the two columns does not
+   * open). `null` unless a rotation's overlap is under way, or has ended and the worker has
+   * not cleared it yet. Whether it still signs is judged from
+   * {@link WebhookEndpointRecord.previousSecretExpiresAt} and the clock, never from its
+   * presence.
+   */
+  previousSecret: string | null
+  /** When the previous secret stops signing. Set exactly when `previousSecret` is. */
+  previousSecretExpiresAt: Date | null
+  enabled: boolean
+  /**
+   * Why the server switched it off; `null` while it is on and when an administrator did.
+   */
+  disabledReason: WebhookDisabledReason | null
+  /**
+   * When the current run of failed requests began: no success since, and no silence between
+   * two failures longer than the service allows. `null` when the last request that was
+   * answered succeeded. What "keeps failing" is measured from.
+   */
+  failingSince: Date | null
+  /**
+   * When a request to it last failed; `null` when the last one that was answered succeeded.
+   * A failure long after this does not continue the run: it begins a new one.
+   */
+  lastFailedAt: Date | null
+  createdAt: Date
+  updatedAt: Date
+}
+
+/** An endpoint's run of failed requests: both set while one is under way, both `null` otherwise. */
+export interface WebhookEndpointHealth {
+  failingSince: Date | null
+  lastFailedAt: Date | null
+}
+
+/** A secret rotation, as the store writes it: every value already sealed. */
+export interface WebhookSecretRotation {
+  /**
+   * The sealed current secret the caller read and re-sealed as `previousSecret`. The rotation
+   * is written only over a row that still holds exactly this, so the previous slot can only
+   * ever receive the secret that was signing.
+   */
+  expectedSecret: string
+  /** The new secret, sealed for the current slot. */
+  secret: string
+  /** The secret being replaced, sealed for the previous slot. */
+  previousSecret: string
+  /** When the replaced secret stops signing. */
+  previousSecretExpiresAt: Date
+}
+
+/** Why the server switches an endpoint off by itself. */
+export type WebhookDisabledReason = 'failing' | 'gone'
+
+/** The fields of an endpoint an update may change. The secret and the id are not among them. */
+export interface WebhookEndpointChanges {
+  url?: string
+  eventTypes?: string[]
+  enabled?: boolean
+  /**
+   * Forget what the worker held against the endpoint (`failingSince`, `lastFailedAt`,
+   * `disabledReason`): it is
+   * being switched on again, or given another address.
+   */
+  resetHealth?: true
+}
+
+/** Webhook endpoints, always read and written inside one environment. */
+export interface WebhookEndpointStore {
+  /**
+   * @param environmentId - The environment to look in.
+   * @returns Its endpoints, oldest first.
+   */
+  list(environmentId: string): Promise<WebhookEndpointRecord[]>
+
+  /**
+   * @param environmentId - The environment to look in.
+   * @param id - The endpoint.
+   * @returns The endpoint, or `null` when the environment has none with that id.
+   */
+  find(environmentId: string, id: string): Promise<WebhookEndpointRecord | null>
+
+  /**
+   * Store a new endpoint.
+   *
+   * @param record - The endpoint, its secret already sealed.
+   * @param activity - Recorded in the same transaction.
+   * @returns The row as stored.
+   */
+  insert(record: WebhookEndpointRecord, activity: Recorded): Promise<WebhookEndpointRecord>
+
+  /**
+   * Change an endpoint.
+   *
+   * @param environmentId - The environment.
+   * @param id - The endpoint.
+   * @param changes - The fields to set; one left out keeps its value.
+   * @param updatedAt - When the change is made.
+   * @param activity - Recorded in the same transaction, only if the endpoint exists.
+   * @returns The endpoint as it is now, or `null` when the environment has none with that id.
+   */
+  update(
+    environmentId: string,
+    id: string,
+    changes: WebhookEndpointChanges,
+    updatedAt: Date,
+    activity: Recorded
+  ): Promise<WebhookEndpointRecord | null>
+
+  /**
+   * Remove an endpoint, and with it the record of its deliveries.
+   *
+   * @param environmentId - The environment.
+   * @param id - The endpoint.
+   * @param activity - Recorded in the same transaction, only if something was removed.
+   * @returns `false` when the environment has no endpoint with that id.
+   */
+  delete(environmentId: string, id: string, activity: Recorded): Promise<boolean>
+
+  /**
+   * Write an endpoint's run of failures (when it began and when a request last failed, or
+   * `null` for both), **only if the row still holds what the caller read**. The worker's own
+   * bookkeeping: it changes nothing about who can do what and is **not recorded** (ADR 0012).
+   * What it leads to, the endpoint being switched off, is ({@link WebhookEndpointStore.disable}).
+   *
+   * A compare-and-set, because the worker computes the new values from a row it read a while
+   * ago. An administrator may have switched the endpoint on again or given it another address
+   * since (both forget the run), or a delivery sent again may have got through: written
+   * blindly, the worker's next failure would bring the forgotten run back, and could switch
+   * off an endpoint that had just been reset. On `false` the caller reads the row again and
+   * applies its rule to what is there now.
+   *
+   * `updatedAt` does not move: no administrator changed the endpoint.
+   *
+   * @param environmentId - The environment. An endpoint of another is not touched.
+   * @param id - The endpoint.
+   * @param expected - What the caller read: both values must still be exactly these. `null`
+   *   writes over whatever is there, which is right for one case only: a request got through,
+   *   and that ends any run.
+   * @param next - The run as it stands now.
+   * @returns `false` when nothing was written: the endpoint is gone, or its run is no longer
+   *   what was read.
+   */
+  setHealth(
+    environmentId: string,
+    id: string,
+    expected: WebhookEndpointHealth | null,
+    next: WebhookEndpointHealth
+  ): Promise<boolean>
+
+  /**
+   * Replace an endpoint's signing secret, keeping the one it replaces in the previous slot
+   * until `rotation.previousSecretExpiresAt`.
+   *
+   * A compare-and-set, in one statement: the row is written only if its current secret is
+   * still the one the caller read (`rotation.expectedSecret`) **and** no previous secret is
+   * still signing at `at` (none stored, or its end has come: `previous_secret_expires_at <=
+   * at`). That is what keeps an endpoint from ever having three secrets: of two rotations
+   * that arrive together, on one instance or two, one writes and the other gets `null`.
+   *
+   * @param environmentId - The environment. An endpoint of another is not touched.
+   * @param id - The endpoint.
+   * @param rotation - The sealed values, and the sealed secret they were worked out from.
+   * @param at - When the rotation is made: the instant "still signing" is judged by, and the
+   *   endpoint's new `updatedAt`.
+   * @param activity - Recorded in the same transaction, only if the row was written.
+   * @returns The endpoint as it is now, or `null` when nothing was written: the endpoint is
+   *   gone, its secret is no longer the one read, or a previous secret still signs.
+   */
+  rotateSecret(
+    environmentId: string,
+    id: string,
+    rotation: WebhookSecretRotation,
+    at: Date,
+    activity: Recorded
+  ): Promise<WebhookEndpointRecord | null>
+
+  /**
+   * End a rotation's overlap now: delete the previous secret and its end from the row.
+   *
+   * Guarded in the statement: only a previous secret that still signs at `at`
+   * (`previous_secret_expires_at > at`) is revoked. One that has already stopped by itself is
+   * the worker's to clear ({@link WebhookEndpointStore.clearExpiredPreviousSecrets}) and is
+   * not a revocation.
+   *
+   * @param environmentId - The environment. An endpoint of another is not touched.
+   * @param id - The endpoint.
+   * @param at - When; the endpoint's new `updatedAt`.
+   * @param activity - Recorded in the same transaction, only if a secret was revoked.
+   * @returns The endpoint as it is now, or `null` when nothing was written: the endpoint is
+   *   gone, or it has no previous secret that still signs.
+   */
+  revokePreviousSecret(
+    environmentId: string,
+    id: string,
+    at: Date,
+    activity: Recorded
+  ): Promise<WebhookEndpointRecord | null>
+
+  /**
+   * Delete, from the endpoints of one environment, the previous secrets that have stopped
+   * signing (`previous_secret_expires_at <= at`), at most `limit` rows a call.
+   *
+   * The worker's housekeeping, and **not recorded** (ADR 0012): the secret stopped signing at
+   * its end, by the clock, whether or not this has run; the rotation that set that end is what
+   * changed something and is recorded. This only makes sure a ciphertext nothing will ever
+   * open again does not stay in the database. `updatedAt` does not move: no administrator
+   * changed the endpoint.
+   *
+   * @param environmentId - The environment.
+   * @param at - Now.
+   * @param limit - Most rows cleared by this call.
+   * @returns How many endpoints had a previous secret deleted.
+   */
+  clearExpiredPreviousSecrets(environmentId: string, at: Date, limit: number): Promise<number>
+
+  /**
+   * Switch an endpoint off because of what its deliveries did, and say why.
+   *
+   * @param environmentId - The environment.
+   * @param id - The endpoint.
+   * @param reason - Why.
+   * @param at - When.
+   * @param activity - Recorded in the same transaction, only if the endpoint was on.
+   * @returns `false` when the endpoint is gone or was already off: nothing changed.
+   */
+  disable(
+    environmentId: string,
+    id: string,
+    reason: WebhookDisabledReason,
+    at: Date,
+    activity: Recorded
+  ): Promise<boolean>
+}

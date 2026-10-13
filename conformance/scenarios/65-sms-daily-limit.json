@@ -1,0 +1,438 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "text messages past the daily limit",
+  "description": "Once an environment has sent as many text messages in a day (UTC) as its `sms.dailyMessageLimit` allows, nothing more is sent: a request for a code from another user, to another number, of another allowed country, is refused with `rate_limited`, the answer every send limit gives, and the operator's usage counts hold no code for that number's prefix. The client config says nothing about the limit. A code that was texted before the limit was reached still confirms its number. The scenario first sends one message under a high limit and then lowers the limit to one, so that the day is spent whatever the server sent before. Within one run the limit's hourly shares (a quarter of it for the environment, a tenth for a destination) are spent as well, and are counted first: that the day's own count refuses once the hour has passed, with a wait that ends at midnight UTC, cannot be shown over HTTP without waiting an hour and is an API test (`modules/sms/service.test.ts`) and an SDK journey. The last steps put the original settings back.",
+  "needsSecretKey": true,
+  "needsSmsInbox": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "otherEmail": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    },
+    "phone": {
+      "generate": "phone"
+    },
+    "british": "+447700900142"
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "revision": "$any",
+          "settings": {
+            "sms": {
+              "dailyMessageLimit": "$any"
+            }
+          }
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "s_app": "settings.app",
+        "s_password": "settings.password",
+        "s_signIn": "settings.signIn",
+        "s_signUp": "settings.signUp",
+        "s_urls": "settings.urls",
+        "s_audit": "settings.audit",
+        "s_notifications": "settings.notifications",
+        "s_mfa": "settings.mfa",
+        "s_passkeys": "settings.passkeys",
+        "s_sessions": "settings.sessions"
+      }
+    },
+    {
+      "name": "an administrator allows text messages to the United States and the United Kingdom",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{s_app}}"
+          },
+          "password": {
+            "$json": "{{s_password}}"
+          },
+          "signIn": {
+            "$json": "{{s_signIn}}"
+          },
+          "signUp": {
+            "$json": "{{s_signUp}}"
+          },
+          "urls": {
+            "$json": "{{s_urls}}"
+          },
+          "audit": {
+            "$json": "{{s_audit}}"
+          },
+          "notifications": {
+            "$json": "{{s_notifications}}"
+          },
+          "mfa": {
+            "$json": "{{s_mfa}}"
+          },
+          "passkeys": {
+            "$json": "{{s_passkeys}}"
+          },
+          "sessions": {
+            "$json": "{{s_sessions}}"
+          },
+          "sms": {
+            "enabled": true,
+            "allowedCountries": ["US", "GB"],
+            "dailyMessageLimit": 100000
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "sms": {
+              "enabled": true,
+              "allowedCountries": ["US", "GB"],
+              "dailyMessageLimit": 100000
+            }
+          }
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      }
+    },
+    {
+      "name": "Maya starts a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "mayaSignUp": "id",
+        "mayaSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "Maya reads the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "mayaEmailCode"
+      }
+    },
+    {
+      "name": "Maya verifies the address and is signed in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{mayaSignUp}}/verify-email",
+        "attempt": "{{mayaSecret}}",
+        "body": {
+          "code": "{{mayaEmailCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "$any"
+          },
+          "session": {
+            "accessToken": "$any"
+          }
+        }
+      },
+      "capture": {
+        "maya": "session.accessToken",
+        "mayaId": "step.userId"
+      }
+    },
+    {
+      "name": "Sam starts a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{otherEmail}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "samSignUp": "id",
+        "samSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "Sam reads the emailed code",
+      "emailCode": {
+        "to": "{{otherEmail}}",
+        "capture": "samEmailCode"
+      }
+    },
+    {
+      "name": "Sam verifies the address and is signed in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{samSignUp}}/verify-email",
+        "attempt": "{{samSecret}}",
+        "body": {
+          "code": "{{samEmailCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "$any"
+          },
+          "session": {
+            "accessToken": "$any"
+          }
+        }
+      },
+      "capture": {
+        "sam": "session.accessToken",
+        "samId": "step.userId"
+      }
+    },
+    {
+      "name": "Maya asks for a code to her number, and it is sent",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/phone",
+        "body": {
+          "phoneNumber": "{{phone}}"
+        },
+        "accessToken": "{{maya}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "expiresAt": "$any"
+        }
+      }
+    },
+    {
+      "name": "read the texted code",
+      "smsCode": {
+        "to": "{{phone}}",
+        "capture": "code"
+      }
+    },
+    {
+      "name": "the administrator lowers the daily limit to one message: the day is spent",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{s_app}}"
+          },
+          "password": {
+            "$json": "{{s_password}}"
+          },
+          "signIn": {
+            "$json": "{{s_signIn}}"
+          },
+          "signUp": {
+            "$json": "{{s_signUp}}"
+          },
+          "urls": {
+            "$json": "{{s_urls}}"
+          },
+          "audit": {
+            "$json": "{{s_audit}}"
+          },
+          "notifications": {
+            "$json": "{{s_notifications}}"
+          },
+          "mfa": {
+            "$json": "{{s_mfa}}"
+          },
+          "passkeys": {
+            "$json": "{{s_passkeys}}"
+          },
+          "sessions": {
+            "$json": "{{s_sessions}}"
+          },
+          "sms": {
+            "enabled": true,
+            "allowedCountries": ["US", "GB"],
+            "dailyMessageLimit": 1
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "sms": {
+              "enabled": true,
+              "allowedCountries": ["US", "GB"],
+              "dailyMessageLimit": 1
+            }
+          }
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      }
+    },
+    {
+      "name": "the client config still says a number can be added, and nothing about the limit",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/config"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "phone": {
+            "enabled": true
+          }
+        },
+        "bodyExcludes": ["dailyMessageLimit"]
+      }
+    },
+    {
+      "name": "past the limit nothing is sent: another user, another number, another country",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/phone",
+        "body": {
+          "phoneNumber": "{{british}}"
+        },
+        "accessToken": "{{sam}}"
+      },
+      "expect": {
+        "status": 429,
+        "body": {
+          "status": 429,
+          "code": "rate_limited",
+          "params": {
+            "retryAfter": "$any"
+          }
+        }
+      }
+    },
+    {
+      "name": "the operator’s counts hold no code for that number’s prefix",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/sms/usage?days=1",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "days": 1,
+          "since": "$any",
+          "sent": "$any",
+          "used": "$any",
+          "unused": "$any",
+          "truncated": false
+        },
+        "bodyExcludes": ["+44", "{{british}}", "{{phone}}"]
+      }
+    },
+    {
+      "name": "Sam has no number, pending or otherwise",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me",
+        "accessToken": "{{sam}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{samId}}",
+          "phoneNumber": "$absent"
+        }
+      }
+    },
+    {
+      "name": "the code texted before the limit was reached still confirms its number",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/phone/verify",
+        "accessToken": "{{maya}}",
+        "body": {
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{mayaId}}",
+          "phoneNumber": "{{phone}}"
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

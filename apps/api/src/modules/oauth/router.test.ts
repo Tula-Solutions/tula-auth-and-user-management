@@ -5,6 +5,7 @@ import {
   type FlowAttempt,
   type Identity,
   type IdentityLinkStart,
+  OAUTH_PROVIDERS,
   type OAuthProvider,
   type OAuthProviderSettings,
   type OAuthStart,
@@ -17,9 +18,11 @@ import { base32Decode, totp } from '~/lib/totp'
 import * as Audit from '~/modules/audit/service'
 import * as Notices from '~/modules/notice/service'
 import { OAUTH_INVALID_PAGE } from '~/modules/oauth/router'
+import * as DeviceBinding from '~/modules/session/device-binding'
 import { OAuthProviderError } from '~/ports/oauth-provider'
 import type { OAuthProviderRecord } from '~/ports/oauth-provider-store'
 import { createTestDeps, seedApiKey, TEST_TENANT, type TestDeps } from '~/testing'
+import { DPOP_HEADER, generateSoftwareDeviceKey, jwkThumbprint, proofFor } from '~/testing/proofs'
 
 const PK = 'tula_pk_dev_publishable0000000000000000000'
 const SK = 'tula_sk_dev_secret000000000000000000000000'
@@ -85,7 +88,15 @@ function client(
   method: string,
   path: string,
   body?: unknown,
-  options: { key?: string; token?: string; secret?: string; kind?: string; origin?: string } = {}
+  options: {
+    key?: string
+    token?: string
+    secret?: string
+    kind?: string
+    origin?: string
+    /** The `DPoP` header. */
+    dpop?: string
+  } = {}
 ) {
   return app.request(`/v1/client${path}`, {
     method,
@@ -96,6 +107,7 @@ function client(
       ...(options.token && { authorization: `Bearer ${options.token}` }),
       ...(options.secret && { [FLOW_ATTEMPT_HEADER]: options.secret }),
       ...(options.origin && { origin: options.origin }),
+      ...(options.dpop !== undefined && { [DPOP_HEADER]: options.dpop }),
     },
     ...(body !== undefined && { body: JSON.stringify(body) }),
   })
@@ -257,6 +269,46 @@ describe('starting an OAuth sign-in', () => {
     expect(res.status).toBe(403)
     expect(await codeOf(res)).toBe('request.origin_not_allowed')
   })
+
+  // A bug in an adapter is not a provider that is off: it stays the logged 500 it always
+  // was. What changed is only that the URL is built before the attempt is stored.
+  test.each([...OAUTH_PROVIDERS])(
+    '%s: an adapter that throws something of its own while building the URL is a 500, with no attempt stored',
+    async (provider) => {
+      const bodies = {
+        google: {},
+        github: {},
+        apple: {
+          clientSecret: undefined,
+          teamId: 'TEAM123456',
+          keyId: 'KEY1234567',
+          privateKey: await applePrivateKey(),
+        },
+        microsoft: { tenant: 'common' },
+        discord: {},
+        linkedin: {},
+        x: {},
+        facebook: {},
+      }
+      expect((await configure(provider, bodies[provider])).status).toBe(200)
+      const built = spyOn(deps.oauth[provider], 'authorizationUrl').mockImplementation(() => {
+        throw new TypeError('a bug in the adapter')
+      })
+      const created = spyOn(deps.flowAttempts, 'create')
+      const logged = spyOn(logger, 'error').mockImplementation(() => undefined)
+      try {
+        const res = await client('POST', '/sign-ins/oauth', { provider, redirectUrl: REDIRECT })
+        expect(res.status).toBe(500)
+        expect(await codeOf(res)).toBe('internal')
+        expect(built).toHaveBeenCalledTimes(1)
+        expect(created).not.toHaveBeenCalled()
+      } finally {
+        built.mockRestore()
+        created.mockRestore()
+        logged.mockRestore()
+      }
+    }
+  )
 
   test('a sign-in start and the client config offer the enabled providers', async () => {
     await configure('apple', {
@@ -1118,6 +1170,8 @@ describe('admin: provider credentials', () => {
         clientId: 'google-client-id',
         teamId: null,
         keyId: null,
+        tenant: null,
+        additionalClientIds: [],
         callbackUrl: 'http://localhost:3003/v1/oauth/callback/google',
         updatedAt: expect.any(String),
       },
@@ -1131,6 +1185,33 @@ describe('admin: provider credentials', () => {
         provider: 'apple',
         configured: false,
         callbackUrl: 'http://localhost:3003/v1/oauth/callback/apple',
+      }),
+      expect.objectContaining({
+        provider: 'microsoft',
+        configured: false,
+        tenant: null,
+        additionalClientIds: [],
+        callbackUrl: 'http://localhost:3003/v1/oauth/callback/microsoft',
+      }),
+      expect.objectContaining({
+        provider: 'discord',
+        configured: false,
+        callbackUrl: 'http://localhost:3003/v1/oauth/callback/discord',
+      }),
+      expect.objectContaining({
+        provider: 'linkedin',
+        configured: false,
+        callbackUrl: 'http://localhost:3003/v1/oauth/callback/linkedin',
+      }),
+      expect.objectContaining({
+        provider: 'x',
+        configured: false,
+        callbackUrl: 'http://localhost:3003/v1/oauth/callback/x',
+      }),
+      expect.objectContaining({
+        provider: 'facebook',
+        configured: false,
+        callbackUrl: 'http://localhost:3003/v1/oauth/callback/facebook',
       }),
     ])
   })
@@ -1295,6 +1376,36 @@ describe('admin: provider credentials', () => {
       { signIn: { methods: { password: { enabled: false } } } },
       { 'if-match': current.headers.get('etag') ?? '' }
     )
+    expect(res.status).toBe(422)
+    expect(await json(res)).toMatchObject({
+      errors: [
+        { field: 'signIn.methods', message: 'at least one sign-in method must stay enabled' },
+      ],
+    })
+  })
+
+  // Nobody can sign up with a phone number (ADR 0037): an environment whose only method is
+  // the texted code could never gain a user, so that method is no way in by itself.
+  test('the texted code alone is not a way in: refused as the only method, from either side', async () => {
+    const smsOnly = {
+      signIn: { methods: { password: { enabled: false }, smsCode: { enabled: true } } },
+      sms: { enabled: true, allowedCountries: ['US'] },
+      urls: { allowedRedirectUrls: [REDIRECT] },
+    }
+    // With Google enabled the settings are accepted, and Google is then the last way in.
+    await saveSettings(smsOnly)
+    expect((await configure('google', { enabled: false })).status).toBe(422)
+    expect((await admin('DELETE', '/oauth-providers/google')).status).toBe(422)
+    // Beside another method of the settings' own it is fine.
+    await saveSettings({
+      ...smsOnly,
+      signIn: { methods: { password: { enabled: true }, smsCode: { enabled: true } } },
+    })
+    expect((await configure('google', { enabled: false })).status).toBe(200)
+    const current = await admin('GET', '/settings')
+    const res = await admin('PUT', '/settings', smsOnly, {
+      'if-match': current.headers.get('etag') ?? '',
+    })
     expect(res.status).toBe(422)
     expect(await json(res)).toMatchObject({
       errors: [
@@ -1468,5 +1579,45 @@ describe('nothing sensitive leaves', () => {
     for (const spy of spies) {
       spy.mockRestore()
     }
+  })
+})
+
+describe('an OAuth sign-in bound to a device key (ADR 0043)', () => {
+  test('the key the start proved is the session’s: the callback and the exchange bring none', async () => {
+    await configure('google')
+    const key = await generateSoftwareDeviceKey()
+    const dpop = await proofFor(key, {
+      now: deps.clock.now(),
+      path: '/v1/client/sign-ins/oauth',
+      nonce: await DeviceBinding.nonce(deps, TEST_TENANT),
+    })
+    const started = await start('google', { dpop })
+    const returned = fragment(
+      await callback('google', { state: started.state, code: 'provider-code' })
+    )
+    const res = await exchange({
+      ticket: returned.ticket as string,
+      attemptId: returned.attemptId,
+      binding: started.binding,
+    })
+    expect(res.status).toBe(200)
+    const done = await json<FlowAttempt>(res)
+    expect(done.step.status).toBe('complete')
+    const session = await deps.sessions.findById(
+      TEST_TENANT.environmentId,
+      done.session?.sessionId ?? ''
+    )
+    expect(session?.deviceThumbprint).toBe(await jwkThumbprint(key.publicJwk))
+  })
+
+  test('an invalid proof at the start is refused before a provider is looked at', async () => {
+    const res = await client(
+      'POST',
+      '/sign-ins/oauth',
+      { provider: 'google', redirectUrl: REDIRECT },
+      { dpop: 'not.a.proof' }
+    )
+    expect(res.status).toBe(401)
+    expect((await json<{ code: string }>(res)).code).toBe('device.proof_invalid')
   })
 })

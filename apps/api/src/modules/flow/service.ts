@@ -4,7 +4,6 @@ import {
   EMAIL_LINK_TOKEN_PARAM,
   type EmailLinkRequest,
   type EmailLinkResult,
-  EmailVerificationStrategySchema,
   type FirstFactorAttemptRequest,
   type FirstFactorPrepareRequest,
   type FirstFactorStrategy,
@@ -12,8 +11,13 @@ import {
   type FlowAttempt,
   type FlowKind,
   type FlowStep,
+  ID_TOKEN_CLIENT_KINDS,
   type Identity,
   type IdentityLinkStart,
+  type IdTokenProvider,
+  IdTokenProviderSchema,
+  isTestAddress,
+  maskPhoneNumber,
   OAUTH_ERROR_PARAM,
   OAUTH_TICKET_PARAM,
   type OAuthExchangeRequest,
@@ -25,8 +29,12 @@ import {
   type PasskeyRequestOptions,
   type PasswordResetRequest,
   type PasswordResetStartRequest,
+  PreparedFirstFactorStrategySchema,
+  PreparedSecondFactorMethodSchema,
+  parsePhoneNumber,
   type SecondFactorMethod,
   SecondFactorMethodSchema,
+  type SecondFactorPrepareRequest,
   type SessionClient,
   SessionClientSchema,
   type SignInStartRequest,
@@ -35,26 +43,37 @@ import {
 } from '@tula/contract'
 import { z } from 'zod'
 import type { Deps, Tenant } from '~/dependencies'
-import { AuthError, InvalidEmailError, RateLimitError, ValidationError } from '~/exceptions'
+import {
+  AuthError,
+  InvalidEmailError,
+  RateLimitError,
+  ServiceUnavailableError,
+  ValidationError,
+} from '~/exceptions'
 import { type Actor, cleanOrigin, systemActor } from '~/lib/actor'
+import { ipBucket } from '~/lib/client-ip'
 import { randomToken, sha256Hex, timingSafeEqual } from '~/lib/crypto'
-import { maskEmail, normalizeEmail, parseEmail } from '~/lib/email'
+import { maskEmail, normalizeEmail, parseEmail, type TestAddressPermit } from '~/lib/email'
 import * as logger from '~/lib/logger'
 import * as WebAuthn from '~/lib/webauthn'
 import * as Audit from '~/modules/audit/service'
 import * as Factors from '~/modules/factor/service'
+import * as Hooks from '~/modules/hook/service'
 import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
 import * as OAuth from '~/modules/oauth/service'
 import * as Passkeys from '~/modules/passkey/service'
 import * as Passwords from '~/modules/password/service'
+import * as Phone from '~/modules/phone/service'
 import * as Sessions from '~/modules/session/service'
 import * as Settings from '~/modules/settings/service'
+import * as Sms from '~/modules/sms/service'
 import * as Users from '~/modules/user/service'
 import * as Verification from '~/modules/verification/service'
 import type { FlowAttemptRecord } from '~/ports/flow-attempt-store'
 import { CREDENTIAL_LOCKOUT, signInLockKey } from '~/ports/lockout'
-import { OAuthProviderError } from '~/ports/oauth-provider'
+import { type OAuthProfile, OAuthProviderError } from '~/ports/oauth-provider'
+import { mergeAuthMethods } from '~/ports/session-store'
 import type { UserRecord } from '~/ports/user-repository'
 import { sendAccountExistsNotice, sendNoAccountNotice, sendNoAccountSignInNotice } from './mailer'
 import { assertAccepts, nextStatus } from './transitions'
@@ -183,6 +202,51 @@ async function requireSignUpMethod(
 }
 
 /**
+ * Refuse a step of a sign-in with a texted code unless a texted code can still be had: the
+ * method is on (`signIn.methods.smsCode`), text messages are on with the identifier's
+ * country allowed (`Settings.requireSms`), and the deployment has a sender.
+ *
+ * On **every** step that asks for, accepts or follows a texted code, before anything is
+ * counted, spent or sent: a code asked for before the method or SMS was switched off, or
+ * before its country left the list, is not honoured after. Every answer depends on the
+ * settings and on what was typed, never on an account.
+ *
+ * @param identifier - What the sign-in was started with.
+ * @returns The identifier as a number in E.164 form, or `null` when it is not a number (an
+ *   email address typed for a sign-in that then asked for a texted code).
+ * @throws AuthError `auth.method_disabled`, `sms.disabled`, `sms.country_not_allowed` or
+ *   `sms.unavailable`.
+ */
+async function requireSmsMethod(
+  deps: Pick<Deps, 'environmentSettings' | 'config' | 'sms'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  identifier: string
+): Promise<string | null> {
+  await Settings.requireMethod(deps, tenant, 'smsCode')
+  const number = parsePhoneNumber(identifier)
+  await Settings.requireSms(deps, tenant, number ?? undefined)
+  Sms.requireSender(deps, tenant)
+  return number
+}
+
+/**
+ * The lockout key of a sign-in's identifier: every guess at one identifier, of a password or
+ * of a code, counts under one key (ADR 0011). An email address is hashed as it always was;
+ * a phone number goes under a **keyed** hash (`Phone.signInLockKey`), because a plain hash of
+ * a number is undone by trying every number.
+ */
+async function identifierLockKey(
+  deps: Pick<Deps, 'keyedHash'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  identifier: string
+): Promise<string> {
+  const number = parsePhoneNumber(identifier)
+  return number === null
+    ? signInLockKey(tenant.environmentId, identifier)
+    : Phone.signInLockKey(deps, tenant.environmentId, number)
+}
+
+/**
  * Refuse a step that comes **after** an attempt's first proof once the method that proof used
  * has been switched off.
  *
@@ -194,7 +258,8 @@ async function requireSignUpMethod(
  * - a sign-up: its own rule ({@link requireSignUpMethod});
  * - a password reset: the password;
  * - a sign-in: the first factor recorded on the attempt. A password, an emailed code or link
- *   by its settings switch; a passkey through `Passkeys.relyingParty` (which is also its
+ *   by its settings switch; a texted code by its switch and by everything a text message
+ *   needs ({@link requireSmsMethod}); a passkey through `Passkeys.relyingParty` (which is also its
  *   "still on" check, and holds the step to the relying party's origins); a provider through
  *   `OAuth.credentials`. An attempt stored before the factor was recorded proved a password or
  *   nothing this function lets through: it is held to the password's switch.
@@ -202,14 +267,19 @@ async function requireSignUpMethod(
  * Called after `load` and the step check, and before anything is counted, spent or sent, so a
  * refusal uses up no guess, no code, no challenge and no rate limit.
  *
- * @throws AuthError `auth.method_disabled`, or `request.origin_not_allowed` for a passkey
- *   attempt continued from an origin outside the relying party.
+ * @throws AuthError `auth.method_disabled`, `request.origin_not_allowed` for a passkey
+ *   attempt continued from an origin outside the relying party, or what a text message is
+ *   refused with (`sms.disabled`, `sms.country_not_allowed`, `sms.unavailable`) for an
+ *   attempt that proved a texted code.
  */
 async function requireProvenMethod(
-  deps: Pick<Deps, 'environmentSettings' | 'config' | 'oauthProviders' | 'secretBox'>,
+  deps: Pick<
+    Deps,
+    'environmentSettings' | 'config' | 'oauthProviders' | 'secretBox' | 'sms' | 'nativeApps'
+  >,
   tenant: Tenant,
-  attempt: Pick<FlowAttemptRecord, 'kind'>,
-  state: Pick<State, 'passwordless' | 'firstFactor'>,
+  attempt: Pick<FlowAttemptRecord, 'kind' | 'identifier'>,
+  state: Pick<State, 'passwordless' | 'firstFactor' | 'client'>,
   context: Pick<ClientContext, 'origin'>
 ): Promise<void> {
   if (attempt.kind === 'sign_up') {
@@ -222,11 +292,35 @@ async function requireProvenMethod(
   if (first === 'email_code' || first === 'email_link') {
     return Settings.requireMethod(deps, tenant, Factors.EMAIL_FACTOR_METHODS[first])
   }
+  if (first === 'sms_code') {
+    await requireSmsMethod(deps, tenant, attempt.identifier)
+    return
+  }
   if (first === 'passkey') {
-    await Passkeys.relyingParty(deps, tenant, context.origin)
+    await Passkeys.relyingParty(deps, tenant, ceremony(context, state.client))
     return
   }
   await OAuth.credentials(deps, tenant, OAuthProviderSchema.parse(first.slice('oauth_'.length)))
+}
+
+/**
+ * What of a flow request decides a passkey ceremony's relying party (`Passkeys.relyingParty`):
+ * the request's `Origin` header and a client kind.
+ *
+ * The kind is the one the **attempt was started with**, never a header of a later call: it is
+ * fixed at the start like everything else an attempt was asked for, so a step cannot move an
+ * attempt from a browser's rule to a native app's. A request that has an `Origin` is judged
+ * by it whatever the kind.
+ *
+ * @param context - The request.
+ * @param client - The client kind: the start's own, or the attempt's.
+ * @returns The two values, and nothing of the request's body.
+ */
+function ceremony(
+  context: Pick<ClientContext, 'origin'>,
+  client: SessionClient
+): Passkeys.CeremonyRequest {
+  return { origin: context.origin, client }
 }
 
 /** The device a flow request comes from. */
@@ -244,14 +338,27 @@ export interface ClientContext {
   userAgent: string | null
   ipAddress: string | null
   /**
+   * A sign-in test's permit to use an address of the reserved test domain (ADR 0058). Only
+   * `~/modules/sign-in-test/service` can make one, and no router ever sets it: for every
+   * request such an address is not an address (`parseEmail`).
+   */
+  testAddress?: TestAddressPermit
+  /**
+   * The thumbprint of the device key the start's proof was accepted for (ADR 0043), when the
+   * request that starts the attempt brought one. Like `client` it is read only when an attempt
+   * starts and kept on the attempt: no later step adds, changes or removes it.
+   */
+  deviceThumbprint?: string
+  /**
    * Whether the request may set or use the environment's cookies: it has no `Origin` header (not
    * a cross-origin browser request), or its origin is one the environment allows. The same rule
    * the refresh cookie is read under (`originMayUseCookies`).
    */
   originAllowed: boolean
   /**
-   * The request's `Origin` header, for a passkey step: a WebAuthn response is verified against
-   * the origin of the page that made the request (ADR 0027). Unused by every other step.
+   * The request's `Origin` header, for a passkey step: a browser's WebAuthn response is
+   * verified against the origin of the page that made the request, and a request without one
+   * can only be a registered native app's (ADR 0027). Unused by every other step.
    */
   origin?: string | null
 }
@@ -278,12 +385,21 @@ export interface FlowResult {
 }
 
 /** Server-only state kept on an attempt. Never sent to clients. */
-/** What an attempt remembers of the client that started it: its kind and the profile it asked for. */
-function asked(context: Pick<ClientContext, 'client' | 'profile'>): {
+/**
+ * What an attempt remembers of the client that started it: its kind, the profile it asked for
+ * and the device key it proved. **The one place the key gets onto an attempt**: every start
+ * builds its state from this, and no later step is given the request's proof.
+ */
+function asked(context: Pick<ClientContext, 'client' | 'profile' | 'deviceThumbprint'>): {
   client: SessionClient
   profile?: string
+  deviceThumbprint?: string
 } {
-  return { client: context.client, ...(context.profile && { profile: context.profile }) }
+  return {
+    client: context.client,
+    ...(context.profile && { profile: context.profile }),
+    ...(context.deviceThumbprint && { deviceThumbprint: context.deviceThumbprint }),
+  }
 }
 
 const StateSchema = z.object({
@@ -293,6 +409,12 @@ const StateSchema = z.object({
    * session service decides at `finish` whether the environment offers it (ADR 0028).
    */
   profile: z.string().max(64).optional(),
+  /**
+   * The thumbprint of the device key the attempt's start accepted a proof for (ADR 0043). The
+   * session the attempt ends in is bound to it. Set by the start and carried unchanged by
+   * every step; absent for an attempt that brought no proof.
+   */
+  deviceThumbprint: z.string().optional(),
   /** Email as entered, for sending and for the masked destination. */
   email: z.string().optional(),
   firstName: z.string().nullable().optional(),
@@ -315,10 +437,19 @@ const StateSchema = z.object({
   firstFactor: FirstFactorStrategySchema.optional(),
   /** The second factors the user may choose from, while the attempt waits on one. */
   secondFactors: z.array(SecondFactorMethodSchema).optional(),
+  /**
+   * The second factor a code was last texted for while the attempt waits on one, and the
+   * masked number it went to (`***42`: the last two digits, never the number). Kept so that
+   * the step can say where the code went; the number itself is read from the account at
+   * every send and every check.
+   */
+  secondFactorPrepared: z
+    .object({ method: PreparedSecondFactorMethodSchema, destination: z.string().max(16) })
+    .optional(),
   /** A sign-up made without a password (`signUp.password: 'optional'`). */
   passwordless: z.boolean().optional(),
-  /** The email first factor a sign-in last asked an email for. */
-  prepared: EmailVerificationStrategySchema.optional(),
+  /** The first factor a sign-in last asked an email, or a text message, for. */
+  prepared: PreparedFirstFactorStrategySchema.optional(),
   /**
    * SHA-256 of the binding returned to the browser that asked for an emailed link. The link is
    * honoured only together with that binding.
@@ -335,6 +466,20 @@ const StateSchema = z.object({
    */
   amr: z.array(z.string()).optional(),
   /**
+   * The attempt is a sign-in that created its account (a first sign-in with a provider). The
+   * `before_session` hook is told so (`signUp`), also when the attempt waited on an enrolment
+   * in between. A sign-up attempt needs no mark: its kind says it.
+   */
+  accountCreated: z.boolean().optional(),
+  /**
+   * The sign-in proved a password that is older than the environment's `password.expiryDays`
+   * allows (ADR 0041): the attempt sets a new one before it completes. The value is when that
+   * password was set (epoch milliseconds), kept so that the step which replaces it can tell
+   * that it is still the password this attempt proved: one replaced meanwhile (the owner's
+   * own reset) was set at another time, and then the attempt has proven nothing.
+   */
+  expiredPasswordSetAt: z.number().optional(),
+  /**
    * The WebAuthn challenge an attempt issued and has not used yet (ADR 0027), and when it stops
    * being accepted (epoch milliseconds). Top-level, because taking it is a compare-and-set on
    * its value (`StateGuard`): a challenge is used up by the first request that presents an
@@ -342,6 +487,18 @@ const StateSchema = z.object({
    */
   passkeyChallenge: z.string().optional(),
   passkeyChallengeExpiresAt: z.number().optional(),
+  /**
+   * A native ID-token sign-in (ADR 0045): the provider whose token the attempt waits for.
+   * Fixed by the start; the exchange reads the provider from here and never from a request.
+   */
+  idTokenProvider: IdTokenProviderSchema.optional(),
+  /**
+   * The nonce a native ID-token sign-in was started with, until a token is presented for
+   * it. Top-level, because taking it is a compare-and-set on its value (`StateGuard`), as a
+   * passkey challenge is taken: it is used up by the first request that presents a token,
+   * whatever that token turns out to be, so a token is judged once per attempt.
+   */
+  idTokenNonce: z.string().optional(),
   /**
    * Where an OAuth attempt is in its round trip (ADR 0026). Top-level, because each move is a
    * compare-and-set on it (`StateGuard`): the attempt's `status` stays `needs_first_factor`
@@ -387,8 +544,14 @@ const StateSchema = z.object({
 })
 type State = z.infer<typeof StateSchema>
 
+/** A sign-in's identifier, masked as a phone number; a fixed mask when it is not one. */
+function maskedNumber(identifier: string): string {
+  const number = parsePhoneNumber(identifier)
+  return number === null ? '***' : maskPhoneNumber(number)
+}
+
 function stepFor(
-  attempt: Pick<FlowAttemptRecord, 'status' | 'identifier'>,
+  attempt: Pick<FlowAttemptRecord, 'kind' | 'status' | 'identifier'>,
   state: State
 ): FlowStep {
   if (attempt.status === 'needs_email_verification') {
@@ -399,11 +562,12 @@ function stepFor(
     }
   }
   if (attempt.status === 'needs_new_password') {
-    return {
-      status: 'needs_new_password',
-      destination: maskEmail(state.email ?? attempt.identifier),
-      strategies: ['email_code'],
-    }
+    const destination = maskEmail(state.email ?? attempt.identifier)
+    // A sign-in waits here for one reason only: the password it proved has expired. Nothing
+    // was emailed, so there is no way to get a code to name.
+    return attempt.kind === 'sign_in'
+      ? { status: 'needs_new_password', destination, strategies: [], reason: 'expired' }
+      : { status: 'needs_new_password', destination, strategies: ['email_code'] }
   }
   if (attempt.status === 'needs_first_factor') {
     return {
@@ -411,12 +575,22 @@ function stepFor(
       strategies: state.strategies ?? [],
       // The identifier as it was typed at the start, masked: it says nothing about an account.
       ...(state.prepared && {
-        prepared: { strategy: state.prepared, destination: maskEmail(attempt.identifier) },
+        prepared: {
+          strategy: state.prepared,
+          destination:
+            state.prepared === 'sms_code'
+              ? maskedNumber(attempt.identifier)
+              : maskEmail(attempt.identifier),
+        },
       }),
     }
   }
   if (attempt.status === 'needs_second_factor') {
-    return { status: 'needs_second_factor', options: state.secondFactors ?? [] }
+    return {
+      status: 'needs_second_factor',
+      options: state.secondFactors ?? [],
+      ...(state.secondFactorPrepared && { prepared: state.secondFactorPrepared }),
+    }
   }
   if (attempt.status === 'needs_factor_enrolment') {
     return { status: 'needs_factor_enrolment', methods: [...Factors.ENROLMENT_METHODS] }
@@ -470,13 +644,25 @@ interface Requirement {
   enrolmentRequired: boolean
 }
 
-/** Ask what a user still has to do: prove a second factor, enrol one, or nothing. */
+/**
+ * Ask what a user still has to do: prove a second factor, enrol one, or nothing.
+ *
+ * @param amr - What the attempt will have proven once the step that asks is accepted. Where
+ *   that already covers the second factor the user is held to (`Mfa.meetsSecondFactor`),
+ *   nothing more is asked: a sign-in by texted code that also proved the emailed code of an
+ *   unverified address has shown two things, and is not sent a second text message. Left
+ *   out by a step that proves one thing only.
+ */
 async function requirement(
-  deps: Pick<Deps, 'factors' | 'passkeys' | 'environmentSettings' | 'config'>,
+  deps: Mfa.SecondFactorDeps,
   tenant: Tenant,
-  userId: string
+  userId: string,
+  amr: readonly string[] = []
 ): Promise<Requirement> {
   const secondFactors = await Factors.requiredFor(deps, tenant, userId)
+  if (secondFactors.length > 0 && Mfa.meetsSecondFactor(amr, secondFactors)) {
+    return NOTHING_REQUIRED
+  }
   return {
     secondFactors,
     enrolmentRequired: await Factors.enrolmentRequired(deps, tenant, secondFactors),
@@ -611,6 +797,17 @@ async function load(
  * confirmed while this attempt was between its first factor and here), the session is revoked,
  * no tokens are returned and the answer is `flow.invalid_step`: start again. (Not for a
  * sign-up: its account is created by the same request and cannot have a factor yet.)
+ *
+ * **The `before_session` hook is asked here and nowhere else** (ADR 0035): after the attempt
+ * is spent, when every factor it needed is proven, and immediately before `Sessions.create`.
+ * So it is asked for a sign-in, a sign-up's first session and the session a password reset
+ * ends in, and never for a refresh, a step-up or anything an administrator does. A denial
+ * (`hook.denied`) and a failure the hook does not let through (`hook.unavailable`) are
+ * thrown before a session exists: no session, no tokens, no cookie, no `session.created`, no
+ * notice. The attempt stays spent, as for any other error past this point (see above): the
+ * client starts again, and what proved the last step is not given back. The session's own
+ * `before_token` hook is asked by `Sessions.create`, before it stores anything, so a sign-in
+ * asks two hooks at most and neither can leave a session behind a refusal.
  */
 async function finish(
   deps: Deps,
@@ -622,6 +819,10 @@ async function finish(
   once: CompletionExtras = {}
 ): Promise<FlowResult> {
   const now = deps.clock.now()
+  // The profile's device-binding option as it is now (ADR 0043): an attempt started before
+  // the option changed must not finish against it. Asked before the attempt is spent and
+  // before a hook is asked; `Sessions.create` holds the rule again.
+  await Sessions.requireBinding(deps, tenant, state)
   const moved = await deps.flowAttempts.transition(
     tenant.environmentId,
     attempt.id,
@@ -632,6 +833,16 @@ async function finish(
   if (!moved) {
     throw new AuthError('flow.invalid_step')
   }
+  // Named field by field from the server's own records: the allow-list of the question
+  // (`HookBeforeSessionDataSchema`). No address of the user's, no user agent, no attempt.
+  const clearance = await Hooks.beforeSession(deps, tenant, {
+    userId,
+    client: state.client,
+    profile: await Sessions.profileNameFor(deps, tenant, state),
+    amr: mergeAuthMethods([], state.amr ?? []),
+    signUp: attempt.kind === 'sign_up' || state.accountCreated === true,
+    ipAddress: cleanOrigin(context).ipAddress,
+  })
   const tokens = await Sessions.create(deps, tenant, {
     userId,
     client: state.client,
@@ -639,11 +850,15 @@ async function finish(
     ipAddress: context.ipAddress,
     authMethods: state.amr ?? [],
     profile: state.profile,
+    hookBypassed: clearance === 'bypassed',
+    // Only what the attempt's start fixed: nothing of this request decides the binding.
+    deviceThumbprint: state.deviceThumbprint,
   })
   if (
     attempt.kind !== 'sign_up' &&
+    // Asked only of an attempt that did not prove a strong factor: one that did is past this.
     !state.amr?.includes('mfa') &&
-    (await Factors.requiredFor(deps, tenant, userId)).length > 0
+    !Mfa.meetsSecondFactor(state.amr ?? [], await Factors.requiredFor(deps, tenant, userId))
   ) {
     // The user turned two-step verification on between this attempt's "no second factor
     // needed" and the session just created. Their confirmation ended "every other session"
@@ -686,12 +901,16 @@ async function finish(
 }
 
 /**
- * Park an attempt on `needs_second_factor` or `needs_factor_enrolment`: everything before it was
- * accepted, and the user must now prove one of `secondFactors`, or enrol a factor.
+ * Park an attempt on `needs_second_factor`, `needs_factor_enrolment` or (a sign-in whose
+ * password has expired) `needs_new_password`: everything before it was accepted, and the user
+ * must now prove one of `secondFactors`, enrol a factor, or set a new password.
  *
  * No session is created and no tokens are returned. The move is a compare-and-set, so of two
  * racing requests only one gets here. Only what the next step needs is kept on the attempt:
  * never a sign-up's password hash.
+ *
+ * @param once - What the step that got the attempt here hands out once (the backup codes of
+ *   an enrolment, how many backup codes are left): it is in this response or in none.
  */
 async function park(
   deps: Pick<Deps, 'flowAttempts' | 'clock'>,
@@ -699,10 +918,16 @@ async function park(
   attempt: FlowAttemptRecord,
   state: State,
   userId: string,
-  status: 'needs_second_factor' | 'needs_factor_enrolment',
-  secondFactors: State['secondFactors']
+  status: 'needs_second_factor' | 'needs_factor_enrolment' | 'needs_new_password',
+  secondFactors: State['secondFactors'],
+  once: CompletionExtras = {}
 ): Promise<FlowResult> {
-  const { passwordHash: _hash, secondFactors: _earlier, ...kept } = state
+  const {
+    passwordHash: _hash,
+    secondFactors: _earlier,
+    secondFactorPrepared: _texted,
+    ...kept
+  } = state
   const pending: State = status === 'needs_second_factor' ? { ...kept, secondFactors } : { ...kept }
   const waiting = { ...attempt, status, userId }
   const moved = await deps.flowAttempts.transition(
@@ -715,12 +940,15 @@ async function park(
   if (!moved) {
     throw new AuthError('flow.invalid_step')
   }
-  return { attempt: toAttempt(waiting, stepFor(waiting, pending)), client: state.client }
+  return {
+    attempt: toAttempt(waiting, stepFor(waiting, pending), undefined, undefined, once),
+    client: state.client,
+  }
 }
 
 /**
- * Take an attempt past its last proof: to a session, or to the second factor or the enrolment
- * that still stands in the way.
+ * Take an attempt past its last proof: to a session, or to the second factor, the enrolment
+ * or the new password that still stands in the way.
  */
 function advance(
   deps: Deps,
@@ -730,12 +958,29 @@ function advance(
   userId: string,
   next: FlowStep['status'],
   required: Requirement,
-  context: ClientContext
+  context: ClientContext,
+  once: CompletionExtras = {}
 ): Promise<FlowResult> {
-  if (next === 'needs_second_factor' || next === 'needs_factor_enrolment') {
-    return park(deps, tenant, attempt, state, userId, next, required.secondFactors)
+  if (
+    next === 'needs_second_factor' ||
+    next === 'needs_factor_enrolment' ||
+    next === 'needs_new_password'
+  ) {
+    return park(deps, tenant, attempt, state, userId, next, required.secondFactors, once)
   }
-  return finish(deps, tenant, attempt, state, userId, context)
+  return finish(deps, tenant, attempt, state, userId, context, once)
+}
+
+/** Nothing more to prove: what an attempt past its second factor or its enrolment is asked with. */
+const NOTHING_REQUIRED: Requirement = { secondFactors: [], enrolmentRequired: false }
+
+/**
+ * Whether a sign-in attempt proved a password that has expired, and so still has to replace
+ * it (ADR 0041). Set once, by the step that verified the password; every later step of the
+ * attempt asks this and tells the transition table.
+ */
+function owesNewPassword(state: Pick<State, 'expiredPasswordSetAt'>): boolean {
+  return state.expiredPasswordSetAt !== undefined
 }
 
 /**
@@ -772,7 +1017,7 @@ export async function signUp(
   context: ClientContext
 ): Promise<FlowResult> {
   requireAllowedOrigin(context.client, context)
-  const parsed = parseEmail(input.email)
+  const parsed = parseEmail(input.email, context.testAddress)
   if (!parsed) {
     throw new InvalidEmailError()
   }
@@ -861,7 +1106,7 @@ async function issueCode(
  *
  * @param deps - Flow attempt store, clock, ids and settings.
  * @param tenant - The environment the publishable key resolved to.
- * @param input - The identifier (email).
+ * @param input - The identifier: an email address, or a phone number for a texted code.
  * @param context - The requesting device.
  * @returns The attempt, waiting on `needs_password` or `needs_first_factor`, with its secret.
  * @throws AuthError `auth.method_disabled` when the environment has every method switched off,
@@ -870,7 +1115,7 @@ async function issueCode(
 export async function signIn(
   deps: Pick<
     Deps,
-    'flowAttempts' | 'clock' | 'ids' | 'environmentSettings' | 'config' | 'oauthProviders'
+    'flowAttempts' | 'clock' | 'ids' | 'environmentSettings' | 'config' | 'oauthProviders' | 'sms'
   >,
   tenant: Tenant,
   input: SignInStartRequest,
@@ -879,7 +1124,8 @@ export async function signIn(
   requireAllowedOrigin(context.client, context)
   const strategies = Factors.firstFactors(
     await Settings.current(deps, tenant),
-    await OAuth.enabledProviders(deps, tenant)
+    await OAuth.enabledProviders(deps, tenant),
+    { smsSender: deps.sms.configured }
   )
   if (strategies.length === 0) {
     throw new AuthError('auth.method_disabled')
@@ -891,7 +1137,9 @@ export async function signIn(
       strategies.length === 1 && strategies[0] === 'password'
         ? 'needs_password'
         : 'needs_first_factor',
-    identifier: normalizeEmail(input.identifier),
+    // A phone number is kept in E.164 form, whatever was typed between its digits; anything
+    // else is kept as an address would be. Neither is looked up here.
+    identifier: parsePhoneNumber(input.identifier) ?? normalizeEmail(input.identifier),
     state,
   })
   return { attempt: toAttempt(attempt, stepFor(attempt, state), secret), client: state.client }
@@ -914,8 +1162,16 @@ export async function signIn(
  * @param ref - The sign-in attempt and its secret.
  * @param password - The submitted password.
  * @param context - The requesting device.
- * @returns `complete` with tokens; `needs_email_verification` for an unverified email; or
- *   `needs_second_factor`, without tokens, for a user who has a second factor.
+ * **An expired password** (`password.expiryDays`, ADR 0041) is looked at only once the
+ * password was found right, so it changes nothing about any answer above. The attempt then
+ * owes a new password, **after** whatever else it owes: the emailed code, the second factor,
+ * the enrolment. Only then does it wait on `needs_new_password`, with no session and no
+ * tokens, for {@link replaceExpiredPassword}.
+ *
+ * @returns `complete` with tokens; `needs_email_verification` for an unverified email;
+ *   `needs_second_factor`, without tokens, for a user who has a second factor; or
+ *   `needs_new_password` (`reason: 'expired'`), without tokens, for a password that is right
+ *   and too old.
  * @throws AuthError `flow.not_found`, `flow.invalid_step`, `request.origin_not_allowed`,
  *   `auth.method_disabled`, `auth.invalid_credentials` or `auth.user_banned`.
  * @throws RateLimitError while the identifier is locked out after repeated failures.
@@ -935,7 +1191,7 @@ export async function submitPassword(
   // Hash the identifier so lockout keys (which may live in Redis) hold no email. The attempt is
   // counted as a failure up front and cleared on success, so parallel guesses can't all slip
   // through; it happens before the lookup, so unknown identifiers lock out exactly the same.
-  const lockKey = signInLockKey(tenant.environmentId, attempt.identifier)
+  const lockKey = await identifierLockKey(deps, tenant, attempt.identifier)
   const lock = await deps.lockout.attempt(lockKey, CREDENTIAL_LOCKOUT, deps.clock.now())
   if (!lock.allowed) {
     throw new RateLimitError(lock.retryAfterMs)
@@ -967,18 +1223,35 @@ export async function submitPassword(
     )
   }
 
+  // Looked at only here, after the password was found right: a wrong password, an unknown
+  // address, a locked identifier and a banned user were answered above, exactly as they are
+  // where no password expires (ADR 0041). The settings are the ones `requirePasswordMethod`
+  // already read; nothing is fetched for it.
+  const expiredSetAt = Passwords.expired(
+    await Passwords.policy(deps, tenant),
+    found.passwordChangedAt,
+    deps.clock.now()
+  )
+    ? found.passwordChangedAt?.getTime()
+    : undefined
+  const proved: State = {
+    ...firstProven(state, 'password', 'pwd'),
+    ...(expiredSetAt !== undefined && { expiredPasswordSetAt: expiredSetAt }),
+  }
+
   const required = await requirement(deps, tenant, user.id)
   const next = nextStatus(attempt.kind, attempt.status, event, {
     strategies,
     emailVerified: user.emailVerifiedAt !== null,
     ...required,
+    passwordExpired: owesNewPassword(proved),
   })
   if (next !== 'needs_email_verification') {
-    const done = firstProven(state, 'password', 'pwd')
-    return advance(deps, tenant, attempt, done, user.id, next, required, context)
+    return advance(deps, tenant, attempt, proved, user.id, next, required, context)
   }
 
-  const pending: State = { ...firstProven(state, 'password', 'pwd'), email: user.email }
+  // Found by its address a moment ago, so it has one.
+  const pending: State = { ...proved, email: user.email ?? undefined }
   const waiting = { ...attempt, status: next, userId: user.id }
   // Send the code before moving the attempt: if the send is refused (e.g. the address is on
   // its cooldown) the attempt stays on the password step and can simply be retried.
@@ -1074,7 +1347,7 @@ async function completeEmailFactor(
     attempt.kind,
     attempt.status,
     { type: 'first_factor_verified', strategy },
-    { strategies: state.strategies ?? [], emailVerified: true, ...required }
+    { strategies: state.strategies ?? [], emailVerified: true, ...required, passwordExpired: false }
   )
   await spend()
   if (user.emailVerifiedAt === null) {
@@ -1103,7 +1376,8 @@ async function completeEmailFactor(
 }
 
 /**
- * Email the code (and, for `email_link`, the link) that proves a sign-in's email first factor.
+ * Email the code (and, for `email_link`, the link) that proves a sign-in's email first factor,
+ * or text the code of `sms_code` ({@link prepareSmsCode}).
  *
  * **The answer is the same for every address.** An address with no account is sent a notice
  * instead (no code, no link), its attempt holds a decoy code nobody knows, and the per-address
@@ -1147,12 +1421,18 @@ export async function prepareFirstFactor(
     { type: 'first_factor_verified', strategy },
     state.strategies ?? []
   )
+  if (strategy === 'sms_code') {
+    return prepareSmsCode(deps, tenant, attempt, state, context)
+  }
   await Settings.requireMethod(deps, tenant, Factors.EMAIL_FACTOR_METHODS[strategy])
   const redirectUrl =
     strategy === 'email_link'
-      ? await Settings.requireRedirectUrl(deps, tenant, input.redirectUrl)
+      ? // An emailed link is not a provider sign-in: a custom scheme is never its page.
+        await Settings.requireRedirectUrl(deps, tenant, input.redirectUrl, {
+          client: state.client,
+        })
       : undefined
-  const parsed = parseEmail(attempt.identifier)
+  const parsed = parseEmail(attempt.identifier, context.testAddress)
   if (!parsed) {
     throw new InvalidEmailError()
   }
@@ -1201,7 +1481,8 @@ export async function prepareFirstFactor(
 }
 
 /**
- * Prove a sign-in's email first factor.
+ * Prove a sign-in's email first factor, or `sms_code` with the texted code
+ * ({@link attemptSmsCode}).
  *
  * **`email_code`**: checks the emailed code. A wrong one is `verification.invalid_code`; the
  * code allows five guesses, and every try also counts against the per-identifier lockout
@@ -1244,6 +1525,9 @@ export async function attemptFirstFactor(
     { type: 'first_factor_verified', strategy: input.strategy },
     state.strategies ?? []
   )
+  if (input.strategy === 'sms_code') {
+    return attemptSmsCode(deps, tenant, attempt, state, input.code, context)
+  }
   await Settings.requireMethod(deps, tenant, Factors.EMAIL_FACTOR_METHODS[input.strategy])
 
   if (input.strategy === 'email_link') {
@@ -1264,7 +1548,7 @@ export async function attemptFirstFactor(
   }
 
   // Counted as a failure up front and cleared on success, exactly as a password is.
-  const lockKey = signInLockKey(tenant.environmentId, attempt.identifier)
+  const lockKey = await identifierLockKey(deps, tenant, attempt.identifier)
   const lock = await deps.lockout.attempt(lockKey, CREDENTIAL_LOCKOUT, deps.clock.now())
   if (!lock.allowed) {
     throw new RateLimitError(lock.retryAfterMs)
@@ -1287,6 +1571,283 @@ export async function attemptFirstFactor(
   return completeEmailFactor(deps, tenant, attempt, state, user, 'email_code', context, () =>
     Verification.consume(deps, tenant, token.id)
   )
+}
+
+/**
+ * What a texted sign-in code's keyed hash also covers: the attempt and what it was started
+ * with. A code then proves that number for that attempt and nothing else, even if a row were
+ * moved or rewritten.
+ */
+function smsCodeBinding(attemptId: string, identifier: string): string {
+  return `${attemptId}:${identifier}`
+}
+
+/** An attempt's state without what an emailed or texted first factor kept on it. */
+function withoutPrepared(state: State): State {
+  const {
+    prepared: _prepared,
+    linkBindingHash: _linkBindingHash,
+    linkVerified: _linkVerified,
+    ...rest
+  } = state
+  return rest
+}
+
+/**
+ * Text the code that proves a sign-in's `sms_code` first factor (ADR 0037).
+ *
+ * **The answer is the same for every identifier**, and so is everything else a caller can
+ * observe: the step returned, every limit of `Sms.sendCode` that is counted, and how long it
+ * takes. A message goes only to a number that exactly one account has proven within the last
+ * year (`Phone.signInHolder`, the one lookup by number). For any other identifier (a number
+ * nobody holds, one several accounts hold, one proven too long ago, something that is no
+ * number) **nothing is sent**: a text message to a stranger's phone would be the pumping the
+ * send limits exist to prevent. Such an attempt holds a decoy code nobody was told, so later
+ * guesses behave the same and can never complete it.
+ *
+ * The message is handed to the sender and not waited for (`detached`): how long a provider
+ * takes, and whether it took the message, would otherwise tell a known number from an
+ * unknown one. So a send that fails is not reported here; the user asks again.
+ *
+ * In order, and before anything is counted or sent: the method, text messages and the
+ * identifier's country must be on and the deployment must have a sender
+ * ({@link requireSmsMethod}). Then the send limits, the same for a real message and a decoy.
+ * The asker the limits are counted by is the identifier itself (`Sms.signInAsker`), never the
+ * attempt: an attempt costs nothing to start.
+ *
+ * The code is a verification token of purpose `sms_sign_in`, six digits, ten minutes, five
+ * guesses, stored as a keyed hash that also covers the attempt and the number.
+ *
+ * @returns The attempt, still on `needs_first_factor`, now with `prepared`.
+ * @throws AuthError `auth.method_disabled`, `sms.disabled`, `sms.country_not_allowed` or
+ *   `sms.unavailable` (the deployment has no sender).
+ * @throws RateLimitError when a send limit, or the environment's daily limit, is spent.
+ */
+async function prepareSmsCode(
+  deps: Deps,
+  tenant: Tenant,
+  attempt: FlowAttemptRecord,
+  state: State,
+  context: ClientContext
+): Promise<FlowResult> {
+  const number = await requireSmsMethod(deps, tenant, attempt.identifier)
+  const identifier = number ?? attempt.identifier
+  // The one place an account is found from a number, and it decides only whether a message
+  // goes: nothing of the answer depends on it.
+  const holder = number === null ? null : await Phone.signInHolder(deps, tenant, number)
+  const asker = await Sms.signInAsker(deps, tenant.environmentId, identifier)
+  const address = context.ipAddress === null ? null : ipBucket(context.ipAddress)
+  // The token is stored by the send itself, once the sender took the message (or, for a
+  // decoy, once nothing refused it): never before, so a code that did not leave cannot be
+  // guessed against and the earlier code keeps working. Neither is waited for here.
+  await Verification.issueWhenTaken(
+    deps,
+    tenant,
+    {
+      purpose: Phone.SMS_SIGN_IN_PURPOSE,
+      destination: identifier,
+      flowAttemptId: attempt.id,
+      userId: holder?.id,
+      binding: smsCodeBinding(attempt.id, identifier),
+      sendLimits: Verification.LIMITED_BY_DELIVERY,
+    },
+    ({ code }, store) =>
+      Sms.sendCode(
+        deps,
+        tenant,
+        holder !== null && number !== null
+          ? {
+              kind: 'sign_in',
+              to: number,
+              code,
+              asker,
+              newNumber: false,
+              address,
+              detached: true,
+              onTaken: store,
+            }
+          : { decoy: true, identifier, asker, address, onTaken: store }
+      )
+  )
+  const pending: State = { ...withoutPrepared(state), prepared: 'sms_code' }
+  const moved = await deps.flowAttempts.transition(
+    tenant.environmentId,
+    attempt.id,
+    attempt.status,
+    { status: attempt.status, state: pending },
+    deps.clock.now()
+  )
+  if (!moved) {
+    throw new AuthError('flow.invalid_step')
+  }
+  return { attempt: toAttempt(attempt, stepFor(attempt, pending)), client: state.client }
+}
+
+/**
+ * Prove a sign-in's `sms_code` first factor with the texted code.
+ *
+ * **Every failure is `auth.invalid_credentials`**: a wrong, used, expired or replaced code, a
+ * code out of guesses, no code asked for, the decoy of an identifier nobody can sign in with,
+ * a number that has since gained a second holder, lost its holder or gone stale, and an
+ * identifier that is locked out. The answer says nothing about which.
+ *
+ * In order:
+ * 1. the method, text messages, the identifier's country and the sender must still be on
+ *    ({@link requireSmsMethod}); nothing is counted or spent by a refusal;
+ * 2. the guess is counted under the identifier's lockout (`CREDENTIAL_LOCKOUT`, the key a
+ *    password typed for the same identifier counts under), **before** the code is looked at;
+ * 3. the code is checked against the attempt's `sms_sign_in` token, with the binding of this
+ *    attempt and this number. A token of another purpose (`phone_verification`, `sign_in`)
+ *    is never found here;
+ * 4. the number is looked up again: it must still sign in exactly the user the code was
+ *    texted for;
+ * 5. a banned user is told so (only here, after the proof, as for an emailed code);
+ * 6. **an attempt that proved nothing but a phone number does not enrol a second factor.**
+ *    Where the environment requires one and the user has none, the answer is
+ *    `mfa.enrolment_needs_other_sign_in` and the code is left unspent: the attempt is still on
+ *    its first factor, and the user signs in another way. A phone number is the easiest
+ *    factor to take from someone (a swapped SIM, a recycled number); it must not be what
+ *    chooses the account's second factor;
+ *    **Nor does a texted code count twice.** A user whose only second factor is a texted
+ *    code cannot sign in with a texted code and then prove the "second" step with another:
+ *    `mfa.needs_other_sign_in`, the code unspent, for the same reason;
+ * 7. where the user's email address is not verified, a code is emailed to it, **before** the
+ *    texted code is spent: an email that cannot be sent leaves the texted code unspent,
+ *    and usable for the tries it has left (this submission was one of its five);
+ * 8. the code is spent, counted as used, and the number's proof is moved to now. The same
+ *    code presented twice at once is spent by one request; the other is the failed sign-in
+ *    (or, for an unverified address, refused earlier by the emailed code's cooldown).
+ *
+ * A user who has a second factor gets `needs_second_factor` and no tokens. One whose email
+ * address is not verified waits at `needs_email_verification`, as after a passkey; a user
+ * with no address at all goes on.
+ *
+ * @throws AuthError `auth.method_disabled`, `sms.disabled`, `sms.country_not_allowed`,
+ *   `sms.unavailable`, `auth.invalid_credentials`, `auth.user_banned`,
+ *   `mfa.enrolment_needs_other_sign_in` or `mfa.needs_other_sign_in`.
+ */
+async function attemptSmsCode(
+  deps: Deps,
+  tenant: Tenant,
+  attempt: FlowAttemptRecord,
+  state: State,
+  code: string,
+  context: ClientContext
+): Promise<FlowResult> {
+  const number = await requireSmsMethod(deps, tenant, attempt.identifier)
+  const identifier = number ?? attempt.identifier
+  const lockKey = await identifierLockKey(deps, tenant, attempt.identifier)
+  const lock = await deps.lockout.attempt(lockKey, CREDENTIAL_LOCKOUT, deps.clock.now())
+  if (!lock.allowed) {
+    throw new AuthError('auth.invalid_credentials')
+  }
+  await chargeEnvironment(deps, tenant, 'verify')
+  let token: Awaited<ReturnType<typeof Verification.verifyCode>>
+  try {
+    token = await Verification.verifyCode(deps, tenant, {
+      purpose: Phone.SMS_SIGN_IN_PURPOSE,
+      subject: { flowAttemptId: attempt.id },
+      code,
+      binding: smsCodeBinding(attempt.id, identifier),
+      consume: false,
+    })
+  } catch (error) {
+    if (error instanceof AuthError && error.code.startsWith('verification.')) {
+      // Wrong, expired, used, replaced, out of guesses or never asked for: one answer.
+      throw new AuthError('auth.invalid_credentials')
+    }
+    throw error
+  }
+  // Looked up again, by the same rule that decided whether the message went: the number
+  // must still sign in exactly the user the code was texted for. A decoy's token has no
+  // user, so its code, should anyone ever guess it, proves nothing.
+  const user =
+    number !== null && token.userId !== null ? await Phone.signInHolder(deps, tenant, number) : null
+  if (!user || number === null || user.id !== token.userId) {
+    throw new AuthError('auth.invalid_credentials')
+  }
+  await deps.lockout.clear(lockKey)
+  if (user.bannedAt !== null) {
+    throw new AuthError('auth.user_banned')
+  }
+  const required = await requirement(deps, tenant, user.id)
+  const next = nextStatus(
+    attempt.kind,
+    attempt.status,
+    { type: 'first_factor_verified', strategy: 'sms_code' },
+    {
+      strategies: state.strategies ?? [],
+      // An account with no address has none to prove (as after a passkey).
+      emailVerified: user.email === null || user.emailVerifiedAt !== null,
+      ...required,
+      passwordExpired: false,
+    }
+  )
+  if (next === 'needs_factor_enrolment') {
+    // Before the code is spent: the attempt stays on its first factor, where another one
+    // (a password, an emailed code) can still be proven.
+    throw new AuthError('mfa.enrolment_needs_other_sign_in')
+  }
+  if (next === 'needs_second_factor' && !required.secondFactors.some(Mfa.isStrongSecondFactor)) {
+    // The user's only second factor is a texted code, and all this attempt has proven is a
+    // texted code: asking for another one would be the same phone twice, never two steps
+    // (ADR 0025). Refused before the code is spent, as above: the attempt stays on its
+    // first factor, where a password or an emailed code can still be proven.
+    throw new AuthError('mfa.needs_other_sign_in')
+  }
+  const done = firstProven(withoutPrepared(state), 'sms_code', 'sms')
+  let parked: { waiting: FlowAttemptRecord; pending: State } | null = null
+  if (next === 'needs_email_verification') {
+    if (user.email === null) {
+      // Not reachable (see `emailVerified` above); refused rather than completed if it ever is.
+      throw new AuthError('flow.invalid_step')
+    }
+    // The attempt keeps the number as its identifier (the later steps still check that a
+    // texted code may be had for it); the address the code goes to is kept beside it.
+    const pending: State = { ...done, email: user.email }
+    const waiting = { ...attempt, status: next, userId: user.id }
+    // Sent before the texted code is spent, as a password's is before its attempt moves:
+    // an email that is refused (its cooldown, a relay that is down) leaves the texted code
+    // unspent (one try poorer), so the user is not made to pay for a second message. Only here, after the code
+    // and its holder were checked: a request that proved nothing causes no email.
+    await issueCode(deps, tenant, waiting, pending, { userId: user.id })
+    parked = { waiting, pending }
+  }
+  try {
+    await Verification.consume(deps, tenant, token.id)
+  } catch (error) {
+    if (error instanceof AuthError && error.code.startsWith('verification.')) {
+      // The same code presented twice at once: the request that did not spend it is a
+      // failed sign-in like any other, and moves nothing.
+      throw new AuthError('auth.invalid_credentials')
+    }
+    throw error
+  }
+  await Sms.recordUsed(deps, tenant, { to: number, sentAt: token.createdAt })
+  try {
+    await Phone.recordSignInProof(deps, tenant, user.id, number)
+  } catch (error) {
+    // Bookkeeping only: the number then lapses a little earlier than it had to.
+    logger.warn('could not record that a phone number was proven again', {
+      environmentId: tenant.environmentId,
+      err: error instanceof Error ? error.name : 'unknown',
+    })
+  }
+  if (parked === null) {
+    return advance(deps, tenant, attempt, done, user.id, next, required, context)
+  }
+  const { waiting, pending } = parked
+  const moved = await deps.flowAttempts.transition(
+    tenant.environmentId,
+    attempt.id,
+    attempt.status,
+    { status: next, userId: user.id, state: pending },
+    deps.clock.now()
+  )
+  if (!moved) {
+    throw new AuthError('flow.invalid_step')
+  }
+  return { attempt: toAttempt(waiting, stepFor(waiting, pending)), client: state.client }
 }
 
 /**
@@ -1401,7 +1962,10 @@ export interface OAuthStartResult {
  *
  * Nothing is looked up about any user. The answer depends on the environment alone: the
  * provider must be enabled (`auth.method_disabled` otherwise) and `redirectUrl` must be,
- * exactly, one of its `urls.allowedRedirectUrls` (`request.redirect_not_allowed`).
+ * exactly, one of its `urls.allowedRedirectUrls` (`request.redirect_not_allowed`). A listed
+ * custom-scheme URL is refused with the same code and a fixed `params.reason` for a provider
+ * whose code is not bound with PKCE and for a client that is not a native app (ADR 0044),
+ * before an attempt is made or the environment's ceiling is charged.
  *
  * Kept on the attempt, server-side: the hash of `state` (random, single use: the only link
  * between the provider's answer and this attempt), the PKCE verifier and the OIDC nonce. The
@@ -1419,7 +1983,9 @@ export interface OAuthStartResult {
  * @param context - The requesting device.
  * @param link - For connecting from a profile: the signed-in user.
  * @returns The attempt (with its secret), the provider's URL and the binding.
- * @throws AuthError `request.origin_not_allowed`, `auth.method_disabled` or
+ * @throws AuthError `request.origin_not_allowed`, `auth.method_disabled` (also when the
+ *   provider's adapter says, with an `OAuthProviderError`, that it cannot build its URL from
+ *   the stored credentials; any other error of an adapter is rethrown as it is) or
  *   `request.redirect_not_allowed`.
  * @throws RateLimitError when the environment's ceiling is reached.
  */
@@ -1433,7 +1999,13 @@ export async function startOAuth(
   requireAllowedOrigin(context.client, context)
   const { provider } = input
   const credentials = await OAuth.credentials(deps, tenant, provider)
-  const redirectUrl = await Settings.requireRedirectUrl(deps, tenant, input.redirectUrl)
+  // Judged before anything is counted or stored: a custom scheme is refused here for a
+  // provider without PKCE and for a client that is not a native app (ADR 0044), from the
+  // provider and the client kind alone.
+  const redirectUrl = await Settings.requireRedirectUrl(deps, tenant, input.redirectUrl, {
+    client: context.client,
+    provider,
+  })
   await chargeEnvironment(deps, tenant, 'oauth')
 
   const id = deps.ids.next()
@@ -1442,6 +2014,30 @@ export async function startOAuth(
   const oauthState = `${tenant.environmentId}.${id}.${randomToken()}`
   const codeVerifier = randomToken()
   const nonce = randomToken()
+  // Built before the attempt is stored, so that a failure here leaves no attempt behind.
+  // `OAuth.credentials` has already refused what it can tell is unusable; an adapter that
+  // says, in the port's own error, that it still cannot make a URL from what it was given is
+  // the provider being unavailable: the answer of a provider that is off. Anything else an
+  // adapter throws is a bug and stays the 500 it is, never a method that looks switched off.
+  let authorizationUrl: string
+  try {
+    authorizationUrl = deps.oauth[provider].authorizationUrl(credentials, {
+      state: oauthState,
+      codeVerifier,
+      nonce,
+      redirectUri: OAuth.callbackUrl(deps.config, provider),
+    })
+  } catch (error) {
+    if (!(error instanceof OAuthProviderError)) {
+      throw error
+    }
+    logger.error('an OAuth provider could not build its authorization URL', {
+      environmentId: tenant.environmentId,
+      provider,
+      failure: error.failure,
+    })
+    throw new AuthError('auth.method_disabled', { method: OAuth.strategyOf(provider) })
+  }
   const binding = `${OAUTH_BINDING_PREFIX}${randomToken()}`
   const state: State = {
     ...asked(context),
@@ -1465,12 +2061,6 @@ export async function startOAuth(
     // An OAuth attempt has no identifier: who it is for is what the provider will say.
     identifier: `oauth:${provider}`,
     state,
-  })
-  const authorizationUrl = deps.oauth[provider].authorizationUrl(credentials, {
-    state: oauthState,
-    codeVerifier,
-    nonce,
-    redirectUri: OAuth.callbackUrl(deps.config, provider),
   })
   return {
     attempt: toAttempt(attempt, stepFor(attempt, state), secret),
@@ -1581,7 +2171,12 @@ export async function oauthCallback(
   const tenant: Tenant = { projectId: attempt.projectId, environmentId, apiKeyId: '' }
   try {
     // The URL was allowed when the attempt started; the allow-list may have changed since.
-    await Settings.requireRedirectUrl(deps, tenant, oauth.redirectUrl)
+    // The custom-scheme rule is asked again too, from what the attempt itself holds: the
+    // provider that answered and the client kind it was started as.
+    await Settings.requireRedirectUrl(deps, tenant, oauth.redirectUrl, {
+      client: state.client,
+      provider,
+    })
   } catch {
     return { invalid: true }
   }
@@ -1797,7 +2392,9 @@ async function redeemOAuthTicket(
  *   tokens and with the new `attemptSecret`.
  * @throws AuthError `oauth.ticket_invalid`, `oauth.different_browser`,
  *   `request.origin_not_allowed`, `auth.method_disabled`, `oauth.email_missing`,
- *   `oauth.email_unverified`, `oauth.account_exists` or `auth.user_banned`.
+ *   `oauth.email_unverified`, `oauth.account_exists`, `auth.user_banned`, or, where the
+ *   sign-in would create an account, the `before_sign_up` hook's `hook.denied` or
+ *   `hook.unavailable`.
  */
 export async function exchangeOAuth(
   deps: Deps,
@@ -1806,13 +2403,56 @@ export async function exchangeOAuth(
   context: ClientContext
 ): Promise<FlowResult> {
   const redeemed = await redeemOAuthTicket(deps, tenant, input, 'sign_in', context)
-  const { attempt, state, provider } = redeemed
+  const result = await completeProviderSignIn(
+    deps,
+    tenant,
+    redeemed.attempt,
+    redeemed.state,
+    redeemed.provider,
+    redeemed.profile,
+    context
+  )
+  return result.tokens
+    ? result
+    : { ...result, attempt: { ...result.attempt, attemptSecret: redeemed.secret } }
+}
+
+/**
+ * Take a sign-in past a provider's word for who the user is: resolve the account and continue
+ * as after any first factor.
+ *
+ * **The one tail of every provider sign-in**, whichever way the profile was obtained: the
+ * browser's round trip ({@link exchangeOAuth}) and a native app's ID token
+ * ({@link submitIdToken}, ADR 0045). So the linking table (`OAuth.resolveAccount`), the
+ * `before_sign_up` hook, the ban check, `Factors.requiredFor`, the enrolment policy and
+ * `fed` in `amr` cannot differ between the two.
+ *
+ * @param deps - All dependencies.
+ * @param tenant - The environment.
+ * @param attempt - The attempt, on `needs_first_factor`.
+ * @param state - Its state, with whatever proved the profile already used up.
+ * @param provider - The provider that vouched.
+ * @param profile - What it vouched for.
+ * @param context - The requesting device.
+ * @returns `complete` with tokens, or `needs_second_factor` / `needs_factor_enrolment`.
+ * @throws AuthError as `OAuth.resolveAccount`, or `auth.user_banned`.
+ */
+async function completeProviderSignIn(
+  deps: Deps,
+  tenant: Tenant,
+  attempt: FlowAttemptRecord,
+  state: State,
+  provider: OAuthProvider,
+  profile: OAuthProfile,
+  context: ClientContext
+): Promise<FlowResult> {
   const { user, created } = await OAuth.resolveAccount(
     deps,
     tenant,
     provider,
-    redeemed.profile,
-    context
+    profile,
+    context,
+    state.client
   )
   if (user.bannedAt !== null) {
     throw new AuthError('auth.user_banned')
@@ -1831,21 +2471,225 @@ export async function exchangeOAuth(
       // through `needs_email_verification`, and the address's own flag is left as it is.
       emailVerified: true,
       ...required,
+      passwordExpired: false,
     }
   )
-  const result = await advance(
+  return advance(
     deps,
     tenant,
     attempt,
-    firstProven(state, OAuth.strategyOf(provider), 'fed'),
+    {
+      ...firstProven(state, OAuth.strategyOf(provider), 'fed'),
+      ...(created && { accountCreated: true }),
+    },
     user.id,
     next,
     required,
     context
   )
-  return result.tokens
-    ? result
-    : { ...result, attempt: { ...result.attempt, attemptSecret: redeemed.secret } }
+}
+
+/**
+ * Start a native sign-in with a provider's ID token (ADR 0045): an attempt of its own, and
+ * the nonce the app hands to the provider's SDK.
+ *
+ * There is no browser, so there is no redirect URL, no `state`, no ticket and no binding:
+ * what ties the provider's answer to this attempt is the **nonce**, 32 random bytes made
+ * here, kept on the attempt and returned once. The token the app later presents must carry
+ * exactly it, so a token obtained for any other sign-in (another attempt's, another
+ * device's, one lifted from a log) is useless here.
+ *
+ * Nothing is looked up about any user: the answer depends on the environment alone.
+ *
+ * **For native clients only, and for Apple an `ios` one** (`ID_TOKEN_CLIENT_KINDS`). That
+ * is the client's own claim (`x-tula-client`), a rule for honest clients and not a
+ * boundary: nothing rests on it. What is checked is the token. A browser is refused because
+ * nothing here is designed for one (no origin rule ties a token to a page; Google's web
+ * flow is not part of this), and an Android client is refused Apple because Apple's sheet
+ * is on Apple's platforms: what Apple issues elsewhere is for a Services ID, which this
+ * exchange does not accept.
+ *
+ * **Apple needs a registered iOS app** (ADR 0047): the accepted audiences are the bundle
+ * ids of the environment's iOS apps, and with none the start is `auth.method_disabled`, as
+ * for a provider that is off. That depends on the environment's rows alone.
+ *
+ * @param deps - All dependencies.
+ * @param tenant - The environment the publishable key resolved to.
+ * @param provider - The provider whose ID token the app will present.
+ * @param context - The requesting device.
+ * @returns The attempt on `needs_first_factor` (the provider's strategy) with its secret,
+ *   and the nonce.
+ * @throws ValidationError (422, field `x-tula-client`) for a client that is not a native
+ *   app, or not one of the provider's platform.
+ * @throws AuthError `auth.method_disabled` when the provider is not configured, is switched
+ *   off, cannot verify an ID token, or has no audience it accepts (Apple with no iOS app).
+ * @throws RateLimitError when the environment's ceiling is reached.
+ */
+export async function startIdTokenSignIn(
+  deps: Deps,
+  tenant: Tenant,
+  provider: IdTokenProvider,
+  context: ClientContext
+): Promise<{ attempt: FlowAttempt; nonce: string; client: SessionClient }> {
+  const kinds: readonly SessionClient[] = ID_TOKEN_CLIENT_KINDS[provider]
+  if (!kinds.includes(context.client)) {
+    throw new ValidationError({
+      errors: [
+        {
+          field: 'x-tula-client',
+          code: 'validation.failed',
+          message: `this provider's ID token is exchanged by a native app: ${kinds.join(' or ')}`,
+        },
+      ],
+    })
+  }
+  const credentials = await OAuth.credentials(deps, tenant, provider)
+  if (deps.oauth[provider].verifyIdToken === undefined) {
+    // Not reachable for a provider of `ID_TOKEN_PROVIDERS`; answered as a provider that is
+    // off rather than started and failed later.
+    throw new AuthError('auth.method_disabled', { method: OAuth.strategyOf(provider) })
+  }
+  // Apple with no iOS app registered: no token could be accepted, so nothing is started.
+  await OAuth.requireIdTokenAudiences(deps, tenant, provider, credentials)
+  await chargeEnvironment(deps, tenant, 'oauth')
+  const nonce = randomToken()
+  const state: State = {
+    ...asked(context),
+    strategies: [OAuth.strategyOf(provider)],
+    idTokenProvider: provider,
+    idTokenNonce: nonce,
+  }
+  const { attempt, secret } = await start(deps, tenant, {
+    kind: 'sign_in',
+    status: 'needs_first_factor',
+    // No identifier: who it is for is what the provider's token will say.
+    identifier: `oauth:${provider}`,
+    state,
+  })
+  return {
+    attempt: toAttempt(attempt, stepFor(attempt, state), secret),
+    nonce,
+    client: state.client,
+  }
+}
+
+/**
+ * Exchange a provider's ID token for the sign-in's next step (ADR 0045).
+ *
+ * The attempt must be one {@link startIdTokenSignIn} started; the provider is the attempt's
+ * own, never a request's. In order, and a request refused at one point has used up nothing
+ * that comes after it: the attempt's secret (`load`), the step, the provider still on
+ * (`OAuth.credentials`) and still with an audience (`OAuth.requireIdTokenAudiences`: for
+ * Apple the environment's iOS apps **as they are now**, so an app removed since the start
+ * is no audience), the environment's ceiling, then **the nonce is taken** (a
+ * compare-and-set on its value, as a WebAuthn challenge is taken), and only then is the
+ * token judged by the provider's adapter.
+ *
+ * So a token is judged once per attempt: a second request, with the same token or another,
+ * finds no nonce. **Every refusal of a token is the one `auth.invalid_credentials`**: a bad
+ * signature, a wrong issuer, an expired token, another app's audience, an `azp` that is not
+ * the operator's, a wrong or missing nonce, a token already presented. Which it was is a
+ * fixed word in the log and nowhere else, and the token itself is never logged or stored.
+ * The one other answer is `service.unavailable`, when the provider's signing keys could not
+ * be fetched: that says nothing about the token, and the nonce is spent all the same (the
+ * app starts again).
+ *
+ * With the token accepted the sign-in continues exactly as a browser's does after its
+ * ticket ({@link completeProviderSignIn}): the same account resolution, hooks, second
+ * factor and enrolment, and `fed` in `amr`.
+ *
+ * @param deps - All dependencies.
+ * @param tenant - The environment the publishable key resolved to.
+ * @param ref - The attempt and its secret.
+ * @param idToken - The provider's ID token, as the provider's SDK handed it to the app.
+ * @param context - The requesting device.
+ * @param name - Apple only (ADR 0047): the name the system's sheet handed the app, which
+ *   Apple's token does not carry. Unsigned: a display name for a new account, nothing else.
+ * @returns `complete` with tokens, or `needs_second_factor` / `needs_factor_enrolment`.
+ * @throws AuthError `flow.not_found`, `flow.invalid_step`, `auth.method_disabled`,
+ *   `auth.invalid_credentials`, `auth.user_banned`, or what `OAuth.resolveAccount` refuses
+ *   an account with (`oauth.email_missing`, `oauth.email_unverified`,
+ *   `oauth.account_exists`, a `before_sign_up` hook's `hook.denied` / `hook.unavailable`).
+ * @throws RateLimitError when the environment's ceiling is reached.
+ * @throws ServiceUnavailableError when the provider's keys could not be fetched.
+ */
+export async function submitIdToken(
+  deps: Deps,
+  tenant: Tenant,
+  ref: AttemptRef,
+  idToken: string,
+  context: ClientContext,
+  name: { givenName?: string; familyName?: string } = {}
+): Promise<FlowResult> {
+  const { attempt, state } = await load(deps, tenant, 'sign_in', ref, context)
+  const provider = state.idTokenProvider
+  if (provider === undefined) {
+    // An attempt of another kind (a password's, a browser's provider round trip).
+    throw new AuthError('flow.invalid_step')
+  }
+  assertAccepts(
+    attempt.kind,
+    attempt.status,
+    { type: 'first_factor_verified', strategy: OAuth.strategyOf(provider) },
+    state.strategies ?? []
+  )
+  // The provider still on and still with an audience, then the ceiling, and only then the
+  // nonce: a request refused by any of them leaves the nonce to be used.
+  const credentials = await OAuth.credentials(deps, tenant, provider)
+  const verify = deps.oauth[provider].verifyIdToken?.bind(deps.oauth[provider])
+  if (verify === undefined) {
+    throw new AuthError('auth.method_disabled', { method: OAuth.strategyOf(provider) })
+  }
+  // Read now, never kept from the start: an app removed meanwhile is no audience.
+  const audiences = await OAuth.requireIdTokenAudiences(deps, tenant, provider, credentials)
+  await chargeEnvironment(deps, tenant, 'verify')
+
+  const { idTokenNonce: nonce, ...rest } = state
+  const taken =
+    nonce !== undefined &&
+    (await deps.flowAttempts.transition(
+      tenant.environmentId,
+      attempt.id,
+      attempt.status,
+      { status: attempt.status, state: rest },
+      deps.clock.now(),
+      { key: 'idTokenNonce', value: nonce }
+    ))
+  if (nonce === undefined || !taken) {
+    // A token was already presented for this attempt, by this request's twin or an earlier one.
+    logger.warn('a native ID token was refused', {
+      environmentId: tenant.environmentId,
+      provider,
+      failure: 'nonce_used',
+    })
+    throw new AuthError('auth.invalid_credentials')
+  }
+
+  let profile: OAuthProfile
+  try {
+    profile = await verify(credentials, {
+      idToken,
+      audiences,
+      nonce,
+      // Read by Apple's adapter alone, whose token has no name.
+      ...((name.givenName !== undefined || name.familyName !== undefined) && { user: name }),
+    })
+  } catch (error) {
+    if (!(error instanceof OAuthProviderError)) {
+      throw error
+    }
+    // The kind of failure only: the token can hold the user's address, and is one.
+    logger.warn('a native ID token was refused', {
+      environmentId: tenant.environmentId,
+      provider,
+      failure: error.failure,
+    })
+    if (error.failure === 'unavailable') {
+      throw new ServiceUnavailableError()
+    }
+    throw new AuthError('auth.invalid_credentials')
+  }
+  return completeProviderSignIn(deps, tenant, attempt, rest, provider, profile, context)
 }
 
 /**
@@ -1911,7 +2755,8 @@ export async function exchangeOAuthLink(
  * @param context - The requesting device.
  * @returns `complete` with tokens, or `needs_second_factor` without.
  * @throws AuthError `flow.not_found`, `flow.invalid_step`, `request.origin_not_allowed`,
- *   `auth.method_disabled`, a `verification.*` code or `auth.user_banned`.
+ *   `auth.method_disabled`, a `verification.*` code or `auth.user_banned`; for a sign-up, the
+ *   `before_sign_up` hook's `hook.denied` or `hook.unavailable` (the attempt has then ended).
  */
 export async function verifyEmail(
   deps: Deps,
@@ -1949,9 +2794,11 @@ export async function verifyEmail(
     }
     // An attempt that has already proven two factors (a passkey) is asked for nothing more:
     // no second factor and no enrolment, exactly as when its address was verified already.
+    // The same for one that proved a texted code first and now the address, where a texted
+    // code is the user's only second factor: that is two things shown (`requirement`).
     const required: Requirement = state.amr?.includes('mfa')
       ? { secondFactors: [], enrolmentRequired: false }
-      : await requirement(deps, tenant, user.id)
+      : await requirement(deps, tenant, user.id, [...(state.amr ?? []), 'email'])
     if (state.amr?.includes('pwd')) {
       // The verifier knows the password, so it stays.
       await deps.users.markEmailVerified(
@@ -1972,6 +2819,8 @@ export async function verifyEmail(
       strategies: state.strategies ?? [],
       emailVerified: true,
       ...required,
+      // A password sign-in that detoured through this code still owes what its password owed.
+      passwordExpired: owesNewPassword(state),
     })
     return advance(deps, tenant, attempt, proven(state, 'email'), user.id, next, required, context)
   }
@@ -1981,6 +2830,14 @@ export async function verifyEmail(
     // Answer as if the guess was wrong: the attempt can never create or enter an account.
     throw new AuthError('verification.invalid_code', { attemptsRemaining: 0 })
   }
+  // The address is proven and the attempt is no decoy: an account is about to be created, and
+  // only now is the environment's hook asked (ADR 0035). A refusal ends the attempt.
+  const clearance = await clearSignUp(deps, tenant, attempt, {
+    email: attempt.identifier,
+    method: state.passwordHash ? 'password' : 'passwordless',
+    client: state.client,
+    ipAddress: cleanOrigin(context).ipAddress,
+  })
   const userId = deps.ids.next()
   const created = await deps.users.create(
     {
@@ -2006,6 +2863,10 @@ export async function verifyEmail(
         method: 'sign_up',
         emailVerified: true,
         ...(!state.passwordHash && { passwordless: true }),
+        ...(clearance === 'bypassed' && { hookBypassed: true }),
+        // A sign-in test's throwaway user (ADR 0058), said where its id is first said.
+        // Decided from the address, so no path that creates one can leave it out.
+        ...(isTestAddress(attempt.identifier) && { test: true }),
       },
     })
   )
@@ -2022,8 +2883,65 @@ export async function verifyEmail(
     strategies: [],
     emailVerified: true,
     ...required,
+    passwordExpired: false,
   })
   return advance(deps, tenant, attempt, proven(state, 'email'), userId, next, required, context)
+}
+
+/**
+ * Ask the environment's `before_sign_up` hook about a sign-up whose address has just been
+ * proven, and end the attempt when the answer is no (ADR 0035).
+ *
+ * **Why here and nowhere earlier.** A sign-up's start answers the same for an address that has
+ * an account and one that has none, and an attempt for an existing address is a decoy whose
+ * code nobody knows. The hook is asked only for a new address, so asking it at the start (or
+ * at any step a decoy also reaches) would make "was the hook asked", its answer and its time
+ * an oracle for which addresses exist. This is the first point where the flow already answers
+ * differently: the caller has presented the emailed code, which only the address's owner
+ * holds and which no decoy attempt accepts.
+ *
+ * It is also behind every check the step makes first: the attempt's secret and origin
+ * (`load`), the method's switch, the environment's ceiling and a spent code. Nobody makes the
+ * server call the operator's endpoint without an inbox of their own and a code from it.
+ *
+ * **A refusal ends the attempt.** The code is spent by then, so an attempt left open could
+ * only be continued by asking for another code, with the user none the wiser about why. It is
+ * deleted (with the password hash it holds), nothing of an account exists, and the client is
+ * told which of the two it was: `hook.denied` (with the operator's code) or
+ * `hook.unavailable` (try again later). If the delete itself fails, that is logged and the
+ * hook's error is still the answer: the attempt then expires by itself. Any other error (the environment's cap on hook calls,
+ * a store that is down) leaves the attempt as it is.
+ *
+ * @returns What the hook module returns: `clear` or `bypassed`, and nothing of an answer.
+ * @throws AuthError `hook.denied` or `hook.unavailable`.
+ */
+async function clearSignUp(
+  deps: Deps,
+  tenant: Tenant,
+  attempt: Pick<FlowAttemptRecord, 'id'>,
+  question: Hooks.SignUpQuestion
+): Promise<Hooks.SignUpClearance> {
+  try {
+    return await Hooks.beforeSignUp(deps, tenant, question)
+  } catch (error) {
+    if (
+      error instanceof AuthError &&
+      (error.code === 'hook.denied' || error.code === 'hook.unavailable')
+    ) {
+      try {
+        await deps.flowAttempts.delete(tenant.environmentId, attempt.id)
+      } catch (cleanup) {
+        // The hook's verdict is what the client must hear, not that tidying up after it
+        // failed. The attempt is left to expire; its code is spent, and nothing was created.
+        logger.warn('could not end a sign-up attempt after its hook refused it', {
+          environmentId: tenant.environmentId,
+          attemptId: attempt.id,
+          err: cleanup instanceof Error ? cleanup.name : 'unknown',
+        })
+      }
+    }
+    throw error
+  }
 }
 
 /**
@@ -2147,6 +3065,8 @@ export async function resetPassword(
     // The code proves control of the address.
     emailVerified: true,
     ...required,
+    // The password a reset stores is seconds old.
+    passwordExpired: false,
   })
   const actor = { type: 'user', id: user.id, ...cleanOrigin(context) } as const
   await Users.resetPassword(deps, tenant, user.id, input.password, actor, () =>
@@ -2178,6 +3098,111 @@ export async function resetPassword(
 }
 
 /**
+ * Replace an expired password, for a sign-in waiting on `needs_new_password`, and sign the
+ * user in (ADR 0041).
+ *
+ * The attempt got here by proving the password it must now replace, and after it everything
+ * else it owed (the emailed code of an unverified address, a second factor, an enrolment):
+ * the transition table puts this step last. So the holder of nothing but an old password
+ * never reaches it on an account that has a second factor.
+ *
+ * What is checked, in this order, before anything is counted or stored:
+ *
+ * - the attempt's secret and origin (`load`), the step, and that passwords are still on;
+ * - **that the password is still the one the attempt proved.** An attempt waits here for up
+ *   to ten minutes, and its owner may reset the password meanwhile. The attempt remembers
+ *   when the password it proved was set; a password set at any other time is another
+ *   password, and the answer is `flow.invalid_step` (start again) with nothing compared, so
+ *   that an old password plus a waiting attempt can neither overwrite a reset nor ask
+ *   whether a candidate is the new password. The store's write is a compare-and-set on the
+ *   same hash, which covers a reset that lands later still;
+ * - that the user is not banned, and has not confirmed a second factor this attempt never
+ *   proved (as `finish` checks for a session).
+ *
+ * The password itself goes through `Users.replaceExpiredPassword`: the policy, the history as
+ * for a user's own change, and **the expired password is refused as its own replacement
+ * whatever `password.history` says** (`password.reused`). A refusal leaves the attempt where
+ * it is: the user tries another password. Once one is stored the user's other sessions have
+ * ended, the owner is told, and the attempt completes through {@link finish} like any other
+ * (so `before_session` is asked there, and only there).
+ *
+ * Of two requests at once one stores its password and gets the session. The other finds the
+ * stored password is no longer the one the attempt proved and is refused
+ * (`flow.invalid_step`), with nothing stored and no session ended.
+ *
+ * **After the password is stored the request can still fail, and the password stays.** The
+ * user's earlier sessions are ended next (tried three times); if that fails the answer is
+ * `service.unavailable`, nobody is signed in and those sessions live on until they end or an
+ * administrator ends them. Then {@link finish}: a hook that refuses, a session limit or a
+ * store that is away leaves the new password, the earlier sessions ended and no session.
+ * Either way the attempt is over (`flow.invalid_step` for a retry: the password it proved
+ * is gone) and the user signs in again with the new password.
+ *
+ * @param deps - All dependencies.
+ * @param tenant - The environment the publishable key resolved to.
+ * @param ref - The sign-in attempt and its secret.
+ * @param password - The new password.
+ * @param context - The requesting device.
+ * @returns `complete` with tokens.
+ * @throws AuthError `flow.not_found`, `request.origin_not_allowed`, `flow.invalid_step` (not
+ *   waiting on a new password, or the password is no longer the one the attempt proved),
+ *   `auth.method_disabled` or `auth.user_banned`.
+ * @throws ServiceException a `password.*` code when the new password fails the policy, or is
+ *   one the user may not set again (`password.reused`).
+ * @throws RateLimitError when the user's allowance of history comparisons is used up.
+ * @throws ServiceUnavailableError when the password was stored and the user's earlier
+ *   sessions could not be ended.
+ */
+export async function replaceExpiredPassword(
+  deps: Deps,
+  tenant: Tenant,
+  ref: AttemptRef,
+  password: string,
+  context: ClientContext
+): Promise<FlowResult> {
+  const { attempt, state } = await load(deps, tenant, 'sign_in', ref, context)
+  // Throws `flow.invalid_step` unless the attempt is a sign-in waiting on a new password.
+  assertAccepts(attempt.kind, attempt.status, { type: 'expired_password_replaced' })
+  const { userId } = attempt
+  const { expiredPasswordSetAt: setAt, ...rest } = state
+  if (!userId || setAt === undefined) {
+    throw new AuthError('flow.invalid_step')
+  }
+  // Before the ceiling is charged or anything compared: passwords switched off since the
+  // attempt proved one must not end in a new password.
+  await requireProvenMethod(deps, tenant, attempt, state, context)
+  await chargeEnvironment(deps, tenant, 'password')
+
+  const user = await deps.users.findById(tenant.environmentId, userId)
+  const found = user ? await Passwords.ofUser(deps, tenant.environmentId, user) : null
+  if (
+    !found ||
+    found.passwordHash === null ||
+    found.user.emailNormalized !== attempt.identifier ||
+    found.passwordChangedAt?.getTime() !== setAt
+  ) {
+    // The account is gone, moved to another address, or has another password by now (its
+    // owner reset it, an administrator set one): what this attempt proved no longer holds.
+    throw new AuthError('flow.invalid_step')
+  }
+  if (found.user.bannedAt !== null) {
+    throw new AuthError('auth.user_banned')
+  }
+  if (
+    !state.amr?.includes('mfa') &&
+    !Mfa.meetsSecondFactor(state.amr ?? [], await Factors.requiredFor(deps, tenant, userId))
+  ) {
+    // A second factor was confirmed while the attempt waited here. It never proved one, so
+    // it may neither replace the password nor end in a session: the user starts again and
+    // is asked for the factor first.
+    throw new AuthError('flow.invalid_step')
+  }
+  const actor = { type: 'user', id: userId, ...cleanOrigin(context) } as const
+  await Users.replaceExpiredPassword(deps, tenant, found.user, password, actor, setAt)
+  return finish(deps, tenant, attempt, rest, userId, context)
+}
+
+/**
  * Lockout key for second-factor guesses of one user in one environment: the one budget shared by
  * every place a TOTP or backup code is checked (`Mfa.secondFactorLockKey`).
  *
@@ -2200,7 +3225,12 @@ export function secondFactorLockKey(environmentId: string, userId: string): stri
  * registered for its method (`Factors.verify`): an authenticator code (accepted once per time
  * step), a backup code (spent, recorded, and the owner told how many are left; the response
  * says so too, as `backupCodesRemaining`) or a passkey (an assertion for the challenge of
- * {@link secondFactorPasskeyOptions}, which is used up whatever the assertion turns out to be).
+ * {@link secondFactorPasskeyOptions}, which is used up whatever the assertion turns out to be)
+ * or a texted code (the one {@link prepareSecondFactor} sent for this attempt).
+ *
+ * **Only a strong factor records `mfa`** (`Mfa.isStrongSecondFactor`). A texted code records
+ * `sms` and nothing else: the session it ends in is not one that "passed two-step
+ * verification" for anything that asks for `mfa`.
  *
  * **A proof is spent even if the session then cannot be created.** The verifier uses the proof
  * up (a backup code is marked used and recorded) before `finish` creates the session, and
@@ -2215,7 +3245,9 @@ export function secondFactorLockKey(environmentId: string, userId: string): stri
  * @param ref - The attempt and its secret.
  * @param proof - The method and what the client submitted for it.
  * @param context - The requesting device.
- * @returns `complete` with tokens.
+ * @returns `complete` with tokens; or, for a sign-in whose password has expired,
+ *   `needs_new_password` without tokens (and with `backupCodesRemaining` when a backup code
+ *   was used: the code is spent whatever becomes of the new password).
  * @throws AuthError `flow.not_found`, `request.origin_not_allowed`, `flow.invalid_step` (wrong
  *   step, or a method the attempt did not offer), `auth.method_disabled` when the first factor
  *   the attempt proved has been switched off since, `mfa.invalid_code` for a proof that does
@@ -2242,7 +3274,13 @@ export async function submitSecondFactor(
   if (proof.method === 'passkey') {
     // Passkeys switched off since the attempt was offered one, or a foreign origin: refused
     // before the guess is counted or the challenge used.
-    await Passkeys.relyingParty(deps, tenant, context.origin)
+    await Passkeys.relyingParty(deps, tenant, ceremony(context, state.client))
+  }
+  const user = await deps.users.findById(tenant.environmentId, userId)
+  if (proof.method === 'sms_code') {
+    // The texted second factor switched off, text messages off or the number's country
+    // removed since the code was sent: refused before the guess is counted or the code used.
+    await requireSmsSecondFactor(deps, tenant, user)
   }
   const lockKey = secondFactorLockKey(tenant.environmentId, userId)
   const lock = await deps.lockout.attempt(lockKey, CREDENTIAL_LOCKOUT, deps.clock.now())
@@ -2251,10 +3289,18 @@ export async function submitSecondFactor(
   }
   await chargeEnvironment(deps, tenant, 'verify')
 
-  const user = await deps.users.findById(tenant.environmentId, userId)
   const actor = { type: 'user', id: userId, ...cleanOrigin(context) } as const
-  let current = state
+  // What a texted code kept on the attempt has done its job once any factor is submitted.
+  const { secondFactorPrepared: _texted, ...untexted } = state
+  let current: State = untexted
   let checked = proof
+  if (proof.method === 'sms_code') {
+    // The attempt is named by the engine, never by the client: the code's keyed hash covers it.
+    checked = {
+      method: 'sms_code',
+      response: { code: proof.response, attemptId: attempt.id } satisfies Factors.SmsCodeProof,
+    }
+  }
   if (proof.method === 'passkey') {
     // The challenge is used up before the assertion is looked at: a response works once.
     const taken = await takePasskeyChallenge(deps, tenant, attempt, state, context)
@@ -2275,17 +3321,133 @@ export async function submitSecondFactor(
   if (user.bannedAt !== null) {
     throw new AuthError('auth.user_banned')
   }
-  return finish(
+  // The factor is proven. A sign-in whose password has expired is not done yet: it is asked
+  // for the new password now, and only now (ADR 0041).
+  const next = nextStatus(
+    attempt.kind,
+    attempt.status,
+    { type: 'second_factor_verified' },
+    {
+      strategies: [],
+      emailVerified: true,
+      ...NOTHING_REQUIRED,
+      passwordExpired: owesNewPassword(current),
+    }
+  )
+  return advance(
     deps,
     tenant,
     attempt,
-    proven(current, ...outcome.methods, 'mfa'),
+    // `mfa` says "a strong second factor": a texted code never earns it.
+    proven(current, ...outcome.methods, ...(Mfa.isStrongSecondFactor(proof.method) ? ['mfa'] : [])),
     user.id,
+    next,
+    NOTHING_REQUIRED,
     context,
     outcome.backupCodesRemaining === undefined
       ? {}
       : { backupCodesRemaining: outcome.backupCodesRemaining }
   )
+}
+
+/**
+ * Refuse a step of the texted second factor for a user who cannot use it now: the user is
+ * gone or holds no number, or the environment's switch, text messages, the number's country
+ * or the sender is off (`Mfa.requireSmsFactor`). Before anything is counted, spent or sent.
+ */
+async function requireSmsSecondFactor(
+  deps: Pick<Deps, 'environmentSettings' | 'config' | 'sms'>,
+  tenant: Tenant,
+  user: UserRecord | null
+): Promise<string> {
+  if (!user || user.phoneNumber === null || user.smsFactorEnabledAt === null) {
+    // The factor went (its number was removed or replaced, an administrator reset it) while
+    // the attempt waited: what the attempt was offered no longer exists. Start again.
+    throw new AuthError('flow.invalid_step')
+  }
+  await Mfa.requireSmsFactor(deps, tenant, user.phoneNumber)
+  return user.phoneNumber
+}
+
+/**
+ * Text the code of a second factor that is sent, for an attempt waiting on
+ * `needs_second_factor` whose options include it (`sms_code`, the only such method).
+ *
+ * **Nothing is sent until the client asks.** An attempt that reaches `needs_second_factor`
+ * has cost no message; the user (or the screen, once) asks for the code here. The number is
+ * the account's own, read now: never one from the request, and never one kept on the attempt.
+ *
+ * In order, and before anything is counted or sent: the attempt's secret and origin (`load`),
+ * the step, that the attempt was offered the method, that the first factor it proved is
+ * still on ({@link requireProvenMethod}), that a texted code **still is** what this user is
+ * asked for (a user who gained an authenticator app or a passkey meanwhile is never texted:
+ * `flow.invalid_step`, start again), and that the texted second factor can be used now
+ * (`Mfa.requireSmsFactor`). Then the environment's ceiling, and `Sms.sendCode` with every
+ * limit it has. **The send is waited for**: a message that could not be sent is
+ * `sms.unavailable`, and no token is stored, so an earlier code keeps working.
+ *
+ * The code is a verification token of purpose `sms_second_factor`, bound to this attempt
+ * and the number: it is honoured by this attempt's `second-factor` step and nowhere else.
+ *
+ * @param deps - All dependencies.
+ * @param tenant - The environment the publishable key resolved to.
+ * @param kind - Which flow the route belongs to (`sign_in` or `password_reset`).
+ * @param ref - The attempt and its secret.
+ * @param input - The method to prepare.
+ * @param context - The requesting device.
+ * @returns The attempt, still on `needs_second_factor`, now with `prepared` (the masked
+ *   number the code went to). No tokens.
+ * @throws AuthError `flow.not_found`, `request.origin_not_allowed`, `flow.invalid_step`
+ *   (wrong step, a method the attempt was not offered, or one the user is no longer asked
+ *   for), `auth.method_disabled`, `sms.disabled`, `sms.country_not_allowed` or
+ *   `sms.unavailable`.
+ * @throws RateLimitError when a send limit, or the environment's daily limit, is spent.
+ */
+export async function prepareSecondFactor(
+  deps: Deps,
+  tenant: Tenant,
+  kind: FlowKind,
+  ref: AttemptRef,
+  input: SecondFactorPrepareRequest,
+  context: ClientContext
+): Promise<FlowResult> {
+  const { attempt, state } = await load(deps, tenant, kind, ref, context)
+  assertAccepts(attempt.kind, attempt.status, { type: 'second_factor_verified' })
+  const userId = attempt.userId
+  if (!userId || !state.secondFactors?.includes(input.method)) {
+    throw new AuthError('flow.invalid_step')
+  }
+  await requireProvenMethod(deps, tenant, attempt, state, context)
+  const user = await deps.users.findById(tenant.environmentId, userId)
+  const phoneNumber = await requireSmsSecondFactor(deps, tenant, user)
+  if (!(await Factors.requiredFor(deps, tenant, userId)).includes(input.method)) {
+    // A stronger factor was enrolled while the attempt waited: a texted code is not sent,
+    // and would not be accepted. The user starts again and is asked for the stronger one.
+    throw new AuthError('flow.invalid_step')
+  }
+  await chargeEnvironment(deps, tenant, 'verify')
+  const sent = await Mfa.textSecondFactorCode(deps, tenant, {
+    purpose: Mfa.SMS_SECOND_FACTOR_PURPOSE,
+    userId,
+    phoneNumber,
+    askedBy: { flowAttemptId: attempt.id },
+    address: context.ipAddress === null ? null : ipBucket(context.ipAddress),
+  })
+  const pending: State = {
+    ...state,
+    secondFactorPrepared: { method: input.method, destination: sent.destination },
+  }
+  const moved = await deps.flowAttempts.transition(
+    tenant.environmentId,
+    attempt.id,
+    attempt.status,
+    { status: attempt.status, state: pending },
+    deps.clock.now()
+  )
+  if (!moved) {
+    throw new AuthError('flow.invalid_step')
+  }
+  return { attempt: toAttempt(attempt, stepFor(attempt, pending)), client: state.client }
 }
 
 /**
@@ -2331,13 +3493,13 @@ async function issuePasskeyChallenge(
  *   `expected` when the attempt has no challenge, it expired, or another request took it.
  */
 async function takePasskeyChallenge(
-  deps: Pick<Deps, 'flowAttempts' | 'clock' | 'environmentSettings' | 'config'>,
+  deps: Pick<Deps, 'flowAttempts' | 'clock' | 'environmentSettings' | 'config' | 'nativeApps'>,
   tenant: Tenant,
   attempt: FlowAttemptRecord,
   state: State,
   context: Pick<ClientContext, 'origin'>
 ): Promise<{ state: State; expected?: WebAuthn.Expected }> {
-  const rp = await Passkeys.relyingParty(deps, tenant, context.origin)
+  const rp = await Passkeys.relyingParty(deps, tenant, ceremony(context, state.client))
   const { passkeyChallenge: challenge, passkeyChallengeExpiresAt: expiresAt, ...rest } = state
   const now = deps.clock.now()
   if (challenge === undefined) {
@@ -2374,20 +3536,27 @@ async function takePasskeyChallenge(
  *   the request options.
  * @throws AuthError `auth.method_disabled` when passkeys are off, or
  *   `request.origin_not_allowed` for an origin the environment does not allow or that does not
- *   belong to its relying-party id.
+ *   belong to its relying-party id, and for a request with no origin that is not from a
+ *   native client whose platform has a registered app.
  * @throws RateLimitError when the environment's ceiling for starts (`passkeyStart`, its own:
  *   never the one code steps are counted under) is reached.
  */
 export async function startPasskeySignIn(
   deps: Pick<
     Deps,
-    'flowAttempts' | 'clock' | 'ids' | 'environmentSettings' | 'config' | 'rateLimiter'
+    | 'flowAttempts'
+    | 'clock'
+    | 'ids'
+    | 'environmentSettings'
+    | 'config'
+    | 'rateLimiter'
+    | 'nativeApps'
   >,
   tenant: Tenant,
   context: ClientContext
 ): Promise<{ attempt: FlowAttempt; options: PasskeyRequestOptions; client: SessionClient }> {
   requireAllowedOrigin(context.client, context)
-  const rp = await Passkeys.relyingParty(deps, tenant, context.origin)
+  const rp = await Passkeys.relyingParty(deps, tenant, ceremony(context, context.client))
   // Its own ceiling: every idle sign-in page asks for a start (see ENVIRONMENT_RATE_LIMITS).
   await chargeEnvironment(deps, tenant, 'passkeyStart')
   const challenge = WebAuthn.newChallenge()
@@ -2415,8 +3584,8 @@ export async function startPasskeySignIn(
  * Prove a passkey for an attempt started with {@link startPasskeySignIn}, and sign the user in.
  *
  * **Every failure is the same `auth.invalid_credentials`**: an unknown credential, another
- * environment's, a wrong signature, a response made for another origin, relying party or
- * challenge, one without user verification, a used or expired challenge, a counter that went
+ * environment's, a wrong signature, a response made for another origin (a page's, or a native
+ * app's whose signing certificate is not a registered one), relying party or challenge, one without user verification, a used or expired challenge, a counter that went
  * backwards. The challenge is used up by the first response presented for it; a request that
  * is refused before that (passkeys off, the origin, the environment's ceiling or a limiter that
  * cannot answer) uses nothing up.
@@ -2454,10 +3623,10 @@ export async function submitPasskey(
   assertAccepts(attempt.kind, attempt.status, event, strategies)
   // The relying party first (passkeys still on, origin allowed), then the ceiling, and only
   // then the challenge: a request refused by either leaves the challenge to be used.
-  await Passkeys.relyingParty(deps, tenant, context.origin)
+  await Passkeys.relyingParty(deps, tenant, ceremony(context, state.client))
   await chargeEnvironment(deps, tenant, 'verify')
   const taken = await takePasskeyChallenge(deps, tenant, attempt, state, context)
-  const { challenge, ...rp } = taken.expected ?? { challenge: null, rpId: '', origin: '' }
+  const { challenge, ...rp } = taken.expected ?? { challenge: null, rpId: '', origins: [] }
   const asserted =
     challenge === null
       ? null
@@ -2478,17 +3647,25 @@ export async function submitPasskey(
   }
   // Nothing more is asked of a user who proved a passkey: no second factor, no enrolment.
   const required: Requirement = { secondFactors: [], enrolmentRequired: false }
+  const { email, emailNormalized } = user
   const next = nextStatus(attempt.kind, attempt.status, event, {
     strategies,
-    emailVerified: user.emailVerifiedAt !== null,
+    // An account with no address (made through X or Facebook; ADR 0026) has none to prove:
+    // it is never sent to `needs_email_verification`, where a code would have nowhere to go.
+    emailVerified: email === null || user.emailVerifiedAt !== null,
     ...required,
+    passwordExpired: false,
   })
   const done = firstProven(taken.state, 'passkey', ...asserted.methods, 'mfa')
   if (next !== 'needs_email_verification') {
     return advance(deps, tenant, attempt, done, user.id, next, required, context)
   }
-  const pending: State = { ...done, email: user.email }
-  const waiting = { ...attempt, status: next, userId: user.id, identifier: user.emailNormalized }
+  if (email === null || emailNormalized === null) {
+    // Not reachable (see `emailVerified` above); refused rather than completed if it ever is.
+    throw new AuthError('flow.invalid_step')
+  }
+  const pending: State = { ...done, email }
+  const waiting = { ...attempt, status: next, userId: user.id, identifier: emailNormalized }
   await issueCode(deps, tenant, waiting, pending, { userId: user.id })
   const moved = await deps.flowAttempts.transition(
     tenant.environmentId,
@@ -2496,7 +3673,7 @@ export async function submitPasskey(
     attempt.status,
     // The attempt started with no identifier (the passkey said who it is): it gets the user's
     // address now, stored, so that every later read of the attempt agrees with this answer.
-    { status: next, userId: user.id, identifier: user.emailNormalized, state: pending },
+    { status: next, userId: user.id, identifier: emailNormalized, state: pending },
     deps.clock.now()
   )
   if (!moved) {
@@ -2535,7 +3712,7 @@ export async function secondFactorPasskeyOptions(
     throw new AuthError('flow.invalid_step')
   }
   await requireProvenMethod(deps, tenant, attempt, state, context)
-  const rp = await Passkeys.relyingParty(deps, tenant, context.origin)
+  const rp = await Passkeys.relyingParty(deps, tenant, ceremony(context, state.client))
   await chargeEnvironment(deps, tenant, 'verify')
   const owned = await deps.passkeys.listForUser(tenant.environmentId, attempt.userId)
   const challenge = await issuePasskeyChallenge(deps, tenant, attempt, state)
@@ -2558,6 +3735,12 @@ async function loadEnrolment(
   }
   // Before the ceiling is charged, a pending factor stored or a guess counted.
   await requireProvenMethod(deps, tenant, attempt, state, context)
+  if (state.firstFactor === 'sms_code' && !state.amr?.some((m) => m === 'pwd' || m === 'email')) {
+    // Never reached by an attempt this version parked (a texted code alone is refused before
+    // it gets here: `attemptSmsCode`); held here too, so that no later path can let a phone
+    // number alone enrol an account's second factor.
+    throw new AuthError('mfa.enrolment_needs_other_sign_in')
+  }
   await chargeEnvironment(deps, tenant, 'verify')
   return { attempt, state, userId: attempt.userId }
 }
@@ -2641,9 +3824,30 @@ export async function confirmFactorEnrolment(
   })
   let result: FlowResult
   try {
-    result = await finish(deps, tenant, attempt, proven(state, 'otp', 'mfa'), userId, context, {
-      backupCodes: codes,
-    })
+    // To a session, or, for a sign-in whose password has expired, to the new password. The
+    // backup codes are shown by this response either way: they are never returned again.
+    const next = nextStatus(
+      attempt.kind,
+      attempt.status,
+      { type: 'factor_enrolled' },
+      {
+        strategies: [],
+        emailVerified: true,
+        ...NOTHING_REQUIRED,
+        passwordExpired: owesNewPassword(state),
+      }
+    )
+    result = await advance(
+      deps,
+      tenant,
+      attempt,
+      proven(state, 'otp', 'mfa'),
+      userId,
+      next,
+      NOTHING_REQUIRED,
+      context,
+      { backupCodes: codes }
+    )
   } catch (error) {
     try {
       await deps.factors.removeForUser(

@@ -22,7 +22,35 @@ interface FirstFactor {
    * Whether the environment offers it. Reads the environment's settings and its enabled OAuth
    * providers only: never anything about a user.
    */
-  enabled: (settings: EnvironmentSettings, providers: readonly OAuthProvider[]) => boolean
+  enabled: (
+    settings: EnvironmentSettings,
+    providers: readonly OAuthProvider[],
+    deployment: Deployment
+  ) => boolean
+}
+
+/** What a first factor may need of the deployment, beside the environment's settings. */
+export interface Deployment {
+  /** Whether the deployment can send a text message at all (`deps.sms.configured`). */
+  smsSender: boolean
+}
+
+/**
+ * Whether a texted code can be asked for: the method is on, text messages are on with at
+ * least one country, and the deployment has a sender. Without any one of them every try
+ * would be refused, so the strategy is not offered.
+ *
+ * @param settings - The environment's settings.
+ * @param deployment - Whether the deployment has an SMS sender.
+ * @returns `true` when `sms_code` is offered.
+ */
+export function smsCodeAvailable(settings: EnvironmentSettings, deployment: Deployment): boolean {
+  return (
+    deployment.smsSender &&
+    settings.signIn.methods.smsCode.enabled &&
+    settings.sms.enabled &&
+    settings.sms.allowedCountries.length > 0
+  )
 }
 
 /**
@@ -33,16 +61,35 @@ interface FirstFactor {
  * `sign-ins/:attemptId/first-factor/*`; an OAuth provider (ADR 0026) through an attempt of its
  * own (`sign-ins/oauth`, the provider's callback, `sign-ins/oauth/exchange`); a passkey
  * (ADR 0027) through an attempt of its own too (`sign-ins/passkey`, `sign-ins/:id/passkey`),
- * since it needs no identifier.
+ * since it needs no identifier. A texted code (`sms_code`, ADR 0037) is proven through the
+ * same two routes as an emailed one, for a sign-in started with a phone number.
  */
 const FIRST_FACTORS: readonly FirstFactor[] = [
   { strategy: 'password', enabled: (settings) => settings.signIn.methods.password.enabled },
   { strategy: 'email_code', enabled: (settings) => settings.signIn.methods.emailCode.enabled },
   { strategy: 'email_link', enabled: (settings) => settings.signIn.methods.emailLink.enabled },
   { strategy: 'passkey', enabled: (settings) => Passkeys.available(settings) },
+  {
+    strategy: 'sms_code',
+    enabled: (settings, _providers, deployment) => smsCodeAvailable(settings, deployment),
+  },
   { strategy: 'oauth_google', enabled: (_settings, providers) => providers.includes('google') },
   { strategy: 'oauth_github', enabled: (_settings, providers) => providers.includes('github') },
   { strategy: 'oauth_apple', enabled: (_settings, providers) => providers.includes('apple') },
+  {
+    strategy: 'oauth_microsoft',
+    enabled: (_settings, providers) => providers.includes('microsoft'),
+  },
+  { strategy: 'oauth_discord', enabled: (_settings, providers) => providers.includes('discord') },
+  {
+    strategy: 'oauth_linkedin',
+    enabled: (_settings, providers) => providers.includes('linkedin'),
+  },
+  { strategy: 'oauth_x', enabled: (_settings, providers) => providers.includes('x') },
+  {
+    strategy: 'oauth_facebook',
+    enabled: (_settings, providers) => providers.includes('facebook'),
+  },
 ]
 
 /**
@@ -57,12 +104,14 @@ export const EMAIL_FACTOR_METHODS = {
 /**
  * The first factors an environment offers at sign-in.
  *
- * Decided by the environment's settings **alone**. It must never take an identifier or a user:
+ * Decided by the environment's settings **alone** (and, for a texted code, by whether the
+ * deployment can send one). It must never take an identifier or a user:
  * the list is sent in the answer to a sign-in start, before anything is proven, so a list that
  * depended on the account would tell a stranger whether an address has a password or a passkey.
  *
  * @param settings - The environment's settings.
  * @param providers - The OAuth providers the environment has enabled (`OAuth.enabledProviders`).
+ * @param deployment - What the deployment can do. Left out: it has no SMS sender.
  * @returns The enabled strategies, in registry order. Empty when every method is switched off.
  *
  * @example
@@ -72,9 +121,10 @@ export const EMAIL_FACTOR_METHODS = {
  */
 export function firstFactors(
   settings: EnvironmentSettings,
-  providers: readonly OAuthProvider[] = []
+  providers: readonly OAuthProvider[] = [],
+  deployment: Deployment = { smsSender: false }
 ): FirstFactorStrategy[] {
-  return FIRST_FACTORS.filter((factor) => factor.enabled(settings, providers)).map(
+  return FIRST_FACTORS.filter((factor) => factor.enabled(settings, providers, deployment)).map(
     (factor) => factor.strategy
   )
 }
@@ -90,7 +140,9 @@ export function firstFactors(
  * unused one is left. A pending enrolment counts for nothing. The environment's MFA policy does
  * not switch that off: a factor a user has is asked for even where the policy is `off`
  * (ADR 0025). A user with a passkey may prove it instead, where they have an authenticator or
- * the policy is `required` (ADR 0027); a sign-in **by** passkey never asks any of this.
+ * the policy is `required` (ADR 0027); a sign-in **by** passkey never asks any of this. A
+ * user whose only second factor is a texted code is asked for `sms_code`, alone: it is never
+ * listed beside a stronger factor (`Mfa.isStrongSecondFactor`).
  *
  * @param deps - Factor store, passkey store and settings.
  * @param tenant - The environment.
@@ -171,8 +223,24 @@ export interface PasskeyProof {
 }
 
 /**
- * The verifier of each second-factor method: `totp` and `backup_code` (ADR 0025), and `passkey`
- * (ADR 0027). A method with no verifier can never be proven.
+ * What the flow engine hands the `sms_code` verifier: the code as submitted, and the attempt
+ * it was texted for. The attempt is the engine's own, never the client's word: the code's
+ * keyed hash covers it, so another attempt's code proves nothing here.
+ */
+export interface SmsCodeProof {
+  code: unknown
+  attemptId: string
+}
+
+/**
+ * The verifier of each second-factor method: `totp` and `backup_code` (ADR 0025), `passkey`
+ * (ADR 0027) and `sms_code` (ADR 0025, "A texted code as the second factor"). A method with
+ * no verifier can never be proven.
+ *
+ * **Where a second factor is registered.** A method is an entry here, the route that submits
+ * it (`Flows.submitSecondFactor`) and, when its proof is sent first, the route that asks for
+ * it (`Flows.prepareSecondFactor`). What a proof adds to `amr` is the verifier's to say;
+ * whether it also earns `mfa` is `Mfa.isStrongSecondFactor`'s, never a verifier's.
  */
 export const SECOND_FACTOR_VERIFIERS: Partial<Record<SecondFactorMethod, SecondFactorVerifier>> = {
   totp: async (deps, tenant, userId, response) =>
@@ -197,6 +265,21 @@ export const SECOND_FACTOR_VERIFIERS: Partial<Record<SecondFactorMethod, SecondF
       actor,
     })
     return asserted !== null && { methods: asserted.methods }
+  },
+  sms_code: async (deps, tenant, userId, response) => {
+    // Only the flow engine builds a proof (it names its own attempt): anything else submitted
+    // under this method proves nothing.
+    const { code, attemptId } = (response ?? {}) as Partial<SmsCodeProof>
+    if (typeof response !== 'object' || typeof attemptId !== 'string') {
+      return false
+    }
+    const texted = await Mfa.verifySmsCode(deps, tenant, userId, {
+      purpose: Mfa.SMS_SECOND_FACTOR_PURPOSE,
+      askedBy: { flowAttemptId: attemptId },
+      code,
+    })
+    // `sms`: the same value a texted first factor records. Never `mfa`.
+    return texted && { methods: ['sms'] }
   },
 }
 

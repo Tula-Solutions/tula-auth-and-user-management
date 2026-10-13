@@ -1,15 +1,18 @@
+import { DPOP_HEADER, DPOP_NONCE_HEADER } from '@tula/contract'
 import { Hono } from 'hono'
 import { describeRoute, resolver, validator } from 'hono-openapi'
 import type { AppEnv } from '~/dependencies'
 import { AuthError } from '~/exceptions'
 import { validationHook } from '~/handlers'
 import { requestOrigin, userActor } from '~/lib/actor'
+import { clientIp, ipBucket } from '~/lib/client-ip'
 import { originMayUseCookies, requestMayUseSessionCookie } from '~/middleware/cors'
 import { publishableKey } from '~/middleware/publishable-key'
 import { byIp, rateLimit } from '~/middleware/rate-limit'
 import { sessionAuth } from '~/middleware/session-auth'
 import * as Mfa from '~/modules/mfa/service'
 import { PasskeyRequestOptionsSchema } from '~/modules/passkey/schema'
+import * as Passkeys from '~/modules/passkey/service'
 import * as Sessions from '~/modules/session/service'
 import * as openapi from '~/openapi'
 import {
@@ -25,6 +28,7 @@ import {
   SessionIdParamSchema,
   SessionListSchema,
   SessionTokensSchema,
+  SmsFactorCodeSchema,
   StepUpEmailCodeSchema,
   StepUpRequestSchema,
 } from './schema'
@@ -54,11 +58,20 @@ router.post(
       'token again (within the `refresh.reuseGracePeriod` of the session’s profile). ' +
       'A browser whose session is of a `stateful` profile has no refresh token: called with ' +
       'only its session cookie, this answers `{ sessionId }` with no token when the session is ' +
-      'still live (nothing is rotated), and 401 when it is not.',
+      'still live (nothing is rotated), and 401 when it is not. ' +
+      'A session bound to a device key (a proof was sent when its sign-in started) is ' +
+      'refreshed only with a `DPoP` header: a proof signed by that key for `POST` and this ' +
+      'route’s address under the API’s public URL, with the server’s nonce. Without a valid ' +
+      'one the answer is `device.proof_invalid` (401), or `device.nonce_required` (400) with ' +
+      'a fresh nonce in the `DPoP-Nonce` header when only the nonce is missing or too old; ' +
+      'either way nothing is rotated and the session is not ended. Every refresh of a bound ' +
+      'session answers with a `DPoP-Nonce` header for the next proof.',
     security: openapi.security.client,
     responses: {
       413: openapi.responses[413],
       200: { description: 'New tokens.', content: json(SessionTokensSchema) },
+      // `device.nonce_required`: the proof of a bound session needs a fresh nonce.
+      400: openapi.responses[400],
       401: openapi.responses[401],
       403: openapi.responses[403],
       422: openapi.responses[422],
@@ -110,12 +123,16 @@ router.post(
       }
     }
     try {
-      const { refreshToken, cookieMaxAge, ...tokens } = await Sessions.refresh(
+      const { refreshToken, cookieMaxAge, proofNonce, ...tokens } = await Sessions.refresh(
         deps,
         tenant,
         presented,
-        requestOrigin(c)
+        requestOrigin(c),
+        { proof: c.req.header(DPOP_HEADER), method: c.req.method, path: c.req.path }
       )
+      if (proofNonce) {
+        c.header(DPOP_NONCE_HEADER, proofNonce)
+      }
       if (fromCookie && refreshToken && cookieMaxAge) {
         // Browsers never see the refresh token in JavaScript.
         setRefreshCookie(c, deps.config, tenant.environmentId, refreshToken, cookieMaxAge)
@@ -292,7 +309,10 @@ router.post(
       'the session’s profile. A user with two-step ' +
       'verification must use `totp` or `backup_code` (their password alone answers ' +
       '`auth.step_up_required`); a user without it uses `password`, or an `email_code` asked ' +
-      'for with `POST /v1/client/sessions/step-up/email-code` from this session. A wrong ' +
+      'for with `POST /v1/client/sessions/step-up/email-code` from this session. A user whose ' +
+      '**only** second factor is a texted code uses the `sms_code` asked for with ' +
+      '`POST /v1/client/sessions/step-up/sms-code` (recorded as `sms`, never `mfa`); beside ' +
+      'an authenticator app or a passkey a texted code is not a method. A wrong ' +
       'password is `auth.invalid_credentials`, a wrong second-factor code `mfa.invalid_code`, ' +
       'a wrong emailed code `verification.invalid_code` (`verification.expired` once it is ' +
       'used, replaced or too old, `verification.too_many_attempts` after five guesses); wrong ' +
@@ -324,7 +344,7 @@ router.post(
           c.get('tenant'),
           { userId: sub, sessionId: sid },
           c.req.valid('json'),
-          { ...requestOrigin(c), origin: c.req.header('origin') ?? null }
+          { ...requestOrigin(c), ...Passkeys.ceremonyOf(c.req) }
         )
       )
     )
@@ -375,6 +395,51 @@ router.post(
 )
 
 router.post(
+  '/sessions/step-up/sms-code',
+  describeRoute({
+    operationId: 'sendStepUpSmsCode',
+    tags: ['Sessions'],
+    summary: 'Text me a code to prove it is still me',
+    description:
+      'Texts the signed-in user a 6-digit code to step up with ' +
+      '(`POST /v1/client/sessions/step-up`, method `sms_code`), to the phone number on the ' +
+      'account. **Only for a user whose only second factor is a texted code**: anyone else ' +
+      '(a user with an authenticator app or a passkey, and a user with no second factor) ' +
+      'gets `auth.step_up_required` (403) with `params.methods`, and nothing is sent. The ' +
+      'code works for ten minutes, five guesses, once, and only for the session that asked; ' +
+      'a new one replaces it. `auth.method_disabled` where the environment has switched the ' +
+      'texted second factor off; `sms.unavailable` (503) when the message could not be ' +
+      'sent. The response never holds the code or the number.',
+    security: openapi.security.session,
+    responses: {
+      200: { description: 'The code was texted.', content: json(SmsFactorCodeSchema) },
+      401: openapi.responses[401],
+      403: openapi.responses[403],
+      429: openapi.responses[429],
+      500: openapi.responses[500],
+      503: openapi.responses[503],
+    },
+  }),
+  rateLimit({ name: 'session_step_up_sms', limit: STEP_UP_RATE_LIMIT, window: '1m', key: byIp }),
+  publishableKey(),
+  sessionAuth(),
+  async (c) => {
+    const { sub, sid } = c.get('session')
+    c.header('Cache-Control', 'no-store')
+    return c.json(
+      SmsFactorCodeSchema.parse(
+        await Mfa.prepareStepUpSms(
+          c.get('deps'),
+          c.get('tenant'),
+          { userId: sub, sessionId: sid },
+          { address: ipBucket(clientIp(c, c.get('deps').config.trustProxy)) }
+        )
+      )
+    )
+  }
+)
+
+router.post(
   '/sessions/step-up/passkey',
   describeRoute({
     operationId: 'getStepUpPasskeyOptions',
@@ -414,7 +479,7 @@ router.post(
           c.get('deps'),
           c.get('tenant'),
           { userId: sub, sessionId: sid },
-          c.req.header('origin')
+          Passkeys.ceremonyOf(c.req)
         )
       )
     )

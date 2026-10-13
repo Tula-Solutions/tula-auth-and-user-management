@@ -38,7 +38,7 @@ function newUser(overrides: Partial<NewUser> = {}): NewUser {
 }
 
 const resolve = (answer: OAuthProfile = profile) =>
-  OAuth.resolveAccount(deps, tenant, 'google', answer, origin)
+  OAuth.resolveAccount(deps, tenant, 'google', answer, origin, 'web')
 const codeOf = (promise: Promise<unknown>) =>
   promise.then(
     () => 'resolved',
@@ -284,6 +284,7 @@ describe('canStillSignIn', () => {
         emailCode: { enabled: emailCode },
         emailLink: { enabled: false },
         passkey: { enabled: false },
+        smsCode: { enabled: false },
       },
     },
   })
@@ -358,6 +359,28 @@ describe('canStillSignIn', () => {
     expect(OAuth.canStillSignIn(on, [], means({ passkeys: 1 }))).toBe(true)
     expect(OAuth.canStillSignIn(on, [], means({ passkeys: 0 }))).toBe(false)
     expect(OAuth.canStillSignIn(settings(false, false), [], means({ passkeys: 2 }))).toBe(false)
+  })
+
+  // ADR 0037: a phone number is not counted, even where the texted code signs in. A number
+  // can lapse (a year without proof) or gain a second holder at any time, and either ends
+  // it as a way in without the account doing anything.
+  test('a phone number is never a way to sign in, even with the texted code on', () => {
+    const on: EnvironmentSettings = {
+      ...settings(false, false),
+      signIn: {
+        methods: { ...settings(false, false).signIn.methods, smsCode: { enabled: true } },
+      },
+      sms: { enabled: true, allowedCountries: ['US'], dailyMessageLimit: 500, templates: {} },
+    }
+    // There is nothing to say it with: what a user has left names no number.
+    expect(Object.keys(means()).sort()).toEqual([
+      'emailVerified',
+      'hasPassword',
+      'passkeys',
+      'providers',
+    ])
+    expect(OAuth.canStillSignIn(on, [], means())).toBe(false)
+    expect(OAuth.canStillSignIn(on, [], means({ emailVerified: true }))).toBe(false)
   })
 })
 

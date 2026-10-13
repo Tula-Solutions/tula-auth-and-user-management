@@ -1,4 +1,10 @@
-import { CAN_STILL_SIGN_IN_HEADER, DASHBOARD_HEADER, ENVIRONMENT_HEADER } from '@tula/contract'
+import {
+  CAN_STILL_SIGN_IN_HEADER,
+  DASHBOARD_HEADER,
+  DPOP_HEADER,
+  DPOP_NONCE_HEADER,
+  ENVIRONMENT_HEADER,
+} from '@tula/contract'
 import type { Context } from 'hono'
 import { createMiddleware } from 'hono/factory'
 import type { AppEnv, Deps, Tenant, TenantVariables } from '~/dependencies'
@@ -20,6 +26,9 @@ export const CORS_REQUEST_HEADERS = [
   CLIENT_HEADER,
   FLOW_ATTEMPT_HEADER,
   SESSION_PROFILE_HEADER,
+  // A device-binding proof (ADR 0043). A browser's own session cannot be bound, but an app
+  // that runs in a web view and declares itself `ios` or `android` sends one cross-origin.
+  DPOP_HEADER,
   // The dashboard's two headers (ADR 0032). Listing them lets a deployment origin send them
   // after a preflight; for any other origin the preflight carries no allow headers at all.
   DASHBOARD_HEADER,
@@ -35,6 +44,8 @@ export const CORS_EXPOSED_HEADERS = [
   'X-Request-Id',
   'ETag',
   CAN_STILL_SIGN_IN_HEADER,
+  // The nonce for such an app's next proof.
+  DPOP_NONCE_HEADER,
 ] as const
 
 /** How long a browser may reuse a preflight answer, in seconds. */
@@ -151,14 +162,18 @@ export async function requestMayUseSessionCookie<E extends AppEnv & { Variables:
 }
 
 /**
- * Routes whose credential is an operator's (a secret key, the instance admin token, the
- * dashboard's cookie): only the deployment's own origins (`isDeploymentOrigin`: `PUBLIC_URL`
+ * Routes whose credential is an operator's (a secret key, an agent key, the instance admin
+ * token, the dashboard's cookie): only the deployment's own origins (`isDeploymentOrigin`: `PUBLIC_URL`
  * and `CORS_ORIGINS`, exactly) may call them from a browser. Never an origin a tenant put in
  * its environment's settings, and never the `local` tier's "any loopback origin": the
  * preflight would otherwise say yes to a page the cookie check then refuses.
  */
 function isAdminPath(path: string): boolean {
-  return path.startsWith('/v1/admin/') || path.startsWith('/v1/instance/')
+  return (
+    path.startsWith('/v1/admin/') ||
+    path.startsWith('/v1/instance/') ||
+    path.startsWith('/v1/agent/')
+  )
 }
 
 /**

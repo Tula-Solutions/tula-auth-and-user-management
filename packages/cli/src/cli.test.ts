@@ -606,6 +606,51 @@ describe('apply', () => {
     })
   })
 
+  test('Microsoft is written with its tenant, and a change of tenant keeps the stored secret', async () => {
+    const microsoft = (tenant: string) => ({
+      dev: {
+        providers: {
+          microsoft: {
+            clientId: 'ms-client',
+            clientSecret: { $env: 'MICROSOFT_CLIENT_SECRET' },
+            tenant,
+          },
+        },
+      },
+    })
+    const secret = 'ms-secret-do-not-print'
+    const environment = {
+      TULA_API_URL: BASE_URL,
+      TULA_SECRET_KEY: SECRET_KEY,
+      MICROSOFT_CLIENT_SECRET: secret,
+    }
+    const first = await configFile(microsoft('organizations'))
+    const plan = await tula(['diff', '--config', first], { env: environment })
+    expect(plan.stdout).toContain('+ microsoft: create')
+    expect(plan.stdout).toContain('tenant')
+    expect(plan.stdout).toContain('organizations')
+    const run = await tula(['apply', '--config', first, '-y'], { env: environment })
+    expect(run.code).toBe(0)
+    expect(run.stdout + run.stderr).not.toContain(secret)
+    expect(api.providers.get('microsoft')).toEqual({
+      clientId: 'ms-client',
+      teamId: null,
+      keyId: null,
+      tenant: 'organizations',
+      enabled: true,
+      secret,
+    } as never)
+
+    // The variable is not set for the second run: the secret is not needed, and not sent.
+    const second = await configFile(microsoft('common'))
+    const changed = await tula(['apply', '--config', second, '-y'])
+    expect(changed.code).toBe(0)
+    expect(changed.stdout).toContain('~ microsoft: update')
+    expect(api.providers.get('microsoft')).toMatchObject({ tenant: 'common', secret })
+    const again = await tula(['diff', '--config', second])
+    expect(again.code).toBe(0)
+  })
+
   test('when providers go first, a revision that moved is caught before any of them is written', async () => {
     const config = await configFile({
       dev: {
@@ -783,10 +828,102 @@ describe('settings this version does not know', () => {
     expect(text.stdout).toContain('`tula apply` refuses this plan without --allow-unknown')
     const json = JSON.parse((await tula(['diff', '--config', config, '--json'])).stdout) as {
       unknown: string[]
-      applyRequires: { allowUnknown: boolean; allowWeaker: boolean }
+      applyRequires: Record<string, boolean>
     }
     expect(json.unknown).toEqual(['mfa.methods', 'future'])
-    expect(json.applyRequires).toEqual({ allowUnknown: true, allowWeaker: false })
+    expect(json.applyRequires).toEqual({
+      allowUnknown: true,
+      allowWeaker: false,
+      allowWebhookRemoval: false,
+      webhookSecrets: false,
+      hookSecrets: false,
+    })
+  })
+})
+
+describe('a plan that sets or shortens the audit retention period', () => {
+  test.each([
+    ['sets one where entries were kept for ever', null, 365],
+    ['shortens it', 365, 30],
+  ] as [string, number | null, number][])(
+    'apply --yes refuses a plan that %s, and applies it with --allow-weaker',
+    async (_name, was, is) => {
+      api.revision = 2
+      api.settings.audit.retentionDays = was
+      const config = await configFile({ dev: { settings: { audit: { retentionDays: is } } } })
+      const refused = await tula(['apply', '--config', config, '--yes'])
+      expect(refused.code).toBe(1)
+      expect(refused.stderr).toContain('audit.retentionDays')
+      expect(refused.stderr).toContain('--allow-weaker')
+      expect(refused.stderr).toContain('Nothing was changed.')
+      expect(writes()).toEqual([])
+      expect(api.settings.audit.retentionDays).toBe(was)
+
+      const applied = await tula(['apply', '--config', config, '--yes', '--allow-weaker'])
+      expect(applied.code).toBe(0)
+      expect(api.settings.audit.retentionDays).toBe(is)
+    }
+  )
+
+  test('apply --yes applies a longer period without the flag', async () => {
+    api.revision = 2
+    api.settings.audit.retentionDays = 30
+    const config = await configFile({ dev: { settings: { audit: { retentionDays: 365 } } } })
+    const run = await tula(['apply', '--config', config, '--yes'])
+    expect(run.code).toBe(0)
+    expect(api.settings.audit.retentionDays).toBe(365)
+  })
+
+  test('the plan says in words that entries will be deleted, and that it cannot be undone', async () => {
+    api.revision = 2
+    const config = await configFile({ dev: { settings: { audit: { retentionDays: 90 } } } })
+    const run = await tula(['diff', '--config', config])
+    expect(run.stdout).toContain('! weakens security: audit.retentionDays')
+    expect(run.stdout).toContain(
+      '! deletes audit entries older than 90 days, for good, starting with the next retention run'
+    )
+  })
+})
+
+describe('the question apply asks at a terminal before a plan that deletes audit entries', () => {
+  const ask = async (settings: Record<string, unknown>) => {
+    const config = await configFile({ dev: { settings } })
+    const asked: string[] = []
+    const run = await tula(['apply', '--config', config], {
+      isTTY: true,
+      prompt: async (question) => {
+        asked.push(question)
+        return 'no'
+      },
+    })
+    expect(run.code).toBe(1)
+    expect(writes()).toEqual([])
+    return asked
+  }
+
+  test('says that older audit entries are deleted for good, and from what age', async () => {
+    api.revision = 2
+    expect(await ask({ audit: { retentionDays: 90 } })).toEqual([
+      'This DELETES audit entries older than 90 days, for good (audit.retentionDays). ' +
+        `Apply these changes to "dev" at ${BASE_URL}? Type yes to continue: `,
+    ])
+  })
+
+  test('says both when the plan also weakens something else', async () => {
+    api.revision = 2
+    api.settings.mfa.policy = 'required'
+    expect(await ask({ audit: { retentionDays: 90 }, mfa: { policy: 'off' } })).toEqual([
+      'This WEAKENS security (audit.retentionDays, mfa.policy) and DELETES audit entries older ' +
+        `than 90 days, for good. Apply these changes to "dev" at ${BASE_URL}? Type yes to continue: `,
+    ])
+  })
+
+  test('a longer period is asked about like any other change', async () => {
+    api.revision = 2
+    api.settings.audit.retentionDays = 30
+    expect(await ask({ audit: { retentionDays: 90 } })).toEqual([
+      `Apply these changes to "dev" at ${BASE_URL}? Type yes to continue: `,
+    ])
   })
 })
 
@@ -841,10 +978,282 @@ describe('a plan that weakens security', () => {
     expect(text.stdout).toContain('`tula apply --yes` refuses this plan without --allow-weaker')
     const json = JSON.parse((await tula(['diff', '--config', config, '--json'])).stdout) as {
       weakened: string[]
-      applyRequires: { allowUnknown: boolean; allowWeaker: boolean }
+      applyRequires: Record<string, boolean>
     }
     expect(json.weakened).toEqual(['mfa.policy'])
-    expect(json.applyRequires).toEqual({ allowUnknown: false, allowWeaker: true })
+    expect(json.applyRequires).toEqual({
+      allowUnknown: false,
+      allowWeaker: true,
+      allowWebhookRemoval: false,
+      webhookSecrets: false,
+      hookSecrets: false,
+    })
+  })
+})
+
+describe('a provider that accounts can only sign in with (ADR 0059)', () => {
+  const COUNT = 'GET /v1/admin/oauth-providers/x/dependents'
+  const x = { clientId: 'x-client', clientSecret: { $env: 'GOOGLE_CLIENT_SECRET' } }
+  const counts = () => api.requests.filter((request) => request.endsWith('/dependents'))
+  const stored = (dependents?: { accounts: number; more: boolean }) => {
+    for (const name of ['x', 'github']) {
+      api.providers.set(name, {
+        clientId: `${name}-client`,
+        teamId: null,
+        keyId: null,
+        enabled: true,
+        secret: 's',
+      })
+    }
+    if (dependents) {
+      api.dependents.set('x', dependents)
+    }
+  }
+  const off = () => configFile({ dev: { providers: { x: { ...x, enabled: false } } } })
+
+  test('apply --yes refuses to switch it off, before any write, and says how many', async () => {
+    stored({ accounts: 3, more: false })
+    const run = await tula(['apply', '--config', await off(), '--yes'])
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain('providers.x.enabled')
+    expect(run.stderr).toContain('--allow-weaker')
+    expect(run.stderr).toContain('Nothing was changed.')
+    expect(run.stdout).toContain(
+      '  ! 3 accounts can sign in only with x: they are locked out while it is off'
+    )
+    expect(writes()).toEqual([])
+    expect(api.providers.get('x')?.enabled).toBe(true)
+    // Asked once, and only about the provider that goes off: github is left alone.
+    expect(counts()).toEqual([COUNT])
+  })
+
+  test('apply --yes --allow-weaker switches it off', async () => {
+    stored({ accounts: 3, more: false })
+    const run = await tula(['apply', '--config', await off(), '--yes', '--allow-weaker'])
+    expect(run.code).toBe(0)
+    // The settings' write records the file as their manager; the provider's follows it.
+    expect(writes()).toEqual(['PUT /v1/admin/settings', 'PUT /v1/admin/oauth-providers/x'])
+    expect(api.providers.get('x')?.enabled).toBe(false)
+  })
+
+  test('removing it with --prune is refused the same way, and applied with the flag', async () => {
+    stored({ accounts: 1000, more: true })
+    const config = await configFile({
+      dev: { providers: { github: { clientId: 'github-client', clientSecret: x.clientSecret } } },
+    })
+    const refused = await tula(['apply', '--config', config, '--yes', '--prune'])
+    expect(refused.code).toBe(1)
+    expect(refused.stderr).toContain('(providers.x)')
+    expect(refused.stderr).toContain('--allow-weaker')
+    expect(refused.stdout).toContain(
+      '  ! at least 1000 accounts can sign in only with x: they are locked out until it is configured again'
+    )
+    expect(writes()).toEqual([])
+    expect(api.providers.has('x')).toBe(true)
+    expect(counts()).toEqual([COUNT])
+
+    const applied = await tula(['apply', '--config', config, '--yes', '--prune', '--allow-weaker'])
+    expect(applied.code).toBe(0)
+    expect(writes()).toEqual(['PUT /v1/admin/settings', 'DELETE /v1/admin/oauth-providers/x'])
+    expect(api.providers.has('x')).toBe(false)
+  })
+
+  test('at a terminal the question names it', async () => {
+    stored({ accounts: 3, more: false })
+    const asked: string[] = []
+    const run = await tula(['apply', '--config', await off()], {
+      isTTY: true,
+      prompt: async (question) => {
+        asked.push(question)
+        return 'no'
+      },
+    })
+    expect(asked).toEqual([
+      `This WEAKENS security (providers.x.enabled). Apply these changes to "dev" at ${BASE_URL}? Type yes to continue: `,
+    ])
+    expect(run.code).not.toBe(0)
+    expect(writes()).toEqual([])
+  })
+
+  test('with no account that depends on it, it is switched off without the flag', async () => {
+    stored()
+    const run = await tula(['apply', '--config', await off(), '--yes'])
+    expect(run.code).toBe(0)
+    expect(run.stdout).not.toContain('sign in only with')
+    expect(api.providers.get('x')?.enabled).toBe(false)
+    expect(counts()).toEqual([COUNT])
+  })
+
+  test('nothing is counted for a provider that stays on, is switched on or is already off', async () => {
+    stored({ accounts: 3, more: false })
+    const on = await configFile({ dev: { providers: { x } } })
+    expect((await tula(['diff', '--config', on])).stdout).toContain('= x: unchanged')
+    const entry = api.providers.get('x')
+    if (!entry) {
+      throw new Error('fixture')
+    }
+    entry.enabled = false
+    expect((await tula(['diff', '--config', on])).stdout).toContain('enabled false → true')
+    expect((await tula(['diff', '--config', await off(), '--prune'])).code).toBe(2)
+    // The last run removes github (on, left out, --prune) and leaves x as off as it is.
+    expect(counts()).toEqual(['GET /v1/admin/oauth-providers/github/dependents'])
+  })
+
+  test.each([
+    [
+      'a server without the route',
+      () =>
+        Response.json({ status: 404, code: 'resource.not_found', detail: 'x' }, { status: 404 }),
+    ],
+  ] as [string, () => Response][])(
+    '%s: the accounts are said to be uncounted, never none, and the plan is not judged',
+    async (_name, answer) => {
+      stored({ accounts: 3, more: false })
+      api.intercept = (method, path) =>
+        method === 'GET' && path.endsWith('/dependents') ? answer() : undefined
+      const config = await off()
+      const diff = await tula(['diff', '--config', config])
+      expect(diff.code).toBe(2)
+      expect(diff.stdout).toContain(
+        '  ! the accounts that can sign in only with x could not be counted (this server has no count): if there are any they are locked out while it is off, and this plan was not judged for them'
+      )
+      expect(diff.stdout).not.toMatch(/\d+ accounts? can sign in/)
+      expect(diff.stdout).not.toContain('weakens security')
+      const json = JSON.parse((await tula(['diff', '--config', config, '--json'])).stdout) as {
+        weakened: string[]
+        providers: { provider: string; dependents?: unknown }[]
+      }
+      expect(json.weakened).toEqual([])
+      expect(json.providers.find((entry) => entry.provider === 'x')?.dependents).toBeNull()
+      const run = await tula(['apply', '--config', config, '--yes'])
+      expect(run.code).toBe(0)
+      expect(api.providers.get('x')?.enabled).toBe(false)
+    }
+  )
+
+  const CANARY = 'canary-of-the-failed-count'
+  const failed = (status: number, code: string) => () =>
+    Response.json({ status, code, detail: CANARY }, { status, headers: { 'x-canary': CANARY } })
+
+  // A count the server has and did not hand over says nothing about how many there are:
+  // only a server from before the route (404, 405) leaves a plan unjudged.
+  describe.each([
+    ['a server that fails (503)', failed(503, 'service.unavailable')],
+    ['a server that limits (429)', failed(429, 'rate_limited')],
+    ['a key that is refused (401)', failed(401, 'auth.invalid_key')],
+    ['a server error (500)', failed(500, 'internal')],
+    // A 404 or a 405 that is not the API's own answer for an unknown route is something in
+    // front of it speaking (a proxy, an access wall): it says nothing about the server.
+    [
+      'a 404 that is an HTML page',
+      () =>
+        new Response(`<html><body>${CANARY}</body></html>`, {
+          status: 404,
+          headers: { 'content-type': 'text/html' },
+        }),
+    ],
+    ['a 404 with no body', () => new Response(null, { status: 404 })],
+    ['a 404 with another code', failed(404, 'auth.forbidden')],
+    ['a 405 in the envelope', failed(405, 'resource.not_found')],
+    ['a 405 with another code', failed(405, 'internal')],
+    [
+      'no answer',
+      () => {
+        throw new TypeError(CANARY)
+      },
+    ],
+    ['an answer of another shape', () => Response.json({ provider: 'x', accounts: '3' })],
+    [
+      'an answer about another provider',
+      () => Response.json({ provider: 'github', accounts: 3, more: false }),
+    ],
+    ['a negative count', () => Response.json({ provider: 'x', accounts: -3, more: false })],
+  ] as [string, () => Response][])('a count that could not be read: %s', (_name, answer) => {
+    const removing = () =>
+      configFile({
+        dev: { providers: { github: { clientId: 'github-client', clientSecret: x.clientSecret } } },
+      })
+
+    test.each([
+      ['switched off', off, [], 'providers.x.enabled', 'while it is off'],
+      ['removed', removing, ['--prune'], 'providers.x', 'until it is configured again'],
+    ] as [string, () => Promise<string>, string[], string, string][])(
+      'a provider %s is refused by apply --yes without --allow-weaker, and nothing is written',
+      async (_case, file, flags, path, outcome) => {
+        stored({ accounts: 0, more: false })
+        api.intercept = (method, route) =>
+          method === 'GET' && route.endsWith('/x/dependents') ? answer() : undefined
+        const config = await file()
+        const diff = await tula(['diff', '--config', config, ...flags])
+        expect(diff.code).toBe(2)
+        expect(diff.stdout).toContain(
+          `  ! weakens security: ${path} (\`tula apply --yes\` needs --allow-weaker)`
+        )
+        expect(diff.stdout).toContain(
+          `  ! the accounts that can sign in only with x could not be counted (the count could not be read): if there are any they are locked out ${outcome}, and this plan is taken to weaken security`
+        )
+        expect(diff.stdout).not.toMatch(/\d+ accounts? can sign in/)
+        const json = JSON.parse(
+          (await tula(['diff', '--config', config, '--json', ...flags])).stdout
+        ) as {
+          weakened: string[]
+          providers: { provider: string; dependents?: unknown }[]
+          applyRequires: { allowWeaker: boolean }
+        }
+        expect(json.weakened).toEqual([path])
+        expect(json.applyRequires.allowWeaker).toBe(true)
+        expect(json.providers.find((entry) => entry.provider === 'x')?.dependents).toBe('unread')
+
+        const refused = await tula(['apply', '--config', config, '--yes', ...flags])
+        expect(refused.code).toBe(1)
+        expect(refused.stderr).toContain(path)
+        expect(refused.stderr).toContain('--allow-weaker')
+        expect(refused.stderr).toContain('Nothing was changed.')
+        expect(writes()).toEqual([])
+        expect(api.providers.get('x')?.enabled).toBe(true)
+        // Nothing of the failure is said: fixed words only.
+        for (const run of [diff, refused]) {
+          expect(run.stdout + run.stderr).not.toContain(CANARY)
+        }
+
+        const applied = await tula([
+          'apply',
+          '--config',
+          config,
+          '--yes',
+          '--allow-weaker',
+          ...flags,
+        ])
+        expect(applied.code).toBe(0)
+        expect(api.providers.get('x')?.enabled ?? false).toBe(false)
+      }
+    )
+  })
+
+  test('diff says the count and what apply --yes will need, in text and in --json', async () => {
+    stored({ accounts: 1, more: false })
+    const config = await off()
+    const text = await tula(['diff', '--config', config])
+    expect(text.code).toBe(2)
+    expect(text.stdout).toContain(
+      '  ! weakens security: providers.x.enabled (`tula apply --yes` needs --allow-weaker)'
+    )
+    expect(text.stdout).toContain(
+      '  ! 1 account can sign in only with x: it is locked out while it is off'
+    )
+    expect(text.stdout).toContain('`tula apply --yes` refuses this plan without --allow-weaker')
+    const json = JSON.parse((await tula(['diff', '--config', config, '--json'])).stdout) as {
+      weakened: string[]
+      providers: { provider: string; dependents?: unknown }[]
+      applyRequires: { allowWeaker: boolean }
+    }
+    expect(json.weakened).toEqual(['providers.x.enabled'])
+    expect(json.applyRequires.allowWeaker).toBe(true)
+    expect(json.providers.find((entry) => entry.provider === 'x')?.dependents).toEqual({
+      accounts: 1,
+      more: false,
+    })
+    expect(writes()).toEqual([])
   })
 })
 

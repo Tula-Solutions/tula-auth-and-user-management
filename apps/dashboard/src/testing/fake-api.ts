@@ -1,4 +1,26 @@
-import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula/contract'
+import {
+  DEFAULT_ENVIRONMENT_SETTINGS,
+  type EmailTemplateKind,
+  emailTemplateProblems,
+  type SmsTemplateKind,
+  smsSegments,
+  smsTemplateProblems,
+} from '@tula/contract'
+import { type FakeHookState, hookRoutes } from './fake-hooks'
+import { type FakeNativeAppState, nativeAppRoutes } from './fake-native-apps'
+import { type FakeProposalState, proposalRoutes } from './fake-proposals'
+import { type FakeWebhookState, webhookRoutes } from './fake-webhooks'
+
+export { type FakeHook, fakeHook } from './fake-hooks'
+export { type FakeNativeApp, fakeAndroidApp, fakeIosApp } from './fake-native-apps'
+export { FAKE_AGENT_KEY_ID, type FakeProposal, fakeProposal } from './fake-proposals'
+
+export {
+  type FakeWebhookDelivery,
+  type FakeWebhookEndpoint,
+  fakeWebhookDelivery,
+  fakeWebhookEndpoint,
+} from './fake-webhooks'
 
 // A small stand-in for the API, for component tests: the routes the dashboard calls, on plain
 // in-memory data, answering with the contract's shapes and error envelope. The real API is
@@ -28,7 +50,9 @@ export interface FakeCall {
   body: unknown
 }
 
-type Handler = (call: FakeCall, match: RegExpExecArray) => Response | unknown
+/** What answers one route of the fake: a response, or a body to send with a 200. */
+export type FakeHandler = (call: FakeCall, match: RegExpExecArray) => Response | unknown
+type Handler = FakeHandler
 
 function json(status: number, body: unknown, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -44,15 +68,143 @@ function json(status: number, body: unknown, headers: Record<string, string> = {
  * @param code - Error code.
  * @param detail - Description.
  * @param errors - Field errors.
+ * @param params - The envelope's parameters (`reason`, `max`).
  * @returns The response.
  */
 export function failure(
   status: number,
   code: string,
   detail: string,
-  errors?: { field: string; code: string; message: string }[]
+  errors?: { field: string; code: string; message: string }[],
+  params?: Record<string, unknown>
 ): Response {
-  return json(status, { status, code, detail, ...(errors ? { errors } : {}) })
+  return json(status, {
+    status,
+    code,
+    detail,
+    ...(params ? { params } : {}),
+    ...(errors ? { errors } : {}),
+  })
+}
+
+/** What the server's `sms_sender` check says of a deployment that has a sender. */
+export const SMS_SENDER_OK =
+  'The deployment has a sender for text messages (SMS_PROVIDER). No message was sent and the provider was not asked: this does not show that its credentials or its sender work.'
+
+/** What it says of a deployment without one, where no environment has text messages on. */
+export const SMS_SENDER_NONE =
+  'The deployment has no sender for text messages (SMS_PROVIDER is `none`), and no environment has them switched on.'
+
+/**
+ * `GET /v1/admin/sms/usage`, as the server answers it: the totals over every prefix, the
+ * prefixes with the most unused codes first, cut at the cap.
+ */
+function smsUsageOf(state: Pick<FakeState, 'smsUsage' | 'smsUsageMaxPrefixes'>, days: number) {
+  const all = state.smsUsage
+    .map((row) => ({ ...row, unused: row.sent - row.used }))
+    .sort((a, b) => b.unused - a.unused || b.sent - a.sent || (a.prefix < b.prefix ? -1 : 1))
+  const sent = all.reduce((sum, row) => sum + row.sent, 0)
+  const used = all.reduce((sum, row) => sum + row.used, 0)
+  const since = new Date(Date.parse(NOW) - (days - 1) * 86_400_000).toISOString().slice(0, 10)
+  return {
+    since,
+    days,
+    sent,
+    used,
+    unused: sent - used,
+    prefixes: all.slice(0, state.smsUsageMaxPrefixes),
+    truncated: all.length > state.smsUsageMaxPrefixes,
+  }
+}
+
+/** The sample values the fake's preview fills a wording with, as the server's are. */
+const SAMPLE_VALUES: Record<string, string> = {
+  code: '123456',
+  link: 'https://app.example/sign-in#sample-link',
+  expiresInMinutes: '10',
+  time: '2026-01-15 14:05 UTC',
+  device: 'Chrome on Windows',
+  provider: 'Google',
+  backupCodesLeft: '7',
+}
+
+function filled(text: string, appName: string): string {
+  return text.replace(/\{\{(\w+)\}\}/g, (_whole, name: string) =>
+    name === 'appName' ? appName : (SAMPLE_VALUES[name] ?? '')
+  )
+}
+
+type Problem = { field: string; message: string }
+
+function refusal(prefix: string, problems: readonly Problem[]): Response {
+  return failure(
+    422,
+    'validation.failed',
+    'Invalid wording.',
+    problems.map((problem) => ({
+      field: `${prefix}.${problem.field}`,
+      code: 'validation.failed',
+      message: problem.message,
+    }))
+  )
+}
+
+/**
+ * What the fake answers for a preview: the draft with sample values in it, or a stand-in
+ * for the built-in text (the real copy is the server's; the browser tests show it).
+ */
+function previewOf(body: unknown, appName: string): Response | unknown {
+  const request = body as
+    | { channel: 'email'; kind: EmailTemplateKind; template?: { subject?: string; body?: string } }
+    | { channel: 'sms'; kind: SmsTemplateKind; template?: { text: string } }
+  if (request.channel === 'sms') {
+    const problems = request.template ? smsTemplateProblems(request.kind, request.template) : []
+    if (problems.length > 0) {
+      return refusal('template', problems)
+    }
+    const sentence = filled(
+      request.template?.text ?? 'Built-in text of {{appName}}: {{code}}.',
+      appName
+    )
+    const text = `${sentence}\n\n@app.example #123456`
+    return {
+      channel: 'sms',
+      kind: request.kind,
+      subject: null,
+      text,
+      unused: [],
+      segments: smsSegments(text),
+    }
+  }
+  const problems = request.template ? emailTemplateProblems(request.kind, request.template) : []
+  if (problems.length > 0) {
+    return refusal('template', problems)
+  }
+  return {
+    channel: 'email',
+    kind: request.kind,
+    subject: filled(request.template?.subject ?? `Built-in subject of ${request.kind}`, appName),
+    text: filled(request.template?.body ?? `Built-in body of ${request.kind}.`, appName),
+    unused: [],
+    segments: null,
+  }
+}
+
+/** The field errors a save of these settings gets for its wording, as the server names them. */
+function wordingProblems(settings: typeof DEFAULT_ENVIRONMENT_SETTINGS): Problem[] {
+  const emails = Object.entries(settings.emails?.templates ?? {}).flatMap(([kind, template]) =>
+    emailTemplateProblems(kind as EmailTemplateKind, template ?? {}).map((problem) => ({
+      field: `emails.templates.${kind}.${problem.field}`,
+      message: problem.message,
+    }))
+  )
+  const texts = Object.entries(settings.sms?.templates ?? {}).flatMap(([kind, template]) =>
+    smsTemplateProblems(kind as SmsTemplateKind, template ?? { text: '' }).map((problem) => ({
+      field: `sms.templates.${kind}.${problem.field}`,
+      message: problem.message,
+    }))
+  )
+  return [...emails, ...texts]
 }
 
 function page<T>(rows: T[]) {
@@ -60,7 +212,11 @@ function page<T>(rows: T[]) {
 }
 
 /** The fake's data, open to a test that wants to arrange or inspect it. */
-export interface FakeState {
+export interface FakeState
+  extends FakeWebhookState,
+    FakeHookState,
+    FakeNativeAppState,
+    FakeProposalState {
   /** Whether `TULA_ADMIN_TOKEN` is set (the instance routes exist). */
   adminToken: boolean
   signedIn: boolean
@@ -80,8 +236,11 @@ export interface FakeState {
   }[]
   users: {
     id: string
-    email: string
+    /** `null` for an account made through X or Facebook. */
+    email: string | null
     emailVerifiedAt: string | null
+    phoneNumber?: string | null
+    phoneNumberVerifiedAt?: string | null
     firstName: string | null
     lastName: string | null
     bannedAt: string | null
@@ -102,6 +261,18 @@ export interface FakeState {
     }
   }
   audit: Record<string, unknown>[]
+  /**
+   * The codes texted per destination prefix over the span a request asks for, as the store
+   * would sum them. `GET /v1/admin/sms/usage` orders them and adds the totals.
+   */
+  smsUsage: { prefix: string; sent: number; used: number }[]
+  /** How many prefixes one usage answer lists at most (the server's is 100). */
+  smsUsageMaxPrefixes: number
+  /**
+   * The `sms_sender` check of the diagnostics; `null` for a server that reports none.
+   * A deployment with a sender by default.
+   */
+  smsSender: { status: 'ok' | 'warn' | 'fail' | 'skipped'; summary: string; fix?: string } | null
   /** What the factor reset says about the user afterwards. */
   canStillSignIn: boolean
   /** How every user signs in, as `GET …/authentication` answers. */
@@ -162,6 +333,7 @@ function initialState(): FakeState {
         lastActiveAt: NOW,
         expiresAt: NOW,
         current: false,
+        deviceBound: false,
       },
     ],
     keys: [],
@@ -182,6 +354,19 @@ function initialState(): FakeState {
         occurredAt: NOW,
       },
     ],
+    smsUsage: [],
+    smsUsageMaxPrefixes: 100,
+    smsSender: { status: 'ok', summary: SMS_SENDER_OK },
+    webhookEndpoints: [],
+    webhookDeliveries: [],
+    webhookReceiver: { statusCode: 204, durationMs: 41, failureReason: null },
+    webhookNow: NOW,
+    hooks: [],
+    hookNow: NOW,
+    nativeApps: [],
+    proposals: [],
+    proposalNow: NOW,
+    webhookWorkerSeparate: false,
     canStillSignIn: true,
     authentication: {
       hasPassword: true,
@@ -332,6 +517,7 @@ export function installFakeApi() {
             fix: 'Check SMTP_URL.',
           },
           { id: 'public_url', status: 'skipped', summary: 'Not checked in the local tier.' },
+          ...(state.smsSender ? [{ id: 'sms_sender', ...state.smsSender }] : []),
         ],
       }),
     ],
@@ -340,7 +526,7 @@ export function installFakeApi() {
       /^\/v1\/admin\/users$/,
       (call) => {
         const q = call.search.get('q')?.toLowerCase() ?? ''
-        return page(state.users.filter((user) => user.email.includes(q)))
+        return page(state.users.filter((user) => (user.email ?? '').includes(q)))
       },
     ],
     [
@@ -447,9 +633,10 @@ export function installFakeApi() {
       'POST',
       /^\/v1\/admin\/api-keys$/,
       (call) => {
-        const body = call.body as { kind: 'secret' | 'publishable'; name: string }
+        const body = call.body as { kind: 'secret' | 'publishable' | 'agent'; name: string }
         keyCount += 1
-        const key = `tula_${body.kind === 'secret' ? 'sk' : 'pk'}_dev_fakekeymaterial${keyCount}wxyz`
+        const short = { secret: 'sk', publishable: 'pk', agent: 'ak' }[body.kind]
+        const key = `tula_${short}_dev_fakekeymaterial${keyCount}wxyz`
         const record = {
           id: `00000000-0000-7000-8000-00000000f${keyCount}00`,
           kind: body.kind,
@@ -496,6 +683,10 @@ export function installFakeApi() {
         ]),
     ],
     ['GET', /^\/v1\/admin\/audit-logs$/, () => page(state.audit)],
+    ...webhookRoutes(state),
+    ...hookRoutes(state),
+    ...nativeAppRoutes(state),
+    ...proposalRoutes(state),
     ['GET', /^\/v1\/admin\/settings$/, () => structuredClone(state.settings)],
     [
       'PUT',
@@ -514,6 +705,15 @@ export function installFakeApi() {
             },
           ])
         }
+        const wording = wordingProblems(body)
+        if (wording.length > 0) {
+          return failure(
+            422,
+            'validation.failed',
+            'Invalid settings.',
+            wording.map((problem) => ({ ...problem, code: 'validation.failed' }))
+          )
+        }
         state.settings = {
           revision: state.settings.revision + 1,
           settings: body,
@@ -526,15 +726,50 @@ export function installFakeApi() {
     ],
     [
       'GET',
+      /^\/v1\/admin\/sms\/usage$/,
+      (call) => {
+        const days = Number(call.search.get('days') ?? 7)
+        return Number.isInteger(days) && days >= 1 && days <= 30
+          ? smsUsageOf(state, days)
+          : failure(422, 'validation.failed', 'Invalid query.', [
+              { field: 'days', code: 'validation.failed', message: 'Must be 1 to 30.' },
+            ])
+      },
+    ],
+    [
+      'POST',
+      /^\/v1\/admin\/message-preview$/,
+      (call) => previewOf(call.body, state.settings.settings.app.name),
+    ],
+    [
+      // No account depends on any provider, unless a test overrides the route.
+      'GET',
+      /^\/v1\/admin\/oauth-providers\/([^/]+)\/dependents$/,
+      (_call, match) => ({ provider: match[1], accounts: 0, more: false }),
+    ],
+    [
+      'GET',
       /^\/v1\/admin\/oauth-providers$/,
       () => ({
-        data: (['google', 'github', 'apple'] as const).map((provider) => ({
+        data: (
+          [
+            'google',
+            'github',
+            'apple',
+            'microsoft',
+            'discord',
+            'linkedin',
+            'x',
+            'facebook',
+          ] as const
+        ).map((provider) => ({
           provider,
           configured: false,
           enabled: false,
           clientId: null,
           teamId: null,
           keyId: null,
+          tenant: null,
           callbackUrl: `http://localhost:3003/v1/client/oauth/${provider}/callback`,
           updatedAt: null,
         })),

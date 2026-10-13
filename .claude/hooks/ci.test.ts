@@ -15,6 +15,7 @@ type Job = {
   needs?: string | string[]
   if?: string
   permissions?: Record<string, string>
+  env?: Record<string, string>
   steps: Step[]
 }
 type Workflow = { jobs: Record<string, Job> }
@@ -131,6 +132,73 @@ describe('the Turborepo cache', () => {
   })
 })
 
+// TULA-52: a webhook delivered by the worker running as a service of its own.
+describe('the self-host run with the worker as its own service', () => {
+  const steps = () => job('self-host-worker').steps
+  const scripts = () => steps().map((step) => step.run ?? '')
+  const indexOf = (text: string) => scripts().findIndex((script) => script.includes(text))
+  const COMPOSE =
+    'docker compose -f docker-compose.yml -f docker/worker-check/compose.yml --profile app --profile worker'
+
+  test('every container is told the worker is separate, and nothing else is changed', () => {
+    // No `ENVIRONMENT` and nothing that loosens the outbound guard: the stack runs in the
+    // tier the other self-host jobs run in, and the receiver is reached within its rules.
+    expect(Object.keys(job('self-host-worker').env ?? {}).sort()).toEqual([
+      'TULA_MASTER_KEY',
+      'WEBHOOK_WORKER',
+    ])
+    expect(job('self-host-worker').env?.WEBHOOK_WORKER).toBe('separate')
+  })
+
+  test('the stack is started without the worker: the check has to see nothing delivered first', () => {
+    const start = indexOf('up -d --build')
+    expect(start).toBeGreaterThan(-1)
+    expect(scripts()[start]).toContain('--profile app up -d --build')
+    expect(scripts()[start]).not.toContain('--profile worker')
+    // The check starts the worker itself, after it has seen the event wait.
+    expect(scripts().filter((script) => /up -d[^\n]*\bworker\b/.test(script))).toEqual([])
+  })
+
+  test('the check runs against that stack, with the receiver’s file laid over it', () => {
+    const check = indexOf('scripts/worker-check/check.ts')
+    expect(check).toBeGreaterThan(indexOf('up -d --build'))
+    expect(scripts()[check]).toContain(`bun run scripts/worker-check/check.ts -- ${COMPOSE}`)
+    // Its exit code is the step's: nothing after it on the line, nothing that swallows it.
+    expect(scripts()[check]).not.toMatch(/check\.ts[^\n]*(\|\||\|\s|;)/)
+  })
+
+  test('the instance token is generated for the run, never written in the workflow', () => {
+    const token = indexOf('TULA_ADMIN_TOKEN=')
+    expect(token).toBeGreaterThan(-1)
+    expect(token).toBeLessThan(indexOf('up -d --build'))
+    expect(scripts()[token]).toContain('openssl rand -hex 32')
+    expect(scripts()[token]).toContain('::add-mask::')
+  })
+
+  test('the conformance run still names the scenarios it skips, all nine', () => {
+    // The worker job replaces none of that: a receiver on the runner is still out of reach
+    // for a server in a container, and the skip is still checked by name. The ninth waits a
+    // day, which a live server cannot be made to do.
+    const run = job('self-host').steps.find((step) => step.run?.includes('bun run conformance'))
+    for (const name of [
+      'claims added by a hook',
+      'hook that times out',
+      'password expiry',
+      'sign-in denied by a hook',
+      'sign-in hook that times out',
+      'sign-up denied by a hook',
+      'webhook delivered and signed',
+      'webhook retried after a 500',
+      'webhook secret rotated with an overlap',
+    ]) {
+      expect(run?.run).toContain(`'${name}'`)
+    }
+    expect(run?.run).toContain('if [ "$skipped" != "$expected" ]; then')
+    // And the count in both summary lines is the list's own.
+    expect(run?.run?.match(/ 0 failed, 9 skipped against /g)).toHaveLength(2)
+  })
+})
+
 // The decision itself, run as the workflow runs it, with `gh` and `git` replaced by stubs.
 describe('the decision', () => {
   let dir = ''
@@ -195,5 +263,115 @@ describe('the decision', () => {
 
   test('a pull request into main is not a push to main, and may be skipped', () => {
     expect(decide('pull_request', 'refs/heads/main', 'true').output).toBe(`${TREE}skip=true\n`)
+  })
+})
+
+// The Kotlin client has two modules and two jobs (ADR 0054). The JVM tests are what shows
+// the client works; the Android module is only compiled and linted. In one job a problem
+// with the runner's Android SDK failed both, and a red job said nothing about the tests.
+describe('the Kotlin client: the JVM tests and the Android build are read apart', () => {
+  const runs = (name: string) => job(name).steps.map((step) => step.run ?? '')
+  const androidBuild = /tula-auth-android|assemble|lint/
+
+  test('they are two jobs', () => {
+    expect(Object.keys(jobs)).toContain('kotlin')
+    expect(Object.keys(jobs)).toContain('kotlin-android')
+    expect(runs('kotlin').filter((run) => run.includes('native:kotlin:test')).length).toBe(1)
+    expect(runs('kotlin').filter((run) => androidBuild.test(run))).toEqual([])
+    expect(runs('kotlin-android').filter((run) => run.includes('native:kotlin:test'))).toEqual([])
+    expect(runs('kotlin-android').filter((run) => androidBuild.test(run)).length).toBe(1)
+    // Neither waits for the other, and the pass is recorded only after both.
+    expect(needs('kotlin')).toEqual(['duplicate'])
+    expect(needs('kotlin-android')).toEqual(['duplicate'])
+    expect(needs('passed')).toContain('kotlin')
+    expect(needs('passed')).toContain('kotlin-android')
+  })
+
+  test('the JVM tests run with no Android SDK named, so the build has the JVM module alone', () => {
+    const tests = job('kotlin').steps.find((step) => step.run === 'bun run native:kotlin:test') as
+      | (Step & { env?: Record<string, string> })
+      | undefined
+    expect(tests?.env).toEqual({ ANDROID_HOME: '', ANDROID_SDK_ROOT: '' })
+    const settings = readFileSync(
+      join(workflowsDir, '..', '..', 'native/android/settings.gradle.kts'),
+      'utf8'
+    )
+    // An empty variable names no SDK: without this the module would still be included.
+    for (const name of ['ANDROID_HOME', 'ANDROID_SDK_ROOT']) {
+      expect(settings).toContain(
+        `providers.environmentVariable("${name}").orNull?.takeIf { it.isNotBlank() }`
+      )
+    }
+  })
+
+  test('the Android job installs, by name, the platform and build tools the module pins, before it builds', () => {
+    const build = readFileSync(
+      join(workflowsDir, '..', '..', 'native/android/tula-auth-android/build.gradle.kts'),
+      'utf8'
+    )
+    const major = /version = release\((\d+)\)/.exec(build)?.[1]
+    const minor = /minorApiLevel = (\d+)/.exec(build)?.[1]
+    const tools = /buildToolsVersion = "([0-9.]+)"/.exec(build)?.[1]
+    expect([major, minor, tools].every(Boolean)).toBe(true)
+    const steps = runs('kotlin-android')
+    const install = steps.findIndex((run) => run.includes('sdkmanager" --install'))
+    const gradle = steps.findIndex((run) => run.includes('./gradlew'))
+    expect(install).toBeGreaterThanOrEqual(0)
+    expect(gradle).toBeGreaterThan(install)
+    const script = steps[install] ?? ''
+    expect(script).toContain(
+      `--install "platforms;android-${major}.${minor}" "build-tools;${tools}"`
+    )
+    // Installed is looked at, not assumed from the tool's exit.
+    expect(script).toContain(`test -d "$ANDROID_HOME/platforms/android-${major}.${minor}"`)
+    expect(script).toContain(`test -d "$ANDROID_HOME/build-tools/${tools}"`)
+    // Nothing of Gradle's is cached here either.
+    const all = job('kotlin-android').steps
+    expect(all.filter((step) => step.with && 'cache' in step.with)).toEqual([])
+    expect(all.filter((step) => step.uses?.includes('setup-gradle'))).toEqual([])
+  })
+
+  // The Compose screens (ADR 0061): the library, the example app and the example's UI tests
+  // are compiled and linted where the Android SDK is. The UI tests need a device, so they are
+  // run by hand (native/android/fixture/ui-tests.ts) and never by a workflow.
+  test('the Android job compiles and lints the Compose screens, the example and its UI tests', () => {
+    const gradle = runs('kotlin-android').find((run) => run.includes('./gradlew')) ?? ''
+    for (const task of [
+      ':tula-auth-android:assembleRelease',
+      ':tula-auth-android:lintRelease',
+      ':tula-auth-compose:assembleRelease',
+      ':tula-auth-compose:lintRelease',
+      ':compose-example:assembleDebug',
+      ':compose-example:assembleDebugAndroidTest',
+      ':compose-example:lintDebug',
+    ]) {
+      expect(gradle.split(/\s+/)).toContain(task)
+    }
+  })
+
+  test('every Android module compiles against the platform and build tools the job installs', () => {
+    const pins = (file: string) => {
+      const build = readFileSync(join(workflowsDir, '..', '..', file), 'utf8')
+      return [
+        /version = release\((\d+)\)/.exec(build)?.[1],
+        /minorApiLevel = (\d+)/.exec(build)?.[1],
+        /buildToolsVersion = "([0-9.]+)"/.exec(build)?.[1],
+      ]
+    }
+    const installed = pins('native/android/tula-auth-android/build.gradle.kts')
+    expect(installed.every(Boolean)).toBe(true)
+    for (const file of [
+      'native/android/tula-auth-compose/build.gradle.kts',
+      'examples/compose/build.gradle.kts',
+    ]) {
+      expect(pins(file)).toEqual(installed)
+    }
+  })
+
+  test('no job starts an emulator or runs tests on a device', () => {
+    const everyRun = Object.keys(jobs).flatMap((name) => runs(name))
+    expect(
+      everyRun.filter((run) => /connected\w*AndroidTest|emulator|ui-tests\.ts|\bavd\b/i.test(run))
+    ).toEqual([])
   })
 })

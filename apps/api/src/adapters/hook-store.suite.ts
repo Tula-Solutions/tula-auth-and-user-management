@@ -1,0 +1,415 @@
+import { beforeEach, describe, expect, test } from 'bun:test'
+import * as Audit from '~/modules/audit/service'
+import type { Activity } from '~/ports/activity-log'
+import type { HookRecord, HookStore } from '~/ports/hook-store'
+
+/** A tenant for the suite. */
+export interface HookSuiteTenant {
+  projectId: string
+  environmentId: string
+}
+
+/** What the store under test provides. */
+export interface HookSuiteContext {
+  store: HookStore
+  /** The audit actions recorded so far in tenant `a`, oldest first. */
+  recorded: () => Promise<string[]>
+  a: HookSuiteTenant
+  b: HookSuiteTenant
+}
+
+/**
+ * Behaviour every `HookStore` must have. Run against each adapter so the memory store used by
+ * unit tests can't drift from Postgres.
+ *
+ * @param name - Adapter name for the report.
+ * @param setup - Builds a fresh context; called before each test.
+ */
+export function describeHookStore(name: string, setup: () => Promise<HookSuiteContext>): void {
+  const now = new Date('2026-01-01T00:00:00.000Z')
+  const later = new Date('2026-01-02T00:00:00.000Z')
+  const strict = { enabled: true, failureMode: 'deny' } as const
+  let ctx: HookSuiteContext
+
+  // The tenant of a real-server fixture carries helpers of its own: only its two ids are taken.
+  function hook(tenant: HookSuiteTenant, overrides: Partial<HookRecord> = {}): HookRecord {
+    return {
+      id: Bun.randomUUIDv7(),
+      projectId: tenant.projectId,
+      environmentId: tenant.environmentId,
+      point: 'before_sign_up',
+      url: 'https://app.example.com/tula/before-sign-up',
+      secret: 'v1.sealed.secret',
+      enabled: true,
+      deadlineMs: 2000,
+      failureMode: 'deny',
+      lastFailedAt: null,
+      lastFailureReason: null,
+      createdAt: now,
+      updatedAt: now,
+      ...overrides,
+    }
+  }
+
+  function activity(
+    tenant: HookSuiteTenant,
+    type: 'hook.created' | 'hook.updated' | 'hook.deleted',
+    id: string
+  ): Activity {
+    const scope = { projectId: tenant.projectId, environmentId: tenant.environmentId }
+    const deps = { ids: { next: () => Bun.randomUUIDv7() }, clock: { now: () => now } }
+    const actor = { type: 'admin', id: null, ipAddress: null, userAgent: null } as const
+    const target = { type: 'hook', id } as const
+    const point = 'before_sign_up' as const
+    if (type === 'hook.created') {
+      return Audit.entry(deps, scope, {
+        type,
+        actor,
+        target,
+        data: { point, enabled: true, failureMode: 'deny' },
+      })
+    }
+    if (type === 'hook.updated') {
+      return Audit.entry(deps, scope, { type, actor, target, data: { point, changed: ['url'] } })
+    }
+    return Audit.entry(deps, scope, { type, actor, target, data: { point } })
+  }
+
+  async function stored(tenant: HookSuiteTenant, overrides: Partial<HookRecord> = {}) {
+    const record = hook(tenant, overrides)
+    const row = await ctx.store.insert(record, activity(tenant, 'hook.created', record.id))
+    if (!row) {
+      throw new Error('the hook was not stored')
+    }
+    return row
+  }
+
+  describe(`${name} HookStore`, () => {
+    beforeEach(async () => {
+      ctx = await setup()
+    })
+
+    test('stores a hook and reads it back by id and by point, with its registration recorded', async () => {
+      const record = hook(ctx.a)
+      expect(await ctx.store.insert(record, activity(ctx.a, 'hook.created', record.id))).toEqual(
+        record
+      )
+      expect(await ctx.store.find(ctx.a.environmentId, record.id)).toEqual(record)
+      expect(await ctx.store.findByPoint(ctx.a.environmentId, 'before_sign_up')).toEqual(record)
+      expect(await ctx.store.list(ctx.a.environmentId)).toEqual([record])
+      expect(await ctx.recorded()).toEqual(['hook.created'])
+    })
+
+    test('an environment has one hook per point: a second is not stored and not recorded', async () => {
+      const first = await stored(ctx.a)
+      const second = hook(ctx.a, { url: 'https://other.example.com/hook' })
+      expect(await ctx.store.insert(second, activity(ctx.a, 'hook.created', second.id))).toBeNull()
+      expect(await ctx.store.list(ctx.a.environmentId)).toEqual([first])
+      expect(await ctx.recorded()).toEqual(['hook.created'])
+    })
+
+    test('an environment has a hook for each point, found by its own point and by no other', async () => {
+      const env = ctx.a.environmentId
+      const points = ['before_sign_up', 'before_session', 'before_token'] as const
+      const stored = []
+      for (const point of points) {
+        const record = hook(ctx.a, { point })
+        expect(await ctx.store.insert(record, Audit.none('fixture'))).toEqual(record)
+        stored.push(record)
+      }
+      for (const [index, point] of points.entries()) {
+        expect(await ctx.store.findByPoint(env, point)).toEqual(stored[index] ?? null)
+        // One of each at most.
+        expect(await ctx.store.insert(hook(ctx.a, { point }), Audit.none('fixture'))).toBeNull()
+      }
+      expect((await ctx.store.list(env)).map((record) => record.point)).toEqual([...points])
+      // A failure is noted on the hook that failed and on no other.
+      await ctx.store.noteFailure(env, stored[2]?.id ?? '', later, 'claims_invalid')
+      expect((await ctx.store.findByPoint(env, 'before_token'))?.lastFailureReason).toBe(
+        'claims_invalid'
+      )
+      expect((await ctx.store.findByPoint(env, 'before_session'))?.lastFailureReason).toBeNull()
+      expect(await ctx.store.findByPoint(ctx.b.environmentId, 'before_token')).toBeNull()
+    })
+
+    test('of two registrations at once exactly one is stored', async () => {
+      const [one, two] = [hook(ctx.a), hook(ctx.a)]
+      const rows = await Promise.all([
+        ctx.store.insert(one, activity(ctx.a, 'hook.created', one.id)),
+        ctx.store.insert(two, activity(ctx.a, 'hook.created', two.id)),
+      ])
+      expect(rows.filter((row) => row !== null)).toHaveLength(1)
+      expect(await ctx.store.list(ctx.a.environmentId)).toHaveLength(1)
+      expect(await ctx.recorded()).toEqual(['hook.created'])
+    })
+
+    test('a hook of another environment is never found, listed, changed, removed or marked', async () => {
+      const theirs = await stored(ctx.b)
+      const env = ctx.a.environmentId
+      expect(await ctx.store.find(env, theirs.id)).toBeNull()
+      expect(await ctx.store.findByPoint(env, 'before_sign_up')).toBeNull()
+      expect(await ctx.store.list(env)).toEqual([])
+      expect(
+        await ctx.store.update(
+          env,
+          theirs.id,
+          strict,
+          { enabled: false, failureMode: 'allow' },
+          later,
+          activity(ctx.a, 'hook.updated', theirs.id)
+        )
+      ).toBeNull()
+      expect(
+        await ctx.store.delete(env, theirs.id, strict, activity(ctx.a, 'hook.deleted', theirs.id))
+      ).toBe(false)
+      await ctx.store.noteFailure(env, theirs.id, later, 'timeout')
+      expect(await ctx.store.find(ctx.b.environmentId, theirs.id)).toEqual(theirs)
+      expect(await ctx.recorded()).toEqual([])
+    })
+
+    test('an update sets what it names, keeps the rest, and is recorded', async () => {
+      const record = await stored(ctx.a)
+      const updated = await ctx.store.update(
+        ctx.a.environmentId,
+        record.id,
+        strict,
+        { url: 'https://new.example.com/hook', deadlineMs: 5000 },
+        later,
+        activity(ctx.a, 'hook.updated', record.id)
+      )
+      expect(updated).toEqual({
+        ...record,
+        url: 'https://new.example.com/hook',
+        deadlineMs: 5000,
+        updatedAt: later,
+      })
+      expect(await ctx.store.find(ctx.a.environmentId, record.id)).toEqual(updated)
+      expect(await ctx.recorded()).toEqual(['hook.created', 'hook.updated'])
+    })
+
+    test.each([
+      ['switched off meanwhile', { enabled: false }],
+      ['set to allow on failure meanwhile', { failureMode: 'allow' }],
+    ] as const)(
+      'an update judged against a hook that was %s writes nothing and records nothing',
+      async (_name, drift) => {
+        const record = await stored(ctx.a, drift)
+        const outcome = await ctx.store.update(
+          ctx.a.environmentId,
+          record.id,
+          strict,
+          { deadlineMs: 300 },
+          later,
+          activity(ctx.a, 'hook.updated', record.id)
+        )
+        expect(outcome).toBeNull()
+        expect(await ctx.store.find(ctx.a.environmentId, record.id)).toEqual(record)
+        expect(await ctx.recorded()).toEqual(['hook.created'])
+      }
+    )
+
+    test('a removal is recorded, and one judged against a hook that changed removes nothing', async () => {
+      const record = await stored(ctx.a, { enabled: false })
+      const env = ctx.a.environmentId
+      expect(
+        await ctx.store.delete(env, record.id, strict, activity(ctx.a, 'hook.deleted', record.id))
+      ).toBe(false)
+      expect(await ctx.store.find(env, record.id)).toEqual(record)
+      expect(
+        await ctx.store.delete(
+          env,
+          record.id,
+          { enabled: false, failureMode: 'deny' },
+          activity(ctx.a, 'hook.deleted', record.id)
+        )
+      ).toBe(true)
+      expect(await ctx.store.find(env, record.id)).toBeNull()
+      expect(await ctx.recorded()).toEqual(['hook.created', 'hook.deleted'])
+    })
+
+    test('an unknown hook is neither changed nor removed, and nothing is recorded', async () => {
+      const id = Bun.randomUUIDv7()
+      const env = ctx.a.environmentId
+      expect(
+        await ctx.store.update(
+          env,
+          id,
+          strict,
+          { enabled: false },
+          later,
+          activity(ctx.a, 'hook.updated', id)
+        )
+      ).toBeNull()
+      expect(await ctx.store.delete(env, id, strict, activity(ctx.a, 'hook.deleted', id))).toBe(
+        false
+      )
+      await ctx.store.noteFailure(env, id, later, 'timeout')
+      expect(await ctx.recorded()).toEqual([])
+    })
+
+    test('a failed call is noted with its time and reason, unrecorded, and moves nothing else', async () => {
+      const record = await stored(ctx.a)
+      await ctx.store.noteFailure(ctx.a.environmentId, record.id, later, 'timeout')
+      expect(await ctx.store.find(ctx.a.environmentId, record.id)).toEqual({
+        ...record,
+        lastFailedAt: later,
+        lastFailureReason: 'timeout',
+      })
+      const again = new Date(later.getTime() + 1000)
+      await ctx.store.noteFailure(ctx.a.environmentId, record.id, again, 'answer_invalid')
+      expect(await ctx.store.find(ctx.a.environmentId, record.id)).toEqual({
+        ...record,
+        lastFailedAt: again,
+        lastFailureReason: 'answer_invalid',
+      })
+      expect(await ctx.recorded()).toEqual(['hook.created'])
+    })
+
+    describe('counts of calls', () => {
+      const hour = new Date('2026-01-02T09:00:00.000Z')
+      const minute = (n: number) => new Date(hour.getTime() + n * 60_000)
+
+      test('a call is counted under its hook, its hour and what it came to', async () => {
+        const record = await stored(ctx.a)
+        const env = ctx.a.environmentId
+        await ctx.store.countCall(env, record.id, minute(1), 'allowed')
+        await ctx.store.countCall(env, record.id, minute(5), 'allowed')
+        await ctx.store.countCall(env, record.id, minute(7), 'denied')
+        await ctx.store.countCall(env, record.id, minute(61), 'timed_out')
+        expect(await ctx.store.callCounts(env, hour)).toEqual([
+          { hookId: record.id, hour, outcome: 'allowed', calls: 2, lastAt: minute(5) },
+          { hookId: record.id, hour, outcome: 'denied', calls: 1, lastAt: minute(7) },
+          {
+            hookId: record.id,
+            hour: minute(60),
+            outcome: 'timed_out',
+            calls: 1,
+            lastAt: minute(61),
+          },
+        ])
+      })
+
+      test('the first and the last instant of an hour are that hour\u2019s', async () => {
+        const record = await stored(ctx.a)
+        const env = ctx.a.environmentId
+        await ctx.store.countCall(env, record.id, hour, 'failed')
+        await ctx.store.countCall(env, record.id, new Date(hour.getTime() + 3_599_999), 'failed')
+        await ctx.store.countCall(env, record.id, new Date(hour.getTime() - 1), 'failed')
+        expect(await ctx.store.callCounts(env, new Date(hour.getTime() - 3_600_000))).toEqual([
+          {
+            hookId: record.id,
+            hour: new Date(hour.getTime() - 3_600_000),
+            outcome: 'failed',
+            calls: 1,
+            lastAt: new Date(hour.getTime() - 1),
+          },
+          {
+            hookId: record.id,
+            hour,
+            outcome: 'failed',
+            calls: 2,
+            lastAt: new Date(hour.getTime() + 3_599_999),
+          },
+        ])
+      })
+
+      test('a call written late does not move the latest call back', async () => {
+        const record = await stored(ctx.a)
+        const env = ctx.a.environmentId
+        await ctx.store.countCall(env, record.id, minute(9), 'allowed')
+        await ctx.store.countCall(env, record.id, minute(3), 'allowed')
+        expect(await ctx.store.callCounts(env, hour)).toEqual([
+          { hookId: record.id, hour, outcome: 'allowed', calls: 2, lastAt: minute(9) },
+        ])
+      })
+
+      test('calls at once are each counted', async () => {
+        const record = await stored(ctx.a)
+        const env = ctx.a.environmentId
+        await Promise.all(
+          Array.from({ length: 12 }, (_, n) =>
+            ctx.store.countCall(env, record.id, minute(n), 'allowed')
+          )
+        )
+        expect(await ctx.store.callCounts(env, hour)).toEqual([
+          { hookId: record.id, hour, outcome: 'allowed', calls: 12, lastAt: minute(11) },
+        ])
+      })
+
+      test('only hours from the one asked for are read', async () => {
+        const record = await stored(ctx.a)
+        const env = ctx.a.environmentId
+        await ctx.store.countCall(env, record.id, new Date(hour.getTime() - 1), 'allowed')
+        await ctx.store.countCall(env, record.id, hour, 'denied')
+        expect((await ctx.store.callCounts(env, hour)).map((count) => count.outcome)).toEqual([
+          'denied',
+        ])
+      })
+
+      test('counting is not recorded and leaves the hook as it was', async () => {
+        const record = await stored(ctx.a)
+        await ctx.store.countCall(ctx.a.environmentId, record.id, minute(1), 'failed')
+        expect(await ctx.store.find(ctx.a.environmentId, record.id)).toEqual(record)
+        expect(await ctx.recorded()).toEqual(['hook.created'])
+      })
+
+      test('another environment neither counts for a hook nor reads or deletes its counts', async () => {
+        const record = await stored(ctx.a)
+        const theirs = await stored(ctx.b)
+        await ctx.store.countCall(ctx.b.environmentId, record.id, minute(1), 'allowed')
+        expect(await ctx.store.callCounts(ctx.a.environmentId, hour)).toEqual([])
+        expect(await ctx.store.callCounts(ctx.b.environmentId, hour)).toEqual([])
+        await ctx.store.countCall(ctx.a.environmentId, record.id, minute(1), 'allowed')
+        await ctx.store.countCall(ctx.b.environmentId, theirs.id, minute(2), 'denied')
+        expect(
+          (await ctx.store.callCounts(ctx.b.environmentId, hour)).map((count) => count.hookId)
+        ).toEqual([theirs.id])
+        expect(await ctx.store.deleteCallCountsBefore(ctx.b.environmentId, minute(120), 10)).toBe(1)
+        expect(
+          (await ctx.store.callCounts(ctx.a.environmentId, hour)).map((count) => count.hookId)
+        ).toEqual([record.id])
+      })
+
+      test('a hook that is gone is counted nothing, and a removed hook\u2019s counts go with it', async () => {
+        const env = ctx.a.environmentId
+        await ctx.store.countCall(env, Bun.randomUUIDv7(), minute(1), 'allowed')
+        expect(await ctx.store.callCounts(env, hour)).toEqual([])
+        const record = await stored(ctx.a)
+        await ctx.store.countCall(env, record.id, minute(1), 'allowed')
+        expect(
+          await ctx.store.delete(env, record.id, strict, activity(ctx.a, 'hook.deleted', record.id))
+        ).toBe(true)
+        expect(await ctx.store.callCounts(env, new Date(0))).toEqual([])
+      })
+
+      test('hours before a cutoff are deleted, a batch at a time, and the cutoff\u2019s hour stays', async () => {
+        const record = await stored(ctx.a)
+        const env = ctx.a.environmentId
+        for (const hoursAgo of [3, 2, 1, 0]) {
+          await ctx.store.countCall(
+            env,
+            record.id,
+            new Date(hour.getTime() - hoursAgo * 3_600_000),
+            'allowed'
+          )
+        }
+        expect(await ctx.store.deleteCallCountsBefore(env, hour, 2)).toBe(2)
+        expect(await ctx.store.deleteCallCountsBefore(env, hour, 2)).toBe(1)
+        expect(await ctx.store.deleteCallCountsBefore(env, hour, 2)).toBe(0)
+        expect((await ctx.store.callCounts(env, new Date(0))).map((count) => count.hour)).toEqual([
+          hour,
+        ])
+      })
+    })
+
+    test('what is read back is a copy: changing it changes nothing stored', async () => {
+      const record = await stored(ctx.a)
+      const read = await ctx.store.find(ctx.a.environmentId, record.id)
+      if (read) {
+        read.enabled = false
+        read.url = 'https://changed.example.com'
+      }
+      expect(await ctx.store.find(ctx.a.environmentId, record.id)).toEqual(record)
+    })
+  })
+}

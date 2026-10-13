@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { PUBLISHABLE_KEY_PREFIX, SECRET_KEY_PREFIX } from '@tula/contract'
+import { AGENT_KEY_PREFIX, PUBLISHABLE_KEY_PREFIX, SECRET_KEY_PREFIX } from '@tula/contract'
 import { type FormEvent, useEffect, useState } from 'react'
 import { fieldErrorMap, messageFor } from '~/api/errors'
 import {
@@ -16,11 +16,35 @@ import { DataTable } from '~/components/data-table'
 import { SelectField, TextField } from '~/components/field'
 import { Modal } from '~/components/modal'
 import { PageHeader } from '~/components/page'
+import { SecretRequestActions } from '~/components/secret-request-actions'
 import { EmptyState, QueryState } from '~/components/states'
 import { notify } from '~/components/toaster'
 import { NativeSelectOption } from '~/components/ui/native-select'
 import { useEnvironment, useEnvironmentRequest } from '~/features/shell/environment-context'
 import { formatDateTime } from '~/lib/format'
+
+/** The prefix a key of each kind starts with. A kind without one does not compile. */
+const KEY_PREFIXES: Readonly<Record<ApiKeyKind, string>> = {
+  publishable: PUBLISHABLE_KEY_PREFIX,
+  secret: SECRET_KEY_PREFIX,
+  agent: AGENT_KEY_PREFIX,
+}
+
+/** What each kind of key is called in the list. */
+const KIND_LABELS: Readonly<Record<ApiKeyKind, string>> = {
+  publishable: 'Publishable',
+  secret: 'Secret',
+  agent: 'Agent',
+}
+
+/** What is said under a key of each kind when it is shown, once. */
+const KIND_WARNINGS: Readonly<Record<ApiKeyKind, string | null>> = {
+  publishable: null,
+  secret:
+    'A secret key gives full access to this environment. Keep it on a server, never in a browser or an app.',
+  agent:
+    'An agent key reads everything a secret key reads, users’ email addresses among them, and can ask for changes as proposals. It cannot approve a proposal, and changes nothing itself but by running a sign-in test where this environment allows one (a throwaway user, made and deleted). Give it to the MCP server of an AI agent, and nowhere else.',
+}
 
 /**
  * How a key is shown once it can no longer be read: its prefix and last four characters.
@@ -29,7 +53,7 @@ import { formatDateTime } from '~/lib/format'
  * @returns For example `tula_sk_…a1b2`.
  */
 export function maskedKey(key: Pick<ApiKey, 'kind' | 'lastFour'>): string {
-  return `${key.kind === 'secret' ? SECRET_KEY_PREFIX : PUBLISHABLE_KEY_PREFIX}…${key.lastFour}`
+  return `${KEY_PREFIXES[key.kind]}…${key.lastFour}`
 }
 
 /**
@@ -42,7 +66,18 @@ function CreateKeyDialog({ open, onClose }: { open: boolean; onClose: () => void
   const queryClient = useQueryClient()
   // `gcTime: 0`: the mutation's result (which holds the key) is not kept by the query client
   // after this component lets go of it.
-  const create = useCreateApiKey({ mutation: { gcTime: 0 }, request: useEnvironmentRequest() })
+  // The list is refreshed by the mutation itself, so it is right even when this dialog has
+  // gone before the answer came. Started, never awaited: the query client waits for what
+  // this returns before it hands over the answer, and the key must not wait for a list.
+  const create = useCreateApiKey({
+    mutation: {
+      gcTime: 0,
+      onSuccess: () => {
+        void queryClient.invalidateQueries({ queryKey: ['/v1/admin/api-keys'] })
+      },
+    },
+    request: useEnvironmentRequest(),
+  })
   const [name, setName] = useState('')
   const [kind, setKind] = useState<ApiKeyKind>('publishable')
   const [problem, setProblem] = useState<string>()
@@ -58,6 +93,10 @@ function CreateKeyDialog({ open, onClose }: { open: boolean; onClose: () => void
   }, [open])
 
   function close() {
+    // The server has made the key by the time it answers; the answer is where the key is.
+    if (create.isPending) {
+      return
+    }
     setCreated(null)
     create.reset()
     onClose()
@@ -76,10 +115,9 @@ function CreateKeyDialog({ open, onClose }: { open: boolean; onClose: () => void
     create.mutate(
       { data: { kind, name: trimmed } },
       {
-        onSuccess: async (result) => {
+        onSuccess: (result) => {
           setCreated({ key: result.key, kind: result.kind })
           create.reset()
-          await queryClient.invalidateQueries({ queryKey: ['/v1/admin/api-keys'] })
         },
       }
     )
@@ -102,11 +140,8 @@ function CreateKeyDialog({ open, onClose }: { open: boolean; onClose: () => void
             {created.key}
           </code>
           <CopyButton value={created.key} label='Copy key' />
-          {created.kind === 'secret' ? (
-            <p className='text-sm font-medium text-destructive'>
-              A secret key gives full access to this environment. Keep it on a server, never in a
-              browser or an app.
-            </p>
+          {KIND_WARNINGS[created.kind] ? (
+            <p className='text-sm font-medium text-destructive'>{KIND_WARNINGS[created.kind]}</p>
           ) : null}
         </div>
       </Modal>
@@ -115,7 +150,7 @@ function CreateKeyDialog({ open, onClose }: { open: boolean; onClose: () => void
 
   const fieldError = problem ?? fieldErrorMap(create.error).name
   return (
-    <Modal open={open} onClose={close} title='Create API key'>
+    <Modal open={open} onClose={close} title='Create API key' busy={create.isPending}>
       <form onSubmit={submit} className='flex flex-col gap-4' noValidate>
         <TextField
           label='Name'
@@ -129,24 +164,23 @@ function CreateKeyDialog({ open, onClose }: { open: boolean; onClose: () => void
           label='Kind'
           value={kind}
           onChange={(event) => setKind(event.target.value as ApiKeyKind)}
-          hint='Publishable: for browsers and apps. Secret: for your servers, full access.'
+          hint='Publishable: for browsers and apps. Secret: for your servers, full access. Agent: for an AI agent’s MCP server; it reads, asks for changes that a person approves, and runs a sign-in test where this environment allows one.'
         >
           <NativeSelectOption value='publishable'>Publishable</NativeSelectOption>
           <NativeSelectOption value='secret'>Secret</NativeSelectOption>
+          <NativeSelectOption value='agent'>Agent</NativeSelectOption>
         </SelectField>
         {create.error && !fieldError ? (
           <p role='alert' className='text-sm text-destructive'>
             {messageFor(create.error)}
           </p>
         ) : null}
-        <div className='flex flex-wrap justify-end gap-2'>
-          <ActionButton variant='outline' onClick={close}>
-            Cancel
-          </ActionButton>
-          <ActionButton type='submit' pending={create.isPending}>
-            Create key
-          </ActionButton>
-        </div>
+        <SecretRequestActions
+          pending={create.isPending}
+          onCancel={close}
+          submitLabel='Create key'
+          pendingLabel='Creating…'
+        />
       </form>
     </Modal>
   )
@@ -196,7 +230,7 @@ export function ApiKeysScreen() {
                   },
                   {
                     header: 'Kind',
-                    cell: (key) => (key.kind === 'secret' ? 'Secret' : 'Publishable'),
+                    cell: (key) => KIND_LABELS[key.kind],
                   },
                   { header: 'Created', cell: (key) => formatDateTime(key.createdAt) },
                   { header: 'Last used', cell: (key) => formatDateTime(key.lastUsedAt) },

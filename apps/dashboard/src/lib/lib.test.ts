@@ -5,7 +5,7 @@ import { maskedKey } from '~/features/keys/api-keys-screen'
 import { numberOrNull, textOrNull, wholeNumber } from '~/features/settings/inputs'
 import { ENVIRONMENT_SECTIONS, sectionOf } from '~/features/shell/sections'
 import { syncScope, useScope } from '~/state/scope'
-import { formatDateTime, fullName, isHttpsUrl } from './format'
+import { formatDateTime, fullName, isHttpsUrl, userLabel } from './format'
 import { safeRedirect } from './redirect'
 import { pageSearch } from './search'
 
@@ -84,6 +84,15 @@ describe('format', () => {
     expect(formatDateTime('2026-10-04T12:00:00.000Z')).toContain('2026')
     expect(fullName({ firstName: 'Ada', lastName: 'Lovelace' })).toBe('Ada Lovelace')
     expect(fullName({ firstName: null, lastName: null })).toBe('')
+  })
+
+  test.each([
+    [{ email: 'ada@example.com', firstName: 'Ada', lastName: null }, 'ada@example.com'],
+    [{ email: null, firstName: 'Nelly', lastName: 'Okafor' }, 'Nelly Okafor'],
+    [{ email: null, firstName: null, lastName: null }, 'User u1'],
+    [{ email: null, firstName: '', lastName: '' }, 'User u1'],
+  ])('userLabel of %j is %j: the address, else the name, else the id', (user, label) => {
+    expect(userLabel({ id: 'u1', ...user })).toBe(label)
     expect(isHttpsUrl('https://example.com/a')).toBe(true)
     expect(isHttpsUrl('http://example.com')).toBe(false)
     expect(isHttpsUrl('javascript:alert(1)')).toBe(false)
@@ -102,6 +111,7 @@ describe('format', () => {
   test('a key is shown by its prefix and last four only', () => {
     expect(maskedKey({ kind: 'secret', lastFour: 'a1b2' })).toBe('tula_sk_…a1b2')
     expect(maskedKey({ kind: 'publishable', lastFour: 'c3d4' })).toBe('tula_pk_…c3d4')
+    expect(maskedKey({ kind: 'agent', lastFour: 'e5f6' })).toBe('tula_ak_…e5f6')
   })
 })
 

@@ -16,15 +16,63 @@ paths:
   which has no RLS but does declare the composite FK itself).
 - Tenant data is only read/written inside `withTenant(db, environmentId, fn)`. Outside it,
   policies match nothing — a missing `withTenant` shows up as "no rows", not a leak.
-- Runtime connects as `tula_api` (in role `tula_app`); migrations run as the owner. Migration
-  history lives in `drizzle.__drizzle_migrations`, unreachable by the runtime role.
+- Migration history lives in `drizzle.__drizzle_migrations`, unreachable by the runtime role.
 - The runtime grant matrix (migration 0003) is least-privilege: control plane has no DELETE
   (except `instance_audit_logs`, which the retention job purges after
   `INSTANCE_AUDIT_RETENTION_DAYS`: migration 0016, DELETE but never UPDATE),
-  `audit_logs` is append-only, `events` has no DELETE. Admin deletes run under the owner
+  `audit_logs` has SELECT, INSERT and DELETE but never UPDATE (migration 0017: the retention
+  job deletes an environment's entries past its `audit.retentionDays`, and the restrictive
+  policy `audit_logs_retention_floor` refuses any entry younger than a day). The webhook
+  tables (migrations 0018 and 0019): `events` has SELECT, INSERT, **UPDATE of `delivered_at`
+  only** (never grant UPDATE on the table again: a payload must not be rewritable) and DELETE
+  inside `events_retention_floor` (settled and more than a day old); `webhook_deliveries` has
+  SELECT, INSERT, UPDATE of its eight state columns only (not the endpoint, the event, the
+  type, the test flag or `created_at`) and DELETE inside `webhook_deliveries_retention_floor`
+  (not `pending` and more than seven days old); `sms_code_counts` (migration 0024) has
+  SELECT, INSERT, UPDATE of `sent`, `used` and `updated_at` only (never `day`, the prefix
+  or the tenant columns) and DELETE inside `sms_code_counts_retention_floor` (days more than
+  seven before today, UTC: today's rows are what the daily SMS limit is held against);
+  `password_history` (migration 0026) has SELECT, INSERT and DELETE, and UPDATE of
+  `position` and `updated_at` only (never `secret`, `user_id` or the tenant columns: a
+  stored hash is not rewritable and a row cannot be moved to another user); its rows go
+  with their user by cascade, hold argon2id hashes only, `position` is at least 1
+  (`password_history_position_positive`), and a user has one row at a position
+  (`password_history_user_position_unique`: a `DEFERRABLE INITIALLY IMMEDIATE` unique
+  constraint written by hand in the migration, never a plain unique index, which would
+  refuse the one-statement shift of a user's rows);
+  `webhook_delivery_attempts` is append-only,
+  SELECT and INSERT, and goes only by cascade from its delivery. `webhook_endpoints`
+  (migration 0020) holds two sealed secrets at most: `secret`, and `previous_secret` with
+  `previous_secret_expires_at`, set and cleared together (the check
+  `webhook_endpoints_previous_secret_whole`); the role's table-level UPDATE from 0018 covers
+  them, and no grant changed. Neither of the last two has
+  a column for anything of a receiver's answer beyond a status code. `hooks` (migration 0021):
+  SELECT, INSERT and DELETE, and UPDATE of seven columns only (the address, `enabled`,
+  `deadline_ms`, `failure_mode`, `updated_at` and the two last-failure columns: never
+  `secret`, `point`, the id, the tenant columns or `created_at`; a rotation would extend the
+  grant deliberately); one row per `(environment_id, point)`; `deadline_ms`
+  held to 100..5000 by the check `hooks_deadline_bounds` (never widen it: the API's schema
+  is not the only writer a table has); `last_failed_at` and `last_failure_reason` set
+  together; and no column for anything an endpoint answered, with one exception that is
+  not on that table: `sessions.hook_claims` (migration 0022), the claims a `before_token`
+  hook answered with, nullable jsonb held by the check `sessions_hook_claims_bounds` to an
+  object of at most 4,096 bytes of its text (the claims' own rules are the service's, on
+  write and again on read). `hooks.point` is text with no check: a new point needs no
+  migration. `hook_call_counts` (migration 0034, ADR 0035 "Recent outcomes"): one row per
+  hook, UTC hour and outcome; SELECT, INSERT and DELETE, and UPDATE of `calls`, `last_at`
+  and `updated_at` only (never the hook, the hour, the outcome or the tenant columns); the
+  outcome one of four words (`hook_call_counts_outcome_known`), the hour whole and
+  `last_at` inside it; a composite reference to its hook (`hooks` declares
+  `tenantParentKey`), cascading; and **no column for anything of a call**: never add one.
+  It has no retention floor policy, on purpose: nothing is decided by its rows. Three tables have a
+  second policy (`audit_logs`, `events`, `webhook_deliveries`), and a second policy is always
+  restrictive and `FOR DELETE`. `webhook_deliveries.event_id` is deliberately **not** a
+  foreign key (the log outlives the event). Admin deletes run under the owner
   (`DATABASE_MIGRATION_URL`), never the request path. The retention job (ADR 0017) deletes
   expired tenant rows as the runtime role, per environment inside `withTenant`, through batched
-  store methods; it never touches `audit_logs` or `events`. New tables get **no**
+  store methods. A migration that has to change rows of a tenant table lifts `FORCE ROW LEVEL
+  SECURITY` for the backfill and restores it in the same file (0019): the owner is bound by
+  the policy too, and a migration sets no environment. New tables get **no**
   default grants: add them to the matrix in the same migration (a test fails otherwise). Run all
   migrations as the same owner role (default privileges are per-owner).
 - Refresh tokens are pruned by deleting sessions (cascade), never token-by-token.
@@ -33,9 +81,16 @@ paths:
   (signing keys, TOTP seeds). Prefer deriving over storing recoverable secrets.
 - Child → parent references between tenant tables use `tenantForeignKey()` (composite on
   `environment_id`) and the parent declares `tenantParentKey()`: FK checks bypass RLS.
-- Workflow: edit schema → `bun run db:generate` → **read the SQL** → commit the migration.
-  `bun run db:check` (in `verify`) fails on schema drift. Never `drizzle-kit push`; never edit a
-  migration that is already on `develop`.
 - Tests: PGlite via `createTestDatabase()` / `createTestTenant()` from `@tula/db/testing`
   (runs as `tula_app`, RLS enforced). Real-Postgres checks go in `*.integration.ts`.
 - Drizzle builders are thenables, not Promises: wrap them before `expect(...).rejects`.
+- `native_apps` (ADR 0040) feeds two public files: keep its shape checks
+  (`native_apps_identifier_shape`, `native_apps_ios_whole`, `native_apps_android_whole`,
+  `native_apps_fingerprints_shape`, `native_apps_app_link_paths_shape`) and the column-level
+  `UPDATE` grant (`team_id`, `sha256_cert_fingerprints`, `app_link_paths`, `updated_at`:
+  never `platform` or `identifier`).
+- `sessions.device_thumbprint` (ADR 0043) is written when the session is inserted and never
+  again: keep the check `sessions_device_thumbprint_shape` (null, or 43 base64url
+  characters on a `hybrid` session) and the trigger `sessions_device_thumbprint_immutable`
+  (hand-written in the migration: Drizzle declares no triggers), and add no store method
+  that updates the column. `packages/db/src/session-device-binding.test.ts` holds both.

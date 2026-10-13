@@ -4,10 +4,19 @@ import {
   type EnvironmentSettings,
   EnvironmentSettingsInputSchema,
   EnvironmentSettingsSchema,
+  EVENT_DATA_SCHEMAS,
+  MAX_CHANGED_SETTINGS,
+  MAX_CUSTOM_CLAIM_KEY_LENGTH,
+  MAX_CUSTOM_SESSION_PROFILES,
+  MAX_JWT_TEMPLATE_CLAIMS,
+  MAX_JWT_TEMPLATES,
+  MAX_SESSION_PROFILE_NAME_LENGTH,
+  MAX_SETTING_NAME_LENGTH,
   PASSWORD_POLICY_PRESETS,
 } from '@tula/contract'
 import { cacheEnvironmentSettings } from '~/adapters/cache/environment-settings'
 import { ServiceException } from '~/exceptions'
+import { eventPayload } from '~/lib/event-payload'
 import * as Audit from '~/modules/audit/service'
 import * as Settings from '~/modules/settings/service'
 import { createTestDeps, TEST_ACTOR, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
@@ -247,12 +256,15 @@ describe('replace', () => {
 
 describe('the MFA policy of an environment', () => {
   test('is `optional` for an environment that saved nothing', async () => {
-    expect((await Settings.current(deps, tenant)).mfa).toEqual({ policy: 'optional' })
+    expect((await Settings.current(deps, tenant)).mfa).toEqual({
+      policy: 'optional',
+      smsCode: { enabled: false },
+    })
     expect((await Settings.current(deps, tenant)).notifications.mfaChanged).toBe(true)
   })
 
   test('is saved and read back, per environment', async () => {
-    await replace(0, document({ mfa: { policy: 'required' } }))
+    await replace(0, document({ mfa: { policy: 'required', smsCode: { enabled: false } } }))
     expect((await Settings.current(deps, tenant)).mfa.policy).toBe('required')
     expect((await Settings.current(deps, other)).mfa.policy).toBe('optional')
   })
@@ -271,11 +283,105 @@ describe('changedKeys', () => {
     expect(Settings.changedKeys(before, structuredClone(before))).toEqual([])
   })
 
+  // `environment.settings_updated` lists these keys in `changed`, which the event contract
+  // bounds (a name's pattern and length, the length of the list). A list that does not fit is
+  // dropped from the payload whole (`eventPayload`), so a deeper or longer setting must
+  // fail here, not go missing from a webhook.
+  test('every key of the largest settings document fits the event’s `changed`', () => {
+    const name = (n: number) => `p${n}${'x'.repeat(MAX_SESSION_PROFILE_NAME_LENGTH - 2)}`
+    const custom = Object.fromEntries(
+      Array.from({ length: MAX_CUSTOM_SESSION_PROFILES }, (_, n) => [
+        name(n),
+        { ...DEFAULT_ENVIRONMENT_SETTINGS.sessions.profiles.web, jwtTemplate: name(0) },
+      ])
+    )
+    // As many templates as there can be, each with as many claims as it can hold, under the
+    // longest names.
+    const claims = Object.fromEntries(
+      Array.from({ length: MAX_JWT_TEMPLATE_CLAIMS }, (_, n) => [
+        `c${n}`.padEnd(MAX_CUSTOM_CLAIM_KEY_LENGTH, 'x'),
+        { value: n },
+      ])
+    )
+    const jwtTemplates = Object.fromEntries(
+      Array.from({ length: MAX_JWT_TEMPLATES }, (_, n) => [name(n), { claims }])
+    )
+    const largest = EnvironmentSettingsSchema.parse(
+      document({
+        sessions: {
+          ...DEFAULT_ENVIRONMENT_SETTINGS.sessions,
+          profiles: { ...DEFAULT_ENVIRONMENT_SETTINGS.sessions.profiles, ...custom },
+          jwtTemplates,
+        },
+      })
+    )
+    expect(name(0)).toHaveLength(MAX_SESSION_PROFILE_NAME_LENGTH)
+    // Against nothing at all, every key is a changed one.
+    const keys = Settings.changedKeys({} as EnvironmentSettings, largest)
+    // The templates are one name, whatever they hold.
+    expect(keys.filter((key) => key.startsWith('sessions.jwtTemplates'))).toEqual([
+      'sessions.jwtTemplates',
+    ])
+    expect(keys.some((key) => key.startsWith(`sessions.profiles.${name(0)}.refresh.`))).toBe(true)
+    expect(keys.length).toBeLessThanOrEqual(MAX_CHANGED_SETTINGS)
+    expect(Math.max(...keys.map((key) => key.length))).toBeLessThanOrEqual(MAX_SETTING_NAME_LENGTH)
+    const { changed } = EVENT_DATA_SCHEMAS['environment.settings_updated'].shape
+    expect(changed.parse(keys)).toEqual(keys)
+    // And the payload carries the whole list.
+    const payload = eventPayload(
+      Audit.entry(deps, tenant, {
+        type: 'environment.settings_updated',
+        actor: TEST_ACTOR,
+        target: { type: 'environment', id: tenant.environmentId },
+        data: { revision: 1, changed: keys },
+      })
+    )
+    expect(payload.data.changed).toEqual(keys)
+  })
+
   test('a key present on one side only counts as changed', () => {
     const before = document()
     const after = { ...document(), extra: { flag: true } } as unknown as EnvironmentSettings
     expect(Settings.changedKeys(before, after)).toEqual(['extra.flag'])
     expect(Settings.changedKeys(after, before)).toEqual(['extra.flag'])
+  })
+
+  // A constant is the operator's value: like every setting's value it stays out of the audit
+  // log and out of an event's payload. So do a claim's key and the template's name, which is
+  // also a value in the document (a profile's `jwtTemplate`).
+  test('changed templates are one key, and nothing of a template is named', () => {
+    const template = (role: string) =>
+      document({
+        sessions: {
+          ...DEFAULT_ENVIRONMENT_SETTINGS.sessions,
+          jwtTemplates: { canary_name: { claims: { canary_key: { value: role } } } },
+        },
+      })
+    const keys = Settings.changedKeys(template('CANARY-before'), template('CANARY-after'))
+    expect(keys).toEqual(['sessions.jwtTemplates'])
+    expect(Settings.changedKeys(document(), template('CANARY-added'))).toEqual([
+      'sessions.jwtTemplates',
+    ])
+    expect(Settings.changedKeys(template('CANARY-removed'), document())).toEqual([
+      'sessions.jwtTemplates',
+    ])
+  })
+
+  test('a profile that changes its template is named by the field', () => {
+    const using = (jwtTemplate: string | null) =>
+      document({
+        sessions: {
+          ...DEFAULT_ENVIRONMENT_SETTINGS.sessions,
+          jwtTemplates: { app: { claims: {} }, other: { claims: {} } },
+          profiles: {
+            ...DEFAULT_ENVIRONMENT_SETTINGS.sessions.profiles,
+            web: { ...DEFAULT_ENVIRONMENT_SETTINGS.sessions.profiles.web, jwtTemplate },
+          },
+        },
+      })
+    expect(Settings.changedKeys(using('app'), using('other'))).toEqual([
+      'sessions.profiles.web.jwtTemplate',
+    ])
   })
 })
 
@@ -331,17 +437,39 @@ describe('clientConfig', () => {
       signIn: { methods: ['password'], oauth: [] },
       signUp: { password: 'required' },
       password: PASSWORD_POLICY_PRESETS.recommended,
-      mfa: { policy: 'optional' },
+      mfa: { policy: 'optional', smsCode: false },
+      phone: { enabled: false },
     })
     expect(JSON.stringify(config)).not.toContain('https://acme.test')
+  })
+
+  // A screen needs to know whether to offer "add a phone number", and nothing more: which
+  // countries an operator pays to text is theirs to know.
+  test.each<[EnvironmentSettings['sms'], boolean]>([
+    [{ enabled: false, allowedCountries: [], dailyMessageLimit: 500, templates: {} }, false],
+    [{ enabled: false, allowedCountries: ['US'], dailyMessageLimit: 500, templates: {} }, false],
+    [{ enabled: true, allowedCountries: [], dailyMessageLimit: 500, templates: {} }, false],
+    [
+      { enabled: true, allowedCountries: ['US', 'DE'], dailyMessageLimit: 500, templates: {} },
+      true,
+    ],
+  ])('a number can be added (%j) only with SMS on and a country allowed: %p', (sms, enabled) => {
+    const config = Settings.clientConfig(document({ sms }), [], true)
+    expect(config.phone).toEqual({ enabled })
+    // A deployment that has no way to send a message offers nothing, whatever the settings
+    // say; and that is what is assumed when the caller does not say.
+    expect(Settings.clientConfig(document({ sms }), [], false).phone).toEqual({ enabled: false })
+    expect(Settings.clientConfig(document({ sms })).phone).toEqual({ enabled: false })
+    expect(JSON.stringify(config)).not.toContain('allowedCountries')
+    expect(JSON.stringify(config)).not.toContain('"DE"')
   })
 
   test.each<[EnvironmentSettings['mfa']['policy']]>([['off'], ['optional'], ['required']])(
     'shows the MFA policy `%s`, so a profile screen knows whether to offer it',
     (value) => {
-      expect(Settings.clientConfig(document({ mfa: { policy: value } })).mfa).toEqual({
-        policy: value,
-      })
+      expect(
+        Settings.clientConfig(document({ mfa: { policy: value, smsCode: { enabled: false } } })).mfa
+      ).toEqual({ policy: value, smsCode: false })
     }
   )
 
@@ -379,6 +507,85 @@ describe('requireMethod', () => {
       params: { method: 'password' },
     })
     await Settings.requireMethod(deps, other, 'password')
+  })
+})
+
+describe('requireSms', () => {
+  const seed = (sms: EnvironmentSettings['sms']) =>
+    deps.environmentSettings.seed(tenant.environmentId, {
+      revision: 1,
+      settings: document({ sms }),
+    })
+  const US = '+14155550142'
+  const DE = '+4915112345678'
+
+  test('an environment that has saved nothing sends no text message', async () => {
+    expect((await rejection(Settings.requireSms(deps, tenant))).toJSON()).toEqual({
+      status: 403,
+      code: 'sms.disabled',
+      detail: 'Text messages are not available.',
+    })
+    expect((await rejection(Settings.requireSms(deps, tenant, US))).code).toBe('sms.disabled')
+  })
+
+  test.each<[string, EnvironmentSettings['sms']]>([
+    [
+      'off, with countries listed',
+      { enabled: false, allowedCountries: ['US'], dailyMessageLimit: 500, templates: {} },
+    ],
+    [
+      'on, with no country listed',
+      { enabled: true, allowedCountries: [], dailyMessageLimit: 500, templates: {} },
+    ],
+  ])('%s: disabled, whatever the number', async (_name, sms) => {
+    seed(sms)
+    expect((await rejection(Settings.requireSms(deps, tenant))).code).toBe('sms.disabled')
+    expect((await rejection(Settings.requireSms(deps, tenant, US))).code).toBe('sms.disabled')
+  })
+
+  test('on with a list: a listed country passes, another is refused, and only there', async () => {
+    seed({ enabled: true, allowedCountries: ['US'], dailyMessageLimit: 500, templates: {} })
+    await Settings.requireSms(deps, tenant)
+    await Settings.requireSms(deps, tenant, US)
+    const error = await rejection(Settings.requireSms(deps, tenant, DE))
+    expect(error.status).toBe(422)
+    expect(error.code).toBe('sms.country_not_allowed')
+    // The refusal names no number and no country.
+    expect(JSON.stringify(error.toJSON())).not.toContain('49')
+    // Another environment has its own settings.
+    expect((await rejection(Settings.requireSms(deps, other, US))).code).toBe('sms.disabled')
+  })
+
+  test('a number whose calling code is no country’s is not allowed by any list', async () => {
+    seed({
+      enabled: true,
+      allowedCountries: ['US', 'DE', 'GB'],
+      dailyMessageLimit: 500,
+      templates: {},
+    })
+    expect((await rejection(Settings.requireSms(deps, tenant, '+99912345678'))).code).toBe(
+      'sms.country_not_allowed'
+    )
+  })
+})
+
+describe('changedKeys: sms', () => {
+  test('a change of the switch and of the country list are one key each', () => {
+    const before = document()
+    const after = document({
+      sms: { enabled: true, allowedCountries: ['US', 'DE'], dailyMessageLimit: 500, templates: {} },
+    })
+    expect(Settings.changedKeys(before, after)).toEqual(['sms.allowedCountries', 'sms.enabled'])
+    // Never weaker by the audit entry's definition: it lets nobody in, and the daily limit
+    // bounds what the messages cost wherever they go (ADR 0037). Raising that limit is.
+    expect(Settings.weakened(before, after)).toBe(false)
+    expect(Settings.weakened(after, before)).toBe(false)
+    const raised = document({
+      sms: { enabled: true, allowedCountries: ['US', 'DE'], dailyMessageLimit: 501, templates: {} },
+    })
+    expect(Settings.changedKeys(after, raised)).toEqual(['sms.dailyMessageLimit'])
+    expect(Settings.weakened(after, raised)).toBe(true)
+    expect(Settings.weakened(raised, after)).toBe(false)
   })
 })
 
@@ -488,32 +695,47 @@ describe('weakened', () => {
     ['required', 'required', false],
   ])('the MFA policy from %s to %s → %p', (was, is, expected) => {
     expect(
-      Settings.weakened(document({ mfa: { policy: was } }), document({ mfa: { policy: is } }))
+      Settings.weakened(
+        document({ mfa: { policy: was, smsCode: { enabled: false } } }),
+        document({ mfa: { policy: is, smsCode: { enabled: false } } })
+      )
     ).toBe(expected)
   })
 
   test('a stricter MFA policy does not hide a weaker password policy, nor the other way round', () => {
     expect(
       Settings.weakened(
-        document({ password: strict.password, mfa: { policy: 'optional' } }),
-        document({ password: policy({ minLength: 8 }).password, mfa: { policy: 'required' } })
+        document({
+          password: strict.password,
+          mfa: { policy: 'optional', smsCode: { enabled: false } },
+        }),
+        document({
+          password: policy({ minLength: 8 }).password,
+          mfa: { policy: 'required', smsCode: { enabled: false } },
+        })
       )
     ).toBe(true)
     expect(
       Settings.weakened(
-        document({ password: policy({ minLength: 8 }).password, mfa: { policy: 'required' } }),
-        document({ password: strict.password, mfa: { policy: 'optional' } })
+        document({
+          password: policy({ minLength: 8 }).password,
+          mfa: { policy: 'required', smsCode: { enabled: false } },
+        }),
+        document({
+          password: strict.password,
+          mfa: { policy: 'optional', smsCode: { enabled: false } },
+        })
       )
     ).toBe(true)
   })
 
   test('relaxing the MFA policy is flagged in the audit entry with the key, never the value', async () => {
-    await replace(0, document({ mfa: { policy: 'required' } }))
+    await replace(0, document({ mfa: { policy: 'required', smsCode: { enabled: false } } }))
     expect(deps.activityLog.ofType('environment.settings_updated').at(-1)?.data).toEqual({
       revision: 1,
       changed: ['mfa.policy'],
     })
-    await replace(1, document({ mfa: { policy: 'off' } }))
+    await replace(1, document({ mfa: { policy: 'off', smsCode: { enabled: false } } }))
     expect(deps.activityLog.ofType('environment.settings_updated').at(-1)?.data).toEqual({
       revision: 2,
       changed: ['mfa.policy'],
@@ -530,6 +752,36 @@ describe('weakened', () => {
       changed: ['mfa.policy', 'notifications.mfaChanged'],
       weakened: true,
     })
+  })
+
+  test.each([
+    [null, 365, true],
+    [365, 30, true],
+    [30, 365, false],
+    [30, 30, false],
+    [365, null, false],
+  ] as [number | null, number | null, boolean][])(
+    'the audit retention period from %p to %p → %p',
+    (was, is, expected) => {
+      expect(
+        Settings.weakened(
+          document({ audit: { retentionDays: was } }),
+          document({ audit: { retentionDays: is } })
+        )
+      ).toBe(expected)
+    }
+  )
+
+  test('setting or shortening the audit period is flagged in the audit entry; lengthening it is not', async () => {
+    const last = () => deps.activityLog.ofType('environment.settings_updated').at(-1)?.data
+    await replace(0, document({ audit: { retentionDays: 365 } }))
+    expect(last()).toEqual({ revision: 1, changed: ['audit.retentionDays'], weakened: true })
+    await replace(1, document({ audit: { retentionDays: 30 } }))
+    expect(last()).toEqual({ revision: 2, changed: ['audit.retentionDays'], weakened: true })
+    await replace(2, document({ audit: { retentionDays: 90 } }))
+    expect(last()).toEqual({ revision: 3, changed: ['audit.retentionDays'] })
+    await replace(3, document({ audit: { retentionDays: null } }))
+    expect(last()).toEqual({ revision: 4, changed: ['audit.retentionDays'] })
   })
 
   test('switching a security notice off is flagged in the audit entry, switching it on is not', async () => {

@@ -60,7 +60,12 @@ export function planSave(
   }
 }
 
+/** The one weakening that destroys something when it is saved. */
+const AUDIT_RETENTION = 'audit.retentionDays'
+
 const WEAKENINGS: Record<string, string> = {
+  [AUDIT_RETENTION]:
+    'Audit entries older than the new period are deleted for good, starting with the next retention run',
   'password.minLength': 'Passwords may be shorter',
   'password.breachCheck': 'Breached passwords are checked less strictly',
   'password.requireLowercase': 'A lowercase letter is no longer required',
@@ -78,7 +83,21 @@ const WEAKENINGS: Record<string, string> = {
   'notifications.mfaChanged': 'Users are no longer told when two-step verification changes',
   'notifications.identityChanged': 'Users are no longer told when a sign-in method is linked',
   'mfa.policy': 'Two-step verification is asked of fewer users',
+  'mfa.smsCode':
+    'The second step this environment requires may be a texted code: whoever receives the messages of a user’s number passes it. A text message cannot be taken back once it is sent',
+  'agents.testSignIn':
+    'A sign-in test may run in this environment: by name, also if it is a production one, or by its kind’s default again if it is a development one. An agent key (or a secret key) can then make a throwaway user, sign it in and delete it. While a test runs your hooks are asked about that user and its events are delivered to your webhook endpoints',
   'sessions.maxPerUser': 'A user may have more sessions at once',
+  'agents.proposalsInProduction':
+    'An AI agent that holds an agent key of this environment may propose changes to it where it is a production environment: banning a user, lifting a ban, ending a session, switching a sign-in provider off. A proposal makes no change until a person approves it, and whoever approves one without reading it has made the change',
+  'sms.dailyMessageLimit':
+    'More text messages may be sent in a day. The limit is what a day can cost at most (in messages: your provider’s prices turn that into money), so abuse of this environment’s SMS can cost more, and a message that was sent cannot be un-sent',
+  'signIn.methods.smsCode':
+    'A texted code can sign people in: whoever receives the messages of a number an account has proven can enter that account, with no password and no inbox',
+  'sms.allowedCountries':
+    'Text messages go to the countries added, where a texted code signs people in or may be the second step this environment requires: accounts with phone numbers there can now be entered, or pass that step, by whoever receives their messages. More destinations can also be texted at your cost, and a message that was sent cannot be un-sent',
+  'urls.allowedRedirectUrls':
+    'A provider sign-in may be returned to a custom scheme (such as com.example.app:/oauth): any app on a device can claim one, so the app that receives the redirect may not be yours. An https link is handed to the app your domain’s association file names, which Tula builds and cannot check your domain serves',
 }
 
 /**
@@ -88,11 +107,41 @@ const WEAKENINGS: Record<string, string> = {
  * @returns A sentence for a path this version knows; the path itself otherwise.
  */
 export function describeWeakening(path: string): string {
+  const template = /^sessions\.profiles\.(.+)\.jwtTemplate$/.exec(path)
+  if (template) {
+    return `Sessions of the “${template[1]}” profile lose custom claims, or get different ones: an application that reads them may refuse those users`
+  }
+  const binding = /^sessions\.profiles\.(.+)\.deviceBinding$/.exec(path)
+  if (binding) {
+    return `Native apps that sign in under the “${binding[1]}” profile are asked less for a device key: a refresh token copied from a device can then be used elsewhere. Sessions that exist are not changed`
+  }
   const profile = /^sessions\.profiles\.(.+)$/.exec(path)
   if (profile) {
     return `Sessions of the “${profile[1]}” profile last longer or are easier to get`
   }
   return WEAKENINGS[path] ?? path
+}
+
+/**
+ * The question the editor asks before a save that needs a confirmation.
+ *
+ * A shorter audit retention period is said as what it is, a deletion that cannot be undone,
+ * and not only as "weaker": the operator must not learn it from the list underneath.
+ *
+ * @param weakenings - The paths from {@link SavePlan.weakenings}.
+ * @returns The dialog's title; with nothing weaker, the question about managed settings.
+ */
+export function confirmationTitle(weakenings: readonly string[]): string {
+  if (weakenings.length === 0) {
+    return 'Change settings managed by a config file?'
+  }
+  const deletes = weakenings.includes(AUDIT_RETENTION)
+  if (deletes && weakenings.length === 1) {
+    return 'This deletes older audit entries for good. Save anyway?'
+  }
+  return deletes
+    ? 'This weakens security and deletes older audit entries for good. Save anyway?'
+    : 'This weakens security. Save anyway?'
 }
 
 /**

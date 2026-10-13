@@ -1,5 +1,5 @@
 import { constants } from 'node:fs'
-import { lstat, open, readFile, rename, rm } from 'node:fs/promises'
+import { lstat, open, rename, rm, unlink } from 'node:fs/promises'
 import { basename } from 'node:path'
 import { UsageError } from './args'
 import type { Host, RunResult } from './host'
@@ -46,6 +46,48 @@ async function refuseIrregular(path: string): Promise<boolean> {
   }
 }
 
+/** What is said when a file that must be new is already there, whatever it is. */
+function existsRefusal(path: string): UsageError {
+  return new UsageError(
+    `${basename(path)} already exists. \`tula\` writes these secrets to a new file only and never replaces one: name a file that does not exist.`
+  )
+}
+
+/**
+ * Open the regular file at `path` for reading, or refuse what is there. Asked with `lstat`
+ * before anything is opened (opening a named pipe for reading waits for a writer that never
+ * comes, and a link leads to a file somebody else chose); then opened without following a
+ * link and without blocking, and the kind checked again on the handle, in case the name was
+ * swapped after the first look.
+ *
+ * @param path - The file.
+ * @returns The open file, for the caller to close; `null` when nothing is at `path`.
+ * @throws UsageError for a symbolic link and for anything else that is not a regular file.
+ */
+async function openRegular(path: string): Promise<Awaited<ReturnType<typeof open>> | null> {
+  if (!(await refuseIrregular(path))) {
+    return null
+  }
+  let file: Awaited<ReturnType<typeof open>>
+  try {
+    file = await open(
+      path,
+      constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
+    )
+  } catch (error) {
+    const code = (error as { code?: unknown }).code
+    if (code === 'ENOENT') {
+      return null
+    }
+    throw code === 'ELOOP' ? linkRefusal(path) : error
+  }
+  if (!(await file.stat()).isFile()) {
+    await file.close()
+    throw kindRefusal(path)
+  }
+  return file
+}
+
 /** A name for a temporary file that nobody who can write to the directory can predict. */
 function unguessable(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(16))
@@ -69,6 +111,8 @@ function unguessable(): string {
  * ```
  */
 export function createProcessHost(env: Readonly<Record<string, string | undefined>>): Host {
+  /** How each child that an interrupt stops is stopped, while it runs. */
+  const stoppable = new Set<() => void>()
   return {
     async run(command, options): Promise<RunResult> {
       const child = Bun.spawn([...command], {
@@ -77,6 +121,8 @@ export function createProcessHost(env: Readonly<Record<string, string | undefine
         stdin: 'ignore',
         stdout: 'pipe',
         stderr: options.stderr === 'inherit' ? 'inherit' : 'pipe',
+        // Its own process group: a Ctrl-C at the terminal goes to the foreground group.
+        ...(options.shielded && { detached: true }),
       })
       let timedOut = false
       let interrupted = false
@@ -88,7 +134,10 @@ export function createProcessHost(env: Readonly<Record<string, string | undefine
         interrupted = true
         child.kill('SIGINT')
       }
-      process.once('SIGINT', onInterrupt)
+      if (!options.shielded) {
+        process.once('SIGINT', onInterrupt)
+        stoppable.add(onInterrupt)
+      }
       try {
         const [stdout, stderr] = await Promise.all([
           new Response(child.stdout).text(),
@@ -102,14 +151,69 @@ export function createProcessHost(env: Readonly<Record<string, string | undefine
       } finally {
         clearTimeout(timer)
         process.off('SIGINT', onInterrupt)
+        stoppable.delete(onInterrupt)
+      }
+    },
+    onInterrupt(listener) {
+      const interrupt = () => listener()
+      // Without a listener a termination signal ends the CLI at once. With one it does not,
+      // so the child that is running is stopped here, as an interrupt stops it: the
+      // listener's owner must not have to wait for it.
+      const terminate = () => {
+        for (const stop of [...stoppable]) {
+          stop()
+        }
+        listener()
+      }
+      process.on('SIGINT', interrupt)
+      process.on('SIGTERM', terminate)
+      // What a closed terminal window sends.
+      process.on('SIGHUP', terminate)
+      return () => {
+        process.off('SIGINT', interrupt)
+        process.off('SIGTERM', terminate)
+        process.off('SIGHUP', terminate)
       }
     },
     async readFile(path) {
+      const file = await openRegular(path)
+      if (!file) {
+        return null
+      }
       try {
-        return await readFile(path, 'utf8')
+        return await file.readFile('utf8')
+      } finally {
+        await file.close()
+      }
+    },
+    async createSecretFile(path, text) {
+      let file: Awaited<ReturnType<typeof open>>
+      try {
+        // Exclusive: the one call both asks "is anything there?" and takes the name, so
+        // nothing can appear in between. It fails on a file, a directory, a named pipe and a
+        // link alike (a link is never followed), without opening any of them.
+        file = await open(path, 'wx', 0o600)
+      } catch (error) {
+        if ((error as { code?: unknown }).code === 'EEXIST') {
+          throw existsRefusal(path)
+        }
+        throw error
+      }
+      try {
+        await file.writeFile(text)
+        await file.chmod(0o600)
+      } finally {
+        await file.close()
+      }
+    },
+    async removeFile(path) {
+      try {
+        // Removes the name itself: a link at the path goes, never what it points at.
+        await unlink(path)
+        return true
       } catch (error) {
         if ((error as { code?: unknown }).code === 'ENOENT') {
-          return null
+          return false
         }
         throw error
       }
@@ -140,35 +244,14 @@ export function createProcessHost(env: Readonly<Record<string, string | undefine
       }
     },
     async restrictFile(path) {
-      if (!(await refuseIrregular(path))) {
+      // Changed through the handle, so that what was checked is what is changed even if the
+      // name is swapped in between.
+      const file = await openRegular(path)
+      if (!file) {
         return false
       }
-      // Opened without following a link and changed through the handle, so that what was
-      // checked is what is changed even if the name is swapped in between.
-      let file: Awaited<ReturnType<typeof open>>
       try {
-        // `O_NONBLOCK`: should a named pipe be swapped in after the check above, the open
-        // returns at once instead of waiting, and the check below refuses it.
-        file = await open(
-          path,
-          constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
-        )
-      } catch (error) {
-        const code = (error as { code?: unknown }).code
-        if (code === 'ENOENT') {
-          return false
-        }
-        if (code === 'ELOOP') {
-          throw linkRefusal(path)
-        }
-        throw error
-      }
-      try {
-        const opened = await file.stat()
-        if (!opened.isFile()) {
-          throw kindRefusal(path)
-        }
-        if ((opened.mode & 0o077) === 0) {
+        if (((await file.stat()).mode & 0o077) === 0) {
           return false
         }
         await file.chmod(0o600)

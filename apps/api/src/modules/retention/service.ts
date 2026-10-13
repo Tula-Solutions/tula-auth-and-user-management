@@ -1,7 +1,12 @@
-import { durationToMs } from '@tula/contract'
+import { durationToMs, MAX_PASSWORD_HISTORY } from '@tula/contract'
 import type { Deps } from '~/dependencies'
+import { systemActor } from '~/lib/actor'
 import * as logger from '~/lib/logger'
 import { errorReason } from '~/lib/safe-error'
+import * as Audit from '~/modules/audit/service'
+import * as Passwords from '~/modules/password/service'
+import * as Settings from '~/modules/settings/service'
+import { hourOf } from '~/ports/hook-store'
 
 /**
  * How long a session is kept after it ended (was revoked, or passed its idle or absolute
@@ -19,9 +24,60 @@ export const ENDED_SESSION_RETENTION = '30d'
 export const EXPIRED_VERIFICATION_TOKEN_RETENTION = '1h'
 
 /**
+ * How long an outbox event is kept after the webhook worker settled it (every endpoint it was
+ * owed to has its delivery, ADR 0034). The event's payload is what "send it again" sends, so
+ * this is how long a delivery can be redelivered: a month covers an operator who learns late
+ * that their receiver dropped something, and is far past the day and a few hours the worker
+ * itself keeps trying. An event with a delivery that is still pending is kept whatever its age.
+ */
+export const SETTLED_EVENT_RETENTION = '30d'
+
+/**
+ * How long the record of a delivery is kept (the row and every request made for it), from the
+ * moment it was queued, once it is no longer pending. Longer than the event it is of, on
+ * purpose: what happened to last quarter's deliveries can still be read after their payloads
+ * are gone. It holds no payload and nothing of a receiver's answer, only ids, times, status
+ * codes and durations.
+ */
+export const ENDED_DELIVERY_RETENTION = '90d'
+
+/**
+ * How long the counts of texted codes are kept (`sms_code_counts`, ADR 0037), from the day
+ * they are of. A quarter: three times what the admin API reads back (`SMS_USAGE_MAX_DAYS`),
+ * so that a month can still be compared with the ones before it by whoever keeps the answers.
+ * The rows hold counts by destination prefix and nothing else.
+ */
+export const SMS_COUNT_RETENTION = '90d'
+
+/**
+ * How long a sign-in test's throwaway user may exist before this job deletes it (ADR 0058).
+ * A test deletes its own user within a minute; one that is still there after a quarter of an
+ * hour is what a failed deletion, or a process that ended mid-run, left behind. Far longer
+ * than a run can last (`SIGN_IN_TEST_DEADLINE_MS`), so the job never deletes a user a run is
+ * still using.
+ */
+export const TEST_USER_RETENTION = '15m'
+
+/**
+ * How long an agent's proposal is kept after its expiry, whatever became of it (ADR 0053). A
+ * proposal can be approved for minutes; the row afterwards is what an operator looks back at
+ * for a while. The audit log holds what was proposed, approved and done.
+ */
+export const EXPIRED_PROPOSAL_RETENTION = '30d'
+
+/**
+ * How long the counts of a hook's calls are kept (`hook_call_counts`, ADR 0035, "Recent
+ * outcomes"), from the hour they are of. A week: seven times the day the admin API reads
+ * back (`HOOK_OUTCOME_WINDOW_HOURS`), so that a purge that is late, or a window that is
+ * later made longer, loses nothing an operator is shown. The rows hold counts by hook, hour
+ * and outcome and nothing else, at most four an hour for a hook.
+ */
+export const HOOK_CALL_COUNT_RETENTION = '7d'
+
+/**
  * How often the retention job runs. Expired sign-up attempts hold the hash of a password that
  * was never used, so they should not outlive their expiry by long; the other tables only need
- * a daily pass, and an idle pass costs three indexed queries per environment.
+ * a daily pass, and an idle pass costs a handful of indexed queries per environment.
  */
 export const RETENTION_INTERVAL_MS = 10 * 60_000
 
@@ -50,6 +106,22 @@ export interface RetentionCounts {
   passkeyChallenges: number
   /** Instance audit entries older than the deployment's `INSTANCE_AUDIT_RETENTION_DAYS`. */
   instanceAuditLogs: number
+  /** Environments' audit entries older than their own `audit.retentionDays`. */
+  auditLogs: number
+  /** Webhook deliveries that ended, with their attempts, past {@link ENDED_DELIVERY_RETENTION}. */
+  webhookDeliveries: number
+  /** Outbox events settled more than {@link SETTLED_EVENT_RETENTION} ago. */
+  events: number
+  /** Rows of texted-code counts of days more than {@link SMS_COUNT_RETENTION} ago. */
+  smsCodeCounts: number
+  /** Previous passwords beyond what the environment's `password.history` now keeps. */
+  passwordHistory: number
+  /** Agents' proposals that expired more than {@link EXPIRED_PROPOSAL_RETENTION} ago. */
+  proposals: number
+  /** Rows of hook call counts of hours more than {@link HOOK_CALL_COUNT_RETENTION} ago. */
+  hookCallCounts: number
+  /** Sign-in tests' throwaway users older than {@link TEST_USER_RETENTION}. */
+  testUsers: number
 }
 
 /** The outcome of one retention run. Counts only: nothing here identifies a user. */
@@ -69,8 +141,16 @@ type RetentionDeps = Pick<
   | 'factors'
   | 'passkeys'
   | 'controlPlane'
+  | 'activityLog'
+  | 'webhookDeliveries'
+  | 'smsUsage'
+  | 'proposals'
+  | 'hooks'
+  | 'users'
+  | 'environmentSettings'
   | 'config'
   | 'clock'
+  | 'ids'
 >
 
 /** Repeat one batched delete until a batch comes back short, or the ceiling is reached. */
@@ -87,6 +167,111 @@ async function drain(deleteBatch: (limit: number) => Promise<number>): Promise<n
 }
 
 /**
+ * The instant before which an environment's audit entries are past its retention period.
+ *
+ * `null` (the setting's default) means "keep for ever". So does anything that is not a whole
+ * number of days, one or more: the admin API stores nothing else, and a document changed by
+ * hand must never read as "delete everything" (zero or a negative period would put the cutoff
+ * at or after now).
+ *
+ * @param retentionDays - The environment's `audit.retentionDays`, as stored.
+ * @param now - The run's time.
+ * @returns The cutoff, or `null` when nothing is to be deleted.
+ */
+function auditCutoff(retentionDays: unknown, now: Date): Date | null {
+  if (typeof retentionDays !== 'number' || !Number.isInteger(retentionDays) || retentionDays < 1) {
+    return null
+  }
+  return new Date(now.getTime() - retentionDays * DAY_MS)
+}
+
+/**
+ * Delete one environment's audit entries that are older than its `audit.retentionDays`.
+ *
+ * The period is read from the source, past this instance's settings cache: every other setting
+ * may trail a change by a few seconds, but acting on a period that was lengthened a moment ago
+ * on another instance would delete what the operator has just asked to keep.
+ *
+ * The deletes are not audit entries themselves (ADR 0012): an entry cannot record its own end,
+ * and one entry per run would grow the log the period is there to bound. What is on record is
+ * the change of the setting (`environment.settings_updated`, with `audit.retentionDays` among
+ * its changed keys) and a line in the server's log each time entries go.
+ *
+ * @param deps - The settings store, config, the audit log.
+ * @param environmentId - The environment.
+ * @param now - The run's time.
+ * @returns How many entries were deleted: 0 when the environment keeps its entries for ever.
+ */
+async function purgeAudit(
+  deps: Pick<RetentionDeps, 'environmentSettings' | 'config' | 'activityLog'>,
+  environmentId: string,
+  now: Date
+): Promise<number> {
+  const { settings } = await Settings.get(deps, { environmentId }, true)
+  const retentionDays: unknown = settings.audit?.retentionDays
+  const before = auditCutoff(retentionDays, now)
+  if (!before) {
+    return 0
+  }
+  const deleted = await drain((limit) =>
+    deps.activityLog.deleteAuditBefore(environmentId, before, limit)
+  )
+  if (deleted > 0) {
+    logger.info('audit entries past the retention period deleted', {
+      environmentId,
+      retentionDays,
+      deleted,
+    })
+  }
+  return deleted
+}
+
+/**
+ * Delete the previous passwords an environment no longer keeps (ADR 0038): what a lowered
+ * `password.history` left with users who have not changed their password since. A user who
+ * does change it loses the surplus in that transaction; this is for everyone else, so that an
+ * old hash does not outlive the policy that wanted it.
+ *
+ * The number is read from the source, past this instance's settings cache, for the reason the
+ * audit period is: acting on a number that was raised a moment ago on another instance would
+ * delete what the operator has just asked to keep. Anything that is not a whole number from 0
+ * to the contract's cap deletes nothing: a document changed by hand must never read as "keep
+ * none".
+ *
+ * @param deps - The settings store, config and the users.
+ * @param environmentId - The environment.
+ * @returns How many rows were deleted.
+ */
+async function purgePasswordHistory(
+  deps: Pick<RetentionDeps, 'environmentSettings' | 'config' | 'users'>,
+  environmentId: string
+): Promise<number> {
+  const { settings } = await Settings.get(deps, { environmentId }, true)
+  const history: unknown = settings.password?.history
+  if (
+    typeof history !== 'number' ||
+    !Number.isInteger(history) ||
+    history < 0 ||
+    history > MAX_PASSWORD_HISTORY
+  ) {
+    return 0
+  }
+  const keep = Passwords.previousKept(history)
+  const deleted = await drain((limit) =>
+    deps.users.deletePasswordHistoryBeyond(environmentId, keep, limit)
+  )
+  if (deleted > 0) {
+    // Counts only: which users, and how many each, is nobody's to read.
+    logger.info('previous passwords beyond the password history deleted', {
+      environmentId,
+      history,
+      deleted,
+    })
+  }
+  return deleted
+}
+
+/**
  * Delete what no longer has a use, in every environment:
  *
  * - flow attempts past their expiry (with their verification tokens);
@@ -94,25 +279,50 @@ async function drain(deleteBatch: (limit: number) => Promise<number>): Promise<n
  * - sessions that ended more than {@link ENDED_SESSION_RETENTION} ago, with their refresh
  *   tokens;
  * - authenticator enrolments that were never confirmed and lapsed more than
- *   {@link EXPIRED_VERIFICATION_TOKEN_RETENTION} ago (a sealed secret nobody will use).
+ *   {@link EXPIRED_VERIFICATION_TOKEN_RETENTION} ago (a sealed secret nobody will use);
+ * - audit entries older than the environment's own `audit.retentionDays`, where it has set one
+ *   (the default, `null`, keeps them for ever);
+ * - webhook deliveries that have ended (delivered or given up) and were queued more than
+ *   {@link ENDED_DELIVERY_RETENTION} ago, with every request recorded for them;
+ * - outbox events the webhook worker settled more than {@link SETTLED_EVENT_RETENTION} ago,
+ *   except one that a delivery still pending is of;
+ * - counts of texted codes (by destination prefix and day) of days more than
+ *   {@link SMS_COUNT_RETENTION} ago;
+ * - previous passwords beyond what the environment's `password.history` keeps today;
+ * - agents' proposals whose expiry is more than {@link EXPIRED_PROPOSAL_RETENTION} past,
+ *   approved or not.
+ * - counts of a hook's calls (by hook, hour and outcome) of hours more than
+ *   {@link HOOK_CALL_COUNT_RETENTION} ago.
  *
  * It also deletes instance audit entries (the control plane's log: dashboard sign-ins,
  * workspaces, projects) older than the deployment's `INSTANCE_AUDIT_RETENTION_DAYS`.
  *
- * An environment's audit entries are never deleted here, and neither are outbox events: nothing delivers events
- * yet (Phase 2), so none is safe to drop (ADR 0017).
+ * An outbox event that no worker has settled is never deleted, and nor is a delivery that is
+ * still pending: the database refuses both whatever this job asks (the restrictive policies of
+ * migration 0019), as it refuses an event of the last day and a delivery of the last week.
+ * Deleting an event does not delete the audit entry of the same id, nor the other way round:
+ * each has its own period.
  *
  * A failure in one environment is logged and skipped, so it cannot keep the environments after
  * it from being purged. Each environment is purged through its own tenant-scoped store calls:
  * one environment's purge cannot touch another's rows.
  *
- * @param deps - Environments, the three stores and the clock.
+ * @param deps - Environments, the stores, the settings store and the clock.
  * @returns What was deleted. Counts from an environment that failed part-way are included.
  */
 export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
   const now = deps.clock.now()
   const tokensBefore = new Date(now.getTime() - durationToMs(EXPIRED_VERIFICATION_TOKEN_RETENTION))
   const sessionsBefore = new Date(now.getTime() - durationToMs(ENDED_SESSION_RETENTION))
+  const deliveriesBefore = new Date(now.getTime() - durationToMs(ENDED_DELIVERY_RETENTION))
+  const eventsBefore = new Date(now.getTime() - durationToMs(SETTLED_EVENT_RETENTION))
+  // A day (UTC), as the counts are kept: the first one that stays.
+  const smsCountsBefore = new Date(now.getTime() - durationToMs(SMS_COUNT_RETENTION))
+    .toISOString()
+    .slice(0, 10)
+  const proposalsBefore = new Date(now.getTime() - durationToMs(EXPIRED_PROPOSAL_RETENTION))
+  // An hour (UTC), as the counts are kept: the first one that stays.
+  const hookCountsBefore = hourOf(new Date(now.getTime() - durationToMs(HOOK_CALL_COUNT_RETENTION)))
   const report: RetentionReport = {
     environments: 0,
     failed: 0,
@@ -122,10 +332,18 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
     pendingFactors: 0,
     passkeyChallenges: 0,
     instanceAuditLogs: 0,
+    auditLogs: 0,
+    webhookDeliveries: 0,
+    events: 0,
+    smsCodeCounts: 0,
+    passwordHistory: 0,
+    proposals: 0,
+    hookCallCounts: 0,
+    testUsers: 0,
   }
-  // The instance audit log belongs to no environment. It is the one audit log with an end:
-  // anyone who can reach the sign-in can add to it, so it is kept for a period the
-  // deployment sets, not for ever. An environment's audit log is never deleted here.
+  // The instance audit log belongs to no environment, and its period is the deployment's:
+  // anyone who can reach the sign-in can add to it, so it always has an end. An environment's
+  // audit log ends only where the environment has set a period (below).
   try {
     const auditBefore = new Date(now.getTime() - deps.config.instanceAuditRetentionDays * DAY_MS)
     report.instanceAuditLogs = await drain((limit) =>
@@ -135,7 +353,8 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
     report.failed += 1
     logger.warn('retention failed for the instance audit log', { err: errorReason(error) })
   }
-  for (const { id } of await deps.environments.listAll()) {
+  const testUsersBefore = new Date(now.getTime() - durationToMs(TEST_USER_RETENTION))
+  for (const { id, projectId } of await deps.environments.listAll()) {
     report.environments += 1
     try {
       report.flowAttempts += await drain((limit) => deps.flowAttempts.deleteExpired(id, now, limit))
@@ -154,11 +373,54 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
       report.passkeyChallenges += await drain((limit) =>
         deps.passkeys.deleteExpiredChallenges(id, now, limit)
       )
+      // Last, and the only step whose rows did not end by themselves: the environment chose
+      // how long its audit entries are kept. One that cannot be read, or purged, keeps them.
+      report.auditLogs += await purgeAudit(deps, id, now)
+      // The webhook worker's leavings. The delivery log first, then the events: neither
+      // depends on the other (a delivery keeps its event's id and type, not a reference).
+      report.webhookDeliveries += await drain((limit) =>
+        deps.webhookDeliveries.deleteEndedBefore(id, deliveriesBefore, limit)
+      )
+      report.events += await drain((limit) =>
+        deps.webhookDeliveries.deleteSettledEvents(id, eventsBefore, limit)
+      )
+      report.smsCodeCounts += await drain((limit) =>
+        deps.smsUsage.deleteBefore(id, smsCountsBefore, limit)
+      )
+      report.passwordHistory += await purgePasswordHistory(deps, id)
+      report.proposals += await drain((limit) =>
+        deps.proposals.deleteExpiredBefore(id, proposalsBefore, limit)
+      )
+      report.hookCallCounts += await drain((limit) =>
+        deps.hooks.deleteCallCountsBefore(id, hookCountsBefore, limit)
+      )
     } catch (error) {
       report.failed += 1
       logger.warn('retention failed in one environment', {
         environmentId: id,
         err: errorReason(error),
+      })
+    }
+    // What a sign-in test could not delete itself (ADR 0058). The one purge here that is
+    // recorded: a user is going, and the log says who removed every other one. In a `try` of
+    // its own, after the others': it is the safety net of a run whose deletion failed, and an
+    // earlier purge that throws every round must not take it away with it.
+    try {
+      report.testUsers += await drain((limit) =>
+        deps.users.deleteTestUsersBefore(id, testUsersBefore, limit, (userId) =>
+          Audit.entry(
+            deps,
+            { projectId, environmentId: id },
+            { type: 'user.deleted', actor: systemActor(), target: { type: 'user', id: userId } }
+          )
+        )
+      )
+    } catch (error) {
+      report.failed += 1
+      // Fixed words, the environment and the error's name: a store's own text can quote a row.
+      logger.warn('retention could not purge the test users of one environment', {
+        environmentId: id,
+        error: error instanceof Error ? error.name : 'unknown',
       })
     }
   }
@@ -189,7 +451,15 @@ export async function run(
     report.sessions +
     report.pendingFactors +
     report.passkeyChallenges +
-    report.instanceAuditLogs
+    report.instanceAuditLogs +
+    report.auditLogs +
+    report.webhookDeliveries +
+    report.events +
+    report.smsCodeCounts +
+    report.passwordHistory +
+    report.proposals +
+    report.hookCallCounts +
+    report.testUsers
   // An idle run is routine; one that deleted something, or could not, is worth a line.
   const log = report.failed > 0 ? logger.warn : removed > 0 ? logger.info : logger.debug
   log('retention run finished', { ...report })

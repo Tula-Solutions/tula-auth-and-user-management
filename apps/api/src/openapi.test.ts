@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
+import { ACTIVITY_TYPES, EVENT_DATA_SCHEMAS, EVENT_FIXTURES, EVENT_SCHEMAS } from '@tula/contract'
+import { generateSpecs } from 'hono-openapi'
+import { z } from 'zod'
 import { createApp, OPENAPI_PATH } from '~/index'
+import { documentation, eventSchemas } from '~/openapi'
 import { createTestDeps } from '~/testing'
 
 interface Operation {
@@ -47,5 +51,145 @@ describe('the OpenAPI document and the dashboard session', () => {
       )
     )
     expect(missing).toEqual([])
+  })
+})
+
+// An agent key is accepted by `secretKey()` for a read of the admin API and for nothing else
+// there (ADR 0053). The document is what clients and the reference are generated from, so it
+// says the same, operation by operation.
+describe('the OpenAPI document and the agent key', () => {
+  const takes = (operation: Operation, scheme: string) =>
+    operation.security?.some((alternative) => scheme in alternative) === true
+
+  test('every read of the admin API lists the agent key', async () => {
+    const reads = (await operations()).filter(
+      ({ path, method }) => path.startsWith('/v1/admin/') && method === 'get'
+    )
+    expect(reads.length).toBeGreaterThanOrEqual(20)
+    expect(
+      reads.filter((operation) => !takes(operation, 'agentKey')).map(({ path }) => path)
+    ).toEqual([])
+    // Beside the credentials it already had, never instead of one.
+    expect(
+      reads.filter((operation) => !takes(operation, 'secretKey')).map(({ path }) => path)
+    ).toEqual([])
+  })
+
+  test('no write of the admin API lists it', async () => {
+    const writes = (await operations()).filter(
+      ({ path, method }) => path.startsWith('/v1/admin/') && method !== 'get'
+    )
+    expect(writes.length).toBeGreaterThanOrEqual(20)
+    expect(
+      writes
+        .filter((operation) => takes(operation, 'agentKey'))
+        .map(({ method, path }) => `${method} ${path}`)
+    ).toEqual([])
+  })
+
+  test('outside the admin reads it opens the agent’s own group and nothing else', async () => {
+    const elsewhere = (await operations()).filter(
+      (operation) =>
+        takes(operation, 'agentKey') &&
+        !(operation.path.startsWith('/v1/admin/') && operation.method === 'get')
+    )
+    expect(elsewhere.map(({ method, path }) => `${method} ${path}`).sort()).toEqual([
+      'post /v1/agent/proposals',
+      'post /v1/agent/sign-in-tests',
+    ])
+    // And there it is the only credential.
+    for (const operation of elsewhere) {
+      expect(operation.security).toEqual([{ agentKey: [] }])
+    }
+  })
+})
+
+describe('the event payloads in the OpenAPI document', () => {
+  interface Component {
+    oneOf?: { $ref: string }[]
+    properties?: Record<string, { $ref?: string; const?: unknown }>
+    required?: string[]
+  }
+
+  async function document() {
+    const res = await createApp(createTestDeps()).request(OPENAPI_PATH)
+    return (await res.json()) as {
+      paths: Record<string, unknown>
+      components: { schemas: Record<string, Component>; securitySchemes: Record<string, unknown> }
+    }
+  }
+
+  const refOf = (schema: z.ZodType) => String(z.globalRegistry.get(schema)?.ref)
+  const component = (schema: z.ZodType) => `#/components/schemas/${refOf(schema)}`
+
+  test('every activity type has an event component and a data component', async () => {
+    const { schemas } = (await document()).components
+    for (const type of ACTIVITY_TYPES) {
+      const event = schemas[refOf(EVENT_SCHEMAS[type])]
+      expect(event?.properties?.type?.const).toBe(type)
+      expect(event?.properties?.schemaVersion?.const).toBe(EVENT_FIXTURES[type].schemaVersion)
+      expect(event?.required).toEqual([
+        'id',
+        'type',
+        'schemaVersion',
+        'occurredAt',
+        'actor',
+        'target',
+        'data',
+      ])
+      expect(event?.properties?.data?.$ref).toBe(component(EVENT_DATA_SCHEMAS[type]))
+      expect(
+        Object.keys(schemas[refOf(EVENT_DATA_SCHEMAS[type])]?.properties ?? {}).sort()
+      ).toEqual(Object.keys(EVENT_DATA_SCHEMAS[type].shape).sort())
+    }
+  })
+
+  test('`TulaEvent` is one of them, by reference, and nothing else', async () => {
+    const { schemas } = (await document()).components
+    expect(schemas.TulaEvent?.oneOf?.map((one) => one.$ref).sort()).toEqual(
+      ACTIVITY_TYPES.map((type) => component(EVENT_SCHEMAS[type])).sort()
+    )
+  })
+
+  test('they are components only: no route refers to one, and the rest is still there', async () => {
+    const { paths, components } = await document()
+    const referred = JSON.stringify(paths).match(/#\/components\/schemas\/\w+/g) ?? []
+    expect(referred.length).toBeGreaterThan(0)
+    expect(referred.filter((ref) => /Event(Data|Actor)?$/.test(ref))).toEqual([])
+    // The components the routes bring, and the security schemes, are merged in, not replaced.
+    expect(components.schemas.ErrorEnvelope).toBeDefined()
+    expect(components.schemas.AuditLog).toBeDefined()
+    expect(components.securitySchemes.secretKey).toBeDefined()
+  })
+
+  /** The names two sets of components share with different content. */
+  function conflicts(one: Record<string, unknown>, other: Record<string, unknown>): string[] {
+    return Object.keys(one).filter(
+      (name) => name in other && JSON.stringify(one[name]) !== JSON.stringify(other[name])
+    )
+  }
+
+  // The two sets are merged by name and the routes' win: an event component that shared a
+  // name with a different route component would be replaced without a word.
+  test('a component the events and the routes both bring is the same in both', async () => {
+    const fromEvents = await eventSchemas()
+    const fromRoutes = (await generateSpecs(createApp(createTestDeps()), { documentation }))
+      .components.schemas as Record<string, unknown>
+    const shared = Object.keys(fromEvents).filter((name) => name in fromRoutes)
+    // Today: the enums an event's data reuses. The check is not vacuous.
+    expect(shared.sort()).toEqual(['OAuthProvider', 'ProposalApprover', 'SessionClient'])
+    expect(conflicts(fromEvents, fromRoutes)).toEqual([])
+    // And the routes alone bring no event component: these names are the events' own.
+    expect(Object.keys(fromRoutes).filter((name) => /Event(Data|Actor)?$/.test(name))).toEqual([])
+
+    expect(conflicts({ A: { type: 'string' }, B: 1 }, { A: { type: 'number' }, B: 1 })).toEqual([
+      'A',
+    ])
+  })
+
+  test('the document is built once and served again', async () => {
+    const app = createApp(createTestDeps())
+    const first = await (await app.request(OPENAPI_PATH)).text()
+    expect(await (await app.request(OPENAPI_PATH)).text()).toBe(first)
   })
 })

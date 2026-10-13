@@ -1,0 +1,396 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "a texted sign-in code for an unknown number",
+  "description": "Asking for a texted sign-in code answers the same for every number: the step, its `prepared` part and the limits are those of a number that signs an account in (the scenario \"sign in with a texted code\"), and nothing says whether a message went. For a number nobody holds none goes: the operator's usage counts hold no code for that number's destination, which this scenario allows and no other scenario sends to. Such an attempt holds a code nobody was told, so every guess is the generic failed sign-in. An email address that asks for a texted code is treated as an unknown number, and a number of a country the environment does not send to is refused whoever holds it, as it is everywhere else. That the limiter's counters are the same for both kinds of number, and that a number two accounts hold or one proven more than a year ago is answered like an unknown one, are API tests (`modules/flow/sms-sign-in.test.ts`). The scenario needs a server that can send text messages, which is what a development SMS inbox says of one; it reads no code. The last steps put the original settings back.",
+  "needsSecretKey": true,
+  "needsSmsInbox": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "ghost": {
+      "generate": "phone_fr"
+    },
+    "german": "+4915112345678"
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "revision": "$any"
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "s_app": "settings.app",
+        "s_password": "settings.password",
+        "s_signUp": "settings.signUp",
+        "s_urls": "settings.urls",
+        "s_audit": "settings.audit",
+        "s_notifications": "settings.notifications",
+        "s_mfa": "settings.mfa",
+        "s_passkeys": "settings.passkeys",
+        "s_sessions": "settings.sessions"
+      }
+    },
+    {
+      "name": "an administrator switches the texted sign-in code on, with text messages to the United States and France",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{s_app}}"
+          },
+          "password": {
+            "$json": "{{s_password}}"
+          },
+          "signUp": {
+            "$json": "{{s_signUp}}"
+          },
+          "urls": {
+            "$json": "{{s_urls}}"
+          },
+          "audit": {
+            "$json": "{{s_audit}}"
+          },
+          "notifications": {
+            "$json": "{{s_notifications}}"
+          },
+          "mfa": {
+            "$json": "{{s_mfa}}"
+          },
+          "passkeys": {
+            "$json": "{{s_passkeys}}"
+          },
+          "sessions": {
+            "$json": "{{s_sessions}}"
+          },
+          "signIn": {
+            "methods": {
+              "password": {
+                "enabled": true
+              },
+              "emailCode": {
+                "enabled": true
+              },
+              "smsCode": {
+                "enabled": true
+              }
+            }
+          },
+          "sms": {
+            "enabled": true,
+            "allowedCountries": ["US", "FR"],
+            "dailyMessageLimit": 100000
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "signIn": {
+              "methods": {
+                "smsCode": {
+                  "enabled": true
+                }
+              }
+            },
+            "sms": {
+              "enabled": true
+            }
+          }
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      }
+    },
+    {
+      "name": "a sign-in is started with a number nobody holds: the same strategies as for any identifier",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{ghost}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_first_factor",
+            "strategies": {
+              "$set": ["password", "email_code", "sms_code"]
+            }
+          }
+        }
+      },
+      "capture": {
+        "signIn": "id",
+        "secret": "attemptSecret"
+      }
+    },
+    {
+      "name": "asking for the code answers as it does for a number that signs in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signIn}}/first-factor/prepare",
+        "attempt": "{{secret}}",
+        "body": {
+          "strategy": "sms_code"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_first_factor",
+            "strategies": {
+              "$set": ["password", "email_code", "sms_code"]
+            },
+            "prepared": {
+              "strategy": "sms_code",
+              "destination": {
+                "$matches": "^\\*\\*\\*[0-9]{2}$"
+              }
+            }
+          },
+          "session": "$absent",
+          "code": "$absent"
+        },
+        "bodyExcludes": ["{{ghost}}"]
+      }
+    },
+    {
+      "name": "and is limited as one: asking again within the minute is rate limited",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signIn}}/first-factor/prepare",
+        "attempt": "{{secret}}",
+        "body": {
+          "strategy": "sms_code"
+        }
+      },
+      "expect": {
+        "status": 429,
+        "body": {
+          "status": 429,
+          "code": "rate_limited"
+        }
+      }
+    },
+    {
+      "name": "no message went: the usage counts hold no code for that destination",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/sms/usage?days=1",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "bodyExcludes": ["+33"]
+      }
+    },
+    {
+      "name": "a guess is the generic failed sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signIn}}/first-factor/attempt",
+        "attempt": "{{secret}}",
+        "body": {
+          "strategy": "sms_code",
+          "code": "000000"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials"
+        }
+      }
+    },
+    {
+      "name": "and so is another",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signIn}}/first-factor/attempt",
+        "attempt": "{{secret}}",
+        "body": {
+          "strategy": "sms_code",
+          "code": "123456"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials"
+        }
+      }
+    },
+    {
+      "name": "a sign-in is started with an email address",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_first_factor",
+            "strategies": {
+              "$set": ["password", "email_code", "sms_code"]
+            }
+          }
+        }
+      },
+      "capture": {
+        "byEmail": "id",
+        "byEmailSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "an address that asks for a texted code is answered like an unknown number",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{byEmail}}/first-factor/prepare",
+        "attempt": "{{byEmailSecret}}",
+        "body": {
+          "strategy": "sms_code"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_first_factor",
+            "prepared": {
+              "strategy": "sms_code",
+              "destination": "***"
+            }
+          },
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "and no code signs it in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{byEmail}}/first-factor/attempt",
+        "attempt": "{{byEmailSecret}}",
+        "body": {
+          "strategy": "sms_code",
+          "code": "000000"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials"
+        }
+      }
+    },
+    {
+      "name": "a sign-in is started with a number of a country that is not allowed",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{german}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_first_factor",
+            "strategies": {
+              "$set": ["password", "email_code", "sms_code"]
+            }
+          }
+        }
+      },
+      "capture": {
+        "abroad": "id",
+        "abroadSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "a code for it is refused, whoever holds the number",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{abroad}}/first-factor/prepare",
+        "attempt": "{{abroadSecret}}",
+        "body": {
+          "strategy": "sms_code"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "status": 422,
+          "code": "sms.country_not_allowed"
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

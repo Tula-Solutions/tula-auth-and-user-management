@@ -712,6 +712,10 @@
   color: var(--_tula-color-success);
 }
 
+:where(.tula-checklist-item.tula-is-failed) {
+  color: var(--_tula-color-danger);
+}
+
 /* User button */
 
 :where(.tula-user-button) {

@@ -1,0 +1,28 @@
+# A test fixture, laid over the repository's Compose file by the worker check only
+# (scripts/worker-check/check.ts, the `self-host-worker` CI job):
+#
+#   docker compose -f docker-compose.yml -f docker/worker-check/compose.yml \
+#     --profile app --profile worker ...
+#
+# It adds one container: a webhook receiver in the WORKER's network namespace. The server's
+# outbound guard refuses every private address, in every tier, so a receiver in a container
+# of its own (at a private address of the Compose network) cannot be delivered to, and the
+# guard is never loosened for a test. Sharing the worker's namespace, the receiver is at the
+# worker's loopback, which the `local` tier allows, and at nobody else's: the two API
+# instances cannot reach it, so a delivery it receives was made by the worker.
+#
+# It is the API image (Bun is in it) running a script of this repository, mounted read-only,
+# and it is given none of the deployment's settings or secrets.
+services:
+  receiver:
+    profiles: ['worker']
+    image: ${API_IMAGE:-tula-api:local}
+    command: ['bun', 'run', '/check/receiver.ts']
+    network_mode: service:worker
+    volumes:
+      - ./scripts/worker-check/receiver.ts:/check/receiver.ts:ro
+    # The image's health check asks port 3003 for `/v1/ready`, which in this namespace is the
+    # worker's answer and says nothing about the receiver.
+    healthcheck:
+      disable: true
+    restart: 'no'

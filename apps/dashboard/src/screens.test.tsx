@@ -5,7 +5,14 @@ import { clearToasts, notify, TOAST_MS, Toaster } from '~/components/toaster'
 import { useEnvironment } from '~/features/shell/environment-context'
 import { RouteError } from '~/routes/__root'
 import { failure, IDS, installFakeApi } from '~/testing/fake-api'
-import { DEV_PATH, openDialogs, renderApp, type World } from '~/testing/harness'
+import {
+  DEV_PATH,
+  holdAnswers,
+  openDialogs,
+  PROD_PATH,
+  renderApp,
+  type World,
+} from '~/testing/harness'
 
 // The rest of each screen: the controls the walk through the app (app.test.tsx) did not touch.
 
@@ -223,7 +230,7 @@ describe('settings controls', () => {
       ['Maximum length', '200'],
       ['Kinds of character required', '3'],
       ['Longest run of one character', '4'],
-      ['Previous passwords remembered', '5'],
+      ['Passwords remembered', '5'],
       ['Password expires after (days)', '90'],
     ] as const) {
       const field = screen.getByLabelText(label)
@@ -297,6 +304,751 @@ describe('settings controls', () => {
     expect(api.state.settings.settings.notifications.passwordChanged).toBe(false)
   })
 
+  // Whether a production environment accepts an agent's proposals (ADR 0053): asked about
+  // first, by the contract's weakening and in the screen's own sentence for it.
+  test('general settings: accepting proposals in production asks first; switching it off does not', async () => {
+    const { user, api } = start(`${PROD_PATH}/settings`)
+    const accept = await screen.findByRole('switch', { name: 'Accept proposals in production' })
+    expect(accept.getAttribute('aria-checked')).toBe('false')
+    await user.click(accept)
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    expect(dialog().textContent).toContain('This weakens security')
+    expect(dialog().textContent).toContain('may propose changes to it where it is a production')
+    expect(dialog().textContent).toContain('makes no change until a person approves it')
+    expect(api.callsTo('PUT', '/v1/admin/settings')).toHaveLength(0)
+    await user.click(within(dialog()).getByRole('button', { name: 'Save anyway' }))
+    await screen.findByText('Settings saved')
+    expect(api.state.settings.settings.agents).toEqual({
+      proposalsInProduction: true,
+      testSignIn: null,
+    })
+    // Switching it off again weakens nothing: saved without a question.
+    await user.click(screen.getByRole('switch', { name: 'Accept proposals in production' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() =>
+      expect(api.state.settings.settings.agents).toEqual({
+        proposalsInProduction: false,
+        testSignIn: null,
+      })
+    )
+    expect(openDialogs()).toBe(0)
+  })
+
+  // The section's other key has no control on this screen. A save replaces the whole
+  // document, so the switch must write its own key and keep the one beside it: a sign-in
+  // test an operator allowed by name (ADR 0058) is not taken back by this toggle.
+  test('general settings: the proposals switch keeps what agents.testSignIn says', async () => {
+    const { user, api } = start(`${PROD_PATH}/settings`)
+    api.state.settings.settings.agents = { proposalsInProduction: false, testSignIn: true }
+    await user.click(await screen.findByRole('switch', { name: 'Accept proposals in production' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    await user.click(within(dialog()).getByRole('button', { name: 'Save anyway' }))
+    await screen.findByText('Settings saved')
+    expect(api.state.settings.settings.agents).toEqual({
+      proposalsInProduction: true,
+      testSignIn: true,
+    })
+  })
+
+  // The dashboard has no editor for the wording of emails (ADR 0039), and a save replaces
+  // the whole document: what the API holds must go back as it came.
+  test('a save keeps the email templates the environment has, which no screen edits', async () => {
+    const api = installFakeApi()
+    const templates = {
+      email_verification: { subject: '{{code}} opens Northline', body: 'Your code: {{code}}' },
+      password_changed: { body: 'Your Northline password was changed.' },
+    }
+    api.state.settings.settings.emails = { templates: structuredClone(templates) }
+    const { user } = start(`${DEV_PATH}/settings`, { api })
+    const name = await screen.findByLabelText('App name')
+    await user.clear(name)
+    await user.type(name, 'Reworded')
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    // Wording is not a weakening: nothing is asked before the save.
+    await screen.findByText('Settings saved')
+    expect(api.state.settings.revision).toBe(4)
+    expect(api.state.settings.settings.app.name).toBe('Reworded')
+    expect(api.state.settings.settings.emails).toEqual({ templates })
+  })
+
+  describe('the Microsoft card', () => {
+    const TENANT = '72f988bf-86f1-41af-91ab-2d7cd011db47'
+    const listed = (over: Record<string, unknown> = {}) => ({
+      data: [
+        {
+          provider: 'microsoft',
+          configured: false,
+          enabled: false,
+          clientId: null,
+          teamId: null,
+          keyId: null,
+          tenant: null,
+          callbackUrl: 'http://localhost:3003/v1/client/oauth/microsoft/callback',
+          updatedAt: null,
+          ...over,
+        },
+      ],
+    })
+    const card = () =>
+      screen.getByRole('heading', { name: 'Microsoft' }).closest('li') as HTMLElement
+    const select = () => within(card()).getByLabelText('Who can sign in') as HTMLSelectElement
+
+    test('asks who can sign in, has no default, and sends one organization’s tenant id', async () => {
+      const api = installFakeApi()
+      const bodies: Record<string, unknown>[] = []
+      api.override('GET', /^\/v1\/admin\/oauth-providers$/, () => listed())
+      api.override('PUT', /^\/v1\/admin\/oauth-providers\/microsoft$/, (call) => {
+        const body = call.body as Record<string, unknown>
+        bodies.push(body)
+        return typeof body.tenant === 'string' && body.tenant !== 'not-a-tenant'
+          ? { provider: 'microsoft' }
+          : failure(422, 'validation.failed', 'Invalid.', [
+              { field: 'tenant', code: 'validation.failed', message: 'tenant is required' },
+            ])
+      })
+      const { user } = start(`${DEV_PATH}/sign-in-methods`, { api })
+      await screen.findByRole('heading', { name: 'Microsoft' })
+      expect(select().value).toBe('')
+      expect(within(card()).queryByLabelText('Directory (tenant) ID') === null).toBe(true)
+      await user.type(within(card()).getByLabelText('Application (client) ID'), 'ms-client')
+      await user.type(within(card()).getByLabelText('Client secret'), 'ms-secret-value')
+
+      // Nothing chosen: no tenant is invented, and the refusal is said at the question.
+      await user.click(within(card()).getByRole('button', { name: 'Save Microsoft' }))
+      await within(card()).findByText('tenant is required')
+      expect(bodies[0]).toEqual({
+        clientId: 'ms-client',
+        enabled: true,
+        clientSecret: 'ms-secret-value',
+      })
+      expect(select().getAttribute('aria-invalid')).toBe('true')
+
+      // One organization: its id is typed, and a refusal of it is said at the id.
+      await user.selectOptions(select(), 'tenant')
+      const id = within(card()).getByLabelText('Directory (tenant) ID') as HTMLInputElement
+      await user.type(id, 'not-a-tenant')
+      await user.click(within(card()).getByRole('button', { name: 'Save Microsoft' }))
+      await waitFor(() => expect(bodies).toHaveLength(2))
+      await waitFor(() => expect(id.getAttribute('aria-invalid')).toBe('true'))
+      expect(bodies[1]?.tenant).toBe('not-a-tenant')
+      await user.clear(id)
+      await user.type(id, ` ${TENANT} `)
+      await user.click(within(card()).getByRole('button', { name: 'Save Microsoft' }))
+      await screen.findByText('Microsoft saved')
+      expect(bodies[2]).toEqual({
+        clientId: 'ms-client',
+        enabled: true,
+        tenant: TENANT,
+        clientSecret: 'ms-secret-value',
+      })
+      // Saved: the secret is gone from the page.
+      expect(document.documentElement.outerHTML.includes('ms-secret-value')).toBe(false)
+    })
+
+    test.each([
+      ['common', 'common', null],
+      ['organizations', 'organizations', null],
+      ['consumers', 'consumers', null],
+      [TENANT, 'tenant', TENANT],
+    ])(
+      'a stored tenant %p is shown as %p, and saved again without the secret',
+      async (tenant, choice, id) => {
+        const api = installFakeApi()
+        const bodies: unknown[] = []
+        api.override('GET', /^\/v1\/admin\/oauth-providers$/, () =>
+          listed({ configured: true, enabled: true, clientId: 'ms-client', tenant })
+        )
+        api.override('PUT', /^\/v1\/admin\/oauth-providers\/microsoft$/, (call) => {
+          bodies.push(call.body)
+          return { provider: 'microsoft' }
+        })
+        const { user } = start(`${DEV_PATH}/sign-in-methods`, { api })
+        await screen.findByRole('heading', { name: 'Microsoft' })
+        expect(select().value).toBe(choice)
+        const field = within(card()).queryByLabelText(
+          'Directory (tenant) ID'
+        ) as HTMLInputElement | null
+        expect(field?.value ?? null).toBe(id)
+        await user.click(within(card()).getByRole('button', { name: 'Save Microsoft' }))
+        await screen.findByText('Microsoft saved')
+        expect(bodies).toEqual([{ clientId: 'ms-client', enabled: true, tenant }])
+      }
+    )
+
+    test('every other provider has no such question', async () => {
+      start(`${DEV_PATH}/sign-in-methods`)
+      await screen.findByRole('heading', { name: 'Microsoft' })
+      expect(screen.getAllByLabelText('Who can sign in')).toHaveLength(1)
+    })
+  })
+
+  // ADR 0045: the client ids of the operator's native apps, whose Google ID tokens the
+  // server accepts beside the provider's own client id.
+  describe('Google’s native app client ids', () => {
+    const WEB = '1234567890-web.apps.googleusercontent.com'
+    const ANDROID = '1234567890-android.apps.googleusercontent.com'
+    const IOS = '1234567890-ios.apps.googleusercontent.com'
+    const LABEL = 'OAuth clients of your Android and iOS apps'
+    const QUESTION = /^Accept Google ID tokens from /
+
+    function google(additionalClientIds: string[] | undefined, path = DEV_PATH) {
+      const api = installFakeApi()
+      const bodies: Record<string, unknown>[] = []
+      api.override('GET', /^\/v1\/admin\/oauth-providers$/, () => ({
+        data: [
+          {
+            provider: 'google',
+            configured: true,
+            enabled: true,
+            clientId: WEB,
+            teamId: null,
+            keyId: null,
+            tenant: null,
+            ...(additionalClientIds && { additionalClientIds }),
+            callbackUrl: 'http://localhost:3003/v1/client/oauth/google/callback',
+            updatedAt: '2026-03-01T09:00:00.000Z',
+          },
+        ],
+      }))
+      api.override('PUT', /^\/v1\/admin\/oauth-providers\/google$/, (call) => {
+        bodies.push(call.body as Record<string, unknown>)
+        return { provider: 'google' }
+      })
+      const { user } = start(`${path}/sign-in-methods`, { api })
+      const card = async () =>
+        (await screen.findByRole('heading', { name: 'Google' })).closest('li') as HTMLElement
+      const field = async () => within(await card()).getByLabelText(LABEL) as HTMLTextAreaElement
+      const save = async () =>
+        user.click(within(await card()).getByRole('button', { name: 'Save Google' }))
+      return { user, bodies, card, field, save }
+    }
+
+    test('the stored ids are shown one to a line, and a save that changes none sends them back unasked', async () => {
+      const { bodies, field, save } = google([ANDROID, IOS])
+      expect((await field()).value).toBe(`${ANDROID}\n${IOS}`)
+      await save()
+      await screen.findByText('Google saved')
+      // Sent again: the request replaces the record, and leaving them out would remove them.
+      expect(bodies).toEqual([
+        { clientId: WEB, enabled: true, additionalClientIds: [ANDROID, IOS] },
+      ])
+      expect(screen.queryByRole('dialog') === null).toBe(true)
+    })
+
+    test('a server from before the field shows none and is sent none', async () => {
+      const { bodies, field, save } = google(undefined)
+      expect((await field()).value).toBe('')
+      await save()
+      await screen.findByText('Google saved')
+      expect(bodies).toEqual([{ clientId: WEB, enabled: true, additionalClientIds: [] }])
+    })
+
+    test('a gained id is asked about first: cancelling sends nothing, confirming sends the whole set', async () => {
+      const { user, bodies, field, save } = google([ANDROID])
+      // Blank lines, spaces around an id and an id written twice are not ids of their own.
+      await user.type(await field(), `\n\n  ${IOS}  \n${ANDROID}\n`)
+      await save()
+      const dialog = (await screen.findByRole('heading', { name: QUESTION })).closest(
+        'dialog'
+      ) as HTMLElement
+      expect(dialog.textContent).toContain('Accept Google ID tokens from 1 more app?')
+      expect(dialog.textContent).toContain('can sign users in')
+      expect(bodies).toEqual([])
+      await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+      await waitFor(() => expect(openDialogs()).toBe(0))
+      expect(bodies).toEqual([])
+
+      await save()
+      const again = (await screen.findByRole('heading', { name: QUESTION })).closest(
+        'dialog'
+      ) as HTMLElement
+      await user.click(within(again).getByRole('button', { name: 'Accept their tokens' }))
+      await screen.findByText('Google saved')
+      expect(bodies).toEqual([
+        { clientId: WEB, enabled: true, additionalClientIds: [ANDROID, IOS] },
+      ])
+      await waitFor(() => expect(openDialogs()).toBe(0))
+    })
+
+    test('an id taken away is not asked about', async () => {
+      const { user, bodies, field, save } = google([ANDROID, IOS])
+      await user.clear(await field())
+      await user.type(await field(), IOS)
+      await save()
+      await screen.findByText('Google saved')
+      expect(bodies).toEqual([{ clientId: WEB, enabled: true, additionalClientIds: [IOS] }])
+    })
+
+    test('in production the provider’s name is typed before a gained id is saved', async () => {
+      const { user, bodies, field, save } = google([], PROD_PATH)
+      await user.type(await field(), ANDROID)
+      await save()
+      const dialog = (await screen.findByRole('heading', { name: QUESTION })).closest(
+        'dialog'
+      ) as HTMLElement
+      await user.click(within(dialog).getByRole('button', { name: 'Accept their tokens' }))
+      expect(bodies).toEqual([])
+      await user.type(within(dialog).getByLabelText(/^Type/), 'Google')
+      await user.click(within(dialog).getByRole('button', { name: 'Accept their tokens' }))
+      await screen.findByText('Google saved')
+      expect(bodies).toEqual([{ clientId: WEB, enabled: true, additionalClientIds: [ANDROID] }])
+    })
+
+    test.each([
+      [
+        'what is not a Google client id',
+        'com.example.app',
+        'Line 1 is not a Google OAuth client ID',
+      ],
+      [
+        'more than eight',
+        Array.from({ length: 9 }, (_, n) => `${n}-a.apps.googleusercontent.com`).join('\n'),
+        'At most 8 client IDs',
+      ],
+      ['the client ID above, listed again', `${ANDROID}\n${WEB}`, 'Line 2 is the client ID above'],
+    ])(
+      '%s is said at the field, by the contract’s rule, and nothing is sent',
+      async (_name, typed, message) => {
+        const { user, bodies, card, field, save } = google([])
+        await user.type(await field(), typed)
+        await save()
+        const alert = await within(await card()).findByRole('alert')
+        expect(alert.textContent).toContain(message)
+        expect(bodies).toEqual([])
+        expect(screen.queryByRole('dialog') === null).toBe(true)
+      }
+    )
+
+    test('a refusal by the server for the field is shown at the field', async () => {
+      const api = installFakeApi()
+      api.override('PUT', /^\/v1\/admin\/oauth-providers\/google$/, () =>
+        failure(422, 'validation.failed', 'Invalid.', [
+          {
+            field: 'additionalClientIds.0',
+            code: 'validation.failed',
+            message: 'must be a Google OAuth client id',
+          },
+        ])
+      )
+      const { user } = start(`${DEV_PATH}/sign-in-methods`, { api })
+      const card = (await screen.findByRole('heading', { name: 'Google' })).closest(
+        'li'
+      ) as HTMLElement
+      await user.type(within(card).getByLabelText('Client ID'), WEB)
+      await user.type(within(card).getByLabelText('Client secret'), 'the-secret-value')
+      await user.click(within(card).getByRole('button', { name: 'Save Google' }))
+      const alert = await within(card).findByRole('alert')
+      expect(alert.textContent).toContain('must be a Google OAuth client id')
+      expect(within(card).getByLabelText(LABEL).getAttribute('aria-invalid')).toBe('true')
+    })
+
+    test('no other provider has the field', async () => {
+      start(`${DEV_PATH}/sign-in-methods`)
+      await screen.findByRole('heading', { name: 'Google' })
+      expect(screen.getAllByLabelText(LABEL)).toHaveLength(1)
+    })
+  })
+
+  // ADR 0059: the server does not refuse to switch off or remove a provider that accounts
+  // can sign in with only; the dashboard counts them and asks first.
+  describe('accounts that depend on a provider', () => {
+    const DEPENDENTS = '/v1/admin/oauth-providers/x/dependents'
+    const NO_ADDRESS =
+      'An account with no email address (one made by signing in with X or Facebook) cannot recover by itself: it stays locked out until X is back or an administrator gives it an address.'
+
+    function x(
+      dependents: () => unknown,
+      { path = DEV_PATH, enabled = true }: { path?: string; enabled?: boolean } = {}
+    ) {
+      const api = installFakeApi()
+      const bodies: unknown[] = []
+      const removed: string[] = []
+      api.override('GET', /^\/v1\/admin\/oauth-providers$/, () => ({
+        data: [
+          {
+            provider: 'x',
+            configured: true,
+            enabled,
+            clientId: 'x-client',
+            teamId: null,
+            keyId: null,
+            tenant: null,
+            callbackUrl: 'http://localhost:3003/v1/client/oauth/x/callback',
+            updatedAt: '2026-03-01T09:00:00.000Z',
+          },
+        ],
+      }))
+      api.override('GET', /^\/v1\/admin\/oauth-providers\/x\/dependents$/, dependents)
+      api.override('PUT', /^\/v1\/admin\/oauth-providers\/x$/, (call) => {
+        bodies.push(call.body)
+        return { provider: 'x' }
+      })
+      api.override('DELETE', /^\/v1\/admin\/oauth-providers\/x$/, (call) => {
+        removed.push(call.path)
+        return new Response(null, { status: 204 })
+      })
+      const { user } = start(`${path}/sign-in-methods`, { api })
+      const card = async () =>
+        (await screen.findByRole('heading', { name: 'X' })).closest('li') as HTMLElement
+      const save = async () =>
+        user.click(within(await card()).getByRole('button', { name: 'Save X' }))
+      const saveOff = async () => {
+        await user.click(
+          within(await card()).getByRole('switch', { name: 'Let users sign in with X' })
+        )
+        await save()
+      }
+      const question = async (name = 'Switch X off?') =>
+        (await screen.findByRole('heading', { name })).closest('dialog') as HTMLElement
+      const counts = () => api.callsTo('GET', DEPENDENTS).length
+      return { api, user, bodies, removed, card, save, saveOff, question, counts }
+    }
+
+    test('switching off a provider accounts depend on asks first and says the count; cancelling sends nothing', async () => {
+      const { user, bodies, save, saveOff, question, counts } = x(() => ({
+        provider: 'x',
+        accounts: 3,
+        more: false,
+      }))
+      await saveOff()
+      const asked = await question()
+      expect(asked.textContent).toContain('Switch X off?')
+      expect(asked.textContent).toContain(
+        `3 accounts can sign in only with X. They will not be able to sign in while X is off. ${NO_ADDRESS} The change is recorded in the audit log as one that weakens security.`
+      )
+      expect(counts()).toBe(1)
+      expect(bodies).toEqual([])
+      await user.click(within(asked).getByRole('button', { name: 'Cancel' }))
+      await waitFor(() => expect(openDialogs()).toBe(0))
+      expect(bodies).toEqual([])
+
+      // Asked again, the accounts are counted again: the question is about the count of now.
+      await save()
+      await question()
+      expect(counts()).toBe(2)
+      expect(bodies).toEqual([])
+    })
+
+    test('confirming sends the save once, however slow the answer', async () => {
+      const { user, bodies, saveOff, question } = x(() => ({
+        provider: 'x',
+        accounts: 1,
+        more: false,
+      }))
+      await saveOff()
+      const asked = await question()
+      expect(asked.textContent).toContain(
+        '1 account can sign in only with X. It will not be able to sign in while X is off.'
+      )
+      const hold = holdAnswers((path, _headers, method) => method === 'PUT' && path.endsWith('/x'))
+      const confirm = within(asked).getByRole('button', { name: 'Switch X off' })
+      await user.click(confirm)
+      await waitFor(() => expect(hold.held()).toBe(1))
+      expect(confirm.getAttribute('aria-disabled')).toBe('true')
+      await user.click(confirm)
+      await act(() => hold.release())
+      await screen.findByText('X saved')
+      await waitFor(() => expect(openDialogs()).toBe(0))
+      expect(bodies).toEqual([{ clientId: 'x-client', enabled: false }])
+    })
+
+    test('a refused save closes the question and gives its button back', async () => {
+      const { api, user, bodies, saveOff, save, question, card } = x(() => ({
+        provider: 'x',
+        accounts: 2,
+        more: false,
+      }))
+      api.override('PUT', /^\/v1\/admin\/oauth-providers\/x$/, (call) => {
+        bodies.push(call.body)
+        return failure(422, 'validation.failed', 'Invalid.', [
+          { field: 'enabled', code: 'validation.failed', message: 'one method must stay' },
+        ])
+      })
+      await saveOff()
+      await user.click(within(await question()).getByRole('button', { name: 'Switch X off' }))
+      const refusal = await within(await card()).findByRole('alert')
+      expect(refusal.textContent).toContain('X was not switched off')
+      await waitFor(() => expect(openDialogs()).toBe(0))
+      await save()
+      const again = within(await question()).getByRole('button', { name: 'Switch X off' })
+      expect(again.getAttribute('aria-disabled') === null).toBe(true)
+      await user.click(again)
+      await waitFor(() => expect(bodies).toHaveLength(2))
+    })
+
+    test('no account depends on it: nothing is asked and the save is sent', async () => {
+      const { bodies, saveOff, counts } = x(() => ({ provider: 'x', accounts: 0, more: false }))
+      await saveOff()
+      await screen.findByText('X saved')
+      expect(counts()).toBe(1)
+      expect(bodies).toEqual([{ clientId: 'x-client', enabled: false }])
+      expect(openDialogs()).toBe(0)
+    })
+
+    test.each([
+      [
+        'a floor',
+        { accounts: 1000, more: true },
+        'At least 1,000 accounts can sign in only with X. They will not be able to sign in while X is off.',
+      ],
+      [
+        'a floor of one',
+        { accounts: 1, more: true },
+        'At least 1 account can sign in only with X. They will not be able to sign in while X is off.',
+      ],
+      [
+        'none among the accounts looked at',
+        { accounts: 0, more: true },
+        'X has more accounts than the server looks at, so the number that can sign in only with X is not known. Any that can will not be able to sign in while X is off.',
+      ],
+    ])('more accounts than the server looks at is said as %s', async (_name, counted, sentence) => {
+      const { bodies, saveOff, question } = x(() => ({ provider: 'x', ...counted }))
+      await saveOff()
+      expect((await question()).textContent).toContain(sentence)
+      expect(bodies).toEqual([])
+    })
+
+    test.each([
+      ['the request fails', () => failure(503, 'service.unavailable', 'Unavailable.')],
+      ['an older server has no such route', () => failure(404, 'resource.not_found', 'Not found.')],
+      ['the answer is no count', () => ({ provider: 'x' })],
+    ])(
+      'a count that could not be read (%s) is asked about in its own words, never as none',
+      async (_name, answer) => {
+        const { user, bodies, saveOff, question } = x(answer)
+        await saveOff()
+        const asked = await question()
+        expect(asked.textContent).toContain(
+          `The number of accounts that can sign in only with X could not be counted. Any that can will not be able to sign in while X is off. ${NO_ADDRESS} If an account depends on X, the change is recorded in the audit log as one that weakens security.`
+        )
+        expect((asked.textContent ?? '').includes('0 accounts')).toBe(false)
+        expect(bodies).toEqual([])
+        // Not blocked: the operator may go on.
+        await user.click(within(asked).getByRole('button', { name: 'Switch X off' }))
+        await screen.findByText('X saved')
+        expect(bodies).toEqual([{ clientId: 'x-client', enabled: false }])
+      }
+    )
+
+    test('in production the provider’s name is typed before it is switched off', async () => {
+      const { user, bodies, saveOff, question } = x(
+        () => ({ provider: 'x', accounts: 3, more: false }),
+        { path: PROD_PATH }
+      )
+      await saveOff()
+      const asked = await question()
+      await user.click(within(asked).getByRole('button', { name: 'Switch X off' }))
+      expect(bodies).toEqual([])
+      await user.type(within(asked).getByLabelText(/^Type/), 'X')
+      await user.click(within(asked).getByRole('button', { name: 'Switch X off' }))
+      await screen.findByText('X saved')
+      expect(bodies).toEqual([{ clientId: 'x-client', enabled: false }])
+    })
+
+    test('a save that leaves the provider on counts nothing and asks nothing', async () => {
+      const { bodies, save, counts } = x(() => ({ provider: 'x', accounts: 3, more: false }))
+      // Shown, and still not counted: the count is read for a question, never on arrival.
+      await save()
+      await screen.findByText('X saved')
+      expect(bodies).toEqual([{ clientId: 'x-client', enabled: true }])
+      expect(counts()).toBe(0)
+      expect(openDialogs()).toBe(0)
+    })
+
+    test('a provider that is already off is saved and removed without a count', async () => {
+      const { user, bodies, removed, card, save, counts } = x(
+        () => ({ provider: 'x', accounts: 3, more: false }),
+        { enabled: false }
+      )
+      await save()
+      await screen.findByText('X saved')
+      expect(bodies).toEqual([{ clientId: 'x-client', enabled: false }])
+      await user.click(within(await card()).getByRole('button', { name: 'Remove X' }))
+      const asked = (await screen.findByRole('heading', { name: 'Remove X sign-in?' })).closest(
+        'dialog'
+      ) as HTMLElement
+      expect((asked.textContent ?? '').includes('can sign in only with X')).toBe(false)
+      await user.click(within(asked).getByRole('button', { name: 'Remove X' }))
+      await screen.findByText('X removed')
+      expect(removed).toHaveLength(1)
+      expect(counts()).toBe(0)
+    })
+
+    test('removing a provider accounts depend on says the count in its question', async () => {
+      const { user, removed, card, question, counts } = x(() => ({
+        provider: 'x',
+        accounts: 12,
+        more: false,
+      }))
+      await user.click(within(await card()).getByRole('button', { name: 'Remove X' }))
+      const asked = await question('Remove X sign-in?')
+      expect(asked.textContent).toContain(
+        `12 accounts can sign in only with X. They will not be able to sign in until X is configured again. ${NO_ADDRESS}`
+      )
+      expect(counts()).toBe(1)
+      expect(removed).toEqual([])
+      await user.click(within(asked).getByRole('button', { name: 'Cancel' }))
+      await waitFor(() => expect(openDialogs()).toBe(0))
+      expect(removed).toEqual([])
+      await user.click(within(await card()).getByRole('button', { name: 'Remove X' }))
+      await user.click(
+        within(await question('Remove X sign-in?')).getByRole('button', { name: 'Remove X' })
+      )
+      await screen.findByText('X removed')
+      expect(removed).toHaveLength(1)
+    })
+
+    test('removing with a count that could not be read says so; in production the name is typed', async () => {
+      const { user, removed, card, question } = x(
+        () => failure(503, 'service.unavailable', 'Unavailable.'),
+        { path: PROD_PATH }
+      )
+      await user.click(within(await card()).getByRole('button', { name: 'Remove X' }))
+      const asked = await question('Remove X sign-in?')
+      expect(asked.textContent).toContain(
+        'The number of accounts that can sign in only with X could not be counted. Any that can will not be able to sign in until X is configured again.'
+      )
+      await user.click(within(asked).getByRole('button', { name: 'Remove X' }))
+      expect(removed).toEqual([])
+      await user.type(within(asked).getByLabelText(/^Type/), 'X')
+      await user.click(within(asked).getByRole('button', { name: 'Remove X' }))
+      await screen.findByText('X removed')
+      expect(removed).toHaveLength(1)
+    })
+
+    test('removing a provider nobody depends on asks what it always asked', async () => {
+      const { user, removed, card, question } = x(
+        () => ({ provider: 'x', accounts: 0, more: false }),
+        { path: PROD_PATH }
+      )
+      await user.click(within(await card()).getByRole('button', { name: 'Remove X' }))
+      const asked = await question('Remove X sign-in?')
+      expect((asked.textContent ?? '').includes('can sign in only with X')).toBe(false)
+      await user.click(within(asked).getByRole('button', { name: 'Remove X' }))
+      await screen.findByText('X removed')
+      expect(removed).toHaveLength(1)
+    })
+  })
+
+  describe('providers by the server’s name', () => {
+    const listed = (provider: string, over: Record<string, unknown> = {}) => ({
+      provider,
+      configured: false,
+      enabled: false,
+      clientId: null,
+      teamId: null,
+      keyId: null,
+      tenant: null,
+      callbackUrl: `http://localhost:3003/v1/oauth/callback/${provider}`,
+      updatedAt: null,
+      ...over,
+    })
+
+    test.each([
+      ['discord', 'Discord'],
+      ['linkedin', 'LinkedIn'],
+      ['x', 'X'],
+      ['facebook', 'Facebook'],
+    ])('the %s card takes a client id and a secret, and nothing else', async (provider, name) => {
+      const api = installFakeApi()
+      const bodies: unknown[] = []
+      api.override('GET', /^\/v1\/admin\/oauth-providers$/, () => ({ data: [listed(provider)] }))
+      api.override('PUT', new RegExp(`^/v1/admin/oauth-providers/${provider}$`), (call) => {
+        bodies.push(call.body)
+        return { provider }
+      })
+      const { user } = start(`${DEV_PATH}/sign-in-methods`, { api })
+      const card = (await screen.findByRole('heading', { name })).closest('li') as HTMLElement
+      expect(
+        within(card).getByText(`http://localhost:3003/v1/oauth/callback/${provider}`)
+      ).toBeTruthy()
+      for (const absent of ['Who can sign in', 'Team ID', 'Key ID', 'Private key (.p8)']) {
+        expect(within(card).queryByLabelText(absent) === null).toBe(true)
+      }
+      await user.type(within(card).getByLabelText('Client ID'), 'the-client')
+      await user.type(within(card).getByLabelText('Client secret'), 'the-secret-value')
+      await user.click(within(card).getByRole('button', { name: `Save ${name}` }))
+      await screen.findByText(`${name} saved`)
+      expect(bodies).toEqual([
+        { clientId: 'the-client', enabled: true, clientSecret: 'the-secret-value' },
+      ])
+      // Saved: the secret is gone from the page.
+      expect(document.documentElement.outerHTML.includes('the-secret-value')).toBe(false)
+      // Only the two providers that are asked for no address say what that costs.
+      expect((card.textContent ?? '').includes('is asked for no email address')).toBe(
+        provider === 'x' || provider === 'facebook'
+      )
+    })
+
+    // A later server lists a provider this version has no form for, or a name that is a
+    // property of every object. Neither gets a card whose fields would be a guess.
+    test('a provider this version does not know has no card, and the known ones keep theirs', async () => {
+      const api = installFakeApi()
+      api.override('GET', /^\/v1\/admin\/oauth-providers$/, () => ({
+        data: [
+          listed('twitch'),
+          listed('constructor'),
+          listed('__proto__'),
+          listed('toString'),
+          listed('discord'),
+        ],
+      }))
+      start(`${DEV_PATH}/sign-in-methods`, { api })
+      await screen.findByRole('heading', { name: 'Discord' })
+      const section = screen.getByRole('heading', { name: 'OAuth providers' }).closest('section')
+      const cards = within(section as HTMLElement).getAllByRole('listitem')
+      expect(cards).toHaveLength(1)
+      const text = section?.textContent ?? ''
+      for (const unknown of ['twitch', 'constructor', '__proto__', 'toString', 'function']) {
+        expect(text.includes(unknown)).toBe(false)
+      }
+    })
+
+    test.each([
+      [['discord'], 'No password; signs in with Discord.'],
+      [['linkedin', 'github'], 'No password; signs in with LinkedIn and GitHub.'],
+      [['x', 'facebook'], 'No password; signs in with X and Facebook.'],
+      // Unknown to this version: said as the server names it, never looked up as a property.
+      [['twitch'], 'No password; signs in with twitch.'],
+      [['constructor', 'toString'], 'No password; signs in with constructor and toString.'],
+      [['__proto__'], 'No password; signs in with __proto__.'],
+    ])('a user who signs in with %p: %s', async (providers, sentence) => {
+      const api = installFakeApi()
+      api.state.authentication = {
+        ...api.state.authentication,
+        hasPassword: false,
+        identities: providers.map((provider) => ({
+          provider,
+          linkedAt: '2026-03-01T09:00:00.000Z',
+        })),
+      }
+      start(`${DEV_PATH}/users/${IDS.user}`, { api })
+      await screen.findByText(sentence)
+    })
+
+    // A second factor's type is the server's word too: `FACTOR_NAME['constructor']` is a
+    // function of `Object.prototype`, which React draws as nothing.
+    test.each([
+      ['totp', 'Authenticator app since '],
+      ['sms', 'Texted code since '],
+      ['pager', 'pager since '],
+      ['constructor', 'constructor since '],
+      ['toString', 'toString since '],
+      ['__proto__', '__proto__ since '],
+    ])('a second factor the server calls %p is listed as “%s…”', async (type, start_) => {
+      const api = installFakeApi()
+      api.state.authentication = {
+        ...api.state.authentication,
+        factors: [{ type, confirmedAt: '2026-03-01T09:00:00.000Z' }],
+      }
+      start(`${DEV_PATH}/users/${IDS.user}`, { api })
+      const line = await screen.findByText((_text, element) =>
+        element?.tagName === 'LI' ? (element.textContent ?? '').startsWith(start_) : false
+      )
+      expect(line.textContent?.startsWith(start_)).toBe(true)
+    })
+  })
+
   test('Apple takes a team, a key id and a private key; a provider can be removed; “enabled” may be refused', async () => {
     const api = installFakeApi()
     const bodies: unknown[] = []
@@ -313,6 +1065,7 @@ describe('settings controls', () => {
           clientId: null,
           teamId: null,
           keyId: null,
+          tenant: null,
           callbackUrl: 'http://localhost:3003/v1/client/oauth/apple/callback',
           updatedAt: null,
         },
@@ -323,6 +1076,7 @@ describe('settings controls', () => {
           clientId: 'g-client',
           teamId: null,
           keyId: null,
+          tenant: null,
           callbackUrl: 'http://localhost:3003/v1/client/oauth/google/callback',
           updatedAt: null,
         },
@@ -366,12 +1120,17 @@ describe('settings controls', () => {
     const refusal = await within(google).findByRole('alert')
     expect(refusal.textContent).toContain('Google was not switched off')
 
+    // Google is on: its question opens once the accounts that depend on it were counted.
     await user.click(within(google).getByRole('button', { name: 'Remove Google' }))
-    await user.click(within(dialog()).getByRole('button', { name: 'Cancel' }))
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Cancel' })
+    )
     await waitFor(() => expect(openDialogs()).toBe(0))
     expect(removed).toBe(0)
     await user.click(within(google).getByRole('button', { name: 'Remove Google' }))
-    await user.click(within(dialog()).getByRole('button', { name: 'Remove Google' }))
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Remove Google' })
+    )
     await screen.findByText('Google removed')
     expect(removed).toBe(1)
   })

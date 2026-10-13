@@ -2,7 +2,7 @@ import { type Database, refreshTokens, sessions, users, withTenant } from '@tula
 import { and, count, desc, eq, gt, inArray, isNull, lt, lte, max, ne, or, sql } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { isUniqueViolation, LostRace } from '~/adapters/postgres/errors'
-import { activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
+import { type Activity, activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import {
   type Authentication,
   mergeAuthMethods,
@@ -17,6 +17,7 @@ import {
   type SessionRecord,
   type SessionRevokeReason,
   type SessionStore,
+  sameMethods,
 } from '~/ports/session-store'
 
 const sessionColumns = {
@@ -34,6 +35,8 @@ const sessionColumns = {
   absoluteExpiresAt: sessions.absoluteExpiresAt,
   factorVerifiedAt: sessions.factorVerifiedAt,
   authMethods: sessions.authMethods,
+  hookClaims: sessions.hookClaims,
+  deviceThumbprint: sessions.deviceThumbprint,
   revokedAt: sessions.revokedAt,
   revokeReason: sessions.revokeReason,
   createdAt: sessions.createdAt,
@@ -136,6 +139,20 @@ export class PostgresSessionStore implements SessionStore {
       }
       throw error
     }
+  }
+
+  /** @inheritdoc */
+  async reportRefusedProof(environmentId: string, id: string, activity: Activity): Promise<void> {
+    await withTenant(this.db, environmentId, async (tx) => {
+      const [row] = await tx
+        .select({ id: sessions.id })
+        .from(sessions)
+        .where(and(eq(sessions.id, id), eq(sessions.environmentId, environmentId)))
+        .limit(1)
+      if (row) {
+        await recordActivity(tx, [activity])
+      }
+    })
   }
 
   /** @inheritdoc */
@@ -310,6 +327,34 @@ export class PostgresSessionStore implements SessionStore {
   }
 
   /** @inheritdoc */
+  async hasBoundSessionBefore(
+    environmentId: string,
+    userId: string,
+    session: Pick<SessionRecord, 'id' | 'createdAt'>,
+    thumbprint: string
+  ): Promise<boolean> {
+    return withTenant(this.db, environmentId, async (tx) => {
+      const rows = await tx
+        .select({ id: sessions.id })
+        .from(sessions)
+        .where(
+          and(
+            eq(sessions.environmentId, environmentId),
+            eq(sessions.userId, userId),
+            eq(sessions.deviceThumbprint, thumbprint),
+            // The same order as `beganBefore` in the port: creation time, then id.
+            or(
+              lt(sessions.createdAt, session.createdAt),
+              and(eq(sessions.createdAt, session.createdAt), lt(sessions.id, session.id))
+            )
+          )
+        )
+        .limit(1)
+      return rows.length > 0
+    })
+  }
+
+  /** @inheritdoc */
   async revoke(
     environmentId: string,
     id: string,
@@ -364,11 +409,18 @@ export class PostgresSessionStore implements SessionStore {
       if (!current) {
         return null
       }
+      const { claims, ifAuthMethods } = authentication.hookClaims
+      // Judged on the locked row: the claims were answered for exactly these methods, and a
+      // step-up that got in between must not be given them.
+      if (ifAuthMethods && !sameMethods(current.authMethods, ifAuthMethods)) {
+        return null
+      }
       const [updated] = await tx
         .update(sessions)
         .set({
           factorVerifiedAt: at,
           authMethods: mergeAuthMethods(current.authMethods, authentication.methods),
+          hookClaims: claims,
           updatedAt: at,
         })
         .where(and(eq(sessions.id, id), eq(sessions.environmentId, environmentId)))

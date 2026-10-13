@@ -1,4 +1,21 @@
-import type { Change, Operation, Plan, ProviderChange } from './diff'
+import {
+  MAX_EMAIL_BODY_LENGTH,
+  MAX_NATIVE_APPS,
+  MAX_WEBHOOK_ENDPOINTS,
+  MAX_WEBHOOK_URL_LENGTH,
+} from '@tula/contract'
+import {
+  type Change,
+  DEPENDENTS_UNREAD,
+  type HookChange,
+  isTemplatePath,
+  type NativeAppChange,
+  type Operation,
+  type Plan,
+  type ProviderChange,
+  type WebhookChange,
+} from './diff'
+import { printable } from './doctor'
 import type { Output } from './output'
 
 /** Longest a value is shown before it is cut: a plan is read by a person. */
@@ -9,13 +26,26 @@ function show(value: unknown): string {
   return text.length > MAX_VALUE_LENGTH ? `${text.slice(0, MAX_VALUE_LENGTH - 1)}…` : text
 }
 
+/**
+ * A setting's value as a plan shows it. A template's text (an email's subject or body, a
+ * text message's sentence) is long free
+ * text, and the one on the server is not this file's: it goes through `printable()` first,
+ * so nothing a reader cannot see reaches the terminal, and is cut like any other value.
+ */
+function shown(change: Change, value: unknown): string {
+  return typeof value === 'string' && isTemplatePath(change.path)
+    ? show(printable(value, MAX_EMAIL_BODY_LENGTH))
+    : show(value)
+}
+
 function settingLine(output: Output, change: Change): string {
   const { style } = output
   if (change.kind === 'added') {
-    return style.green(`  + ${change.path}: ${show(change.after)}`)
+    return style.green(`  + ${change.path}: ${shown(change, change.after)}`)
   }
   if (change.kind === 'removed') {
-    return style.red(`  - ${change.path}: ${show(change.before)}`)
+    const note = isTemplatePath(change.path) ? ' (the built-in copy is sent)' : ''
+    return style.red(`  - ${change.path}: ${shown(change, change.before)}${note}`)
   }
   if (change.added || change.removed) {
     const entries = [
@@ -24,7 +54,9 @@ function settingLine(output: Output, change: Change): string {
     ]
     return style.yellow(`  ~ ${change.path}: ${entries.join(' ')}`)
   }
-  return style.yellow(`  ~ ${change.path}: ${show(change.before)} → ${show(change.after)}`)
+  return style.yellow(
+    `  ~ ${change.path}: ${shown(change, change.before)} → ${shown(change, change.after)}`
+  )
 }
 
 /** What happens to a provider's secret, in words. Never the secret. */
@@ -35,13 +67,27 @@ function secretNote(change: ProviderChange): string {
   return change.secret === 'keep' ? 'stored secret kept' : ''
 }
 
+/** A set's entry for a person: a string through `printable()`, anything else as it is. */
+function clean(entry: unknown): unknown {
+  return typeof entry === 'string' ? printable(entry, 128) : entry
+}
+
 function providerLine(output: Output, change: ProviderChange): string {
   const { style } = output
-  const fields = change.fields.map((field) =>
-    field.kind === 'changed'
+  const fields = change.fields.map((field) => {
+    // A list that is a set (Google's additional client ids) is shown by what the file adds
+    // and removes. What it removes is the server's text: nothing a reader cannot see.
+    if (field.added || field.removed) {
+      const entries = [
+        ...(field.added ?? []).map((entry) => `+${show(clean(entry))}`),
+        ...(field.removed ?? []).map((entry) => `-${show(clean(entry))}`),
+      ]
+      return `${field.path} ${entries.join(' ')}`
+    }
+    return field.kind === 'changed'
       ? `${field.path} ${show(field.before)} → ${show(field.after)}`
       : `${field.path} ${show(field.after)}`
-  )
+  })
   const details = [...fields, secretNote(change)].filter((part) => part !== '').join(', ')
   const suffix = details === '' ? '' : ` (${details})`
   switch (change.action) {
@@ -60,12 +106,374 @@ function providerLine(output: Output, change: ProviderChange): string {
   }
 }
 
+/**
+ * An endpoint's address for a person. Whole (two endpoints may differ in their last
+ * character), and, since it may be one the server sent, with nothing a terminal would act on
+ * and nothing a reader cannot see.
+ */
+function address(url: string): string {
+  return printable(url, MAX_WEBHOOK_URL_LENGTH)
+}
+
+const plural = (count: number, one: string, many: string) => (count === 1 ? one : many)
+
+/** `1 webhook endpoint with its pending deliveries and its delivery log`, or the plural. */
+function removedEndpoints(count: number): string {
+  return `${count} webhook ${plural(count, 'endpoint with its', 'endpoints with their')} pending deliveries and ${plural(count, 'its delivery log', 'their delivery logs')}`
+}
+
+function webhookFields(change: WebhookChange): string[] {
+  return change.fields.map((field) => {
+    if (field.path === 'eventTypes') {
+      const entries =
+        field.kind === 'added'
+          ? (field.after as unknown[]).map((entry) => show(entry))
+          : [
+              ...(field.added ?? []).map((entry) => `+${show(entry)}`),
+              ...(field.removed ?? []).map((entry) => `-${show(entry)}`),
+            ]
+      return `eventTypes ${entries.join(' ')}`
+    }
+    if (field.kind === 'added') {
+      return `${field.path} ${show(field.after)}`
+    }
+    const why =
+      change.reenables === undefined
+        ? ''
+        : ` (the server had switched it off: ${printable(change.reenables, 60)})`
+    return `${field.path} ${show(field.before)} → ${show(field.after)}${why}`
+  })
+}
+
+function webhookLine(output: Output, change: WebhookChange): string {
+  const { style } = output
+  const url = address(change.url)
+  const fields = webhookFields(change).join(', ')
+  switch (change.action) {
+    case 'create':
+      return style.green(`  + ${url}: create (${fields}; a signing secret is made, shown once)`)
+    case 'update':
+      return style.yellow(`  ~ ${url}: update (${fields})`)
+    case 'delete':
+      return style.red(`  - ${url}: remove, with its pending deliveries and its delivery log`)
+    case 'unmanaged':
+      return style.dim(
+        `  = ${url}: unmanaged (on the server, not in the file; --prune removes it, with its pending deliveries and its delivery log)`
+      )
+    case 'ambiguous':
+      return style.red(
+        `  ! ${url}: cannot be matched (the server has ${change.duplicates?.length ?? 0} endpoints with this address)`
+      )
+    default:
+      return style.dim(`  = ${url}: unchanged`)
+  }
+}
+
+/** A hook's point for a person: one of the contract's, or whatever a later server sent. */
+function pointName(point: string): string {
+  return printable(point, 60)
+}
+
+function hookFields(change: HookChange): string[] {
+  return change.fields.map((field) => {
+    // An address is shown whole and as it is, like an endpoint's; the server's through
+    // `printable()`, which is what `address` does.
+    const value = (entry: unknown) => (field.path === 'url' ? address(String(entry)) : show(entry))
+    return field.kind === 'added'
+      ? `${field.path} ${value(field.after)}`
+      : `${field.path} ${value(field.before)} → ${value(field.after)}`
+  })
+}
+
+function hookLine(output: Output, change: HookChange): string {
+  const { style } = output
+  const point = pointName(change.point)
+  const fields = hookFields(change).join(', ')
+  switch (change.action) {
+    case 'create':
+      return style.green(`  + ${point}: create (${fields}; a signing secret is made, shown once)`)
+    case 'update':
+      return style.yellow(`  ~ ${point}: update (${fields})`)
+    case 'delete':
+      return style.red(`  - ${point}: remove (${address(change.url)}), with its signing secret`)
+    case 'unmanaged':
+      return style.dim(
+        `  = ${point}: unmanaged (on the server, not in the file; --prune removes it)`
+      )
+    case 'unknown':
+      return style.dim(
+        `  = ${point}: a point this version of tula does not know (left alone, also with --prune)`
+      )
+    default:
+      return style.dim(`  = ${point}: unchanged`)
+  }
+}
+
+/**
+ * A native app for a person: `ios com.example.app`. Both parts may be the server's, so
+ * neither carries anything a terminal would act on or a reader cannot see.
+ */
+function appName(change: Pick<NativeAppChange, 'platform' | 'identifier'>): string {
+  return `${printable(change.platform, 20)} ${printable(change.identifier, 255)}`
+}
+
+/** A team id, a fingerprint or a link path, the file's or the server's, as text that is safe to print. */
+function appValue(value: unknown): string {
+  return printable(String(value), 95)
+}
+
+function nativeAppFields(change: NativeAppChange): string[] {
+  return change.fields.map((field) => {
+    if (field.path === 'sha256CertFingerprints' || field.path === 'appLinkPaths') {
+      const entries =
+        field.kind === 'added'
+          ? (field.after as unknown[]).map(appValue)
+          : [
+              ...(field.added ?? []).map((entry) => `+${appValue(entry)}`),
+              ...(field.removed ?? []).map((entry) => `-${appValue(entry)}`),
+            ]
+      return `${field.path} ${entries.join(' ')}`
+    }
+    return field.kind === 'added'
+      ? `${field.path} ${appValue(field.after)}`
+      : `${field.path} ${appValue(field.before)} → ${appValue(field.after)}`
+  })
+}
+
+/**
+ * The line under an app whose link paths the file does not manage: the server has some and
+ * the entry leaves `appLinkPaths` out. A count and fixed words, no path: it informs, it is
+ * no difference and no warning.
+ */
+function unmanagedLinkPathsLine(change: NativeAppChange): string | null {
+  const count = change.unmanagedLinkPaths ?? 0
+  if (count === 0) {
+    return null
+  }
+  const paths = count === 1 ? '1 link path' : `${count} link paths`
+  return `      ${paths} on the server, not managed by the file (kept; write appLinkPaths to manage them, [] to remove them)`
+}
+
+function nativeAppLine(output: Output, change: NativeAppChange): string {
+  const { style } = output
+  const name = appName(change)
+  const fields = nativeAppFields(change).join(', ')
+  switch (change.action) {
+    case 'create':
+      return style.green(`  + ${name}: register (${fields})`)
+    case 'update':
+      return style.yellow(`  ~ ${name}: update (${fields})`)
+    case 'delete':
+      return style.red(`  - ${name}: remove (the served files stop naming it)`)
+    case 'unmanaged':
+      return style.dim(
+        `  = ${name}: unmanaged (on the server, not in the file; --prune removes it)`
+      )
+    case 'unknown':
+      return style.dim(
+        `  = ${name}: a platform this version of tula does not know (left alone, also with --prune)`
+      )
+    default:
+      return style.dim(`  = ${name}: unchanged`)
+  }
+}
+
+/**
+ * How many hooks a plan creates and removes.
+ *
+ * @param plan - The plan.
+ * @returns The two counts.
+ *
+ * @example
+ * ```ts
+ * hookCounts(plan) // { created: 1, removed: 0 }
+ * ```
+ */
+export function hookCounts(plan: Pick<Plan, 'hooks'>): { created: number; removed: number } {
+  const count = (action: HookChange['action']) =>
+    plan.hooks.hooks.filter((hook) => hook.action === action).length
+  return { created: count('create'), removed: count('delete') }
+}
+
+/**
+ * How many webhook endpoints a plan creates and removes.
+ *
+ * @param plan - The plan.
+ * @returns The two counts.
+ *
+ * @example
+ * ```ts
+ * webhookCounts(plan) // { created: 1, removed: 0 }
+ * ```
+ */
+export function webhookCounts(plan: Pick<Plan, 'webhooks'>): { created: number; removed: number } {
+  const count = (action: WebhookChange['action']) =>
+    plan.webhooks.endpoints.filter((endpoint) => endpoint.action === action).length
+  return { created: count('create'), removed: count('delete') }
+}
+
+/**
+ * Why a plan cannot be applied at all, whatever flags a run is given: an address the server
+ * has more than once (which endpoint the file means cannot be known), or more endpoints or
+ * more native apps than an environment may have. `tula diff` fails on these and `tula apply`
+ * writes nothing.
+ *
+ * @param plan - The plan.
+ * @returns One sentence per reason; empty when the plan can be applied.
+ *
+ * @example
+ * ```ts
+ * planBlockers(plan) // ['The environment would have 11 webhook endpoints and may have 10.']
+ * ```
+ */
+export function planBlockers(
+  plan: Pick<Plan, 'webhooks'> & Partial<Pick<Plan, 'nativeApps'>>
+): string[] {
+  const blockers: string[] = []
+  for (const change of plan.webhooks.endpoints) {
+    if (change.action === 'ambiguous') {
+      const ids = (change.duplicates ?? []).map((id) => printable(id, 40))
+      blockers.push(
+        `The server has ${ids.length} webhook endpoints with the address ${address(change.url)} ` +
+          `(ids ${ids.join(', ')}): tula cannot tell which one the file means and changes none ` +
+          'of them. Remove all but one by hand (DELETE /v1/admin/webhook-endpoints/<id>), then ' +
+          'run again.'
+      )
+    }
+  }
+  if (plan.webhooks.overLimit !== null) {
+    blockers.push(
+      `The environment would have ${plan.webhooks.overLimit} webhook endpoints and may have ${MAX_WEBHOOK_ENDPOINTS}.`
+    )
+  }
+  const apps = plan.nativeApps?.overLimit ?? null
+  if (apps !== null) {
+    blockers.push(`The environment would have ${apps} native apps and may have ${MAX_NATIVE_APPS}.`)
+  }
+  return blockers
+}
+
+/**
+ * What to do about a plan that would leave too many endpoints, said after "Nothing was
+ * changed" by `tula apply` and after the blocker by `tula diff`.
+ *
+ * @example
+ * ```ts
+ * output.error(`${blocker} Nothing was changed. ${OVER_LIMIT_ADVICE}`)
+ * ```
+ */
+export const OVER_LIMIT_ADVICE =
+  'List fewer in the file, or remove the ones it does not list (--prune).'
+
 const MARKER_REASONS: Record<Plan['marker']['reason'], string> = {
   unmanaged: 'the server does not record a config file as the source of these settings yet',
   'other-tool': 'another tool is on record as managing these settings',
   'other-config': 'another version of the config file was applied last',
   drifted: 'the settings were changed outside the config file since the last apply',
   none: '',
+}
+
+/**
+ * Whether applying a plan makes the server delete audit entries, and from what age: the plan
+ * sets an audit retention period where there was none, or a shorter one.
+ *
+ * @param plan - The plan.
+ * @returns The new period in days; `null` when the plan deletes nothing.
+ *
+ * @example
+ * ```ts
+ * deletedAuditAge(plan) // 90
+ * ```
+ */
+export function deletedAuditAge(plan: Pick<Plan, 'weakened' | 'body'>): number | null {
+  const retentionDays = plan.body.audit?.retentionDays
+  return plan.weakened.includes('audit.retentionDays') && typeof retentionDays === 'number'
+    ? retentionDays
+    : null
+}
+
+/**
+ * Whether a plan switches off a texted code as the second step where the server has it on:
+ * the file writes `mfa.smsCode` off, or leaves it out (the default is off, as for every
+ * setting a file leaves out). The server keeps asking the users whose only second step it
+ * is, and can no longer text them (ADR 0025).
+ */
+function switchesOffTextedSecondStep(plan: Pick<Plan, 'settings'>): boolean {
+  return plan.settings.some(
+    (change) =>
+      change.path === 'mfa.smsCode.enabled' && change.before === true && change.after !== true
+  )
+}
+
+/** Whose second step a text message was: said the same way wherever messages stop. */
+const TEXTED_SECOND_STEP_LOCKED =
+  'those whose only second step is a texted code cannot sign in until it is back or an administrator resets their two-step verification'
+
+/** How many countries a warning names before it counts the rest. */
+const MAX_COUNTRIES_NAMED = 20
+
+/**
+ * The countries a plan takes out of `sms.allowedCountries`, as text that can be printed:
+ * the server's own entries (the file can only leave one out), through `printable()`, sorted.
+ */
+function countriesTakenOut(plan: Pick<Plan, 'settings'>): string[] {
+  const change = plan.settings.find((entry) => entry.path === 'sms.allowedCountries')
+  const removed = change?.removed ?? []
+  return removed
+    .filter((entry): entry is string => typeof entry === 'string')
+    .map((entry) => printable(entry, 8))
+    .sort()
+}
+
+/**
+ * What a plan says about the accounts that depend on a provider it switches off or removes
+ * (ADR 0059): one sentence per such provider. A count in words and nothing else, never an
+ * id, an address or a name; "at least" where the server did not look at every account. A
+ * count that is not known is said as that, never as none, in fixed words that hold nothing
+ * of why: a server with no count to give leaves the plan unjudged, a count that could not
+ * be read flags it. A count of none says nothing.
+ */
+function dependentAccountLines(plan: Pick<Plan, 'providers'>): string[] {
+  return plan.providers.flatMap((change): string[] => {
+    if (change.dependents === undefined) {
+      return []
+    }
+    const outcome = change.action === 'delete' ? 'until it is configured again' : 'while it is off'
+    if (change.dependents === null) {
+      return [
+        `the accounts that can sign in only with ${change.provider} could not be counted (this server has no count): if there are any they are locked out ${outcome}, and this plan was not judged for them`,
+      ]
+    }
+    if (change.dependents === DEPENDENTS_UNREAD) {
+      return [
+        `the accounts that can sign in only with ${change.provider} could not be counted (the count could not be read): if there are any they are locked out ${outcome}, and this plan is taken to weaken security`,
+      ]
+    }
+    const { accounts, more } = change.dependents
+    if (accounts === 0 && !more) {
+      return []
+    }
+    if (accounts === 0) {
+      // A scan that stopped early and found none: a floor of nothing is no number, and
+      // nobody found is nobody said to be locked out. The plan is flagged all the same.
+      return [
+        `none of the accounts the server read can sign in only with ${change.provider}, and it did not read them all: the rest were not looked at, so how many there are is not known`,
+      ]
+    }
+    // A scan that stopped early found a floor.
+    const count = `${more ? 'at least ' : ''}${accounts}`
+    const one = accounts === 1 && !more
+    return [
+      `${count} ${accounts === 1 ? 'account' : 'accounts'} can sign in only with ${change.provider}: ${one ? 'it is' : 'they are'} locked out ${outcome}`,
+    ]
+  })
+}
+
+/** Whether a plan switches text messages off where the server has them on. */
+function switchesTextMessagesOff(plan: Pick<Plan, 'settings'>): boolean {
+  return plan.settings.some(
+    (change) => change.path === 'sms.enabled' && change.before === true && change.after !== true
+  )
 }
 
 /**
@@ -84,6 +492,67 @@ export function planWarnings(plan: Plan): string[] {
   if (plan.weakened.length > 0) {
     warnings.push(
       `weakens security: ${plan.weakened.join(', ')} (\`tula apply --yes\` needs --allow-weaker)`
+    )
+  }
+  // What the provider paths above stand for, in words: who can no longer sign in.
+  warnings.push(...dependentAccountLines(plan))
+  // "Weakens security" undersells this one: applying it destroys something. Only "for good"
+  // is promised: a run deletes a bounded number of entries, so a backlog takes several.
+  const doomed = deletedAuditAge(plan)
+  if (doomed !== null) {
+    warnings.push(
+      `deletes audit entries older than ${doomed} days, for good, starting with the next retention run (every ten minutes; a large backlog takes several)`
+    )
+  }
+  // Not a weakening (nobody's account gets easier to take), and still the change of this
+  // plan that stops people signing in: said in words, where "weakens security" says nothing.
+  if (switchesOffTextedSecondStep(plan)) {
+    warnings.push(
+      'switches off the texted code as the second step (mfa.smsCode: off in the file, or left out of it): users whose only second step is a texted code cannot sign in until it is on again or an administrator resets their two-step verification'
+    )
+  }
+  // The same kind of change: nothing gets weaker, and codes stop reaching people.
+  if (switchesTextMessagesOff(plan)) {
+    warnings.push(
+      `switches text messages off (sms.enabled: off in the file, or left out of it): no user can receive a code any more, and ${TEXTED_SECOND_STEP_LOCKED}`
+    )
+  }
+  const countries = countriesTakenOut(plan)
+  if (countries.length > 0) {
+    const named = countries.slice(0, MAX_COUNTRIES_NAMED).join(', ')
+    const more = countries.length - MAX_COUNTRIES_NAMED
+    warnings.push(
+      `stops text messages to ${named}${more > 0 ? ` and ${more} more` : ''} (taken out of sms.allowedCountries): users whose number is there can no longer receive a code, unless a country that stays shares its prefix, and ${TEXTED_SECOND_STEP_LOCKED}`
+    )
+  }
+  const { created, removed } = webhookCounts(plan)
+  if (removed > 0) {
+    warnings.push(
+      `removes ${removedEndpoints(removed)}, for good (\`tula apply --yes\` needs --allow-webhook-removal)`
+    )
+  }
+  if (created > 0) {
+    warnings.push(
+      `creates ${created} webhook ${plural(created, 'endpoint: its signing secret is', 'endpoints: each signing secret is')} shown once, to the run that creates it (\`tula apply\` needs --secrets-file <path>, --show-secrets or --discard-secrets)`
+    )
+  }
+  const hooks = hookCounts(plan).created
+  if (hooks > 0) {
+    warnings.push(
+      `creates ${hooks} ${plural(hooks, 'hook: its signing secret is', 'hooks: each signing secret is')} shown once, to the run that creates it (\`tula apply\` needs --secrets-file <path>, --show-secrets or --discard-secrets)`
+    )
+  }
+  for (const change of plan.webhooks.endpoints) {
+    if (change.reenables !== undefined) {
+      warnings.push(
+        `switches on a webhook endpoint the server switched off (${address(change.url)}: ${printable(change.reenables, 60)}); if it still fails the server switches it off again`
+      )
+    }
+  }
+  const first = plan.webhooks.removedFirst
+  if (first > 0) {
+    warnings.push(
+      `the environment is at its limit of ${MAX_WEBHOOK_ENDPOINTS} webhook endpoints: ${first} of the removals ${plural(first, 'is', 'are')} made before the new ${plural(created, 'endpoint is', 'endpoints are')} created, to make room`
     )
   }
   if (plan.marker.reason === 'other-tool') {
@@ -105,26 +574,62 @@ export function planWarnings(plan: Plan): string[] {
 
 /**
  * What `tula apply` will not do to a plan without being told to: reset settings this version
- * does not know (`--allow-unknown`), and, when nobody is asked (`--yes`), weaken security
- * (`--allow-weaker`).
+ * does not know (`--allow-unknown`); when nobody is asked (`--yes`), weaken security
+ * (`--allow-weaker`) or remove a webhook endpoint with its delivery log
+ * (`--allow-webhook-removal`); and create a webhook endpoint or a hook without a word on what
+ * becomes of its signing secret (`--secrets-file`, `--show-secrets` or `--discard-secrets`).
  *
  * @param plan - The plan.
- * @returns Which of the two flags the plan needs.
+ * @returns Which of them the plan needs.
  *
  * @example
  * ```ts
- * applyRequirements(plan) // { allowUnknown: false, allowWeaker: true }
+ * applyRequirements(plan)
+ * // { allowUnknown: false, allowWeaker: true, allowWebhookRemoval: false,
+ * //   webhookSecrets: false, hookSecrets: false }
  * ```
  */
-export function applyRequirements(plan: Plan): { allowUnknown: boolean; allowWeaker: boolean } {
-  return { allowUnknown: plan.unknown.length > 0, allowWeaker: plan.weakened.length > 0 }
+export function applyRequirements(plan: Plan): {
+  allowUnknown: boolean
+  allowWeaker: boolean
+  allowWebhookRemoval: boolean
+  webhookSecrets: boolean
+  hookSecrets: boolean
+} {
+  const { created, removed } = webhookCounts(plan)
+  return {
+    allowUnknown: plan.unknown.length > 0,
+    allowWeaker: plan.weakened.length > 0,
+    allowWebhookRemoval: removed > 0,
+    webhookSecrets: created > 0,
+    hookSecrets: hookCounts(plan).created > 0,
+  }
+}
+
+/**
+ * What a run says, under `--yes`, to a plan that removes webhook endpoints without
+ * `--allow-webhook-removal`, and at a terminal before its question: what is deleted.
+ *
+ * @param plan - The plan.
+ * @returns E.g. `1 webhook endpoint with its pending deliveries and its delivery log`; `null`
+ *   when the plan removes none.
+ *
+ * @example
+ * ```ts
+ * removedWebhooks(plan) // '2 webhook endpoints with their pending deliveries and their delivery logs'
+ * ```
+ */
+export function removedWebhooks(plan: Pick<Plan, 'webhooks'>): string | null {
+  const { removed } = webhookCounts(plan)
+  return removed > 0 ? removedEndpoints(removed) : null
 }
 
 /**
  * One line that says what a write does.
  *
  * @param operation - The write.
- * @returns E.g. `settings: replace`, `provider google: create`.
+ * @returns E.g. `settings: replace`, `provider google: create`, `webhook https://…: remove`,
+ *   `hook before_sign_up: update`, `native app ios com.example.app: register`.
  *
  * @example
  * ```ts
@@ -135,9 +640,38 @@ export function describeOperation(operation: Operation): string {
   if (operation.kind === 'settings') {
     return 'settings: replace'
   }
-  return operation.kind === 'provider.delete'
-    ? `provider ${operation.provider}: delete`
-    : `provider ${operation.provider}: ${operation.change.action}`
+  if (
+    operation.kind === 'hook.create' ||
+    operation.kind === 'hook.update' ||
+    operation.kind === 'hook.delete'
+  ) {
+    const did = { 'hook.create': 'create', 'hook.update': 'update', 'hook.delete': 'remove' }
+    return `hook ${operation.point}: ${did[operation.kind]}`
+  }
+  if (
+    operation.kind === 'nativeApp.create' ||
+    operation.kind === 'nativeApp.update' ||
+    operation.kind === 'nativeApp.delete'
+  ) {
+    const did = {
+      'nativeApp.create': 'register',
+      'nativeApp.update': 'update',
+      'nativeApp.delete': 'remove',
+    }
+    return `native app ${appName(operation.change)}: ${did[operation.kind]}`
+  }
+  if (operation.kind === 'provider.delete') {
+    return `provider ${operation.provider}: delete`
+  }
+  if (operation.kind === 'provider.set') {
+    return `provider ${operation.provider}: ${operation.change.action}`
+  }
+  const action = {
+    'webhook.create': 'create',
+    'webhook.update': 'update',
+    'webhook.delete': 'remove',
+  }
+  return `webhook ${address(operation.url)}: ${action[operation.kind]}`
 }
 
 /**
@@ -184,6 +718,50 @@ export function renderPlan(
       output.line(providerLine(output, change))
     }
   }
+  if (plan.webhooks.managed) {
+    output.line()
+    output.line(style.bold('Webhooks'))
+    if (plan.webhooks.endpoints.length === 0) {
+      output.line(style.dim('  none in the file, none on the server'))
+    }
+    for (const change of plan.webhooks.endpoints) {
+      output.line(webhookLine(output, change))
+    }
+    const actions = new Set(plan.webhooks.endpoints.map((endpoint) => endpoint.action))
+    // The file cannot say "this address moved": it shows as one endpoint appearing and
+    // another the file no longer lists. Said in words, where both are on screen.
+    if (actions.has('create') && (actions.has('delete') || actions.has('unmanaged'))) {
+      output.line(
+        style.dim(
+          '  an endpoint is its address: a changed address is a new endpoint with a new signing secret; the old one stays until it is removed (--prune), and its pending deliveries and its delivery log go with it'
+        )
+      )
+    }
+  }
+  if (plan.hooks.managed) {
+    output.line()
+    output.line(style.bold('Hooks'))
+    if (plan.hooks.hooks.length === 0) {
+      output.line(style.dim('  none in the file, none on the server'))
+    }
+    for (const change of plan.hooks.hooks) {
+      output.line(hookLine(output, change))
+    }
+  }
+  if (plan.nativeApps.managed) {
+    output.line()
+    output.line(style.bold('Native apps'))
+    if (plan.nativeApps.apps.length === 0) {
+      output.line(style.dim('  none in the file, none on the server'))
+    }
+    for (const change of plan.nativeApps.apps) {
+      output.line(nativeAppLine(output, change))
+      const note = unmanagedLinkPathsLine(change)
+      if (note !== null) {
+        output.line(style.dim(note))
+      }
+    }
+  }
   const warnings = planWarnings(plan)
   if (warnings.length > 0) {
     output.line()
@@ -196,7 +774,8 @@ export function renderPlan(
 
 /**
  * A plan for a machine: the same content as {@link renderPlan}, as plain data. A provider's
- * secret appears as `set` or `keep` and the name of its variable, never as a value.
+ * secret appears as `set` or `keep` and the name of its variable, never as a value; a webhook
+ * endpoint's and a hook's secret do not appear at all (no read returns one).
  *
  * @param target - The environment's name in the config and the API's URL.
  * @param plan - The plan.
@@ -221,6 +800,20 @@ export function planToJson(
     kept: plan.kept,
     unknown: plan.unknown,
     providers: plan.providers,
+    webhooks: {
+      managed: plan.webhooks.managed,
+      endpoints: plan.webhooks.endpoints,
+      removedFirst: plan.webhooks.removedFirst,
+      overLimit: plan.webhooks.overLimit,
+    },
+    hooks: { managed: plan.hooks.managed, hooks: plan.hooks.hooks },
+    nativeApps: {
+      managed: plan.nativeApps.managed,
+      // Without the file's entry: every part of it is in the change already.
+      apps: plan.nativeApps.apps.map(({ entry: _entry, ...change }) => change),
+      overLimit: plan.nativeApps.overLimit,
+    },
+    blockers: planBlockers(plan),
     managedBy: {
       supported: plan.marker.supported,
       pending: plan.marker.pending,

@@ -1,0 +1,481 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "native Google ID token used once",
+  "description": "An ID token is judged once per attempt, and an attempt's nonce is gone as soon as a token was presented for it. A token that signed a user in is refused everywhere after: its own attempt is complete and answers as any finished attempt does (flow.not_found), and a new attempt has another nonce (auth.invalid_credentials). A right token presented after a wrong one for the same attempt is refused too: the app starts again. What is checked before the nonce is taken leaves it to be used: while the provider is switched off the exchange answers auth.method_disabled, and the same attempt completes once it is back on. An attempt of another kind takes no ID token. Uses the server's mock provider. The provider's credentials are removed afterwards.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    },
+    "webClient": "1234567890-conformanceweb.apps.googleusercontent.com",
+    "androidClient": "1234567890-conformanceandroid.apps.googleusercontent.com",
+    "iosClient": "1234567890-conformanceios.apps.googleusercontent.com",
+    "strangerClient": "9999999999-someoneelsesapp.apps.googleusercontent.com"
+  },
+  "steps": [
+    {
+      "name": "an administrator sets the google credentials and lists the Android app",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/google",
+        "auth": "secret",
+        "body": {
+          "clientId": "{{webClient}}",
+          "clientSecret": "conformance-client-secret",
+          "additionalClientIds": ["{{androidClient}}"]
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "google",
+          "enabled": true
+        }
+      }
+    },
+    {
+      "name": "the app asks for an attempt",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "android",
+        "body": {
+          "provider": "google"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_google"]
+            }
+          },
+          "nonce": "$any"
+        }
+      },
+      "capture": {
+        "aId": "attempt.id",
+        "aSecret": "attempt.attemptSecret",
+        "aNonce": "nonce"
+      }
+    },
+    {
+      "name": "Google's SDK hands the app a token with the attempt's nonce",
+      "idToken": {
+        "audience": "{{webClient}}",
+        "authorizedParty": "{{androidClient}}",
+        "nonce": "{{aNonce}}",
+        "email": "{{email}}",
+        "capture": "aToken"
+      }
+    },
+    {
+      "name": "the token signs the user in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{aId}}/id-token",
+        "client": "android",
+        "attempt": "{{aSecret}}",
+        "body": {
+          "idToken": "{{aToken}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "$any",
+            "sessionId": "$any"
+          },
+          "session": {
+            "accessToken": "$any",
+            "refreshToken": "$any"
+          }
+        }
+      },
+      "capture": {
+        "userId": "step.userId"
+      }
+    },
+    {
+      "name": "presented again on its own attempt, which is over: flow.not_found",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{aId}}/id-token",
+        "client": "android",
+        "attempt": "{{aSecret}}",
+        "body": {
+          "idToken": "{{aToken}}"
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "status": 404,
+          "code": "flow.not_found",
+          "detail": "$any"
+        },
+        "bodyExcludes": ["accessToken", "refreshToken"]
+      }
+    },
+    {
+      "name": "someone who copied the token asks for an attempt of their own",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "android",
+        "body": {
+          "provider": "google"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_google"]
+            }
+          },
+          "nonce": "$any"
+        }
+      },
+      "capture": {
+        "bId": "attempt.id",
+        "bSecret": "attempt.attemptSecret",
+        "bNonce": "nonce"
+      }
+    },
+    {
+      "name": "the copied token is for another nonce: the generic failed sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{bId}}/id-token",
+        "client": "android",
+        "attempt": "{{bSecret}}",
+        "body": {
+          "idToken": "{{aToken}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials",
+          "detail": "$any"
+        },
+        "headers": {
+          "set-cookie": "$absent"
+        },
+        "bodyExcludes": ["accessToken", "refreshToken", "audience", "nonce", "expired"]
+      }
+    },
+    {
+      "name": "the app asks for another attempt",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "android",
+        "body": {
+          "provider": "google"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_google"]
+            }
+          },
+          "nonce": "$any"
+        }
+      },
+      "capture": {
+        "cId": "attempt.id",
+        "cSecret": "attempt.attemptSecret",
+        "cNonce": "nonce"
+      }
+    },
+    {
+      "name": "a token with a nonce that is not the attempt’s",
+      "idToken": {
+        "audience": "{{webClient}}",
+        "authorizedParty": "{{androidClient}}",
+        "nonce": "not-the-nonce",
+        "email": "{{email}}",
+        "capture": "cWrongToken"
+      }
+    },
+    {
+      "name": "the wrong token is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{cId}}/id-token",
+        "client": "android",
+        "attempt": "{{cSecret}}",
+        "body": {
+          "idToken": "{{cWrongToken}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials",
+          "detail": "$any"
+        },
+        "headers": {
+          "set-cookie": "$absent"
+        },
+        "bodyExcludes": ["accessToken", "refreshToken", "audience", "nonce", "expired"]
+      }
+    },
+    {
+      "name": "a token with the attempt's nonce, too late",
+      "idToken": {
+        "audience": "{{webClient}}",
+        "authorizedParty": "{{androidClient}}",
+        "nonce": "{{cNonce}}",
+        "email": "{{email}}",
+        "capture": "cToken"
+      }
+    },
+    {
+      "name": "the nonce went with the first token: the right one is refused too",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{cId}}/id-token",
+        "client": "android",
+        "attempt": "{{cSecret}}",
+        "body": {
+          "idToken": "{{cToken}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials",
+          "detail": "$any"
+        },
+        "headers": {
+          "set-cookie": "$absent"
+        },
+        "bodyExcludes": ["accessToken", "refreshToken", "audience", "nonce", "expired"]
+      }
+    },
+    {
+      "name": "the app asks for an attempt, and then the provider is switched off",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "android",
+        "body": {
+          "provider": "google"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "id": "$any",
+            "attemptSecret": "$any",
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["oauth_google"]
+            }
+          },
+          "nonce": "$any"
+        }
+      },
+      "capture": {
+        "dId": "attempt.id",
+        "dSecret": "attempt.attemptSecret",
+        "dNonce": "nonce"
+      }
+    },
+    {
+      "name": "a token with that attempt's nonce",
+      "idToken": {
+        "audience": "{{webClient}}",
+        "authorizedParty": "{{androidClient}}",
+        "nonce": "{{dNonce}}",
+        "email": "{{email}}",
+        "capture": "dToken"
+      }
+    },
+    {
+      "name": "an administrator switches google off",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/google",
+        "auth": "secret",
+        "body": {
+          "clientId": "{{webClient}}",
+          "additionalClientIds": ["{{androidClient}}"],
+          "enabled": false
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "google",
+          "enabled": false
+        }
+      }
+    },
+    {
+      "name": "while it is off the exchange is auth.method_disabled",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{dId}}/id-token",
+        "client": "android",
+        "attempt": "{{dSecret}}",
+        "body": {
+          "idToken": "{{dToken}}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "auth.method_disabled",
+          "detail": "$any",
+          "params": {
+            "method": "oauth_google"
+          }
+        }
+      }
+    },
+    {
+      "name": "and so is a start",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/id-token",
+        "client": "android",
+        "body": {
+          "provider": "google"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "status": 403,
+          "code": "auth.method_disabled",
+          "detail": "$any"
+        }
+      }
+    },
+    {
+      "name": "the administrator switches google back on",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/google",
+        "auth": "secret",
+        "body": {
+          "clientId": "{{webClient}}",
+          "additionalClientIds": ["{{androidClient}}"]
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "google",
+          "enabled": true
+        }
+      }
+    },
+    {
+      "name": "nothing was used up: the same attempt and token complete",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{dId}}/id-token",
+        "client": "android",
+        "attempt": "{{dSecret}}",
+        "body": {
+          "idToken": "{{dToken}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}",
+            "sessionId": "$any"
+          },
+          "session": {
+            "accessToken": "$any",
+            "refreshToken": "$any"
+          }
+        }
+      }
+    },
+    {
+      "name": "a sign-in that started with an identifier",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "android",
+        "body": {
+          "identifier": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": "$any"
+      },
+      "capture": {
+        "eId": "id",
+        "eSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "takes no ID token: flow.invalid_step",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{eId}}/id-token",
+        "client": "android",
+        "attempt": "{{eSecret}}",
+        "body": {
+          "idToken": "{{dToken}}"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "status": 409,
+          "code": "flow.invalid_step",
+          "detail": "$any"
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "remove the google credentials",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/oauth-providers/google",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    }
+  ]
+}

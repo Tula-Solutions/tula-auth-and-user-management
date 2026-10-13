@@ -1,0 +1,427 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "a sign-in test runs where the environment allows it",
+  "description": "A sign-in test signs a throwaway user up and in through the real flow, deletes it, and answers a report of each step. Where the environment's `agents.testSignIn` is false it is refused for an agent key and for a secret key alike, before anything is created or counted. Where it is true an agent key runs it: every step passes, the report holds no token, code or address, the user is gone afterwards, and the audit log names the agent for the run and for the deletion. A second run inside the minute is refused, so two never run at once. Each key has its own route. That a production environment refuses by default, the hourly limits, what a hook's refusal and a failed deletion look like, and that the marked address is refused wherever a person could claim one are API tests (a run is limited to one a minute for an environment: run this scenario twice inside a minute against one server and the second is refused at the step that expects a report). The settings are put back afterwards, even when a step fails, and each run leaves one revoked agent key behind.",
+  "needsSecretKey": true,
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "revision": "$any"
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "app": "settings.app",
+        "passwordPolicy": "settings.password",
+        "origins": "settings.urls.allowedOrigins",
+        "audit": "settings.audit",
+        "notifications": "settings.notifications"
+      }
+    },
+    {
+      "name": "an agent key, shown once",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/api-keys",
+        "auth": "secret",
+        "body": {
+          "kind": "agent",
+          "name": "conformance sign-in test"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "kind": "agent",
+          "key": {
+            "$matches": "^tula_ak_"
+          }
+        }
+      },
+      "capture": {
+        "agentKeyId": "id",
+        "agentKey": "key"
+      }
+    },
+    {
+      "name": "the environment says no sign-in test may run",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{app}}"
+          },
+          "password": {
+            "$json": "{{passwordPolicy}}"
+          },
+          "urls": {
+            "allowedOrigins": {
+              "$json": "{{origins}}"
+            }
+          },
+          "audit": {
+            "$json": "{{audit}}"
+          },
+          "notifications": {
+            "$json": "{{notifications}}"
+          },
+          "agents": {
+            "testSignIn": false
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "agents": {
+              "testSignIn": false
+            }
+          }
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      }
+    },
+    {
+      "name": "the agent key is refused, by a fixed word",
+      "request": {
+        "method": "POST",
+        "path": "/v1/agent/sign-in-tests",
+        "auth": "none",
+        "accessToken": "{{agentKey}}"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "auth.forbidden",
+          "params": {
+            "reason": "test_sign_in_disabled"
+          }
+        }
+      }
+    },
+    {
+      "name": "and so is the secret key, on its own route",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/sign-in-tests",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "auth.forbidden",
+          "params": {
+            "reason": "test_sign_in_disabled"
+          }
+        }
+      }
+    },
+    {
+      "name": "a refused run started nothing",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?action=sign_in_test.started&actorId={{agentKeyId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "the environment allows it",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{app}}"
+          },
+          "password": {
+            "$json": "{{passwordPolicy}}"
+          },
+          "urls": {
+            "allowedOrigins": {
+              "$json": "{{origins}}"
+            }
+          },
+          "audit": {
+            "$json": "{{audit}}"
+          },
+          "notifications": {
+            "$json": "{{notifications}}"
+          },
+          "agents": {
+            "testSignIn": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "agents": {
+              "testSignIn": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "a secret key does not run it on the agent's route",
+      "request": {
+        "method": "POST",
+        "path": "/v1/agent/sign-in-tests",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "auth.invalid_key"
+        }
+      }
+    },
+    {
+      "name": "nor an agent key on the admin route",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/sign-in-tests",
+        "auth": "none",
+        "accessToken": "{{agentKey}}"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "auth.invalid_key"
+        }
+      }
+    },
+    {
+      "name": "the agent runs the test: every step is reported, and the user is deleted",
+      "request": {
+        "method": "POST",
+        "path": "/v1/agent/sign-in-tests",
+        "auth": "none",
+        "accessToken": "{{agentKey}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "outcome": "passed",
+          "steps": [
+            {
+              "step": "sign_up",
+              "outcome": "passed",
+              "durationMs": "$any"
+            },
+            {
+              "step": "verify_email",
+              "outcome": "passed"
+            },
+            {
+              "step": "sign_out",
+              "outcome": "passed"
+            },
+            {
+              "step": "sign_in",
+              "outcome": "passed"
+            },
+            {
+              "step": "first_factor",
+              "outcome": "passed"
+            },
+            {
+              "step": "revoke_session",
+              "outcome": "passed"
+            },
+            {
+              "step": "delete_user",
+              "outcome": "passed"
+            }
+          ],
+          "userId": "$any",
+          "cleanup": "deleted"
+        }
+      },
+      "capture": {
+        "testUserId": "userId"
+      }
+    },
+    {
+      "name": "the throwaway user is gone",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users/{{testUserId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "code": "resource.not_found"
+        }
+      }
+    },
+    {
+      "name": "its deletion is recorded as the agent's",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?action=user.deleted&targetId={{testUserId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1
+          },
+          "data": [
+            {
+              "action": "user.deleted",
+              "actor": {
+                "type": "agent",
+                "id": "{{agentKeyId}}"
+              },
+              "target": {
+                "type": "user",
+                "id": "{{testUserId}}"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "and so is the run, with how it ended",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?action=sign_in_test.finished&actorId={{agentKeyId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1
+          },
+          "data": [
+            {
+              "action": "sign_in_test.finished",
+              "actor": {
+                "type": "agent",
+                "id": "{{agentKeyId}}"
+              },
+              "metadata": {
+                "outcome": "passed",
+                "cleanup": "deleted",
+                "userId": "{{testUserId}}"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "a second run inside the minute is refused: two never run at once",
+      "request": {
+        "method": "POST",
+        "path": "/v1/agent/sign-in-tests",
+        "auth": "none",
+        "accessToken": "{{agentKey}}"
+      },
+      "expect": {
+        "status": 429,
+        "body": {
+          "code": "rate_limited"
+        }
+      }
+    },
+    {
+      "name": "and started nothing",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?action=sign_in_test.started&actorId={{agentKeyId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1
+          }
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "revoke the agent key",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/api-keys/{{agentKeyId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

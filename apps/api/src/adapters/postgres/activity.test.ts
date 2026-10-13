@@ -1,5 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { AUDIT_ACTOR_TYPES as CONTRACT_ACTOR_TYPES } from '@tula/contract'
+import {
+  AUDIT_ACTOR_TYPES as CONTRACT_ACTOR_TYPES,
+  EVENT_SCHEMA_VERSION,
+  EVENT_SCHEMAS,
+} from '@tula/contract'
 import { AUDIT_ACTOR_TYPES, auditLogs, events, withTenant } from '@tula/db'
 import {
   createTestDatabase,
@@ -18,7 +22,8 @@ import { PostgresUserRepository } from '~/adapters/postgres/users'
 import { cleanOrigin } from '~/lib/actor'
 import { sha256Hex } from '~/lib/crypto'
 import * as Audit from '~/modules/audit/service'
-import type { Activity } from '~/ports/activity-log'
+import type { Activity, Recorded } from '~/ports/activity-log'
+import { comparable } from '~/testing/comparable'
 
 // PGlite: real Postgres with every migration, connected as the runtime role (RLS applies).
 let testDb: TestDatabase
@@ -85,22 +90,45 @@ function newUser(tenant: TestTenant) {
 describe('the event outbox', () => {
   test('every activity is also an undelivered event with the same id, without the origin', async () => {
     const user = newUser(a)
-    const entry = activity(a, { target: { type: 'user', id: user.id } })
+    const entry = activity(a, {
+      target: { type: 'user', id: user.id },
+      // A detail the event's schema does not name: the audit log keeps it, the outbox does not.
+      data: { method: 'admin', emailVerified: false, note: 'kept in the audit log only' },
+    })
     await new PostgresUserRepository(testDb.db).create(user, entry)
     const [event] = await withTenant(testDb.db, a.environmentId, (tx) =>
       tx.select().from(events).where(eq(events.id, entry.id))
     )
-    expect(event).toMatchObject({
+    // The stored payload is the typed event of the contract (ADR 0012), whole: its own id,
+    // type, version and time, so a delivery needs nothing but this column.
+    const payload = {
       id: entry.id,
       type: 'user.created',
-      environmentId: a.environmentId,
-      occurredAt: now,
-      deliveredAt: null,
-      payload: { actor: entry.actor, target: entry.target, data: { method: 'admin' } },
-    })
+      schemaVersion: EVENT_SCHEMA_VERSION,
+      occurredAt: now.toISOString(),
+      actor: entry.actor,
+      target: entry.target,
+      data: { method: 'admin', emailVerified: false },
+    }
+    expect(comparable(event)).toMatchObject(
+      comparable({
+        id: entry.id,
+        type: 'user.created',
+        environmentId: a.environmentId,
+        occurredAt: now,
+        deliveredAt: null,
+      })
+    )
+    expect(event?.payload).toEqual(payload)
+    expect(EVENT_SCHEMAS['user.created'].parse(event?.payload)).toEqual(payload as never)
     // Webhook payloads must not carry the caller's IP address or user agent.
     expect(JSON.stringify(event?.payload)).not.toContain('203.0.113.7')
     expect(JSON.stringify(event?.payload)).not.toContain('suite/1.0')
+    // The audit entry is unchanged by the allow-list: it keeps every detail it was given.
+    const [audited] = await withTenant(testDb.db, a.environmentId, (tx) =>
+      tx.select().from(auditLogs).where(eq(auditLogs.id, entry.id))
+    )
+    expect(audited?.metadata).toEqual(entry.data)
   })
 
   test('records more entries than fit in one statement (one user with thousands of sessions)', async () => {
@@ -149,12 +177,39 @@ describe('atomicity', () => {
     await expect(users.delete(env, user.id, broken(a, user.id))).rejects.toThrow()
     await expect(users.setBanned(env, user.id, now, now, broken(a, user.id))).rejects.toThrow()
     await expect(
-      users.setPasswordHash(env, user.id, '$argon2id$new', now, broken(a, user.id))
+      users.setPasswordHash(env, user.id, '$argon2id$new', now, broken(a, user.id), { keep: 0 })
     ).rejects.toThrow()
     await expect(users.markEmailVerified(env, user.id, now, broken(a, user.id))).rejects.toThrow()
     const found = await users.findByEmailWithPassword(env, user.emailNormalized)
     expect(found?.user).toMatchObject({ id: user.id, bannedAt: null, emailVerifiedAt: null })
     expect(found?.passwordHash).toBe('$argon2id$hash')
+  })
+
+  test('a password change that cannot be recorded leaves the previous passwords as they were', async () => {
+    const users = new PostgresUserRepository(testDb.db)
+    const user = newUser(a)
+    await users.create(user, Audit.none('fixture'))
+    const env = a.environmentId
+    const change = (hash: string, recorded: Recorded = Audit.none('fixture')) =>
+      users.setPasswordHash(env, user.id, hash, now, recorded, { keep: 2 })
+    await change('$argon2id$1')
+    await change('$argon2id$2')
+    const before = await users.storedPasswords(env, user.id, 24)
+    expect(before).toEqual({
+      current: '$argon2id$2',
+      previous: ['$argon2id$1', '$argon2id$hash'],
+    })
+    // The write would move both rows back, delete the older and insert a third: none of it
+    // may outlive the transaction.
+    await expect(change('$argon2id$3', broken(a, user.id))).rejects.toThrow()
+    expect(await users.storedPasswords(env, user.id, 24)).toEqual(before)
+    // Nor does a removal that cannot be recorded delete them.
+    await expect(
+      users.markEmailVerified(env, user.id, now, Audit.none('fixture'), {
+        activity: broken(a, user.id),
+      })
+    ).rejects.toThrow()
+    expect(await users.storedPasswords(env, user.id, 24)).toEqual(before)
   })
 
   test('a session is neither created nor revoked when the record cannot be written', async () => {
@@ -222,8 +277,8 @@ describe('atomicity', () => {
   })
 })
 
-describe('the audit log is append-only and tenant-scoped', () => {
-  test('the runtime role can neither change nor delete an entry', async () => {
+describe('the audit log is tenant-scoped, never rewritten, and ends only past the floor', () => {
+  test('the runtime role cannot change an entry', async () => {
     const user = newUser(a)
     const entry = activity(a, { target: { type: 'user', id: user.id } })
     await new PostgresUserRepository(testDb.db).create(user, entry)
@@ -232,17 +287,58 @@ describe('the audit log is append-only and tenant-scoped', () => {
         tx.update(auditLogs).set({ action: 'forged' }).where(eq(auditLogs.id, entry.id))
       )
     ).rejects.toThrow()
-    await expect(
-      withTenant(testDb.db, a.environmentId, (tx) =>
-        tx.delete(auditLogs).where(eq(auditLogs.id, entry.id))
-      )
-    ).rejects.toThrow()
     const { entries } = await new PostgresActivityLog(testDb.db).listAudit(a.environmentId, {
       targetId: user.id,
       page: 1,
       size: 10,
     })
     expect(entries.map((found) => found.type)).toEqual(['user.created'])
+  })
+
+  test('an entry of the last day survives a purge that asks for it, and a direct delete', async () => {
+    const tenant = await createTestTenant(testDb.db)
+    const log = new PostgresActivityLog(testDb.db)
+    const hoursAgo = (hours: number) => new Date(Date.now() - hours * 3_600_000)
+    const fresh = activity(tenant, { occurredAt: hoursAgo(23) })
+    const past = activity(tenant, { occurredAt: hoursAgo(25) })
+    await withTenant(testDb.db, tenant.environmentId, (tx) => recordActivity(tx, [fresh, past]))
+    // A cutoff in the future: a job gone wrong, or anything else running as the runtime role.
+    const tomorrow = new Date(Date.now() + 86_400_000)
+    expect(await log.deleteAuditBefore(tenant.environmentId, tomorrow, 100)).toBe(1)
+    const direct = await withTenant(testDb.db, tenant.environmentId, (tx) =>
+      tx.delete(auditLogs).where(eq(auditLogs.id, fresh.id)).returning()
+    )
+    expect(direct).toEqual([])
+    const { entries } = await log.listAudit(tenant.environmentId, { page: 1, size: 10 })
+    expect(entries.map((entry) => entry.id)).toEqual([fresh.id])
+  })
+
+  test('a purge deletes audit entries only: their outbox events stay', async () => {
+    const tenant = await createTestTenant(testDb.db)
+    const old = activity(tenant, { occurredAt: new Date('2000-06-01T00:00:00.000Z') })
+    await withTenant(testDb.db, tenant.environmentId, (tx) => recordActivity(tx, [old]))
+    const log = new PostgresActivityLog(testDb.db)
+    expect(await log.deleteAuditBefore(tenant.environmentId, new Date('2001-01-01'), 100)).toBe(1)
+    const outbox = await withTenant(testDb.db, tenant.environmentId, (tx) =>
+      tx.select({ id: events.id }).from(events).where(eq(events.id, old.id))
+    )
+    expect(outbox).toEqual([{ id: old.id }])
+  })
+
+  test('a purge for one environment cannot be made to reach another by its arguments', async () => {
+    const [mine, theirs] = [await createTestTenant(testDb.db), await createTestTenant(testDb.db)]
+    const old = activity(theirs, { occurredAt: new Date('2000-06-01T00:00:00.000Z') })
+    await withTenant(testDb.db, theirs.environmentId, (tx) => recordActivity(tx, [old]))
+    // The statement the purge runs, with its own environment filter left out, in A's scope.
+    const reached = await withTenant(testDb.db, mine.environmentId, (tx) =>
+      tx.delete(auditLogs).where(eq(auditLogs.id, old.id)).returning()
+    )
+    expect(reached).toEqual([])
+    const { totalCount } = await new PostgresActivityLog(testDb.db).listAudit(
+      theirs.environmentId,
+      { page: 1, size: 1 }
+    )
+    expect(totalCount).toBe(1)
   })
 
   test('an activity for another environment cannot be written from this one', async () => {

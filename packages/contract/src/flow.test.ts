@@ -2,13 +2,17 @@ import { describe, expect, test } from 'bun:test'
 import {
   EmailLinkRequestSchema,
   EmailLinkResultSchema,
+  EmailVerificationStrategySchema,
   FactorEnrolmentMethodSchema,
   FirstFactorAttemptRequestSchema,
   FirstFactorPrepareRequestSchema,
   FirstFactorStrategySchema,
   FlowAttemptSchema,
   FlowStepSchema,
+  PreparedFirstFactorStrategySchema,
+  PreparedSecondFactorMethodSchema,
   SecondFactorMethodSchema,
+  SecondFactorPrepareRequestSchema,
   SecondFactorRequestSchema,
   SignUpRequestSchema,
   VerifyEmailRequestSchema,
@@ -31,12 +35,32 @@ describe('FlowStep', () => {
       destination: 'm***@northline.app',
       strategies: ['email_code'],
     },
+    {
+      status: 'needs_new_password',
+      destination: 'm***@northline.app',
+      strategies: [],
+      reason: 'expired',
+    },
     { status: 'needs_second_factor', options: ['totp', 'passkey'] },
     { status: 'needs_second_factor', options: ['totp', 'backup_code'] },
     { status: 'needs_factor_enrolment', methods: ['totp'] },
     { status: 'complete', userId: 'u_1', sessionId: 's_1' },
   ])('accepts $status', (step) => {
     expect(FlowStepSchema.parse(step)).toEqual(step as never)
+  })
+
+  test('a new-password step has a code to submit or a reason, never both and never neither', () => {
+    const step = { status: 'needs_new_password', destination: 'm***@northline.app' }
+    for (const refused of [
+      // A reset with no way to get its code.
+      { ...step, strategies: [] },
+      // An expired password that claims a code was sent.
+      { ...step, strategies: ['email_code'], reason: 'expired' },
+      // A reason this version does not know.
+      { ...step, strategies: [], reason: 'compromised' },
+    ]) {
+      expect(FlowStepSchema.safeParse(refused).success).toBe(false)
+    }
   })
 
   test('rejects unknown statuses and empty option lists', () => {
@@ -48,19 +72,53 @@ describe('FlowStep', () => {
       false
     )
     expect(
-      FlowStepSchema.safeParse({ status: 'needs_first_factor', strategies: ['sms_code'] }).success
+      FlowStepSchema.safeParse({ status: 'needs_first_factor', strategies: ['carrier_pigeon'] })
+        .success
     ).toBe(false)
   })
 
-  test('first factors are the password, email, passkeys and the three OAuth providers', () => {
+  test('a texted code is a first factor that is asked for and then proven', () => {
+    expect(PreparedFirstFactorStrategySchema.options).toEqual([
+      'email_code',
+      'email_link',
+      'sms_code',
+    ])
+    const step = {
+      status: 'needs_first_factor',
+      strategies: ['password', 'sms_code'],
+      prepared: { strategy: 'sms_code', destination: '***00' },
+    }
+    const parsed: unknown = FlowStepSchema.parse(step)
+    expect(parsed).toEqual(step)
+    expect(FirstFactorPrepareRequestSchema.safeParse({ strategy: 'sms_code' }).success).toBe(true)
+    expect(
+      FirstFactorAttemptRequestSchema.safeParse({ strategy: 'sms_code', code: '123456' }).success
+    ).toBe(true)
+    for (const code of ['12345', '1234567', 'abcdef', '']) {
+      expect(
+        FirstFactorAttemptRequestSchema.safeParse({ strategy: 'sms_code', code }).success
+      ).toBe(false)
+    }
+    expect(FirstFactorAttemptRequestSchema.safeParse({ strategy: 'sms_code' }).success).toBe(false)
+    // An email address stays what verifies an address: a texted code never does.
+    expect(EmailVerificationStrategySchema.safeParse('sms_code').success).toBe(false)
+  })
+
+  test('first factors are the password, email, passkeys, a texted code and the OAuth providers', () => {
     expect(FirstFactorStrategySchema.options).toEqual([
       'password',
       'email_code',
       'email_link',
       'passkey',
+      'sms_code',
       'oauth_google',
       'oauth_github',
       'oauth_apple',
+      'oauth_microsoft',
+      'oauth_discord',
+      'oauth_linkedin',
+      'oauth_x',
+      'oauth_facebook',
     ])
   })
 
@@ -254,6 +312,7 @@ describe('second factors and enrolment inside an attempt', () => {
     ['a backup code', { method: 'backup_code', code: 'abcde-fghjk' }],
     ['a backup code typed loosely', { method: 'backup_code', code: ' ABCDE FGHJK ' }],
     ['a backup code of 64 characters', { method: 'backup_code', code: 'a'.repeat(64) }],
+    ['a texted code', { method: 'sms_code', code: '012345' }],
   ])('a second-factor request accepts %s', (_, body) => {
     expect(SecondFactorRequestSchema.parse(body)).toEqual(body as never)
   })
@@ -269,10 +328,41 @@ describe('second factors and enrolment inside an attempt', () => {
     ['an empty backup code', { method: 'backup_code', code: '' }],
     ['a backup code of 65 characters', { method: 'backup_code', code: 'a'.repeat(65) }],
     ['a passkey with a code and no assertion', { method: 'passkey', code: '123456' }],
-    ['an SMS code', { method: 'sms_code', code: '123456' }],
+    ['a five-digit texted code', { method: 'sms_code', code: '12345' }],
+    ['a texted code with a letter', { method: 'sms_code', code: '12345a' }],
+    ['a texted-code method with no code', { method: 'sms_code' }],
     ['a password', { method: 'password', password: 'x' }],
   ])('a second-factor request refuses %s', (_, body) => {
     expect(SecondFactorRequestSchema.safeParse(body).success).toBe(false)
+  })
+
+  test('the one second factor whose proof the server sends first is a texted code', () => {
+    expect(PreparedSecondFactorMethodSchema.options).toEqual(['sms_code'])
+    expect(SecondFactorPrepareRequestSchema.parse({ method: 'sms_code' })).toEqual({
+      method: 'sms_code',
+    })
+    for (const body of [
+      {},
+      { method: 'totp' },
+      { method: 'backup_code' },
+      { method: 'email_code' },
+    ]) {
+      expect(SecondFactorPrepareRequestSchema.safeParse(body).success).toBe(false)
+    }
+  })
+
+  test('a second-factor step says where a code was texted, once one was asked for', () => {
+    const waiting = { status: 'needs_second_factor', options: ['sms_code'] }
+    expect(FlowStepSchema.parse(waiting)).toEqual(waiting as never)
+    const prepared = { ...waiting, prepared: { method: 'sms_code', destination: '***42' } }
+    expect(FlowStepSchema.parse(prepared)).toEqual(prepared as never)
+    expect(
+      FlowStepSchema.safeParse({ ...waiting, prepared: { method: 'totp', destination: 'x' } })
+        .success
+    ).toBe(false)
+    expect(FlowStepSchema.safeParse({ ...waiting, prepared: { method: 'sms_code' } }).success).toBe(
+      false
+    )
   })
 
   test('a completed attempt may carry the backup codes, or how many are left', () => {

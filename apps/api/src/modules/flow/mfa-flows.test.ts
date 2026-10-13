@@ -25,6 +25,7 @@ import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
 import { CREDENTIAL_LOCKOUT } from '~/ports/lockout'
 import { createTestDeps, TEST_ACTOR, TEST_TENANT, type TestDeps } from '~/testing'
+import { comparable } from '~/testing/comparable'
 
 const tenant: Tenant = {
   projectId: TEST_TENANT.projectId,
@@ -80,7 +81,7 @@ function configure(switches: Switches = {}, target: Tenant = tenant) {
       },
       urls: { allowedOrigins: [], allowedRedirectUrls: [REDIRECT] },
       signUp: { password: switches.signUpPassword ?? 'required' },
-      mfa: { policy: switches.policy ?? 'optional' },
+      mfa: { policy: switches.policy ?? 'optional', smsCode: { enabled: false } },
     },
   })
 }
@@ -762,8 +763,12 @@ describe('what an issued token says was proven (amr)', () => {
     const claims = await verifyAccessToken(deps, done.tokens?.accessToken as string, tenant)
     expect(claims.auth_time).toBe(Math.floor(deps.clock.now().getTime() / 1000))
     expect(
-      await deps.sessions.findById(tenant.environmentId, done.tokens?.sessionId as string)
-    ).toMatchObject({ userId, authMethods: ['pwd'], factorVerifiedAt: deps.clock.now() })
+      comparable(
+        await deps.sessions.findById(tenant.environmentId, done.tokens?.sessionId as string)
+      )
+    ).toMatchObject(
+      comparable({ userId, authMethods: ['pwd'], factorVerifiedAt: deps.clock.now() })
+    )
   })
 
   test('a password and an authenticator code: pwd, otp, mfa', async () => {
@@ -900,6 +905,7 @@ describe('enrolment inside an attempt, where the environment requires a second f
       expect(await Mfa.status(deps, tenant, userId)).toMatchObject({
         totp: { enabled: true },
         backupCodes: { remaining: 10 },
+        sms: { enabled: false, enabledAt: null, inUse: false, available: false },
       })
       expect(deps.activityLog.ofType('user.mfa_enabled')).toEqual([
         expect.objectContaining({
@@ -1197,6 +1203,7 @@ describe('enrolment inside an attempt, where the environment requires a second f
     expect(await Mfa.status(deps, tenant, userId)).toMatchObject({
       totp: { enabled: true },
       backupCodes: { remaining: 10 },
+      sms: { enabled: false, enabledAt: null, inUse: false, available: false },
     })
     expect(await Mfa.verifyTotp(deps, tenant, userId, codeFor(later?.secret as string))).toBe(true)
     expect(
@@ -1220,6 +1227,7 @@ describe('enrolment inside an attempt, where the environment requires a second f
     expect(await Mfa.status(deps, tenant, userId)).toEqual({
       totp: { enabled: false, confirmedAt: null },
       backupCodes: { remaining: 0 },
+      sms: { enabled: false, enabledAt: null, inUse: false, available: false },
     })
     expect(await deps.factors.findTotp(tenant.environmentId, userId)).toBeNull()
     expect(deps.mailer.outbox.filter((mail) => mail.subject.includes('turned on'))).toEqual([])

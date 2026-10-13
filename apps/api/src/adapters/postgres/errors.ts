@@ -22,3 +22,19 @@ export function isUniqueViolation(error: unknown): boolean {
   }
   return false
 }
+
+/**
+ * Whether an error is a Postgres foreign-key violation, raw (pg / PGlite) or wrapped by Drizzle
+ * in `cause`: the row a new row points at is not there (any more).
+ *
+ * @param error - The caught error.
+ * @returns `true` for SQLSTATE 23503 anywhere in the cause chain.
+ */
+export function isForeignKeyViolation(error: unknown): boolean {
+  for (let current = error; current instanceof Object; current = (current as Error).cause) {
+    if ((current as { code?: unknown }).code === '23503') {
+      return true
+    }
+  }
+  return false
+}

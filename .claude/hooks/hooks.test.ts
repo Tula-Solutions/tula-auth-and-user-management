@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { existsSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { KOTLIN_DIRECTORY, SWIFT_DIRECTORY } from '../../packages/core/scripts/native/index'
 
 const root = join(import.meta.dir, '..', '..')
 
@@ -48,6 +49,7 @@ describe('protect-files.sh', () => {
   test.each([
     'packages/contract/openapi.json',
     'conformance/scenario.schema.json',
+    'conformance/client-journeys.schema.json',
     'apps/api/src/routeTree.gen.ts',
     'apps/dashboard/src/components/ui/button.tsx',
     'bun.lock',
@@ -72,6 +74,31 @@ describe('protect-files.sh', () => {
       expect(protect(path)).toBe(2)
     }
   )
+
+  // The two directories the native generator owns (ADR 0050), by the generator's own
+  // constants: a directory that moves there and not in the hook fails here.
+  test.each([
+    `${SWIFT_DIRECTORY}/Schemas.swift`,
+    `${SWIFT_DIRECTORY}/NotGeneratedYet.swift`,
+    `${KOTLIN_DIRECTORY}/Schemas.kt`,
+    `${KOTLIN_DIRECTORY}/Theme.kt`,
+    `native/swift/Sources/x/../${SWIFT_DIRECTORY.slice('native/swift/Sources/'.length)}/Theme.swift`,
+  ])('blocks a generated native source: %s', (path) => {
+    expect(protect(join(root, path))).toBe(2)
+    expect(protect(path)).toBe(2)
+  })
+
+  test.each([
+    'native/swift/Package.swift',
+    'native/swift/Tests/TulaAuthTests/GeneratedTypesTests.swift',
+    // Hand-written sources of the same target and of the same Kotlin module, beside the
+    // generated directory, are the SDK's own.
+    `${dirname(SWIFT_DIRECTORY)}/Client.swift`,
+    `${dirname(KOTLIN_DIRECTORY)}/Client.kt`,
+    'packages/core/scripts/native/swift.ts',
+  ])('allows a hand-written native source: %s', (path) => {
+    expect(protect(join(root, path))).toBe(0)
+  })
 })
 
 describe('.husky/commit-msg', () => {
@@ -155,6 +182,87 @@ describe('workspace packages', () => {
     async (script) => {
       const pkg = await Bun.file(join(root, 'apps/dashboard/package.json')).json()
       expect(pkg.scripts[script]).toMatch(/^bun test (.* )?--timeout 30000( |$)/)
+    }
+  )
+
+  // The shared SDK journeys run the real API in process (Argon2 and all) and are called from
+  // two packages. apps/api runs its tests with a 20 s limit; packages/expo has Bun's five, and
+  // a journey that takes 0.6 s there took 5016 ms on a busy CI runner. The suite therefore
+  // sets its own limit, for its own file only, and it is the API package's.
+  /**
+   * What is wrong with the journeys' timeout: the constant, the call that applies it and the
+   * API package's own flag must say the same number. A call that is only mentioned in a comment
+   * and a flag that merely starts with the number (`--timeout 200000`) do not count.
+   */
+  function journeyTimeoutProblems(source: string, scripts: Record<string, string | undefined>) {
+    const problems: string[] = []
+    const declared = /^export const JOURNEY_TIMEOUT_MS = ([\d_]+)$/m.exec(source)?.[1]
+    if (declared === undefined) {
+      return ['JOURNEY_TIMEOUT_MS is not declared']
+    }
+    const limit = Number(declared.replaceAll('_', ''))
+    const body = source.slice(source.indexOf('export function sdkJourneys('))
+    if (!/^\s*setDefaultTimeout\(JOURNEY_TIMEOUT_MS\)$/m.test(body)) {
+      problems.push('sdkJourneys does not call setDefaultTimeout(JOURNEY_TIMEOUT_MS)')
+    }
+    for (const [name, command] of Object.entries(scripts)) {
+      if (!new RegExp(`(^| )--timeout ${limit}( |$)`).test(command ?? '')) {
+        problems.push(`${name} does not pass --timeout ${limit}`)
+      }
+    }
+    return problems
+  }
+
+  const journeys = [
+    'export const JOURNEY_TIMEOUT_MS = 20_000',
+    'export function sdkJourneys(target: JourneyTarget): JourneyKit {',
+    '  setDefaultTimeout(JOURNEY_TIMEOUT_MS)',
+    '}',
+  ].join('\n')
+
+  test('the shared SDK journeys set the test timeout of apps/api wherever they run', async () => {
+    const source = await Bun.file(join(root, 'apps/api/src/testing/sdk-journeys.ts')).text()
+    const pkg = await Bun.file(join(root, 'apps/api/package.json')).json()
+    const scripts = { test: pkg.scripts.test, 'test:coverage': pkg.scripts['test:coverage'] }
+    expect(journeyTimeoutProblems(source, scripts)).toEqual([])
+  })
+
+  test('the journeys’ timeout check passes for the constant, its call and the same flag', () => {
+    expect(journeyTimeoutProblems(journeys, { test: 'bun test --timeout 20000' })).toEqual([])
+    expect(journeyTimeoutProblems(journeys, { test: 'bun test --timeout 20000 --bail' })).toEqual(
+      []
+    )
+  })
+
+  test.each([
+    [
+      'a call that is only in a comment',
+      journeys.replace('  set', '  // set'),
+      'bun test --timeout 20000',
+    ],
+    [
+      'a call on a line that does something else',
+      journeys.replace('  set', '  void 0, set'),
+      'bun test --timeout 20000',
+    ],
+    ['a flag that only starts with the number', journeys, 'bun test --timeout 200000'],
+    ['no flag', journeys, 'bun test'],
+    [
+      'no constant',
+      journeys.replace('JOURNEY_TIMEOUT_MS =', 'OTHER ='),
+      'bun test --timeout 20000',
+    ],
+  ])('the journeys’ timeout check fails for %s', (_name, source, command) => {
+    expect(journeyTimeoutProblems(source, { test: command })).not.toEqual([])
+  })
+
+  // The journeys bring their limit to the file that calls them, so a package never needs a
+  // flag for them; one on packages/expo would also cover tests that spawn nothing.
+  test.each(['test', 'test:coverage'])(
+    'packages/expo passes no --timeout in `%s`',
+    async (script) => {
+      const pkg = await Bun.file(join(root, 'packages/expo/package.json')).json()
+      expect(pkg.scripts[script]).not.toContain('--timeout')
     }
   )
 })

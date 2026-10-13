@@ -14,7 +14,7 @@ rotating refresh token, 7 days idle and 30 days in all.
 
 | Where | How |
 | --- | --- |
-| Dashboard | **Session profiles**: lifetimes per profile, custom profiles, the concurrent-session limit. A user's page: revoke one session or all. |
+| Dashboard | **Session profiles**: lifetimes per profile, custom profiles, JWT templates, the concurrent-session limit. A user's page: revoke one session or all. |
 | `tula.config.ts` | `sessions`. |
 | Admin API | `PUT /v1/admin/settings`; `DELETE /v1/admin/users/<id>/sessions`; `POST /v1/admin/sessions/verify` for a stateful cookie. |
 
@@ -67,10 +67,16 @@ await admin.call('revokeUserSessions', { params: { userId } })
 
 - A browser gets the `web` profile, every other client `mobile`. A client may ask for another
   profile and gets it only if the environment marks it `clientSelectable`.
+- **`deviceBinding`** (`none`, `optional`, `required`): whether a native app's session may, or
+  must, be bound to a device key ([device binding](../device-binding.md)). Browsers are never
+  affected, and a change applies to new sign-ins only.
 - **`type: 'hybrid'`** (default): a short access token verified offline, and a refresh token.
 - **`type: 'stateful'`** (browsers only): one httpOnly cookie and no token; every request is
   checked against the database, so a sign-out elsewhere takes effect on the very next request.
   It costs a database read per request.
+- **`jwtTemplate`** names the [JWT template](../jwt-templates.md) whose custom claims the
+  profile's sessions carry under the `ext` claim (`auth().customClaims` in `@tula/nextjs`).
+  None by default.
 - **`maxPerUser`** with `onLimit: 'end_oldest'` (default) lets the new device in and ends the
   oldest session; `'refuse_newest'` refuses the new sign-in.
 
@@ -92,6 +98,10 @@ Each field's range is in [self-host.md](../self-host.md#sessions).
 - A refresh token is single use and rotates; presenting a used one ends the whole session
   family (`session.reuse_detected`). The one exception is the profile's grace window (10
   seconds by default): a token re-presented within it gets the same successor, never a new one.
+- A client that is not a browser can bind its session to a key the device holds: every
+  refresh then needs a proof signed by that key, a copied refresh token is of no use
+  without it, and a refresh refused for its proof ends nothing
+  ([device-binding.md](../device-binding.md)).
 - Access tokens are EdDSA JWTs issued per environment; keys are published at the issuer's
   `/.well-known/jwks.json`. A revoked session's token is refused by the API at once (a shared
   denylist), but **your own backend, verifying offline, accepts it until it expires**: keep
@@ -150,7 +160,9 @@ export default async function Dashboard() {
   const user = await currentUser()
   return (
     <section className='panel' aria-labelledby='dashboard-title'>
-      <h1 id='dashboard-title'>Hello{user ? `, ${user.firstName ?? user.email}` : ''}</h1>
+      <h1 id='dashboard-title'>
+        Hello{user ? `, ${user.firstName ?? user.email ?? 'there'}` : ''}
+      </h1>
       <p>This page was rendered on the server, which verified your session offline.</p>
       <dl className='facts'>
         <dt>Email</dt>
@@ -241,8 +253,114 @@ const backOffice = createTulaClient({
 ```
 <!-- /snippet -->
 
+`@tula/expo` keeps the refresh token in the device's secure store and nowhere else
+([expo.md](../expo.md#where-the-tokens-are)). The example app's signed-in screen:
+
+<!-- snippet: examples/expo/app/src/screens.tsx#signed-in -->
+```tsx
+/**
+ * Who is signed in, the devices the account is signed in on, and the way out. Signing out
+ * is the app's to do (`App.tsx`): this screen is gone the moment the app is signed out,
+ * so it could not say that the server was not told.
+ */
+export function HomeScreen(props: { onSignOut(): void }) {
+  const { user } = useUser()
+  const { sessions, sessionId } = useSession()
+
+  return (
+    <Screen title='Signed in'>
+      <Note>{user?.email ?? 'Loading your account…'}</Note>
+      {sessions?.map((session) => (
+        <Note key={session.id}>
+          {session.id === sessionId ? 'This device' : 'Another device'}, signed in{' '}
+          {new Date(session.createdAt).toLocaleString()}
+          {/* What the server knows: a key signed for the session. Not whose hands it is in. */}
+          {session.deviceBound ? ', bound to a device key' : ''}
+        </Note>
+      ))}
+      <PasskeySection />
+      <Action label='Sign out' onPress={props.onSignOut} />
+    </Screen>
+  )
+}
+```
+<!-- /snippet -->
+
+The Swift client ([swift.md](../swift.md)) keeps the refresh token in its token storage
+(the Keychain by default) and the access token in memory:
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#session -->
+```swift
+_ = try await tula.session.load()  // reads the Keychain, once
+for await state in await tula.session.updates() {
+    switch state {
+    case .loading: break  // not known yet
+    case .signedOut: App.showSignIn()
+    case .signedIn(_, let user): App.showApp(user)
+    }
+}
+```
+<!-- /snippet -->
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#token -->
+```swift
+// The access token for a request to your own backend: refreshed first when it is
+// about to expire, `nil` when nobody is signed in.
+let token = try await tula.session.getToken()
+```
+<!-- /snippet -->
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#sign-out -->
+```swift
+do {
+    try await tula.session.signOut()
+} catch {
+    // Signed out here, but the server could not be told: the session may live on there.
+}
+```
+<!-- /snippet -->
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#sessions -->
+```swift
+let sessions = try await tula.session.list()  // every session of the signed-in user
+try await tula.session.revoke(other)  // one of them, by its id
+let ended = try await tula.session.revokeOthers()  // all but this one; how many ended
+```
+<!-- /snippet -->
+
+The Kotlin client ([kotlin.md](../kotlin.md)) has no default storage: the app passes one.
+
+<!-- snippet: native/android/tula-auth/src/test/kotlin/dev/tula/auth/DocsSnippets.kt#client -->
+```kotlin
+// `storage` is where the refresh token is kept: on Android,
+// KeystoreTokenStorage(applicationContext) from the module tula-auth-android.
+val tula = TulaClient(
+    publishableKey = "tula_pk_…",
+    baseUrl = "https://auth.example.com",
+    storage = storage,
+)
+
+// Once, at start: restores the session the storage holds.
+when (val state = tula.load()) {
+    AuthState.Loading -> Unit // the storage could not be read: not known yet
+    AuthState.SignedOut -> App.showSignIn()
+    is AuthState.SignedIn -> App.showApp(state)
+}
+```
+<!-- /snippet -->
+
+<!-- snippet: native/android/tula-auth/src/test/kotlin/dev/tula/auth/DocsSnippets.kt#session -->
+```kotlin
+val token = tula.session.getToken() // refreshed first when it is about to expire
+App.callBackend(token)
+tula.session.signOut() // throws when the server could not be told
+```
+<!-- /snippet -->
+
 Reference: [`@tula/nextjs`](../reference/nextjs.md), [`@tula/core`](../reference/core.md),
-[`@tula/react`](../reference/react.md).
+[`@tula/react`](../reference/react.md), [`@tula/expo`](../reference/expo.md).
+
+Native: [Swift](../reference/swift.md), [Kotlin](../reference/kotlin.md).
 
 ## Troubleshooting
 

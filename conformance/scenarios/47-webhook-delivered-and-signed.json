@@ -1,0 +1,287 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "webhook delivered and signed",
+  "description": "An operator registers an endpoint for an environment: the server generates the signing secret and returns it once, never again. When a user is created, the event is posted to the endpoint with the Standard Webhooks headers, signed with that secret, and its body is the typed event. The registration is in the audit log without the endpoint's address or its secret. Needs a receiver the server can reach.",
+  "needsSecretKey": true,
+  "needsWebhookReceiver": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    }
+  },
+  "steps": [
+    {
+      "name": "start a receiver",
+      "webhook": {
+        "receiver": "backend",
+        "captureUrl": "receiverUrl"
+      }
+    },
+    {
+      "name": "registering an endpoint takes a secret key",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/webhook-endpoints",
+        "body": {
+          "url": "{{receiverUrl}}",
+          "eventTypes": ["user.created"]
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "auth.invalid_key"
+        }
+      }
+    },
+    {
+      "name": "the caller cannot choose the secret",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/webhook-endpoints",
+        "auth": "secret",
+        "body": {
+          "url": "{{receiverUrl}}",
+          "eventTypes": ["user.created"],
+          "secret": "whsec_YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE="
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "validation.failed"
+        }
+      }
+    },
+    {
+      "name": "register the receiver for user.created: the secret is in this answer",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/webhook-endpoints",
+        "auth": "secret",
+        "body": {
+          "url": "{{receiverUrl}}",
+          "eventTypes": ["user.created"]
+        }
+      },
+      "expect": {
+        "status": 201,
+        "headers": {
+          "cache-control": "no-store"
+        },
+        "body": {
+          "id": "$any",
+          "url": "{{receiverUrl}}",
+          "eventTypes": ["user.created"],
+          "enabled": true,
+          "secret": {
+            "$matches": "^whsec_[A-Za-z0-9+/]{43}=$"
+          },
+          "createdAt": "$any"
+        }
+      },
+      "capture": {
+        "endpointId": "id",
+        "secret": "secret"
+      }
+    },
+    {
+      "name": "reading the endpoint does not return the secret",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/webhook-endpoints/{{endpointId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{endpointId}}",
+          "url": "{{receiverUrl}}",
+          "enabled": true,
+          "secret": "$absent"
+        },
+        "bodyExcludes": ["{{secret}}"]
+      }
+    },
+    {
+      "name": "nor does the list",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/webhook-endpoints",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "bodyExcludes": ["{{secret}}", "whsec_"]
+      }
+    },
+    {
+      "name": "something happens: an admin creates a user",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users",
+        "auth": "secret",
+        "body": {
+          "email": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "userId": "id"
+      }
+    },
+    {
+      "name": "the event arrives at the receiver, signed with the endpoint's secret",
+      "webhook": {
+        "receiver": "backend",
+        "expect": {
+          "secret": "{{secret}}",
+          "type": "user.created",
+          "body": {
+            "id": "$any",
+            "type": "user.created",
+            "schemaVersion": 1,
+            "occurredAt": "$any",
+            "actor": {
+              "type": "admin",
+              "id": "$any"
+            },
+            "target": {
+              "type": "user",
+              "id": "{{userId}}"
+            },
+            "data": {
+              "method": "admin",
+              "emailVerified": false
+            }
+          },
+          "captureId": "eventId"
+        }
+      }
+    },
+    {
+      "name": "the delivered event is the user's audit entry, by id",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?targetId={{userId}}&action=user.created",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1
+          },
+          "data": [
+            {
+              "id": "{{eventId}}",
+              "action": "user.created"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "the registration is in the audit log, without the address or the secret",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?targetId={{endpointId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1
+          },
+          "data": [
+            {
+              "action": "webhook_endpoint.created",
+              "target": {
+                "type": "webhook_endpoint",
+                "id": "{{endpointId}}"
+              },
+              "metadata": {
+                "eventTypes": 1,
+                "enabled": true
+              }
+            }
+          ]
+        },
+        "bodyExcludes": ["{{secret}}", "{{receiverUrl}}", "whsec_"]
+      }
+    },
+    {
+      "name": "switch the endpoint off: the change names the field, never a value",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/webhook-endpoints/{{endpointId}}",
+        "auth": "secret",
+        "body": {
+          "enabled": false
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{endpointId}}",
+          "enabled": false,
+          "secret": "$absent"
+        }
+      }
+    },
+    {
+      "name": "the change is recorded by field name",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?targetId={{endpointId}}&action=webhook_endpoint.updated",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1
+          },
+          "data": [
+            {
+              "metadata": {
+                "changed": ["enabled"]
+              }
+            }
+          ]
+        },
+        "bodyExcludes": ["{{secret}}", "{{receiverUrl}}"]
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "remove the endpoint",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/webhook-endpoints/{{endpointId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "it is gone",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/webhook-endpoints/{{endpointId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 404
+      }
+    }
+  ]
+}

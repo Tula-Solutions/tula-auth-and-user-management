@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { requestId } from 'hono/request-id'
 import { secureHeaders } from 'hono/secure-headers'
-import { openAPIRouteHandler } from 'hono-openapi'
+import { generateSpecs } from 'hono-openapi'
 import type { AppEnv, Deps } from '~/dependencies'
 import { ServiceException } from '~/exceptions'
 import { notFound, onError } from '~/handlers'
@@ -11,7 +11,7 @@ import { DASHBOARD_PATH, dashboardRouter, dashboardSecurityHeaders } from '~/lib
 import { cors } from '~/middleware/cors'
 import { clientRateLimit } from '~/middleware/rate-limit'
 import { requestLog } from '~/middleware/request-log'
-import { documentation } from '~/openapi'
+import { documentAgentReads, documentation, eventSchemas, hookSchemas } from '~/openapi'
 
 /**
  * Largest request body the API reads. Auth payloads are a few hundred bytes; the cap stops a
@@ -38,6 +38,15 @@ const routes: ReadonlyArray<readonly [path: string, router: Hono<AppEnv>]> = [
   ['/v1', (await import('~/modules/settings/router')).default],
   ['/v1', (await import('~/modules/oauth/router')).default],
   ['/v1', (await import('~/modules/passkey/router')).default],
+  ['/v1', (await import('~/modules/phone/router')).default],
+  ['/v1', (await import('~/modules/email-address/router')).default],
+  ['/v1/admin/webhook-endpoints', (await import('~/modules/webhook/router')).default],
+  ['/v1/admin/hooks', (await import('~/modules/hook/router')).default],
+  ['/v1', (await import('~/modules/native-app/router')).default],
+  ['/v1/admin/sms', (await import('~/modules/sms/router')).default],
+  ['/v1/admin/message-preview', (await import('~/modules/message-preview/router')).default],
+  ['/v1', (await import('~/modules/proposal/router')).default],
+  ['/v1', (await import('~/modules/sign-in-test/router')).default],
   ['/v1/instance', (await import('~/modules/instance/router')).default],
   ['/v1/instance', (await import('~/modules/control-plane/router')).default],
 ]
@@ -45,6 +54,10 @@ const routes: ReadonlyArray<readonly [path: string, router: Hono<AppEnv>]> = [
 // Mounted only where the deployment runs the mock OAuth provider (`ENVIRONMENT=local` with
 // `OAUTH_MOCK_PROVIDER=true`): in every other deployment the paths do not exist.
 const devOAuthRouter = (await import('~/modules/oauth/dev-router')).default
+
+// Mounted only where the deployment has the development SMS inbox (`ENVIRONMENT=local` with
+// `SMS_PROVIDER=dev`): in every other deployment the path does not exist.
+const devSmsRouter = (await import('~/modules/sms/dev-router')).default
 
 // Looked up once: where the reference's bundle is in the installed package, if it is.
 const docsBundle = findApiDocsBundle()
@@ -107,14 +120,35 @@ export function createApp(deps: Deps): Hono<AppEnv> {
   if (deps.config.oauthMock && deps.config.tier === 'local') {
     app.route('/v1/dev/oauth', devOAuthRouter)
   }
+  if (deps.smsInbox !== null && deps.config.tier === 'local') {
+    app.route('/v1/dev/sms', devSmsRouter)
+  }
 
-  app.get(
-    OPENAPI_PATH,
-    openAPIRouteHandler(app, {
-      documentation,
+  // Built on the first request and kept: the routes, and beside them the schemas no route
+  // refers to (the event payloads a webhook delivers, `eventSchemas`; the question and the
+  // answer of a hook, `hookSchemas`). A failed build is not
+  // kept, so the next request tries again.
+  let specs: Awaited<ReturnType<typeof generateSpecs>> | undefined
+  app.get(OPENAPI_PATH, async (c) => {
+    specs ??= await documented()
+    return c.json(specs)
+  })
+  async function documented() {
+    const built = await generateSpecs(app, {
+      documentation: {
+        ...documentation,
+        components: {
+          ...documentation?.components,
+          schemas: { ...(await eventSchemas()), ...(await hookSchemas()) },
+        },
+      },
       exclude: [OPENAPI_PATH, new RegExp(`^${API_DOCS_PATH}(/|$)`)],
     })
-  )
+    // What an agent key opens is decided by method in `secretKey()`; the document says it
+    // the same way, for every admin read at once.
+    documentAgentReads((built.paths ?? {}) as Parameters<typeof documentAgentReads>[0])
+    return built
+  }
   // The API reference: only where `API_DOCS` is on (by default, the `local` and `dev` tiers),
   // and only from the installed package. Nothing of it is loaded from another host (ADR 0032).
   if (deps.config.apiDocs && docsBundle !== null) {

@@ -6,6 +6,7 @@ export {
   IdentityListSchema,
   IdentitySchema,
   OAuthExchangeRequestSchema,
+  OAuthProviderDependentsSchema,
   OAuthProviderSettingsListSchema,
   OAuthProviderSettingsSchema,
   OAuthProviderUpdateSchema,

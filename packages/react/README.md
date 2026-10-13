@@ -87,6 +87,14 @@ ways to sign in"; choosing "Email me a code" or "Email me a link" sends the emai
 password?" runs the reset in the same card (email → code and new password together → signed
 in).
 
+Where the environment signs in with a texted code (`smsCode` in its client configuration;
+off by default), the first field reads "Email address or phone number". A number, typed
+with its country code, leads to "Text me a code": nothing is sent before that button is
+pressed, and the next screen takes the code. The screens are the same for a number no
+account can sign in with, so their words never say that a message was sent. A version of
+this package from before the method leaves the strategy out, as it does any it has no form
+for. See [Texted code](../../docs/methods/sms-code.md).
+
 | Prop | |
 | --- | --- |
 | `signUpUrl`, `onSwitchToSignUp` | Shows "New here? Create an account" as a link, or calls you instead. |
@@ -115,7 +123,7 @@ page, `useEmailLinkCallback()` returns `{ status, error }` with the same outcome
 A link works only in the browser that asked for it, by design: someone who types another
 person's address must not be signed in because that person clicked the genuine email.
 
-### Signing in with Google, GitHub or Apple
+### Signing in with Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X or Facebook
 
 `<SignIn>` and `<SignUp>` draw a "Continue with …" button for every OAuth provider the
 environment has enabled (`GET /v1/client/config` → `signIn.oauth`), once the app says where the
@@ -142,10 +150,27 @@ browser, an account now connected). `useOAuthCallback()` returns the same as
 to sign in.
 
 The buttons are neutral, themeable buttons with each provider's mark and name. They follow the
-providers' basic rules (Google's "G" in its own colours, GitHub's and Apple's marks in the text
-colour, "Continue with …") but are **not the providers' own button artwork**: check Google's
-and Apple's branding guidelines against your theme before you ship, and remember that App Store
+providers' basic rules (Google's "G", Microsoft's four squares, Discord's mark and LinkedIn's
+"in" in their own colours, GitHub's and Apple's marks in the text colour, "Continue with …")
+but are **not the
+providers' own button artwork**: check Google's, Apple's and Microsoft's branding guidelines
+against your theme before you ship (Microsoft's own button says "Sign in with Microsoft" in
+a fixed size, font and colours), and remember that App Store
 Review requires an iOS app that offers another social sign-in to offer Sign in with Apple.
+**Discord's and LinkedIn's marks were drawn without their brand pages open**: their shapes,
+their colours (`#5865F2`, `#0A66C2`) and the clear space around them were not checked against
+either company's brand guidelines. Check both before you ship. The same holds for **X's mark**
+(in the text colour) **and Facebook's** (`#0866FF`): neither was checked against X's or
+Meta's brand guidelines.
+
+**A user who signed up with X or Facebook has no email address**: `useUser().user.email` is
+`null`, and `<UserButton>` and `<UserProfile>` draw the name instead, with no address line
+and no password section. Code of your own that reads `user.email` has to allow for `null`.
+For such a user `<UserProfile>` has an "Email address" section: they type an address, are
+emailed a code and confirm it, and the address is then the account's, verified. An address
+another account holds gets the same screen and is sent no code. A user who signed in more
+than ten minutes ago, with no passkey and no authenticator app, is told to sign out and
+sign in again first. The section never changes an address an account has.
 
 ### Passkeys
 
@@ -196,8 +221,9 @@ be active on this device, with "Try again". The same holds for `<UserProfile>`.
 
 ### `<UserProfile>`
 
-Profile, change password (other devices are signed out), two-step verification, "Where you're
-signed in" with this device marked, sign out one device or all the others, sign out. Props:
+Profile, change password (other devices are signed out), phone number (where the environment
+sends text messages: add one with a texted code, change it, remove it), two-step verification,
+"Where you're signed in" with this device marked, sign out one device or all the others, sign out. Props:
 `afterSignOutUrl`, `appearance`, `headingLevel`.
 
 ## Two-step verification

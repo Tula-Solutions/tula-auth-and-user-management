@@ -129,6 +129,82 @@ export function GoogleMark() {
   )
 }
 
+/**
+ * Microsoft's logo: four squares in the colours its branding guidelines give, which are the
+ * mark's own and so not theme tokens (as Google's are not). Drawn here, never fetched.
+ */
+export function MicrosoftMark() {
+  return (
+    <Mark viewBox='0 0 21 21'>
+      <path fill='#F25022' d='M0 0h10v10H0z' />
+      <path fill='#7FBA00' d='M11 0h10v10H11z' />
+      <path fill='#00A4EF' d='M0 11h10v10H0z' />
+      <path fill='#FFB900' d='M11 11h10v10H11z' />
+    </Mark>
+  )
+}
+
+/**
+ * Discord's mark (the controller-shaped face) in its "blurple", the mark's own colour and so
+ * not a theme token (as Google's are not). Drawn here, never fetched.
+ */
+export function DiscordMark() {
+  return (
+    <Mark viewBox='0 0 24 24'>
+      <path
+        fill='#5865F2'
+        d='M20.317 4.37a19.79 19.79 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.865-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.74 19.74 0 0 0 3.677 4.37a.07.07 0 0 0-.032.028C.533 9.046-.32 13.58.099 18.058a.082.082 0 0 0 .031.056 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.873-1.295 1.226-1.994a.076.076 0 0 0-.042-.106 13.1 13.1 0 0 1-1.872-.892.077.077 0 0 1-.008-.128c.126-.094.252-.192.372-.291a.074.074 0 0 1 .078-.01c3.928 1.793 8.18 1.793 12.061 0a.074.074 0 0 1 .079.009c.12.099.246.198.373.292a.077.077 0 0 1-.007.128 12.3 12.3 0 0 1-1.873.891.077.077 0 0 0-.041.107c.36.698.772 1.363 1.225 1.993a.076.076 0 0 0 .084.029 19.84 19.84 0 0 0 6.002-3.03.077.077 0 0 0 .032-.055c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.029zM8.02 15.331c-1.183 0-2.157-1.086-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.211 0 2.176 1.095 2.157 2.419 0 1.333-.956 2.419-2.157 2.419zm7.975 0c-1.183 0-2.157-1.086-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.211 0 2.176 1.095 2.157 2.419 0 1.333-.946 2.419-2.157 2.419z'
+      />
+    </Mark>
+  )
+}
+
+/**
+ * LinkedIn's mark (the "in" in a rounded square) in its blue, the mark's own colour and so
+ * not a theme token (as Google's are not). Drawn here, never fetched.
+ */
+export function LinkedInMark() {
+  return (
+    <Mark viewBox='0 0 24 24'>
+      <path
+        fill='#0A66C2'
+        d='M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z'
+      />
+    </Mark>
+  )
+}
+
+/**
+ * X's mark, in the button's text colour (black on light, white on dark). Drawn here, never
+ * fetched. Not checked against X's brand page: see `<OAuthButtons>`.
+ */
+export function XMark() {
+  return (
+    <Mark viewBox='0 0 24 24'>
+      <path
+        fill='currentColor'
+        d='M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z'
+      />
+    </Mark>
+  )
+}
+
+/**
+ * Facebook's mark (the "f" in a circle) in its blue, the mark's own colour and so not a
+ * theme token (as Google's are not). Drawn here, never fetched. Not checked against Meta's
+ * brand page: see `<OAuthButtons>`.
+ */
+export function FacebookMark() {
+  return (
+    <Mark viewBox='0 0 24 24'>
+      <path
+        fill='#0866FF'
+        d='M9.101 23.691v-7.98H6.627v-3.667h2.474v-1.58c0-4.085 1.848-5.978 5.858-5.978.401 0 .955.042 1.468.103a8.68 8.68 0 0 1 1.141.195v3.325a8.623 8.623 0 0 0-.653-.036 26.805 26.805 0 0 0-.733-.009c-.707 0-1.259.096-1.675.309a1.686 1.686 0 0 0-.679.622c-.258.42-.374.995-.374 1.752v1.297h3.919l-.386 2.103-.287 1.564h-3.246v8.245C19.396 23.238 24 18.179 24 12.044c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.628 3.874 10.35 9.101 11.647Z'
+      />
+    </Mark>
+  )
+}
+
 /** GitHub's mark, in the button's text colour (black on light, white on dark, as GitHub asks). */
 export function GitHubMark() {
   return (

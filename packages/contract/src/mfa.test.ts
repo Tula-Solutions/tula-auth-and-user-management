@@ -4,6 +4,8 @@ import {
   BACKUP_CODE_COUNT,
   BackupCodesSchema,
   FactorsSchema,
+  SmsFactorCodeSchema,
+  SmsFactorConfirmRequestSchema,
   StepUpEmailCodeSchema,
   StepUpMethodSchema,
   StepUpRequestSchema,
@@ -104,14 +106,16 @@ describe('TotpConfirmRequest', () => {
 })
 
 describe('StepUpRequest', () => {
-  test('the methods are the password, an authenticator code, a backup code and an emailed code', () => {
-    // Additive: `email_code` and `passkey` came after the first three, whose order is kept.
+  test('the methods are the password, an authenticator code, a backup code, an emailed code, a passkey and a texted code', () => {
+    // Additive: `email_code`, `passkey` and `sms_code` came after the first three, whose
+    // order is kept.
     expect(StepUpMethodSchema.options).toEqual([
       'password',
       'totp',
       'backup_code',
       'email_code',
       'passkey',
+      'sms_code',
     ])
   })
 
@@ -128,6 +132,7 @@ describe('StepUpRequest', () => {
       { method: 'backup_code', code: ' ABCDE FGHJK ' },
     ],
     ['an emailed code', { method: 'email_code', code: '012345' }],
+    ['a texted code', { method: 'sms_code', code: '012345' }],
   ])('accepts %s', (_, proof) => {
     expect(StepUpRequestSchema.parse(proof)).toEqual(proof as never)
   })
@@ -143,7 +148,9 @@ describe('StepUpRequest', () => {
     ['an empty backup code', { method: 'backup_code', code: '' }],
     ['a backup code over 64 characters', { method: 'backup_code', code: 'a'.repeat(65) }],
     ['a passkey with a code and no assertion', { method: 'passkey', code: '123456' }],
-    ['an SMS code', { method: 'sms_code', code: '123456' }],
+    ['a five-digit texted code', { method: 'sms_code', code: '12345' }],
+    ['a texted code with a letter', { method: 'sms_code', code: '12345a' }],
+    ['a texted-code method with no code', { method: 'sms_code' }],
     ['a five-digit emailed code', { method: 'email_code', code: '12345' }],
     ['an emailed code with a letter', { method: 'email_code', code: '12345a' }],
     ['an emailed code with a space', { method: 'email_code', code: '123 456' }],
@@ -183,5 +190,63 @@ describe('StepUpEmailCode', () => {
     ['an expiry that is not a timestamp', { ...receipt, expiresAt: 'soon' }],
   ])('refuses %s', (_, value) => {
     expect(StepUpEmailCodeSchema.safeParse(value).success).toBe(false)
+  })
+})
+
+describe('a texted code as the second factor', () => {
+  const factors = {
+    totp: { enabled: false, confirmedAt: null },
+    backupCodes: { remaining: 0 },
+  }
+  const receipt = {
+    method: 'sms_code',
+    destination: '***42',
+    expiresAt: '2026-01-01T00:10:00.000Z',
+  }
+
+  test('an answer without it is still a list of factors (an older server)', () => {
+    expect(FactorsSchema.safeParse(factors).success).toBe(true)
+  })
+
+  test('it says whether it is enrolled, in use and could be enrolled', () => {
+    const sms = {
+      enabled: true,
+      enabledAt: '2026-01-01T00:00:00.000Z',
+      inUse: false,
+      available: false,
+    }
+    expect(FactorsSchema.parse({ ...factors, sms }).sms).toEqual(sms)
+  })
+
+  test.each<[string, unknown]>([
+    ['a missing field', { enabled: true, enabledAt: null, inUse: true }],
+    ['a time that is not one', { enabled: true, enabledAt: 'now', inUse: true, available: false }],
+    [
+      'a switch that is not a boolean',
+      { enabled: 'yes', enabledAt: null, inUse: true, available: false },
+    ],
+  ])('refuses %s', (_, sms) => {
+    expect(FactorsSchema.safeParse({ ...factors, sms }).success).toBe(false)
+  })
+
+  test('the receipt of a texted code is a method, a masked number and an expiry, never a code', () => {
+    expect(SmsFactorCodeSchema.parse({ ...receipt, code: '123456' })).toEqual(receipt as never)
+    expect(Object.keys(SmsFactorCodeSchema.shape).sort()).toEqual([
+      'destination',
+      'expiresAt',
+      'method',
+    ])
+    expect(SmsFactorCodeSchema.safeParse({ ...receipt, method: 'email_code' }).success).toBe(false)
+    expect(SmsFactorCodeSchema.safeParse({ ...receipt, expiresAt: 'soon' }).success).toBe(false)
+  })
+
+  test.each<[string, unknown, boolean]>([
+    ['six digits', { code: '012345' }, true],
+    ['five digits', { code: '12345' }, false],
+    ['a letter', { code: '12345a' }, false],
+    ['a number', { code: 123456 }, false],
+    ['nothing', {}, false],
+  ])('confirming takes %s', (_, body, ok) => {
+    expect(SmsFactorConfirmRequestSchema.safeParse(body).success).toBe(ok)
   })
 })

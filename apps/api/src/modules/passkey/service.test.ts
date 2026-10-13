@@ -12,10 +12,13 @@ import * as Notices from '~/modules/notice/service'
 import * as Passkeys from '~/modules/passkey/service'
 import type { PasskeyRecord } from '~/ports/passkey-store'
 import { createTestDeps, TEST_TENANT, type TestDeps } from '~/testing'
+import { comparable } from '~/testing/comparable'
 
 const tenant = { projectId: TEST_TENANT.projectId, environmentId: TEST_TENANT.environmentId }
 const RP_ID = 'northline.test'
 const ORIGIN = 'https://app.northline.test'
+/** A browser's request from the allowed page. */
+const REQUEST = { origin: ORIGIN, client: 'web' } as const
 const USER = '00000000-0000-7000-8000-0000000000a1'
 const self = { userId: USER, sessionId: '00000000-0000-7000-8000-0000000000b1' }
 const actor = { type: 'user', id: USER, ipAddress: null, userAgent: null } as const
@@ -96,9 +99,9 @@ describe('available', () => {
 
 describe('relyingParty', () => {
   test('answers the relying-party id and the request’s own origin', async () => {
-    expect(await Passkeys.relyingParty(deps, tenant, ORIGIN)).toEqual({
+    expect(await Passkeys.relyingParty(deps, tenant, REQUEST)).toEqual({
       rpId: RP_ID,
-      origin: ORIGIN,
+      origins: [ORIGIN],
     })
   })
 
@@ -115,30 +118,32 @@ describe('relyingParty', () => {
     ['the allowed origin with a path', `${ORIGIN}/`, 'request.origin_not_allowed'],
     ['the allowed origin in another case', ORIGIN.toUpperCase(), 'request.origin_not_allowed'],
   ])('%s is refused', async (_, origin, code) => {
-    expect(await codeOf(Passkeys.relyingParty(deps, tenant, origin))).toBe(code)
+    expect(await codeOf(Passkeys.relyingParty(deps, tenant, { origin, client: 'web' }))).toBe(code)
   })
 
   test('passkeys off, or no relying-party id, is method_disabled whatever the origin', async () => {
     configure({
       signIn: { methods: { ...settings().signIn.methods, passkey: { enabled: false } } },
     })
-    expect(await codeOf(Passkeys.relyingParty(deps, tenant, ORIGIN))).toBe('auth.method_disabled')
-    expect(await codeOf(Passkeys.relyingParty(deps, tenant, 'https://evil.test'))).toBe(
-      'auth.method_disabled'
-    )
+    expect(await codeOf(Passkeys.relyingParty(deps, tenant, REQUEST))).toBe('auth.method_disabled')
+    expect(
+      await codeOf(
+        Passkeys.relyingParty(deps, tenant, { origin: 'https://evil.test', client: 'web' })
+      )
+    ).toBe('auth.method_disabled')
     // A stored document that has the method on without an id (written by hand) is still off.
     configure({ passkeys: { rpId: null } })
-    expect(await codeOf(Passkeys.relyingParty(deps, tenant, ORIGIN))).toBe('auth.method_disabled')
+    expect(await codeOf(Passkeys.relyingParty(deps, tenant, REQUEST))).toBe('auth.method_disabled')
   })
 
   test('another environment’s settings do not apply', async () => {
     const other = { ...tenant, environmentId: TEST_TENANT.productionEnvironmentId }
-    expect(await codeOf(Passkeys.relyingParty(deps, other, ORIGIN))).toBe('auth.method_disabled')
+    expect(await codeOf(Passkeys.relyingParty(deps, other, REQUEST))).toBe('auth.method_disabled')
   })
 })
 
 describe('requestOptions', () => {
-  const rp = { rpId: RP_ID, origin: ORIGIN }
+  const rp = { rpId: RP_ID, origins: [ORIGIN] }
 
   test('a sign-in’s options carry no allowCredentials', () => {
     expect(Passkeys.requestOptions(rp, 'challenge')).toEqual({
@@ -195,9 +200,9 @@ describe('challenges of a session', () => {
 
 describe('registration', () => {
   async function registered(authenticator = new VirtualAuthenticator(), who = self) {
-    const options = await Passkeys.startRegistration(deps, tenant, who, ORIGIN)
+    const options = await Passkeys.startRegistration(deps, tenant, who, REQUEST)
     const credential = await authenticator.create(options, { origin: ORIGIN })
-    return Passkeys.finishRegistration(deps, tenant, who, { credential }, ORIGIN, {
+    return Passkeys.finishRegistration(deps, tenant, who, { credential }, REQUEST, {
       ...actor,
       id: who.userId,
     })
@@ -205,14 +210,14 @@ describe('registration', () => {
 
   test('the display name is the user’s name, and the app name is the relying party’s', async () => {
     configure({ app: { name: 'Northline', supportEmail: null } })
-    const options = await Passkeys.startRegistration(deps, tenant, self, ORIGIN)
+    const options = await Passkeys.startRegistration(deps, tenant, self, REQUEST)
     expect(options.rp).toEqual({ id: RP_ID, name: 'Northline' })
     expect(options.user).toMatchObject({ name: 'maya@northline.app', displayName: 'Maya Okafor' })
   })
 
   test('a user who does not exist cannot start or finish', async () => {
     const ghost = { ...self, userId: deps.ids.next() }
-    await expect(Passkeys.startRegistration(deps, tenant, ghost, ORIGIN)).rejects.toBeInstanceOf(
+    await expect(Passkeys.startRegistration(deps, tenant, ghost, REQUEST)).rejects.toBeInstanceOf(
       NotFoundError
     )
     await Passkeys.issueChallenge(deps, tenant, ghost, 'registration')
@@ -233,7 +238,7 @@ describe('registration', () => {
             tenant,
             ghost,
             { credential: {} as never },
-            ORIGIN,
+            REQUEST,
             actor
           )
         )
@@ -268,7 +273,7 @@ describe('registration', () => {
               tenant,
               who,
               { credential: {} as never },
-              ORIGIN,
+              REQUEST,
               actor
             )
           )
@@ -284,7 +289,7 @@ describe('registration', () => {
     const pending = []
     for (let count = 0; count < MAX_PASSKEYS_PER_USER + 1; count++) {
       const who = { ...self, sessionId: deps.ids.next() }
-      const options = await Passkeys.startRegistration(deps, tenant, who, ORIGIN)
+      const options = await Passkeys.startRegistration(deps, tenant, who, REQUEST)
       pending.push({
         who,
         credential: await new VirtualAuthenticator().create(options, { origin: ORIGIN }),
@@ -293,7 +298,7 @@ describe('registration', () => {
     const outcomes = []
     for (const { who, credential } of pending) {
       outcomes.push(
-        await codeOf(Passkeys.finishRegistration(deps, tenant, who, { credential }, ORIGIN, actor))
+        await codeOf(Passkeys.finishRegistration(deps, tenant, who, { credential }, REQUEST, actor))
       )
     }
     expect(outcomes).toEqual([
@@ -307,10 +312,10 @@ describe('registration', () => {
 describe('assert', () => {
   async function setUp() {
     const authenticator = new VirtualAuthenticator()
-    const options = await Passkeys.startRegistration(deps, tenant, self, ORIGIN)
+    const options = await Passkeys.startRegistration(deps, tenant, self, REQUEST)
     const credential = await authenticator.create(options, { origin: ORIGIN })
-    await Passkeys.finishRegistration(deps, tenant, self, { credential }, ORIGIN, actor)
-    const rp = { rpId: RP_ID, origin: ORIGIN }
+    await Passkeys.finishRegistration(deps, tenant, self, { credential }, REQUEST, actor)
+    const rp = { rpId: RP_ID, origins: [ORIGIN] }
     const sign = async (challenge: string, input: object = {}) =>
       authenticator.get(Passkeys.requestOptions(rp, challenge), { origin: ORIGIN, ...input })
     return { rp, sign }
@@ -328,12 +333,14 @@ describe('assert', () => {
     expect(asserted?.methods).toEqual(['swk', 'user'])
     expect(asserted?.passkey.userId).toBe(USER)
     const [stored] = await deps.passkeys.listForUser(tenant.environmentId, USER)
-    expect(stored).toMatchObject({
-      signCount: 2,
-      backupEligible: true,
-      backedUp: true,
-      lastUsedAt: deps.clock.now(),
-    })
+    expect(comparable(stored)).toMatchObject(
+      comparable({
+        signCount: 2,
+        backupEligible: true,
+        backedUp: true,
+        lastUsedAt: deps.clock.now(),
+      })
+    )
   })
 
   test('the user must match where one is given, and the handle where none is', async () => {

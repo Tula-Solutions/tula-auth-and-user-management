@@ -26,8 +26,8 @@ const { values } = parseArgs({
 if (!values.environment || !UUID.test(values.environment)) {
   fail('pass --environment <uuid> (`bun run seed` prints the environment ids)')
 }
-if (values.kind !== 'secret' && values.kind !== 'publishable') {
-  fail('--kind must be secret or publishable')
+if (values.kind !== 'secret' && values.kind !== 'publishable' && values.kind !== 'agent') {
+  fail('--kind must be secret, publishable or agent')
 }
 const name = values.name.trim()
 if (name.length < 1 || name.length > 100) {

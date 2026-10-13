@@ -77,6 +77,8 @@ describe('create', () => {
       lastName: 'Okafor',
       bannedAt: null,
       lastSignInAt: null,
+      phoneNumber: null,
+      phoneNumberVerifiedAt: null,
       createdAt: deps.clock.now().toISOString(),
     })
     const hash = await storedPassword()

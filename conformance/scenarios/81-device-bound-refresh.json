@@ -1,0 +1,216 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "a session bound to a device key is refreshed with a proof",
+  "description": "Device binding (ADR 0043). A client that is not a browser sends a DPoP proof when it starts an attempt: a JWT signed by a key it holds, naming the request's method, the API's own address, a time, a unique id and the server's nonce. The session the attempt ends in is bound to that key: its access tokens carry the key's thumbprint as cnf.jkt, and every refresh needs a new proof by the same key. The runner signs with a software key it makes for the run. What a key held in hardware adds cannot be shown over HTTP.",
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    }
+  },
+  "steps": [
+    {
+      "name": "a start that brings a proof with no nonce is asked for the server's nonce, and starts nothing",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        },
+        "proof": {
+          "key": "device"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "code": "device.nonce_required"
+        },
+        "headers": {
+          "DPoP-Nonce": "$any"
+        }
+      },
+      "captureHeaders": {
+        "nonce": "DPoP-Nonce"
+      }
+    },
+    {
+      "name": "the start, repeated with the nonce, binds the session it will end in to the device's key",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        },
+        "proof": {
+          "key": "device",
+          "nonce": "{{nonce}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_up",
+          "step": {
+            "status": "needs_email_verification"
+          }
+        },
+        "headers": {
+          "DPoP-Nonce": "$any"
+        }
+      },
+      "capture": {
+        "signUpId": "id",
+        "signUpSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "code"
+      }
+    },
+    {
+      "name": "the code completes the sign-up; the access token names the key by its thumbprint and the answer brings a nonce",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signUpSecret}}",
+        "body": {
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          },
+          "session": {
+            "sessionId": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "cnf": {
+              "jkt": {
+                "$matches": "^[A-Za-z0-9_-]{43}$"
+              }
+            }
+          }
+        },
+        "headers": {
+          "DPoP-Nonce": "$any"
+        }
+      },
+      "capture": {
+        "sessionId": "session.sessionId",
+        "accessToken": "session.accessToken",
+        "refreshToken": "session.refreshToken"
+      },
+      "captureHeaders": {
+        "nonce": "DPoP-Nonce"
+      }
+    },
+    {
+      "name": "a refresh with a proof of the session's key rotates the token, keeps the thumbprint and hands out the next nonce",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/refresh",
+        "body": {
+          "refreshToken": "{{refreshToken}}"
+        },
+        "proof": {
+          "key": "device",
+          "nonce": "{{nonce}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "sessionId": "{{sessionId}}",
+          "accessToken": "$any",
+          "refreshToken": {
+            "$not": "{{refreshToken}}"
+          }
+        },
+        "headers": {
+          "DPoP-Nonce": "$any"
+        },
+        "claims": {
+          "accessToken": {
+            "cnf": {
+              "jkt": {
+                "$matches": "^[A-Za-z0-9_-]{43}$"
+              }
+            }
+          }
+        }
+      },
+      "capture": {
+        "secondToken": "refreshToken"
+      },
+      "captureHeaders": {
+        "nonce": "DPoP-Nonce"
+      }
+    },
+    {
+      "name": "and again, on the other instance, with the new token and a new proof",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/refresh",
+        "body": {
+          "refreshToken": "{{secondToken}}"
+        },
+        "proof": {
+          "key": "device",
+          "nonce": "{{nonce}}"
+        },
+        "instance": "second"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "sessionId": "{{sessionId}}",
+          "accessToken": "$any",
+          "refreshToken": {
+            "$not": "{{secondToken}}"
+          }
+        },
+        "headers": {
+          "DPoP-Nonce": "$any"
+        },
+        "claims": {
+          "accessToken": {
+            "cnf": {
+              "jkt": {
+                "$matches": "^[A-Za-z0-9_-]{43}$"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "the session is still alive: its access token opens a session route",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/sessions",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

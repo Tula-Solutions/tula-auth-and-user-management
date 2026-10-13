@@ -1,10 +1,25 @@
 /**
  * What a verification token proves: control of an address being verified, the right to reset
- * its account's password, (`sign_in`) the email first factor of a sign-in, or (`step_up`) that
- * a signed-in user without a second factor can still read their mail. A token issued for one
- * purpose is never honoured for another.
+ * its account's password, (`sign_in`) the email first factor of a sign-in, (`step_up`) that
+ * a signed-in user without a second factor can still read their mail,
+ * (`email_addition`) that a signed-in user whose account has no address reads the mail of
+ * the one they want on it (ADR 0059), or
+ * (`phone_verification`) that a signed-in user holds the phone a code was texted to. A token
+ * issued for one purpose is never honoured for another.
  */
-export type VerificationPurpose = 'email_verification' | 'password_reset' | 'sign_in' | 'step_up'
+export type VerificationPurpose =
+  | 'email_verification'
+  | 'password_reset'
+  | 'sign_in'
+  | 'step_up'
+  | 'email_addition'
+  | 'phone_verification'
+  | 'sms_sign_in'
+  // A texted code as a second factor (ADR 0025): making it one, proving it at a sign-in or a
+  // reset (bound to the attempt), and stepping up with it (bound to the session).
+  | 'sms_factor_enrolment'
+  | 'sms_second_factor'
+  | 'sms_step_up'
 
 /** What a token belongs to: an in-progress flow attempt, or an existing user. */
 export type VerificationSubject = { flowAttemptId: string } | { userId: string }
@@ -17,7 +32,10 @@ export interface VerificationTokenRecord {
   userId: string | null
   flowAttemptId: string | null
   purpose: VerificationPurpose
-  /** Normalized email it was sent to. */
+  /**
+   * Where it was sent: a normalized email, or for `phone_verification` the E.164 number the
+   * user asked to add (the pending number is kept here and nowhere else).
+   */
   destination: string
   /** `HMAC(verification key, "<id>:<code>")`, hex. */
   codeHash: string

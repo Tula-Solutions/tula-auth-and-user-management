@@ -1,8 +1,27 @@
 import {
+  type ActivityType,
+  AdditionalClientIdsSchema,
+  AndroidAppIdentitySchema,
+  CreateHookRequestSchema,
+  CreateWebhookEndpointRequestSchema,
+  DEFAULT_SMS_DAILY_MESSAGE_LIMIT,
+  defaultDeviceBinding,
   type EnvironmentSettingsInput,
   EnvironmentSettingsInputSchema,
+  type HookFailureMode,
+  type HookPoint,
+  IosAppIdentitySchema,
+  MAX_NATIVE_APPS,
+  MAX_WEBHOOK_ENDPOINTS,
+  type MicrosoftTenant,
+  MicrosoftTenantSchema,
+  nativeAppIdentifier,
+  normalizeAppLinkPaths,
+  normalizeCertFingerprints,
   OAUTH_PROVIDERS,
   type OAuthProvider,
+  ownClientIdAmong,
+  UpdateWebhookEndpointRequestSchema,
 } from '@tula/contract'
 import { z } from 'zod'
 import { ConfigError, type ConfigIssue, invalidConfig } from './errors'
@@ -92,6 +111,33 @@ const ClientProvider = z.strictObject({
   enabled: z.boolean().default(true),
 })
 
+// Google alone takes ID tokens from native apps (ADR 0045). The ids are the admin API's own
+// field, judged by the contract's schema. They are a set: sorted when the file is loaded.
+// **Left out is none, and managed** (not "unmanaged", as a native app's link paths are):
+// each id widens whose tokens sign someone in, and a file that says nothing must not leave
+// one standing that nobody reads. An empty list is dropped, so that the two spellings of
+// "none" load, hash and plan alike, and a file from before the field hashes as it did.
+// The provider's own client id is not an additional one (the contract's `ownClientIdAmong`,
+// which the admin API refuses a save by): said here by the entry's place, never its value.
+const GoogleProvider = ClientProvider.extend({
+  additionalClientIds: AdditionalClientIdsSchema.optional(),
+})
+  .superRefine(({ clientId, additionalClientIds }, context) => {
+    const own = ownClientIdAmong(clientId, additionalClientIds ?? [])
+    if (own !== -1) {
+      context.addIssue({
+        code: 'custom',
+        path: ['additionalClientIds', own],
+        message: 'must not be the provider’s own clientId: its tokens are accepted already',
+      })
+    }
+  })
+  .transform(({ additionalClientIds, ...provider }) =>
+    additionalClientIds === undefined || additionalClientIds.length === 0
+      ? provider
+      : { ...provider, additionalClientIds: [...additionalClientIds].sort() }
+  )
+
 const AppleProvider = z.strictObject({
   clientId: text(512),
   teamId: text(64),
@@ -100,16 +146,179 @@ const AppleProvider = z.strictObject({
   enabled: z.boolean().default(true),
 })
 
+// The tenant is the admin API's own field (`PUT /v1/admin/oauth-providers/microsoft`): an
+// alias or a tenant id, lower-cased. It is required, as it is there: which accounts may sign
+// in is a decision, and a default would make it for the operator.
+const MicrosoftProvider = z.strictObject({
+  clientId: text(512),
+  clientSecret: Secret,
+  tenant: MicrosoftTenantSchema,
+  enabled: z.boolean().default(true),
+})
+
 const Providers = z.strictObject({
-  google: ClientProvider.optional(),
+  google: GoogleProvider.optional(),
   github: ClientProvider.optional(),
   apple: AppleProvider.optional(),
+  microsoft: MicrosoftProvider.optional(),
+  discord: ClientProvider.optional(),
+  linkedin: ClientProvider.optional(),
+  x: ClientProvider.optional(),
+  facebook: ClientProvider.optional(),
 })
+
+// An endpoint's fields are the admin API's own (`POST` and `PATCH
+// /v1/admin/webhook-endpoints`): the address and the event types as a registration takes
+// them, `enabled` as a change does, with no default. Nothing is declared a second time here.
+const WebhookAddress = CreateWebhookEndpointRequestSchema.shape.url
+const WebhookEventTypes = CreateWebhookEndpointRequestSchema.shape.eventTypes
+const WebhookEnabled = UpdateWebhookEndpointRequestSchema.shape.enabled
+
+/** Whether an address has a user name or a password in front of its host. */
+function carriesCredentials(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    return parsed.username !== '' || parsed.password !== ''
+  } catch {
+    // Not an address a parser reads: the server's guard is the judge of that, not this file.
+    return false
+  }
+}
+
+const CREDENTIALS_MESSAGE =
+  'must not carry a user name or a password (user:password@host): the server refuses such an address, and an address is printed in plans and logs'
+
+const WebhookEndpoint = z.strictObject({
+  // The server refuses credentials in an address when the endpoint is registered. Here they
+  // are refused sooner: `tula diff` prints every address, into terminals and pipeline logs,
+  // before the server is ever asked. Only in the file's schema, not the contract's: the API
+  // answers such an address with its own error (`webhook.url_not_allowed`), which callers
+  // of the API already rely on.
+  url: WebhookAddress.refine((url) => !carriesCredentials(url), { message: CREDENTIALS_MESSAGE }),
+  // A set: each type is checked where it was written, then repeats are dropped and the order
+  // fixed, so that neither is a difference to `tula diff` or to the config's fingerprint.
+  eventTypes: z
+    .array(WebhookEventTypes.element)
+    .transform((types) => [...new Set(types)].sort())
+    .pipe(WebhookEventTypes),
+  enabled: WebhookEnabled,
+})
+
+const Webhooks = z.array(WebhookEndpoint).superRefine((endpoints, context) => {
+  if (endpoints.length > MAX_WEBHOOK_ENDPOINTS) {
+    context.addIssue({
+      code: 'custom',
+      message: `an environment has at most ${MAX_WEBHOOK_ENDPOINTS} webhook endpoints`,
+    })
+  }
+  const firstAt = new Map<string, number>()
+  endpoints.forEach((endpoint, index) => {
+    const first = firstAt.get(endpoint.url)
+    if (first === undefined) {
+      firstAt.set(endpoint.url, index)
+      return
+    }
+    // By position, never by value: an address may carry a token in its path or query.
+    context.addIssue({
+      code: 'custom',
+      path: [index, 'url'],
+      message: `the same address as webhooks.${first}: an endpoint is identified by its address, so each is listed once`,
+    })
+  })
+})
+
+// A hook's fields are the admin API's own (`POST /v1/admin/hooks`), with its defaults: a
+// hook in the file is whole, so what an entry leaves out is what a registration that leaves
+// it out gets (on, two seconds, refuse on failure). There is no point field: the key is the
+// point. And no secret field: the server makes the secret.
+const HookEntry = z.strictObject({
+  // Refused here for the same reason as a webhook endpoint's: every address is printed.
+  url: CreateHookRequestSchema.shape.url.refine((url) => !carriesCredentials(url), {
+    message: CREDENTIALS_MESSAGE,
+  }),
+  enabled: CreateHookRequestSchema.shape.enabled,
+  deadlineMs: CreateHookRequestSchema.shape.deadlineMs,
+  failureMode: CreateHookRequestSchema.shape.failureMode,
+})
+
+// One key per point of the contract's `HOOK_POINTS`, and no other: an environment has at
+// most one hook per point, so the point is what names a hook in the file.
+const Hooks = z.strictObject({
+  before_sign_up: HookEntry.optional(),
+  before_session: HookEntry.optional(),
+  before_token: HookEntry.optional(),
+} satisfies Record<HookPoint, unknown>)
+
+// A native app's fields are the admin API's own (`POST /v1/admin/native-apps`), taken from the
+// contract's schemas by `shape`: an identifier that the API would refuse is refused when the
+// file is loaded. Nothing is declared a second time here.
+const AndroidFingerprints = AndroidAppIdentitySchema.shape.sha256CertFingerprints
+const AppLinkPaths = IosAppIdentitySchema.shape.appLinkPaths.unwrap()
+
+// An app's link paths (ADR 0044) are a set too: each path is checked where it was written,
+// then repeats are dropped and the order fixed, as the server stores them. Left out, the
+// paths are not managed by the file and the key stays absent (never defaulted to `[]`,
+// which manages the app to have none): a file written before the key existed loads, hashes
+// and plans as it did.
+const appLinkPaths = z
+  .array(AppLinkPaths.element)
+  .transform((paths) => normalizeAppLinkPaths(paths))
+  .pipe(AppLinkPaths)
+  .optional()
+
+const IosAppEntry = z.strictObject({
+  platform: IosAppIdentitySchema.shape.platform,
+  teamId: IosAppIdentitySchema.shape.teamId,
+  bundleId: IosAppIdentitySchema.shape.bundleId,
+  appLinkPaths,
+})
+
+const AndroidAppEntry = z.strictObject({
+  platform: AndroidAppIdentitySchema.shape.platform,
+  packageName: AndroidAppIdentitySchema.shape.packageName,
+  appLinkPaths,
+  // A set: each fingerprint is checked where it was written, then all are put in the form the
+  // server stores (upper case, colons), repeats dropped and the order fixed, so that none of
+  // the three is a difference to `tula diff` or to the config's fingerprint.
+  sha256CertFingerprints: z
+    .array(AndroidFingerprints.element)
+    .transform((fingerprints) => normalizeCertFingerprints(fingerprints))
+    .pipe(AndroidFingerprints),
+})
+
+const NativeApps = z
+  .array(z.discriminatedUnion('platform', [IosAppEntry, AndroidAppEntry]))
+  .superRefine((apps, context) => {
+    if (apps.length > MAX_NATIVE_APPS) {
+      context.addIssue({
+        code: 'custom',
+        message: `an environment has at most ${MAX_NATIVE_APPS} native apps`,
+      })
+    }
+    const firstAt = new Map<string, number>()
+    apps.forEach((app, index) => {
+      // The platform cannot hold a slash, so the pair has one spelling.
+      const key = `${app.platform}/${nativeAppIdentifier(app)}`
+      const first = firstAt.get(key)
+      if (first === undefined) {
+        firstAt.set(key, index)
+        return
+      }
+      context.addIssue({
+        code: 'custom',
+        path: [index, app.platform === 'ios' ? 'bundleId' : 'packageName'],
+        message: `the same app as nativeApps.${first}: an app is identified by its platform and its ${app.platform === 'ios' ? 'bundle id' : 'package name'}, so each is listed once`,
+      })
+    })
+  })
 
 const Environment = z.strictObject({
   kind: z.enum(['development', 'production']).optional(),
   settings: EnvironmentSettingsInputSchema.prefault({}),
   providers: Providers.prefault({}),
+  webhooks: Webhooks.optional(),
+  hooks: Hooks.optional(),
+  nativeApps: NativeApps.optional(),
 })
 
 const Config = z.strictObject({
@@ -132,7 +341,8 @@ const Config = z.strictObject({
 })
 
 /**
- * Google's or GitHub's credentials for one environment.
+ * The credentials of a provider that takes a client id and a client secret and nothing else
+ * (Google, GitHub, Discord, LinkedIn, X, Facebook), for one environment.
  *
  * @example
  * ```ts
@@ -146,6 +356,30 @@ export interface OAuthClientConfig {
   clientSecret: SecretRef
   /** Whether sign-in offers the provider. Defaults to `true`. */
   enabled?: boolean
+}
+
+/**
+ * Google's credentials for one environment, and the client ids of the operator's native
+ * apps.
+ *
+ * @example
+ * ```ts
+ * const google: GoogleProviderConfig = {
+ *   clientId: '1234567890-web.apps.googleusercontent.com',
+ *   clientSecret: env('GOOGLE_CLIENT_SECRET'),
+ *   additionalClientIds: ['1234567890-android.apps.googleusercontent.com'],
+ * }
+ * ```
+ */
+export interface GoogleProviderConfig extends OAuthClientConfig {
+  /**
+   * The OAuth client ids, beside `clientId`, whose ID tokens the server accepts in a native
+   * sign-in: the Android and iOS client ids of your apps. Not secrets. At most eight, each
+   * once, in any order. **Left out means none**: `tula apply` removes the ids the server has
+   * and the file does not name. Adding one widens who can sign in and is a weakening
+   * (`--allow-weaker` under `--yes`).
+   */
+  additionalClientIds?: string[]
 }
 
 /**
@@ -175,6 +409,33 @@ export interface AppleProviderConfig {
 }
 
 /**
+ * Microsoft's credentials for one environment.
+ *
+ * @example
+ * ```ts
+ * const microsoft: MicrosoftProviderConfig = {
+ *   clientId: '6731de76-14a6-49ae-97bc-6eba6914391e',
+ *   clientSecret: env('MICROSOFT_CLIENT_SECRET'),
+ *   tenant: 'organizations',
+ * }
+ * ```
+ */
+export interface MicrosoftProviderConfig {
+  /** The application (client) id of the app registration. Not a secret. */
+  clientId: string
+  /** The client secret's value, by reference: `env('NAME')`. */
+  clientSecret: SecretRef
+  /**
+   * Which Microsoft accounts may sign in: `common` (any), `organizations` (work and school
+   * accounts), `consumers` (personal accounts) or one tenant's id. Not a secret. A domain
+   * name is refused: a token names its tenant by id.
+   */
+  tenant: MicrosoftTenant
+  /** Whether sign-in offers the provider. Defaults to `true`. */
+  enabled?: boolean
+}
+
+/**
  * The OAuth providers of one environment. A provider left out is not managed by the file:
  * `tula apply` leaves it alone unless it is run with `--prune`.
  *
@@ -185,12 +446,189 @@ export interface AppleProviderConfig {
  */
 export interface ProvidersConfig {
   /** Google. */
-  google?: OAuthClientConfig
+  google?: GoogleProviderConfig
   /** GitHub. */
   github?: OAuthClientConfig
   /** Sign in with Apple. */
   apple?: AppleProviderConfig
+  /** Microsoft (Entra ID and personal accounts). */
+  microsoft?: MicrosoftProviderConfig
+  /** Discord. */
+  discord?: OAuthClientConfig
+  /** LinkedIn (Sign In with LinkedIn using OpenID Connect). */
+  linkedin?: OAuthClientConfig
+  /**
+   * X. The client id and secret of an OAuth 2.0 app. An account made through X has no email
+   * address: none is asked of X.
+   */
+  x?: OAuthClientConfig
+  /**
+   * Facebook Login. The app id and the app secret. An account made through Facebook has no
+   * email address: none is asked of Facebook.
+   */
+  facebook?: OAuthClientConfig
 }
+
+/**
+ * One webhook endpoint of an environment: where its events are posted, and which.
+ *
+ * There is no field for the signing secret, on purpose: the server makes it and returns it
+ * once, when `tula apply` registers the endpoint (`--secrets-file`, `--show-secrets`). A
+ * `secret` key does not compile and is refused when the file is loaded.
+ *
+ * An endpoint has no name: it is **its address**. `tula` matches an entry to the server's
+ * endpoint with exactly the same `url`, so changing the address means a new endpoint (a new
+ * secret) and, with `--prune`, the removal of the old one.
+ *
+ * @example
+ * ```ts
+ * const endpoint: WebhookEndpointConfig = {
+ *   url: 'https://api.northline.app/webhooks/tula',
+ *   eventTypes: ['user.created', 'user.deleted'],
+ * }
+ * ```
+ */
+export interface WebhookEndpointConfig {
+  /** Where events are posted: `https`, no credentials, a host the server may call. */
+  url: string
+  /** The event types delivered to it: a set, so order and repeats mean nothing. At least one. */
+  eventTypes: ActivityType[]
+  /**
+   * Whether events are delivered. Left out, the switch is **not managed**: a new endpoint
+   * starts switched on and an existing one is left as the server has it, including one the
+   * server switched off because it kept failing. Written, `tula apply` sets it.
+   */
+  enabled?: boolean
+}
+
+/**
+ * One hook of an environment: the address the server asks at a point, and what a call that
+ * fails does.
+ *
+ * There is no field for the signing secret, on purpose: the server makes it and returns it
+ * once, when `tula apply` registers the hook (`--secrets-file`, `--show-secrets`). A `secret`
+ * key does not compile and is refused when the file is loaded.
+ *
+ * A hook is named by its **point** (the key it is written under), so a changed address is the
+ * same hook with the same secret.
+ *
+ * @example
+ * ```ts
+ * const hook: HookConfig = { url: 'https://api.northline.app/hooks/sign-up', deadlineMs: 1500 }
+ * ```
+ */
+export interface HookConfig {
+  /** Where the question is posted: `https`, no credentials, a host the server may call. */
+  url: string
+  /** Whether the hook is asked. Defaults to `true`. Switching one off is a weakening. */
+  enabled?: boolean
+  /** How long the server waits for the answer, in milliseconds: 100 to 5000. Defaults to 2000. */
+  deadlineMs?: number
+  /**
+   * What a call that fails does: `deny` (the default) refuses what was asked about, `allow`
+   * lets it happen as if there were no hook. `allow` is a weakening: `tula diff` flags it and
+   * `tula apply --yes` needs `--allow-weaker`.
+   */
+  failureMode?: HookFailureMode
+}
+
+/**
+ * The hooks of one environment, by point. A point left out is not managed by the file:
+ * `tula apply` leaves the server's hook for it alone unless it is run with `--prune`.
+ *
+ * @example
+ * ```ts
+ * const hooks: HooksConfig = { before_sign_up: { url: 'https://api.northline.app/hooks/sign-up' } }
+ * ```
+ */
+export type HooksConfig = Partial<Record<HookPoint, HookConfig>>
+
+/**
+ * One iOS app of an environment: its bundle id, under the Apple team that signs it.
+ *
+ * An app is named by its **platform and bundle id**, so a changed team is the same app.
+ *
+ * `appLinkPaths` hands the app links of your domain: the exact paths the association file
+ * names it for, so that iOS opens `https://<your domain><path>` in the app. Tula builds
+ * that file; it cannot check that your domain serves it, and none of it was tested on a
+ * device. A path more is a weakening.
+ *
+ * @example
+ * ```ts
+ * const app: IosAppConfig = {
+ *   platform: 'ios',
+ *   teamId: 'A1B2C3D4E5',
+ *   bundleId: 'app.northline.ios',
+ *   appLinkPaths: ['/oauth/callback'],
+ * }
+ * ```
+ */
+export interface IosAppConfig {
+  /** The platform: what tells an iOS entry from an Android one. */
+  platform: 'ios'
+  /** The Apple team (the App ID prefix): ten upper-case letters and digits. */
+  teamId: string
+  /** The app's bundle id, e.g. `app.northline.ios`. Compared exactly. */
+  bundleId: string
+  /**
+   * The exact paths of your domain the app opens as universal links (`/oauth/callback`): a
+   * set of at most ten, with no wildcard, query or trailing slash. Left out, the paths are
+   * not managed: the server keeps what it has. Written, also as `[]`, the list is the whole
+   * set and what it leaves out is removed.
+   */
+  appLinkPaths?: string[]
+}
+
+/**
+ * One Android app of an environment: its package name and the certificates it may be signed
+ * with.
+ *
+ * An app is named by its **platform and package name**, so changed fingerprints are the same
+ * app. Adding a fingerprint is a weakening (whoever holds that certificate's key can sign the
+ * app): `tula diff` flags it and `tula apply --yes` needs `--allow-weaker`.
+ *
+ * `appLinkPaths` are the paths the app is meant to open as App Links. **Android's file cannot
+ * name a path**: an app with at least one is served `handle_all_urls`, which lets it verify a
+ * claim on any link of the domain; which links it opens is the app's own manifest. A path
+ * more is a weakening.
+ *
+ * @example
+ * ```ts
+ * const app: AndroidAppConfig = {
+ *   platform: 'android',
+ *   packageName: 'app.northline.android',
+ *   sha256CertFingerprints: ['14:6D:E9:83:C5:73:06:50:D8:EE:B9:95:2F:34:FC:64:16:A0:83:42:E6:1D:BE:A8:8A:04:96:B2:3F:CF:44:E5'],
+ * }
+ * ```
+ */
+export interface AndroidAppConfig {
+  /** The platform: what tells an Android entry from an iOS one. */
+  platform: 'android'
+  /** The app's package name, e.g. `app.northline.android`. Compared exactly. */
+  packageName: string
+  /**
+   * SHA-256 fingerprints of the app's signing certificates: a set, so order, case, colons and
+   * repeats mean nothing. One to ten.
+   */
+  sha256CertFingerprints: string[]
+  /**
+   * The exact paths of your domain the app opens as App Links: a set of at most ten. Left
+   * out, the paths are not managed: the server keeps what it has. Written, also as `[]`, the
+   * list is the whole set. With at least one the app is served the relation that covers
+   * every link of the domain.
+   */
+  appLinkPaths?: string[]
+}
+
+/**
+ * One native app of an environment, as a config file writes it.
+ *
+ * @example
+ * ```ts
+ * const apps: NativeAppConfig[] = [{ platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'app.northline.ios' }]
+ * ```
+ */
+export type NativeAppConfig = IosAppConfig | AndroidAppConfig
 
 /**
  * The settings document of one environment, as it is written in a config file: every field
@@ -229,6 +667,27 @@ export interface EnvironmentConfigInput {
   settings?: EnvironmentSettingsConfig
   /** The OAuth providers the file manages. */
   providers?: ProvidersConfig
+  /**
+   * The webhook endpoints. Left out, webhooks are **not managed** by the file: `tula` neither
+   * reads nor changes them. Written (an empty list included), the list is what the
+   * environment should have; an endpoint the server has and the list does not is left alone
+   * and shown as unmanaged, and `tula apply --prune` removes it.
+   */
+  webhooks?: WebhookEndpointConfig[]
+  /**
+   * The hooks, by point. Left out, hooks are **not managed** by the file: `tula` neither reads
+   * nor changes them. Written (an empty object included), a point with an entry is made what
+   * the entry says; a hook the server has for a point without one is left alone and shown as
+   * unmanaged, and `tula apply --prune` removes it.
+   */
+  hooks?: HooksConfig
+  /**
+   * The native apps whose association files the server serves. Left out, native apps are
+   * **not managed** by the file: `tula` neither reads nor changes them. Written (an empty list
+   * included), the list is what the environment should have; an app the server has and the
+   * list does not is left alone and shown as unmanaged, and `tula apply --prune` removes it.
+   */
+  nativeApps?: NativeAppConfig[]
 }
 
 /**
@@ -263,10 +722,32 @@ export interface EnvironmentConfig {
   settings: EnvironmentSettingsInput
   /** The providers the file manages. */
   providers: {
-    google?: Required<OAuthClientConfig>
+    /** Google; its `additionalClientIds` sorted, and absent when the file names none. */
+    google?: Required<OAuthClientConfig> & Pick<GoogleProviderConfig, 'additionalClientIds'>
     github?: Required<OAuthClientConfig>
     apple?: Required<AppleProviderConfig>
+    microsoft?: Required<MicrosoftProviderConfig>
+    discord?: Required<OAuthClientConfig>
+    linkedin?: Required<OAuthClientConfig>
+    x?: Required<OAuthClientConfig>
+    facebook?: Required<OAuthClientConfig>
   }
+  /**
+   * The webhook endpoints, when the file manages them: each address once, its event types
+   * sorted and without repeats. Absent when the file does not mention webhooks.
+   */
+  webhooks?: WebhookEndpointConfig[]
+  /**
+   * The hooks, by point, when the file manages them: every field of each filled in. Absent
+   * when the file does not mention hooks.
+   */
+  hooks?: Partial<Record<HookPoint, Required<HookConfig>>>
+  /**
+   * The native apps, when the file manages them: each app once, an Android app's fingerprints
+   * in the stored form (upper case, colons), sorted and without repeats. Absent when the file
+   * does not mention native apps.
+   */
+  nativeApps?: NativeAppConfig[]
 }
 
 /**
@@ -446,8 +927,8 @@ export function requiredSecrets(
  *
  * @param providers - The providers of one environment.
  * @param provider - The provider.
- * @returns Its `clientSecret` (Google, GitHub) or `privateKey` (Apple), or `undefined` when the
- *   file does not configure the provider.
+ * @returns Its `privateKey` (Apple) or `clientSecret` (every other provider), or `undefined`
+ *   when the file does not configure the provider.
  *
  * @example
  * ```ts
@@ -501,12 +982,100 @@ function canonical(value: unknown): unknown {
 }
 
 /**
+ * The environment as it is hashed: without the defaults later versions added to every
+ * settings document. JWT templates added two (no templates; a profile that names none), text
+ * messages one (`sms`: off, with no country) and then the daily limit inside it
+ * (`sms.dailyMessageLimit`), the texted sign-in code one (`signIn.methods.smsCode`, off),
+ * email wording one (`emails`: no template), text message wording one inside `sms`
+ * (`sms.templates`: no template), a texted code as the second step one (`mfa.smsCode`, off),
+ * device binding one on every profile (`deviceBinding`: `none` for `web`, `optional` for
+ * every other, which is what each did before), proposals from an agent in a production
+ * environment one (`agents.proposalsInProduction`, off) and the sign-in test one beside it
+ * (`agents.testSignIn`: `null`, the default of the environment's kind; ADR 0058).
+ *
+ * The fingerprint says which version of the file is applied. A field that every document
+ * gained by upgrading must not change it, or each applied environment would report a new
+ * version of a file nobody touched.
+ */
+function withoutUnusedDefaults(environment: EnvironmentConfig): unknown {
+  const { sessions, sms, signIn, emails, mfa, agents, ...settings } = environment.settings
+  const { smsCode: smsSecondStep, ...mfaBefore } = mfa
+  const { jwtTemplates, ...rest } = sessions
+  const { smsCode, ...methods } = signIn.methods
+  const profiles = Object.fromEntries(
+    Object.entries(sessions.profiles).map(([name, profile]) => {
+      const { jwtTemplate, deviceBinding, ...limits } = profile
+      return [
+        name,
+        {
+          ...limits,
+          ...(jwtTemplate !== null && { jwtTemplate }),
+          // Written only when it is not what the profile did before the option existed.
+          ...(deviceBinding !== defaultDeviceBinding(name) && { deviceBinding }),
+        },
+      ]
+    })
+  )
+  const { dailyMessageLimit, templates, ...destinations } = sms
+  const ownLimit = dailyMessageLimit !== DEFAULT_SMS_DAILY_MESSAGE_LIMIT
+  const ownWording = Object.keys(templates).length > 0
+  return {
+    ...environment,
+    settings: {
+      ...settings,
+      // A texted code as the second step is written only when it is on.
+      mfa: smsSecondStep.enabled ? mfa : mfaBefore,
+      // The texted sign-in code is written only when it is on.
+      signIn: { ...signIn, methods: smsCode.enabled ? signIn.methods : methods },
+      sessions: {
+        ...rest,
+        profiles,
+        ...(Object.keys(jwtTemplates).length > 0 && { jwtTemplates }),
+      },
+      // Left out exactly when it is the default: switched on with no country is written. The
+      // daily limit arrived later, so it is written only when it is not the default one.
+      // The templates arrived later again: written only when there is one.
+      ...((sms.enabled || sms.allowedCountries.length > 0 || ownLimit || ownWording) && {
+        sms: {
+          ...destinations,
+          ...(ownLimit && { dailyMessageLimit }),
+          ...(ownWording && { templates }),
+        },
+      }),
+      // Email templates arrived later still: written only when there is one.
+      ...(Object.keys(emails.templates).length > 0 && { emails }),
+      // What an agent may do arrived in two steps, and `agents` is written when either says
+      // something: proposals in a production environment only when they are accepted, and
+      // whether a sign-in test may run only when the file says yes or no (`null` is "as the
+      // environment's kind has it", which is what every environment did before).
+      ...((agents.proposalsInProduction || agents.testSignIn !== null) && {
+        agents: {
+          ...(agents.proposalsInProduction && { proposalsInProduction: true }),
+          ...(agents.testSignIn !== null && { testSignIn: agents.testSignIn }),
+        },
+      }),
+    },
+  }
+}
+
+/**
  * A fingerprint of one environment's config: what `tula apply` records with the settings it
  * writes, so the dashboard and a later `tula diff` can say which version of the file is in
  * force.
  *
- * It covers the settings and the providers as written, with each secret as the **name** of its
- * variable: no secret value is hashed, so the fingerprint reveals nothing about one.
+ * It covers the settings, the providers, the webhook endpoints, the hooks and the native apps
+ * as written, with each secret as the **name** of its variable: no secret value is hashed, so
+ * the fingerprint reveals nothing about one. An endpoint's event types and an Android app's
+ * fingerprints count as sets, and an environment that does not mention webhooks, hooks or
+ * native apps hashes as it did before they could be written (a hook's defaults count as
+ * written). So does one
+ * that defines no JWT template and whose profiles name none, and one that leaves text messages
+ * (`sms`), their daily limit, the texted sign-in code (`signIn.methods.smsCode`) or a texted
+ * code as the second step (`mfa.smsCode`) at the default, one whose profiles leave
+ * `deviceBinding` at their default, and one that does not accept an agent's proposals in
+ * production (`agents.proposalsInProduction`) and does not say whether a sign-in test may
+ * run (`agents.testSignIn`); the order templates and their claims are written in
+ * never counts.
  *
  * @param environment - The environment's validated config.
  * @returns `sha256:` and 64 hex characters. The same for the same content in any key order.
@@ -517,7 +1086,7 @@ function canonical(value: unknown): unknown {
  * ```
  */
 export async function hashEnvironmentConfig(environment: EnvironmentConfig): Promise<string> {
-  const text = JSON.stringify(canonical(environment))
+  const text = JSON.stringify(canonical(withoutUnusedDefaults(environment)))
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
   const hex = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
   return `sha256:${hex}`

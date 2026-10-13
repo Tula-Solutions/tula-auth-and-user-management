@@ -1,0 +1,392 @@
+[
+  {
+    "type": "color",
+    "value": "#5b4cf0",
+    "valid": true
+  },
+  {
+    "type": "color",
+    "value": "#FFF",
+    "valid": true
+  },
+  {
+    "type": "color",
+    "value": "#ffff",
+    "valid": true
+  },
+  {
+    "type": "color",
+    "value": "#5b4cf0cc",
+    "valid": true
+  },
+  {
+    "type": "color",
+    "value": "#5b4cf",
+    "valid": false
+  },
+  {
+    "type": "color",
+    "value": "#ggg",
+    "valid": false
+  },
+  {
+    "type": "color",
+    "value": "rgb(91, 76, 240)",
+    "valid": true
+  },
+  {
+    "type": "color",
+    "value": "rgb(91 76 240 / 50%)",
+    "valid": true
+  },
+  {
+    "type": "color",
+    "value": "rgba(0,0,0,0.5)",
+    "valid": true
+  },
+  {
+    "type": "color",
+    "value": "hsl(246 84% 62%)",
+    "valid": true
+  },
+  {
+    "type": "color",
+    "value": "oklch(60% 0.2 280)",
+    "valid": true
+  },
+  {
+    "type": "color",
+    "value": "transparent",
+    "valid": true
+  },
+  {
+    "type": "color",
+    "value": "rebeccapurple",
+    "valid": true
+  },
+  {
+    "type": "color",
+    "value": "currentColor",
+    "valid": true
+  },
+  {
+    "type": "color",
+    "value": "red; background: url(x)",
+    "valid": false
+  },
+  {
+    "type": "color",
+    "value": "url(https://example.com/a.png)",
+    "valid": false
+  },
+  {
+    "type": "color",
+    "value": "URL(x)",
+    "valid": false
+  },
+  {
+    "type": "color",
+    "value": "var(--brand)",
+    "valid": false
+  },
+  {
+    "type": "color",
+    "value": "expression(alert(1))",
+    "valid": false
+  },
+  {
+    "type": "color",
+    "value": "#fff}",
+    "valid": false
+  },
+  {
+    "type": "color",
+    "value": "#fff/*",
+    "valid": false
+  },
+  {
+    "type": "color",
+    "value": "#fff\\",
+    "valid": false
+  },
+  {
+    "type": "color",
+    "value": "#fff !important",
+    "valid": false
+  },
+  {
+    "type": "color",
+    "value": "@import",
+    "valid": false
+  },
+  {
+    "type": "color",
+    "value": "<b>",
+    "valid": false
+  },
+  {
+    "type": "color",
+    "value": "#fff\n",
+    "valid": false
+  },
+  {
+    "type": "color",
+    "value": "#fff\r",
+    "valid": false
+  },
+  {
+    "type": "color",
+    "value": "#fff\u000b",
+    "valid": true
+  },
+  {
+    "type": "color",
+    "value": "#fff\f",
+    "valid": false
+  },
+  {
+    "type": "color",
+    "value": "#fff\t",
+    "valid": true
+  },
+  {
+    "type": "color",
+    "value": " #fff",
+    "valid": true
+  },
+  {
+    "type": "color",
+    "value": "#fff ",
+    "valid": true
+  },
+  {
+    "type": "color",
+    "value": "",
+    "valid": false
+  },
+  {
+    "type": "color",
+    "value": "rgb(1,2,3",
+    "valid": false
+  },
+  {
+    "type": "color",
+    "value": "rgb()",
+    "valid": false
+  },
+  {
+    "type": "color",
+    "value": "#ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "valid": false
+  },
+  {
+    "type": "length",
+    "value": "0",
+    "valid": true
+  },
+  {
+    "type": "length",
+    "value": "12px",
+    "valid": true
+  },
+  {
+    "type": "length",
+    "value": "0.9375rem",
+    "valid": true
+  },
+  {
+    "type": "length",
+    "value": ".5em",
+    "valid": true
+  },
+  {
+    "type": "length",
+    "value": "-4px",
+    "valid": true
+  },
+  {
+    "type": "length",
+    "value": "50%",
+    "valid": true
+  },
+  {
+    "type": "length",
+    "value": "12",
+    "valid": false
+  },
+  {
+    "type": "length",
+    "value": "12 px",
+    "valid": false
+  },
+  {
+    "type": "length",
+    "value": "calc(1px + 2px)",
+    "valid": false
+  },
+  {
+    "type": "length",
+    "value": "1e3px",
+    "valid": false
+  },
+  {
+    "type": "length",
+    "value": "12pt",
+    "valid": true
+  },
+  {
+    "type": "length",
+    "value": "10vw",
+    "valid": true
+  },
+  {
+    "type": "length",
+    "value": "px",
+    "valid": false
+  },
+  {
+    "type": "length",
+    "value": "12px\u000b",
+    "valid": true
+  },
+  {
+    "type": "fontFamily",
+    "value": "system-ui, sans-serif",
+    "valid": true
+  },
+  {
+    "type": "fontFamily",
+    "value": "\"Inter\", system-ui",
+    "valid": true
+  },
+  {
+    "type": "fontFamily",
+    "value": "'Helvetica Neue', Arial",
+    "valid": true
+  },
+  {
+    "type": "fontFamily",
+    "value": "Inter",
+    "valid": true
+  },
+  {
+    "type": "fontFamily",
+    "value": "ui-monospace, Menlo, monospace",
+    "valid": true
+  },
+  {
+    "type": "fontFamily",
+    "value": "\"Inter",
+    "valid": false
+  },
+  {
+    "type": "fontFamily",
+    "value": "Inter; color: red",
+    "valid": false
+  },
+  {
+    "type": "fontFamily",
+    "value": "Inter,",
+    "valid": false
+  },
+  {
+    "type": "fontFamily",
+    "value": ", Inter",
+    "valid": false
+  },
+  {
+    "type": "fontFamily",
+    "value": "url(font.woff)",
+    "valid": false
+  },
+  {
+    "type": "fontFamily",
+    "value": "Inter\u000bBold",
+    "valid": false
+  },
+  {
+    "type": "shadow",
+    "value": "none",
+    "valid": true
+  },
+  {
+    "type": "shadow",
+    "value": "0 1px 2px rgba(0,0,0,0.1)",
+    "valid": true
+  },
+  {
+    "type": "shadow",
+    "value": "0 1px 2px #0003, 0 4px 12px rgb(0 0 0 / 12%)",
+    "valid": true
+  },
+  {
+    "type": "shadow",
+    "value": "inset 0 1px 0 #fff",
+    "valid": true
+  },
+  {
+    "type": "shadow",
+    "value": "0 1px 2px url(x)",
+    "valid": false
+  },
+  {
+    "type": "shadow",
+    "value": "0 1px",
+    "valid": true
+  },
+  {
+    "type": "shadow",
+    "value": "0 1px 2px var(--shadow)",
+    "valid": false
+  },
+  {
+    "type": "shadow",
+    "value": "1px 2px red;",
+    "valid": false
+  },
+  {
+    "type": "color",
+    "value": "#fff\u0000",
+    "valid": false
+  },
+  {
+    "type": "color",
+    "value": "\u0000#fff",
+    "valid": false
+  },
+  {
+    "type": "color",
+    "value": "#fff",
+    "valid": false
+  },
+  {
+    "type": "fontFamily",
+    "value": "Inter\u0000",
+    "valid": false
+  },
+  {
+    "type": "fontFamily",
+    "value": "Inter",
+    "valid": false
+  },
+  {
+    "type": "length",
+    "value": "12px\u0000",
+    "valid": false
+  },
+  {
+    "type": "length",
+    "value": "12px",
+    "valid": false
+  },
+  {
+    "type": "fontFamily",
+    "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "valid": true
+  },
+  {
+    "type": "fontFamily",
+    "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "valid": false
+  }
+]

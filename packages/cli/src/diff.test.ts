@@ -9,12 +9,28 @@ import { DEFAULT_ENVIRONMENT_SETTINGS, type EnvironmentSettings } from '@tula/co
 import {
   buildPlan,
   diffValues,
+  type HookChange,
+  hookSnapshot,
+  type NativeAppChange,
+  nativeAppSnapshot,
   orderOperations,
   type Plan,
+  planHooks,
+  planNativeApps,
   planProviders,
+  planWebhooks,
+  providersGoingOff,
+  type RemoteDependents,
+  type RemoteHook,
+  type RemoteNativeApp,
   type RemoteProvider,
   type RemoteState,
+  type RemoteWebhook,
+  readDependentCount,
+  type WebhookChange,
+  webhookSnapshot,
 } from './diff'
+import { planWarnings } from './render'
 
 const HASH = `sha256:${'a1'.repeat(32)}`
 
@@ -43,13 +59,23 @@ function provider(
     clientId: null,
     teamId: null,
     keyId: null,
+    tenant: null,
     callbackUrl: `https://auth.example.com/v1/oauth/${name}/callback`,
     updatedAt: null,
     ...over,
   }
 }
 
-const NO_PROVIDERS = [provider('google'), provider('github'), provider('apple')]
+const NO_PROVIDERS = [
+  provider('google'),
+  provider('github'),
+  provider('apple'),
+  provider('microsoft'),
+  provider('discord'),
+  provider('linkedin'),
+  provider('x'),
+  provider('facebook'),
+]
 
 function remote(over: Partial<RemoteState> = {}): RemoteState {
   return { revision: 3, settings: settings(), managedBy: null, providers: NO_PROVIDERS, ...over }
@@ -62,6 +88,12 @@ function plan(
 ): Plan {
   return buildPlan(state, environment(input), { configHash: HASH, ...options })
 }
+
+/** The method, `sms.enabled` and `sms.allowedCountries`, for the texted sign-in code's table. */
+type SmsSignIn = [boolean, boolean, string[]]
+type MfaPolicy = EnvironmentSettings['mfa']['policy']
+/** The policy, `mfa.smsCode`, `sms.enabled` and `sms.allowedCountries`, for the second step's table. */
+type SmsSecondStep = [MfaPolicy, boolean, boolean, string[]]
 
 describe('diffValues', () => {
   test.each([
@@ -91,6 +123,55 @@ describe('diffValues', () => {
       { path: 'a.b.d', kind: 'changed', before: 2, after: 3 },
       { path: 'fresh', kind: 'added', after: { whole: 'object' } },
       { path: 'gone', kind: 'removed', before: 1 },
+    ])
+  })
+
+  test.each([
+    ['urls.allowedOrigins', ['https://a.test', 'https://b.test'], 'https://c.test'],
+    ['urls.allowedRedirectUrls', ['https://a.test/cb', 'https://b.test/cb'], 'https://c.test/cb'],
+    ['sms.allowedCountries', ['US', 'DE'], 'FR'],
+  ])('%s is a set by default: order is no change, an entry is', (path, entries, extra) => {
+    const [section, key] = path.split('.') as [string, string]
+    const doc = (list: string[]) => ({ [section]: { [key]: list } })
+    expect(diffValues(doc(entries), doc([...entries].reverse()))).toEqual([])
+    expect(diffValues(doc(entries), doc([...entries].reverse().concat(extra)))).toEqual([
+      {
+        path,
+        kind: 'changed',
+        before: entries,
+        after: [...entries].reverse().concat(extra),
+        added: [extra],
+        removed: [],
+      },
+    ])
+  })
+
+  test.each([
+    ['reordered', ['US', 'DE'], ['DE', 'US']],
+    ['an entry written twice', ['US', 'DE'], ['US', 'DE', 'US']],
+    ['reordered, with entries written twice', ['US', 'DE'], ['DE', 'DE', 'US', 'US']],
+  ])('sms.allowedCountries is a set: %s is no change', (_name, server, file) => {
+    // With the paths the plan itself uses: a country is texted or it is not.
+    expect(
+      diffValues({ sms: { allowedCountries: server } }, { sms: { allowedCountries: file } })
+    ).toEqual([])
+  })
+
+  test('sms.allowedCountries is a set: a change names the countries added and removed', () => {
+    expect(
+      diffValues(
+        { sms: { allowedCountries: ['US', 'DE'] } },
+        { sms: { allowedCountries: ['FR', 'US', 'FR'] } }
+      )
+    ).toEqual([
+      {
+        path: 'sms.allowedCountries',
+        kind: 'changed',
+        before: ['US', 'DE'],
+        after: ['FR', 'US', 'FR'],
+        added: ['FR'],
+        removed: ['DE'],
+      },
     ])
   })
 
@@ -150,6 +231,7 @@ describe('planProviders', () => {
       secretEnv: 'GOOGLE_CLIENT_SECRET',
       enabledBefore: false,
       enabledAfter: true,
+      weakened: [],
     })
     expect(apple?.action).toBe('create')
     expect(apple?.fields.map((field) => field.path)).toEqual([
@@ -180,6 +262,251 @@ describe('planProviders', () => {
       ['apple', 'none', 'keep'],
       ['google', 'none', 'keep'],
     ])
+  })
+
+  describe('Microsoft', () => {
+    const microsoft = {
+      clientId: 'ms-client',
+      clientSecret: env('MICROSOFT_CLIENT_SECRET'),
+      tenant: 'organizations',
+    }
+    const file = (over: Partial<typeof microsoft> & { enabled?: boolean } = {}) =>
+      environment({ providers: { microsoft: { ...microsoft, ...over } } }).providers
+    const stored = (over: Partial<RemoteProvider> = {}) => [
+      provider('microsoft', {
+        configured: true,
+        enabled: true,
+        clientId: 'ms-client',
+        tenant: 'organizations',
+        ...over,
+      }),
+    ]
+    const TENANT_ID = '72f988bf-86f1-41af-91ab-2d7cd011db47'
+
+    test('it is created with its tenant as a field and its secret from the environment', () => {
+      expect(planProviders(NO_PROVIDERS, file(), {})).toEqual([
+        {
+          provider: 'microsoft',
+          action: 'create',
+          fields: [
+            { path: 'clientId', kind: 'added', after: 'ms-client' },
+            { path: 'tenant', kind: 'added', after: 'organizations' },
+            { path: 'enabled', kind: 'added', after: true },
+          ],
+          secret: 'set',
+          secretEnv: 'MICROSOFT_CLIENT_SECRET',
+          enabledBefore: false,
+          enabledAfter: true,
+          weakened: [],
+        },
+      ])
+    })
+
+    // What each difference between the file and the server does to the provider and to its
+    // stored secret. The tenant says which accounts may sign in, not which app registration
+    // the secret belongs to: changing it keeps the secret, as switching the provider does.
+    test.each([
+      ['nothing differs', {}, {}, 'none', [], 'keep'],
+      ['the tenant', { tenant: TENANT_ID }, {}, 'update', ['tenant'], 'keep'],
+      [
+        'the tenant, written in capitals',
+        { tenant: TENANT_ID.toUpperCase() },
+        { tenant: TENANT_ID },
+        'none',
+        [],
+        'keep',
+      ],
+      ['an alias in capitals', { tenant: 'Organizations' }, {}, 'none', [], 'keep'],
+      [
+        'the tenant and the switch',
+        { tenant: 'common', enabled: false },
+        {},
+        'update',
+        ['tenant', 'enabled'],
+        'keep',
+      ],
+      ['the client id', { clientId: 'other' }, {}, 'update', ['clientId'], 'set'],
+      [
+        'the client id and the tenant',
+        { clientId: 'other', tenant: 'common' },
+        {},
+        'update',
+        ['clientId', 'tenant'],
+        'set',
+      ],
+      ['a server that reports no tenant', {}, { tenant: null }, 'update', ['tenant'], 'keep'],
+    ] as const)('%s', (_name, inFile, onServer, action, fields, secret) => {
+      const [plan] = planProviders(stored(onServer), file(inFile), {})
+      expect(plan?.action).toBe(action)
+      expect(plan?.fields.map((field) => field.path)).toEqual([...fields])
+      expect(plan?.secret).toBe(secret)
+    })
+
+    // Pinned, not decided (TULA-12): a wider tenant admits accounts from more directories,
+    // and nothing here calls that a weakening, so `apply --yes` makes the change without
+    // `--allow-weaker`. Whether it should be one is the owner's question; this row is what
+    // changes when it is answered.
+    test.each([
+      ['one organization to every organization', TENANT_ID, 'organizations'],
+      ['one organization to any account', TENANT_ID, 'common'],
+      ['every organization to any account', 'organizations', 'common'],
+      ['personal accounts to any account', 'consumers', 'common'],
+    ])(
+      'widening the tenant (%s) is a change and is not flagged as a weakening',
+      (_name, was, is) => {
+        const state = remote({
+          providers: [
+            ...NO_PROVIDERS.filter((entry) => entry.provider !== 'microsoft'),
+            ...stored({ tenant: was }),
+          ],
+        })
+        const result = plan({ providers: { microsoft: { ...microsoft, tenant: is } } }, state)
+        expect(result.providers.find((entry) => entry.provider === 'microsoft')?.fields).toEqual([
+          { path: 'tenant', kind: 'changed', before: was, after: is },
+        ])
+        expect(result.weakened).toEqual([])
+      }
+    )
+
+    test('a tenant change with --rotate-secrets sends the secret', () => {
+      const [plan] = planProviders(stored(), file({ tenant: 'common' }), { rotateSecrets: true })
+      expect(plan).toMatchObject({ action: 'update', secret: 'set' })
+    })
+  })
+
+  // ADR 0045: the client ids of the operator's native apps, whose Google ID tokens the
+  // server accepts. A set; left out of the file means none; a gained one is a weakening.
+  describe('Google’s additional client ids', () => {
+    const WEB = '1-web.apps.googleusercontent.com'
+    const A = '1-android.apps.googleusercontent.com'
+    const B = '1-ios.apps.googleusercontent.com'
+    const C = '1-tablet.apps.googleusercontent.com'
+    const google = { clientId: WEB, clientSecret: env('GOOGLE_CLIENT_SECRET') }
+    const file = (additionalClientIds?: string[]) =>
+      environment({
+        providers: { google: { ...google, ...(additionalClientIds && { additionalClientIds }) } },
+      }).providers
+    const stored = (additionalClientIds?: string[]) => [
+      provider('google', {
+        configured: true,
+        enabled: true,
+        clientId: WEB,
+        ...(additionalClientIds && { additionalClientIds }),
+      }),
+    ]
+
+    test.each([
+      ['the same set', [A, B], [A, B], 'none', [], [], []],
+      ['the same set in another order', [B, A], [A, B], 'none', [], [], []],
+      ['none in the file, none on the server', undefined, [], 'none', [], [], []],
+      [
+        'none in the file, a server from before the field',
+        undefined,
+        undefined,
+        'none',
+        [],
+        [],
+        [],
+      ],
+      ['an empty list in the file, none on the server', [], undefined, 'none', [], [], []],
+      ['one gained', [A, B], [A], 'update', [B], [], ['providers.google.additionalClientIds']],
+      [
+        'the first one, on a server from before the field',
+        [A],
+        undefined,
+        'update',
+        [A],
+        [],
+        ['providers.google.additionalClientIds'],
+      ],
+      ['one taken away', [A], [A, B], 'update', [], [B], []],
+      [
+        'left out of the file: the server’s are removed',
+        undefined,
+        [A, B],
+        'update',
+        [],
+        [A, B],
+        [],
+      ],
+      [
+        'one replaced by another',
+        [A, C],
+        [A, B],
+        'update',
+        [C],
+        [B],
+        ['providers.google.additionalClientIds'],
+      ],
+    ] as const)('%s', (_name, inFile, onServer, action, added, removed, weakened) => {
+      const [plan] = planProviders(
+        stored(onServer && [...onServer]),
+        file(inFile && [...inFile]),
+        {}
+      )
+      expect(plan?.action).toBe(action)
+      expect(plan?.fields).toEqual(
+        action === 'none'
+          ? []
+          : [
+              {
+                path: 'additionalClientIds',
+                kind: 'changed',
+                before: [...(onServer ?? [])].sort(),
+                after: [...(inFile ?? [])].sort(),
+                added: [...added],
+                removed: [...removed],
+              },
+            ]
+      )
+      // The app registration is the same: the stored secret stays.
+      expect(plan?.secret).toBe('keep')
+      expect(plan?.weakened).toEqual([...weakened])
+    })
+
+    test('a provider created with ids shows them, and that is a weakening', () => {
+      const [plan] = planProviders(NO_PROVIDERS, file([B, A]), {})
+      expect(plan).toMatchObject({
+        action: 'create',
+        fields: [
+          { path: 'clientId', kind: 'added', after: WEB },
+          { path: 'additionalClientIds', kind: 'added', after: [A, B] },
+          { path: 'enabled', kind: 'added', after: true },
+        ],
+        secret: 'set',
+        weakened: ['providers.google.additionalClientIds'],
+      })
+    })
+
+    test('a provider created without ids does not mention them', () => {
+      const [plan] = planProviders(NO_PROVIDERS, file(), {})
+      expect(plan?.fields.map((field) => field.path)).toEqual(['clientId', 'enabled'])
+      expect(plan?.weakened).toEqual([])
+    })
+
+    test('a gained id is in the plan’s weakened list, a lost one is not', () => {
+      const state = (ids: string[]) =>
+        remote({
+          providers: [
+            ...NO_PROVIDERS.filter((entry) => entry.provider !== 'google'),
+            ...stored(ids),
+          ],
+        })
+      const gained = plan(
+        { providers: { google: { ...google, additionalClientIds: [A] } } },
+        state([])
+      )
+      expect(gained.weakened).toEqual(['providers.google.additionalClientIds'])
+      const lost = plan({ providers: { google } }, state([A]))
+      expect(lost.weakened).toEqual([])
+      // The path names the field and never a client id.
+      expect(JSON.stringify(gained.weakened)).not.toContain('googleusercontent')
+    })
+
+    test('a provider the file leaves out keeps its ids: unmanaged, nothing weakened', () => {
+      const [plan] = planProviders(stored([A]), {}, {})
+      expect(plan).toMatchObject({ action: 'unmanaged', fields: [], weakened: [] })
+    })
   })
 
   test('a changed client id is an update that sends the secret again', () => {
@@ -229,6 +556,7 @@ describe('planProviders', () => {
         secret: 'none',
         enabledBefore: true,
         enabledAfter: true,
+        weakened: [],
       },
     ])
     expect(planProviders(configured, {}, { prune: true })).toMatchObject([
@@ -236,6 +564,211 @@ describe('planProviders', () => {
     ])
     // Not configured and not in the file: nothing to say.
     expect(planProviders(NO_PROVIDERS, {}, { prune: true })).toEqual([])
+  })
+})
+
+describe('a provider that accounts depend on (ADR 0059)', () => {
+  const x = { clientId: 'x-client', clientSecret: env('X_CLIENT_SECRET') }
+  const stored = (enabled: boolean) => [
+    provider('x', { configured: true, enabled, clientId: 'x-client' }),
+  ]
+  const COUNTED = { accounts: 3, more: false }
+  const NOT_COUNTED =
+    'the accounts that can sign in only with x could not be counted (this server has no count): if there are any they are locked out'
+
+  const NOT_JUDGED = ', and this plan was not judged for them'
+
+  const NOT_READ =
+    'the accounts that can sign in only with x could not be counted (the count could not be read): if there are any they are locked out'
+
+  const TAKEN_AS_WEAKER = ', and this plan is taken to weaken security'
+
+  /** What the file does with the provider, the server's state, the count, and the outcome. */
+  type Row = [
+    name: string,
+    file: 'on' | 'off' | 'left out' | 'pruned',
+    enabledOnServer: boolean,
+    dependents: RemoteDependents,
+    weakened: string[],
+    line: string | null,
+  ]
+
+  test.each([
+    [
+      'switched off with dependents',
+      'off',
+      true,
+      { x: COUNTED },
+      ['providers.x.enabled'],
+      '3 accounts can sign in only with x: they are locked out while it is off',
+    ],
+    [
+      'switched off with one dependent',
+      'off',
+      true,
+      { x: { accounts: 1, more: false } },
+      ['providers.x.enabled'],
+      '1 account can sign in only with x: it is locked out while it is off',
+    ],
+    ['switched off with none', 'off', true, { x: { accounts: 0, more: false } }, [], null],
+    [
+      'switched off, none among the accounts looked at and more not looked at',
+      'off',
+      true,
+      { x: { accounts: 0, more: true } },
+      ['providers.x.enabled'],
+      'none of the accounts the server read can sign in only with x, and it did not read them all: the rest were not looked at, so how many there are is not known',
+    ],
+    [
+      'switched off, the scan’s limit found and more not looked at',
+      'off',
+      true,
+      { x: { accounts: 1000, more: true } },
+      ['providers.x.enabled'],
+      'at least 1000 accounts can sign in only with x: they are locked out while it is off',
+    ],
+    [
+      'switched off, exactly one found and more not looked at',
+      'off',
+      true,
+      { x: { accounts: 1, more: true } },
+      ['providers.x.enabled'],
+      'at least 1 account can sign in only with x: they are locked out while it is off',
+    ],
+    // A count that should have been there and could not be read is a floor nobody knows:
+    // the plan is flagged, as for a scan that did not look at every account.
+    [
+      'switched off, the count not read',
+      'off',
+      true,
+      { x: 'unread' },
+      ['providers.x.enabled'],
+      `${NOT_READ} while it is off${TAKEN_AS_WEAKER}`,
+    ],
+    [
+      'removed, the count not read',
+      'pruned',
+      true,
+      { x: 'unread' },
+      ['providers.x'],
+      `${NOT_READ} until it is configured again${TAKEN_AS_WEAKER}`,
+    ],
+    ['already off, the count not read', 'off', false, { x: 'unread' }, [], null],
+    ['removed while off, the count not read', 'pruned', false, { x: 'unread' }, [], null],
+    [
+      'switched off, not counted',
+      'off',
+      true,
+      { x: null },
+      [],
+      `${NOT_COUNTED} while it is off${NOT_JUDGED}`,
+    ],
+    // A count nobody asked for is not there to judge, and nothing is said of it.
+    ['switched off, not asked', 'off', true, {}, [], null],
+    // A count is for a provider the run takes away: handed one all the same, it is not used.
+    ['stays on', 'on', true, { x: COUNTED }, [], null],
+    ['already off', 'off', false, { x: COUNTED }, [], null],
+    ['left out of the file, without --prune', 'left out', true, { x: COUNTED }, [], null],
+    [
+      'removed with dependents',
+      'pruned',
+      true,
+      { x: COUNTED },
+      ['providers.x'],
+      '3 accounts can sign in only with x: they are locked out until it is configured again',
+    ],
+    ['removed with none', 'pruned', true, { x: { accounts: 0, more: false } }, [], null],
+    [
+      'removed, not counted',
+      'pruned',
+      true,
+      { x: null },
+      [],
+      `${NOT_COUNTED} until it is configured again${NOT_JUDGED}`,
+    ],
+    ['removed while off', 'pruned', false, { x: COUNTED }, [], null],
+  ] as Row[])('%s', (_name, file, enabledOnServer, dependents, weakened, line) => {
+    const providers = file === 'on' ? { x } : file === 'off' ? { x: { ...x, enabled: false } } : {}
+    const result = plan({ providers }, remote({ providers: stored(enabledOnServer), dependents }), {
+      prune: file === 'pruned',
+    })
+    expect(result.weakened).toEqual(weakened)
+    expect(result.providers.find((change) => change.provider === 'x')?.weakened).toEqual(weakened)
+    const lines = planWarnings(result).filter((warning) => warning.includes('sign in only with'))
+    expect(lines).toEqual(line === null ? [] : [line])
+    // A floor of none is no number: nobody was found, and nobody is said to be locked out.
+    expect(planWarnings(result).join('\n')).not.toMatch(/at least 0/i)
+    // A count that was not read is never said as a number.
+    if (dependents.x === null || dependents.x === 'unread') {
+      expect(planWarnings(result).join('\n')).not.toMatch(/\d+ accounts?/)
+    }
+  })
+
+  test('the count is asked for only where a provider that is on is switched off or removed', () => {
+    const state = [
+      provider('x', { configured: true, enabled: true, clientId: 'x-client' }),
+      provider('github', { configured: true, enabled: true, clientId: 'gh' }),
+      provider('discord', { configured: true, enabled: false, clientId: 'd' }),
+      provider('facebook', { configured: true, enabled: true, clientId: 'f' }),
+      provider('google', { configured: true, enabled: false, clientId: 'g' }),
+    ]
+    const desired = environment({
+      providers: {
+        x: { ...x, enabled: false },
+        github: { clientId: 'gh', clientSecret: env('GITHUB_CLIENT_SECRET') },
+        discord: { clientId: 'd', clientSecret: env('DISCORD_CLIENT_SECRET'), enabled: false },
+        linkedin: { clientId: 'l', clientSecret: env('LINKEDIN_CLIENT_SECRET'), enabled: false },
+      },
+    }).providers
+    // Facebook is left out and on: removed only with --prune. Google is left out and off.
+    expect(providersGoingOff(state, desired, {})).toEqual(['x'])
+    expect(providersGoingOff(state, desired, { prune: true })).toEqual(['facebook', 'x'])
+    expect(providersGoingOff(NO_PROVIDERS, desired, { prune: true })).toEqual([])
+  })
+
+  test('a client id gained and a switch-off are both named, the field first', () => {
+    const A = '1234567890-abc.apps.googleusercontent.com'
+    const google = { clientId: 'g', clientSecret: env('GOOGLE_CLIENT_SECRET') }
+    const result = plan(
+      { providers: { google: { ...google, additionalClientIds: [A], enabled: false } } },
+      remote({
+        providers: [provider('google', { configured: true, enabled: true, clientId: 'g' })],
+        dependents: { google: COUNTED },
+      })
+    )
+    expect(result.weakened).toEqual([
+      'providers.google.additionalClientIds',
+      'providers.google.enabled',
+    ])
+  })
+
+  test.each([
+    [
+      { provider: 'x', accounts: 3, more: false },
+      { accounts: 3, more: false },
+    ],
+    [
+      { provider: 'x', accounts: 0, more: true },
+      { accounts: 0, more: true },
+    ],
+    // Only the two values are kept, whatever else an answer holds.
+    [
+      { provider: 'x', accounts: 2, more: false, users: ['u1'] },
+      { accounts: 2, more: false },
+    ],
+    [{ provider: 'github', accounts: 3, more: false }, null],
+    [{ provider: 'x', accounts: -1, more: false }, null],
+    [{ provider: 'x', accounts: 1.5, more: false }, null],
+    [{ provider: 'x', accounts: '3', more: false }, null],
+    [{ provider: 'x', accounts: Number.NaN, more: false }, null],
+    [{ provider: 'x', accounts: 3 }, null],
+    [{ provider: 'x', accounts: 3, more: 'false' }, null],
+    [{ accounts: 3, more: false }, null],
+    [null, null],
+    ['3', null],
+    [[], null],
+  ] as [unknown, unknown][])('an answer %j is read as %j', (answer, count) => {
+    expect(readDependentCount('x', answer)).toEqual(count as never)
   })
 })
 
@@ -288,6 +821,228 @@ describe('buildPlan', () => {
     expect(result.weakened).toEqual(['mfa.policy'])
   })
 
+  test.each([
+    ['a period where the server keeps entries for ever', null, 365, ['audit.retentionDays']],
+    ['a shorter period', 365, 30, ['audit.retentionDays']],
+    ['a longer period', 30, 365, []],
+    ['the same period', 30, 30, []],
+    ['no period (left out of the file) where there was one', 365, null, []],
+  ] as [string, number | null, number | null, string[]][])(
+    'audit retention: %s is flagged only when older entries would be deleted',
+    (_name, was, is, weakened) => {
+      const state = remote({
+        settings: settings((s) => {
+          s.audit.retentionDays = was
+        }),
+      })
+      const file = is === null ? {} : { settings: { audit: { retentionDays: is } } }
+      expect(plan(file, state).weakened).toEqual(weakened)
+    }
+  )
+
+  // Whether a production environment accepts an agent's proposals (ADR 0053). Left out of
+  // the file it is off, and managed: a file that says nothing switches it off.
+  test.each([
+    ['switched on', false, true, ['agents.proposalsInProduction'], true],
+    ['switched off', true, false, [], true],
+    ['on in both', true, true, [], false],
+    ['off in both', false, false, [], false],
+    ['left out of the file where it is on', true, null, [], true],
+    ['left out of the file where it is off', false, null, [], false],
+  ] as [string, boolean, boolean | null, string[], boolean][])(
+    'proposals in production: %s is flagged only when it lets agents propose there',
+    (_name, was, is, weakened, changes) => {
+      const state = remote({
+        settings: settings((s) => {
+          s.agents.proposalsInProduction = was
+        }),
+      })
+      const file = is === null ? {} : { settings: { agents: { proposalsInProduction: is } } }
+      const planned = plan(file, state)
+      expect(planned.weakened).toEqual(weakened)
+      expect(planned.settings.map((change) => change.path)).toEqual(
+        changes ? ['agents.proposalsInProduction'] : []
+      )
+    }
+  )
+
+  test.each([
+    ['a higher limit', 100, 2000, ['sms.dailyMessageLimit']],
+    ['a lower limit', 2000, 100, []],
+    ['the same limit', 100, 100, []],
+    // The file's default (500) is what it asks for.
+    ['no limit in the file where the server has a lower one', 100, null, ['sms.dailyMessageLimit']],
+    ['no limit in the file where the server has a higher one', 2000, null, []],
+  ] as [string, number, number | null, string[]][])(
+    'the daily limit of text messages: %s is flagged only when more could be sent',
+    (_name, was, is, weakened) => {
+      const state = remote({
+        settings: settings((s) => {
+          s.sms.dailyMessageLimit = was
+        }),
+      })
+      const file = is === null ? {} : { settings: { sms: { dailyMessageLimit: is } } }
+      expect(plan(file, state).weakened).toEqual(weakened)
+    }
+  )
+
+  test.each([
+    [
+      'the method switched on where text messages are sent',
+      [false, true, ['US']],
+      [true, true, ['US']],
+      ['signIn.methods.smsCode'],
+    ],
+    [
+      'text messages switched on under the method',
+      [true, false, ['US']],
+      [true, true, ['US']],
+      ['signIn.methods.smsCode'],
+    ],
+    [
+      'a first country under the method',
+      [true, true, []],
+      [true, true, ['US']],
+      ['signIn.methods.smsCode'],
+    ],
+    [
+      'the method switched on where no text message is sent',
+      [false, false, []],
+      [true, false, []],
+      [],
+    ],
+    [
+      'a country added while a texted code signs in',
+      [true, true, ['US']],
+      [true, true, ['DE', 'US']],
+      ['sms.allowedCountries'],
+    ],
+    ['a country added while it does not', [false, true, ['US']], [false, true, ['DE', 'US']], []],
+    ['a country taken away', [true, true, ['DE', 'US']], [true, true, ['US']], []],
+    ['the method switched off', [true, true, ['US']], [false, true, ['US']], []],
+  ] as [string, SmsSignIn, SmsSignIn, string[]][])(
+    'signing in with a texted code: %s',
+    (_name, was, is, weakened) => {
+      const state = remote({
+        settings: settings((s) => {
+          s.signIn.methods.smsCode.enabled = was[0]
+          s.sms.enabled = was[1]
+          s.sms.allowedCountries = was[2]
+        }),
+      })
+      const file = {
+        settings: {
+          signIn: { methods: { smsCode: { enabled: is[0] } } },
+          sms: { enabled: is[1], allowedCountries: is[2] },
+        },
+      }
+      expect(plan(file, state).weakened).toEqual(weakened)
+    }
+  )
+
+  test.each([
+    [
+      'switched on where a second step is required',
+      ['required', false],
+      ['required', true],
+      ['mfa.smsCode'],
+    ],
+    ['switched on where it is optional', ['optional', false], ['optional', true], []],
+    ['switched on with the policy off', ['off', false], ['off', true], []],
+    ['switched off where it is required', ['required', true], ['required', false], []],
+    ['left out of a file where the server has it on', ['required', true], ['required', null], []],
+    [
+      'switched on with a policy made required',
+      ['optional', false],
+      ['required', true],
+      ['mfa.smsCode'],
+    ],
+    ['switched on under a weaker policy', ['required', false], ['optional', true], ['mfa.policy']],
+  ] as [string, [MfaPolicy, boolean], [MfaPolicy, boolean | null], string[]][])(
+    'a texted code as the second step: %s',
+    (_name, was, is, weakened) => {
+      const state = remote({
+        settings: settings((s) => {
+          s.mfa = { policy: was[0], smsCode: { enabled: was[1] } }
+        }),
+      })
+      const file = {
+        settings: {
+          mfa: { policy: is[0], ...(is[1] !== null && { smsCode: { enabled: is[1] } }) },
+        },
+      }
+      const result = plan(file, state)
+      expect(result.weakened).toEqual(weakened)
+      // Left out of the file it is the default, off: a change like any other, never kept.
+      if (is[1] === null && was[1]) {
+        expect(JSON.stringify(result)).toContain('mfa.smsCode')
+      }
+    }
+  )
+
+  test.each([
+    [
+      'text messages switched on under the switch, where a second step is required',
+      ['required', true, false, ['US']],
+      ['required', true, true, ['US']],
+      ['mfa.smsCode'],
+    ],
+    [
+      'a first country under the switch, where a second step is required',
+      ['required', true, true, []],
+      ['required', true, true, ['US']],
+      ['mfa.smsCode'],
+    ],
+    [
+      'a country added while a texted code may be the required step',
+      ['required', true, true, ['US']],
+      ['required', true, true, ['DE', 'US']],
+      ['sms.allowedCountries'],
+    ],
+    [
+      'the same countries in another order',
+      ['required', true, true, ['US', 'DE']],
+      ['required', true, true, ['DE', 'US']],
+      [],
+    ],
+    [
+      'a country added where the second step is optional',
+      ['optional', true, true, ['US']],
+      ['optional', true, true, ['DE', 'US']],
+      [],
+    ],
+    [
+      'a country added while the switch is off',
+      ['required', false, true, ['US']],
+      ['required', false, true, ['DE', 'US']],
+      [],
+    ],
+    [
+      'a country taken away',
+      ['required', true, true, ['DE', 'US']],
+      ['required', true, true, ['US']],
+      [],
+    ],
+  ] as [string, SmsSecondStep, SmsSecondStep, string[]][])(
+    'where a texted second step may be sent: %s',
+    (_name, was, is, weakened) => {
+      const state = remote({
+        settings: settings((s) => {
+          s.mfa = { policy: was[0], smsCode: { enabled: was[1] } }
+          s.sms.enabled = was[2]
+          s.sms.allowedCountries = was[3]
+        }),
+      })
+      const file = {
+        settings: {
+          mfa: { policy: is[0], smsCode: { enabled: is[1] } },
+          sms: { enabled: is[2], allowedCountries: is[3] },
+        },
+      }
+      expect(plan(file, state).weakened).toEqual(weakened)
+    }
+  )
+
   test('weakenings are the contract’s: a shorter password and a longer session are both flagged', () => {
     const result = plan({
       settings: {
@@ -334,6 +1089,271 @@ describe('buildPlan', () => {
       ['sessions.profiles.old', 'removed'],
     ])
     expect(result.unknown).toEqual([])
+  })
+
+  describe('the sign-in test (ADR 0058)', () => {
+    type Allowed = boolean | null
+    /** A server whose `agents.testSignIn` is this. */
+    const server = (testSignIn: Allowed) =>
+      remote({
+        settings: settings((s) => {
+          s.agents.testSignIn = testSignIn
+        }),
+      })
+    /** A file that writes the setting, or (`undefined`) leaves it out. */
+    const file = (testSignIn: Allowed | undefined) => ({
+      settings: testSignIn === undefined ? {} : { agents: { testSignIn } },
+    })
+    const PATH = 'agents.testSignIn'
+
+    // Server, file, whether the plan changes the field, whether that weakens. `true` written
+    // where the server does not have `true` is flagged whatever the environment's kind: the
+    // plan does not know the kind, and in production that is the one value that lets a run
+    // create a user there. Left out of the file it is `null` (the kind's default), managed:
+    // over a server that says `false` that takes a refusal back, and is flagged too.
+    test.each<[Allowed, Allowed | undefined, boolean, boolean]>([
+      [null, true, true, true],
+      [false, true, true, true],
+      [true, true, false, false],
+      [true, false, true, false],
+      [true, null, true, false],
+      [true, undefined, true, false],
+      [null, false, true, false],
+      [false, null, true, true],
+      [false, undefined, true, true],
+      [null, null, false, false],
+      [null, undefined, false, false],
+      [false, false, false, false],
+    ])('the server has %p, the file %p: changed %p, weakens %p', (has, wants, changes, weakens) => {
+      const result = plan(file(wants), server(has))
+      expect(result.settings.map((change) => [change.path, change.kind])).toEqual(
+        changes ? [[PATH, 'changed']] : []
+      )
+      expect(result.weakened).toEqual(weakens ? [PATH] : [])
+      expect(result.unknown).toEqual([])
+    })
+
+    // `agents` has two keys (this one and ADR 0053's `proposalsInProduction`), and each is
+    // planned by itself: a file that writes one leaves the other at its default, which is
+    // managed, and a file that writes both as the server has them plans nothing.
+    test.each<[string, Record<string, unknown>, string[]]>([
+      ['both as the server has them', { proposalsInProduction: true, testSignIn: true }, []],
+      ['only the sign-in test', { testSignIn: true }, ['agents.proposalsInProduction']],
+      ['only the proposals', { proposalsInProduction: true }, [PATH]],
+      ['neither', {}, ['agents.proposalsInProduction', PATH]],
+    ])('a server with both on and a file with %s', (_name, agents, changed) => {
+      const both = remote({
+        settings: settings((s) => {
+          s.agents.proposalsInProduction = true
+          s.agents.testSignIn = true
+        }),
+      })
+      const result = plan({ settings: { agents } }, both)
+      expect(result.settings.map((change) => change.path).sort()).toEqual([...changed].sort())
+      // Taking either back to its default asks less of nobody.
+      expect(result.weakened).toEqual([])
+    })
+
+    test('the line shows the value before and after', () => {
+      expect(plan(file(true), server(null)).settings).toEqual([
+        { path: PATH, kind: 'changed', before: null, after: true },
+      ])
+    })
+  })
+
+  describe('device binding (ADR 0043)', () => {
+    type Binding = 'none' | 'optional' | 'required'
+    /** A server whose `mobile` profile has this option. */
+    const server = (mobile: Binding) =>
+      remote({
+        settings: settings((s) => {
+          s.sessions.profiles.mobile.deviceBinding = mobile
+        }),
+      })
+    /** A file that writes the option on `mobile`, or (`null`) leaves it out. */
+    const file = (mobile: Binding | null) => ({
+      settings: {
+        sessions: { profiles: { mobile: mobile === null ? {} : { deviceBinding: mobile } } },
+      },
+    })
+    const PATH = 'sessions.profiles.mobile.deviceBinding'
+
+    // Server, file, whether the plan changes the field, whether that weakens.
+    test.each<[Binding, Binding | null, boolean, boolean]>([
+      ['required', 'required', false, false],
+      ['required', 'optional', true, true],
+      ['required', 'none', true, true],
+      ['optional', 'none', true, true],
+      ['optional', 'optional', false, false],
+      ['optional', 'required', true, false],
+      ['none', 'optional', true, false],
+      ['none', 'required', true, false],
+      ['none', 'none', false, false],
+      // Left out of the file it is the profile's default (`optional` for `mobile`), as for
+      // every setting the file leaves out: never "unmanaged", so a server that requires a
+      // key is loosened, and the plan says so.
+      ['required', null, true, true],
+      ['optional', null, false, false],
+      ['none', null, true, false],
+    ])('the server has %s, the file %p: changed %p, weakens %p', (has, wants, changes, weakens) => {
+      const result = plan(file(wants), server(has))
+      expect(result.settings.map((change) => [change.path, change.kind])).toEqual(
+        changes ? [[PATH, 'changed']] : []
+      )
+      expect(result.weakened).toEqual(weakens ? [PATH] : [])
+      expect(result.unknown).toEqual([])
+    })
+
+    test('the line shows the value before and after', () => {
+      expect(plan(file('none'), server('required')).settings).toEqual([
+        { path: PATH, kind: 'changed', before: 'required', after: 'none' },
+      ])
+    })
+
+    test('the web profile’s default is none: a file that leaves it out changes nothing there', () => {
+      expect(plan({ settings: {} }).settings).toEqual([])
+      const result = plan({
+        settings: { sessions: { profiles: { web: { deviceBinding: 'none' } } } },
+      })
+      expect(result.settings).toEqual([])
+    })
+  })
+
+  describe('JWT templates', () => {
+    const app = { claims: { role: { value: 'member' }, email: { from: 'user.email' } } } as const
+    /** A server that has these templates, with `web` using the one named. */
+    const server = (templates: Record<string, unknown>, web: string | null = null) =>
+      remote({
+        settings: settings((s) => {
+          s.sessions.jwtTemplates = structuredClone(templates) as never
+          s.sessions.profiles.web.jwtTemplate = web
+        }),
+      })
+    const file = (jwtTemplates: Record<string, unknown>, web: string | null = null) =>
+      ({
+        settings: { sessions: { jwtTemplates, profiles: { web: { jwtTemplate: web } } } },
+      }) as never
+    const lines = (result: ReturnType<typeof plan>) =>
+      result.settings.map((change) => [change.path, change.kind])
+
+    test.each<[string, Record<string, unknown>, Record<string, unknown>, [string, string][]]>([
+      ['the same templates', { app }, { app }, []],
+      [
+        'templates and claims are sets: another order is no change',
+        { app, other: { claims: {} } },
+        {
+          other: { claims: {} },
+          app: { claims: { email: { from: 'user.email' }, role: { value: 'member' } } },
+        },
+        [],
+      ],
+      [
+        'a template only the file has is added as a whole',
+        {},
+        { app },
+        [['sessions.jwtTemplates.app', 'added']],
+      ],
+      [
+        'a template only the server has is removed as a whole',
+        { app },
+        {},
+        [['sessions.jwtTemplates.app', 'removed']],
+      ],
+      [
+        'a claim only the file has is added by its key',
+        { app },
+        { app: { claims: { ...app.claims, beta: { value: true } } } },
+        [['sessions.jwtTemplates.app.claims.beta', 'added']],
+      ],
+      [
+        'a claim only the server has is removed by its key',
+        { app },
+        { app: { claims: { role: { value: 'member' } } } },
+        [['sessions.jwtTemplates.app.claims.email', 'removed']],
+      ],
+      [
+        'a constant that differs is one changed claim',
+        { app },
+        { app: { claims: { ...app.claims, role: { value: 'owner' } } } },
+        [['sessions.jwtTemplates.app.claims.role', 'changed']],
+      ],
+      [
+        'a claim that changes its kind of source is one changed claim, not a field each way',
+        { app },
+        { app: { claims: { ...app.claims, role: { from: 'session.client' } } } },
+        [['sessions.jwtTemplates.app.claims.role', 'changed']],
+      ],
+    ])('%s', (_name, has, wants, expected) => {
+      const result = plan(file(wants), server(has))
+      expect(lines(result)).toEqual(expected)
+      // A template or a claim the file does not have is the file's choice, never a setting
+      // this version does not know.
+      expect(result.unknown).toEqual([])
+    })
+
+    test('a changed claim shows both definitions whole', () => {
+      const result = plan(
+        file({ app: { claims: { ...app.claims, role: { from: 'session.client' } } } }),
+        server({ app })
+      )
+      expect(result.settings).toEqual([
+        {
+          path: 'sessions.jwtTemplates.app.claims.role',
+          kind: 'changed',
+          before: { value: 'member' },
+          after: { from: 'session.client' },
+        },
+      ])
+    })
+
+    test('a profile that starts or stops using a template is a change of its field', () => {
+      expect(lines(plan(file({ app }, 'app'), server({ app })))).toEqual([
+        ['sessions.profiles.web.jwtTemplate', 'changed'],
+      ])
+      expect(lines(plan(file({ app }), server({ app }, 'app')))).toEqual([
+        ['sessions.profiles.web.jwtTemplate', 'changed'],
+      ])
+    })
+
+    test.each<[string, Record<string, unknown>, string | null, string[]]>([
+      [
+        'the profile stops using its template',
+        { app },
+        null,
+        ['sessions.profiles.web.jwtTemplate'],
+      ],
+      [
+        'a claim its sessions carry is removed',
+        { app: { claims: { role: { value: 'member' } } } },
+        'app',
+        ['sessions.profiles.web.jwtTemplate'],
+      ],
+      [
+        'a claim its sessions carry changes',
+        { app: { claims: { ...app.claims, role: { value: 'owner' } } } },
+        'app',
+        ['sessions.profiles.web.jwtTemplate'],
+      ],
+      [
+        'a claim is added',
+        { app: { claims: { ...app.claims, beta: { value: true } } } },
+        'app',
+        [],
+      ],
+      ['another template is added', { app, extra: { claims: {} } }, 'app', []],
+    ])('weakening: %s', (_name, wants, web, weakened) => {
+      expect(plan(file(wants, web), server({ app }, 'app')).weakened).toEqual(weakened)
+    })
+
+    test('a file that leaves templates out removes the server’s: flagged where a profile used one', () => {
+      const result = plan({}, server({ app }, 'app'))
+      expect(lines(result)).toEqual([
+        ['sessions.profiles.web.jwtTemplate', 'changed'],
+        ['sessions.jwtTemplates.app', 'removed'],
+      ])
+      expect(result.weakened).toEqual(['sessions.profiles.web.jwtTemplate'])
+      expect(result.unknown).toEqual([])
+    })
   })
 
   test('a setting the server has and this version does not know is reported, not hidden', () => {
@@ -404,7 +1424,9 @@ describe('orderOperations', () => {
 
   function kinds(result: Plan): string[] {
     return orderOperations(result).map((operation) =>
-      operation.kind === 'settings' ? 'settings' : `${operation.kind}:${operation.provider}`
+      operation.kind === 'provider.set' || operation.kind === 'provider.delete'
+        ? `${operation.kind}:${operation.provider}`
+        : operation.kind
     )
   }
 
@@ -475,5 +1497,1456 @@ describe('orderOperations', () => {
       'provider.set:github',
       'provider.delete:apple',
     ])
+  })
+})
+
+const HOOK = 'https://hooks.northline.app/tula'
+
+function endpoint(id: number, over: Partial<RemoteWebhook> = {}): RemoteWebhook {
+  return {
+    id: `00000000-0000-7000-8000-${String(id).padStart(12, '0')}`,
+    url: `${HOOK}/${id}`,
+    eventTypes: ['user.created'],
+    enabled: true,
+    disabledReason: null,
+    failingSince: null,
+    lastFailedAt: null,
+    rotationOverlapEndsAt: null,
+    createdAt: '2026-10-01T00:00:00.000Z',
+    updatedAt: '2026-10-01T00:00:00.000Z',
+    ...over,
+  }
+}
+
+const idOf = (id: number) => endpoint(id).id
+
+describe('planWebhooks', () => {
+  type Row = [
+    name: string,
+    remote: RemoteWebhook[],
+    desired: NonNullable<EnvironmentConfigInput['webhooks']>,
+    prune: boolean,
+    expected: Partial<WebhookChange>[],
+  ]
+  const rows: Row[] = [
+    [
+      'an address the server does not have is created; enabled left out is not sent',
+      [],
+      [{ url: `${HOOK}/1`, eventTypes: ['user.deleted', 'user.created'] }],
+      false,
+      [
+        {
+          url: `${HOOK}/1`,
+          action: 'create',
+          fields: [{ path: 'eventTypes', kind: 'added', after: ['user.created', 'user.deleted'] }],
+        },
+      ],
+    ],
+    [
+      'enabled written on a new endpoint is part of the creation',
+      [],
+      [{ url: `${HOOK}/1`, eventTypes: ['user.created'], enabled: false }],
+      false,
+      [
+        {
+          action: 'create',
+          fields: [
+            { path: 'eventTypes', kind: 'added', after: ['user.created'] },
+            { path: 'enabled', kind: 'added', after: false },
+          ],
+        },
+      ],
+    ],
+    [
+      'the same address with the same event types is no change',
+      [endpoint(1)],
+      [{ url: `${HOOK}/1`, eventTypes: ['user.created'] }],
+      false,
+      [{ url: `${HOOK}/1`, id: idOf(1), action: 'none', fields: [] }],
+    ],
+    [
+      'event types are a set: another order, and repeats in the file, are no change',
+      [endpoint(1, { eventTypes: ['user.deleted', 'user.created'] })],
+      [{ url: `${HOOK}/1`, eventTypes: ['user.created', 'user.deleted', 'user.created'] }],
+      false,
+      [{ action: 'none', fields: [] }],
+    ],
+    [
+      'a changed set shows the types added and removed, sorted',
+      [endpoint(1, { eventTypes: ['user.updated', 'user.created'] })],
+      [{ url: `${HOOK}/1`, eventTypes: ['user.deleted', 'user.created', 'session.created'] }],
+      false,
+      [
+        {
+          action: 'update',
+          id: idOf(1),
+          fields: [
+            {
+              path: 'eventTypes',
+              kind: 'changed',
+              before: ['user.created', 'user.updated'],
+              after: ['session.created', 'user.created', 'user.deleted'],
+              added: ['session.created', 'user.deleted'],
+              removed: ['user.updated'],
+            },
+          ],
+        },
+      ],
+    ],
+    [
+      'enabled left out is not managed: an endpoint that is off stays off, unmentioned',
+      [endpoint(1, { enabled: false, disabledReason: 'failing' })],
+      [{ url: `${HOOK}/1`, eventTypes: ['user.created'] }],
+      false,
+      [{ action: 'none', fields: [] }],
+    ],
+    [
+      'enabled written is managed: switching an endpoint off',
+      [endpoint(1)],
+      [{ url: `${HOOK}/1`, eventTypes: ['user.created'], enabled: false }],
+      false,
+      [
+        {
+          action: 'update',
+          fields: [{ path: 'enabled', kind: 'changed', before: true, after: false }],
+        },
+      ],
+    ],
+    [
+      'switching on an endpoint an administrator switched off carries no reason',
+      [endpoint(1, { enabled: false })],
+      [{ url: `${HOOK}/1`, eventTypes: ['user.created'], enabled: true }],
+      false,
+      [
+        {
+          action: 'update',
+          fields: [{ path: 'enabled', kind: 'changed', before: false, after: true }],
+        },
+      ],
+    ],
+    [
+      'switching on an endpoint the server switched off says why it was off',
+      [endpoint(1, { enabled: false, disabledReason: 'failing' })],
+      [{ url: `${HOOK}/1`, eventTypes: ['user.created'], enabled: true }],
+      false,
+      [
+        {
+          action: 'update',
+          reenables: 'failing',
+          fields: [{ path: 'enabled', kind: 'changed', before: false, after: true }],
+        },
+      ],
+    ],
+    [
+      'an endpoint the list leaves out is unmanaged',
+      [endpoint(1), endpoint(2)],
+      [{ url: `${HOOK}/1`, eventTypes: ['user.created'] }],
+      false,
+      [{ action: 'none' }, { url: `${HOOK}/2`, id: idOf(2), action: 'unmanaged', fields: [] }],
+    ],
+    [
+      'and removed with --prune',
+      [endpoint(1), endpoint(2)],
+      [{ url: `${HOOK}/1`, eventTypes: ['user.created'] }],
+      true,
+      [{ action: 'none' }, { url: `${HOOK}/2`, id: idOf(2), action: 'delete', fields: [] }],
+    ],
+    [
+      'an empty list manages webhooks and has none: what the server has is unmanaged',
+      [endpoint(1)],
+      [],
+      false,
+      [{ action: 'unmanaged' }],
+    ],
+    [
+      'a changed address is a new endpoint, and the old one is another: never an update',
+      [endpoint(1)],
+      [{ url: `${HOOK}/moved`, eventTypes: ['user.created'] }],
+      true,
+      [
+        { url: `${HOOK}/moved`, action: 'create' },
+        { url: `${HOOK}/1`, action: 'delete' },
+      ],
+    ],
+    [
+      'an address is compared exactly, as the server stores it: a trailing slash is another',
+      [endpoint(1, { url: `${HOOK}/a/` })],
+      [{ url: `${HOOK}/a`, eventTypes: ['user.created'] }],
+      false,
+      [
+        { url: `${HOOK}/a`, action: 'create' },
+        { url: `${HOOK}/a/`, action: 'unmanaged' },
+      ],
+    ],
+    [
+      'an address the server has twice cannot be matched: neither is touched',
+      [endpoint(1, { url: HOOK }), endpoint(2, { url: HOOK }), endpoint(3)],
+      [{ url: HOOK, eventTypes: ['user.deleted'], enabled: false }],
+      true,
+      [
+        { url: HOOK, action: 'ambiguous', duplicates: [idOf(1), idOf(2)], fields: [] },
+        { url: `${HOOK}/3`, action: 'delete' },
+      ],
+    ],
+    [
+      'an address the server has twice and the file does not name is two endpoints like any',
+      [endpoint(1, { url: HOOK }), endpoint(2, { url: HOOK })],
+      [],
+      true,
+      [
+        { url: HOOK, id: idOf(1), action: 'delete' },
+        { url: HOOK, id: idOf(2), action: 'delete' },
+      ],
+    ],
+  ]
+
+  test.each(rows)('%s', (_, remoteEndpoints, desired, prune, expected) => {
+    const result = planWebhooks(remoteEndpoints, environment({ webhooks: desired }).webhooks, {
+      prune,
+    })
+    expect(result.managed).toBe(true)
+    expect(result.endpoints).toHaveLength(expected.length)
+    expect(result.endpoints).toMatchObject(expected)
+  })
+
+  test('a file without the key manages nothing: no entry, whatever the server has, even with --prune', () => {
+    expect(planWebhooks([endpoint(1)], undefined, { prune: true })).toEqual({
+      managed: false,
+      endpoints: [],
+      removedFirst: 0,
+      overLimit: null,
+      seen: webhookSnapshot([]),
+    })
+    const result = plan({}, remote({ webhooks: undefined }), { prune: true })
+    expect(result.webhooks.managed).toBe(false)
+    expect(orderOperations(result).some((operation) => operation.kind.startsWith('webhook.'))).toBe(
+      false
+    )
+  })
+
+  test('an unchanged or unmanaged endpoint is not a change; a create, update or delete is', () => {
+    const state = remote({
+      managedBy: { tool: 'tula-apply', configHash: HASH, at: 'x', revision: 3, drifted: false },
+      webhooks: [endpoint(1), endpoint(2)],
+    })
+    const same = { url: `${HOOK}/1`, eventTypes: ['user.created' as const] }
+    expect(plan({ webhooks: [same] }, state).changes).toBe(false)
+    expect(plan({ webhooks: [same] }, state, { prune: true }).changes).toBe(true)
+    expect(plan({ webhooks: [{ ...same, enabled: false }] }, state).changes).toBe(true)
+    expect(plan({ webhooks: [same, { ...same, url: `${HOOK}/3` }] }, state).changes).toBe(true)
+  })
+
+  test('the snapshot is the same for the same endpoints in any order, and moves with any field a plan reads', () => {
+    const base = webhookSnapshot([endpoint(1), endpoint(2)])
+    expect(webhookSnapshot([endpoint(2), endpoint(1)])).toBe(base)
+    // Not what a plan reads: a delivery failing or a rotation must not make a plan stale.
+    expect(
+      webhookSnapshot([
+        endpoint(1, { failingSince: '2026-10-02T00:00:00.000Z', updatedAt: 'later' }),
+        endpoint(2),
+      ])
+    ).toBe(base)
+    for (const moved of [
+      [endpoint(1)],
+      [endpoint(1), endpoint(2), endpoint(3)],
+      [endpoint(1, { url: `${HOOK}/x` }), endpoint(2)],
+      [endpoint(1, { eventTypes: ['user.deleted'] }), endpoint(2)],
+      [endpoint(1, { enabled: false }), endpoint(2)],
+      [endpoint(1, { enabled: false, disabledReason: 'gone' }), endpoint(2)],
+    ]) {
+      expect(webhookSnapshot(moved)).not.toBe(base)
+    }
+  })
+})
+
+describe('orderOperations: webhooks', () => {
+  const google = { clientId: 'g', clientSecret: env('GOOGLE_CLIENT_SECRET') }
+  const types = ['user.created' as const]
+
+  function steps(result: Plan): string[] {
+    return orderOperations(result).map((operation) => {
+      if (operation.kind === 'settings') {
+        return 'settings'
+      }
+      if ('point' in operation) {
+        return `${operation.kind}:${operation.point}`
+      }
+      return operation.kind === 'provider.set' || operation.kind === 'provider.delete'
+        ? `${operation.kind}:${operation.provider}`
+        : `${operation.kind}:${'url' in operation ? operation.url.slice(HOOK.length + 1) : ''}`
+    })
+  }
+
+  const webhookSteps = (result: Plan) => steps(result).filter((step) => step.startsWith('webhook.'))
+
+  test('webhooks come after the settings and every provider: nothing about sign-in waits for them', () => {
+    const state = remote({
+      providers: [provider('github', { configured: true, enabled: true, clientId: 'gh' })],
+      webhooks: [endpoint(1), endpoint(2, { eventTypes: ['user.deleted'] })],
+    })
+    const result = plan(
+      {
+        settings: { app: { name: 'New' } },
+        providers: { google },
+        webhooks: [
+          { url: `${HOOK}/3`, eventTypes: types },
+          { url: `${HOOK}/2`, eventTypes: types },
+        ],
+      },
+      state,
+      { prune: true }
+    )
+    expect(steps(result)).toEqual([
+      'settings',
+      'provider.set:google',
+      'provider.delete:github',
+      'webhook.update:2',
+      'webhook.create:3',
+      'webhook.delete:1',
+    ])
+  })
+
+  test('also when the settings wait for a provider', () => {
+    const result = plan(
+      {
+        settings: { signIn: { methods: { password: { enabled: false } } } },
+        providers: { google },
+        webhooks: [{ url: `${HOOK}/1`, eventTypes: types }],
+      },
+      remote({ webhooks: [] })
+    )
+    expect(steps(result)).toEqual(['provider.set:google', 'settings', 'webhook.create:1'])
+  })
+
+  const ten = Array.from({ length: 10 }, (_, index) => endpoint(index + 1))
+  const keep = (from: number, to: number) =>
+    ten.slice(from - 1, to).map((entry) => ({ url: entry.url, eventTypes: types }))
+  const fresh = (name: string) => ({ url: `${HOOK}/${name}`, eventTypes: types })
+
+  test.each([
+    [
+      'room for the new one: created before anything is removed',
+      ten.slice(0, 9),
+      [...keep(1, 8), fresh('new')],
+      0,
+      ['webhook.create:new', 'webhook.delete:9'],
+    ],
+    [
+      'at the limit, one replaced: exactly one removal goes first, the oldest being removed',
+      ten,
+      [...keep(1, 8), fresh('new')],
+      1,
+      ['webhook.delete:9', 'webhook.create:new', 'webhook.delete:10'],
+    ],
+    [
+      'at the limit, two replaced by two: both removals first',
+      ten,
+      [...keep(1, 8), fresh('a'), fresh('b')],
+      2,
+      ['webhook.delete:9', 'webhook.delete:10', 'webhook.create:a', 'webhook.create:b'],
+    ],
+    [
+      'one under the limit, two new, two removed: one removal first, no more than needed',
+      ten.slice(0, 9),
+      [...keep(1, 7), fresh('a'), fresh('b')],
+      1,
+      ['webhook.delete:8', 'webhook.create:a', 'webhook.create:b', 'webhook.delete:9'],
+    ],
+  ])('the limit of ten, %s', (_, existing, desired, removedFirst, expected) => {
+    const result = plan({ webhooks: desired }, remote({ webhooks: existing }), { prune: true })
+    expect(result.webhooks.removedFirst).toBe(removedFirst)
+    expect(result.webhooks.overLimit).toBeNull()
+    expect(webhookSteps(result)).toEqual(expected)
+  })
+
+  test('a plan that would leave more than ten says how many, and removes nothing first', () => {
+    const result = plan({ webhooks: [fresh('new')] }, remote({ webhooks: ten }))
+    expect(result.webhooks.overLimit).toBe(11)
+    expect(result.webhooks.removedFirst).toBe(0)
+  })
+
+  test('an address that cannot be matched is no operation', () => {
+    const result = plan(
+      { webhooks: [{ url: HOOK, eventTypes: types, enabled: false }] },
+      remote({ webhooks: [endpoint(1, { url: HOOK }), endpoint(2, { url: HOOK })] })
+    )
+    expect(webhookSteps(result)).toEqual([])
+  })
+})
+
+describe('planHooks', () => {
+  const ASK = 'https://api.northline.app/hooks'
+
+  function hook(point: string, over: Partial<RemoteHook> = {}): RemoteHook {
+    return {
+      id: `id-${point}`,
+      point,
+      url: `${ASK}/${point}`,
+      enabled: true,
+      deadlineMs: 2000,
+      failureMode: 'deny',
+      lastFailedAt: null,
+      lastFailureReason: null,
+      recentOutcomes: {
+        since: '2026-09-30T01:00:00.000Z',
+        allowed: 0,
+        denied: 0,
+        failed: 0,
+        timedOut: 0,
+        lastCallAt: null,
+        lastOutcome: null,
+      },
+      createdAt: '2026-10-01T00:00:00.000Z',
+      updatedAt: '2026-10-01T00:00:00.000Z',
+      ...over,
+    }
+  }
+
+  /** What a row expects of one hook: its point, the action, the fields that differ, the weakenings. */
+  type Expected = [
+    point: string,
+    action: HookChange['action'],
+    fields: string[],
+    weakened: string[],
+  ]
+
+  const summary = (changes: readonly HookChange[]): Expected[] =>
+    changes.map((change) => [
+      change.point,
+      change.action,
+      change.fields.map((field) => field.path),
+      change.weakened,
+    ])
+
+  type Desired = NonNullable<EnvironmentConfigInput['hooks']>
+
+  // The weakenings are the contract's `hookWeakenings`: `failureMode` to `allow` (or a hook
+  // registered with it), `enabled` to `false`, the removal of a hook that is on.
+  const rows: [string, RemoteHook[], Desired, boolean, Expected[]][] = [
+    [
+      'a hook the server does not have is created, every field sent',
+      [],
+      { before_sign_up: { url: `${ASK}/before_sign_up` } },
+      false,
+      [['before_sign_up', 'create', ['url', 'enabled', 'deadlineMs', 'failureMode'], []]],
+    ],
+    [
+      'a hook created to let through on failure is weaker, as the server records it',
+      [],
+      { before_session: { url: `${ASK}/before_session`, failureMode: 'allow' } },
+      false,
+      [
+        [
+          'before_session',
+          'create',
+          ['url', 'enabled', 'deadlineMs', 'failureMode'],
+          ['hooks.before_session.failureMode'],
+        ],
+      ],
+    ],
+    [
+      'a hook that is as the file says is left alone',
+      [hook('before_sign_up')],
+      { before_sign_up: { url: `${ASK}/before_sign_up` } },
+      false,
+      [['before_sign_up', 'none', [], []]],
+    ],
+    [
+      'the defaults are the file’s word: a server’s other deadline is a difference',
+      [hook('before_sign_up', { deadlineMs: 4000 })],
+      { before_sign_up: { url: `${ASK}/before_sign_up` } },
+      false,
+      [['before_sign_up', 'update', ['deadlineMs'], []]],
+    ],
+    [
+      'a changed address is the same hook, updated: the point names it',
+      [hook('before_token')],
+      { before_token: { url: `${ASK}/claims` } },
+      false,
+      [['before_token', 'update', ['url'], []]],
+    ],
+    [
+      'an address is compared exactly: a trailing slash is another address',
+      [hook('before_token', { url: `${ASK}/claims/` })],
+      { before_token: { url: `${ASK}/claims` } },
+      false,
+      [['before_token', 'update', ['url'], []]],
+    ],
+    [
+      'deny to allow is weaker',
+      [hook('before_sign_up')],
+      { before_sign_up: { url: `${ASK}/before_sign_up`, failureMode: 'allow' } },
+      false,
+      [['before_sign_up', 'update', ['failureMode'], ['hooks.before_sign_up.failureMode']]],
+    ],
+    [
+      'allow to deny is not',
+      [hook('before_sign_up', { failureMode: 'allow' })],
+      { before_sign_up: { url: `${ASK}/before_sign_up` } },
+      false,
+      [['before_sign_up', 'update', ['failureMode'], []]],
+    ],
+    [
+      'allow that stays allow is no change and no new weakening',
+      [hook('before_sign_up', { failureMode: 'allow' })],
+      { before_sign_up: { url: `${ASK}/before_sign_up`, failureMode: 'allow' } },
+      false,
+      [['before_sign_up', 'none', [], []]],
+    ],
+    [
+      'switching a hook off is weaker',
+      [hook('before_session')],
+      { before_session: { url: `${ASK}/before_session`, enabled: false } },
+      false,
+      [['before_session', 'update', ['enabled'], ['hooks.before_session.enabled']]],
+    ],
+    [
+      'switching one on is not',
+      [hook('before_session', { enabled: false })],
+      { before_session: { url: `${ASK}/before_session` } },
+      false,
+      [['before_session', 'update', ['enabled'], []]],
+    ],
+    [
+      'off and allow at once: both fields, in the contract’s order',
+      [hook('before_session')],
+      { before_session: { url: `${ASK}/before_session`, enabled: false, failureMode: 'allow' } },
+      false,
+      [
+        [
+          'before_session',
+          'update',
+          ['enabled', 'failureMode'],
+          ['hooks.before_session.enabled', 'hooks.before_session.failureMode'],
+        ],
+      ],
+    ],
+    [
+      'a point the file leaves out is unmanaged',
+      [hook('before_sign_up'), hook('before_token')],
+      { before_sign_up: { url: `${ASK}/before_sign_up` } },
+      false,
+      [
+        ['before_sign_up', 'none', [], []],
+        ['before_token', 'unmanaged', [], []],
+      ],
+    ],
+    [
+      '--prune removes it, and removing a hook that is on is weaker',
+      [hook('before_sign_up'), hook('before_token')],
+      { before_sign_up: { url: `${ASK}/before_sign_up` } },
+      true,
+      [
+        ['before_sign_up', 'none', [], []],
+        ['before_token', 'delete', [], ['hooks.before_token']],
+      ],
+    ],
+    [
+      'removing a hook that is off weakens nothing',
+      [hook('before_token', { enabled: false })],
+      {},
+      true,
+      [['before_token', 'delete', [], []]],
+    ],
+    [
+      'a point this version does not know is left alone, even with --prune',
+      [hook('before_refresh')],
+      {},
+      true,
+      [['before_refresh', 'unknown', [], []]],
+    ],
+    [
+      'the points come in the contract’s order, whatever the file’s or the server’s',
+      [hook('before_token'), hook('before_sign_up')],
+      {
+        before_token: { url: `${ASK}/before_token` },
+        before_session: { url: `${ASK}/before_session` },
+      },
+      false,
+      [
+        ['before_sign_up', 'unmanaged', [], []],
+        ['before_session', 'create', ['url', 'enabled', 'deadlineMs', 'failureMode'], []],
+        ['before_token', 'none', [], []],
+      ],
+    ],
+  ]
+
+  test.each(rows)('%s', (_, remoteHooks, desired, prune, expected) => {
+    const planned = planHooks(remoteHooks, environment({ hooks: desired }).hooks, { prune })
+    expect(planned.managed).toBe(true)
+    expect(summary(planned.hooks)).toEqual(expected)
+  })
+
+  test('a file without the key manages nothing: no entry, whatever the server has, even with --prune', () => {
+    const planned = planHooks([hook('before_sign_up')], environment({}).hooks, { prune: true })
+    expect(planned).toEqual({ managed: false, hooks: [], seen: hookSnapshot([]) })
+    const whole = plan({}, remote({ hooks: [hook('before_sign_up')] }), { prune: true })
+    expect(whole.hooks.managed).toBe(false)
+    expect(orderOperations(whole).some((operation) => operation.kind.startsWith('hook.'))).toBe(
+      false
+    )
+  })
+
+  test('a change shows the server’s value and the file’s; a creation only the file’s', () => {
+    const changed = planHooks(
+      [hook('before_sign_up', { deadlineMs: 4000, failureMode: 'allow' })],
+      environment({ hooks: { before_sign_up: { url: `${ASK}/before_sign_up` } } }).hooks,
+      {}
+    ).hooks[0]
+    expect(changed).toEqual({
+      point: 'before_sign_up',
+      id: 'id-before_sign_up',
+      url: `${ASK}/before_sign_up`,
+      action: 'update',
+      fields: [
+        { path: 'deadlineMs', kind: 'changed', before: 4000, after: 2000 },
+        { path: 'failureMode', kind: 'changed', before: 'allow', after: 'deny' },
+      ],
+      weakened: [],
+    })
+    const created = planHooks(
+      [],
+      environment({ hooks: { before_token: { url: `${ASK}/claims`, deadlineMs: 300 } } }).hooks,
+      {}
+    ).hooks[0]
+    expect(created).toEqual({
+      point: 'before_token',
+      url: `${ASK}/claims`,
+      action: 'create',
+      fields: [
+        { path: 'url', kind: 'added', after: `${ASK}/claims` },
+        { path: 'enabled', kind: 'added', after: true },
+        { path: 'deadlineMs', kind: 'added', after: 300 },
+        { path: 'failureMode', kind: 'added', after: 'deny' },
+      ],
+      weakened: [],
+    })
+  })
+
+  test('the plan’s weakenings are the settings’ and the hooks’ together; a hook change is a change', () => {
+    const state = remote({ hooks: [hook('before_sign_up'), hook('before_session')] })
+    const weaker = plan(
+      {
+        settings: { mfa: { policy: 'optional' } },
+        hooks: { before_sign_up: { url: `${ASK}/before_sign_up`, failureMode: 'allow' } },
+      },
+      remote({
+        ...state,
+        settings: settings((s) => {
+          s.mfa.policy = 'required'
+        }),
+      }),
+      { prune: true }
+    )
+    expect(weaker.weakened).toEqual([
+      'mfa.policy',
+      'hooks.before_sign_up.failureMode',
+      'hooks.before_session',
+    ])
+    expect(weaker.changes).toBe(true)
+
+    const settled = buildPlan(
+      {
+        ...state,
+        managedBy: {
+          tool: 'tula-apply',
+          configHash: HASH,
+          at: '2026-10-01T00:00:00.000Z',
+          revision: 3,
+          drifted: false,
+        },
+      },
+      environment({
+        hooks: {
+          before_sign_up: { url: `${ASK}/before_sign_up` },
+        },
+      }),
+      { configHash: HASH }
+    )
+    // One is as the file says, the other unmanaged: nothing is pending for the hooks.
+    expect(settled.hooks.hooks.map((entry) => entry.action)).toEqual(['none', 'unmanaged'])
+    expect(settled.weakened).toEqual([])
+  })
+
+  test('the snapshot is the same for the same hooks in any order, and moves with any field a plan reads', () => {
+    const one = hook('before_sign_up')
+    const two = hook('before_token')
+    const base = hookSnapshot([one, two])
+    expect(hookSnapshot([two, one])).toBe(base)
+    // What a call moves is not what a plan reads.
+    expect(
+      hookSnapshot([
+        { ...one, lastFailedAt: '2026-10-02T00:00:00.000Z', lastFailureReason: 'timeout' },
+        { ...two, updatedAt: '2026-10-03T00:00:00.000Z' },
+      ])
+    ).toBe(base)
+    for (const moved of [
+      { id: 'another' },
+      { point: 'before_session' },
+      { url: `${ASK}/elsewhere` },
+      { enabled: false },
+      { deadlineMs: 2001 },
+      { failureMode: 'allow' },
+    ]) {
+      expect(hookSnapshot([{ ...one, ...moved }, two])).not.toBe(base)
+    }
+    expect(hookSnapshot([one])).not.toBe(base)
+  })
+})
+
+describe('orderOperations: hooks', () => {
+  const ASK = 'https://api.northline.app/hooks'
+  const HOOK = 'https://hooks.northline.app/tula'
+
+  function hook(point: string, over: Partial<RemoteHook> = {}): RemoteHook {
+    return {
+      id: `id-${point}`,
+      point,
+      url: `${ASK}/${point}`,
+      enabled: true,
+      deadlineMs: 2000,
+      failureMode: 'deny',
+      lastFailedAt: null,
+      lastFailureReason: null,
+      recentOutcomes: {
+        since: '2026-09-30T01:00:00.000Z',
+        allowed: 0,
+        denied: 0,
+        failed: 0,
+        timedOut: 0,
+        lastCallAt: null,
+        lastOutcome: null,
+      },
+      createdAt: '2026-10-01T00:00:00.000Z',
+      updatedAt: '2026-10-01T00:00:00.000Z',
+      ...over,
+    }
+  }
+
+  const kinds = (planned: Plan) =>
+    orderOperations(planned).map((operation) =>
+      'point' in operation ? `${operation.kind} ${operation.point}` : operation.kind
+    )
+
+  test('hooks come last: after the settings, every provider and every webhook endpoint', () => {
+    const planned = plan(
+      {
+        settings: { app: { name: 'Northline' } },
+        providers: { google: { clientId: 'g', clientSecret: env('GOOGLE_CLIENT_SECRET') } },
+        webhooks: [{ url: HOOK, eventTypes: ['user.created'] }],
+        hooks: { before_sign_up: { url: `${ASK}/before_sign_up` } },
+      },
+      remote({ webhooks: [], hooks: [] })
+    )
+    expect(kinds(planned)).toEqual([
+      'settings',
+      'provider.set',
+      'webhook.create',
+      'hook.create before_sign_up',
+    ])
+  })
+
+  test('what adds a check or loosens none goes first, then what loosens one, then removals', () => {
+    const planned = plan(
+      {
+        hooks: {
+          // Loosened: goes after the two below.
+          before_sign_up: { url: `${ASK}/before_sign_up`, failureMode: 'allow' },
+          // Tightened (switched on): first.
+          before_session: { url: `${ASK}/before_session` },
+        },
+      },
+      remote({
+        hooks: [
+          hook('before_sign_up'),
+          hook('before_session', { enabled: false }),
+          hook('before_token'),
+        ],
+      }),
+      { prune: true }
+    )
+    expect(kinds(planned)).toEqual([
+      'settings',
+      'hook.update before_session',
+      'hook.update before_sign_up',
+      'hook.delete before_token',
+    ])
+  })
+
+  test('a new hook is created before another is loosened, whatever the points’ order', () => {
+    const planned = plan(
+      {
+        hooks: {
+          before_sign_up: { url: `${ASK}/before_sign_up`, enabled: false },
+          before_token: { url: `${ASK}/before_token`, failureMode: 'allow' },
+        },
+      },
+      remote({ hooks: [hook('before_sign_up')] })
+    )
+    expect(kinds(planned)).toEqual([
+      'settings',
+      'hook.create before_token',
+      'hook.update before_sign_up',
+    ])
+  })
+
+  test('an unchanged, an unmanaged and an unknown hook are no operation', () => {
+    const planned = plan(
+      { hooks: { before_sign_up: { url: `${ASK}/before_sign_up` } } },
+      remote({ hooks: [hook('before_sign_up'), hook('before_token'), hook('before_refresh')] })
+    )
+    expect(kinds(planned)).toEqual(['settings'])
+  })
+})
+
+describe('planNativeApps', () => {
+  const fp = (byte: string) => Array.from({ length: 32 }, () => byte).join(':')
+  const [AA, BB, CC] = [fp('AA'), fp('BB'), fp('CC')]
+  const TEAM = 'A1B2C3D4E5'
+  const STAMPS = { createdAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-01T00:00:00.000Z' }
+
+  function ios(bundleId: string, teamId = TEAM, appLinkPaths: string[] = []): RemoteNativeApp {
+    return { id: `ios-${bundleId}`, platform: 'ios', teamId, bundleId, appLinkPaths, ...STAMPS }
+  }
+
+  function android(
+    packageName: string,
+    sha256CertFingerprints = [AA],
+    appLinkPaths: string[] = []
+  ): RemoteNativeApp {
+    return {
+      id: `android-${packageName}`,
+      platform: 'android',
+      packageName,
+      sha256CertFingerprints,
+      appLinkPaths,
+      ...STAMPS,
+    }
+  }
+
+  /** An app as a server from before link paths lists it: without the key. */
+  function fromBefore(app: RemoteNativeApp): RemoteNativeApp {
+    const { appLinkPaths: _none, ...rest } = app
+    return rest as RemoteNativeApp
+  }
+
+  /** What a row expects of one app: its name, the action, the fields that differ, the weakenings. */
+  type Expected = [
+    name: string,
+    action: NativeAppChange['action'],
+    fields: string[],
+    weakened: string[],
+  ]
+
+  const summary = (changes: readonly NativeAppChange[]): Expected[] =>
+    changes.map((change) => [
+      `${change.platform}/${change.identifier}`,
+      change.action,
+      change.fields.map((field) => field.path),
+      change.weakened,
+    ])
+
+  type Desired = NonNullable<EnvironmentConfigInput['nativeApps']>
+  const desiredOf = (nativeApps: Desired) => environment({ nativeApps }).nativeApps
+
+  const iosEntry = (bundleId: string, teamId = TEAM, appLinkPaths?: string[]) => ({
+    platform: 'ios' as const,
+    teamId,
+    bundleId,
+    ...(appLinkPaths && { appLinkPaths }),
+  })
+  const androidEntry = (
+    packageName: string,
+    sha256CertFingerprints = [AA],
+    appLinkPaths?: string[]
+  ) => ({
+    platform: 'android' as const,
+    packageName,
+    sha256CertFingerprints,
+    ...(appLinkPaths && { appLinkPaths }),
+  })
+
+  test('a file with no nativeApps key manages nothing: not read, not touched, even with --prune', () => {
+    const result = planNativeApps([ios('com.a.b')], undefined, { prune: true })
+    expect(result).toEqual({
+      managed: false,
+      apps: [],
+      overLimit: null,
+      seen: nativeAppSnapshot([]),
+    })
+    const planned = plan({}, remote({ nativeApps: [ios('com.a.b')] }), { prune: true })
+    expect(planned.nativeApps.managed).toBe(false)
+    expect(orderOperations(planned).some((op) => op.kind.startsWith('nativeApp.'))).toBe(false)
+  })
+
+  test.each<[string, RemoteNativeApp[], Desired, boolean, Expected[]]>([
+    [
+      'an app the server does not have is registered, which is a weakening',
+      [],
+      [iosEntry('com.a.b')],
+      false,
+      [['ios/com.a.b', 'create', ['teamId'], ['nativeApps.ios/com.a.b']]],
+    ],
+    [
+      'an Android app is registered with its fingerprints',
+      [],
+      [androidEntry('com.a.b')],
+      false,
+      [['android/com.a.b', 'create', ['sha256CertFingerprints'], ['nativeApps.android/com.a.b']]],
+    ],
+    [
+      'an app that is as the file says is left alone',
+      [ios('com.a.b'), android('com.a.b', [AA, BB])],
+      [iosEntry('com.a.b'), androidEntry('com.a.b', [BB, AA])],
+      false,
+      [
+        ['ios/com.a.b', 'none', [], []],
+        ['android/com.a.b', 'none', [], []],
+      ],
+    ],
+    [
+      'fingerprints are a set: case, colons, order and repeats are no difference',
+      [android('com.a.b', [AA, BB])],
+      [androidEntry('com.a.b', ['bb'.repeat(32), AA.toLowerCase(), BB])],
+      false,
+      [['android/com.a.b', 'none', [], []]],
+    ],
+    [
+      'another team is an update of the same app, and a weakening',
+      [ios('com.a.b', 'ZZZZZZZZZZ')],
+      [iosEntry('com.a.b')],
+      false,
+      [['ios/com.a.b', 'update', ['teamId'], ['nativeApps.ios/com.a.b.teamId']]],
+    ],
+    [
+      'a gained fingerprint is a weakening',
+      [android('com.a.b', [AA])],
+      [androidEntry('com.a.b', [AA, BB])],
+      false,
+      [
+        [
+          'android/com.a.b',
+          'update',
+          ['sha256CertFingerprints'],
+          ['nativeApps.android/com.a.b.sha256CertFingerprints'],
+        ],
+      ],
+    ],
+    [
+      'a fingerprint taken away is an update and no weakening',
+      [android('com.a.b', [AA, BB])],
+      [androidEntry('com.a.b', [AA])],
+      false,
+      [['android/com.a.b', 'update', ['sha256CertFingerprints'], []]],
+    ],
+    [
+      'a fingerprint replaced is a gained one: a weakening',
+      [android('com.a.b', [AA])],
+      [androidEntry('com.a.b', [CC])],
+      false,
+      [
+        [
+          'android/com.a.b',
+          'update',
+          ['sha256CertFingerprints'],
+          ['nativeApps.android/com.a.b.sha256CertFingerprints'],
+        ],
+      ],
+    ],
+    [
+      'an app registered with link paths is a registration and a path gained: both are said',
+      [],
+      [iosEntry('com.a.b', TEAM, ['/oauth'])],
+      false,
+      [
+        [
+          'ios/com.a.b',
+          'create',
+          ['teamId', 'appLinkPaths'],
+          ['nativeApps.ios/com.a.b', 'nativeApps.ios/com.a.b.appLinkPaths'],
+        ],
+      ],
+    ],
+    [
+      'a gained link path is an update and a weakening, on either platform',
+      [ios('com.a.b', TEAM, ['/oauth']), android('com.a.c')],
+      [iosEntry('com.a.b', TEAM, ['/oauth', '/link']), androidEntry('com.a.c', [AA], ['/oauth'])],
+      false,
+      [
+        ['ios/com.a.b', 'update', ['appLinkPaths'], ['nativeApps.ios/com.a.b.appLinkPaths']],
+        [
+          'android/com.a.c',
+          'update',
+          ['appLinkPaths'],
+          ['nativeApps.android/com.a.c.appLinkPaths'],
+        ],
+      ],
+    ],
+    [
+      'link paths are a set: order and repeats are no difference',
+      [ios('com.a.b', TEAM, ['/link', '/oauth'])],
+      [iosEntry('com.a.b', TEAM, ['/oauth', '/link', '/oauth'])],
+      false,
+      [['ios/com.a.b', 'none', [], []]],
+    ],
+    [
+      'a link path is compared exactly: another case is another path, gained',
+      [ios('com.a.b', TEAM, ['/oauth'])],
+      [iosEntry('com.a.b', TEAM, ['/OAuth'])],
+      false,
+      [['ios/com.a.b', 'update', ['appLinkPaths'], ['nativeApps.ios/com.a.b.appLinkPaths']]],
+    ],
+    [
+      'a link path taken away is an update and no weakening',
+      [ios('com.a.b', TEAM, ['/link', '/oauth'])],
+      [iosEntry('com.a.b', TEAM, ['/oauth'])],
+      false,
+      [['ios/com.a.b', 'update', ['appLinkPaths'], []]],
+    ],
+    [
+      'link paths left out of an entry are unmanaged: the server keeps its own and no operation is planned',
+      [ios('com.a.b', TEAM, ['/oauth']), android('com.a.c', [AA], ['/oauth'])],
+      [iosEntry('com.a.b'), androidEntry('com.a.c')],
+      false,
+      [
+        ['ios/com.a.b', 'none', [], []],
+        ['android/com.a.c', 'none', [], []],
+      ],
+    ],
+    [
+      'an empty list is written: it manages the app to have none, a removal that widens nothing',
+      [ios('com.a.b', TEAM, ['/link', '/oauth']), android('com.a.c', [AA], ['/oauth'])],
+      [iosEntry('com.a.b', TEAM, []), androidEntry('com.a.c', [AA], [])],
+      false,
+      [
+        ['ios/com.a.b', 'update', ['appLinkPaths'], []],
+        ['android/com.a.c', 'update', ['appLinkPaths'], []],
+      ],
+    ],
+    [
+      'a list that adds a path to what the server has is a weakening',
+      [ios('com.a.b', TEAM, ['/oauth'])],
+      [iosEntry('com.a.b', TEAM, ['/oauth', '/new'])],
+      false,
+      [['ios/com.a.b', 'update', ['appLinkPaths'], ['nativeApps.ios/com.a.b.appLinkPaths']]],
+    ],
+    [
+      'another team with link paths left out changes the team and leaves the paths alone',
+      [ios('com.a.b', 'ZZZZZZZZZZ', ['/oauth'])],
+      [iosEntry('com.a.b')],
+      false,
+      [['ios/com.a.b', 'update', ['teamId'], ['nativeApps.ios/com.a.b.teamId']]],
+    ],
+    [
+      'an empty list and a list left out plan the same where the server has no paths: nothing',
+      [ios('com.a.b'), ios('com.a.c')],
+      [iosEntry('com.a.b', TEAM, []), iosEntry('com.a.c')],
+      false,
+      [
+        ['ios/com.a.b', 'none', [], []],
+        ['ios/com.a.c', 'none', [], []],
+      ],
+    ],
+    [
+      'a server from before link paths lists none: an app without paths in the file is as it says',
+      [fromBefore(ios('com.a.b')), fromBefore(android('com.a.c'))],
+      [iosEntry('com.a.b'), androidEntry('com.a.c')],
+      false,
+      [
+        ['ios/com.a.b', 'none', [], []],
+        ['android/com.a.c', 'none', [], []],
+      ],
+    ],
+    [
+      'another team and a gained link path at once are two weakenings of one update',
+      [ios('com.a.b', 'ZZZZZZZZZZ')],
+      [iosEntry('com.a.b', TEAM, ['/oauth'])],
+      false,
+      [
+        [
+          'ios/com.a.b',
+          'update',
+          ['teamId', 'appLinkPaths'],
+          ['nativeApps.ios/com.a.b.teamId', 'nativeApps.ios/com.a.b.appLinkPaths'],
+        ],
+      ],
+    ],
+    [
+      'the same name on the other platform is another app',
+      [ios('com.a.b')],
+      [androidEntry('com.a.b')],
+      false,
+      [
+        ['android/com.a.b', 'create', ['sha256CertFingerprints'], ['nativeApps.android/com.a.b']],
+        ['ios/com.a.b', 'unmanaged', [], []],
+      ],
+    ],
+    [
+      'an identifier is compared exactly: another case is another app',
+      [ios('com.a.B')],
+      [iosEntry('com.a.b')],
+      false,
+      [
+        ['ios/com.a.b', 'create', ['teamId'], ['nativeApps.ios/com.a.b']],
+        ['ios/com.a.B', 'unmanaged', [], []],
+      ],
+    ],
+    [
+      'an app the file does not list is unmanaged without --prune',
+      [ios('com.a.b'), ios('com.a.c')],
+      [iosEntry('com.a.b')],
+      false,
+      [
+        ['ios/com.a.b', 'none', [], []],
+        ['ios/com.a.c', 'unmanaged', [], []],
+      ],
+    ],
+    [
+      'and removed with --prune, which is no weakening',
+      [ios('com.a.b'), android('com.a.c')],
+      [],
+      true,
+      [
+        ['ios/com.a.b', 'delete', [], []],
+        ['android/com.a.c', 'delete', [], []],
+      ],
+    ],
+  ])('%s', (_label, existing, desired, prune, expected) => {
+    expect(summary(planNativeApps(existing, desiredOf(desired), { prune }).apps)).toEqual(expected)
+  })
+
+  test('link paths the file does not manage are counted, for the line that says so, and only then', () => {
+    const count = (remote: RemoteNativeApp[], nativeApps: Desired) =>
+      planNativeApps(remote, desiredOf(nativeApps), {}).apps.map(
+        (change) => change.unmanagedLinkPaths ?? null
+      )
+    // The key left out and paths on the server: a grant somebody made, kept and said.
+    expect(count([ios('com.a.b', TEAM, ['/link', '/oauth'])], [iosEntry('com.a.b')])).toEqual([2])
+    // Also beside a change of something else.
+    expect(count([ios('com.a.b', 'ZZZZZZZZZZ', ['/oauth'])], [iosEntry('com.a.b')])).toEqual([1])
+    // Nothing to say: no paths on the server, the key written, or an app to register.
+    expect(count([ios('com.a.b')], [iosEntry('com.a.b')])).toEqual([null])
+    expect(count([ios('com.a.b', TEAM, ['/oauth'])], [iosEntry('com.a.b', TEAM, [])])).toEqual([
+      null,
+    ])
+    expect(count([], [iosEntry('com.a.b')])).toEqual([null])
+    // An app the file does not list is unmanaged whole: its line already says so.
+    expect(count([ios('com.a.b', TEAM, ['/oauth'])], [])).toEqual([null])
+  })
+
+  test('link paths left out are no change of the plan: nothing to apply, nothing weakened', () => {
+    const plan = planNativeApps(
+      [ios('com.a.b', TEAM, ['/oauth'])],
+      desiredOf([iosEntry('com.a.b')]),
+      { prune: true }
+    )
+    expect(plan.apps.map((change) => [change.action, change.fields, change.weakened])).toEqual([
+      ['none', [], []],
+    ])
+  })
+
+  test('an app of a platform this version does not know is never touched, --prune or not', () => {
+    const later = {
+      id: 'later-1',
+      platform: 'harmony',
+      bundleId: 'com.a.later',
+      ...STAMPS,
+    } as unknown as RemoteNativeApp
+    for (const prune of [false, true]) {
+      const result = planNativeApps([later], desiredOf([]), { prune })
+      expect(summary(result.apps)).toEqual([['harmony/com.a.later', 'unknown', [], []]])
+    }
+    const planned = plan({ nativeApps: [] }, remote({ nativeApps: [later] }), { prune: true })
+    expect(orderOperations(planned).some((op) => op.kind.startsWith('nativeApp.'))).toBe(false)
+  })
+
+  test('a changed set says what it gains and what it loses, in the stored form', () => {
+    const [change] = planNativeApps(
+      [android('com.a.b', [AA, BB])],
+      desiredOf([androidEntry('com.a.b', ['cc'.repeat(32), AA])]),
+      {}
+    ).apps
+    expect(change?.fields).toEqual([
+      {
+        path: 'sha256CertFingerprints',
+        kind: 'changed',
+        before: [AA, BB],
+        after: [AA, CC],
+        added: [CC],
+        removed: [BB],
+      },
+    ])
+  })
+
+  test('more apps than an environment may have is said, counting what --prune removes', () => {
+    const existing = Array.from({ length: 20 }, (_, n) => ios(`com.a.n${n}`))
+    const listed = existing.slice(0, 19).map((app) => iosEntry(`com.a.n${existing.indexOf(app)}`))
+    const one = planNativeApps(existing, desiredOf([...listed, iosEntry('com.a.new')]), {})
+    expect(one.overLimit).toBe(21)
+    // With --prune the twentieth goes, and the new one fits.
+    const pruned = planNativeApps(existing, desiredOf([...listed, iosEntry('com.a.new')]), {
+      prune: true,
+    })
+    expect(pruned.overLimit).toBeNull()
+    // A full environment that registers nothing is not over any limit.
+    expect(planNativeApps(existing, desiredOf(listed), {}).overLimit).toBeNull()
+  })
+
+  test('the plan’s weakenings include the native apps’, after the hooks’', () => {
+    const planned = plan(
+      {
+        hooks: { before_sign_up: { url: 'https://api.northline.app/h', failureMode: 'allow' } },
+        nativeApps: [iosEntry('com.a.b'), androidEntry('com.a.c', [AA, BB])],
+      },
+      remote({ hooks: [], nativeApps: [android('com.a.c', [AA])] })
+    )
+    expect(planned.weakened).toEqual([
+      'hooks.before_sign_up.failureMode',
+      'nativeApps.ios/com.a.b',
+      'nativeApps.android/com.a.c.sha256CertFingerprints',
+    ])
+    expect(planned.changes).toBe(true)
+  })
+
+  test('a plan whose only difference is an app has changes; an unmanaged app is none', () => {
+    const none = plan({ nativeApps: [] }, remote({ nativeApps: [ios('com.a.b')] }))
+    expect(none.nativeApps.apps.map((app) => app.action)).toEqual(['unmanaged'])
+    expect(orderOperations(none).some((op) => op.kind.startsWith('nativeApp.'))).toBe(false)
+    const pruned = plan({ nativeApps: [] }, remote({ nativeApps: [ios('com.a.b')] }), {
+      prune: true,
+    })
+    expect(pruned.changes).toBe(true)
+  })
+
+  test('the snapshot covers every field a plan reads, and no order', () => {
+    const base = [ios('com.a.b'), android('com.a.c', [AA, BB])]
+    const seen = nativeAppSnapshot(base)
+    expect(nativeAppSnapshot([...base].reverse())).toBe(seen)
+    expect(nativeAppSnapshot([ios('com.a.b'), android('com.a.c', [BB, AA])])).toBe(seen)
+    for (const other of [
+      [ios('com.a.b', 'ZZZZZZZZZZ'), android('com.a.c', [AA, BB])],
+      [ios('com.a.b'), android('com.a.c', [AA])],
+      [ios('com.a.b'), android('com.a.c', [AA, CC])],
+      [ios('com.a.b')],
+      [ios('com.a.x'), android('com.a.c', [AA, BB])],
+      [{ ...ios('com.a.b'), id: 'another' }, android('com.a.c', [AA, BB])],
+    ]) {
+      expect(nativeAppSnapshot(other)).not.toBe(seen)
+    }
+    // When an app was last written is not something a plan reads.
+    expect(
+      nativeAppSnapshot([
+        { ...ios('com.a.b'), updatedAt: '2027-01-01T00:00:00.000Z' },
+        android('com.a.c', [AA, BB]),
+      ])
+    ).toBe(seen)
+  })
+
+  describe('orderOperations', () => {
+    const kinds = (planned: Plan) =>
+      orderOperations(planned).map((operation) =>
+        operation.kind === 'nativeApp.create' ||
+        operation.kind === 'nativeApp.update' ||
+        operation.kind === 'nativeApp.delete'
+          ? `${operation.kind} ${operation.change.platform}/${operation.change.identifier}`
+          : operation.kind
+      )
+
+    test('native apps come last: after the settings, the providers, the endpoints and the hooks', () => {
+      const planned = plan(
+        {
+          settings: { app: { name: 'Northline' } },
+          providers: { google: { clientId: 'g', clientSecret: env('GOOGLE_CLIENT_SECRET') } },
+          webhooks: [{ url: HOOK, eventTypes: ['user.created'] }],
+          hooks: { before_sign_up: { url: 'https://api.northline.app/h' } },
+          nativeApps: [iosEntry('com.a.b')],
+        },
+        remote({ webhooks: [], hooks: [], nativeApps: [] })
+      )
+      expect(kinds(planned)).toEqual([
+        'settings',
+        'provider.set',
+        'webhook.create',
+        'hook.create',
+        'nativeApp.create ios/com.a.b',
+      ])
+    })
+
+    test('removals, then what widens nothing, then what widens, then registrations', () => {
+      const planned = plan(
+        {
+          nativeApps: [
+            iosEntry('com.a.new'),
+            iosEntry('com.a.moved'),
+            androidEntry('com.a.narrowed', [AA]),
+          ],
+        },
+        remote({
+          nativeApps: [
+            ios('com.a.moved', 'ZZZZZZZZZZ'),
+            android('com.a.narrowed', [AA, BB]),
+            ios('com.a.gone'),
+          ],
+        }),
+        { prune: true }
+      )
+      expect(kinds(planned)).toEqual([
+        'settings',
+        'nativeApp.delete ios/com.a.gone',
+        'nativeApp.update android/com.a.narrowed',
+        'nativeApp.update ios/com.a.moved',
+        'nativeApp.create ios/com.a.new',
+      ])
+    })
+  })
+})
+
+// Email templates (ADR 0039). A template is its kind; its subject and its body are each a
+// line of the plan. The file is the whole truth: a kind it leaves out has its template
+// removed, and the built-in copy is sent.
+describe('email templates', () => {
+  const VERIFY = { subject: '{{code}} is your code', body: 'Your code: {{code}}' }
+  const server = (templates: Record<string, unknown>) =>
+    remote({
+      settings: settings((s) => {
+        s.emails.templates = structuredClone(templates) as never
+      }),
+    })
+  const file = (templates: Record<string, unknown>) =>
+    ({ settings: { emails: { templates } } }) as never
+  const lines = (result: ReturnType<typeof plan>) =>
+    result.settings.map((change) => [change.path, change.kind])
+
+  test.each<[string, Record<string, unknown>, Record<string, unknown>, [string, string][]]>([
+    ['the same templates', { email_verification: VERIFY }, { email_verification: VERIFY }, []],
+    [
+      'kinds in another order are no change',
+      { email_verification: VERIFY, password_changed: { body: 'Changed.' } },
+      { password_changed: { body: 'Changed.' }, email_verification: VERIFY },
+      [],
+    ],
+    [
+      'a template only the file has is added, a line for each field',
+      {},
+      { email_verification: VERIFY },
+      [
+        ['emails.templates.email_verification.subject', 'added'],
+        ['emails.templates.email_verification.body', 'added'],
+      ],
+    ],
+    [
+      'a changed subject is one line, by kind and field',
+      { email_verification: VERIFY },
+      { email_verification: { ...VERIFY, subject: 'Code {{code}}' } },
+      [['emails.templates.email_verification.subject', 'changed']],
+    ],
+    [
+      'a body the file no longer has is removed alone',
+      { email_verification: VERIFY },
+      { email_verification: { subject: VERIFY.subject } },
+      [['emails.templates.email_verification.body', 'removed']],
+    ],
+    [
+      'a kind the file leaves out is removed, not unmanaged',
+      { email_verification: VERIFY, password_changed: { body: 'Changed.' } },
+      { email_verification: VERIFY },
+      [['emails.templates.password_changed.body', 'removed']],
+    ],
+  ])('%s', (_name, has, wants, expected) => {
+    const result = plan(file(wants), server(has))
+    expect(lines(result)).toEqual(expected)
+    // Wording is not a weakening, and a template of a known kind is not an unknown setting.
+    expect(result.weakened).toEqual([])
+    expect(result.unknown).toEqual([])
+  })
+
+  test('a file with no `emails` key removes every template the server has', () => {
+    const result = plan({}, server({ email_verification: VERIFY }))
+    expect(lines(result)).toEqual([
+      ['emails.templates.email_verification.subject', 'removed'],
+      ['emails.templates.email_verification.body', 'removed'],
+    ])
+    expect(result.unknown).toEqual([])
+  })
+
+  test('a template of a kind this version does not know is an unknown setting', () => {
+    const result = plan(
+      file({ email_verification: VERIFY }),
+      server({ email_verification: VERIFY, a_later_kind: { body: 'Later.' } })
+    )
+    expect(result.unknown).toEqual(['emails.templates.a_later_kind.body'])
+  })
+})
+
+// Text message templates (ADR 0042), by the rules of an email's: a template is its kind,
+// its text is a line of the plan, and a kind the file leaves out has its template removed.
+describe('text message templates', () => {
+  const SIGN_IN = { text: 'Use {{code}} to sign in to {{appName}}.' }
+  const CHECK = { text: 'Your {{appName}} number check: {{code}}' }
+  const server = (templates: Record<string, unknown>) =>
+    remote({
+      settings: settings((s) => {
+        s.sms.templates = structuredClone(templates) as never
+      }),
+    })
+  const file = (templates: Record<string, unknown>) =>
+    ({ settings: { sms: { templates } } }) as never
+  const lines = (result: ReturnType<typeof plan>) =>
+    result.settings.map((change) => [change.path, change.kind])
+
+  test.each<[string, Record<string, unknown>, Record<string, unknown>, [string, string][]]>([
+    ['the same templates', { sign_in: SIGN_IN }, { sign_in: SIGN_IN }, []],
+    [
+      'kinds in another order are no change',
+      { sign_in: SIGN_IN, phone_verification: CHECK },
+      { phone_verification: CHECK, sign_in: SIGN_IN },
+      [],
+    ],
+    [
+      'a template only the file has is added, as its text',
+      {},
+      { sign_in: SIGN_IN },
+      [['sms.templates.sign_in.text', 'added']],
+    ],
+    [
+      'a changed text is one line, by kind',
+      { sign_in: SIGN_IN },
+      { sign_in: { text: 'Code: {{code}}' } },
+      [['sms.templates.sign_in.text', 'changed']],
+    ],
+    [
+      'a kind the file leaves out is removed, not unmanaged',
+      { sign_in: SIGN_IN, phone_verification: CHECK },
+      { sign_in: SIGN_IN },
+      [['sms.templates.phone_verification.text', 'removed']],
+    ],
+  ])('%s', (_name, has, wants, expected) => {
+    const result = plan(file(wants), server(has))
+    expect(lines(result)).toEqual(expected)
+    // Wording is not a weakening, and a template of a known kind is not an unknown setting.
+    expect(result.weakened).toEqual([])
+    expect(result.unknown).toEqual([])
+  })
+
+  test('a file with no `sms` key removes every template the server has', () => {
+    const result = plan({}, server({ sign_in: SIGN_IN }))
+    expect(lines(result)).toEqual([['sms.templates.sign_in.text', 'removed']])
+    expect(result.unknown).toEqual([])
+    expect(result.weakened).toEqual([])
+  })
+
+  test('a template of a kind this version does not know is an unknown setting', () => {
+    const result = plan(
+      file({ sign_in: SIGN_IN }),
+      server({ sign_in: SIGN_IN, a_later_kind: { text: 'Later {{code}}' } })
+    )
+    expect(result.unknown).toEqual(['sms.templates.a_later_kind.text'])
+  })
+
+  test('the plan’s body carries the file’s templates, and none when it has none', () => {
+    expect(plan(file({ sign_in: SIGN_IN }), server({})).body.sms.templates).toEqual({
+      sign_in: SIGN_IN,
+    })
+    expect(plan({}, server({ sign_in: SIGN_IN })).body.sms.templates).toEqual({})
   })
 })

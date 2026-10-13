@@ -47,6 +47,9 @@ const STEP_UP =
 const ORIGIN =
   ' Passkeys must be on for the environment (`auth.method_disabled` otherwise), and the ' +
   'request’s `Origin` must be one the environment allows and belong to its `passkeys.rpId` ' +
+  '(`request.origin_not_allowed`). A native app sends no `Origin` and `x-tula-client: ios` or ' +
+  '`android`: the response must then carry an origin of one of the environment’s registered ' +
+  'apps of that platform, and with no such app the request is refused ' +
   '(`request.origin_not_allowed`).'
 
 router.get(
@@ -112,7 +115,7 @@ router.post(
           c.get('deps'),
           c.get('tenant'),
           { userId: sub, sessionId: sid },
-          c.req.header('origin')
+          Passkeys.ceremonyOf(c.req)
         )
       )
     )
@@ -159,7 +162,7 @@ router.post(
           c.get('tenant'),
           { userId: sub, sessionId: sid },
           c.req.valid('json'),
-          c.req.header('origin'),
+          Passkeys.ceremonyOf(c.req),
           userActor(c)
         )
       ),

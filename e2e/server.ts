@@ -8,6 +8,8 @@ import { findDashboardDir } from '../apps/api/src/lib/dashboard-files'
 import * as Audit from '../apps/api/src/modules/audit/service'
 import * as Jwks from '../apps/api/src/modules/jwks/service'
 import * as OAuth from '../apps/api/src/modules/oauth/service'
+import * as Sms from '../apps/api/src/modules/sms/service'
+import * as Webhooks from '../apps/api/src/modules/webhook/service'
 import type { RateLimiter } from '../apps/api/src/ports/rate-limiter'
 import { createTestDeps, seedApiKey, TEST_CONFIG, TEST_TENANT } from '../apps/api/src/testing'
 import {
@@ -15,11 +17,13 @@ import {
   EnvironmentSettingsSchema,
 } from '../packages/contract/src/index'
 import { testRouteRefusal } from './guard'
+import { RECEIVER_PORT, receiverResponse } from './receiver'
 
 // The server the browser tests run against: the REAL API (`createApp`, every route and
-// middleware) on memory adapters, plus the built example app, on two local ports. Nothing is
-// mocked; the only differences from production are where data lives (memory) and where email
-// goes (an outbox the tests read).
+// middleware) on memory adapters, the built example app, and a receiver for the dashboard's
+// webhook tests to have deliveries sent to, on three local ports (`API_PORT`, `APP_PORT`,
+// `RECEIVER_PORT`). Nothing of the API is mocked; the only differences from production are
+// where data lives (memory) and where email goes (an outbox the tests read).
 //
 //   E2E=1 bun run e2e/server.ts
 //
@@ -186,9 +190,13 @@ const FIXTURE_SETTINGS = {
  * The document is validated exactly as `PUT /v1/admin/settings` validates one.
  */
 async function replaceSettings(request: Request): Promise<Response> {
+  const asked = (await request.json()) as { password?: object }
   const parsed = EnvironmentSettingsSchema.safeParse({
     ...FIXTURE_SETTINGS,
-    ...((await request.json()) as object),
+    ...asked,
+    // A test names the rules it changes (`history`, `expiryDays`); the rest of the policy
+    // stays the default.
+    password: { ...FIXTURE_SETTINGS.password, ...asked.password },
   })
   if (!parsed.success) {
     return json({ error: 'not a settings document' }, 422)
@@ -252,7 +260,16 @@ async function enableProviders(body: unknown): Promise<Response> {
   }
   const tenant = { projectId: TEST_TENANT.projectId, environmentId: TEST_TENANT.environmentId }
   const actor = { type: 'system', id: null, ipAddress: null, userAgent: null } as const
-  for (const provider of ['google', 'github', 'apple'] as const) {
+  for (const provider of [
+    'google',
+    'github',
+    'apple',
+    'microsoft',
+    'discord',
+    'linkedin',
+    'x',
+    'facebook',
+  ] as const) {
     if (wanted.includes(provider)) {
       await OAuth.update(
         deps,
@@ -266,11 +283,52 @@ async function enableProviders(body: unknown): Promise<Response> {
               privateKey: APPLE_KEY,
               enabled: true,
             }
-          : { clientId: `e2e-${provider}`, clientSecret: 'e2e-client-secret', enabled: true },
+          : {
+              clientId: `e2e-${provider}`,
+              clientSecret: 'e2e-client-secret',
+              enabled: true,
+              // Any Microsoft account: the tests choose the tenant at the consent page.
+              ...(provider === 'microsoft' && { tenant: 'common' }),
+            },
         actor
       )
     } else if (await deps.oauthProviders.find(tenant.environmentId, provider)) {
       await deps.oauthProviders.delete(tenant.environmentId, provider, Audit.none('fixture'))
+    }
+  }
+  return json({ ok: true })
+}
+
+/**
+ * Replace the environment's counts of texted codes with these, for today: what the
+ * dashboard's usage table is read from. `{ rows: [] }` empties them. The counts are written
+ * through the store's own methods, as a sent and a used code write them; no message is sent.
+ * A few dozen at most: today's count is also what the daily limit is held against.
+ */
+async function seedSmsUsage(body: unknown): Promise<Response> {
+  const rows = (body as { rows?: unknown }).rows
+  if (!Array.isArray(rows) || rows.length > 20) {
+    return json({ error: 'rows must be a list of at most 20' }, 422)
+  }
+  const scope = { projectId: TEST_TENANT.projectId, environmentId: TEST_TENANT.environmentId }
+  const now = clock.now()
+  const day = now.toISOString().slice(0, 10)
+  // Every row of the environment, whatever its day.
+  while ((await deps.smsUsage.deleteBefore(scope.environmentId, '9999-12-31', 1000)) > 0) {
+    // Until nothing is left.
+  }
+  for (const row of rows as { prefix?: unknown; sent?: unknown; used?: unknown }[]) {
+    const sent = Number(row.sent)
+    const used = Number(row.used)
+    const whole = Number.isInteger(sent) && Number.isInteger(used)
+    if (typeof row.prefix !== 'string' || !whole || sent < 0 || sent > 50 || used > sent) {
+      return json({ error: 'a row is a prefix, and 0 to 50 sent with no more used' }, 422)
+    }
+    for (let index = 0; index < sent; index += 1) {
+      await deps.smsUsage.takeFromDay(scope, day, row.prefix, 1_000_000, now)
+    }
+    for (let index = 0; index < used; index += 1) {
+      await deps.smsUsage.recordUsed(scope.environmentId, day, row.prefix, now)
     }
   }
   return json({ ok: true })
@@ -292,6 +350,30 @@ function testRoute(request: Request): Response | Promise<Response> | null {
       .filter((message) => to === null || message.to === to)
       .map(({ to: recipient, subject, text }) => ({ to: recipient, subject, text }))
     return json({ data: messages })
+  }
+  if (request.method === 'GET' && url.pathname === '/__test/sms') {
+    // The text messages the API "sent" (the memory sender's outbox), as the emails above.
+    // The API's own development inbox (`/v1/dev/sms`) is not mounted in the fixture.
+    // A sign-in's message is in the outbox before its code's token is stored (the send is
+    // not waited for by the request that asked). A test that reads a code here types it at
+    // once, so the answer waits for that work: a code it shows is one that can be used.
+    return Sms.settled().then(() => {
+      const messages = deps.sms
+        .messages(url.searchParams.get('to') ?? undefined)
+        .map(({ to, text }) => ({ to, text }))
+      return json({ data: messages })
+    })
+  }
+  if (request.method === 'POST' && url.pathname === '/__test/sms-sender') {
+    // Whether the deployment has an SMS sender (`SMS_PROVIDER`), which no setting says: a
+    // test of what the dashboard shows without one switches it off, and on again after.
+    return request.json().then((body) => {
+      deps.sms.configured = (body as { configured?: unknown }).configured !== false
+      return json({ configured: deps.sms.configured })
+    })
+  }
+  if (request.method === 'POST' && url.pathname === '/__test/sms-usage') {
+    return request.json().then(seedSmsUsage)
   }
   if (request.method === 'POST' && url.pathname === '/__test/reset-limits') {
     rateLimiter.reset()
@@ -327,6 +409,11 @@ function testRoute(request: Request): Response | Promise<Response> | null {
     clock.reset()
     return json({ now: clock.now().getTime() })
   }
+  if (request.method === 'POST' && url.pathname === '/__test/webhook-round') {
+    // One round of the webhook worker (`server.ts` runs it on a timer; the fixture has none),
+    // so that a test decides when what is owed is queued and sent.
+    return Webhooks.run(deps).then((report) => json({ report }))
+  }
   return json({ error: 'unknown test route' }, 404)
 }
 
@@ -360,6 +447,20 @@ const web = Bun.serve({
   },
 })
 
+/**
+ * Where the dashboard's webhook tests have deliveries sent: `receiverResponse`
+ * (`e2e/receiver.ts`), which answers with the status code a path names and nothing else,
+ * behind the same guard as the test routes. Bound to the loopback **address**, which is the
+ * one place the API's own outbound guard lets a delivery go in the `local` tier; nothing
+ * about that guard is changed for it.
+ */
+const receiver = Bun.serve({
+  port: RECEIVER_PORT,
+  hostname: '127.0.0.1',
+  fetch: (request) => receiverResponse(request),
+})
+
 process.stdout.write(
-  `e2e: API on ${api.url.origin} (memory adapters), example app on ${web.url.origin}\n`
+  `e2e: webhook receiver on ${receiver.url.origin}\n` +
+    `e2e: API on ${api.url.origin} (memory adapters), example app on ${web.url.origin}\n`
 )

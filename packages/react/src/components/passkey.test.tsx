@@ -11,6 +11,7 @@ import { useTula } from '../hooks/use-tula'
 import {
   attempt,
   completed,
+  expectAbsent,
   expectFocus,
   failure,
   json,
@@ -190,7 +191,7 @@ describe('<SignIn> with a passkey', () => {
     const field = await screen.findByLabelText('Email address')
     await waitFor(() => expect(w.api.calls(ROUTE.config)).toHaveLength(1))
     expect(field.getAttribute('autocomplete')).toBe('username')
-    expect(screen.queryByRole('button', { name: 'Sign in with a passkey' })).toBeNull()
+    expectAbsent(screen.queryByRole('button', { name: 'Sign in with a passkey' }))
   })
 
   test('hidden, not broken, in a browser without WebAuthn', async () => {
@@ -198,7 +199,7 @@ describe('<SignIn> with a passkey', () => {
     w.mount(<SignIn />)
     const field = await screen.findByLabelText('Email address')
     await waitFor(() => expect(field.getAttribute('autocomplete')).toBe('username webauthn'))
-    expect(screen.queryByRole('button', { name: 'Sign in with a passkey' })).toBeNull()
+    expectAbsent(screen.queryByRole('button', { name: 'Sign in with a passkey' }))
     expect(w.api.calls(PK.start)).toHaveLength(0)
   })
 
@@ -287,7 +288,7 @@ describe('<SignIn> with a passkey', () => {
     // success either: nothing was done, so it is drawn in the neutral tone, not the green one.
     expect(quiet.tagName).toBe('OUTPUT')
     expect(quiet.classList.contains('tula-is-neutral')).toBe(true)
-    expect(screen.queryByRole('alert')).toBeNull()
+    expectAbsent(screen.queryByRole('alert'))
     expect(document.body.textContent).not.toContain('the browser said something')
     await expectFocus(button)
     expect(button.getAttribute('aria-disabled')).toBeNull()
@@ -350,6 +351,45 @@ describe('<SignIn> with a passkey', () => {
 
   test('after an address, in a browser without WebAuthn: the passkey is not among the ways', async () => {
     const w = passkeyWorld(null)
+    // The browser is asked from an effect, so each time it is asked the page is as the commit
+    // before left it: what a user sees until the answer has been drawn. The link used to be
+    // there (a passkey was "not ruled out yet") and to go away one render later, which a slow
+    // CI runner caught in between (TULA-64).
+    const drawnWhenAsked: number[] = []
+    spyOn(w.client.signIn, 'canUsePasskey').mockImplementation(() => {
+      drawnWhenAsked.push(
+        screen.queryAllByRole('button', { name: 'Sign in with a passkey' }).length
+      )
+      return false
+    })
+    w.mount(<SignIn />)
+    w.api.on(ROUTE.signIn, () =>
+      started('sign_in', { status: 'needs_first_factor', strategies: ['password', 'passkey'] })
+    )
+    await w.user.type(await screen.findByLabelText('Email address'), EMAIL)
+    const askedBefore = drawnWhenAsked.length
+    await w.user.click(screen.getByRole('button', { name: 'Continue' }))
+    await screen.findByLabelText('Password')
+    // The screen that lists the ways asked for itself, and never had the link.
+    expect(drawnWhenAsked.length).toBeGreaterThan(askedBefore)
+    expect(drawnWhenAsked.every((count) => count === 0)).toBe(true)
+    expectAbsent(screen.queryByRole('button', { name: 'Sign in with a passkey' }))
+  })
+
+  test('after an address, in a browser with WebAuthn: the other ways are absent from the first commit and the passkey joins them once the browser has said so', async () => {
+    const w = passkeyWorld()
+    // A decision, not an accident: the link is hidden until the browser has answered, so here,
+    // where the passkey is the only other way, the whole list is missing from the screen's
+    // first commit and arrives with the next one (a frame late, after the title has taken the
+    // focus). The other choice draws a control that vanishes in a browser without WebAuthn.
+    // Each entry is what was on the page when the browser was asked on the password screen.
+    const listsWhenAsked: number[] = []
+    spyOn(w.client.signIn, 'canUsePasskey').mockImplementation(() => {
+      if (screen.queryAllByLabelText('Password').length > 0) {
+        listsWhenAsked.push(screen.queryAllByRole('list', { name: 'Other ways to sign in' }).length)
+      }
+      return true
+    })
     w.mount(<SignIn />)
     w.api.on(ROUTE.signIn, () =>
       started('sign_in', { status: 'needs_first_factor', strategies: ['password', 'passkey'] })
@@ -357,7 +397,14 @@ describe('<SignIn> with a passkey', () => {
     await w.user.type(await screen.findByLabelText('Email address'), EMAIL)
     await w.user.click(screen.getByRole('button', { name: 'Continue' }))
     await screen.findByLabelText('Password')
-    expect(screen.queryByRole('button', { name: 'Sign in with a passkey' })).toBeNull()
+    expect(listsWhenAsked.length).toBeGreaterThan(0)
+    expect(listsWhenAsked.every((count) => count === 0)).toBe(true)
+    const ways = screen.getByRole('list', { name: 'Other ways to sign in' })
+    expect(
+      within(ways)
+        .getAllByRole('button')
+        .map((button) => button.textContent)
+    ).toEqual(['Sign in with a passkey'])
   })
 
   test('where a passkey is the only way and the browser has none: the unsupported screen', async () => {
@@ -440,7 +487,7 @@ describe('<SignIn> passkeys in the address field’s autofill', () => {
     expect(waiting?.signal?.aborted).toBe(true)
     expect(live(browser)).toHaveLength(0)
     // Its ending is the screen's own doing: nothing is said about it.
-    expect(screen.queryByRole('alert')).toBeNull()
+    expectAbsent(screen.queryByRole('alert'))
 
     const modal = browser.gets.find((get) => !get.conditional)
     await act(async () => {
@@ -522,7 +569,7 @@ describe('a passkey as the second factor', () => {
     w.mount(<SignIn />)
     await passwordAnswers(w, secondFactor(['passkey']))
     expect(await screen.findByText(/This browser cannot use passkeys/)).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Use your passkey' })).toBeNull()
+    expectAbsent(screen.queryByRole('button', { name: 'Use your passkey' }))
     expect(screen.getByRole('button', { name: 'Back to sign in' })).toBeTruthy()
   })
 
@@ -544,14 +591,14 @@ describe('a passkey as the second factor', () => {
 
     await w.user.click(use)
     expect(await screen.findByText(/passkey request was cancelled or timed out/)).toBeTruthy()
-    expect(screen.queryByRole('alert')).toBeNull()
+    expectAbsent(screen.queryByRole('alert'))
     await expectFocus(use)
     // Nothing was sent to be judged, and nothing of the dismissal follows to the code form.
     expect(w.api.calls(PK.second)).toHaveLength(0)
     await w.user.click(screen.getByRole('button', { name: 'Use your authenticator app' }))
     await expectFocus(await screen.findByLabelText('Authentication code'))
-    expect(screen.queryByText(/passkey request was cancelled/)).toBeNull()
-    expect(screen.queryByRole('alert')).toBeNull()
+    expectAbsent(screen.queryByText(/passkey request was cancelled/))
+    expectAbsent(screen.queryByRole('alert'))
   })
 
   test('next to a code, in a browser without WebAuthn: the passkey is not offered', async () => {
@@ -559,7 +606,7 @@ describe('a passkey as the second factor', () => {
     w.mount(<SignIn />)
     await passwordAnswers(w, secondFactor(['totp', 'passkey']))
     await screen.findByLabelText('Authentication code')
-    expect(screen.queryByRole('button', { name: 'Use your passkey instead' })).toBeNull()
+    expectAbsent(screen.queryByRole('button', { name: 'Use your passkey instead' }))
   })
 
   test('a refused passkey is an alert; a wrong code afterwards is the code field’s', async () => {
@@ -573,7 +620,7 @@ describe('a passkey as the second factor', () => {
     expect((await screen.findByRole('alert')).textContent).toContain('incorrect')
     await w.user.click(screen.getByRole('button', { name: 'Use your authenticator app' }))
     await screen.findByLabelText('Authentication code')
-    expect(screen.queryByRole('alert')).toBeNull()
+    expectAbsent(screen.queryByRole('alert'))
   })
 })
 
@@ -638,7 +685,7 @@ describe('the step-up dialog with a passkey', () => {
     const w = steppingWorld('passkey')
     const dialog = await open(w)
     expect(within(dialog).getByText('Use your passkey to continue.')).toBeTruthy()
-    expect(within(dialog).queryByLabelText('Password')).toBeNull()
+    expectAbsent(within(dialog).queryByLabelText('Password'))
     await w.user.click(within(dialog).getByRole('button', { name: 'Use your passkey' }))
     expect(await screen.findByText('result: done')).toBeTruthy()
     await waitFor(() => expect(openDialogs()).toBe(0))
@@ -670,7 +717,7 @@ describe('the step-up dialog with a passkey', () => {
     await w.user.click(use)
     const quiet = await within(dialog).findByText(/passkey request was cancelled/)
     expect(quiet.classList.contains('tula-is-neutral')).toBe(true)
-    expect(within(dialog).queryByRole('alert')).toBeNull()
+    expectAbsent(within(dialog).queryByRole('alert'))
     await expectFocus(use)
     await w.user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
     expect(await screen.findByText('result: declined')).toBeTruthy()
@@ -681,7 +728,7 @@ describe('the step-up dialog with a passkey', () => {
     const w = steppingWorld('totp,backup_code,passkey')
     const dialog = await open(w)
     await within(dialog).findByLabelText('Authentication code')
-    expect(within(dialog).queryByLabelText('Password')).toBeNull()
+    expectAbsent(within(dialog).queryByLabelText('Password'))
     await w.user.click(
       await within(dialog).findByRole('button', { name: 'Use your passkey instead' })
     )
@@ -694,7 +741,7 @@ describe('the step-up dialog with a passkey', () => {
     const w = steppingWorld('passkey,password', null)
     const dialog = await open(w)
     expect(await within(dialog).findByLabelText('Password')).toBeTruthy()
-    expect(within(dialog).queryByRole('button', { name: 'Use your passkey instead' })).toBeNull()
+    expectAbsent(within(dialog).queryByRole('button', { name: 'Use your passkey instead' }))
     await w.user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
     await waitFor(() => expect(openDialogs()).toBe(0))
   })
@@ -751,8 +798,8 @@ describe('<UserProfile> passkeys', () => {
     await act(async () => {
       await Promise.resolve()
     })
-    expect(screen.queryByRole('heading', { name: 'Passkeys' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Add a passkey' })).toBeNull()
+    expectAbsent(screen.queryByRole('heading', { name: 'Passkeys' }))
+    expectAbsent(screen.queryByRole('button', { name: 'Add a passkey' }))
   })
 
   test('passkeys off and the user has one: listed, renamed and removed as ever, with no "Add" and a line saying so', async () => {
@@ -760,7 +807,7 @@ describe('<UserProfile> passkeys', () => {
     w.mount(<UserProfile />)
     const area = await section()
     expect(await within(area).findByText('MacBook')).toBeTruthy()
-    expect(within(area).queryByRole('button', { name: 'Add a passkey' })).toBeNull()
+    expectAbsent(within(area).queryByRole('button', { name: 'Add a passkey' }))
     expect(within(area).getByText(/New passkeys cannot be added right now/)).toBeTruthy()
     expect(within(area).getByRole('button', { name: 'Rename MacBook' })).toBeTruthy()
 
@@ -769,8 +816,8 @@ describe('<UserProfile> passkeys', () => {
     // The removal is confirmed where it happened, with the focus on the section's title.
     expect(await within(area).findByText('The passkey was removed.')).toBeTruthy()
     expect(w.api.calls(PK.remove)).toHaveLength(1)
-    expect(within(area).queryByText('MacBook')).toBeNull()
-    expect(within(area).queryByRole('button', { name: 'Add a passkey' })).toBeNull()
+    expectAbsent(within(area).queryByText('MacBook'))
+    expectAbsent(within(area).queryByRole('button', { name: 'Add a passkey' }))
     await expectFocus(within(area).getByRole('heading', { name: 'Passkeys' }))
   })
 
@@ -782,7 +829,7 @@ describe('<UserProfile> passkeys', () => {
     await w.user.click(await within(area).findByRole('button', { name: 'Remove passkey' }))
     expect(await within(area).findByText('The passkey was removed.')).toBeTruthy()
     expect(within(area).getByText('YubiKey')).toBeTruthy()
-    expect(within(area).queryByRole('button', { name: 'Add a passkey' })).toBeNull()
+    expectAbsent(within(area).queryByRole('button', { name: 'Add a passkey' }))
     await expectFocus(within(area).getByRole('heading', { name: 'Passkeys' }))
   })
 
@@ -819,6 +866,179 @@ describe('<UserProfile> passkeys', () => {
     expect(w.api.calls(PK.list)).toHaveLength(2)
   })
 
+  // Review round 1, F1. A passkey added by a user whose second step is a texted code takes
+  // that step over, and a passkey has no backup codes: the page says so before the ceremony.
+  describe('for a user whose second step is a texted code', () => {
+    const FACTORS = 'GET /v1/client/me/factors'
+    const WARNING =
+      /Once you add a passkey, it replaces the code by text message as your second step\. A passkey has no backup codes: if you lose it, only an administrator of this app can let you back in\./
+
+    function textedWorld(sms: { enabled: boolean; inUse: boolean } | null) {
+      const browser = authenticator()
+      const w = profileWorld([], browser, { mfaPolicy: 'optional' })
+      const state = { sms }
+      w.api.on(FACTORS, () =>
+        json(200, {
+          totp: { enabled: false, confirmedAt: null },
+          backupCodes: { remaining: 0 },
+          ...(state.sms && {
+            sms: {
+              ...state.sms,
+              available: false,
+              enabledAt: state.sms.enabled ? '2026-10-03T10:00:00.000Z' : null,
+            },
+          }),
+        })
+      )
+      return { w, browser, state }
+    }
+
+    test('"Add a passkey" says, before anything is asked of the browser, that it replaces the texted code', async () => {
+      const { w, browser, state } = textedWorld({ enabled: true, inUse: true })
+      w.mount(<UserProfile />)
+      const area = await section()
+      const warning = await within(area).findByText(WARNING)
+      const add = within(area).getByRole('button', { name: 'Add a passkey' })
+      // Read with the button, not only near it.
+      expect(add.getAttribute('aria-describedby')).toBe(warning.id)
+      expect(warning.id).not.toBe('')
+      expect(browser.creates).toHaveLength(0)
+      expect(w.api.calls(PK.options)).toHaveLength(0)
+
+      // Once it is added the server says the texted code is no longer in use: the warning has
+      // nothing left to warn of, and the two-step section says where the texted code went.
+      state.sms = { enabled: true, inUse: false }
+      await w.user.click(add)
+      await within(area).findByText('Your passkey was added.')
+      await waitFor(() => expect(w.api.calls(FACTORS)).toHaveLength(2))
+      await waitFor(() => expectAbsent(within(area).queryByText(WARNING)))
+      expect(await screen.findByText(/It is not asked for while you have/)).toBeTruthy()
+    })
+
+    test.each<[string, { enabled: boolean; inUse: boolean } | null]>([
+      ['no texted code', { enabled: false, inUse: false }],
+      ['a texted code that is already set aside', { enabled: true, inUse: false }],
+      ['a server that says nothing of one', null],
+    ])('with %s there is nothing to warn of', async (_name, sms) => {
+      const { w } = textedWorld(sms)
+      w.mount(<UserProfile />)
+      const area = await section()
+      const add = await within(area).findByRole('button', { name: 'Add a passkey' })
+      await waitFor(() => expect(w.api.calls(FACTORS)).toHaveLength(1))
+      await screen.findByRole('heading', { name: 'Two-step verification' })
+      expectAbsent(within(area).queryByText(WARNING))
+      expect(add.getAttribute('aria-describedby')).toBeNull()
+    })
+  })
+
+  // Review round 2, F5. Whether a passkey would replace a texted code is read by the two-step
+  // section, after the page is drawn. Until that read has answered nobody may add a passkey:
+  // the warning it would have to carry is not known yet.
+  describe('until the second step has been read', () => {
+    const FACTORS = 'GET /v1/client/me/factors'
+    const CHECKING = 'Checking your second step before a passkey can be added…'
+    const UNCHECKED =
+      'Your second step could not be checked, so a passkey cannot be added right now. Reload the page to try again.'
+    const WARNING = /Once you add a passkey, it replaces the code by text message/
+
+    function heldWorld() {
+      const browser = authenticator()
+      const w = profileWorld([], browser, { mfaPolicy: 'optional' })
+      let release: (answer: Response) => void = () => undefined
+      w.api.on(FACTORS, () => new Promise<Response>((resolve) => (release = resolve)))
+      const factors = (inUse: boolean) =>
+        json(200, {
+          totp: { enabled: false, confirmedAt: null },
+          backupCodes: { remaining: 0 },
+          sms: {
+            enabled: inUse,
+            inUse,
+            available: false,
+            enabledAt: inUse ? '2026-10-03T10:00:00.000Z' : null,
+          },
+        })
+      return { w, browser, answer: (response: Response) => release(response), factors }
+    }
+
+    /** The add button while it is held: there, focusable, unavailable, and saying why. */
+    async function expectHeld(w: World, area: HTMLElement, reason: string) {
+      const add = await within(area).findByRole('button', { name: 'Add a passkey' })
+      await waitFor(() => expect(add.getAttribute('aria-disabled')).toBe('true'))
+      expect(add.hasAttribute('disabled')).toBe(false)
+      const said = within(area).getByText(reason)
+      expect(add.getAttribute('aria-describedby')).toBe(said.id)
+      add.focus()
+      await expectFocus(add)
+      await w.user.click(add)
+      expect(w.api.calls(PK.options)).toHaveLength(0)
+      return add
+    }
+
+    test('"Add a passkey" is unavailable, and once a texted code turns out to be in use the warning is there', async () => {
+      const { w, browser, answer, factors } = heldWorld()
+      w.mount(<UserProfile />)
+      const area = await section()
+      await waitFor(() => expect(w.api.calls(FACTORS)).toHaveLength(1))
+      const add = await expectHeld(w, area, CHECKING)
+      expectAbsent(within(area).queryByText(WARNING))
+      expect(browser.creates).toHaveLength(0)
+
+      answer(factors(true))
+      const warning = await within(area).findByText(WARNING)
+      expectAbsent(within(area).queryByText(CHECKING))
+      expect(add.getAttribute('aria-disabled')).toBeNull()
+      expect(add.getAttribute('aria-describedby')).toBe(warning.id)
+    })
+
+    test('once no texted code turns out to be in use the button works, with nothing to warn of', async () => {
+      const { w, answer, factors } = heldWorld()
+      w.mount(<UserProfile />)
+      const area = await section()
+      await waitFor(() => expect(w.api.calls(FACTORS)).toHaveLength(1))
+      const add = await expectHeld(w, area, CHECKING)
+
+      answer(factors(false))
+      await waitFor(() => expect(add.getAttribute('aria-disabled')).toBeNull())
+      expectAbsent(within(area).queryByText(CHECKING))
+      expectAbsent(within(area).queryByText(WARNING))
+      expect(add.getAttribute('aria-describedby')).toBeNull()
+      await w.user.click(add)
+      expect(await within(area).findByText('Your passkey was added.')).toBeTruthy()
+    })
+
+    test('a read that fails leaves it unavailable and says so, as the two-step section says its own failure', async () => {
+      const { w, browser, answer } = heldWorld()
+      w.mount(<UserProfile />)
+      const area = await section()
+      await waitFor(() => expect(w.api.calls(FACTORS)).toHaveLength(1))
+      await expectHeld(w, area, CHECKING)
+
+      answer(failure(503, 'service.unavailable'))
+      await within(area).findByText(UNCHECKED)
+      await expectHeld(w, area, UNCHECKED)
+      expectAbsent(within(area).queryByText(CHECKING))
+      expect(browser.creates).toHaveLength(0)
+      // The page's own pattern for this read: the failure is said where it was asked, with
+      // no control to ask again.
+      const twoStep = (
+        await screen.findByRole('heading', { name: 'Two-step verification' })
+      ).closest('section') as HTMLElement
+      expect(within(twoStep).getByRole('alert')).toBeTruthy()
+      expectAbsent(within(twoStep).queryByRole('button'))
+    })
+
+    test('an app whose configuration names no two-step verification has nothing to wait for', async () => {
+      const w = profileWorld([])
+      w.mount(<UserProfile />)
+      const area = await section()
+      const add = await within(area).findByRole('button', { name: 'Add a passkey' })
+      await waitFor(() => expect(add.getAttribute('aria-disabled')).toBeNull())
+      expect(w.api.calls(FACTORS)).toHaveLength(0)
+      await w.user.click(add)
+      expect(await within(area).findByText('Your passkey was added.')).toBeTruthy()
+    })
+  })
+
   test('adding goes through the step-up dialog when the server asks for one', async () => {
     const w = profileWorld([])
     let stepped = false
@@ -846,7 +1066,7 @@ describe('<UserProfile> passkeys', () => {
     const again = await screen.findByRole('dialog')
     await w.user.click(within(again).getByRole('button', { name: 'Cancel' }))
     await waitFor(() => expect(openDialogs()).toBe(0))
-    expect(within(area).queryByRole('alert')).toBeNull()
+    expectAbsent(within(area).queryByRole('alert'))
     expect(w.api.calls(PK.create)).toHaveLength(1)
   })
 
@@ -864,7 +1084,7 @@ describe('<UserProfile> passkeys', () => {
     const quiet = await within(area).findByText(/passkey request was cancelled/)
     expect(quiet.tagName).toBe('OUTPUT')
     expect(quiet.classList.contains('tula-is-neutral')).toBe(true)
-    expect(within(area).queryByRole('alert')).toBeNull()
+    expectAbsent(within(area).queryByRole('alert'))
     await expectFocus(add)
     expect(add.getAttribute('aria-disabled')).toBeNull()
 
@@ -884,7 +1104,7 @@ describe('<UserProfile> passkeys', () => {
       expect(within(area).getByRole('alert').textContent).not.toContain('already has a passkey')
     )
     expect(w.api.calls(PK.create)).toHaveLength(1)
-    expect(within(area).queryByText('Your passkey was added.')).toBeNull()
+    expectAbsent(within(area).queryByText('Your passkey was added.'))
   })
 
   test('rename: a field under the row, a name is required, and focus returns to "Rename"', async () => {
@@ -914,7 +1134,7 @@ describe('<UserProfile> passkeys', () => {
     expect(await within(area).findByText('The passkey was renamed.')).toBeTruthy()
     expect(w.api.calls(PK.rename)[0]?.body).toEqual({ name: 'Work laptop' })
     await expectFocus(await within(area).findByRole('button', { name: 'Rename Work laptop' }))
-    expect(within(area).queryByLabelText('Passkey name')).toBeNull()
+    expectAbsent(within(area).queryByLabelText('Passkey name'))
   })
 
   test('rename can be cancelled, and a refusal keeps the field open with its message', async () => {
@@ -925,7 +1145,7 @@ describe('<UserProfile> passkeys', () => {
     await w.user.click(rename)
     await w.user.click(await within(area).findByRole('button', { name: 'Cancel' }))
     await expectFocus(rename)
-    expect(within(area).queryByLabelText('Passkey name')).toBeNull()
+    expectAbsent(within(area).queryByLabelText('Passkey name'))
 
     w.api.on(PK.rename, () => failure(404, 'resource.not_found'))
     await w.user.click(rename)
@@ -953,7 +1173,7 @@ describe('<UserProfile> passkeys', () => {
     await w.user.click(await within(area).findByRole('button', { name: 'Remove passkey' }))
     expect(await within(area).findByText('The passkey was removed.')).toBeTruthy()
     expect(w.api.calls(PK.remove)).toHaveLength(1)
-    expect(within(area).queryByText('MacBook')).toBeNull()
+    expectAbsent(within(area).queryByText('MacBook'))
     expect(within(area).getByText('YubiKey')).toBeTruthy()
     await expectFocus(within(area).getByRole('heading', { name: 'Passkeys' }))
   })
@@ -969,7 +1189,7 @@ describe('<UserProfile> passkeys', () => {
     const alert = await within(area).findByRole('alert')
     expect(alert.textContent?.length).toBeGreaterThan(10)
     expect(within(area).getByText('MacBook')).toBeTruthy()
-    expect(within(area).queryByRole('group')).toBeNull()
+    expectAbsent(within(area).queryByRole('group'))
     await expectFocus(remove)
   })
 
@@ -978,7 +1198,7 @@ describe('<UserProfile> passkeys', () => {
     w.mount(<UserProfile />)
     const area = await section()
     expect(await within(area).findByText(/This browser cannot create passkeys/)).toBeTruthy()
-    expect(within(area).queryByRole('button', { name: 'Add a passkey' })).toBeNull()
+    expectAbsent(within(area).queryByRole('button', { name: 'Add a passkey' }))
     expect(await within(area).findByRole('button', { name: 'Remove MacBook' })).toBeTruthy()
   })
 
@@ -988,8 +1208,8 @@ describe('<UserProfile> passkeys', () => {
     w.mount(<UserProfile />)
     const area = await section()
     expect(await within(area).findByRole('alert')).toBeTruthy()
-    expect(within(area).queryByText('You have no passkeys yet.')).toBeNull()
-    expect(within(area).queryByText('Loading your passkeys…')).toBeNull()
+    expectAbsent(within(area).queryByText('You have no passkeys yet.'))
+    expectAbsent(within(area).queryByText('Loading your passkeys…'))
   })
 
   test('a result that arrives after the session ended is dropped', async () => {
@@ -1011,7 +1231,7 @@ describe('<UserProfile> passkeys', () => {
       finish({ toJSON: () => REGISTRATION })
       await Promise.resolve()
     })
-    expect(screen.queryByText('Your passkey was added.')).toBeNull()
+    expectAbsent(screen.queryByText('Your passkey was added.'))
     // The dialog that was open was ended with the session.
     const request = browser.creates[0] as { signal?: AbortSignal }
     expect(request.signal?.aborted).toBe(true)

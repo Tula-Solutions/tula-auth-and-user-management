@@ -53,8 +53,14 @@ export const ROUTE = {
   signOut: 'POST /v1/client/sessions/sign-out',
   revokeOthers: 'POST /v1/client/sessions/revoke-others',
   changePassword: 'POST /v1/client/me/password',
+  emailAddress: 'POST /v1/client/me/email',
+  emailAddressVerify: 'POST /v1/client/me/email/verify',
+  phone: 'POST /v1/client/me/phone',
+  phoneVerify: 'POST /v1/client/me/phone/verify',
+  phoneRemove: 'DELETE /v1/client/me/phone',
   signIn: 'POST /v1/client/sign-ins',
   signInPassword: 'POST /v1/client/sign-ins/attempt_1/password',
+  signInNewPassword: 'POST /v1/client/sign-ins/attempt_1/new-password',
   signInVerify: 'POST /v1/client/sign-ins/attempt_1/verify-email',
   signInResend: 'POST /v1/client/sign-ins/attempt_1/resend-code',
   signInPrepare: 'POST /v1/client/sign-ins/attempt_1/first-factor/prepare',
@@ -97,6 +103,24 @@ export async function expectFocus(element: Element | null): Promise<void> {
   await waitFor(() => expect(document.activeElement === element).toBe(true))
 }
 
+/**
+ * Assert that a query found nothing: `expectAbsent(screen.queryByRole('button', { name }))`.
+ *
+ * Never `expect(screen.queryBy…(…)).toBeNull()`. That matcher fails exactly when it was given
+ * an element, and then formats it, window and all (see {@link openDialogs}): the one failure
+ * of this kind on CI took 22 seconds and wrote 290 MB before it said which button it had
+ * found. Here the matcher sees a short description of the element, or `null`.
+ *
+ * @param element - What a `queryBy…` or `querySelector` returned.
+ */
+export function expectAbsent(element: Element | null): void {
+  const found =
+    element === null
+      ? null
+      : `<${element.tagName.toLowerCase()}> ${(element.textContent ?? '').trim().slice(0, 80)}`
+  expect(found).toBeNull()
+}
+
 /** A step as any answer after the start carries it. */
 export function attempt(kind: FlowKind, step: FlowStep | { status: string }, extra: object = {}) {
   return json(200, {
@@ -134,6 +158,14 @@ export const NEW_PASSWORD_STEP: FlowStep = {
   strategies: ['email_code'],
 }
 
+/** What a sign-in waits on after a right password that has expired. */
+export const EXPIRED_PASSWORD_STEP: FlowStep = {
+  status: 'needs_new_password',
+  destination: 'm***@northline.app',
+  strategies: [],
+  reason: 'expired',
+}
+
 /** A fake API, a client that talks to it, and a way to mount components under a provider. */
 export interface World {
   api: FakeApi
@@ -157,6 +189,11 @@ export interface WorldOptions {
   signUpPassword?: 'required' | 'optional'
   /** The environment's `mfa.policy`. Left out, the config says nothing (an older server). */
   mfaPolicy?: 'off' | 'optional' | 'required'
+  /**
+   * Whether the environment can text a code to a new phone number (`phone.enabled`). Left
+   * out, the config says nothing (an older server).
+   */
+  phone?: boolean
   /** Storage shared by the browser's tabs; without it an emailed link cannot be used. */
   linkStorage?: FakeLinkStorage
   /** The tab's `sessionStorage`: where an OAuth round trip's binding is kept. */
@@ -200,6 +237,7 @@ export function world(options: WorldOptions = {}): World {
       signUp: { password: options.signUpPassword ?? 'required' },
       password: options.policy ?? PASSWORD_POLICY_PRESETS.recommended,
       ...(options.mfaPolicy && { mfa: { policy: options.mfaPolicy } }),
+      ...(options.phone !== undefined && { phone: { enabled: options.phone } }),
     })
   )
   api.on(ROUTE.signOut, () => new Response(null, { status: 204 }))

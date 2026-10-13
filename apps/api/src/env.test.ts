@@ -221,6 +221,358 @@ describe('OAUTH_MOCK_PROVIDER', () => {
   )
 })
 
+// TULA-35, review finding F2. PUBLIC_URL is the issuer of every access token and the address
+// of the server's two requests to itself: credentials in it would be published in the one
+// and sent as basic auth by `fetch` in the other, and a query or a fragment would swallow
+// every path appended to it.
+describe('PUBLIC_URL', () => {
+  const SECRET = 'canary-pass-word'
+
+  test.each([
+    ['a user name and a password', `https://canary-user:${SECRET}@auth.example.com`],
+    ['a user name alone', 'https://canary-user@auth.example.com'],
+    ['a password alone', `https://:${SECRET}@auth.example.com`],
+    ['credentials on a loopback address', `http://canary-user:${SECRET}@localhost:3003`],
+    ['an encoded user name', 'https://canary%2Duser@auth.example.com/'],
+    // Review finding F7: the parser gives these an empty user name and password, and the
+    // issuer is built from the text as typed, so every token's `iss` would hold the `@`.
+    ['an at sign and nothing before it', 'https://@auth.example.com'],
+    ['a colon and an at sign and nothing else', 'https://:@auth.example.com'],
+    ['an at sign before a port', 'https://@auth.example.com:8443/auth'],
+    ['two at signs', 'https://canary-user@canary-pass@auth.example.com'],
+  ])('with %s is refused, in every tier, and the value is not repeated', (_name, url) => {
+    for (const source of [base, live]) {
+      const found = issues({ ...source, PUBLIC_URL: url })
+      expect(found).toContain(
+        'PUBLIC_URL: must not hold a user name or a password: it is the issuer of every access token and the address the server requests to check itself, so the credentials would be published in every token and sent with those requests'
+      )
+      expect(found.every((issue) => issue.startsWith('PUBLIC_URL: '))).toBe(true)
+      expect(found.join('\n')).not.toMatch(/canary/i)
+    }
+  })
+
+  test.each([
+    ['a query', 'https://auth.example.com/?canary=1'],
+    ['an empty query', 'https://auth.example.com/?'],
+    ['a fragment', 'https://auth.example.com/#canary'],
+    ['an empty fragment', 'https://auth.example.com#'],
+    ['a query after a path', 'https://auth.example.com/auth?canary'],
+  ])('with %s is refused, in every tier, and the value is not repeated', (_name, url) => {
+    for (const source of [base, live]) {
+      const found = issues({ ...source, PUBLIC_URL: url })
+      expect(found).toEqual([
+        'PUBLIC_URL: must not have a query or a fragment: the issuer and every address the server builds are this value with a path added',
+      ])
+      expect(found.join('\n')).not.toMatch(/canary/i)
+    }
+  })
+
+  test('with both, both are said', () => {
+    expect(
+      invalidVars({ ...live, PUBLIC_URL: `https://u:${SECRET}@auth.example.com/?q#f` })
+    ).toEqual(['PUBLIC_URL', 'PUBLIC_URL'])
+  })
+
+  test.each([
+    'https://auth.example.com',
+    'https://auth.example.com/',
+    'https://auth.example.com:8443',
+    'https://auth.example.com/auth',
+    'https://auth.example.com/auth/',
+  ])('%p, with none of them, still boots', (url) => {
+    expect(parseEnv({ ...live, PUBLIC_URL: url }).PUBLIC_URL).toBe(url)
+    expect(parseEnv({ ...base, PUBLIC_URL: url }).PUBLIC_URL).toBe(url)
+  })
+
+  test.each([
+    'https://auth.example.com/@auth',
+    'https://auth.example.com/a@b',
+    'https://auth.example.com:8443/a/b@c/',
+    'http://localhost:3003/a@b',
+  ])('an at sign in the path of %p is no credential', (url) => {
+    expect(parseEnv({ ...base, PUBLIC_URL: url }).PUBLIC_URL).toBe(url)
+  })
+
+  test('the look for an at sign is one pass over the value', () => {
+    const long = `https://${'a'.repeat(200_000)}`
+    const started = performance.now()
+    expect(invalidVars({ ...base, PUBLIC_URL: `${long}@auth.example.com` })).toContain('PUBLIC_URL')
+    expect(invalidVars({ ...base, PUBLIC_URL: `${long}/` })).not.toContain('PUBLIC_URL')
+    expect(performance.now() - started).toBeLessThan(1_000)
+  })
+})
+
+// The development SMS inbox hands every code to whoever asks: the same two guards as the
+// mock provider (ADR 0037).
+describe('SMS_PROVIDER', () => {
+  test('is none unless asked for, and dev is allowed in the local tier', () => {
+    expect(parseEnv(base).SMS_PROVIDER).toBe('none')
+    expect(parseEnv({ ...base, SMS_PROVIDER: 'none' }).SMS_PROVIDER).toBe('none')
+    expect(parseEnv({ ...base, SMS_PROVIDER: 'dev' }).SMS_PROVIDER).toBe('dev')
+  })
+
+  test('refuses a provider it does not know', () => {
+    expect(() => parseEnv({ ...base, SMS_PROVIDER: 'vonage' })).toThrow(/SMS_PROVIDER/)
+    expect(() => parseEnv({ ...base, SMS_PROVIDER: 'Twilio' })).toThrow(/SMS_PROVIDER/)
+    expect(() => parseEnv({ ...base, SMS_PROVIDER: 'true' })).toThrow(/SMS_PROVIDER/)
+  })
+
+  test.each(['dev', 'staging', 'prod'])('refuses to boot with the inbox in %s', (tier) => {
+    const source = tier === 'dev' ? base : live
+    expect(() => parseEnv({ ...source, ENVIRONMENT: tier, SMS_PROVIDER: 'dev' })).toThrow(
+      /SMS_PROVIDER: dev is only allowed with ENVIRONMENT=local/
+    )
+    // Without it the same environment boots.
+    expect(parseEnv({ ...source, ENVIRONMENT: tier }).SMS_PROVIDER).toBe('none')
+  })
+
+  test.each([
+    'http://localhost:3003',
+    'http://127.0.0.1:3003',
+    'http://[::1]:3003',
+    'http://auth.localhost:3003',
+  ])('boots with the inbox when PUBLIC_URL is the loopback address %p', (url) => {
+    expect(parseEnv({ ...base, SMS_PROVIDER: 'dev', PUBLIC_URL: url }).SMS_PROVIDER).toBe('dev')
+  })
+
+  test.each([
+    'http://192.168.1.20:3003',
+    'http://0.0.0.0:3003',
+    'https://auth.example.com',
+    'http://localhost.example.com:3003',
+    'http://my-laptop.local:3003',
+  ])('refuses the inbox when PUBLIC_URL is %p, even in the local tier', (url) => {
+    expect(() => parseEnv({ ...base, SMS_PROVIDER: 'dev', PUBLIC_URL: url })).toThrow(
+      /SMS_PROVIDER: dev is only allowed when PUBLIC_URL is a loopback address/
+    )
+    expect(parseEnv({ ...base, PUBLIC_URL: url }).SMS_PROVIDER).toBe('none')
+  })
+})
+
+// TULA-29: the one sender that really sends. Its variables are judged only when it is chosen.
+describe('SMS_PROVIDER=twilio', () => {
+  const ACCOUNT = `AC${'0a1b2c3d'.repeat(4)}`
+  const KEY = `SK${'9f8e7d6c'.repeat(4)}`
+  const SERVICE = `MG${'1122aabb'.repeat(4)}`
+  const SECRET = 'KeySecret-canary-Zq7Lm2Xw9Rt4Vb6Ny8Pd'
+  const TOKEN = 'authtoken-canary-5f3a9c1e7b2d4f6a8c0e'
+  const NUMBER = '+15005550006'
+  const withKey = {
+    SMS_PROVIDER: 'twilio',
+    TWILIO_ACCOUNT_SID: ACCOUNT,
+    TWILIO_API_KEY_SID: KEY,
+    TWILIO_API_KEY_SECRET: SECRET,
+    TWILIO_MESSAGING_SERVICE_SID: SERVICE,
+  }
+  const withToken = {
+    SMS_PROVIDER: 'twilio',
+    TWILIO_ACCOUNT_SID: ACCOUNT,
+    TWILIO_AUTH_TOKEN: TOKEN,
+    TWILIO_FROM_NUMBER: NUMBER,
+  }
+
+  test.each([
+    ['local', base],
+    ['dev', base],
+    ['staging', live],
+    ['prod', live],
+  ])('boots in %s with an API key and a Messaging Service', (tier, source) => {
+    const env = parseEnv({ ...source, ENVIRONMENT: tier, ...withKey })
+    expect(env.SMS_PROVIDER).toBe('twilio')
+    expect(env.TWILIO_ACCOUNT_SID).toBe(ACCOUNT)
+    expect(env.TWILIO_API_KEY_SID).toBe(KEY)
+    expect(env.TWILIO_API_KEY_SECRET).toBe(SECRET)
+    expect(env.TWILIO_MESSAGING_SERVICE_SID).toBe(SERVICE)
+    expect(env.TWILIO_AUTH_TOKEN).toBeUndefined()
+    expect(env.TWILIO_FROM_NUMBER).toBeUndefined()
+  })
+
+  test('boots with the auth token and one number', () => {
+    const env = parseEnv({ ...live, ...withToken })
+    expect(env.TWILIO_AUTH_TOKEN).toBe(TOKEN)
+    expect(env.TWILIO_FROM_NUMBER).toBe(NUMBER)
+  })
+
+  test('a blank variable is an unset one', () => {
+    const env = parseEnv({
+      ...base,
+      ...withKey,
+      TWILIO_AUTH_TOKEN: '',
+      TWILIO_FROM_NUMBER: '   ',
+    })
+    expect(env.TWILIO_AUTH_TOKEN).toBeUndefined()
+    expect(env.TWILIO_FROM_NUMBER).toBeUndefined()
+  })
+
+  const refusals: [string, Record<string, string | undefined>, string[]][] = [
+    [
+      'nothing but the provider',
+      { SMS_PROVIDER: 'twilio' },
+      ['TWILIO_ACCOUNT_SID', 'TWILIO_API_KEY_SID', 'TWILIO_MESSAGING_SERVICE_SID'],
+    ],
+    ['no account', { ...withKey, TWILIO_ACCOUNT_SID: undefined }, ['TWILIO_ACCOUNT_SID']],
+    ['no credentials', { ...withToken, TWILIO_AUTH_TOKEN: undefined }, ['TWILIO_API_KEY_SID']],
+    ['both ways to authenticate', { ...withKey, TWILIO_AUTH_TOKEN: TOKEN }, ['TWILIO_AUTH_TOKEN']],
+    [
+      'the auth token beside half an API key',
+      { ...withToken, TWILIO_API_KEY_SID: KEY },
+      ['TWILIO_AUTH_TOKEN'],
+    ],
+    [
+      'an API key without its secret',
+      { ...withKey, TWILIO_API_KEY_SECRET: undefined },
+      ['TWILIO_API_KEY_SECRET'],
+    ],
+    [
+      'a secret without its API key',
+      { ...withKey, TWILIO_API_KEY_SID: undefined },
+      ['TWILIO_API_KEY_SID'],
+    ],
+    [
+      'no sender',
+      { ...withKey, TWILIO_MESSAGING_SERVICE_SID: undefined },
+      ['TWILIO_MESSAGING_SERVICE_SID'],
+    ],
+    ['both senders', { ...withKey, TWILIO_FROM_NUMBER: NUMBER }, ['TWILIO_FROM_NUMBER']],
+    [
+      'an account that is an API key',
+      { ...withKey, TWILIO_ACCOUNT_SID: KEY },
+      ['TWILIO_ACCOUNT_SID'],
+    ],
+    [
+      'an account one character short',
+      { ...withKey, TWILIO_ACCOUNT_SID: ACCOUNT.slice(0, -1) },
+      ['TWILIO_ACCOUNT_SID'],
+    ],
+    [
+      'an account one character long',
+      { ...withKey, TWILIO_ACCOUNT_SID: `${ACCOUNT}0` },
+      ['TWILIO_ACCOUNT_SID'],
+    ],
+    [
+      'an account that is not hexadecimal',
+      { ...withKey, TWILIO_ACCOUNT_SID: `AC${'z'.repeat(32)}` },
+      ['TWILIO_ACCOUNT_SID'],
+    ],
+    [
+      'an API key that is an account',
+      { ...withKey, TWILIO_API_KEY_SID: ACCOUNT },
+      ['TWILIO_API_KEY_SID'],
+    ],
+    [
+      'a Messaging Service that is a number',
+      { ...withKey, TWILIO_MESSAGING_SERVICE_SID: NUMBER },
+      ['TWILIO_MESSAGING_SERVICE_SID'],
+    ],
+    [
+      'a secret with a space in it',
+      { ...withKey, TWILIO_API_KEY_SECRET: 'two words' },
+      ['TWILIO_API_KEY_SECRET'],
+    ],
+    [
+      'a token that is not ASCII',
+      { ...withToken, TWILIO_AUTH_TOKEN: 'tökenvalue' },
+      ['TWILIO_AUTH_TOKEN'],
+    ],
+    [
+      'a token of 257 characters',
+      { ...withToken, TWILIO_AUTH_TOKEN: 'a'.repeat(257) },
+      ['TWILIO_AUTH_TOKEN'],
+    ],
+    [
+      'a number without its plus',
+      { ...withToken, TWILIO_FROM_NUMBER: '15005550006' },
+      ['TWILIO_FROM_NUMBER'],
+    ],
+    [
+      'a number with spaces',
+      { ...withToken, TWILIO_FROM_NUMBER: '+1 500 555 0006' },
+      ['TWILIO_FROM_NUMBER'],
+    ],
+    [
+      'a number that starts with zero',
+      { ...withToken, TWILIO_FROM_NUMBER: '+05005550006' },
+      ['TWILIO_FROM_NUMBER'],
+    ],
+    [
+      'a number of seven digits',
+      { ...withToken, TWILIO_FROM_NUMBER: '+1500555' },
+      ['TWILIO_FROM_NUMBER'],
+    ],
+    [
+      'a number of sixteen digits',
+      { ...withToken, TWILIO_FROM_NUMBER: '+1500555000612345' },
+      ['TWILIO_FROM_NUMBER'],
+    ],
+    [
+      'an alphanumeric sender as the number',
+      { ...withToken, TWILIO_FROM_NUMBER: 'Northline' },
+      ['TWILIO_FROM_NUMBER'],
+    ],
+  ]
+
+  test.each(refusals)('refuses to boot with %s', (_name, twilio, refused) => {
+    expect(invalidVars({ ...base, ...twilio })).toEqual(refused)
+    // In a live tier too, and nothing else is complained about there.
+    expect(invalidVars({ ...live, ...twilio })).toEqual(refused)
+  })
+
+  test('a refusal names the variable and never echoes a value', () => {
+    const everything = {
+      ...base,
+      SMS_PROVIDER: 'twilio',
+      TWILIO_ACCOUNT_SID: 'account-canary',
+      TWILIO_API_KEY_SID: 'key-canary',
+      TWILIO_API_KEY_SECRET: 'secret canary',
+      TWILIO_AUTH_TOKEN: 'token canary',
+      TWILIO_MESSAGING_SERVICE_SID: 'service-canary',
+      TWILIO_FROM_NUMBER: 'number-canary',
+    }
+    const said = issues(everything)
+    expect(said.map((issue) => issue.slice(0, issue.indexOf(':'))).sort()).toEqual([
+      'TWILIO_ACCOUNT_SID',
+      'TWILIO_API_KEY_SECRET',
+      'TWILIO_API_KEY_SID',
+      'TWILIO_AUTH_TOKEN',
+      'TWILIO_AUTH_TOKEN',
+      'TWILIO_FROM_NUMBER',
+      'TWILIO_FROM_NUMBER',
+      'TWILIO_MESSAGING_SERVICE_SID',
+    ])
+    expect(said.join('\n')).not.toContain('canary')
+    // A well-formed secret in the wrong line is not repeated either.
+    const misplaced = issues({ ...base, ...withKey, TWILIO_ACCOUNT_SID: SECRET }).join('\n')
+    expect(misplaced).toContain('TWILIO_ACCOUNT_SID')
+    expect(misplaced).not.toContain(SECRET)
+  })
+
+  // Decision of TULA-29: a file may carry another deployment's Twilio lines, and the webhook
+  // worker reads the same schema while sending nothing.
+  test.each(['none', 'dev', undefined])(
+    'with SMS_PROVIDER=%p the Twilio variables are ignored, whatever they hold',
+    (provider) => {
+      const env = parseEnv({
+        ...base,
+        SMS_PROVIDER: provider,
+        TWILIO_ACCOUNT_SID: 'not an account',
+        TWILIO_API_KEY_SID: KEY,
+        TWILIO_AUTH_TOKEN: 'both ways at once',
+        TWILIO_MESSAGING_SERVICE_SID: SERVICE,
+        TWILIO_FROM_NUMBER: 'and both senders',
+      })
+      expect(env.SMS_PROVIDER).toBe(provider ?? 'none')
+    }
+  )
+
+  test('Twilio’s variables do not lift the development inbox’s rule', () => {
+    // Twice: the tier, and the address that is not this machine.
+    expect(invalidVars({ ...live, ...withKey, SMS_PROVIDER: 'dev' })).toEqual([
+      'SMS_PROVIDER',
+      'SMS_PROVIDER',
+    ])
+  })
+})
+
 // Same finding (F8), the live tiers: their cross-field rules parsed SMTP_URL and PUBLIC_URL too.
 describe('a live tier with a URL that does not parse', () => {
   test.each([
@@ -369,5 +721,30 @@ describe('loadEnv', () => {
         expect(String((error as Error).message)).not.toContain(value)
       }
     })
+  })
+})
+
+describe('WEBHOOK_WORKER', () => {
+  test('unset or blank, deliveries are made inside the API, as before the switch existed', () => {
+    expect(parseEnv(base).WEBHOOK_WORKER).toBe('api')
+    expect(parseEnv({ ...base, WEBHOOK_WORKER: '' }).WEBHOOK_WORKER).toBe('api')
+    expect(parseEnv({ ...base, WEBHOOK_WORKER: '  ' }).WEBHOOK_WORKER).toBe('api')
+  })
+
+  test.each(['api', 'separate'] as const)('%s is accepted as written', (value) => {
+    expect(parseEnv({ ...base, WEBHOOK_WORKER: value }).WEBHOOK_WORKER).toBe(value)
+  })
+
+  // A closed set, exact: a near miss must stop the boot, never fall back to a default that
+  // decides who delivers.
+  test.each(['Separate', 'API', 'worker', 'off', 'true', 'none', 'api,separate', ' separate'])(
+    '%p is refused',
+    (value) => {
+      expect(invalidVars({ ...base, WEBHOOK_WORKER: value })).toEqual(['WEBHOOK_WORKER'])
+    }
+  )
+
+  test('it is accepted in a live tier too', () => {
+    expect(parseEnv({ ...live, WEBHOOK_WORKER: 'separate' }).WEBHOOK_WORKER).toBe('separate')
   })
 })

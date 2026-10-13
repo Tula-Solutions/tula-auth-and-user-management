@@ -1,14 +1,28 @@
-import type { OAuthProvider } from '@tula/contract'
-import { credentials, type Database, identities, passkeys, users, withTenant } from '@tula/db'
+import { type OAuthProvider, TEST_ADDRESS_DOMAIN, TEST_ADDRESS_LOCAL_PREFIX } from '@tula/contract'
+import {
+  credentials,
+  type Database,
+  identities,
+  passkeys,
+  passwordHistory,
+  userFactors,
+  users,
+  withTenant,
+} from '@tula/db'
 import {
   and,
   asc,
   count,
   desc,
   eq,
+  gt,
+  gte,
   ilike,
+  inArray,
   isNotNull,
   isNull,
+  like,
+  lt,
   ne,
   or,
   type SQL,
@@ -16,19 +30,27 @@ import {
 } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { isUniqueViolation } from '~/adapters/postgres/errors'
-import { activityOf, type Recorded } from '~/ports/activity-log'
+import { type Activity, activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import type {
+  AddEmailRefusal,
+  DependentAccounts,
   IdentityRecord,
   LinkGuard,
   LinkOutcome,
+  NewEmailAddress,
   NewIdentity,
   NewUser,
+  PasswordHistoryRule,
   PasswordOutcome,
   SignInMeans,
+  SmsFactorEnableOutcome,
+  StoredPasswords,
+  StrongerFactorsHeld,
   UnlinkOutcome,
   UserListCriteria,
   UserRecord,
   UserRepository,
+  UserWithPassword,
 } from '~/ports/user-repository'
 
 const columns = {
@@ -43,6 +65,9 @@ const columns = {
   bannedAt: users.bannedAt,
   lastSignInAt: users.lastSignInAt,
   createdAt: users.createdAt,
+  phoneNumber: users.phoneNumber,
+  phoneNumberVerifiedAt: users.phoneNumberVerifiedAt,
+  smsFactorEnabledAt: users.smsFactorEnabledAt,
 }
 
 /** Escape `LIKE` wildcards so a search term only ever matches literally. */
@@ -104,10 +129,14 @@ export class PostgresUserRepository implements UserRepository {
   async findByEmailWithPassword(
     environmentId: string,
     emailNormalized: string
-  ): Promise<{ user: UserRecord; passwordHash: string | null } | null> {
+  ): Promise<UserWithPassword | null> {
     const [row] = await withTenant(this.db, environmentId, (tx) =>
       tx
-        .select({ user: columns, passwordHash: credentials.secret })
+        .select({
+          user: columns,
+          passwordHash: credentials.secret,
+          passwordChangedAt: credentials.secretChangedAt,
+        })
         .from(users)
         .leftJoin(
           credentials,
@@ -134,14 +163,17 @@ export class PostgresUserRepository implements UserRepository {
     try {
       await withTenant(this.db, user.environmentId, async (tx) => {
         await tx.insert(users).values({ ...record, updatedAt: user.createdAt })
-        await tx.insert(identities).values({
-          id: identityId,
-          ...scope,
-          userId: user.id,
-          provider: 'email',
-          providerSubject: user.emailNormalized,
-          ...stamps,
-        })
+        // An account with no address has no `email` identity: there is nothing to name it by.
+        if (user.emailNormalized !== null) {
+          await tx.insert(identities).values({
+            id: identityId,
+            ...scope,
+            userId: user.id,
+            provider: 'email',
+            providerSubject: user.emailNormalized,
+            ...stamps,
+          })
+        }
         if (oauthIdentity) {
           await tx.insert(identities).values({
             id: oauthIdentity.id,
@@ -159,6 +191,7 @@ export class PostgresUserRepository implements UserRepository {
             userId: user.id,
             type: 'password',
             secret: passwordHash,
+            secretChangedAt: user.createdAt,
             ...stamps,
           })
         }
@@ -340,8 +373,9 @@ export class PostgresUserRepository implements UserRepository {
     userId: string,
     passwordHash: string,
     at: Date,
-    recorded: Recorded
-  ): Promise<PasswordOutcome | null> {
+    recorded: Recorded,
+    history: PasswordHistoryRule
+  ): Promise<PasswordOutcome | 'stale' | null> {
     const activity = activityOf(recorded)
     return withTenant(this.db, environmentId, async (tx) => {
       // The row lock keeps the user from being deleted between this read and the write below,
@@ -350,14 +384,63 @@ export class PostgresUserRepository implements UserRepository {
       // the row, so it waits for this transaction or this one for it. Without the lock a
       // first password stored during the verification is invisible to its delete and stays
       // (`races.integration.ts` fails for it).
+      //
+      // It is a lock no other password write of the user shares (`NO KEY UPDATE`, where a
+      // shared lock was enough before there was a history): the hash read below is then the
+      // one this transaction replaces, so two concurrent writes each keep the other's hash
+      // once, and neither loses one or keeps one twice. It does not block the foreign-key
+      // checks of rows that point at the user (a session being created).
       const [owner] = await tx
         .select({ projectId: users.projectId })
         .from(users)
         .where(and(eq(users.id, userId), eq(users.environmentId, environmentId)))
         .limit(1)
-        .for('share')
+        .for('no key update')
       if (!owner) {
         return null
+      }
+      const ownRows = and(
+        eq(passwordHistory.userId, userId),
+        eq(passwordHistory.environmentId, environmentId)
+      )
+      const [stored] = await tx
+        .select({ secret: credentials.secret })
+        .from(credentials)
+        .where(
+          and(
+            eq(credentials.userId, userId),
+            eq(credentials.environmentId, environmentId),
+            eq(credentials.type, 'password')
+          )
+        )
+        .limit(1)
+      const current = stored?.secret ?? null
+      if (history.ifCurrent !== undefined && history.ifCurrent !== current) {
+        return 'stale'
+      }
+      const keep = Math.max(0, history.keep)
+      if (current === null) {
+        // Nothing stops being current, so nothing moves: only what is beyond the policy goes.
+        await tx.delete(passwordHistory).where(and(ownRows, gt(passwordHistory.position, keep)))
+      } else {
+        // Every row moves one place back, so what is at `keep` now would be beyond it.
+        await tx.delete(passwordHistory).where(and(ownRows, gte(passwordHistory.position, keep)))
+        if (keep >= 1) {
+          await tx
+            .update(passwordHistory)
+            .set({ position: sql`${passwordHistory.position} + 1`, updatedAt: at })
+            .where(ownRows)
+          await tx.insert(passwordHistory).values({
+            projectId: owner.projectId,
+            environmentId,
+            userId,
+            // The hash as it stood: never a second, cheaper form of the password.
+            secret: current,
+            position: 1,
+            createdAt: at,
+            updatedAt: at,
+          })
+        }
       }
       // One statement creates or replaces, so two concurrent first passwords cannot both
       // insert: the second lands on the unique (user, type) key and updates instead.
@@ -369,12 +452,21 @@ export class PostgresUserRepository implements UserRepository {
           userId,
           type: 'password',
           secret: passwordHash,
+          secretChangedAt: at,
           createdAt: at,
           updatedAt: at,
         })
         .onConflictDoUpdate({
           target: [credentials.userId, credentials.type],
-          set: { secret: passwordHash, updatedAt: at },
+          // A different password from here on: its age is counted from this write (ADR 0041).
+          // Always later than the time it replaces, by a millisecond when the writer's clock
+          // says otherwise: that time is how a sign-in waiting to replace an expired password
+          // tells a replacement from a hash upgrade, which leaves it alone.
+          set: {
+            secret: passwordHash,
+            secretChangedAt: sql`GREATEST(excluded.secret_changed_at, ${credentials.secretChangedAt} + interval '1 millisecond')`,
+            updatedAt: at,
+          },
         })
         // `xmax` is 0 on a row this statement inserted and the updating transaction's id on
         // one it updated: the standard way to tell the two apart in an upsert.
@@ -395,6 +487,79 @@ export class PostgresUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
+  async storedPasswords(
+    environmentId: string,
+    userId: string,
+    previous: number
+  ): Promise<StoredPasswords> {
+    return withTenant(this.db, environmentId, async (tx) => {
+      const [stored] = await tx
+        .select({ secret: credentials.secret })
+        .from(credentials)
+        .where(
+          and(
+            eq(credentials.userId, userId),
+            eq(credentials.environmentId, environmentId),
+            eq(credentials.type, 'password')
+          )
+        )
+        .limit(1)
+      const rows =
+        previous > 0
+          ? await tx
+              .select({ secret: passwordHistory.secret })
+              .from(passwordHistory)
+              .where(
+                and(
+                  eq(passwordHistory.userId, userId),
+                  eq(passwordHistory.environmentId, environmentId)
+                )
+              )
+              .orderBy(asc(passwordHistory.position), desc(passwordHistory.id))
+              .limit(previous)
+          : []
+      return { current: stored?.secret ?? null, previous: rows.map((row) => row.secret) }
+    })
+  }
+
+  /** @inheritdoc */
+  async deletePasswordHistoryBeyond(
+    environmentId: string,
+    keep: number,
+    limit: number
+  ): Promise<number> {
+    // An indexed range of one environment (`password_history_environment_position_idx`): the
+    // rows a user may keep are never read.
+    const beyond = and(
+      eq(passwordHistory.environmentId, environmentId),
+      gt(passwordHistory.position, Math.max(0, keep))
+    )
+    const rows = await withTenant(this.db, environmentId, (tx) => {
+      // DELETE has no LIMIT in Postgres: pick the batch in a subquery. The batch is locked as
+      // it is picked and a row someone else holds is passed over (`SKIP LOCKED`): a password
+      // change locks its user's rows in its own order, and a purge that waited for them could
+      // deadlock with it, with the user's request as the victim. What is passed over goes in
+      // a later round.
+      const batch = tx
+        .select({ id: passwordHistory.id })
+        .from(passwordHistory)
+        .where(beyond)
+        .limit(limit)
+        .for('update', { skipLocked: true })
+      return (
+        tx
+          .delete(passwordHistory)
+          // `= ANY(ARRAY(…))` and not `IN (…)`: the array is built once, before the delete
+          // runs, so the batch is `limit` rows at most. Written as `IN (…)` the locking
+          // subquery deleted four rows for a limit of three (the shared suite, on PGlite).
+          .where(and(beyond, sql`${passwordHistory.id} = any(array(${batch}))`))
+          .returning({ id: passwordHistory.id })
+      )
+    })
+    return rows.length
+  }
+
+  /** @inheritdoc */
   async upgradePasswordHash(
     environmentId: string,
     userId: string,
@@ -405,6 +570,8 @@ export class PostgresUserRepository implements UserRepository {
     const rows = await withTenant(this.db, environmentId, (tx) =>
       tx
         .update(credentials)
+        // Not `secretChangedAt`: this is the same password, and hashing it again must not
+        // make an expired password look new (ADR 0041).
         .set({ secret: passwordHash, updatedAt: at })
         .where(
           and(
@@ -440,6 +607,8 @@ export class PostgresUserRepository implements UserRepository {
           and(
             eq(users.id, userId),
             eq(users.environmentId, environmentId),
+            // An account with no address has none to verify (`users_email_whole`).
+            isNotNull(users.email),
             isNull(users.emailVerifiedAt)
           )
         )
@@ -460,6 +629,18 @@ export class PostgresUserRepository implements UserRepository {
             .returning({ id: credentials.id })
         : []
       const passwordRemoved = removed.length > 0
+      if (removePassword) {
+        // Whoever chose the password chose the ones before it too: the address's owner is
+        // never refused a password because a stranger used it (ADR 0038).
+        await tx
+          .delete(passwordHistory)
+          .where(
+            and(
+              eq(passwordHistory.userId, userId),
+              eq(passwordHistory.environmentId, environmentId)
+            )
+          )
+      }
       await recordActivity(tx, [
         ...(activity ? [activity] : []),
         ...(passwordRemoved && removal ? [removal] : []),
@@ -536,6 +717,342 @@ export class PostgresUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
+  async findByPhoneNumber(
+    environmentId: string,
+    phoneNumber: string,
+    limit: number
+  ): Promise<UserRecord[]> {
+    return withTenant(this.db, environmentId, (tx) =>
+      tx
+        .select(columns)
+        .from(users)
+        .where(and(eq(users.environmentId, environmentId), eq(users.phoneNumber, phoneNumber)))
+        .orderBy(asc(users.createdAt), asc(users.id))
+        .limit(limit)
+    )
+  }
+
+  /** @inheritdoc */
+  async recordPhoneNumberProof(
+    environmentId: string,
+    userId: string,
+    phoneNumber: string,
+    at: Date
+  ): Promise<void> {
+    await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .update(users)
+        .set({ phoneNumberVerifiedAt: at, updatedAt: at })
+        .where(
+          and(
+            eq(users.id, userId),
+            eq(users.environmentId, environmentId),
+            // Only while the account still holds the number the code went to, and only forwards.
+            eq(users.phoneNumber, phoneNumber),
+            lt(users.phoneNumberVerifiedAt, at)
+          )
+        )
+    )
+  }
+
+  /** @inheritdoc */
+  async setPhoneNumber(
+    environmentId: string,
+    userId: string,
+    phoneNumber: string,
+    at: Date,
+    recorded: Recorded,
+    factorRemoved: Recorded
+  ): Promise<UserRecord | null> {
+    const isUser = and(eq(users.id, userId), eq(users.environmentId, environmentId))
+    return withTenant(this.db, environmentId, async (tx) => {
+      // The row is held while it is read and written, so "had the factor, for another number"
+      // is true of the row this statement changes: the entry is written exactly when the
+      // factor went.
+      const [before] = await tx
+        .select({ phoneNumber: users.phoneNumber, smsFactorEnabledAt: users.smsFactorEnabledAt })
+        .from(users)
+        .where(isUser)
+        .for('no key update')
+      if (!before) {
+        return null
+      }
+      const hadFactor = before.smsFactorEnabledAt !== null && before.phoneNumber !== phoneNumber
+      const [changed] = await tx
+        .update(users)
+        .set({
+          phoneNumber,
+          phoneNumberVerifiedAt: at,
+          // A factor of the number that is being replaced is not one of the new number.
+          ...(hadFactor && { smsFactorEnabledAt: null }),
+          updatedAt: at,
+        })
+        .where(isUser)
+        .returning(columns)
+      if (!changed) {
+        return null
+      }
+      await recordActivity(tx, recordedOf(hadFactor ? [recorded, factorRemoved] : [recorded]))
+      return changed
+    })
+  }
+
+  /** @inheritdoc */
+  async removePhoneNumber(
+    environmentId: string,
+    userId: string,
+    at: Date,
+    recorded: Recorded,
+    factorRemoved: Recorded
+  ): Promise<boolean> {
+    const isUser = and(eq(users.id, userId), eq(users.environmentId, environmentId))
+    return withTenant(this.db, environmentId, async (tx) => {
+      const [before] = await tx
+        .select({ smsFactorEnabledAt: users.smsFactorEnabledAt })
+        .from(users)
+        .where(and(isUser, isNotNull(users.phoneNumber)))
+        .for('no key update')
+      if (!before) {
+        // No number, or no such user: nothing to remove and nothing to record.
+        return false
+      }
+      // The factor goes in the statement that takes the number: the database would refuse a
+      // factor without one (`users_sms_factor_needs_number`).
+      await tx
+        .update(users)
+        .set({
+          phoneNumber: null,
+          phoneNumberVerifiedAt: null,
+          smsFactorEnabledAt: null,
+          updatedAt: at,
+        })
+        .where(isUser)
+      await recordActivity(
+        tx,
+        recordedOf(before.smsFactorEnabledAt !== null ? [recorded, factorRemoved] : [recorded])
+      )
+      return true
+    })
+  }
+
+  /** @inheritdoc */
+  async enableSmsFactor(
+    environmentId: string,
+    userId: string,
+    phoneNumber: string,
+    at: Date,
+    allowed: (held: StrongerFactorsHeld) => boolean,
+    recorded: Recorded
+  ): Promise<SmsFactorEnableOutcome> {
+    const isUser = and(eq(users.id, userId), eq(users.environmentId, environmentId))
+    return withTenant(this.db, environmentId, async (tx) => {
+      // The row is held from here to the commit. A passkey's registration takes `FOR UPDATE`
+      // on it and an authenticator's confirmation `FOR NO KEY UPDATE`, and both conflict with
+      // this lock: each runs wholly before this transaction or wholly after it. Under READ
+      // COMMITTED the two reads below are statements of their own, so they see whatever
+      // committed before the lock was had.
+      const [before] = await tx
+        .select({ phoneNumber: users.phoneNumber, smsFactorEnabledAt: users.smsFactorEnabledAt })
+        .from(users)
+        .where(isUser)
+        .for('no key update')
+      // Only while the account holds the number the code went to, and only once.
+      if (!before || before.phoneNumber !== phoneNumber || before.smsFactorEnabledAt !== null) {
+        return 'stale'
+      }
+      const [totp] = await tx
+        .select({ id: userFactors.id })
+        .from(userFactors)
+        .where(
+          and(
+            eq(userFactors.environmentId, environmentId),
+            eq(userFactors.userId, userId),
+            eq(userFactors.type, 'totp'),
+            isNotNull(userFactors.confirmedAt)
+          )
+        )
+        .limit(1)
+      const held = {
+        confirmedTotp: totp !== undefined,
+        passkeys: await tx.$count(
+          passkeys,
+          and(eq(passkeys.environmentId, environmentId), eq(passkeys.userId, userId))
+        ),
+      }
+      if (!allowed(held)) {
+        return 'stronger_factor'
+      }
+      await tx.update(users).set({ smsFactorEnabledAt: at, updatedAt: at }).where(isUser)
+      await recordActivity(tx, recordedOf([recorded]))
+      return 'enabled'
+    })
+  }
+
+  /** @inheritdoc */
+  async disableSmsFactor(
+    environmentId: string,
+    userId: string,
+    at: Date,
+    recorded: Recorded
+  ): Promise<boolean> {
+    return withTenant(this.db, environmentId, async (tx) => {
+      const rows = await tx
+        .update(users)
+        .set({ smsFactorEnabledAt: null, updatedAt: at })
+        .where(
+          and(
+            eq(users.id, userId),
+            eq(users.environmentId, environmentId),
+            isNotNull(users.smsFactorEnabledAt)
+          )
+        )
+        .returning({ id: users.id })
+      const disabled = rows.length === 1
+      await recordActivity(tx, disabled ? recordedOf([recorded]) : [])
+      return disabled
+    })
+  }
+
+  /** @inheritdoc */
+  async addEmail(
+    environmentId: string,
+    userId: string,
+    address: NewEmailAddress,
+    at: Date,
+    recorded: Recorded
+  ): Promise<UserRecord | AddEmailRefusal> {
+    const isUser = and(eq(users.id, userId), eq(users.environmentId, environmentId))
+    try {
+      return await withTenant(this.db, environmentId, async (tx) => {
+        // The row is held while it is read and written: of two additions to one user at
+        // once the second sees the first's address, and the user cannot be deleted between.
+        const [before] = await tx
+          .select({ projectId: users.projectId, email: users.email })
+          .from(users)
+          .where(isUser)
+          .limit(1)
+          .for('update')
+        if (!before) {
+          return 'not_found'
+        }
+        if (before.email !== null) {
+          return 'has_email'
+        }
+        const [changed] = await tx
+          .update(users)
+          .set({
+            email: address.email,
+            emailNormalized: address.normalized,
+            emailVerifiedAt: address.verifiedAt,
+            updatedAt: at,
+          })
+          // "Has none" is in the statement too: the address is never written over another.
+          .where(and(isUser, isNull(users.email)))
+          .returning(columns)
+        if (!changed) {
+          return 'has_email'
+        }
+        // The `email` identity every user with an address has (see `create`).
+        await tx.insert(identities).values({
+          id: address.identityId,
+          projectId: before.projectId,
+          environmentId,
+          userId,
+          provider: 'email',
+          providerSubject: address.normalized,
+          createdAt: at,
+          updatedAt: at,
+        })
+        await recordActivity(tx, recordedOf([recorded]))
+        return changed
+      })
+    } catch (error) {
+      // users_environment_email_key, or the email identity's twin: another user has the
+      // address. The transaction wrote nothing.
+      if (isUniqueViolation(error)) {
+        return 'taken'
+      }
+      throw error
+    }
+  }
+
+  /** @inheritdoc */
+  async countDependentOn(
+    environmentId: string,
+    provider: OAuthProvider,
+    canStillSignIn: (means: SignInMeans) => boolean,
+    limit: number
+  ): Promise<DependentAccounts> {
+    return withTenant(this.db, environmentId, async (tx) => {
+      // One more than is looked at, to know whether any were left out. The key on
+      // (environment, provider, subject) is what finds and orders them.
+      const holders = await tx
+        .select({ userId: identities.userId })
+        .from(identities)
+        .where(and(eq(identities.environmentId, environmentId), eq(identities.provider, provider)))
+        .orderBy(asc(identities.providerSubject))
+        .limit(limit + 1)
+      const ids = holders.slice(0, limit).map((holder) => holder.userId)
+      if (ids.length === 0) {
+        return { accounts: 0, more: false }
+      }
+      const verified = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(
+          and(
+            eq(users.environmentId, environmentId),
+            inArray(users.id, ids),
+            isNotNull(users.emailVerifiedAt)
+          )
+        )
+      const withPassword = await tx
+        .select({ userId: credentials.userId })
+        .from(credentials)
+        .where(
+          and(
+            eq(credentials.environmentId, environmentId),
+            inArray(credentials.userId, ids),
+            eq(credentials.type, 'password')
+          )
+        )
+      const owned = await tx
+        .select({ userId: identities.userId, provider: identities.provider })
+        .from(identities)
+        .where(
+          and(
+            eq(identities.environmentId, environmentId),
+            inArray(identities.userId, ids),
+            ne(identities.provider, 'email')
+          )
+        )
+      const withPasskeys = await tx
+        .select({ userId: passkeys.userId, held: count() })
+        .from(passkeys)
+        .where(and(eq(passkeys.environmentId, environmentId), inArray(passkeys.userId, ids)))
+        .groupBy(passkeys.userId)
+      const isVerified = new Set(verified.map((row) => row.id))
+      const hasPassword = new Set(withPassword.map((row) => row.userId))
+      const passkeysOf = new Map(withPasskeys.map((row) => [row.userId, row.held]))
+      let accounts = 0
+      for (const userId of ids) {
+        const means: SignInMeans = {
+          hasPassword: hasPassword.has(userId),
+          emailVerified: isVerified.has(userId),
+          providers: owned
+            .filter((identity) => identity.userId === userId)
+            .map((identity) => identity.provider as OAuthProvider),
+          passkeys: passkeysOf.get(userId) ?? 0,
+        }
+        if (!canStillSignIn(means)) {
+          accounts += 1
+        }
+      }
+      return { accounts, more: holders.length > limit }
+    })
+  }
+
+  /** @inheritdoc */
   async delete(environmentId: string, userId: string, recorded: Recorded): Promise<boolean> {
     const activity = activityOf(recorded)
     return withTenant(this.db, environmentId, async (tx) => {
@@ -546,6 +1063,58 @@ export class PostgresUserRepository implements UserRepository {
       const deleted = rows.length === 1
       await recordActivity(tx, deleted && activity ? [activity] : [])
       return deleted
+    })
+  }
+
+  /** @inheritdoc */
+  async reportSignInTest(environmentId: string, activity: Activity): Promise<void> {
+    await withTenant(this.db, environmentId, (tx) => recordActivity(tx, [activity]))
+  }
+
+  /** @inheritdoc */
+  async deleteTestUsersBefore(
+    environmentId: string,
+    before: Date,
+    limit: number,
+    record: (userId: string) => Activity
+  ): Promise<number> {
+    // The reserved domain, as the one function that writes such an address spells it. `%`
+    // is the only wildcard: the pattern holds no `_` and no backslash.
+    const marked = and(
+      eq(users.environmentId, environmentId),
+      like(users.emailNormalized, `${TEST_ADDRESS_LOCAL_PREFIX}%@${TEST_ADDRESS_DOMAIN}`),
+      lt(users.createdAt, before)
+    )
+    return withTenant(this.db, environmentId, async (tx) => {
+      // DELETE has no LIMIT in Postgres: the batch is picked first, oldest first, and a row
+      // a test's own deletion holds is passed over rather than waited for.
+      const batch = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(marked)
+        .orderBy(asc(users.createdAt), asc(users.id))
+        .limit(Math.max(0, limit))
+        .for('update', { skipLocked: true })
+      if (batch.length === 0) {
+        return 0
+      }
+      const rows = await tx
+        .delete(users)
+        .where(
+          and(
+            eq(users.environmentId, environmentId),
+            inArray(
+              users.id,
+              batch.map((row) => row.id)
+            )
+          )
+        )
+        .returning({ id: users.id })
+      await recordActivity(
+        tx,
+        rows.map((row) => record(row.id))
+      )
+      return rows.length
     })
   }
 }

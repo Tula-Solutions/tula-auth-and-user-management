@@ -3,7 +3,8 @@
 An environment's sign-in behaviour is its **settings** (app name, password policy, sign-in
 methods, allowed origins and redirect URLs, notices, the MFA policy, passkeys, session profiles)
 and its **OAuth providers**. Both can be written in a file, reviewed in a pull request and
-applied by a pipeline. The decisions behind this page are in
+applied by a pipeline. So can its **webhook endpoints** ([Webhook endpoints](#webhook-endpoints),
+below). The decisions behind this page are in
 [ADR 0030](adr/0030-config-and-apply.md).
 
 > Nothing is published to npm yet. Inside this repository the CLI is `bun run tula -- <args>`,
@@ -76,10 +77,24 @@ export default defineConfig({
   (`EnvironmentSettingsInput` in `@tula/contract`). It is typed, so an editor completes it,
   and validated when the file is loaded: a mistake is reported with its path
   (`environments.prod.settings.pasword: unknown key`) before anything is sent.
-- **`providers`** are Google, GitHub and Apple. A client id is written in the file. A secret
-  is **never** written: `clientSecret` and `privateKey` only accept `env('NAME')`, the name of
-  an environment variable. A string there does not compile, and a file that holds one is
-  refused when it is loaded.
+- **`providers`** are Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X and Facebook. A client
+  id is written in the file. A secret is **never** written: `clientSecret` and `privateKey` only accept
+  `env('NAME')`, the name of an environment variable. A string there does not compile, and a
+  file that holds one is refused when it is loaded. Microsoft also takes a `tenant`, which is
+  not a secret and is written in the file: `common`, `organizations`, `consumers` or one
+  tenant's id ([what each means](providers/microsoft.md#the-tenant)). It is required, and a
+  domain name is refused. Google also takes `additionalClientIds`: the OAuth client ids of
+  your Android and iOS apps, whose ID tokens the server accepts in a
+  [native sign-in](providers/google.md#native-sign-in-with-an-id-token) beside the
+  provider's own client id. They are not secrets and are written in the file, at most eight,
+  each once, and never the provider's own `clientId` (a file that lists it again is
+  refused when it is loaded, as the server would refuse the save). **Left out means
+  none**, as an empty list does: the entry is the whole set.
+  Discord, LinkedIn, X (`x`) and Facebook (`facebook`) take a client
+  id and a secret and nothing else, like Google and GitHub; for Facebook they are the app id
+  and the app secret. The file has no switch for what X and Facebook are asked: neither is
+  asked for an email address, and an account made through either has none
+  ([X](providers/x.md#no-email-address), [Facebook](providers/facebook.md#no-email-address)).
 - **`kind`** is optional. With it, `tula` refuses a secret key of the other kind
   (`tula_sk_dev_…` for a `production` entry) before it sends anything.
 - The file is TypeScript: share settings between environments with a constant and a spread.
@@ -100,6 +115,345 @@ The plan lists what was kept. To manage either, write it in the file.
 
 A **provider** the file does not mention is left alone and shown as *unmanaged*; `--prune`
 deletes it.
+
+**Webhook endpoints** follow the same rule, one level up: a file with no `webhooks` list does
+not manage them at all, and a list manages exactly what it names
+([Webhook endpoints](#webhook-endpoints)). So do **hooks**, under a `hooks` key
+([Hooks](#hooks)).
+
+## Webhook endpoints
+
+An environment's [webhook endpoints](webhooks.md) can be listed in the file:
+
+<!-- snippet: examples/tula-config/tula.config.ts#webhooks -->
+```ts
+// The endpoints this environment's events are posted to. An endpoint is its address;
+// there is no secret to write: the server makes it when `tula apply` registers the
+// endpoint (`--secrets-file <path>` keeps it). `enabled` is left out, so the switch
+// stays as the server has it. `dev` has no `webhooks` key: its endpoints are not
+// managed by this file.
+webhooks: [
+  {
+    url: 'https://api.northline.app/webhooks/tula',
+    eventTypes: ['user.created', 'user.deleted'],
+  },
+],
+```
+<!-- /snippet -->
+
+| Field | |
+| --- | --- |
+| `url` | where events are posted: what `POST /v1/admin/webhook-endpoints` takes, judged by the server (`https`, no credentials, a public address) |
+| `eventTypes` | the event types delivered, at least one. A **set**: order and repeats mean nothing |
+| `enabled` | optional. Left out, the switch is **not managed** |
+
+The rules, each of which the plan shows before anything is written:
+
+- **A secret can never be in the file.** There is no field for one: a `secret` key does not
+  compile, and a file that holds one is refused when it is loaded, without the value being
+  repeated. The signing secret is made by the server.
+- **No `webhooks` key: not managed.** `tula` does not read the environment's endpoints, shows
+  nothing about them and changes none, with or without `--prune`. `webhooks: []` is
+  different: it says the file manages webhooks and lists none.
+- **An endpoint is its address.** It has no name or id in the file; an entry is matched to the
+  server's endpoint with **exactly** the same `url`, character for character, which is how
+  the server itself stores and compares an address (it does not normalise one, so
+  `https://a.example/hook` and `https://a.example/hook/` are two endpoints). The same address
+  twice in the file is an error when the file is loaded.
+- **A changed address is a new endpoint, never an update.** The plan shows the new address as
+  `create` (with a **new signing secret**) and the old one as *unmanaged*; with `--prune` the
+  old one is removed, and its pending deliveries and its delivery log go with it. The plan
+  says so in words. To keep an endpoint's secret and log while moving it, change its address
+  through the admin API first, then the file.
+- **An endpoint the list leaves out is left alone** and shown as *unmanaged*, as a provider
+  is. `--prune` removes it.
+- **Event types are a set.** `['user.deleted', 'user.created', 'user.created']` and
+  `['user.created', 'user.deleted']` are the same thing: no difference in the plan and the
+  same fingerprint of the file. A change shows the types added and removed, sorted
+  (`eventTypes +"session.created" -"user.deleted"`).
+- **`enabled` left out is not managed.** A new endpoint starts switched on and an existing one
+  is left as it is, **including one the server switched off** because it kept failing or
+  answered `410`: a file that does not write `enabled` never fights the server. Written
+  (`true` or `false`), it is set. Switching on an endpoint the server switched off needs no
+  extra flag, but the plan says why it was off, on the endpoint's line and as a warning
+  (`! switches on a webhook endpoint the server switched off (https://… : failing); if it
+  still fails the server switches it off again`). A pipeline that keeps `enabled: true` in
+  the file switches such an endpoint on again at every run.
+- **Removal destroys something.** Removing an endpoint deletes its pending deliveries and its
+  delivery log, for good. At a terminal the question says so (`This REMOVES 1 webhook
+  endpoint with its pending deliveries and its delivery log, for good.`). With `--yes`
+  nobody reads it, so the run is refused and nothing is written unless
+  `--allow-webhook-removal` is given too. (`--prune` alone is not enough under `--yes`: a
+  pipeline that already prunes providers would otherwise start deleting delivery logs the day
+  a `webhooks` list is added to the file.)
+- **The signing secret of a new endpoint is shown once, by the server, to the run that
+  creates it.** `tula apply` never prints it unless asked and removes it from every line it
+  writes from the moment it arrives. A plan that creates an endpoint is refused, with or
+  without `--yes` and before anything is written, until the run says what to do with it:
+
+  | Option | |
+  | --- | --- |
+  | `--secrets-file <path>` | write the secrets to a **new** file only you can read (mode 0600), as JSON: `[{ "id", "url", "secret" }]`. **Nothing that is at the path is ever replaced**: the file is created exclusively, in one step, before the first write, so a file that is there (whatever it holds, an earlier run's secrets or an empty list), a symbolic link, a named pipe or a directory is refused, also one that appears a moment before. It is rewritten after every endpoint, so a run that fails part-way has kept what it was given; before each rewrite it is read back, and if it no longer holds what this run wrote (somebody replaced it) it is not written over. That last check and the rewrite are two steps: a replacement made exactly between them is not protected. A file this run created and wrote nothing into is removed again |
+  | `--show-secrets` | print each secret on standard output, under its endpoint's line (with `--json`: in `webhookSecrets`). Not for a pipeline whose log is kept |
+  | `--discard-secrets` | keep nothing. Rotate the secret later to get one ([rotating a secret](webhooks.md#rotate-a-secret)); for the 24 hours of that rotation's overlap deliveries are also signed with the first secret, which nobody holds, and that is harmless |
+
+  Give the secret to the receiver, then delete the file. If a secret cannot be written to
+  the file after its endpoint was created (the disk is full), the run stops and says so in
+  those words: the endpoint exists, its secret was not kept, rotate it to get one. It is
+  printed then only if `--show-secrets` was given too, and the closing line counts only what
+  is in the file.
+- **Order.** Webhook endpoints are written **after** the settings and every provider:
+  nothing about signing in waits for them, and an address the server refuses does not stop a
+  settings change that was safe to make. Among themselves: changes to existing endpoints,
+  then new ones, then removals, so an address being replaced is never without an endpoint.
+  An environment has at most 10 endpoints; when the new ones do not fit beside the ones
+  being removed, exactly as many removals as it takes go first (the oldest of those being
+  removed anyway), and the plan says so (`! the environment is at its limit of 10 webhook
+  endpoints: 1 of the removals is made before the new endpoint is created, to make room`).
+  A plan that would leave more than 10 is refused whole.
+- **An address the server has more than once cannot be matched.** The API allows two endpoints
+  with one address. If the file names such an address, `tula` cannot tell which one is meant
+  and does not guess: `tula diff` prints the plan and fails (exit `1`), `tula apply` writes
+  nothing, and the message gives the ids so that all but one can be removed by hand.
+- **Someone else's change.** Endpoints have no revision, so a webhook write cannot be made
+  conditional the way the settings' is. Instead `apply` reads the endpoints once more just
+  before its first webhook write (if that read fails, it says so and writes nothing to them)
+  and stops, writing nothing to them, if an endpoint was
+  added, removed or changed (address, event types, switch) since the plan was made. That
+  catches a change made while a person read the plan. It does **not** catch one made in the
+  moment between that read and the writes: such a change to a field the plan also changes is
+  overwritten. A change only sends the fields that differ, so a concurrent change to another
+  field of the same endpoint survives; an endpoint removed meanwhile fails its write and is
+  reported. `--expect-revision` is about the settings only.
+- **A failure part-way** is reported as for every other write: what was applied, what was
+  not. An address the server will not call shows the API's code and its one fixed word for
+  the rule, and nothing else:
+
+  ```
+  Failed: webhook https://hooks.example.com/tula: create
+  error: The server cannot deliver to that address. (webhook.url_not_allowed, HTTP 422)
+    reason: resolve_failed
+  ```
+
+In the plan:
+
+```
+Webhooks
+  + https://api.northline.app/webhooks/tula: create (eventTypes "user.created" "user.deleted"; a signing secret is made, shown once)
+  ~ https://ops.northline.app/hooks: update (eventTypes +"session.created" -"user.updated")
+  = https://old.northline.app/hooks: unmanaged (on the server, not in the file; --prune removes it, with its pending deliveries and its delivery log)
+
+  ! creates 1 webhook endpoint: its signing secret is shown once, to the run that creates it (`tula apply` needs --secrets-file <path>, --show-secrets or --discard-secrets)
+```
+
+**An address is printed**, by `tula diff` and `tula apply`, in the plan, in every line about
+its endpoint and so in a pipeline's log. A secret never is: no read of the API returns one.
+So an address must not hold a secret:
+
+- A user name or a password in front of the host (`https://user:password@host/…`) is refused
+  when the file is loaded, by position (`webhooks.1.url`) and without the value. The server
+  refuses such an address too, but `tula diff` would have printed it first.
+- A token in the path or the query is **not** refused (the server allows it) and is printed
+  like the rest of the address. Prefer the signature to a token in the address.
+
+## Hooks
+
+An environment's [hooks](hooks.md) can be written in the file, by the point each is asked
+at. A hook is a question whose answer decides what happens next; it is not a webhook, and
+the two keys are managed apart.
+
+<!-- snippet: examples/tula-config/tula.config.ts#hooks -->
+```ts
+// The questions this environment asks before it acts, by point: at most one hook per
+// point. There is no secret to write here either. What an entry leaves out is the
+// API's default: on, a deadline of two seconds, and `failureMode: 'deny'` (a call that
+// fails refuses what was asked about). `dev` has no `hooks` key: its hooks are not
+// managed by this file.
+hooks: {
+  before_sign_up: { url: 'https://api.northline.app/hooks/tula/sign-up' },
+  before_token: { url: 'https://api.northline.app/hooks/tula/claims', deadlineMs: 1000 },
+},
+```
+<!-- /snippet -->
+
+- **No `hooks` key: not managed.** `tula` does not read the environment's hooks, never
+  changes one and says nothing about them, also with `--prune`. A file written before hooks
+  could be in it keeps the fingerprint it had. `hooks: {}` is different: it manages the
+  hooks and says there should be none (and, with `--prune`, removes the ones there are).
+- **A hook is its point.** An environment has at most one hook per point, so the point is
+  what a hook in the file is matched to. Changing the address of a point's hook is an
+  **update**: the hook keeps its id and its signing secret. (A webhook endpoint is its
+  address; a hook is not.)
+- **What an entry leaves out is the API's default**, and is managed: `enabled: true`,
+  `deadlineMs: 2000`, `failureMode: 'deny'`. An entry is the whole hook. **A change made in
+  the dashboard to a hook's switch, deadline or failure mode is reverted by the next
+  `tula apply`, and `tula diff` shows it in the plan first.** So a hook someone
+  switched off in the dashboard is switched on again by a file that does not say
+  `enabled: false`, and a hook set to `allow` there goes back to `deny`. A check that
+  silently stays off or loosened would be the worse surprise.
+- **A point the file leaves out is left alone** and shown as *unmanaged*, as a provider is.
+  `--prune` removes its hook.
+- **A point this version of `tula` does not know** (a later server's) is shown and never
+  touched, also with `--prune`.
+- **There is no secret in the file.** The entry has no field for one: a `secret` key does
+  not compile and is refused when the file is loaded. The server makes the signing secret
+  when the hook is registered and shows it once, to the run that creates it. `tula apply`
+  treats it exactly as it treats a new webhook endpoint's
+  ([above](#webhook-endpoints)): a plan that creates a hook is refused, before anything is
+  written, without `--secrets-file <path>`, `--show-secrets` or `--discard-secrets`; the
+  secret is removed from every line the run writes unless `--show-secrets` was given; and a
+  secret that could not be written to the file is said as not kept, with its hook reported
+  as created.
+- **One secrets file for both.** The file is one JSON list. A webhook endpoint's entry is
+  `{ "id", "url", "secret" }`, as it has always been; a hook's begins with the point:
+  `{ "hook": "before_sign_up", "id", "url", "secret" }`. A run that creates only endpoints
+  writes what it wrote before hooks existed. With `--json --show-secrets` the hooks' secrets
+  are in `hookSecrets`, beside `webhookSecrets`.
+- **A hook's secret cannot be rotated.** With `--discard-secrets`, or after a secret that
+  was not kept, the only way to get one is to remove the hook and add it again. Until then
+  its receiver cannot verify a question, so with `failureMode: 'deny'` what the hook guards
+  is refused. Prefer `--secrets-file`.
+- **What weakens.** The rule is the server's own (`hookWeakenings`, the one behind the audit
+  log's `weakened`), and the plan lists each case under `! weakens security` by its path:
+
+  | In the plan | Path | |
+  | --- | --- | --- |
+  | a hook created with, or changed to, `failureMode: 'allow'` | `hooks.<point>.failureMode` | a call that fails no longer refuses |
+  | a hook switched off (`enabled: false` where it was on) | `hooks.<point>.enabled` | the check is gone |
+  | a hook that is on, removed (`--prune`) | `hooks.<point>` | the check is gone |
+
+  `tula apply --yes` refuses such a plan, before any write, without `--allow-weaker`. There
+  is no separate flag for removing a hook: unlike a webhook endpoint's, a hook's removal
+  deletes no log, and what it costs is exactly the weakening. **Adding a hook that refuses
+  on failure (`deny`, the default) is not a weakening**, and neither is removing one that
+  was already off, switching one on, or going from `allow` to `deny`. Adding a `deny` hook
+  is still a change to who can sign in: if its endpoint does not answer, every sign-up or
+  sign-in it guards is refused from that moment. Deploy the receiver first.
+- **Order.** Hooks are written after the settings, every provider and every webhook
+  endpoint (only [native apps](#native-apps) come later). An endpoint registered in the same run is then there for the `hook.*` events
+  the hook writes produce, and an address the server refuses for a hook does not stop
+  anything about signing in. Among themselves: new hooks, then changes that weaken nothing,
+  then changes that weaken, then removals. What tightens is in place before anything is
+  loosened, so a run that fails part-way has not left the environment weaker than the file
+  says and weaker than it was.
+- **Someone else's change.** Hooks have no revision either. `apply` reads them once more
+  just before its first hook write and stops, writing nothing to them, if one was added,
+  removed or changed (address, switch, deadline, failure mode) since the plan was made; if
+  that read fails it says so and writes nothing to them. As for webhook endpoints, that
+  catches a change made while a person read the plan and not one made in the moment between
+  the read and the writes. The server refuses a write to a hook that changed between its
+  own read and write (`resource.conflict`), which is reported as a failed operation.
+- **An address is printed**, as an endpoint's is, and one with a user name or a password is
+  refused when the file is loaded, by position (`hooks.before_sign_up.url`) and without the
+  value.
+
+In the plan:
+
+```
+Hooks
+  ~ before_sign_up: update (deadlineMs 2000 → 800, failureMode "deny" → "allow")
+  + before_session: create (url https://api.northline.app/hooks/tula/session, enabled true, deadlineMs 2000, failureMode "deny"; a signing secret is made, shown once)
+  - before_token: remove (https://api.northline.app/hooks/tula/claims), with its signing secret
+
+  ! weakens security: hooks.before_sign_up.failureMode, hooks.before_token (`tula apply --yes` needs --allow-weaker)
+  ! creates 1 hook: its signing secret is shown once, to the run that creates it (`tula apply` needs --secrets-file <path>, --show-secrets or --discard-secrets)
+```
+
+## Native apps
+
+An environment's [native apps](native-apps.md) can be written in the file: the iOS and
+Android apps the server names in the two files the platforms fetch.
+
+<!-- snippet: examples/tula-config/tula.config.ts#native-apps -->
+```ts
+// The native apps the server names in the two files Apple and Android fetch
+// (docs/native-apps.md). An app is its platform and its bundle id or package name.
+// Nothing here is a secret: a team id and a certificate's fingerprint are public.
+// Registering an app, and adding a fingerprint, widen who the platforms believe, so
+// `tula apply --yes` asks for `--allow-weaker`. `dev` has no `nativeApps` key: its apps
+// are not managed by this file.
+nativeApps: [
+  { platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'app.northline.ios' },
+  {
+    platform: 'android',
+    packageName: 'app.northline.android',
+    sha256CertFingerprints: [
+      '14:6D:E9:83:C5:73:06:50:D8:EE:B9:95:2F:34:FC:64:16:A0:83:42:E6:1D:BE:A8:8A:04:96:B2:3F:CF:44:E5',
+    ],
+  },
+],
+```
+<!-- /snippet -->
+
+- **No `nativeApps` key: not managed.** The apps are not read and not touched, `--prune`
+  included, and the file's fingerprint is what it was before the key existed. With a list,
+  the listed apps are managed; one the server has and the list leaves out is *unmanaged*,
+  shown in the plan and removed only with `--prune`. `nativeApps: []` manages them and
+  lists none.
+- **An app is its platform and its bundle ID or package name**, compared exactly. Neither
+  can be changed: another name is another app. The same app twice in the list is refused
+  when the file is loaded, by position (`nativeApps.2`), and so is a list of more than 20.
+- **What can change** is an iOS app's `teamId`, an Android app's
+  `sha256CertFingerprints` and either's `appLinkPaths`. Fingerprints are a set: either
+  spelling (`AA:BB:…` in either case, or 64 hex digits) is normalised when the file is
+  loaded, their order is not a change, and a change shows the ones added and removed.
+- **`appLinkPaths`** are the exact paths of your domain the app opens
+  ([native-apps.md](native-apps.md#link-paths)): a set, at most 10, compared exactly.
+  **Left out of an entry, they are not managed**: the paths the server has are kept, the
+  plan has no operation for them, and `tula diff` says so in one line under the app
+  (`2 link paths on the server, not managed by the file`: a count, never a path), because
+  a path is a grant somebody made. **Written, they are the whole set**: `appLinkPaths: []`
+  manages the app to have none, and a list removes what it leaves out, with no flag
+  (taking a path away weakens nothing). This is the one field of an app where "left out"
+  is not "none": a file written before the field existed would otherwise remove every
+  path, and with them the sign-ins that return by one. A file with the key and one
+  without it are two files to the fingerprint, `[]` included. A server older than the
+  field is read as having none.
+- **Removing an iOS app ends its Sign in with Apple at once.** The server stops accepting
+  Apple's identity tokens for its bundle ID with the removal (a plan applied with
+  `--prune`), where the association files are cached by the platforms for longer. A removal still weakens nothing and needs no flag.
+- **Nothing here is a secret.** A team ID and a certificate's fingerprint are public: they
+  are in the files anyone can fetch. They are printed in the plan.
+- **What weakens.** The rule is the server's own (`nativeAppWeakenings`, the one behind the
+  audit log's `weakened`): a change after which the platforms believe more binaries.
+
+  | In the plan | Path |
+  | --- | --- |
+  | an app registered (for an iOS app, where Sign in with Apple is enabled, also: Apple's identity tokens for its bundle ID are accepted from then on, [ADR 0047](adr/0047-native-apple-sign-in.md)) | `nativeApps.<platform>/<identifier>` |
+  | an iOS app's team changed | `nativeApps.ios/<bundle id>.teamId` |
+  | an Android app that gains a fingerprint | `nativeApps.android/<package name>.sha256CertFingerprints` |
+  | an app that gains a link path | `nativeApps.<platform>/<identifier>.appLinkPaths` |
+
+  `tula apply --yes` refuses such a plan, before any write, without `--allow-weaker`: a
+  changed file must not add someone else's app to yours with nobody asked. Removing an app
+  (`--prune`) and taking a fingerprint away weaken nothing and need no flag; what a removal
+  breaks is whatever in the app relies on the file.
+- **Order.** Native apps are written last, after the hooks: removals, then changes that
+  widen nothing, then changes that widen, then registrations. A run that stops part-way has
+  widened as little as it could, and a list that replaces an app at the limit of 20 never
+  passes through 21. A plan that would end with more than 20 cannot be applied at all:
+  `diff` exits 1 and `apply` writes nothing.
+- **Someone else's change.** Native apps have no revision. `apply` reads them once more just
+  before its first write to one and stops, writing nothing to them, if one was added,
+  removed or changed since the plan was made; if that read fails it says so and writes
+  nothing to them. That catches a change made while a person read the plan, not one made
+  between the read and the writes. The server refuses an update to an app that changed
+  between its own read and write (`resource.conflict`), reported as a failed operation.
+- **An app of a platform this version does not know** is shown and never touched, `--prune`
+  included. Upgrade `tula`.
+
+In the plan:
+
+```
+Native apps
+  + ios app.northline.ios: register (teamId A1B2C3D4E5)
+  ~ android app.northline.android: update (sha256CertFingerprints +9F:86:…:0A:08 -14:6D:…:44:E5)
+  = ios app.northline.beta: unmanaged (on the server, not in the file; --prune removes it)
+
+  ! weakens security: nativeApps.ios/app.northline.ios, nativeApps.android/app.northline.android.sha256CertFingerprints (`tula apply --yes` needs --allow-weaker)
+```
+
+(The fingerprints are printed whole; they are shortened here.)
 
 ## Pointing the CLI at an environment
 
@@ -154,28 +508,190 @@ Providers
 Changes pending. Run `tula apply` to make them.
 ```
 
-- `+` added, `~` changed, `-` removed, by path. Allowed origins and redirect URLs are sets:
-  their order is not a change, and a change shows the entries added and removed.
+- `+` added, `~` changed, `-` removed, by path. Allowed origins, redirect URLs and
+  the countries text messages may go to (`sms.allowedCountries`) are sets:
+  their order is not a change, and a change shows the entries added and removed. A country
+  written twice is refused when the file is loaded, so a list never differs from the
+  server's by a repeat.
+  One thing does read the order of `urls.allowedOrigins`: a texted code is bound to the host
+  of its **first** entry ([phone numbers](phone-numbers.md)). Reordering the list changes that
+  line of the message, and `diff` shows nothing for it: write the origin your users type the
+  code on first.
+- JWT templates (`sessions.jwtTemplates`) are a set by name, and a template's claims a set by
+  key: their order is not a change. A claim is one value: a changed claim is one line at
+  `sessions.jwtTemplates.<name>.claims.<key>` with the claim before and after, never a line
+  for its `from` or `value` alone. A file with no template, and a profile with no
+  `jwtTemplate`, hash as they did before templates existed.
+- A profile's `deviceBinding` ([device binding](device-binding.md)) is one value, compared
+  as written: `none`, `optional` or `required`. Left out, it is the profile's default
+  (`none` for `web`, `optional` for every other profile) and is not part of the file's
+  hash, so a file written before the option existed hashes as it did. Asking less than the
+  server has is `! weakens security` (above); asking more is not. A change applies to new
+  sign-ins only: `apply` ends no session and binds none.
+- `agents.testSignIn` ([the sign-in test](mcp.md#the-sign-in-test)) is one value: `true`,
+  `false` or `null`. `null`, which is also what leaving `agents` out means, is the default
+  of the environment's kind (allowed in a development environment, not in a production
+  one) and is not part of the file's hash. Writing `true` where the server does not have
+  `true` is `! weakens security` (below), whatever the environment's kind: the plan does
+  not know the kind, and in production that value is what lets a run create a user there.
+  So is `null` (written, or left out) where the server has `false`: in a development
+  environment that takes a refusal back. A file that leaves it out where the server has
+  `true` takes the permission away in production and changes nothing in development,
+  which is an ordinary change.
+- [Email templates](email-templates.md) (`emails.templates`) are a set by kind, and a
+  template is shown field by field: `emails.templates.<kind>.subject` and
+  `emails.templates.<kind>.body` are each a line, also when a whole template is added or
+  removed. The text is printed like every other value (cut at 100 characters), with what a
+  reader cannot see taken out of it first. **A kind the file leaves out is not unmanaged:
+  its template is removed, and the built-in email is sent** (the line says so), as for
+  every setting the file leaves out. A template of a kind this version of `tula` does not
+  know is an unknown setting (`--allow-unknown`). Changing a template is not flagged as
+  weakening security. A file with no template hashes as it did before templates existed.
+- [Text message wording](phone-numbers.md#your-own-wording) (`sms.templates`) is a set by
+  kind, one line a kind: `sms.templates.<kind>.text`, printed like an email template's
+  text. A kind the file leaves out is removed and the built-in text is sent (the line says
+  so); a kind this version of `tula` does not know is an unknown setting. A file with no
+  wording hashes as it did before.
+- `mfa.smsCode` left out of the file is the default, off: where the server has it on, the
+  plan switches it off, as for every setting the file leaves out. **Users whose second step
+  is a texted code then cannot sign in** until it is back on or an administrator resets
+  them ([two-step verification](methods/two-step-verification.md)). The plan does not flag
+  it as weakening security, because nothing gets weaker, and `apply --yes` makes it without
+  a flag; what `diff` and `apply` do is **say it in words under the plan**, as a warning
+  that begins "switches off the texted code as the second step", whether the file leaves
+  the key out or writes it off. Two more changes are said the same way, and likewise change
+  no plan and need no flag: a plan that **takes a country out of `sms.allowedCountries`**
+  (or empties the list) begins "stops text messages to" and names the countries, and one
+  that **switches `sms.enabled` off** begins "switches text messages off". Both say that
+  users there can no longer receive a code and that those whose only second step is a
+  texted code cannot sign in until it is back or an administrator resets them. The warning
+  about a country is printed whenever the server's list loses one, also where the server
+  has text messages off and nobody was being texted. A reordered list and a country added
+  print neither. A file that leaves it out, or writes it off, hashes as
+  it did before the setting existed.
 - A secret is never shown. A provider line says `secret set from $NAME` or
   `stored secret kept`. `diff` does not even read the variable.
 - `! weakens security` uses the server's own definition (the one behind the audit log's
   `weakened` flag): a weaker password policy, a security notice switched off, an MFA policy
-  moved towards `off`, sessions that live longer. `tula apply --yes` refuses such a plan
-  without `--allow-weaker`, and `diff` says so under the plan.
+  moved towards `off`, a texted code switched on as the second step where the policy is
+  `required` after the change (`mfa.smsCode`: the policy can then be met with a text
+  message; under `optional` or `off`, and switched off, it is an ordinary change. With the
+  switch already on under `required`, text messages switched on or a first country allowed
+  is flagged as `mfa.smsCode` too, and a country added where a texted code could already be
+  that second step as `sms.allowedCountries`: each opens where the required second step's
+  messages go), sessions that live longer, custom claims taken away from a profile's
+  sessions or redefined (`sessions.profiles.<name>.jwtTemplate`: a backend reads a missing
+  claim as "no"; adding a template or a claim, and editing a template no profile uses, are
+  ordinary changes), a profile that asks less for a device key
+  (`sessions.profiles.<name>.deviceBinding`: `required` to `optional` or `none`, `optional`
+  to `none`; a native app's refresh token is then usable without the device. Asking more is
+  an ordinary change. A profile that leaves `deviceBinding` out asks for the default,
+  `optional` (`none` for `web`), which is flagged where the server has `required`), an audit retention period set or shortened, a production environment
+  that starts accepting an agent's proposals (`agents.proposalsInProduction`: `false` to
+  `true`; [proposals.md](proposals.md#production-environments). Left out of the file it is
+  `false`, and managed: a file that says nothing switches it off where the server has it
+  on, which is an ordinary change), a higher daily limit of
+  text messages (`sms.dailyMessageLimit`: it is the most an attack on the environment can
+  make it send in a day; a file that leaves it out asks for the default, 500, which is
+  flagged where the server has a lower one), and a texted code that can sign someone in
+  where it could not before (`signIn.methods.smsCode`: the method switched on where text
+  messages are sent, or text messages switched on, or a first country allowed, under a
+  method that was on already; and `sms.allowedCountries`: a country added while a texted
+  code signs people in. A phone number is easier to take than an inbox; where no texted
+  code signs anyone in, neither key is flagged), and the sign-in test allowed by name
+  (`agents.testSignIn` written `true` where the server does not have `true`, or left
+  at the default where the server has `false`: an agent key
+  can then make and delete a throwaway user there, hooks asked and events delivered).
+  `tula apply --yes` refuses such a plan without
+  `--allow-weaker`, and `diff` says so under the plan.
+- A [hook](#hooks) is flagged by the same rule the server records it by: created with or
+  changed to `failureMode: 'allow'` (`hooks.<point>.failureMode`), switched off
+  (`hooks.<point>.enabled`), or removed while it is on (`hooks.<point>`). The settings'
+  paths come first in the list, then the providers', then the hooks', then the native apps'.
+- A provider is flagged when it gains a client id (`providers.google.additionalClientIds`)
+  and when it is **switched off or removed while accounts can sign in only with it**
+  (`providers.<provider>.enabled`, and `providers.<provider>` for a removal with `--prune`;
+  [ADR 0059](adr/0059-email-for-accounts-without-one.md)). For each provider that is on at
+  the server and that the plan switches off or removes, and for no other, `tula` asks the
+  server how many accounts depend on it and prints the answer under the plan:
+
+  ```
+    ! weakens security: providers.x.enabled (`tula apply --yes` needs --allow-weaker)
+    ! 3 accounts can sign in only with x: they are locked out while it is off
+  ```
+
+  A removal says `locked out until it is configured again`. The count is a number and
+  nothing about who. An account is counted when the provider is its only way to sign in,
+  by the settings and the other providers **as they are on the server now** (not as the
+  same plan would leave them): no password, no verified address with the emailed code on,
+  no other enabled provider, no passkey. The server looks at no more than 1,000 of the
+  provider's accounts; with more than that the number is a floor, printed as `at least N
+  accounts` (`at least 1 account`). When it found none among those it looked at the plan
+  is flagged all the same and says so with no number: `none of the accounts the server
+  read can sign in only with x, and it did not read them all: the rest were not looked
+  at, so how many there are is not known`.
+  With no such account nothing is flagged and nothing is printed. An account with no email
+  address (one made through X or Facebook, which give none) has no recovery of its own:
+  it cannot sign in until the provider is back or it is given an address. The server does
+  not refuse the change; it records it as a weakening, as `tula` does.
+
+  **A count that is not known is said, never printed as no accounts, and is one of two
+  things.**
+
+  - **A server from before the count has none to give**: it answers the request with the
+    API's own 404 for a route it does not have (the JSON error envelope with the code
+    `resource.not_found`). Only then is the plan not judged: the run goes on, nothing is flagged for
+    that provider, `apply --yes` needs no flag for it, and the plan says `! the accounts
+    that can sign in only with x could not be counted (this server has no count): if
+    there are any they are locked out while it is off, and this plan was not judged for
+    them`.
+  - **A count the server has and `tula` could not read flags the plan**: a request that
+    was refused (401, 403), limited (429), failed (any 5xx) or got no answer, an
+    answer that is not a count, and **a 404 or a 405 that is not the API's own** (a
+    proxy's or an access wall's page, no body, another code: something in front of the
+    API answered, which says nothing about the server). The provider's path is in `weakened`
+    (`providers.<provider>.enabled`, or `providers.<provider>` for a removal), so
+    `apply --yes` refuses the plan without `--allow-weaker` before any write, and the
+    plan says `! the accounts that can sign in only with x could not be counted (the
+    count could not be read): if there are any they are locked out while it is off, and
+    this plan is taken to weaken security`. Nothing of the failure is printed. A count
+    that failed is not a reason to let a run through: run it again, or pass
+    `--allow-weaker` knowing nobody counted.
+
+  In `--json` the provider's entry has `dependents`: `{ "accounts", "more" }`,
+  `"unread"` for a count that could not be read, or `null` for a server with none to
+  give.
+- A [native app](#native-apps) is flagged when it is registered
+  (`nativeApps.<platform>/<identifier>`), when an iOS app's team changes (`….teamId`) and
+  when an Android app gains a fingerprint (`….sha256CertFingerprints`).
+- `audit.retentionDays` is flagged **when applying would delete entries**: the file sets a
+  period where the server keeps entries for ever (`null`, which is also what leaving it out
+  means), or a shorter period than the server has. A longer period, the same one, or none
+  where there was one is an ordinary change. The plan then has a second line,
+  `! deletes audit entries older than N days, for good, starting with the next retention run
+  (every ten minutes; a large backlog takes several)`: nothing brings them back. At a
+  terminal the question `tula apply` asks says so too ("This DELETES audit entries older
+  than N days, for good"). The
+  first apply of a file that sets a period to an environment that has none is such a plan.
 - `! the server has settings this version of tula does not know (…)`: the server is newer
   than the CLI. Applying would reset those settings to their defaults, so `tula apply` refuses
   without `--allow-unknown`. Upgrade `tula` instead.
 - `! the settings were changed outside the config file since the last apply`: someone saved
   in the dashboard or through the API. The differences are in the plan.
-- `--json` prints the same plan as data: `weakened` and `unknown` list the paths, and
-  `applyRequires` (`{ "allowUnknown": false, "allowWeaker": true }`) says which of the two
-  flags `apply` will ask for.
+- `--json` prints the same plan as data: `weakened` and `unknown` list the paths, `webhooks`
+  holds the endpoints, `hooks` the hooks (`{ "managed", "hooks" }`), `nativeApps` the
+  native apps (`{ "managed", "apps", "overLimit" }`), `blockers` the reasons
+  the plan cannot be applied at all, and
+  `applyRequires` (`{ "allowUnknown": false, "allowWeaker": true, "allowWebhookRemoval":
+  false, "webhookSecrets": false, "hookSecrets": false }`) says what `apply` will ask for:
+  the three flags, and a word on the signing secrets of the endpoints and of the hooks it
+  creates.
 
 | Exit code | Meaning |
 | --- | --- |
 | `0` | the environment is as the file says |
 | `2` | there are changes to apply |
-| `1` | an error: bad config, bad key, the API refused or could not be reached |
+| `1` | an error: bad config, bad key, the API refused or could not be reached, or a plan that cannot be applied (a webhook address the server has twice, more than 10 endpoints, more than 20 native apps) |
 
 ## `tula apply`
 
@@ -219,7 +735,28 @@ tula apply --env prod --yes    # no question: for CI
 - **Provider secrets** are read from their variables when the provider is written: when it is
   created, when its client id (or Apple's team or key id) changes, or with `--rotate-secrets`.
   A missing variable stops the run before anything is written. Switching a provider on or off
-  does not need its secret.
+  does not need its secret, and neither does a change of Microsoft's `tenant`: the app
+  registration, and so its secret, is the same. The tenant is compared in lower case, as the
+  server stores it. A change of `tenant` is **not** counted as a weaker policy, a wider one
+  included (one organization's id to `organizations` or `common`): `apply --yes` makes it
+  without `--allow-weaker`, though it admits accounts from more directories, so read that
+  line of the plan (a sign-up still needs Microsoft's verified-domain claim).
+- **Google's `additionalClientIds`** are compared as a set: another order is no change, and
+  the plan shows what the file adds (`+`) and removes (`-`). The file's list is the whole
+  set, so an id the server has and the file does not name is removed, and a file that
+  leaves the key out removes them all; a server from before the field is read as having
+  none. The stored secret is kept. **A gained id is a weaker policy**
+  (`providers.google.additionalClientIds` under `! weakens security`, the rule the server
+  records `weakened` with): every id is another app whose tokens sign users in, so
+  `apply --yes` refuses it, before any write, without `--allow-weaker`. An id taken away is
+  not. The key is sent only when the file names an id, so a file without one still applies
+  to a server from before the field.
+- **Switching a provider off, or removing it, while accounts can sign in only with it is a
+  weaker policy** (`providers.<provider>.enabled`, `providers.<provider>`;
+  [ADR 0059](adr/0059-email-for-accounts-without-one.md)): those accounts are locked out
+  until it is back, so `apply --yes` refuses it, before any write, without
+  `--allow-weaker`, and at a terminal the question names it. What is counted, and what a
+  count that could not be read means, is under [`tula diff`](#tula-diff).
 - Errors show the API's code and, for a refused document, each field's path:
 
   ```
@@ -232,11 +769,15 @@ tula apply --env prod --yes    # no question: for CI
 | `--env`, `-e <name>` | the entry in the file; may be left out when it has one |
 | `--config`, `-c <path>` | default `tula.config.ts` in the current directory |
 | `--yes`, `-y` | apply without asking |
-| `--prune` | delete providers the server has and the file does not |
+| `--prune` | delete providers, and remove webhook endpoints, hooks and native apps, that the server has and the file does not list |
 | `--rotate-secrets` | send every managed provider's secret again |
 | `--expect-revision <n>` | apply only if the settings are still at this revision |
-| `--allow-weaker` | with `--yes`: apply a plan that weakens security |
+| `--allow-weaker` | with `--yes`: apply a plan that weakens security (the settings, a client id added to Google's `additionalClientIds`, a provider switched off or removed while accounts can sign in only with it, a [hook](#hooks), or a [native app](#native-apps) registered or widened) |
 | `--allow-unknown` | apply although the server has settings this version does not know (they are reset) |
+| `--allow-webhook-removal` | with `--yes`: apply a plan that removes a webhook endpoint, with its pending deliveries and its delivery log |
+| `--secrets-file <path>` | write the signing secrets of the webhook endpoints and the hooks the run creates to a new file (mode 0600) |
+| `--show-secrets` | print them |
+| `--discard-secrets` | keep none of them |
 | `--insecure-http` | allow a plain http API URL that is not localhost (a private network you trust) |
 | `--secret-key-file <path>` | read the secret key from a file; `-` for standard input (piped, with `--yes`) |
 | `--json` | print the plan (and what was applied) as JSON |
@@ -291,11 +832,27 @@ jobs:
           TULA_SECRET_KEY: ${{ secrets.TULA_SECRET_KEY_PROD }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           APPLE_PRIVATE_KEY: ${{ secrets.APPLE_PRIVATE_KEY }}
-        # --yes alone never weakens security and never resets a setting a newer server has:
-        # such a plan fails this step. Weakening on purpose is its own, reviewed change:
+        # --yes alone never weakens security, never resets a setting a newer server has and
+        # never removes a webhook endpoint: such a plan fails this step. Each on purpose is
+        # its own, reviewed change:
         #   bunx tula apply --env prod --yes --allow-weaker
-        run: bunx tula apply --env prod --yes
+        #   bunx tula apply --env prod --yes --prune --allow-webhook-removal
+        # --secrets-file matters only to a run that creates a webhook endpoint: the server
+        # shows its signing secret once. Without the option such a run is refused.
+        run: bunx tula apply --env prod --yes --secrets-file "$RUNNER_TEMP/tula-webhook-secrets.json"
+      - name: Hand new webhook secrets to the secret store
+        # The file exists only when an endpoint was created. Store it where the receiver
+        # reads its secret (your vault's CLI goes here), and never print it: a log is kept.
+        run: |
+          file="$RUNNER_TEMP/tula-webhook-secrets.json"
+          if [ -s "$file" ]; then
+            your-vault put tula/webhook-secrets < "$file"
+            rm "$file"
+          fi
 ```
+
+If your pipeline has nowhere to put a secret, use `--discard-secrets` there and rotate the
+secret by hand afterwards; do not use `--show-secrets` in a pipeline.
 
 A plan that weakens security (the pull request's `diff` output says
 `tula apply --yes refuses this plan without --allow-weaker`) fails the apply job as written.
@@ -329,8 +886,10 @@ settings are saved again *without* going through `apply`; the audit entry of tha
 changes this record (a first apply over identical settings, a new version of the file) still
 bumps the settings revision. The fingerprint is
 computed over the file's content with each secret as its variable's **name**; it says nothing
-about a secret's value. Providers are not covered by `drifted` (they have no revision):
-`tula diff` is the full check.
+about a secret's value. Providers and webhook endpoints are not covered by `drifted` (they
+have no revision): `tula diff` is the full check. The fingerprint covers the `webhooks` list
+(event types as a set), so a change to it is a new version of the file; a file without the
+list has the fingerprint it had before the list could be written.
 
 ## What `tula` runs on
 

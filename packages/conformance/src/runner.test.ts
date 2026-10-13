@@ -1,11 +1,16 @@
 import { describe, expect, test } from 'bun:test'
+import { phoneNumberCountries } from '@tula/contract'
 import {
   exitCode,
+  fictionalFrenchPhoneNumber,
+  fictionalPhoneNumber,
   formatResult,
   nextOrigin,
   PUBLISHABLE_KEY_HEADER,
   runScenario,
+  SMS_INBOX_SKIP_REASON,
   type Target,
+  TEST_CLOCK_SKIP_REASON,
 } from './runner'
 import { type Scenario, ScenarioSchema } from './scenario'
 import { totp } from './totp'
@@ -125,6 +130,39 @@ describe('runScenario', () => {
       headers: { authorization: 'Bearer jwt', [PUBLISHABLE_KEY_HEADER]: 'tula_pk_test' },
     })
     expect(second?.headers['content-type']).toBeUndefined()
+  })
+
+  test('a generated snowflake is a decimal id in a string, fresh for each variable and each run', async () => {
+    const ids: string[] = []
+    for (let run = 0; run < 20; run += 1) {
+      const { target, requests } = fakeTarget(() => ({ status: 204 }))
+      const result = await runScenario(
+        scenario(
+          [
+            {
+              name: 'send',
+              request: {
+                method: 'POST',
+                path: '/v1/anything',
+                body: { one: '{{one}}', other: '{{other}}' },
+              },
+              expect: { status: 204 },
+            },
+          ],
+          { variables: { one: { generate: 'snowflake' }, other: { generate: 'snowflake' } } }
+        ),
+        target
+      )
+      expect(result.status).toBe('passed')
+      const sent = requests[0]?.body as { one: string; other: string }
+      ids.push(sent.one, sent.other)
+    }
+    for (const id of ids) {
+      // What Discord's API writes: no sign, no leading zero, within 64 bits.
+      expect(id).toMatch(/^[1-9][0-9]{0,19}$/)
+      expect(BigInt(id) < 2n ** 64n).toBe(true)
+    }
+    expect(new Set(ids).size).toBe(ids.length)
   })
 
   test('attempt sends the captured secret as x-tula-attempt, and nothing when it is left out', async () => {
@@ -623,6 +661,436 @@ describe('runScenario', () => {
       direct.target
     )
     expect(direct.waits).toEqual([])
+  })
+
+  test('reads the texted code, and derives one that is certainly wrong', async () => {
+    const asked: string[] = []
+    const { target, requests } = fakeTarget(() => ({ status: 200 }), {
+      smsCode: async (to) => {
+        asked.push(to)
+        return '482919'
+      },
+    })
+    const result = await runScenario(
+      scenario(
+        [
+          { name: 'read', smsCode: { to: '{{phone}}', capture: 'code', captureWrong: 'wrong' } },
+          {
+            name: 'send',
+            request: {
+              method: 'POST',
+              path: '/verify',
+              body: { code: '{{code}}', bad: '{{wrong}}' },
+            },
+            expect: { status: 200 },
+          },
+        ],
+        { needsSmsInbox: true, variables: { phone: '+12025550142' } }
+      ),
+      target
+    )
+    expect(result.status).toBe('passed')
+    expect(asked).toEqual(['+12025550142'])
+    expect(requests[0]?.body).toEqual({ code: '482919', bad: '482910' })
+  })
+
+  test('an ID-token step has the token minted for what it says, and keeps it for a later request', async () => {
+    const asked: unknown[] = []
+    const { target, requests } = fakeTarget(() => ({ status: 200 }), {
+      idToken: async (ask) => {
+        asked.push(ask)
+        return 'minted-token'
+      },
+    })
+    const result = await runScenario(
+      scenario(
+        [
+          {
+            name: 'mint',
+            idToken: {
+              audience: '{{web}}',
+              authorizedParty: 'app',
+              nonce: '{{nonce}}',
+              email: 'maya@northline.app',
+              expired: true,
+              capture: 'token',
+            },
+          },
+          {
+            name: 'exchange',
+            request: { method: 'POST', path: '/exchange', body: { idToken: '{{token}}' } },
+            expect: { status: 200 },
+          },
+        ],
+        { variables: { web: 'web-client', nonce: 'n-1' } }
+      ),
+      target
+    )
+    expect(result.status).toBe('passed')
+    // The provider defaults to Google, the placeholders are filled, and `capture` is the
+    // runner's own: it is not sent to whoever mints.
+    expect(asked).toEqual([
+      {
+        provider: 'google',
+        audience: 'web-client',
+        authorizedParty: 'app',
+        nonce: 'n-1',
+        email: 'maya@northline.app',
+        expired: true,
+      },
+    ])
+    expect(requests[0]?.body).toEqual({ idToken: 'minted-token' })
+    // The token is in no line of the result.
+    expect(JSON.stringify(result)).not.toContain('minted-token')
+  })
+
+  test('a p256_private_key variable is a fresh PKCS#8 PEM of a P-256 key, new for every run', async () => {
+    const sent: string[] = []
+    const { target } = fakeTarget((request) => {
+      sent.push((request.body as { privateKey: string }).privateKey)
+      return { status: 200 }
+    })
+    const keyed = scenario(
+      [
+        {
+          name: 'save',
+          request: { method: 'PUT', path: '/key', body: { privateKey: '{{key}}' } },
+          expect: { status: 200 },
+        },
+      ],
+      { variables: { key: { generate: 'p256_private_key' } } }
+    )
+    expect((await runScenario(keyed, target)).status).toBe('passed')
+    expect((await runScenario(keyed, target)).status).toBe('passed')
+    const [first = '', second = ''] = sent
+    expect(first).not.toBe(second)
+    for (const pem of [first, second]) {
+      expect(pem).toMatch(
+        /^-----BEGIN PRIVATE KEY-----\n([A-Za-z0-9+/=]{1,64}\n)+-----END PRIVATE KEY-----\n$/
+      )
+      const der = Uint8Array.from(atob(pem.split('\n').slice(1, -2).join('')), (c) =>
+        c.charCodeAt(0)
+      )
+      // It imports as what it says it is: a P-256 signing key.
+      const key = await crypto.subtle.importKey(
+        'pkcs8',
+        der,
+        { name: 'ECDSA', namedCurve: 'P-256' },
+        false,
+        ['sign']
+      )
+      expect(key.type).toBe('private')
+    }
+  })
+
+  test('an ID-token step with nonceSha256 asks for the hash of the filled value, as an iOS app passes it', async () => {
+    const asked: unknown[] = []
+    const { target } = fakeTarget(() => ({ status: 200 }), {
+      idToken: async (ask) => {
+        asked.push(ask)
+        return 'minted-token'
+      },
+    })
+    const result = await runScenario(
+      scenario(
+        [
+          {
+            name: 'mint',
+            idToken: {
+              provider: 'apple',
+              audience: 'app.northline.ios',
+              nonceSha256: '{{nonce}}',
+              capture: 'token',
+            },
+          },
+        ],
+        { variables: { nonce: 'abc' } }
+      ),
+      target
+    )
+    expect(result.status).toBe('passed')
+    // RFC 6234's vector for "abc": lowercase hexadecimal, and `nonceSha256` itself is the
+    // runner's own, not sent to whoever mints.
+    expect(asked).toEqual([
+      {
+        provider: 'apple',
+        audience: 'app.northline.ios',
+        nonce: 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
+      },
+    ])
+  })
+
+  test('an ID-token step fails, without a request, against a target that cannot mint one', async () => {
+    const { target, requests } = fakeTarget(() => ({ status: 200 }))
+    const result = await runScenario(
+      scenario([{ name: 'mint', idToken: { audience: 'a', capture: 'token' } }]),
+      target
+    )
+    expect(result.status).toBe('failed')
+    expect(requests).toEqual([])
+  })
+
+  test('an ID-token step that could not be minted fails the scenario', async () => {
+    const { target } = fakeTarget(() => ({ status: 200 }), {
+      idToken: async () => {
+        throw new Error('the mock provider answered 404')
+      },
+    })
+    const result = await runScenario(
+      scenario([{ name: 'mint', idToken: { audience: 'a', capture: 'token' } }]),
+      target
+    )
+    expect(result.status).toBe('failed')
+  })
+
+  test('with `not`, an SMS-code step waits for a message that holds another code', async () => {
+    // The server sends a sign-in code after it has answered: the newest message is the
+    // earlier one until then.
+    const answers = ['482919', '482919', '731204']
+    let asked = 0
+    const { target, requests } = fakeTarget(() => ({ status: 200 }), {
+      smsCode: async () => {
+        asked += 1
+        return answers.shift() ?? '731204'
+      },
+    })
+    const result = await runScenario(
+      scenario(
+        [
+          { name: 'first', smsCode: { to: '{{phone}}', capture: 'first' } },
+          { name: 'second', smsCode: { to: '{{phone}}', capture: 'second', not: '{{first}}' } },
+          {
+            name: 'send',
+            request: { method: 'POST', path: '/verify', body: { code: '{{second}}' } },
+            expect: { status: 200 },
+          },
+        ],
+        { needsSmsInbox: true, variables: { phone: '+12025550142' } }
+      ),
+      target
+    )
+    expect(result.status).toBe('passed')
+    expect(asked).toBe(3)
+    expect(requests[0]?.body).toEqual({ code: '731204' })
+  })
+
+  describe('what a text message must hold', () => {
+    const TEXT = 'Welcome to Acme. Use 482919 now\n@app.example #482919'
+    const read = (smsCode: Record<string, unknown>) =>
+      scenario([{ name: 'read', smsCode: { to: '+12025550142', capture: 'code', ...smsCode } }], {
+        needsSmsInbox: true,
+      })
+    const texting = (text: string) =>
+      fakeTarget(() => ({ status: 200 }), {
+        smsCode: async () => '482919',
+        smsText: async () => text,
+      }).target
+
+    test('passes when the text holds every part, filled after the code is captured, and none it must not', async () => {
+      const result = await runScenario(
+        read({
+          textContains: ['Welcome to Acme', 'Use {{code}} now', ' #{{code}}'],
+          textExcludes: ['verification code is'],
+        }),
+        texting(TEXT)
+      )
+      expect(result.status).toBe('passed')
+    })
+
+    test.each<[string, Record<string, unknown>, string[]]>([
+      [
+        'a part that is missing',
+        { textContains: ['Welcome to Acme', 'Your Acme verification code'] },
+        ['the text does not contain textContains[1]'],
+      ],
+      [
+        'a part that must not be there',
+        { textExcludes: ['Use {{code}} now'] },
+        ['the text contains textExcludes[0]'],
+      ],
+      [
+        'both at once, each said',
+        { textContains: ['nowhere'], textExcludes: ['Acme'] },
+        ['the text does not contain textContains[0]', 'the text contains textExcludes[0]'],
+      ],
+    ])(
+      'fails for %s, and the problem holds nothing of the message',
+      async (_name, smsCode, problems) => {
+        const result = await runScenario(read(smsCode), texting(TEXT))
+        expect(result).toMatchObject({ status: 'failed', steps: [{ ok: false, problems }] })
+        const said = JSON.stringify(result)
+        expect(said).not.toContain('482919')
+        expect(said).not.toContain('Welcome')
+        expect(said).not.toContain('app.example')
+      }
+    )
+
+    test('a target that reads codes and not texts fails the step rather than passing it', async () => {
+      const { target } = fakeTarget(() => ({ status: 200 }), { smsCode: async () => '482919' })
+      expect(await runScenario(read({ textExcludes: ['x'] }), target)).toMatchObject({
+        status: 'failed',
+        steps: [{ ok: false, problems: ['this target cannot read the text of text messages'] }],
+      })
+    })
+
+    test('a step that says nothing about the text never asks for it', async () => {
+      let asked = 0
+      const { target } = fakeTarget(() => ({ status: 200 }), {
+        smsCode: async () => '482919',
+        smsText: async () => {
+          asked += 1
+          return TEXT
+        },
+      })
+      expect((await runScenario(read({}), target)).status).toBe('passed')
+      expect(asked).toBe(0)
+    })
+  })
+
+  test('a scenario that needs an SMS inbox is skipped, with the reason, by a target without one', async () => {
+    const { target, requests } = fakeTarget(() => ({ status: 200 }))
+    const result = await runScenario(
+      scenario(
+        [
+          { name: 'ask', request: get('/a'), expect: { status: 200 } },
+          { name: 'read', smsCode: { to: '+12025550142', capture: 'code' } },
+        ],
+        { needsSmsInbox: true }
+      ),
+      target
+    )
+    expect(result).toEqual({
+      name: 'test',
+      status: 'skipped',
+      steps: [],
+      reason: SMS_INBOX_SKIP_REASON,
+    })
+    expect(requests).toEqual([])
+  })
+
+  test('a scenario that waits a day is skipped where the wait would be a real sleep, and runs where it moves a clock', async () => {
+    const steps = [
+      { name: 'a day passes', wait: '1d' },
+      { name: 'ask', request: get('/a'), expect: { status: 200 } },
+    ]
+    const live = fakeTarget(() => ({ status: 200 }))
+    expect(await runScenario(scenario(steps, { needsTestClock: true }), live.target)).toEqual({
+      name: 'test',
+      status: 'skipped',
+      steps: [],
+      reason: TEST_CLOCK_SKIP_REASON,
+    })
+    // Nothing was sent and, above all, nothing was slept.
+    expect(live.requests).toEqual([])
+    expect(live.waits).toEqual([])
+
+    const inProcess = fakeTarget(() => ({ status: 200 }), { testClock: true })
+    const result = await runScenario(scenario(steps, { needsTestClock: true }), inProcess.target)
+    expect(result.status).toBe('passed')
+    expect(inProcess.waits).toEqual([86_400_000])
+    expect(inProcess.requests).toHaveLength(1)
+  })
+
+  test('a text message that did not arrive fails the step, and a failure never quotes the code', async () => {
+    const missing = fakeTarget(() => ({ status: 200 }), {
+      smsCode: async () => {
+        throw new Error('no text message with a code arrived for that number')
+      },
+    })
+    const steps = [{ name: 'read', smsCode: { to: '+12025550142', capture: 'code' } }]
+    expect(
+      await runScenario(scenario(steps, { needsSmsInbox: true }), missing.target)
+    ).toMatchObject({
+      status: 'failed',
+      steps: [{ ok: false, problems: ['no text message with a code arrived for that number'] }],
+    })
+    const refused = fakeTarget(() => ({ status: 422, body: { code: '482919' } }), {
+      smsCode: async () => '482919',
+    })
+    const result = await runScenario(
+      scenario(
+        [
+          ...steps,
+          {
+            name: 'send',
+            request: { method: 'POST', path: '/verify', body: { code: '{{code}}' } },
+            expect: { status: 200, body: { code: 'ok' } },
+          },
+        ],
+        { needsSmsInbox: true }
+      ),
+      refused.target
+    )
+    expect(result.status).toBe('failed')
+    expect(JSON.stringify(result)).not.toContain('482919')
+  })
+
+  test('a generated phone number is one the United States is a country of, whatever was drawn', () => {
+    // +1 is shared: an area code such as 242 (the Bahamas) or 876 (Jamaica) is another
+    // country's own prefix, and a scenario that allows the United States alone is then
+    // refused `sms.country_not_allowed`, about one run in thirty.
+    for (let first = 0; first < 8; first += 1) {
+      for (let rest = 0; rest < 100; rest += 1) {
+        const number = fictionalPhoneNumber([first, rest, 7])
+        expect(number).toMatch(/^\+1[2-9][0-9]{2}55501[0-9]{2}$/)
+        expect(number.slice(3, 5)).not.toBe('11')
+        expect({ number, countries: phoneNumberCountries(number).includes('US') }).toEqual({
+          number,
+          countries: true,
+        })
+      }
+    }
+  })
+
+  test('a generated phone number is a fictional United States number, fresh for each run', async () => {
+    const seen = new Set<string>()
+    for (let run = 0; run < 200; run += 1) {
+      const { target, requests } = fakeTarget(() => ({ status: 200 }))
+      await runScenario(
+        scenario(
+          [
+            {
+              name: 'send',
+              request: { method: 'POST', path: '/phone', body: { phoneNumber: '{{phone}}' } },
+              expect: { status: 200 },
+            },
+          ],
+          { variables: { phone: { generate: 'phone' } } }
+        ),
+        target
+      )
+      const number = (requests[0]?.body as { phoneNumber?: string } | undefined)?.phoneNumber ?? ''
+      // +1, an area code that starts 2 to 9 and is no N11 service code, then 555-01XX.
+      expect(number).toMatch(/^\+1[2-9][0-9]{2}55501[0-9]{2}$/)
+      expect(number.slice(3, 5)).not.toBe('11')
+      seen.add(number)
+    }
+    expect(seen.size).toBeGreaterThan(150)
+  })
+
+  test('a generated French number is a fictional mobile number of France alone', async () => {
+    for (const drawn of [0, 7, 9_999, 10_000, 4_294_967_295]) {
+      const number = fictionalFrenchPhoneNumber(drawn)
+      expect(number).toMatch(/^\+3363998[0-9]{4}$/)
+      expect(phoneNumberCountries(number)).toEqual(['FR'])
+    }
+    const { target, requests } = fakeTarget(() => ({ status: 200 }))
+    await runScenario(
+      scenario(
+        [
+          {
+            name: 'send',
+            request: { method: 'POST', path: '/phone', body: { phoneNumber: '{{phone}}' } },
+            expect: { status: 200 },
+          },
+        ],
+        { variables: { phone: { generate: 'phone_fr' } } }
+      ),
+      target
+    )
+    expect((requests[0]?.body as { phoneNumber?: string } | undefined)?.phoneNumber).toMatch(
+      /^\+3363998[0-9]{4}$/
+    )
   })
 
   test('a wait step passes the duration to the target', async () => {
@@ -1370,6 +1838,24 @@ describe('oauth steps', () => {
       { expectError: 'oauth.state_invalid' },
       'expected the callback to send the error oauth.state_invalid, got nothing',
     ],
+    [
+      'the callback redirects to another URL than the one expected',
+      {},
+      { expectRedirectTo: `${APP}/` },
+      'the callback did not redirect to exactly the expected URL',
+    ],
+    [
+      'the callback redirects to another app’s scheme',
+      { callback: { status: 303, location: 'com.evil.app:/oauth#tula_ticket=t' } },
+      { expectRedirectTo: 'com.example.app:/oauth' },
+      'the callback did not redirect to exactly the expected URL',
+    ],
+    [
+      'the callback adds a query to the expected URL',
+      { callback: { status: 303, location: 'com.example.app:/oauth?x=1#tula_ticket=t' } },
+      { expectRedirectTo: 'com.example.app:/oauth' },
+      'the callback did not redirect to exactly the expected URL',
+    ],
   ] as [string, Parameters<typeof oauthTarget>[0], object, string][])(
     'fails when %s',
     async (_name, answers, oauth, problem) => {
@@ -1379,6 +1865,49 @@ describe('oauth steps', () => {
       expect(result.steps[0]?.problems).toEqual([problem])
     }
   )
+
+  test.each([
+    ['a web page', APP],
+    ['an app link', 'https://app.example.com/oauth/callback'],
+    ['a custom scheme', 'com.example.app:/oauth/callback'],
+    // A page's own query is part of the URL that was listed: only an added one is refused.
+    ['a web page with a query of its own', 'https://app.example.com/cb?tenant=a'],
+  ])(
+    'a redirect to exactly the expected URL passes, for %s, and its ticket is read',
+    async (_name, url) => {
+      const { target, hops } = oauthTarget({
+        callback: {
+          status: 303,
+          location: `${url}#tula_ticket=tula_ot_abc&tula_attempt=attempt-1`,
+        },
+      })
+      const result = await runScenario(
+        steps({ expectRedirectTo: url, captureTicket: 'ticket' }, [
+          {
+            name: 'exchange',
+            request: {
+              method: 'POST',
+              path: '/v1/client/sign-ins/oauth/exchange',
+              body: { ticket: '{{ticket}}' },
+            },
+            expect: { status: 200 },
+          },
+        ]),
+        target
+      )
+      expect(result.status).toBe('passed')
+      expect(JSON.parse(hops[2]?.body ?? '{}')).toEqual({ ticket: 'tula_ot_abc' })
+    }
+  )
+
+  test('a wrong destination is not repeated in the failure', async () => {
+    const { target } = oauthTarget({
+      callback: { status: 303, location: 'com.evil.app:/oauth#tula_ticket=tula_ot_secret' },
+    })
+    const result = await runScenario(steps({ expectRedirectTo: 'com.example.app:/oauth' }), target)
+    expect(JSON.stringify(result)).not.toContain('com.evil.app')
+    expect(JSON.stringify(result)).not.toContain('tula_ot_secret')
+  })
 
   test('an attempt id that is missing is captured as empty, and a step needs exactly one source', async () => {
     const { target } = oauthTarget({ callback: { status: 303, location: `${APP}#tula_ticket=t` } })
@@ -1397,5 +1926,203 @@ describe('oauth steps', () => {
     expect(() => scenario([both])).toThrow()
     expect(() => scenario([{ name: 'x', oauth: {} }])).toThrow()
     expect(() => scenario([{ name: 'x', oauth: { callback: '/cb', code: 'x' } }])).toThrow()
+  })
+})
+
+describe('the emailMessage step', () => {
+  const message = {
+    subject: 'Wording 71: your Acme code',
+    text: 'Welcome to Acme.\n\nYour code: 482913\n\nIt works for 10 minutes.\n\n--\nAcme',
+  }
+  const steps = (emailMessage: Record<string, unknown>): Scenario =>
+    ScenarioSchema.parse({
+      name: 'reads an email',
+      description: 'An email step.',
+      variables: { email: 'maya@example.com', app: 'Acme' },
+      steps: [
+        {
+          name: 'read',
+          emailMessage: { to: '{{email}}', subjectContains: 'Wording 71', ...emailMessage },
+        },
+        {
+          name: 'use',
+          request: { method: 'POST', path: '/verify', body: { code: '{{code}}' } },
+          expect: { status: 200 },
+        },
+      ],
+    })
+
+  test('finds the message by its marker, captures the code from the text and checks both parts', async () => {
+    const asked: [string, string][] = []
+    const { target, requests } = fakeTarget(() => ({ status: 200 }), {
+      emailMessage: async (to, marker) => {
+        asked.push([to, marker])
+        return message
+      },
+    })
+    const result = await runScenario(
+      steps({
+        captureCode: 'code',
+        subject: 'Wording 71: your {{app}} code',
+        textContains: ['Welcome to {{app}}.', 'Your code: {{code}}'],
+        textExcludes: ['is your {{app}} verification code'],
+      }),
+      target
+    )
+    expect(result.status).toBe('passed')
+    expect(asked).toEqual([['maya@example.com', 'Wording 71']])
+    expect(requests[0]?.body).toEqual({ code: '482913' })
+  })
+
+  test.each<[string, Record<string, unknown>, string[]]>([
+    ['another subject', { subject: 'Something else' }, ['the subject is not the expected one']],
+    [
+      'text that is missing',
+      { textContains: ['Welcome', 'Goodbye'] },
+      ['the text does not contain textContains[1]'],
+    ],
+    [
+      'text that must not be there',
+      { textExcludes: ['Welcome to Acme'] },
+      ['the text contains textExcludes[0]'],
+    ],
+  ])('%s fails the step without printing the message', async (_, expected, problems) => {
+    const { target } = fakeTarget(() => ({ status: 200 }), { emailMessage: async () => message })
+    const result = await runScenario(steps({ captureCode: 'code', ...expected }), target)
+    expect(result.status).toBe('failed')
+    expect(result.steps[0]?.problems).toEqual(problems)
+    expect(formatResult(result)).not.toContain('482913')
+    expect(formatResult(result)).not.toContain('Welcome')
+  })
+
+  test.each([
+    ['no code', 'Your password was changed at 2026-10-03 14:05 UTC.'],
+    ['two different codes', 'Use 482913, not 111111.'],
+    ['a longer run of digits', 'Reference 4829131.'],
+  ])('a text with %s cannot be captured from', async (_, text) => {
+    const { target } = fakeTarget(() => ({ status: 200 }), {
+      emailMessage: async () => ({ subject: 'Wording 71', text }),
+    })
+    const result = await runScenario(steps({ captureCode: 'code' }), target)
+    expect(result.steps[0]?.problems).toEqual(['the text does not hold exactly one six-digit code'])
+  })
+
+  test('the same code twice is one code', async () => {
+    const { target, requests } = fakeTarget(() => ({ status: 200 }), {
+      emailMessage: async () => ({ subject: 'Wording 71', text: '482913\n\nAgain: 482913' }),
+    })
+    expect((await runScenario(steps({ captureCode: 'code' }), target)).status).toBe('passed')
+    expect(requests[0]?.body).toEqual({ code: '482913' })
+  })
+
+  test('a target that cannot read emails fails the step and says why', async () => {
+    const { target } = fakeTarget(() => ({ status: 200 }))
+    const result = await runScenario(steps({}), target)
+    expect(result.steps[0]).toEqual({
+      name: 'read',
+      ok: false,
+      problems: ['this target cannot read the text of emails'],
+    })
+  })
+
+  test('the step is strict about its keys', () => {
+    expect(() => steps({ html: 'x' })).toThrow()
+    expect(() =>
+      ScenarioSchema.parse({
+        name: 'x',
+        description: 'x',
+        steps: [{ name: 'read', emailMessage: { to: 'a@b.test', subjectContains: '' } }],
+      })
+    ).toThrow()
+  })
+})
+
+describe('a passkey step’s origin', () => {
+  const options = JSON.stringify({
+    rp: { id: 'passkeys.example', name: 'Example' },
+    user: { id: 'dXNlci1oYW5kbGU', name: 'maya@example.com', displayName: 'Maya' },
+    challenge: 'Y2hhbGxlbmdl',
+    pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+  })
+  const FINGERPRINT =
+    '14:B6:C3:A1:E9:D0:7F:52:88:6A:4B:0C:3D:9E:1F:20:A7:B8:C9:D0:E1:F2:A3:B4:C5:D6:E7:F8:09:1A:2B:3C'
+
+  /** Run one `create` ceremony and read the origin out of the client data it sent. */
+  async function originOf(passkey: object, variables: object = {}) {
+    const { target, requests } = fakeTarget(() => ({ status: 200 }))
+    const result = await runScenario(
+      scenario(
+        [
+          {
+            name: 'the authenticator makes a passkey',
+            passkey: { authenticator: 'phone', create: '{{options}}', capture: 'made', ...passkey },
+          },
+          {
+            name: 'send it',
+            request: {
+              method: 'POST',
+              path: '/v1/client/me/passkeys',
+              client: 'android',
+              body: { credential: { $json: '{{made}}' } },
+            },
+            expect: { status: 200 },
+          },
+        ],
+        { variables: { options, ...variables } }
+      ),
+      target
+    )
+    const sent = requests[0]?.body as
+      | { credential: { response: { clientDataJSON: string } } }
+      | undefined
+    const clientData = sent
+      ? (JSON.parse(
+          Buffer.from(sent.credential.response.clientDataJSON, 'base64url').toString()
+        ) as { origin: string })
+      : undefined
+    return { result, origin: clientData?.origin, headers: requests[0]?.headers }
+  }
+
+  test('an Android fingerprint becomes the origin Android derives from it', async () => {
+    // The value is from the Python lines of Android's documentation, not from this code.
+    const expected = 'android:apk-key-hash:FLbDoenQf1KIaksMPZ4fIKe4ydDh8qO0xdbn-AkaKzw'
+    const direct = await originOf({ androidCertFingerprint: FINGERPRINT })
+    expect(direct.result.status).toBe('passed')
+    expect(direct.origin).toBe(expected)
+    // A native app's request: its client kind, and no Origin header.
+    expect(direct.headers?.['x-tula-client']).toBe('android')
+    expect(direct.headers?.origin).toBeUndefined()
+    const filled = await originOf(
+      { androidCertFingerprint: '{{fingerprint}}' },
+      { fingerprint: FINGERPRINT.toLowerCase().replaceAll(':', '') }
+    )
+    expect(filled.origin).toBe(expected)
+  })
+
+  test('an origin is written as it is given, an iOS app’s included', async () => {
+    expect(
+      (await originOf({ origin: 'https://{{rpId}}' }, { rpId: 'passkeys.example' })).origin
+    ).toBe('https://passkeys.example')
+  })
+
+  test('a value that is not a fingerprint fails the step, and nothing is sent', async () => {
+    const { result, origin } = await originOf({ androidCertFingerprint: 'AA:BB' })
+    expect(result.status).toBe('failed')
+    expect(origin).toBeUndefined()
+    expect(JSON.stringify(result.steps)).toContain('not a SHA-256 certificate fingerprint')
+  })
+
+  test.each([
+    ['both', { origin: 'https://passkeys.example', androidCertFingerprint: FINGERPRINT }],
+    ['neither', {}],
+  ])('a step with %s of the two is not a scenario', (_name, passkey) => {
+    const parsed = ScenarioSchema.safeParse({
+      name: 'test',
+      description: 'A test scenario.',
+      steps: [
+        { name: 's', passkey: { authenticator: 'a', create: '{}', capture: 'c', ...passkey } },
+      ],
+    })
+    expect(parsed.success).toBe(false)
   })
 })

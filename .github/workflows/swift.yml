@@ -1,0 +1,58 @@
+name: Swift
+
+# The Swift client's tests (native/swift): its unit tests, and its journeys against the real
+# API, which the suite starts itself in memory on a loopback port
+# (native/swift/fixture/server.ts). A macOS runner because the package uses Apple's
+# Foundation and Security; nothing here runs a simulator or a device, and no test asks a real
+# Keychain (docs/swift.md, docs/plans/phase-2-unverified.md).
+#
+# `swift test` also builds the SwiftUI screens (TulaAuthUI) and runs the tests of what they
+# decide, and the coverage step holds both libraries. The screens' UI tests
+# (native/swift/fixture/ui-tests.ts: the example app in an iOS simulator) are NOT a job here,
+# on purpose: they have been run on one Mac and never on a runner, and a job nobody has seen
+# pass fails for reasons that are not the change's (ADR 0057). They are run by hand.
+#
+# It is a workflow of its own, not a job of ci.yml: macOS minutes are spent only on a change
+# that can break the client, and `verify` already holds what needs no Swift toolchain (the
+# generated sources, and the journey list against the tests the sources declare).
+
+on:
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - native/swift/**
+      - packages/contract/**
+      - packages/conformance/**
+      - conformance/**
+      - .github/workflows/swift.yml
+  # Nightly, on the default branch: the journeys run the whole API, so a change anywhere in
+  # apps/api can break them without touching a path above.
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: swift-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Actions are referenced by tag on purpose: Dependabot follows them (.github/dependabot.yml).
+
+jobs:
+  test:
+    name: swift test
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version-file: package.json }
+      # The journeys' server is the API from source: it needs the workspace installed.
+      - run: bun install --frozen-lockfile
+      # Whatever toolchain the image selects, said in the log: the package asks for Swift 5.9
+      # or later.
+      - run: swift --version
+      - run: swift test --package-path native/swift --enable-code-coverage
+      - run: bun run native/swift/fixture/coverage.ts

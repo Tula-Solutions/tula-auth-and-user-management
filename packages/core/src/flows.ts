@@ -106,11 +106,33 @@ interface FactorEnrolmentActions {
   confirmTotpEnrolment(input: { code: string }): Promise<FactorEnrolmentResult>
 }
 
-/** The action of a flow that can stop at `needs_second_factor`: sign-in and password reset. */
+/** The actions of a flow that can stop at `needs_second_factor`: sign-in and password reset. */
 interface SecondFactorActions {
   /**
+   * Ask for the code of a second factor the server sends (step `needs_second_factor` whose
+   * `options` include `sms_code`): a 6-digit code is texted to the account's phone number.
+   * Nothing is sent until this is called. The answer is the same step, now with `prepared`
+   * (the method and the masked number); prove the code with `submitSecondFactor`.
+   *
+   * @param input - The method: `sms_code`.
+   * @returns The step, still `needs_second_factor`, now with `prepared`.
+   * @throws TulaError `rate_limited` (with `retryAfterMs`) when asked too soon,
+   *   `auth.method_disabled` where the application no longer offers a texted code,
+   *   `sms.disabled`, `sms.country_not_allowed` or `sms.unavailable` when the message cannot
+   *   be sent.
+   * @example
+   * ```ts
+   * if (flow.step.status === 'needs_second_factor' && flow.step.options.includes('sms_code')) {
+   *   await flow.prepareSecondFactor({ method: 'sms_code' })
+   *   await flow.submitSecondFactor({ method: 'sms_code', code: await askForCode() })
+   * }
+   * ```
+   */
+  prepareSecondFactor(input: { method: 'sms_code' }): Promise<FlowStep>
+  /**
    * Prove a second factor (step `needs_second_factor`): the 6-digit code an authenticator app
-   * shows now, or an unused backup code (spent by this call). Completes the flow.
+   * shows now, an unused backup code (spent by this call), or the code texted after
+   * `prepareSecondFactor`. Completes the flow.
    *
    * @param input - One of the step's `options`, and its code.
    * @returns The next step and, after a backup code, how many are left.
@@ -204,6 +226,11 @@ export interface SignUpFlow extends Flow<'sign_up'>, FactorEnrolmentActions {
  * `submitSecondFactor`); where the environment requires it and the user has none, at
  * `needs_factor_enrolment` (`startTotpEnrolment`, then `confirmTotpEnrolment`).
  *
+ * Where the environment's passwords expire, a right password that is too old stops at
+ * `needs_new_password` with `reason: 'expired'`, after everything else the sign-in needs
+ * (a second factor included): answer it with `submitNewPassword`. Nobody is signed in until
+ * then.
+ *
  * @example
  * ```ts
  * const flow = await tula.signIn.start({ identifier: email })
@@ -244,6 +271,27 @@ export interface SignInFlow extends Flow<'sign_in'>, FactorEnrolmentActions, Sec
    */
   submitPassword(input: { password: string }): Promise<FlowStep>
   /**
+   * Replace a password that has expired (step `needs_new_password` with `reason: 'expired'`)
+   * and finish the sign-in. Every other session of the user ends.
+   *
+   * A refused password leaves the flow on the step: call it again with another.
+   *
+   * @param input - The new password. It must meet the environment's policy and must not be
+   *   the expired password, nor one the password history still refuses.
+   * @returns The next step: `complete`.
+   * @throws TulaError a `password.*` code with per-field `errors` when the password is
+   *   refused (`password.reused` for the expired one), `rate_limited` after too many tries,
+   *   and `flow.invalid_step` when the account's password was replaced some other way
+   *   meanwhile: start the sign-in again.
+   * @example
+   * ```ts
+   * if (flow.step.status === 'needs_new_password' && flow.step.reason === 'expired') {
+   *   await flow.submitNewPassword({ password: newPassword })
+   * }
+   * ```
+   */
+  submitNewPassword(input: { password: string }): Promise<FlowStep>
+  /**
    * Submit the emailed 6-digit code (step `needs_email_verification`: the account's address
    * was never verified).
    *
@@ -255,8 +303,14 @@ export interface SignInFlow extends Flow<'sign_in'>, FactorEnrolmentActions, Sec
   verifyEmail(input: { code: string }): Promise<FlowStep>
   /**
    * Ask for the email that proves an email first factor (step `needs_first_factor` offering
-   * `email_code` or `email_link`). The answer is the same whether or not the address has an
-   * account. Calling it again sends a fresh email, at most one a minute.
+   * `email_code` or `email_link`), or for the text message of `sms_code`. The answer is the
+   * same whether or not the address has an account. Calling it again sends a fresh email, at
+   * most one a minute.
+   *
+   * With `sms_code`, for a sign-in started with a phone number (`signIn.start({ identifier:
+   * '+14155550100' })`), a 6-digit code is texted to the number when exactly one account has
+   * proven it within the last year. For any other number nothing is sent and the answer is
+   * the same; whether the message could be sent is not reported either.
    *
    * With `email_link` the email also carries a link to `redirectUrl`, which must be one of the
    * environment's allowed redirect URLs, exactly, **and on the same origin as the page that
@@ -268,25 +322,36 @@ export interface SignInFlow extends Flow<'sign_in'>, FactorEnrolmentActions, Sec
    * @param input - The strategy, and for a link the page it leads to.
    * @returns The step, still `needs_first_factor`, now with `prepared`.
    * @throws TulaError `request.redirect_not_allowed` for a URL that is not allowed,
-   *   `rate_limited` (with `retryAfterMs`) when asked too soon, and two raised by the client
+   *   `rate_limited` (with `retryAfterMs`) when asked too soon, `sms.country_not_allowed`,
+   *   `sms.disabled` or `sms.unavailable` for a texted code, and two raised by the client
    *   itself, with `status: 0` and no request sent: `link.cross_origin` for a `redirectUrl` on
    *   another origin than the page (checked only where there is a page), and `storage.failed`
    *   for `email_link` in a browser without usable storage.
    */
   prepareFirstFactor(
-    input: { strategy: 'email_code' } | { strategy: 'email_link'; redirectUrl: string }
+    input:
+      | { strategy: 'email_code' }
+      | { strategy: 'email_link'; redirectUrl: string }
+      | { strategy: 'sms_code' }
   ): Promise<FlowStep>
   /**
    * Prove an email first factor: submit the emailed code, or (`email_link`) ask once whether
-   * the emailed link has been opened in this browser.
+   * the emailed link has been opened in this browser. Or prove `sms_code` with the texted
+   * code.
    *
-   * @param input - The strategy, and the code for `email_code`.
+   * @param input - The strategy, and the code for `email_code` and `sms_code`.
    * @returns The next step. For a link not opened yet: the unchanged `needs_first_factor`.
    * @throws TulaError `verification.invalid_code`, `verification.expired`,
-   *   `verification.too_many_attempts`, or `rate_limited` while the address is locked.
+   *   `verification.too_many_attempts`, or `rate_limited` while the address is locked. For
+   *   `sms_code` every failure is `auth.invalid_credentials`, and
+   *   `mfa.enrolment_needs_other_sign_in` where two-step verification is required and the
+   *   account has none: the flow stays on `needs_first_factor`, for another strategy.
    */
   attemptFirstFactor(
-    input: { strategy: 'email_code'; code: string } | { strategy: 'email_link' }
+    input:
+      | { strategy: 'email_code'; code: string }
+      | { strategy: 'email_link' }
+      | { strategy: 'sms_code'; code: string }
   ): Promise<FlowStep>
   /**
    * Wait for the emailed link to be opened in this browser, then finish the sign-in here.
@@ -347,8 +412,12 @@ export interface FlowContext {
   links: LinkStore
   /** Names the API and environment (the link channel's name). */
   scope: string
-  /** The browser's WebAuthn ceremonies, or `undefined` where there are none. */
-  passkeys: () => PasskeyAuthenticator | undefined
+  /**
+   * The runtime's passkey ceremonies.
+   *
+   * @throws TulaError `passkey.unsupported` where it has none.
+   */
+  passkeys: () => PasskeyAuthenticator
 }
 
 /** What identifies an attempt to the API: its id in the path, its secret in a header. */
@@ -585,13 +654,20 @@ function secondFactorAction(
     return remaining === undefined ? { step } : { step, backupCodesRemaining: Number(remaining) }
   }
   return {
+    prepareSecondFactor: () =>
+      attempt.step((bound) =>
+        context.transport.call(
+          operation === 'submitSignInSecondFactor'
+            ? 'prepareSignInSecondFactor'
+            : 'preparePasswordResetSecondFactor',
+          // Only the method: nothing else a caller's object may hold.
+          { ...bound, body: { method: 'sms_code' } }
+        )
+      ),
     submitSecondFactor: (proof) => attempt.exclusive((bound) => submit(bound, proof)),
     submitSecondFactorWithPasskey: (request = {}) =>
       attempt.exclusive(async (bound) => {
         const authenticator = context.passkeys()
-        if (!authenticator) {
-          throw clientError('passkey.unsupported', context.messages())
-        }
         const options = await context.transport.call(
           operation === 'submitSignInSecondFactor'
             ? 'getSignInSecondFactorPasskeyOptions'
@@ -667,6 +743,10 @@ export async function signInFlow(
     submitPassword: ({ password }) =>
       attempt.step((bound) =>
         transport.call('submitSignInPassword', { ...bound, body: { password } })
+      ),
+    submitNewPassword: ({ password }) =>
+      attempt.step((bound) =>
+        transport.call('submitSignInNewPassword', { ...bound, body: { password } })
       ),
     verifyEmail: ({ code }) =>
       attempt.step((bound) => transport.call('verifySignInEmail', { ...bound, body: { code } })),
@@ -972,9 +1052,6 @@ export async function passkeySignIn(
   request: PasskeyRequest = {}
 ): Promise<SignInFlow> {
   const authenticator = context.passkeys()
-  if (!authenticator) {
-    throw clientError('passkey.unsupported', context.messages())
-  }
   for (;;) {
     const started = await context.transport.call('startPasskeySignIn', {})
     if (!isPasskeySignInStart(started)) {
@@ -986,5 +1063,87 @@ export async function passkeySignIn(
         context.transport.call('submitSignInPasskey', { ...bound, body: { credential } })
       )
     }
+  }
+}
+
+/** A provider whose ID token `signIn.withIdToken` exchanges. */
+export type IdTokenProvider = Schemas['IdTokenProvider']
+
+/**
+ * A native sign-in that waits for the provider's ID token: what `signIn.withIdToken` returns.
+ *
+ * The attempt's secret stays in this object's closure: it is not a property, and nothing of
+ * the sign-in is kept in storage.
+ */
+export interface IdTokenSignIn {
+  /**
+   * The server's nonce for this sign-in. It is not a secret and authorizes nothing. What to
+   * hand to the provider's SDK depends on the provider, and the server accepts one form:
+   *
+   * - **Google**: this value, unchanged, as the nonce of the request.
+   * - **Apple**: the **lowercase hexadecimal SHA-256 of this value's UTF-8 bytes**, as
+   *   `ASAuthorizationAppleIDRequest.nonce`. The client does not hash it for you: take the
+   *   hash with the platform's own API (CryptoKit's `SHA256` in Swift, `expo-crypto` in
+   *   Expo). A token that carries this value itself is refused.
+   */
+  readonly nonce: string
+  /**
+   * Exchange the ID token the provider's SDK returned. **Once**: the server judges one token
+   * per sign-in, so after a refusal start again with `signIn.withIdToken`.
+   *
+   * @param idToken - The token, as the SDK handed it over.
+   * @param name - **Apple only.** The name the system's sheet handed the app
+   *   (`fullName.givenName`, `fullName.familyName`), which Apple gives on the first
+   *   authorization only and never puts in the token. It names a new account and is used
+   *   for nothing else; nobody signed it. Leave it out for Google, whose token has its own.
+   * @returns The sign-in flow, past its first factor: `complete`, or waiting on a second
+   *   factor or an enrolment.
+   * @throws TulaError `auth.invalid_credentials` for a token the API does not accept (every
+   *   reason is the same), `auth.method_disabled`, `oauth.account_exists`,
+   *   `oauth.email_unverified`, `oauth.email_missing`, `auth.user_banned`.
+   */
+  exchange(idToken: string, name?: IdTokenName): Promise<SignInFlow>
+}
+
+/** The name an Apple sign-in sheet handed the app, passed on beside the ID token. */
+export interface IdTokenName {
+  /** The given name, at most 100 characters. */
+  givenName?: string
+  /** The family name, at most 100 characters. */
+  familyName?: string
+}
+
+/**
+ * Start a native sign-in with a provider's ID token (ADR 0045): ask the API for an attempt
+ * and its nonce.
+ *
+ * @param context - Transport, session and messages.
+ * @param provider - The provider whose SDK will issue the token.
+ * @returns The nonce for the provider's SDK, and the call that exchanges its token.
+ * @throws TulaError `auth.method_disabled` (the provider is not enabled; for Apple also:
+ *   the environment has no registered iOS app), `validation.failed` for a client that is
+ *   not `ios` or `android` (for Apple: not `ios`), `response.invalid`.
+ */
+export async function idTokenSignIn(
+  context: FlowContext,
+  provider: IdTokenProvider
+): Promise<IdTokenSignIn> {
+  const started: unknown = await context.transport.call('startIdTokenSignIn', {
+    body: { provider },
+  })
+  if (
+    !isRecord(started) ||
+    typeof started.nonce !== 'string' ||
+    !isUsableAttempt(started.attempt)
+  ) {
+    throw clientError('response.invalid', context.messages())
+  }
+  const { attempt } = started
+  return {
+    nonce: started.nonce,
+    exchange: (idToken, name) =>
+      signInFlow(context, attempt, (bound) =>
+        context.transport.call('submitSignInIdToken', { ...bound, body: { ...name, idToken } })
+      ),
   }
 }

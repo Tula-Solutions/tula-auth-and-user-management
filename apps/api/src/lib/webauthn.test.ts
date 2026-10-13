@@ -20,7 +20,11 @@ async function registered(input: object = {}) {
   const authenticator = new VirtualAuthenticator()
   const challenge = WebAuthn.newChallenge()
   const response = await authenticator.create(creation(challenge), { origin, ...input })
-  const credential = await WebAuthn.verifyRegistration(response, { challenge, origin, rpId })
+  const credential = await WebAuthn.verifyRegistration(response, {
+    challenge,
+    origins: [origin],
+    rpId,
+  })
   if (!credential) {
     throw new Error('registration did not verify')
   }
@@ -76,8 +80,8 @@ describe('verifyRegistration', () => {
 
   test.each<[string, object, Partial<WebAuthn.Expected>]>([
     ['another challenge', {}, { challenge: WebAuthn.newChallenge() }],
-    ['another origin', {}, { origin: 'https://evil.test' }],
-    ['a look-alike origin', {}, { origin: 'https://app.northline.test.evil.test' }],
+    ['another origin', {}, { origins: ['https://evil.test'] }],
+    ['a look-alike origin', {}, { origins: ['https://app.northline.test.evil.test'] }],
     ['another relying party', {}, { rpId: 'evil.test' }],
     ['an RP ID hash for another relying party', { rpId: 'evil.test' }, {}],
     ['no user verification', { userVerified: false }, {}],
@@ -88,7 +92,12 @@ describe('verifyRegistration', () => {
       ...input,
     })
     expect(
-      await WebAuthn.verifyRegistration(response, { challenge, origin, rpId, ...expectedOverride })
+      await WebAuthn.verifyRegistration(response, {
+        challenge,
+        origins: [origin],
+        rpId,
+        ...expectedOverride,
+      })
     ).toBeNull()
   })
 
@@ -106,7 +115,9 @@ describe('verifyRegistration', () => {
       },
     ],
   ])('refuses %s without throwing', async (_, response) => {
-    expect(await WebAuthn.verifyRegistration(response, { challenge: 'x', origin, rpId })).toBeNull()
+    expect(
+      await WebAuthn.verifyRegistration(response, { challenge: 'x', origins: [origin], rpId })
+    ).toBeNull()
   })
 
   test('refuses a create response replayed as if it were for a get ceremony type', async () => {
@@ -121,7 +132,7 @@ describe('verifyRegistration', () => {
           ...made,
           response: { ...made.response, clientDataJSON: assertion.response.clientDataJSON },
         },
-        { challenge, origin, rpId }
+        { challenge, origins: [origin], rpId }
       )
     ).toBeNull()
   })
@@ -137,14 +148,14 @@ describe('verifyAssertion', () => {
     expect(
       await WebAuthn.verifyAssertion(
         await sign(authenticator, challenge, { counter: 9 }),
-        { challenge, origin, rpId },
+        { challenge, origins: [origin], rpId },
         credential
       )
     ).toEqual({ signCount: 9, backupEligible: false, backedUp: false })
     expect(
       await WebAuthn.verifyAssertion(
         await sign(authenticator, challenge, { synced: true }),
-        { challenge, origin, rpId },
+        { challenge, origins: [origin], rpId },
         credential
       )
     ).toEqual({ signCount: 0, backupEligible: true, backedUp: true })
@@ -155,7 +166,7 @@ describe('verifyAssertion', () => {
     const challenge = WebAuthn.newChallenge()
     const verified = await WebAuthn.verifyAssertion(
       await sign(authenticator, challenge, { counter: 1 }),
-      { challenge, origin, rpId },
+      { challenge, origins: [origin], rpId },
       { ...credential }
     )
     expect(verified?.signCount).toBe(1)
@@ -163,7 +174,7 @@ describe('verifyAssertion', () => {
 
   test.each<[string, object, Partial<WebAuthn.Expected>]>([
     ['another challenge', {}, { challenge: WebAuthn.newChallenge() }],
-    ['another origin', {}, { origin: 'https://evil.test' }],
+    ['another origin', {}, { origins: ['https://evil.test'] }],
     ['another relying party', {}, { rpId: 'evil.test' }],
     ['an RP ID hash for another relying party', { rpId: 'evil.test' }, {}],
     ['no user verification', { userVerified: false }, {}],
@@ -173,7 +184,7 @@ describe('verifyAssertion', () => {
     expect(
       await WebAuthn.verifyAssertion(
         await sign(authenticator, challenge, input),
-        { challenge, origin, rpId, ...expectedOverride },
+        { challenge, origins: [origin], rpId, ...expectedOverride },
         credential
       )
     ).toBeNull()
@@ -184,7 +195,7 @@ describe('verifyAssertion', () => {
     const other = await registered()
     const challenge = WebAuthn.newChallenge()
     const assertion = await sign(authenticator, challenge)
-    const expected = { challenge, origin, rpId }
+    const expected = { challenge, origins: [origin], rpId }
     expect(await WebAuthn.verifyAssertion(assertion, expected, other.credential)).toBeNull()
     const flipped = Buffer.from(assertion.response.signature, 'base64url')
     flipped[flipped.length - 1] = (flipped[flipped.length - 1] ?? 0) ^ 0x01
@@ -221,7 +232,11 @@ describe('verifyAssertion', () => {
   ])('refuses %s without throwing', async (_, response) => {
     const { credential } = await registered()
     expect(
-      await WebAuthn.verifyAssertion(response, { challenge: 'x', origin, rpId }, credential)
+      await WebAuthn.verifyAssertion(
+        response,
+        { challenge: 'x', origins: [origin], rpId },
+        credential
+      )
     ).toBeNull()
   })
 
@@ -231,7 +246,7 @@ describe('verifyAssertion', () => {
     expect(
       await WebAuthn.verifyAssertion(
         await sign(authenticator, challenge),
-        { challenge, origin, rpId },
+        { challenge, origins: [origin], rpId },
         { ...credential, publicKey: new Uint8Array([1, 2, 3]) }
       )
     ).toBeNull()

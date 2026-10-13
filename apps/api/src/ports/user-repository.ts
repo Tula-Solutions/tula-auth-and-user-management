@@ -1,25 +1,58 @@
 import type { OAuthProvider, UserSort } from '@tula/contract'
-import type { Recorded } from '~/ports/activity-log'
+import type { Activity, Recorded } from '~/ports/activity-log'
 
 /** An end user of a customer's app, scoped to one environment. */
 export interface UserRecord {
   id: string
   projectId: string
   environmentId: string
-  /** Email as entered (for display and for sending mail). */
-  email: string
-  /** Lowercased, trimmed email used for lookups and uniqueness. */
-  emailNormalized: string
+  /**
+   * Email as entered (for display and for sending mail), or `null` for an account that has
+   * none: one created by a first sign-in with a provider Tula takes no address from
+   * (`OAUTH_PROVIDERS_WITHOUT_ADDRESS`; ADR 0026). Such an account is sent nothing, is found
+   * by no address, has no `email` identity and no password.
+   */
+  email: string | null
+  /**
+   * Lowercased, trimmed email used for lookups and uniqueness; `null` exactly when
+   * {@link UserRecord.email} is. Any number of accounts may have none.
+   */
+  emailNormalized: string | null
+  /** When the address was verified. Always `null` for an account with no address. */
   emailVerifiedAt: Date | null
   firstName: string | null
   lastName: string | null
   bannedAt: Date | null
   lastSignInAt: Date | null
   createdAt: Date
+  /**
+   * The account's phone number in E.164 form, or `null`. Only ever a number the user proved
+   * with a code sent to it. Not unique. An account is looked up by it in one place only,
+   * `Phone.signInHolder`, for a sign-in with a texted code where the environment has
+   * switched that on (ADR 0037). Personal data like the email address: never in a log line, an audit entry,
+   * an event payload or an error.
+   */
+  phoneNumber: string | null
+  /** When {@link UserRecord.phoneNumber} was verified; `null` exactly when there is none. */
+  phoneNumberVerifiedAt: Date | null
+  /**
+   * Since when a code texted to {@link UserRecord.phoneNumber} is the account's second factor
+   * (ADR 0025); `null` when it is not. Never set without a number: taking the number away,
+   * or replacing it with another, clears it in the same write.
+   */
+  smsFactorEnabledAt: Date | null
 }
 
-/** A user to create together with their email identity and, if they have one, their password. */
-export interface NewUser extends Omit<UserRecord, 'bannedAt' | 'lastSignInAt'> {
+/**
+ * A user to create together with their email identity and, if they have one, their password.
+ * A user with no address gets no email identity, and must come with an `oauthIdentity` and no
+ * password: it is the only thing they sign in with.
+ */
+export interface NewUser
+  extends Omit<
+    UserRecord,
+    'bannedAt' | 'lastSignInAt' | 'phoneNumber' | 'phoneNumberVerifiedAt' | 'smsFactorEnabledAt'
+  > {
   /** Id for the `email` identity row. */
   identityId: string
   /** Id for the `password` credential row. Unused when there is no password. */
@@ -79,6 +112,40 @@ export interface SignInMeans {
   passkeys: number
 }
 
+/**
+ * An email address to store on a user who has none (ADR 0059).
+ */
+export interface NewEmailAddress {
+  /** The address as entered, for display and for sending mail. */
+  email: string
+  /** Lowercased and trimmed: what lookups and the unique key go by. */
+  normalized: string
+  /**
+   * When its holder proved it, or `null` for an address nobody has proven (one an
+   * administrator set).
+   */
+  verifiedAt: Date | null
+  /** Id for the `email` identity row. */
+  identityId: string
+}
+
+/**
+ * What storing an address on a user did, when it stored nothing.
+ *
+ * - `taken`: another user of the environment has the address.
+ * - `has_email`: the user already has an address (this one or another).
+ * - `not_found`: there is no such user in the environment.
+ */
+export type AddEmailRefusal = 'taken' | 'has_email' | 'not_found'
+
+/** How many accounts depend on a provider, as a store counted them. */
+export interface DependentAccounts {
+  /** The accounts found that could not sign in without the provider. */
+  accounts: number
+  /** `true` when the provider has more accounts than were looked at: `accounts` is a floor. */
+  more: boolean
+}
+
 /** What disconnecting an identity did. */
 export type UnlinkOutcome = 'unlinked' | 'not_found' | 'last_method'
 
@@ -87,6 +154,57 @@ export type UnlinkOutcome = 'unlinked' | 'not_found' | 'last_method'
  * `replaced` otherwise.
  */
 export type PasswordOutcome = 'created' | 'replaced'
+
+/**
+ * What a password write does to the passwords the user had before (ADR 0038).
+ *
+ * Every write names it, so that no path can store a password and leave the history as it was.
+ */
+export interface PasswordHistoryRule {
+  /**
+   * How many previous passwords the user has after this write: the environment's
+   * `password.history` minus one (the current password counts as one of "the last N"), and 0
+   * where the policy keeps none. The hash that stops being current becomes the newest previous
+   * one when this is at least 1; whatever is then beyond it is deleted in the same transaction.
+   */
+  keep: number
+  /**
+   * Given when the new password was compared with the stored ones: the current hash it was
+   * compared with (`null`: the user had no password). The write then happens only while that
+   * is still the stored hash, so a password is never stored on a comparison with a history
+   * that has since moved. Left out by a write that compares nothing (an administrator's).
+   */
+  ifCurrent?: string | null
+}
+
+/**
+ * A user's current password hash and the ones before it, newest first.
+ *
+ * Hashes only ever leave the store to be verified against: never log, return or record one.
+ */
+export interface StoredPasswords {
+  /** The current argon2id hash, or `null` for a user with no password. */
+  current: string | null
+  /** The previous hashes that were asked for, the most recent first. */
+  previous: string[]
+}
+
+/**
+ * A user as a password sign-in reads them: with the hash of their password and the time that
+ * password was set.
+ */
+export interface UserWithPassword {
+  user: UserRecord
+  /** The current argon2id hash, or `null` for a user with no password. */
+  passwordHash: string | null
+  /**
+   * When the current password was set: stored for the first time, or replaced by a different
+   * one. `null` exactly when `passwordHash` is. A hash upgrade after a sign-in
+   * (`upgradePasswordHash`) does not move it: it is the same password, and a rehash must not
+   * make an old password look new (`password.expiryDays`, ADR 0041).
+   */
+  passwordChangedAt: Date | null
+}
 
 /** Which users to list. */
 export interface UserListCriteria {
@@ -98,6 +216,21 @@ export interface UserListCriteria {
   size: number
   sort: UserSort
 }
+
+/**
+ * The second factors stronger than a texted code that a user holds, as a store reads them
+ * inside the write they guard. Whether a passkey counts (passkeys may be switched off) is
+ * the service's to say, which is why this is a count and not a verdict.
+ */
+export interface StrongerFactorsHeld {
+  /** An authenticator app that has been confirmed. A pending enrolment is not one. */
+  confirmedTotp: boolean
+  /** How many passkeys the user has, usable or not. */
+  passkeys: number
+}
+
+/** What {@link UserRepository.enableSmsFactor} did. */
+export type SmsFactorEnableOutcome = 'enabled' | 'stale' | 'stronger_factor'
 
 /** Users with their identities and credentials, always inside one environment. */
 export interface UserRepository {
@@ -121,12 +254,13 @@ export interface UserRepository {
    *
    * @param environmentId - The environment to look in.
    * @param emailNormalized - Normalized email.
-   * @returns The user and their password hash (`null` when they have no password), or `null`.
+   * @returns The user, their password hash and when that password was set (both `null` when
+   *   they have no password), or `null`.
    */
   findByEmailWithPassword(
     environmentId: string,
     emailNormalized: string
-  ): Promise<{ user: UserRecord; passwordHash: string | null } | null>
+  ): Promise<UserWithPassword | null>
 
   /**
    * The user a provider account belongs to.
@@ -200,28 +334,79 @@ export interface UserRepository {
    * they have none (a user who signed up another way setting their first password). One atomic
    * write either way; of two concurrent first passwords exactly one is `created`.
    *
+   * The hash that stops being current is kept as the user's newest previous password, every
+   * older one moves one place back, and what is then beyond `history.keep` is deleted: all in
+   * the transaction that stores the new hash, under a lock on the user, so of two concurrent
+   * writes neither loses a previous password nor keeps one twice (ADR 0038).
+   *
    * @param environmentId - The user's environment.
    * @param userId - The user.
    * @param passwordHash - The new argon2id hash.
-   * @param at - Update time.
+   * @param at - Update time, and from now on the time the user's password was set. **A
+   *   replacement is always newer than the password it replaces**: where `at` is not later
+   *   than the time stored, the store sets that time plus one millisecond. A sign-in waiting
+   *   to replace an expired password tells a replacement from a hash upgrade by this time
+   *   (ADR 0041), so it must move whatever the writer's clock says.
    * @param activity - Recorded in the same transaction as the write. When the password is the
    *   user's first, the recorded entry's `data` gains `created: true`: only the store knows
    *   which happened at the moment it happens.
-   * @returns What happened, or `null` when the user does not exist in that environment (nothing
-   *   is written or recorded).
+   * @param history - What becomes of the previous passwords, and the current hash the new
+   *   password was compared with, if it was.
+   * @returns What happened; `'stale'` when `history.ifCurrent` is no longer the stored hash;
+   *   or `null` when the user does not exist in that environment. For the last two nothing is
+   *   written or recorded.
    */
   setPasswordHash(
     environmentId: string,
     userId: string,
     passwordHash: string,
     at: Date,
-    activity: Recorded
-  ): Promise<PasswordOutcome | null>
+    activity: Recorded,
+    history: PasswordHistoryRule
+  ): Promise<PasswordOutcome | 'stale' | null>
+
+  /**
+   * The hashes a new password of the user is compared with (ADR 0038): the current one and
+   * the most recent previous ones.
+   *
+   * Not a snapshot: an adapter may read the current hash and the previous ones in two
+   * statements, and a password change can land between them or after both. What covers that
+   * is not this read but the write: {@link setPasswordHash} is told the current hash that was
+   * compared with (`ifCurrent`) and stores nothing when it is no longer the current one.
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @param previous - How many previous hashes to return at most.
+   * @returns The hashes (a user with no password, or none in that environment: `current` is
+   *   `null` and `previous` is empty).
+   */
+  storedPasswords(environmentId: string, userId: string, previous: number): Promise<StoredPasswords>
+
+  /**
+   * Delete previous passwords that are beyond what the environment now keeps, for the
+   * retention job (ADR 0017): what a lowered `password.history` left with users who have not
+   * changed their password since.
+   *
+   * It never waits for a row a password change holds: such rows are passed over and go in a
+   * later call, so a purge and a user's own change cannot block or deadlock each other. A
+   * return below `limit` therefore does not promise that nothing is left.
+   *
+   * @param environmentId - The environment to purge.
+   * @param keep - How many previous passwords a user may have (`password.history` minus one,
+   *   at least 0).
+   * @param limit - The most rows to delete in this call.
+   * @returns How many rows were deleted.
+   */
+  deletePasswordHistoryBeyond(environmentId: string, keep: number, limit: number): Promise<number>
 
   /**
    * Replace a password hash with a stronger hash **of the same password**, only if the stored
    * hash is still the one that was verified. A plain write here could overwrite a password that
    * was changed between the verify and the upgrade, bringing the old password back.
+   *
+   * It is not a new password, so the previous passwords are left exactly as they are: the old
+   * hash is not kept (the same password would then be there twice). For the same reason the
+   * time the password was set does not move: an expired password stays expired (ADR 0041).
    *
    * @param environmentId - The user's environment.
    * @param userId - The user.
@@ -247,7 +432,9 @@ export interface UserRepository {
    * exists on an account whose address nobody had proven was chosen by whoever made the
    * account, who is not known to be the address's owner, and must not start working the moment
    * the owner verifies it (a pre-hijack; ADR 0024). An address that was already verified
-   * changes nothing and removes nothing.
+   * changes nothing and removes nothing. The account's previous passwords are deleted with
+   * the password, in that transaction: they were chosen by the same stranger, and the owner
+   * must never be refused a password because of them (ADR 0038).
    *
    * @param environmentId - The user's environment.
    * @param userId - The user.
@@ -264,6 +451,59 @@ export interface UserRepository {
     activity: Recorded,
     removePassword?: { activity: Recorded }
   ): Promise<{ passwordRemoved: boolean }>
+
+  /**
+   * Store an email address on a user who has **none**, with its `email` identity, in one
+   * transaction (ADR 0059). There is no other write of a user's address: this never
+   * replaces one.
+   *
+   * The unique key is the arbiter: an address another user has is `taken`, whatever a
+   * caller looked up before, and of two users adding the same address at once exactly one
+   * gets it. The user's row is locked while it is read and written, so of two additions to
+   * one user at once the second is `has_email`.
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @param address - The address, when it was proven (or `null`) and its identity's id.
+   * @param at - Update time.
+   * @param activity - Recorded in the same transaction, only if the address was stored.
+   * @returns The user as they now are, or why nothing was written or recorded.
+   */
+  addEmail(
+    environmentId: string,
+    userId: string,
+    address: NewEmailAddress,
+    at: Date,
+    activity: Recorded
+  ): Promise<UserRecord | AddEmailRefusal>
+
+  /**
+   * Count the users who have an account of a provider connected and could not sign in
+   * without it (ADR 0059): what an operator is shown before the provider is switched off.
+   *
+   * Whether a user could still sign in is the caller's to say (`canStillSignIn`, the one
+   * definition of "a way to sign in"), asked with everything the user has, the provider's
+   * own identity included: the caller leaves that provider out of what it accepts.
+   *
+   * **Bounded work**: at most `limit` users of the provider are looked at, found through
+   * the identities' key on the environment and the provider. Past that the answer says
+   * `more` and the count is a floor.
+   *
+   * A read, with no lock: the count is what was true while it was read, for a question an
+   * operator is asked. Nothing is refused on it.
+   *
+   * @param environmentId - The environment.
+   * @param provider - The provider.
+   * @param canStillSignIn - The caller's rule, asked once per user looked at.
+   * @param limit - The most users to look at.
+   * @returns The count, and whether users were left unlooked at.
+   */
+  countDependentOn(
+    environmentId: string,
+    provider: OAuthProvider,
+    canStillSignIn: (means: SignInMeans) => boolean,
+    limit: number
+  ): Promise<DependentAccounts>
 
   /**
    * @param environmentId - The user's environment.
@@ -301,7 +541,144 @@ export interface UserRepository {
   ): Promise<UserRecord | null>
 
   /**
-   * Delete a user and, by cascade, their identities, credentials, sessions and attempts.
+   * The users of an environment whose account holds a phone number, oldest account first.
+   *
+   * A number is not unique (ADR 0037), so this answers a list. **It is the one read by
+   * number, and it has one caller**: `Phone.signInHolder`, for a sign-in with a texted code.
+   * Nothing else may find an account from a number: not linking, not a sign-up, not a reset,
+   * not a search (`modules/phone/lookup.test.ts` walks the sources).
+   *
+   * @param environmentId - The environment to search.
+   * @param phoneNumber - The number, in E.164 form.
+   * @param limit - The most users to return. Two is enough to tell one holder from several.
+   * @returns The holders, at most `limit`; empty when nobody holds the number.
+   */
+  findByPhoneNumber(
+    environmentId: string,
+    phoneNumber: string,
+    limit: number
+  ): Promise<UserRecord[]>
+
+  /**
+   * Move the time a user's phone number was last proven, after a sign-in with a code texted
+   * to it: the number has just been shown, again, to be theirs.
+   *
+   * Bookkeeping like {@link UserRepository.recordSignIn}, and **not recorded**: it changes
+   * nothing about who can do what today (the session it follows is recorded as
+   * `session.created`), it only keeps the number from lapsing as a way to sign in
+   * (ADR 0012, ADR 0037). It writes only while the account still holds exactly that number,
+   * and never moves the time backwards.
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @param phoneNumber - The number the code was texted to, in E.164 form.
+   * @param at - When the code was accepted.
+   */
+  recordPhoneNumberProof(
+    environmentId: string,
+    userId: string,
+    phoneNumber: string,
+    at: Date
+  ): Promise<void>
+
+  /**
+   * Store a phone number the user has just proven, with the time it was proven, replacing
+   * the one they had. Always a write, and always recorded: proving the same number again
+   * moves its verification time. **A texted code that was the user's second factor goes
+   * when the number changes**, in the same statement (it was a factor of the old number);
+   * proving the same number again keeps it.
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @param phoneNumber - The number, in E.164 form.
+   * @param at - Verification time.
+   * @param activity - Recorded in the same transaction, only if the user exists.
+   * @param factorRemoved - Recorded in the same transaction, only if the user's texted-code
+   *   second factor was on and went with the number it was texted to.
+   * @returns The user as they now are, or `null` when they do not exist (nothing is written).
+   */
+  setPhoneNumber(
+    environmentId: string,
+    userId: string,
+    phoneNumber: string,
+    at: Date,
+    activity: Recorded,
+    factorRemoved: Recorded
+  ): Promise<UserRecord | null>
+
+  /**
+   * Take the phone number, and its verification time, off a user. **A texted code that was
+   * the user's second factor goes with it, in the same statement**: there is never a factor
+   * without the number it is texted to.
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @param at - Update time.
+   * @param activity - Recorded in the same transaction, only if a number was removed.
+   * @param factorRemoved - Recorded in the same transaction, only if the user's texted-code
+   *   second factor was on and went with the number.
+   * @returns `false` when the user has no number, or does not exist (nothing is recorded).
+   */
+  removePhoneNumber(
+    environmentId: string,
+    userId: string,
+    at: Date,
+    activity: Recorded,
+    factorRemoved: Recorded
+  ): Promise<boolean>
+
+  /**
+   * Make a code texted to the user's phone number their second factor (ADR 0025).
+   *
+   * A compare-and-set: it writes only while the account still holds exactly `phoneNumber`
+   * (the number the confirming code was texted to) and the factor is not on already. So a
+   * number replaced or removed while its code was on its way enrols nothing, and of two
+   * confirmations at once one wins.
+   *
+   * **Whether a stronger factor stands in the way is part of the write.** Under the user's
+   * row lock the store reads what the user holds now ({@link StrongerFactorsHeld}) and asks
+   * `allowed`; the service's own earlier look is a courtesy. A passkey's registration takes
+   * the same lock and so does an authenticator's confirmation, so neither can arrive
+   * between this read and this write.
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @param phoneNumber - The number the confirming code was texted to, in E.164 form.
+   * @param at - When it was confirmed.
+   * @param allowed - The service's rule, asked with what the user holds at the write.
+   * @param activity - Recorded in the same transaction, only if the factor was turned on.
+   * @returns `'enabled'`; `'stale'` when the number is not the account's or the factor is
+   *   on already (or there is no such user); `'stronger_factor'` when `allowed` refused.
+   *   Nothing is written or recorded for the last two.
+   */
+  enableSmsFactor(
+    environmentId: string,
+    userId: string,
+    phoneNumber: string,
+    at: Date,
+    allowed: (held: StrongerFactorsHeld) => boolean,
+    activity: Recorded
+  ): Promise<SmsFactorEnableOutcome>
+
+  /**
+   * Stop a texted code being the user's second factor. The phone number stays.
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @param at - Update time.
+   * @param activity - Recorded in the same transaction, only if the factor was on.
+   * @returns `false` when it was not on, or the user does not exist (nothing is recorded).
+   */
+  disableSmsFactor(
+    environmentId: string,
+    userId: string,
+    at: Date,
+    activity: Recorded
+  ): Promise<boolean>
+
+  /**
+   * Delete a user and, by cascade, their identities, credentials (with every previous
+   * password kept for them), sessions and attempts.
    *
    * @param environmentId - The user's environment.
    * @param userId - The user.
@@ -309,4 +686,35 @@ export interface UserRepository {
    * @returns `false` when they do not exist.
    */
   delete(environmentId: string, userId: string, activity: Recorded): Promise<boolean>
+
+  /**
+   * Record that a sign-in test started or finished (ADR 0058), and nothing else: the entry
+   * is the whole write. It is here, beside the users, because what a test makes and removes
+   * is a user; the run's own writes are recorded by the methods that make them.
+   *
+   * @param environmentId - The environment the test runs in.
+   * @param activity - `sign_in_test.started` or `sign_in_test.finished`.
+   */
+  reportSignInTest(environmentId: string, activity: Activity): Promise<void>
+
+  /**
+   * Delete the throwaway users of sign-in tests that are older than a cutoff, for the
+   * retention job (ADR 0017, ADR 0058): what a test whose own deletion failed, or whose
+   * process ended before it, left behind.
+   *
+   * A user is one of them by its address alone (the reserved test domain, which no person's
+   * account can hold), never by a flag a request could set.
+   *
+   * @param environmentId - The environment to purge.
+   * @param before - Users created strictly before this time are deleted.
+   * @param limit - The most users to delete in this call.
+   * @param record - Makes the entry recorded with each deletion, in its transaction.
+   * @returns How many users were deleted.
+   */
+  deleteTestUsersBefore(
+    environmentId: string,
+    before: Date,
+    limit: number,
+    record: (userId: string) => Activity
+  ): Promise<number>
 }

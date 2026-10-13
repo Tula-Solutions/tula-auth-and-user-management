@@ -44,6 +44,16 @@ export class MemoryPasskeyStore implements PasskeyStore {
     users?.countPasskeysWith((environmentId, userId) => this.#of(environmentId, userId).length)
   }
 
+  /**
+   * Whether this store reports to a given user repository.
+   *
+   * @param users - The repository.
+   * @returns `true` when it is the one this store was built on.
+   */
+  belongsTo(users: MemoryUserRepository): boolean {
+    return this.#users === users
+  }
+
   #of(environmentId: string, userId: string): PasskeyRecord[] {
     return [...this.#passkeys.values()]
       .filter((passkey) => passkey.environmentId === environmentId && passkey.userId === userId)

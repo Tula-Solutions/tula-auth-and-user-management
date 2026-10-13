@@ -1,16 +1,23 @@
-import { afterEach, describe, expect, setSystemTime, test } from 'bun:test'
+import { afterAll, afterEach, describe, expect, setSystemTime, test } from 'bun:test'
 import { createTulaClient, isTulaError, type TulaClient } from '@tula/core'
 import { NextRequest } from 'next/server'
 import { FixedClock } from '../../../apps/api/src/adapters/memory/clock'
 import { createApp } from '../../../apps/api/src/index'
+import * as Hooks from '../../../apps/api/src/modules/hook/service'
 import {
   createTestDeps,
   seedApiKey,
+  TEST_ACTOR,
   TEST_CONFIG,
   TEST_TENANT,
   type TestDeps,
 } from '../../../apps/api/src/testing'
-import { DEFAULT_ENVIRONMENT_SETTINGS, EnvironmentSettingsSchema } from '../../contract/src/index'
+import {
+  DEFAULT_ENVIRONMENT_SETTINGS,
+  EnvironmentSettingsSchema,
+  jwtTemplateMaxBytes,
+  MAX_CUSTOM_CLAIMS_BYTES,
+} from '../../contract/src/index'
 import type { TulaServerOptions } from './config'
 import { createTulaHandlers } from './handlers'
 import { authenticate, fetchCurrentUser } from './helpers'
@@ -473,5 +480,209 @@ describe('a stateful session behind the route handler', () => {
       publicRoutes: ['/'],
     })(new NextRequest(`${APP}/dashboard`, { headers: { cookie } }))
     expect(replay.status).toBe(307)
+  })
+})
+
+describe('custom claims from a JWT template (ADR 0036)', () => {
+  const template = {
+    claims: {
+      role: { value: 'member' },
+      email: { from: 'user.email' },
+      verified: { from: 'user.email_verified' },
+      client: { from: 'session.client' },
+    },
+  }
+
+  async function templatedWorld(
+    type: 'hybrid' | 'stateful',
+    jwtTemplates: Record<string, unknown> = { app: template }
+  ) {
+    const w = await world()
+    w.deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+      revision: 1,
+      settings: EnvironmentSettingsSchema.parse({
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        sessions: { jwtTemplates, profiles: { web: { type, jwtTemplate: 'app' } } },
+      }),
+    })
+    return w
+  }
+
+  test('auth() returns the claims of a token session, verified offline', async () => {
+    const w = await templatedWorld('hybrid')
+    const { browser, email } = await signUp(w)
+    w.apiCalls.length = 0
+    const response = await browser.visit('/dashboard')
+    expect(isNext(response)).toBe(true)
+    const auth = await authenticate(passedOn(response), w.instance())
+    expect(auth.customClaims).toEqual({ role: 'member', email, verified: true, client: 'web' })
+    expect(auth.claims?.ext).toEqual(auth.customClaims as Record<string, unknown>)
+    // Read from the token: nothing but the keys was asked of the API.
+    expect(w.apiCalls.filter((call) => !call.endsWith('/jwks.json'))).toEqual([])
+  })
+
+  test('a refresh by the middleware carries the claims as the template is then', async () => {
+    const w = await templatedWorld('hybrid')
+    const { browser } = await signUp(w)
+    w.deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+      revision: 2,
+      settings: EnvironmentSettingsSchema.parse({
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        sessions: {
+          jwtTemplates: { app: { claims: { role: { value: 'owner' } } } },
+          profiles: { web: { jwtTemplate: 'app' } },
+        },
+      }),
+    })
+    w.advance(61_000)
+    const response = await browser.visit('/dashboard')
+    expect(isNext(response)).toBe(true)
+    const auth = await authenticate(passedOn(response), w.instance())
+    expect(auth.customClaims).toEqual({ role: 'owner' })
+  })
+
+  test('auth() returns the same claims for a stateful session, with and without the middleware', async () => {
+    const w = await templatedWorld('stateful')
+    const { browser, email } = await signUp(w)
+    expect([...browser.jar.keys()]).toEqual(['tula_session'])
+    const options = w.instance({ secretKey: SECRET_KEY })
+    const expected = { role: 'member', email, verified: true, client: 'web' }
+
+    const response = await browser.visit('/dashboard')
+    w.apiCalls.length = 0
+    const behind = await authenticate(passedOn(response), options)
+    expect(behind.customClaims).toEqual(expected)
+    // From the middleware's sealed header: the API was not asked again.
+    expect(w.apiCalls).toEqual([])
+
+    const direct = new Request(`${APP}/x`, { headers: { cookie: browser.cookieHeader() } })
+    expect((await authenticate(direct, options)).customClaims).toEqual(expected)
+  })
+
+  test('a session without a template has an empty record, for both session types', async () => {
+    for (const type of ['hybrid', 'stateful'] as const) {
+      const w = await world()
+      w.deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+        revision: 1,
+        settings: EnvironmentSettingsSchema.parse({
+          ...DEFAULT_ENVIRONMENT_SETTINGS,
+          sessions: { profiles: { web: { type } } },
+        }),
+      })
+      const { browser } = await signUp(w)
+      const response = await browser.visit('/dashboard')
+      const auth = await authenticate(passedOn(response), w.instance({ secretKey: SECRET_KEY }))
+      expect(auth.isSignedIn).toBe(true)
+      expect(auth.customClaims).toEqual({})
+      expect(auth.claims && 'ext' in auth.claims).toBe(false)
+    }
+  })
+
+  // The access token is a cookie on every request to the app. A browser allows about 4,096
+  // bytes for a cookie's name and value together; the cap on the namespace claim is what
+  // keeps the largest token a template can produce inside it.
+  test('the largest claims a template can produce still fit the access-token cookie', async () => {
+    const big = {
+      claims: {
+        a: { value: 'x'.repeat(256) },
+        b: { value: 'y'.repeat(256) },
+        c: { value: 'z'.repeat(256) },
+        d: { value: 'w'.repeat(220) },
+      },
+    }
+    expect(jwtTemplateMaxBytes(big)).toBeGreaterThan(MAX_CUSTOM_CLAIMS_BYTES - 16)
+    expect(jwtTemplateMaxBytes(big)).toBeLessThanOrEqual(MAX_CUSTOM_CLAIMS_BYTES)
+
+    const plain = await world()
+    const without = (await signUp(plain)).browser.jar.get('tula_at') ?? ''
+    const w = await templatedWorld('hybrid', { app: big })
+    const { browser } = await signUp(w)
+    const token = browser.jar.get('tula_at') ?? ''
+    const cookie = '__Host-tula_at='.length + token.length
+    // 4/3 of the cap, and the `,"ext":` that introduces it.
+    expect(token.length - without.length).toBeLessThanOrEqual(
+      Math.ceil(((MAX_CUSTOM_CLAIMS_BYTES + 8) * 4) / 3) + 2
+    )
+    expect(cookie).toBeLessThanOrEqual(4096 - 1024)
+
+    const response = await browser.visit('/dashboard')
+    const auth = await authenticate(passedOn(response), w.instance())
+    expect(Object.keys(auth.customClaims ?? {})).toEqual(['a', 'b', 'c', 'd'])
+  })
+})
+
+describe('claims from a before_token hook (ADR 0035)', () => {
+  let asked: Record<string, unknown>[] = []
+  const receiver = Bun.serve({
+    port: 0,
+    hostname: '127.0.0.1',
+    async fetch(request) {
+      asked.push(((await request.json()) as { data: Record<string, unknown> }).data)
+      return Response.json({ claims: { plan: 'pro', seats: 5, role: 'owner' } })
+    },
+  })
+  afterAll(() => receiver.stop(true))
+
+  async function hookedWorld(type: 'hybrid' | 'stateful') {
+    asked = []
+    const w = await world()
+    w.deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+      revision: 1,
+      settings: EnvironmentSettingsSchema.parse({
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        sessions: {
+          jwtTemplates: {
+            app: { claims: { role: { value: 'member' }, client: { from: 'session.client' } } },
+          },
+          profiles: { web: { type, jwtTemplate: 'app' } },
+        },
+      }),
+    })
+    await Hooks.create(
+      w.deps,
+      TEST_TENANT,
+      {
+        point: 'before_token',
+        url: `http://127.0.0.1:${receiver.port}/tula/before-token`,
+        enabled: true,
+        deadlineMs: 2000,
+        failureMode: 'deny',
+      },
+      TEST_ACTOR
+    )
+    return w
+  }
+  // The template's claims with the hook's over them: the hook's `role` wins.
+  const expected = { role: 'owner', client: 'web', plan: 'pro', seats: 5 }
+
+  test('auth() returns the hook’s claim for a token session, and a refresh asks the hook nothing', async () => {
+    const w = await hookedWorld('hybrid')
+    const { browser } = await signUp(w)
+    expect(asked).toHaveLength(1)
+    const response = await browser.visit('/dashboard')
+    const auth = await authenticate(passedOn(response), w.instance())
+    expect(auth.customClaims).toEqual(expected)
+    expect(auth.customClaims?.plan).toBe('pro')
+
+    const before = browser.jar.get('tula_at')
+    w.advance(61_000)
+    const later = await browser.visit('/dashboard')
+    expect(isNext(later)).toBe(true)
+    // The middleware refreshed: a new access token, the same claims, and no second question.
+    expect(browser.jar.get('tula_at')).not.toBe(before)
+    expect((await authenticate(passedOn(later), w.instance())).customClaims).toEqual(expected)
+    expect(asked).toHaveLength(1)
+  })
+
+  test('auth() returns it for a stateful session, with and without the middleware', async () => {
+    const w = await hookedWorld('stateful')
+    const { browser } = await signUp(w)
+    expect([...browser.jar.keys()]).toEqual(['tula_session'])
+    const options = w.instance({ secretKey: SECRET_KEY })
+    const response = await browser.visit('/dashboard')
+    expect((await authenticate(passedOn(response), options)).customClaims).toEqual(expected)
+    const direct = new Request(`${APP}/x`, { headers: { cookie: browser.cookieHeader() } })
+    expect((await authenticate(direct, options)).customClaims).toEqual(expected)
+    expect(asked).toHaveLength(1)
   })
 })

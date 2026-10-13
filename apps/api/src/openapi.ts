@@ -1,4 +1,11 @@
-import { DASHBOARD_SESSION_COOKIE, ErrorEnvelopeSchema } from '@tula/contract'
+import {
+  DASHBOARD_SESSION_COOKIE,
+  ErrorEnvelopeSchema,
+  HookAnswerSchema,
+  HookClaimsAnswerSchema,
+  HookQuestionSchema,
+  TulaEventSchema,
+} from '@tula/contract'
 import type { GenerateSpecOptions } from 'hono-openapi'
 import { resolver } from 'hono-openapi'
 import { PUBLISHABLE_KEY_HEADER } from '~/middleware/publishable-key'
@@ -105,6 +112,35 @@ export const instanceResponses = {
 /** One alternative of a route's security: the schemes that must all be presented. */
 type SecurityRequirement = Record<string, string[]>
 
+/** Path prefix of the admin API in the document. */
+const ADMIN_PATHS = '/v1/admin/'
+
+/**
+ * Say in the document what `secretKey()` does for an agent key (ADR 0053): every **read** of
+ * the admin API also takes one, and nothing else there does.
+ *
+ * It is done here, for the whole document, and not in each route's `security`, for the
+ * reason the rule itself is in the middleware and not in each route: a new admin route is
+ * right without anyone remembering. A `GET` under `/v1/admin/` that takes the secret key
+ * gains the `agentKey` alternative; every other operation is left as its route wrote it.
+ * (`HEAD` is accepted too and is not in the document, like every `HEAD` of the API.)
+ *
+ * @param paths - The document's `paths`. Changed in place.
+ */
+export function documentAgentReads(
+  paths: Record<string, Record<string, { security?: SecurityRequirement[] } | undefined>>
+): void {
+  for (const [path, item] of Object.entries(paths)) {
+    const read = path.startsWith(ADMIN_PATHS) ? item.get : undefined
+    if (
+      read?.security?.some((alternative) => 'secretKey' in alternative) &&
+      !read.security.some((alternative) => 'agentKey' in alternative)
+    ) {
+      read.security = [...read.security, { agentKey: [] }]
+    }
+  }
+}
+
 /**
  * Security requirements per route group, for `describeRoute({ security })`.
  *
@@ -112,20 +148,23 @@ type SecurityRequirement = Record<string, string[]>
  * - `client`: publishable key (browsers and apps).
  * - `session`: publishable key plus a signed-in user's access token.
  * - `admin`: a secret key (servers), or a dashboard session together with the
- *   `x-tula-environment` header (the dashboard).
+ *   `x-tula-environment` header (the dashboard). A `GET` with it also takes an agent key:
+ *   {@link documentAgentReads} adds that to the document, no route writes it.
  * - `instance`: the instance admin token (`TULA_ADMIN_TOKEN`) or a dashboard session, for
  *   `/v1/instance/*`.
+ * - `agent`: an agent key only, for `/v1/agent/*` (ADR 0053).
  * - `instanceToken`: the instance admin token only.
  * - `dashboard`: a dashboard session only.
  */
 export const security: Record<
-  'public' | 'client' | 'session' | 'admin' | 'instance' | 'instanceToken' | 'dashboard',
+  'public' | 'client' | 'session' | 'admin' | 'agent' | 'instance' | 'instanceToken' | 'dashboard',
   SecurityRequirement[]
 > = {
   public: [],
   client: [{ publishableKey: [] }],
   session: [{ publishableKey: [], accessToken: [] }],
   admin: [{ secretKey: [] }, { dashboardSession: [] }],
+  agent: [{ agentKey: [] }],
   instance: [{ instanceAdminToken: [] }, { dashboardSession: [] }],
   instanceToken: [{ instanceAdminToken: [] }],
   dashboard: [{ dashboardSession: [] }],
@@ -166,7 +205,7 @@ export const documentation: GenerateSpecOptions['documentation'] = {
     {
       name: 'OAuth',
       description:
-        'Sign-in with Google, GitHub and Apple: provider credentials (admin), the provider callback, and a user’s connected accounts.',
+        'Sign-in with Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X and Facebook: provider credentials (admin), the provider callback, and a user’s connected accounts.',
     },
     {
       name: 'Settings',
@@ -174,6 +213,21 @@ export const documentation: GenerateSpecOptions['documentation'] = {
         'Per-environment settings (admin) and the public configuration clients draw from them.',
     },
     { name: 'Audit', description: 'The record of auth events and admin actions (admin).' },
+    {
+      name: 'Webhooks',
+      description:
+        'Where an environment’s events are delivered, signed, to an operator’s backend (admin).',
+    },
+    {
+      name: 'Hooks',
+      description:
+        'Signed questions the server asks an operator’s backend before it acts, whose answer allows or denies (admin). Not webhooks: a webhook is a notice of what has already happened.',
+    },
+    {
+      name: 'Native apps',
+      description:
+        'The iOS and Android apps an environment says are its own (admin), and the two association files the platforms fetch to believe it: Apple’s `apple-app-site-association` and Android’s `assetlinks.json` (public).',
+    },
   ],
   components: {
     securitySchemes: {
@@ -194,6 +248,12 @@ export const documentation: GenerateSpecOptions['documentation'] = {
         scheme: 'bearer',
         description: 'Secret key `tula_sk_<env>_…`. Server-side only.',
       },
+      agentKey: {
+        type: 'http',
+        scheme: 'bearer',
+        description:
+          'Agent key `tula_ak_<env>_…`: what an AI agent’s MCP server holds. It is accepted on every `GET` of `/v1/admin/*` (it reads what a secret key reads) and on `/v1/agent/*`: it asks for a change as a proposal, and runs a sign-in test where the environment allows one (a throwaway user, made and deleted). It changes nothing else: every other route that changes anything answers `auth.invalid_key`.',
+      },
       instanceAdminToken: {
         type: 'http',
         scheme: 'bearer',
@@ -209,4 +269,43 @@ export const documentation: GenerateSpecOptions['documentation'] = {
       },
     },
   },
+}
+
+/**
+ * The event payloads as OpenAPI components: `TulaEvent` (any event, told apart by `type`), one
+ * `<Name>Event` and `<Name>EventData` per activity type, and what they refer to.
+ *
+ * No route returns an event (a webhook delivers one to the operator's endpoint), so nothing
+ * in `paths` refers to these schemas and the generator, which collects components from the
+ * routes, would leave them out. They are added to the document's `components.schemas` where
+ * it is assembled (`createApp`), converted by the same resolver as every route's schema.
+ *
+ * @returns The schemas by component name.
+ */
+export async function eventSchemas() {
+  const { components } = await resolver(TulaEventSchema).toOpenAPISchema()
+  return components?.schemas ?? {}
+}
+
+/**
+ * The question and the answer of a hook as OpenAPI components: `HookQuestion` (any question,
+ * told apart by `type`), one `Hook<Point>Question` and `Hook<Point>Data` per point, and
+ * `HookAnswer`.
+ *
+ * No route returns either (the server posts a question to the operator's endpoint and reads
+ * its answer), so, like the event payloads, they are added to the document's
+ * `components.schemas` where it is assembled (`createApp`). Generated clients get their types
+ * from here: that is how a receiver written against `@tula/admin` is typed end to end.
+ *
+ * @returns The schemas by component name.
+ */
+export async function hookSchemas() {
+  const question = await resolver(HookQuestionSchema).toOpenAPISchema()
+  const answer = await resolver(HookAnswerSchema).toOpenAPISchema()
+  const claims = await resolver(HookClaimsAnswerSchema).toOpenAPISchema()
+  return {
+    ...question.components?.schemas,
+    ...answer.components?.schemas,
+    ...claims.components?.schemas,
+  }
 }

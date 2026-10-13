@@ -1,6 +1,7 @@
 import { createHmac } from 'node:crypto'
 import AxeBuilder from '@axe-core/playwright'
 import { type APIRequestContext, expect, type Page } from '@playwright/test'
+import { phoneNumberCountries } from '../../packages/contract/src/phone'
 
 /** The fixture's API (e2e/server.ts). */
 export const API_URL = 'http://localhost:4318'
@@ -86,10 +87,17 @@ export interface TestSettings {
       emailLink: { enabled: boolean }
       /** Passkeys; the fixture's relying party is `localhost`. Off when left out. */
       passkey?: { enabled: boolean }
+      /** The texted sign-in code (ADR 0037); it also needs `sms`. Off when left out. */
+      smsCode?: { enabled: boolean }
     }
   }
   signUp?: { password: 'required' | 'optional' }
-  mfa?: { policy: 'off' | 'optional' | 'required' }
+  /** Rules of the password policy to change; the rest stays the default policy. */
+  password?: { preset: 'custom'; history?: number; expiryDays?: number | null }
+  /** The policy and, off when left out, a texted code as the second step (ADR 0025). */
+  mfa?: { policy: 'off' | 'optional' | 'required'; smsCode?: { enabled: boolean } }
+  /** Text messages (ADR 0037). Off, with no country allowed, when left out. */
+  sms?: { enabled: boolean; allowedCountries: string[]; dailyMessageLimit?: number }
   /** Session profiles and the concurrent-session rule (ADR 0028). */
   sessions?: {
     profiles?: Record<
@@ -112,6 +120,65 @@ export async function useSettings(
 ): Promise<void> {
   const response = await request.post(`${API_URL}/__test/settings`, { data: settings })
   expect(response.ok()).toBe(true)
+}
+
+/** The last three passwords, the current one included, cannot be chosen again (ADR 0038). */
+export const HISTORY_OF_THREE: TestSettings = { password: { preset: 'custom', history: 3 } }
+
+/** A password older than a day is replaced at the next sign-in with it (ADR 0041). */
+export const EXPIRY_OF_ONE_DAY: TestSettings = { password: { preset: 'custom', expiryDays: 1 } }
+
+/** Text messages on, to United States numbers only. */
+export const SMS_ON: TestSettings = { sms: { enabled: true, allowedCountries: ['US'] } }
+
+let phoneNumbers = 0
+/**
+ * A United States number nobody has (`555-01XX` is kept for fiction), different on every
+ * call so that one test's per-number limits are not another's.
+ */
+export function uniquePhoneNumber(): string {
+  phoneNumbers += 1
+  const last = String(phoneNumbers % 100).padStart(2, '0')
+  let offset = Math.floor(Date.now() / 1000) % 700
+  // `+1` is shared by some twenty-five countries: an area code such as 441 (Bermuda) is
+  // another country's own prefix, and a test that allows the United States alone is then
+  // refused `sms.country_not_allowed`. A draw that is not a number of the United States, or
+  // is an N11 service code (211, 311, …), moves on to the next area code.
+  for (let tries = 0; tries < 700; tries += 1) {
+    const number = `+1${201 + offset}55501${last}`
+    if (offset % 100 !== 10 && phoneNumberCountries(number).includes('US')) {
+      return number
+    }
+    offset = (offset + 1) % 700
+  }
+  throw new Error('no United States area code was found')
+}
+
+/**
+ * The 6-digit code in the newest text message to a number, read from the fixture's SMS
+ * outbox.
+ *
+ * @param request - Playwright's API client (the test process, not the page).
+ * @param to - The number in E.164 form.
+ */
+export async function latestSmsCode(request: APIRequestContext, to: string): Promise<string> {
+  let code: string | undefined
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get(`${API_URL}/__test/sms?to=${encodeURIComponent(to)}`)
+        const { data } = (await response.json()) as { data: { text: string }[] }
+        // The last run of exactly six digits: the origin-bound line repeats the code last.
+        code = data
+          .at(-1)
+          ?.text.match(/(?<![0-9])[0-9]{6}(?![0-9])/g)
+          ?.at(-1)
+        return code
+      },
+      { message: 'a text message with a code' }
+    )
+    .toBeTruthy()
+  return code as string
 }
 
 /** Every email method on, beside the password. */
@@ -391,7 +458,16 @@ export async function expectAccessible(page: Page, state: string): Promise<void>
  */
 export async function useProviders(
   request: APIRequestContext,
-  providers: ('google' | 'github' | 'apple')[] = []
+  providers: (
+    | 'google'
+    | 'github'
+    | 'apple'
+    | 'microsoft'
+    | 'discord'
+    | 'linkedin'
+    | 'x'
+    | 'facebook'
+  )[] = []
 ): Promise<void> {
   const response = await request.post(`${API_URL}/__test/oauth`, { data: { providers } })
   expect(response.ok()).toBe(true)
@@ -400,18 +476,38 @@ export async function useProviders(
 /**
  * Play the user at the mock provider's consent page, which the browser is on after
  * "Continue with …": say which address the provider reports, and continue (or cancel).
+ * For X and Facebook, which are asked for no address, `email` is left out (what is typed
+ * there is dropped) and the account is its `subject`, digits only.
  */
 export async function consentAtProvider(
   page: Page,
-  consent: { email: string; unverified?: boolean; subject?: string; cancel?: boolean }
+  consent: {
+    email?: string
+    /** For Microsoft: leave the verified-domain claim out of the token. */
+    unverified?: boolean
+    subject?: string
+    /** Microsoft only: the tenant id (`tid`) and object id (`oid`) of the account. */
+    tenantId?: string
+    objectId?: string
+    cancel?: boolean
+  }
 ): Promise<void> {
   await expect(page.getByRole('heading', { name: /^Mock .* sign-in$/ })).toBeVisible()
-  await page.getByLabel('Email address the provider reports').fill(consent.email)
+  if (consent.email !== undefined) {
+    await page.getByLabel(/^Email address/).fill(consent.email)
+  }
   if (consent.subject) {
     await page.getByLabel(/^Account id/).fill(consent.subject)
   }
+  if (consent.tenantId) {
+    await page.getByLabel('Tenant id (tid)').fill(consent.tenantId)
+  }
+  if (consent.objectId) {
+    await page.getByLabel(/^Object id/).fill(consent.objectId)
+  }
   if (consent.unverified) {
-    await page.getByLabel('Report the email as unverified').check()
+    // "Report the email as unverified", or for Microsoft the claim that is left out.
+    await page.getByLabel(/unverified$/).check()
   }
   await page.getByRole('button', { name: consent.cancel ? 'Cancel' : 'Continue' }).click()
 }

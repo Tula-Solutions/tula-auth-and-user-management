@@ -1,7 +1,11 @@
+import type { DeviceKey } from '@tula/contract/device-binding'
 import { createLinkStore, type EmailLinkOutcome, handleEmailLink } from './email-link'
 import { type Environment, runtimeEnvironment } from './environment'
 import { clientError, type Messages } from './errors'
 import {
+  type IdTokenProvider,
+  type IdTokenSignIn,
+  idTokenSignIn,
   type PasswordResetFlow,
   passkeySignIn,
   passwordResetFlow,
@@ -10,7 +14,7 @@ import {
   signInFlow,
   signUpFlow,
 } from './flows'
-import { isBackupCodes, isFactors, isStepUpPrepared, isTotpEnrolment } from './mfa'
+import { isBackupCodes, isFactors, isPhoneCodeSent, isStepUpPrepared, isTotpEnrolment } from './mfa'
 import {
   createOAuthStore,
   createOAuthTicketHolder,
@@ -23,7 +27,8 @@ import {
   startOAuth,
 } from './oauth'
 import {
-  browserAuthenticator,
+  authenticatorOf,
+  browserProvider,
   isCreationOptions,
   isPasskeyAnswer,
   isPasskeyList,
@@ -45,10 +50,13 @@ import type {
   BackupCodes,
   ClientConfig,
   ClientKind,
+  EmailCodeSent,
   Factors,
   FetchLike,
   Passkey,
+  PhoneCodeSent,
   Session,
+  SmsFactorCode,
   StepUpPrepared,
   StepUpProof,
   TotpEnrolment,
@@ -112,6 +120,27 @@ export interface TulaClientOptions {
    * ```
    */
   sessionProfile?: string
+  /**
+   * A key to bind this client's sessions to (ADR 0043). With one, every sign-in, sign-up and
+   * password reset this client starts asks for a **device-bound** session, and every refresh
+   * proves the key: a refresh token copied off the device is then of no use without it. The
+   * proofs (`DPoP` headers) and the server's nonce are handled by the client.
+   *
+   * Not for `web` clients: a browser has nowhere to keep a key that outlives what steals its
+   * tokens. A native SDK supplies a key held by the Secure Enclave or StrongBox;
+   * `generateSoftwareDeviceKey` makes one in software.
+   *
+   * The key must stay the same for as long as its sessions live: a session is bound to one
+   * key for good, and a client that has lost the key can only sign in again. The proof names
+   * `baseUrl`, which must therefore be the API's own public address, not a proxy's.
+   *
+   * @example
+   * ```ts
+   * const deviceKey = await generateSoftwareDeviceKey()
+   * const tula = createTulaClient({ publishableKey, baseUrl, client: 'ios', storage, deviceKey })
+   * ```
+   */
+  deviceKey?: DeviceKey
   /** The `fetch` to use. Defaults to the global one. */
   fetch?: FetchLike
   /** Called after every change of {@link AuthState}; the same as a first `onChange` listener. */
@@ -290,7 +319,44 @@ export interface TulaClient {
      */
     withPasskey(request?: PasskeyRequest): Promise<SignInFlow>
     /**
-     * "Continue with Google, GitHub or Apple": a sign-in that creates the account when the
+     * A native app's "Continue with Google" or "Sign in with Apple", with no browser: start
+     * a sign-in whose proof is the ID token the provider's own SDK hands the app (Credential
+     * Manager on Android, Google Sign-In on iOS, the system's Sign in with Apple sheet). For
+     * `ios` and `android` clients only, and for Apple an `ios` client.
+     *
+     * Two calls. This one asks the API for an attempt and a **nonce the server made**. Give
+     * the nonce to the provider's SDK as the nonce of its sign-in request (**Google:
+     * unchanged; Apple: its SHA-256 in lowercase hexadecimal**, see
+     * {@link IdTokenSignIn.nonce}), then pass the ID token it returns to `exchange`, once.
+     * The token must have been issued for a client id the environment accepts (for Apple:
+     * the bundle id of one of its registered iOS apps) and carry that nonce in that form;
+     * anything else is `auth.invalid_credentials`, whatever the reason, and the sign-in
+     * starts again. Like `withOAuth`, it creates the account when the provider's verified
+     * address has none. Apple's token has no name: pass the one the sheet gave the app as
+     * the second argument of `exchange`.
+     *
+     * @param input - The provider.
+     * @returns The nonce, and `exchange(idToken, name?)`, which resolves to the sign-in flow
+     *   past its first factor (`complete`, or waiting on a second factor or an enrolment).
+     * @throws TulaError `auth.method_disabled` (the provider is not enabled, or for Apple no
+     *   iOS app is registered) and `validation.failed` (the client is not a native one, or
+     *   not `ios` for Apple) from this call; `auth.invalid_credentials`,
+     *   `oauth.account_exists`, `oauth.email_unverified`, `oauth.email_missing` from
+     *   `exchange`.
+     *
+     * @example
+     * ```ts
+     * const pending = await tula.signIn.withIdToken({ provider: 'google' })
+     * const idToken = await askGoogleForAnIdToken({ nonce: pending.nonce })
+     * const flow = await pending.exchange(idToken)
+     * if (flow.step.status === 'complete') {
+     *   showApp()
+     * }
+     * ```
+     */
+    withIdToken(input: { provider: IdTokenProvider }): Promise<IdTokenSignIn>
+    /**
+     * "Continue with Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X or Facebook": a sign-in that creates the account when the
      * provider's verified address has none.
      *
      * Asks the API for the provider's URL, keeps the round trip's binding for this tab
@@ -495,7 +561,7 @@ export interface TulaClient {
      * }
      * ```
      */
-    prepareStepUp(request: { method: 'email_code' }): Promise<StepUpPrepared>
+    prepareStepUp(request: { method: 'email_code' | 'sms_code' }): Promise<StepUpPrepared>
   }
   /** The signed-in user. */
   readonly user: {
@@ -569,7 +635,111 @@ export interface TulaClient {
        */
       remove(input: { passkeyId: string }): Promise<void>
     }
-    /** The provider accounts (Google, GitHub, Apple) connected to the signed-in user. */
+    /**
+     * The signed-in user's phone number: one, optional, proven with a 6-digit code sent by
+     * text message. Each call may answer `auth.step_up_required`; see `session.stepUp`.
+     *
+     * Whether a number can be added at all is `phone.enabled` of `config.get()`. The number
+     * itself is `phoneNumber` of the user, with `phoneNumberVerifiedAt`.
+     */
+    readonly phone: {
+      /**
+       * Text a 6-digit code to a number the user wants on their account. The number is
+       * only pending: the account's own number, if it has one, stays until `verify`.
+       *
+       * @param input - The number, with its country code (`+14155550142`; spaces, hyphens
+       *   and parentheses are ignored).
+       * @returns The receipt: the number masked and when the code expires. Never the code.
+       * @throws TulaError `phone.invalid` for what is not a phone number, `sms.disabled`
+       *   where the application sends no text messages, `sms.country_not_allowed` for a
+       *   number of a country it does not send to, `sms.unavailable` when the message could
+       *   not be sent, `rate_limited` when a code was sent too recently or too often.
+       *
+       * @example
+       * ```ts
+       * const sent = await tula.user.phone.request({ phoneNumber: '+1 415 555 0142' })
+       * ```
+       */
+      request(input: { phoneNumber: string }): Promise<PhoneCodeSent>
+      /**
+       * Prove the pending number with the code texted to it. The number becomes the
+       * account's, replacing one it had, and the state's user is updated.
+       *
+       * @param input - The 6-digit code.
+       * @returns The user, with the number.
+       * @throws TulaError `verification.invalid_code` for a wrong code,
+       *   `verification.expired` when no code is waiting (none was asked for, or it expired,
+       *   was used or was replaced), `verification.too_many_attempts` or `rate_limited`
+       *   after repeated wrong codes, `sms.disabled` or `sms.country_not_allowed` when the
+       *   application stopped sending to that number since the code was asked for.
+       *
+       * @example
+       * ```ts
+       * const user = await tula.user.phone.verify({ code: '482913' })
+       * user.phoneNumber // '+14155550142'
+       * ```
+       */
+      verify(input: { code: string }): Promise<User>
+      /**
+       * Take the phone number off the account. Nothing happens when it has none.
+       *
+       * @example
+       * ```ts
+       * await tula.user.phone.remove()
+       * ```
+       */
+      remove(): Promise<void>
+    }
+    /**
+     * An email address for a signed-in user whose account has **none**: one made by a
+     * first sign-in with X or Facebook, which give no address. Proven with a 6-digit code
+     * emailed to it. Each call may answer `auth.step_up_required`; see `session.stepUp`.
+     * A user with no address, no passkey and no authenticator app has nothing to step up
+     * with (`params.methods` is empty): they sign in again and ask within the window.
+     *
+     * It never changes an address: for a user who has one, both calls answer
+     * `email.already_set`.
+     */
+    readonly email: {
+      /**
+       * Email a 6-digit code to the address the user wants on their account. The address
+       * is only pending until `verify`. The answer is the same whether or not another
+       * account has the address: that one is sent a notice with no code, and no code
+       * confirms it.
+       *
+       * @param input - The address.
+       * @returns The receipt: the address masked and when the code expires. Never the code.
+       * @throws TulaError `email.already_set` for a user who has an address,
+       *   `request.validation_failed` for what is not an address, `rate_limited` when a
+       *   code was sent too recently or too often.
+       *
+       * @example
+       * ```ts
+       * const sent = await tula.user.email.request({ email: 'ada@example.com' })
+       * ```
+       */
+      request(input: { email: string }): Promise<EmailCodeSent>
+      /**
+       * Prove the pending address with the code emailed to it. The address becomes the
+       * account's, verified, and the state's user is updated.
+       *
+       * @param input - The 6-digit code.
+       * @returns The user, with the address.
+       * @throws TulaError `verification.invalid_code` for a wrong code,
+       *   `verification.expired` when no code is waiting (none was asked for, or it
+       *   expired, was used or was replaced; also when the address was taken by another
+       *   account meanwhile), `verification.too_many_attempts` or `rate_limited` after
+       *   repeated wrong codes, `email.already_set` for a user who has an address.
+       *
+       * @example
+       * ```ts
+       * const user = await tula.user.email.verify({ code: '482913' })
+       * user.email // 'ada@example.com'
+       * ```
+       */
+      verify(input: { code: string }): Promise<User>
+    }
+    /** The provider accounts (Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X, Facebook) connected to the signed-in user. */
     readonly identities: {
       /**
        * @returns The connected accounts, oldest first.
@@ -660,6 +830,44 @@ export interface TulaClient {
      */
     disableTotp(): Promise<void>
     /**
+     * Text a 6-digit code to the account's proven phone number, to make a texted code the
+     * user's second step. It is offered only where the application has switched it on
+     * (`config.mfa.smsCode`), to a user with a proven number and no authenticator app or
+     * passkey (`mfa.get().sms.available`). A new call replaces the earlier code.
+     *
+     * @returns The masked number and when the code stops working. Never the code.
+     * @throws TulaError `mfa.not_available` where the application does not offer it,
+     *   `mfa.phone_number_required` for an account with no proven number,
+     *   `mfa.sms_not_allowed` for a user who has an authenticator app or a passkey,
+     *   `mfa.already_enabled`, `rate_limited` (with `retryAfterMs`) when asked too soon,
+     *   `sms.disabled`, `sms.country_not_allowed` or `sms.unavailable` when the message
+     *   cannot be sent, `auth.step_up_required`.
+     * @example
+     * ```ts
+     * const { destination } = await tula.mfa.startSms()
+     * await tula.mfa.confirmSms({ code: await askForCode(destination) })
+     * ```
+     */
+    startSms(): Promise<SmsFactorCode>
+    /**
+     * Confirm the texted code: it is now the user's second step, and their other sessions
+     * end. The client then refreshes this session, as after `confirmTotp`. There are no
+     * backup codes for a texted code.
+     *
+     * @param input - The code.
+     * @returns What the user has enrolled now.
+     * @throws TulaError `mfa.invalid_code` for a wrong, used or expired code, `rate_limited`
+     *   after repeated wrong codes, and what `startSms` refuses with.
+     */
+    confirmSms(input: { code: string }): Promise<Factors>
+    /**
+     * Stop using a texted code as the second step. The phone number stays on the account.
+     *
+     * @throws TulaError `mfa.not_enabled`, `mfa.required_by_policy` where the application
+     *   requires a second step and this is the user's only one, `auth.step_up_required`.
+     */
+    disableSms(): Promise<void>
+    /**
      * Replace the user's backup codes. The earlier ones stop working.
      *
      * @returns Ten new backup codes, once.
@@ -699,13 +907,28 @@ function defaultClientKind(): ClientKind {
 }
 
 /**
- * Build a client with an explicit environment (clock, locks, channel). Tests use this to pass
- * fakes; applications use {@link createTulaClient}.
+ * Build a client with an explicit environment: what it takes from the runtime besides
+ * `fetch`. Exported as `createTulaClientWithEnvironment`.
+ *
+ * Applications use {@link createTulaClient}, which reads the runtime's own. This is for a
+ * runtime that is not a browser and has its own way of doing what a browser's globals do: a
+ * native app's passkey sheet (`passkeyProvider`) and its system browser session, which is
+ * given a place in memory for the binding of a provider round trip (`tabStorage`) and the
+ * address it came back to (`page`). `@tula/expo` is built on it, and tests pass fakes.
  *
  * @param options - The client's options.
- * @param environment - What the client takes from the runtime.
+ * @param environment - What the client takes from the runtime. Start from
+ *   `runtimeEnvironment()` and replace what the runtime does differently.
  * @returns The client.
  * @throws TypeError for options that can never work.
+ *
+ * @example
+ * ```ts
+ * const tula = createTulaClientWithEnvironment(
+ *   { publishableKey, baseUrl, client: 'ios', storage },
+ *   { ...runtimeEnvironment(), passkeyProvider }
+ * )
+ * ```
  */
 export function createClient(options: TulaClientOptions, environment: Environment): TulaClient {
   const { publishableKey } = options
@@ -738,6 +961,12 @@ export function createClient(options: TulaClientOptions, environment: Environmen
       'createTulaClient: `sessionProfile` must be a profile name: lowercase letters, digits and single hyphens, at most 32 characters'
     )
   }
+  // A key handed over as an option, or the runtime's own way to one (`Environment.deviceKey`).
+  const { deviceKey: key } = options
+  const deviceKey = key ? () => key : environment.deviceKey
+  if (deviceKey && client === 'web') {
+    throw new TypeError('createTulaClient: `deviceKey` is not available to a `web` client')
+  }
   const refreshTimeoutMs = Math.min(timeoutMs, REFRESH_TIMEOUT_MS)
   const send = options.fetch ?? ((request: Request) => globalThis.fetch(request))
 
@@ -755,6 +984,7 @@ export function createClient(options: TulaClientOptions, environment: Environmen
     timeoutMs,
     messages: currentMessages,
     ...(sessionProfile && { sessionProfile }),
+    ...(deviceKey && { deviceKey }),
   })
   const session = createSessionManager({
     client,
@@ -774,8 +1004,15 @@ export function createClient(options: TulaClientOptions, environment: Environmen
   const links = createLinkStore(environment, scope)
   // Looked up when a passkey is asked for, not when the client is made: a page may gain or
   // lose WebAuthn (an extension, a test) after that.
-  const passkeys = () =>
-    environment.passkeys ? browserAuthenticator(environment.passkeys, currentMessages) : undefined
+  const provider = () => environment.passkeyProvider ?? browserProvider(environment.passkeys)
+  /** The runtime's ceremonies, or the error that says there are none. */
+  function passkeys(): PasskeyAuthenticator {
+    const found = provider()
+    if (!found) {
+      throw clientError('passkey.unsupported', messages)
+    }
+    return authenticatorOf(found, currentMessages)
+  }
   const flows = {
     transport,
     session,
@@ -786,14 +1023,6 @@ export function createClient(options: TulaClientOptions, environment: Environmen
     passkeys,
   }
 
-  /** The browser's ceremonies, or the error that says there are none. */
-  function authenticator(): PasskeyAuthenticator {
-    const found = passkeys()
-    if (!found) {
-      throw clientError('passkey.unsupported', messages)
-    }
-    return found
-  }
   const oauth = {
     ...flows,
     oauth: createOAuthStore(environment, scope),
@@ -807,6 +1036,61 @@ export function createClient(options: TulaClientOptions, environment: Environmen
       throw clientError('response.invalid', messages)
     }
     return answer
+  }
+  /**
+   * Ask for a code to be sent to the signed-in user and return its receipt, and only the
+   * receipt: whatever else an answer held does not travel further.
+   */
+  async function receipt<Method extends 'email_code' | 'sms_code'>(
+    operation: 'sendStepUpEmailCode' | 'sendStepUpSmsCode' | 'startSmsFactorEnrolment',
+    method: Method
+  ): Promise<{ method: Method; destination: string; expiresAt: string }> {
+    const answer = checked(await session.authorized(operation, {}), isStepUpPrepared)
+    if (answer.method !== method) {
+      throw clientError('response.invalid', messages)
+    }
+    return { method, destination: answer.destination, expiresAt: answer.expiresAt }
+  }
+  /**
+   * After a factor was confirmed: the server now holds this session to have proven it, but
+   * the access token in hand was issued before, and the next sensitive call would answer
+   * `auth.step_up_required`. A refresh brings a token that says so. It is made only for the
+   * session that asked (a client signed out meanwhile stays signed out), and its failure is
+   * not the caller's: what the confirmation answered (backup codes exist nowhere else) must
+   * reach them.
+   */
+  async function proven(asked: AuthState): Promise<void> {
+    const now = session.state()
+    if (
+      asked.status === 'signed-in' &&
+      now.status === 'signed-in' &&
+      now.sessionId === asked.sessionId
+    ) {
+      await session.refresh().catch(() => session.expire())
+    }
+  }
+  /**
+   * Run a call that answers the signed-in user, and show that user in the state.
+   *
+   * The user belongs to the session that asked. If that session ended, or someone else
+   * signed in, while the request was in flight, it must not become the new state's user.
+   */
+  async function asUser<T extends User | null>(call: () => Promise<T>): Promise<T> {
+    // Settle who is signed in first (a client that has not loaded yet restores its session
+    // here), so that the answer can be tied to that session.
+    await session.getToken()
+    const asked = session.state()
+    const user = await call()
+    const now = session.state()
+    if (
+      user &&
+      asked.status === 'signed-in' &&
+      now.status === 'signed-in' &&
+      now.sessionId === asked.sessionId
+    ) {
+      session.setUser(user)
+    }
+    return user
   }
   let handlingLink: Promise<EmailLinkOutcome> | null = null
   let handlingOAuth: Promise<OAuthCallbackOutcome> | null = null
@@ -842,9 +1126,16 @@ export function createClient(options: TulaClientOptions, environment: Environmen
         }
         return handlingLink
       },
-      canUsePasskey: () => passkeys() !== undefined,
-      canAutofillPasskey: async () => (await passkeys()?.autofillAvailable()) ?? false,
+      canUsePasskey: () => provider() !== undefined,
+      async canAutofillPasskey() {
+        try {
+          return (await provider()?.autofillAvailable?.()) === true
+        } catch {
+          return false
+        }
+      },
       withPasskey: (request) => passkeySignIn(flows, request),
+      withIdToken: (input) => idTokenSignIn(flows, input.provider),
       canUseOAuth: () => oauth.oauth.available(),
       withOAuth: (input) => startOAuth(oauth, input, 'sign_in'),
       handleOAuthCallback() {
@@ -882,7 +1173,7 @@ export function createClient(options: TulaClientOptions, environment: Environmen
       revokeOthers: async () => (await session.authorized('revokeOtherSessions', {})).revoked,
       stepUp: (proof) => session.stepUp(proof),
       async stepUpWithPasskey(request = {}) {
-        const ceremonies = authenticator()
+        const ceremonies = passkeys()
         const options = checked(
           await session.authorized('getStepUpPasskeyOptions', {}),
           isRequestOptions
@@ -890,33 +1181,43 @@ export function createClient(options: TulaClientOptions, environment: Environmen
         const credential = await ceremonies.get(options, { signal: request.signal })
         await session.stepUp({ method: 'passkey', credential })
       },
-      async prepareStepUp() {
-        const { destination, expiresAt } = checked(
-          await session.authorized('sendStepUpEmailCode', {}),
-          isStepUpPrepared
-        )
-        // Only the receipt: whatever else an answer held does not travel further.
-        return { method: 'email_code', destination, expiresAt }
-      },
+      prepareStepUp: ({ method }) =>
+        receipt(method === 'sms_code' ? 'sendStepUpSmsCode' : 'sendStepUpEmailCode', method),
     },
     user: {
-      async get() {
-        // Settle who is signed in first (a client that has not loaded yet restores its
-        // session here), so that the answer can be tied to that session.
-        await session.getToken()
-        const asked = session.state()
-        const user = await session.authorized('getMe', {})
-        const now = session.state()
-        // The user belongs to the session that asked. If that session ended, or someone else
-        // signed in, while the request was in flight, it must not become the new state's user.
-        if (
-          asked.status === 'signed-in' &&
-          now.status === 'signed-in' &&
-          now.sessionId === asked.sessionId
-        ) {
-          session.setUser(user)
-        }
-        return user
+      get: () => asUser(() => session.authorized('getMe', {})),
+      email: {
+        async request(input) {
+          const { destination, expiresAt } = checked(
+            await session.authorized('requestEmailAddressCode', { body: input }),
+            isPhoneCodeSent
+          )
+          // Only the receipt: whatever else an answer held does not travel further.
+          return { destination, expiresAt }
+        },
+        verify: (input) => asUser(() => session.authorized('verifyEmailAddress', { body: input })),
+      },
+      phone: {
+        async request(input) {
+          const { destination, expiresAt } = checked(
+            await session.authorized('requestPhoneCode', { body: input }),
+            isPhoneCodeSent
+          )
+          // Only the receipt: whatever else an answer held does not travel further.
+          return { destination, expiresAt }
+        },
+        verify: (input) => asUser(() => session.authorized('verifyPhoneNumber', { body: input })),
+        async remove() {
+          await asUser(async () => {
+            await session.authorized('removePhoneNumber', {})
+            const now = session.state()
+            // What the server now holds, without asking it again. `null` when the state has
+            // no user to correct: nothing is installed then.
+            return now.status === 'signed-in' && now.user
+              ? { ...now.user, phoneNumber: null, phoneNumberVerifiedAt: null }
+              : null
+          })
+        },
       },
       async changePassword(input) {
         await session.authorized('changeMyPassword', { body: input })
@@ -935,7 +1236,7 @@ export function createClient(options: TulaClientOptions, environment: Environmen
             toPasskey
           ),
         async add(input = {}) {
-          const ceremonies = authenticator()
+          const ceremonies = passkeys()
           const options = checked(
             await session.authorized('startPasskeyRegistration', {}),
             isCreationOptions
@@ -978,23 +1279,25 @@ export function createClient(options: TulaClientOptions, environment: Environmen
           await session.authorized('confirmTotpEnrolment', { body: { code } }),
           isBackupCodes
         )
-        // The server now holds this session to have proven the factor, but the access token
-        // in hand was issued before: the next sensitive call would answer
-        // `auth.step_up_required`. A refresh brings a token that says so. It is made only for
-        // the session that asked (a client signed out meanwhile stays signed out), and its
-        // failure is not the caller's: the codes exist nowhere else and must reach them.
-        const now = session.state()
-        if (
-          asked.status === 'signed-in' &&
-          now.status === 'signed-in' &&
-          now.sessionId === asked.sessionId
-        ) {
-          await session.refresh().catch(() => session.expire())
-        }
+        await proven(asked)
         return { codes }
       },
       async disableTotp() {
         await session.authorized('disableTotp', {})
+      },
+      startSms: () => receipt('startSmsFactorEnrolment', 'sms_code'),
+      async confirmSms({ code }) {
+        await session.getToken()
+        const asked = session.state()
+        const factors = checked(
+          await session.authorized('confirmSmsFactorEnrolment', { body: { code } }),
+          isFactors
+        )
+        await proven(asked)
+        return factors
+      },
+      async disableSms() {
+        await session.authorized('disableSmsFactor', {})
       },
       regenerateBackupCodes: async () => {
         const { codes } = checked(

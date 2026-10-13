@@ -2,9 +2,26 @@ import type { Deps, Tenant } from '~/dependencies'
 import * as Email from '~/modules/email/service'
 import type { VerificationPurpose } from '~/ports/verification-token-store'
 
+/**
+ * The purposes whose code goes out by email. A `phone_verification` code and an
+ * `sms_sign_in` code are texted, by the caller's own delivery (`modules/phone`, the flow
+ * service): there is no email for either. An `email_addition` code is emailed, but by its
+ * caller's own delivery too (`modules/email-address`: the address may be another account's,
+ * which is then sent a notice and no code), so this mailer has no message for it.
+ */
+export type EmailedPurpose = Exclude<
+  VerificationPurpose,
+  | 'email_addition'
+  | 'phone_verification'
+  | 'sms_sign_in'
+  | 'sms_factor_enrolment'
+  | 'sms_second_factor'
+  | 'sms_step_up'
+>
+
 /** What a verification email needs. */
 export interface CodeEmail {
-  purpose: VerificationPurpose
+  purpose: EmailedPurpose
   /** Recipient, as the user entered it. */
   to: string
   code: string

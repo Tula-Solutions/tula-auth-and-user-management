@@ -6,7 +6,8 @@ import type {
   PageLike,
 } from '../environment'
 import type { Schemas } from '../generated/api.gen'
-import type { PasskeyGlobals } from '../passkey'
+import type { PasskeyGlobals, PasskeyProvider } from '../passkey'
+import type { DeviceKeySource } from '../transport'
 import type { FetchLike } from '../types'
 
 /** A publishable key that passes the client's shape check. */
@@ -154,8 +155,8 @@ export function sessionTokens(
   }
 }
 
-/** A user as `/v1/client/me` returns it. */
-export const TEST_USER: Schemas['CurrentUser'] = {
+/** A user as `/v1/client/me` returns it: one with an address, as every test means unless it says otherwise. */
+export const TEST_USER: Schemas['CurrentUser'] & { email: string } = {
   id: 'user_1',
   email: 'maya@northline.app',
   emailVerifiedAt: '2030-01-01T00:00:00.000Z',
@@ -422,6 +423,8 @@ export function fakeEnvironment(
     page?: PageLike
     timers?: FakeTimers
     passkeys?: PasskeyGlobals
+    passkeyProvider?: PasskeyProvider
+    deviceKey?: DeviceKeySource
   } = {}
 ): Environment {
   const hub = parts.hub
@@ -433,6 +436,8 @@ export function fakeEnvironment(
     tabStorage: parts.tabStorage,
     page: parts.page,
     passkeys: parts.passkeys,
+    ...(parts.passkeyProvider && { passkeyProvider: parts.passkeyProvider }),
+    ...(parts.deviceKey && { deviceKey: parts.deviceKey }),
     setTimer:
       parts.timers?.setTimer ??
       ((callback, ms) => {

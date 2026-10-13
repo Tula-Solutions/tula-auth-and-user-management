@@ -40,6 +40,10 @@ export interface TulaLocalization {
     /** Shown until the app's name is known. */
     subtitleNoApp: string
     emailLabel: string
+    /** The first field's label where a texted code is among the ways to sign in. */
+    identifierLabel: string
+    /** Under that field: how to write a phone number. */
+    identifierHint: string
     continue: string
     passwordTitle: string
     passwordLabel: string
@@ -72,6 +76,24 @@ export interface TulaLocalization {
     /** `{time}`. */
     emailResendIn: string
     emailResent: string
+    /** The button that asks for a texted code, and the title before one was asked for. */
+    smsCode: string
+    /** Before a code was asked for. */
+    smsCodePrompt: string
+    /** The title once a code was asked for. */
+    smsTitle: string
+    /**
+     * `{destination}` is the masked number (`***42`). It must not say that a message was
+     * sent: the server answers the same for a number that signs nobody in, and sends nothing.
+     */
+    smsCodeSubtitle: string
+    smsResend: string
+    /** `{time}`. */
+    smsResendIn: string
+    /** After asking again. Like the subtitle, it promises no message. */
+    smsResent: string
+    /** A texted code that did not sign in: wrong, expired, or a number that signs nobody in. */
+    smsCodeWrong: string
   }
   /** `<SignUp>`. */
   signUp: {
@@ -104,7 +126,7 @@ export interface TulaLocalization {
     /** The link back to `<SignIn>`. */
     signIn: string
   }
-  /** Signing in with a provider (Google, GitHub, Apple), and the page it returns to. */
+  /** Signing in with a provider (Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X, Facebook), and the page it returns to. */
   oauth: {
     /** `{provider}` is the provider's name. */
     continueWith: string
@@ -156,6 +178,18 @@ export interface TulaLocalization {
     empty: string
     add: string
     added: string
+    /**
+     * Above "Add a passkey" for a user whose second step is a code by text message: the
+     * passkey takes that step over, and it has no backup codes.
+     */
+    replacesTextedCode: string
+    /**
+     * Read with "Add a passkey" while the account's second step is still being read: the
+     * button is unavailable until it is known whether a passkey would replace a texted code.
+     */
+    addChecking: string
+    /** Read with "Add a passkey" when that read failed: the button stays unavailable. */
+    addUnchecked: string
     /** In place of "Add a passkey" in a browser without WebAuthn. */
     addUnsupported: string
     /**
@@ -218,6 +252,13 @@ export interface TulaLocalization {
     submit: string
     backToSignIn: string
   }
+  /** A sign-in stopped because the password is older than the environment allows. */
+  expiredPassword: {
+    title: string
+    subtitle: string
+    newPasswordLabel: string
+    submit: string
+  }
   /** Password fields and the live checklist. */
   password: {
     show: string
@@ -229,6 +270,12 @@ export interface TulaLocalization {
     summary: string
     /** One line per rule; `{min}` and `{max}` come from the policy. */
     rules: Record<PasswordRule, string>
+    /** The history rule, which only the server can judge. `{count}`: the policy's number. */
+    history: string
+    /** The history rule where the policy remembers only the current password. */
+    historyCurrent: string
+    /** The state of the history rule before the server has answered. */
+    checkedOnSave: string
   }
   /** Two-step verification: the second factor at sign-in, enrolment, backup codes. */
   mfa: {
@@ -285,6 +332,67 @@ export interface TulaLocalization {
     regenerated: string
     /** Shown instead of "Turn off" where the app requires two-step verification. */
     requiredByApp: string
+    /** Above the button that texts a code, at a sign-in's second step. Nothing was sent yet. */
+    smsSubtitle: string
+    /** The button that texts the code: a message is sent only when the user asks. */
+    smsSend: string
+    /** The profile's line for a user who could use a texted code as their second step. */
+    smsOffer: string
+    /** The profile's button that starts it. */
+    smsTurnOn: string
+    /** `{date}`. */
+    smsStatusOn: string
+    /**
+     * Beside `smsStatusOn` while an authenticator app or a passkey is used instead: the
+     * texted code is set aside, not removed, and is the second step again once the stronger
+     * method is gone. The user is told both halves.
+     */
+    smsNotInUse: string
+    /** Shown where a texted code is the second step and no authenticator app is set up. */
+    smsWeaker: string
+    smsTurnOff: string
+    smsTurnedOn: string
+    smsTurnedOff: string
+  }
+  /** The profile's "Phone number" section (ADR 0037). */
+  phone: {
+    sectionTitle: string
+    none: string
+    verified: string
+    add: string
+    change: string
+    /** The accessible name of "Change". */
+    changeLabel: string
+    remove: string
+    /** The accessible name of "Remove". */
+    removeLabel: string
+    numberLabel: string
+    numberHint: string
+    send: string
+    /** `{digits}` is the last digits of the number the code was texted to. */
+    codeSent: string
+    verify: string
+    differentNumber: string
+    cancel: string
+    added: string
+    removed: string
+  }
+  /** The profile's "Email address" section, for an account that has none (ADR 0059). */
+  emailAddress: {
+    sectionTitle: string
+    none: string
+    add: string
+    addressLabel: string
+    send: string
+    /**
+     * `{destination}` is the server's mask of the address. Never worded as "we sent a
+     * code": an address another account holds is emailed a notice with no code.
+     */
+    checkInbox: string
+    verify: string
+    differentAddress: string
+    cancel: string
+    added: string
   }
   /** The dialog that asks a signed-in user to prove who they are before a sensitive change. */
   stepUp: {
@@ -304,6 +412,8 @@ export interface TulaLocalization {
     emailInstead: string
     /** Offered next to the emailed code: switch back to the password. */
     passwordInstead: string
+    /** Above the button that texts a code. Nothing was sent yet. */
+    smsSubtitle: string
     submit: string
     cancel: string
     /** Shown when the user has nothing to step up with: they must sign in again. */
@@ -353,6 +463,12 @@ export interface TulaLocalization {
     sessionsTitle: string
     sessionsLoading: string
     thisDevice: string
+    /**
+     * Marks a session that is bound to a device key (ADR 0043): it can be refreshed only by
+     * the app installation that signed in. It says what the session needs, not what the
+     * device is: binding proves possession of a key and nothing about the device.
+     */
+    deviceBound: string
     activeNow: string
     /** `{time}` is a relative time such as "2 days ago". */
     lastActive: string
@@ -425,6 +541,8 @@ export const EN_LOCALIZATION: TulaLocalization = {
     subtitle: 'to continue to {appName}',
     subtitleNoApp: 'Welcome back',
     emailLabel: 'Email address',
+    identifierLabel: 'Email address or phone number',
+    identifierHint: 'For a phone number, include the country code, for example +1 415 555 0142.',
     continue: 'Continue',
     passwordTitle: 'Enter your password',
     passwordLabel: 'Password',
@@ -451,6 +569,16 @@ export const EN_LOCALIZATION: TulaLocalization = {
     emailResend: 'Send a new email',
     emailResendIn: 'Send a new email in {time}',
     emailResent: 'A new email is on its way.',
+    smsCode: 'Text me a code',
+    smsCodePrompt: 'We will text a 6-digit code to this number, if you can sign in with it.',
+    smsTitle: 'Check your phone',
+    smsCodeSubtitle:
+      'If you can sign in with the number ending in {destination}, we texted it a 6-digit code. Enter it here.',
+    smsResend: 'Text a new code',
+    smsResendIn: 'Text a new code in {time}',
+    smsResent: 'If you can sign in with this number, a new code is on its way.',
+    smsCodeWrong:
+      'That code did not sign you in. Check it, ask for a new one, or sign in another way.',
   },
   signUp: {
     title: 'Create your account',
@@ -497,7 +625,7 @@ export const EN_LOCALIZATION: TulaLocalization = {
     refusedTitle: 'We could not sign you in',
     noneTitle: 'Nothing to finish here',
     noneMessage:
-      'This page finishes a sign-in with Google, GitHub or Apple, and this address does not carry one.',
+      'This page finishes a sign-in with a provider such as Google or Microsoft, and this address does not carry one.',
     linkedTitle: 'Account connected',
     linkedMessage: 'Your {provider} account is connected. You can now use it to sign in.',
     errorTitle: 'We could not finish signing you in',
@@ -523,6 +651,11 @@ export const EN_LOCALIZATION: TulaLocalization = {
     empty: 'You have no passkeys yet.',
     add: 'Add a passkey',
     added: 'Your passkey was added.',
+    replacesTextedCode:
+      'Once you add a passkey, it replaces the code by text message as your second step. A passkey has no backup codes: if you lose it, only an administrator of this app can let you back in.',
+    addChecking: 'Checking your second step before a passkey can be added…',
+    addUnchecked:
+      'Your second step could not be checked, so a passkey cannot be added right now. Reload the page to try again.',
     addUnsupported:
       'This browser cannot create passkeys. You can still rename or remove the ones you have.',
     addUnavailable:
@@ -569,6 +702,12 @@ export const EN_LOCALIZATION: TulaLocalization = {
     submit: 'Reset password',
     backToSignIn: 'Back to sign in',
   },
+  expiredPassword: {
+    title: 'Your password has expired',
+    subtitle: 'Choose a new password to finish signing in.',
+    newPasswordLabel: 'New password',
+    submit: 'Save password and sign in',
+  },
   password: {
     show: 'Show password',
     hide: 'Hide password',
@@ -589,6 +728,9 @@ export const EN_LOCALIZATION: TulaLocalization = {
       repeated_characters: 'No more than {max} repeated characters in a row',
       sequence: 'No sequences like "abcd" or "1234"',
     },
+    history: 'Not one of your last {count} passwords',
+    historyCurrent: 'Not your current password',
+    checkedOnSave: 'Checked when you save',
   },
   mfa: {
     secondFactorTitle: 'Two-step verification',
@@ -640,6 +782,49 @@ export const EN_LOCALIZATION: TulaLocalization = {
     regenerate: 'New backup codes',
     regenerated: 'Your earlier backup codes no longer work.',
     requiredByApp: 'This app requires two-step verification, so it cannot be turned off.',
+    smsSubtitle: 'We will text a 6-digit code to the phone number on your account.',
+    smsSend: 'Text me a code',
+    smsOffer: 'You can also get a code by text message as your second step.',
+    smsTurnOn: 'Use text messages',
+    smsStatusOn: 'A code by text message is your second step since {date}.',
+    smsNotInUse:
+      'It is not asked for while you have an authenticator app or a passkey. If you remove that, the code by text message is your second step again.',
+    smsWeaker: 'An authenticator app is safer than a text message. You can add one here.',
+    smsTurnOff: 'Stop using text messages',
+    smsTurnedOn: 'A code by text message is now your second step.',
+    smsTurnedOff: 'Text messages are no longer your second step.',
+  },
+  phone: {
+    sectionTitle: 'Phone number',
+    none: 'No phone number.',
+    verified: 'Verified',
+    add: 'Add a phone number',
+    change: 'Change',
+    changeLabel: 'Change phone number',
+    remove: 'Remove',
+    removeLabel: 'Remove phone number',
+    numberLabel: 'Phone number',
+    numberHint: 'Include the country code, for example +1 415 555 0142.',
+    send: 'Send code',
+    codeSent: 'We sent a 6-digit code by text message to the number ending in {digits}.',
+    verify: 'Verify',
+    differentNumber: 'Use a different number',
+    cancel: 'Cancel',
+    added: 'Your phone number was added.',
+    removed: 'Your phone number was removed.',
+  },
+  emailAddress: {
+    sectionTitle: 'Email address',
+    none: 'This account has no email address.',
+    add: 'Add an email address',
+    addressLabel: 'Email address',
+    send: 'Send code',
+    checkInbox:
+      'Check {destination}. If that address can be added to this account, the email we sent holds a 6-digit code.',
+    verify: 'Verify',
+    differentAddress: 'Use a different address',
+    cancel: 'Cancel',
+    added: 'Your email address was added.',
   },
   stepUp: {
     title: 'Confirm it is you',
@@ -653,6 +838,7 @@ export const EN_LOCALIZATION: TulaLocalization = {
     emailSend: 'Send code',
     emailInstead: 'Email me a code instead',
     passwordInstead: 'Use your password instead',
+    smsSubtitle: 'To continue, we will text a 6-digit code to the phone number on your account.',
     submit: 'Continue',
     cancel: 'Cancel',
     noMethod: 'For your security, sign out and sign in again to continue.',
@@ -693,6 +879,7 @@ export const EN_LOCALIZATION: TulaLocalization = {
     sessionsTitle: 'Where you’re signed in',
     sessionsLoading: 'Loading your devices…',
     thisDevice: 'This device',
+    deviceBound: 'Bound to a device key',
     activeNow: 'Active now',
     lastActive: 'Last active {time}',
     deviceOn: '{browser} on {os}',

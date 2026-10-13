@@ -1,0 +1,419 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "webhook retried after a 500",
+  "description": "An operator's backend answers a delivery with 500 and then recovers. The server does not give the event up: the delivery stays pending with one attempt on record, cannot be sent again by hand while the server is retrying it, and is sent again by itself a few seconds later with the same webhook-id. The delivery log then shows both requests, each with a status code and a duration and nothing else of what the receiver said. A test event is a real signed delivery marked \"test\": true inside its signed body, recorded in the log and not in the audit log; and a delivery that was delivered can be sent again, with the same id. Needs a receiver the server can reach. The first retry is due five to six seconds after the failure (the schedule's first wait and its jitter), which is what the waits are for: a real sleep against a live server, the test clock in process.",
+  "needsSecretKey": true,
+  "needsWebhookReceiver": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    }
+  },
+  "steps": [
+    {
+      "name": "start a receiver that fails its first delivery",
+      "webhook": {
+        "receiver": "backend",
+        "captureUrl": "receiverUrl",
+        "answers": [500]
+      }
+    },
+    {
+      "name": "register the receiver for user.created",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/webhook-endpoints",
+        "auth": "secret",
+        "body": {
+          "url": "{{receiverUrl}}",
+          "eventTypes": ["user.created"]
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "enabled": true,
+          "disabledReason": null,
+          "failingSince": null
+        }
+      },
+      "capture": {
+        "endpointId": "id",
+        "secret": "secret"
+      }
+    },
+    {
+      "name": "something happens: an admin creates a user",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users",
+        "auth": "secret",
+        "body": {
+          "email": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 201
+      },
+      "capture": {
+        "userId": "id"
+      }
+    },
+    {
+      "name": "the event arrives, and the receiver answers 500",
+      "webhook": {
+        "receiver": "backend",
+        "expect": {
+          "secret": "{{secret}}",
+          "type": "user.created",
+          "body": {
+            "type": "user.created",
+            "target": {
+              "type": "user",
+              "id": "{{userId}}"
+            },
+            "test": "$absent"
+          },
+          "captureId": "eventId"
+        }
+      }
+    },
+    {
+      "name": "give the server a moment to record the answer",
+      "wait": "1s"
+    },
+    {
+      "name": "the delivery is pending, with one attempt and its status code",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/webhook-endpoints/{{endpointId}}/deliveries?state=pending",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1
+          },
+          "data": [
+            {
+              "id": "$any",
+              "endpointId": "{{endpointId}}",
+              "eventId": "{{eventId}}",
+              "eventType": "user.created",
+              "test": false,
+              "state": "pending",
+              "attemptCount": 1,
+              "statusCode": 500,
+              "failureReason": null,
+              "nextAttemptAt": "$any",
+              "completedAt": null
+            }
+          ]
+        },
+        "bodyExcludes": ["{{secret}}", "{{receiverUrl}}"]
+      },
+      "capture": {
+        "deliveryId": "data.0.id"
+      }
+    },
+    {
+      "name": "the endpoint says since when it has been failing",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/webhook-endpoints/{{endpointId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "enabled": true,
+          "disabledReason": null,
+          "failingSince": "$any"
+        }
+      }
+    },
+    {
+      "name": "it cannot be sent again by hand while the server is retrying it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/webhook-endpoints/{{endpointId}}/deliveries/{{deliveryId}}/redeliver",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "webhook.cannot_redeliver",
+          "params": {
+            "reason": "delivery_pending"
+          }
+        }
+      }
+    },
+    {
+      "name": "wait for the first retry to be due",
+      "wait": "7s"
+    },
+    {
+      "name": "the same event arrives again, with the same id, and is taken",
+      "webhook": {
+        "receiver": "backend",
+        "expect": {
+          "secret": "{{secret}}",
+          "type": "user.created",
+          "body": {
+            "id": "{{eventId}}",
+            "type": "user.created",
+            "target": {
+              "type": "user",
+              "id": "{{userId}}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "give the server a moment to record the answer again",
+      "wait": "1s"
+    },
+    {
+      "name": "the delivery is delivered, and the log has both requests: a status code and a duration each",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/webhook-endpoints/{{endpointId}}/deliveries/{{deliveryId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{deliveryId}}",
+          "eventId": "{{eventId}}",
+          "state": "delivered",
+          "attemptCount": 2,
+          "statusCode": 204,
+          "nextAttemptAt": null,
+          "completedAt": "$any",
+          "attempts": [
+            {
+              "attempt": 1,
+              "attemptedAt": "$any",
+              "statusCode": 500,
+              "durationMs": "$any",
+              "failureReason": null
+            },
+            {
+              "attempt": 2,
+              "attemptedAt": "$any",
+              "statusCode": 204,
+              "durationMs": "$any",
+              "failureReason": null
+            }
+          ]
+        },
+        "bodyExcludes": ["{{secret}}", "{{receiverUrl}}"]
+      }
+    },
+    {
+      "name": "the endpoint is no longer failing",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/webhook-endpoints/{{endpointId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "enabled": true,
+          "failingSince": null
+        }
+      }
+    },
+    {
+      "name": "a test event cannot carry an address or a payload of the caller's",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/webhook-endpoints/{{endpointId}}/test",
+        "auth": "secret",
+        "body": {
+          "eventType": "user.deleted",
+          "url": "https://example.com/elsewhere"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "validation.failed"
+        }
+      }
+    },
+    {
+      "name": "send a test event: the answer is the outcome, a status code and a duration",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/webhook-endpoints/{{endpointId}}/test",
+        "auth": "secret",
+        "body": {
+          "eventType": "user.deleted"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "deliveryId": "$any",
+          "outcome": "delivered",
+          "statusCode": 204,
+          "durationMs": "$any",
+          "failureReason": null
+        },
+        "bodyExcludes": ["{{secret}}", "{{receiverUrl}}"]
+      },
+      "capture": {
+        "testDeliveryId": "deliveryId"
+      }
+    },
+    {
+      "name": "the test event arrives signed, of a type the endpoint did not subscribe to, and says it is a test",
+      "webhook": {
+        "receiver": "backend",
+        "expect": {
+          "secret": "{{secret}}",
+          "type": "user.deleted",
+          "body": {
+            "type": "user.deleted",
+            "schemaVersion": 1,
+            "test": true
+          }
+        }
+      }
+    },
+    {
+      "name": "the test is in the delivery log, flagged, with no event",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/webhook-endpoints/{{endpointId}}/deliveries/{{testDeliveryId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "test": true,
+          "eventId": null,
+          "eventType": "user.deleted",
+          "state": "delivered",
+          "attemptCount": 1
+        }
+      }
+    },
+    {
+      "name": "the delivered event can be sent again by hand",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/webhook-endpoints/{{endpointId}}/deliveries/{{deliveryId}}/redeliver",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "deliveryId": "{{deliveryId}}",
+          "outcome": "delivered",
+          "statusCode": 204
+        }
+      }
+    },
+    {
+      "name": "it arrives with the same id once more: a receiver drops repeats by it",
+      "webhook": {
+        "receiver": "backend",
+        "expect": {
+          "secret": "{{secret}}",
+          "type": "user.created",
+          "body": {
+            "id": "{{eventId}}",
+            "test": "$absent"
+          }
+        }
+      }
+    },
+    {
+      "name": "neither the test nor sending again is in the audit log: only the registration is",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?targetId={{endpointId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1
+          },
+          "data": [
+            {
+              "action": "webhook_endpoint.created"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "switch the endpoint off",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/webhook-endpoints/{{endpointId}}",
+        "auth": "secret",
+        "body": {
+          "enabled": false
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "enabled": false,
+          "disabledReason": null
+        }
+      }
+    },
+    {
+      "name": "nothing is sent again to an endpoint that is off",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/webhook-endpoints/{{endpointId}}/deliveries/{{deliveryId}}/redeliver",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "webhook.cannot_redeliver",
+          "params": {
+            "reason": "endpoint_disabled"
+          }
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "remove the endpoint",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/webhook-endpoints/{{endpointId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "its delivery log is gone with it",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/webhook-endpoints/{{endpointId}}/deliveries",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 404
+      }
+    }
+  ]
+}

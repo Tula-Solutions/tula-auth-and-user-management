@@ -24,8 +24,8 @@ interpreter). An application under such a policy should switch the attempt off *
 the contract is imported: `import { config } from 'zod'; config({ jitless: true })` in a
 module that the entry point imports first (the dashboard's `src/lib/zod-csp.ts`), or, for a
 bundle that carries its own copy of Zod, `globalThis.__zod_globalConfig = { jitless: true }`
-in a script that runs before it. The Zod-free entry points (`/error-codes`, `/headers`,
-`/password-rules`, `/theme`, `/issuer`) need nothing.
+in a script that runs before it. The Zod-free entry points (`/error-codes`,
+`/event-types`, `/headers`, `/password-rules`, `/theme`, `/issuer`) need nothing.
 
 ## How a package is built and checked
 
@@ -57,7 +57,7 @@ bunx changeset           # which packages, which bump, the changelog line
 bunx changeset status    # what the next release would contain
 ```
 
-- `@tula/contract`, `@tula/core`, `@tula/react`, `@tula/nextjs`, `@tula/admin`, `@tula/config` and `@tula/cli` are a **fixed** group: they always share one version. The
+- `@tula/contract`, `@tula/core`, `@tula/react`, `@tula/nextjs`, `@tula/expo`, `@tula/expo-screens`, `@tula/admin`, `@tula/config`, `@tula/mcp`, `@tula/cli` and `create-tula` are a **fixed** group: they always share one version. The
   client is written against one version of the protocol, so "0.1.0 of the SDK" should mean one
   thing.
 - The repository is in **prerelease mode** (`.changeset/pre.json`, tag `alpha`). The pending

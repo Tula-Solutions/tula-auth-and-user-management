@@ -1,0 +1,449 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "a texted code is never used beside an authenticator app",
+  "description": "A texted code is the weakest second step, so it is never an alternative to a stronger one. A user with an authenticator app cannot enrol a texted code (`mfa.sms_not_allowed`), is told it is not available to them, and nothing is texted. Their sign-in stops at `needs_second_factor` with the authenticator and a backup code as its options and no `sms_code`, and asking for a texted code on that attempt is refused: whoever holds the phone cannot use it in place of the authenticator. The one text message is the one that proves the number; the daily limit is raised while it is sent. The last steps put the original settings back.",
+  "needsSecretKey": true,
+  "needsSmsInbox": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    },
+    "phone": {
+      "generate": "phone"
+    }
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "revision": "$any",
+          "settings": {
+            "mfa": {
+              "policy": "$any"
+            }
+          }
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "s_app": "settings.app",
+        "s_password": "settings.password",
+        "s_signIn": "settings.signIn",
+        "s_signUp": "settings.signUp",
+        "s_urls": "settings.urls",
+        "s_audit": "settings.audit",
+        "s_notifications": "settings.notifications",
+        "s_passkeys": "settings.passkeys",
+        "s_sessions": "settings.sessions"
+      }
+    },
+    {
+      "name": "an administrator offers a texted code as the second step, with text messages to the United States",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{s_app}}"
+          },
+          "password": {
+            "$json": "{{s_password}}"
+          },
+          "signUp": {
+            "$json": "{{s_signUp}}"
+          },
+          "urls": {
+            "$json": "{{s_urls}}"
+          },
+          "audit": {
+            "$json": "{{s_audit}}"
+          },
+          "notifications": {
+            "$json": "{{s_notifications}}"
+          },
+          "passkeys": {
+            "$json": "{{s_passkeys}}"
+          },
+          "sessions": {
+            "$json": "{{s_sessions}}"
+          },
+          "signIn": {
+            "$json": "{{s_signIn}}"
+          },
+          "mfa": {
+            "policy": "optional",
+            "smsCode": {
+              "enabled": true
+            }
+          },
+          "sms": {
+            "enabled": true,
+            "allowedCountries": ["US"],
+            "dailyMessageLimit": 100000
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "mfa": {
+              "policy": "optional",
+              "smsCode": {
+                "enabled": true
+              }
+            },
+            "sms": {
+              "enabled": true,
+              "allowedCountries": ["US"]
+            }
+          }
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      }
+    },
+    {
+      "name": "Maya starts a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signUp": "id",
+        "signUpSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "Maya reads the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "emailCode"
+      }
+    },
+    {
+      "name": "Maya verifies the address and is signed in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUp}}/verify-email",
+        "attempt": "{{signUpSecret}}",
+        "body": {
+          "code": "{{emailCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "$any"
+          },
+          "session": {
+            "accessToken": "$any",
+            "refreshToken": "$any"
+          }
+        }
+      },
+      "capture": {
+        "maya": "session.accessToken",
+        "mayaRefresh": "session.refreshToken",
+        "mayaId": "step.userId"
+      }
+    },
+    {
+      "name": "Maya asks for a code to her phone number",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/phone",
+        "accessToken": "{{maya}}",
+        "body": {
+          "phoneNumber": "{{phone}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "expiresAt": "$any"
+        }
+      }
+    },
+    {
+      "name": "read the texted code",
+      "smsCode": {
+        "to": "{{phone}}",
+        "capture": "phoneCode"
+      }
+    },
+    {
+      "name": "the code makes the number the account’s",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/phone/verify",
+        "accessToken": "{{maya}}",
+        "body": {
+          "code": "{{phoneCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "phoneNumber": "{{phone}}"
+        }
+      }
+    },
+    {
+      "name": "Maya starts an authenticator enrolment",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/factors/totp",
+        "accessToken": "{{maya}}",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "secret": "$any"
+        }
+      },
+      "capture": {
+        "secret": "secret"
+      }
+    },
+    {
+      "name": "compute the code the authenticator shows",
+      "totp": {
+        "secret": "{{secret}}",
+        "capture": "totpCode"
+      }
+    },
+    {
+      "name": "the code turns the authenticator on",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/factors/totp/confirm",
+        "accessToken": "{{maya}}",
+        "body": {
+          "code": "{{totpCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "codes": "$any"
+        }
+      }
+    },
+    {
+      "name": "the session is refreshed: its token now says the authenticator was proven",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/refresh",
+        "body": {
+          "refreshToken": "{{mayaRefresh}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "accessToken": "$any"
+        }
+      },
+      "capture": {
+        "maya": "accessToken"
+      }
+    },
+    {
+      "name": "a texted code is not offered to a user with an authenticator app",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/factors",
+        "accessToken": "{{maya}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "totp": {
+            "enabled": true
+          },
+          "sms": {
+            "enabled": false,
+            "inUse": false,
+            "available": false
+          }
+        }
+      }
+    },
+    {
+      "name": "and asking for it is refused, with nothing texted",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/factors/sms",
+        "accessToken": "{{maya}}",
+        "body": {}
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "status": 409,
+          "code": "mfa.sms_not_allowed"
+        }
+      }
+    },
+    {
+      "name": "a code cannot confirm what was never started",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/factors/sms/confirm",
+        "accessToken": "{{maya}}",
+        "body": {
+          "code": "{{phoneCode}}"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "status": 409,
+          "code": "mfa.sms_not_allowed"
+        }
+      }
+    },
+    {
+      "name": "a sign-in is started with the address",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signIn": "id",
+        "signInSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "the sign-in asks for the authenticator or a backup code, never a texted code",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signIn}}/password",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "needs_second_factor",
+            "options": {
+              "$set": ["totp", "backup_code"]
+            },
+            "prepared": "$absent"
+          },
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "asking for a texted code on that attempt is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signIn}}/second-factor/prepare",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "method": "sms_code"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "status": 409,
+          "code": "flow.invalid_step"
+        }
+      }
+    },
+    {
+      "name": "and a texted code proves nothing on it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signIn}}/second-factor",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "method": "sms_code",
+          "code": "{{phoneCode}}"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "status": 409,
+          "code": "flow.invalid_step"
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

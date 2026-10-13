@@ -2,16 +2,23 @@ import {
   ACCESS_TOKEN_ALGORITHM,
   ACCESS_TOKEN_VERSION,
   type AccessTokenClaims,
+  type AdminSession,
+  type AuthenticationMethod,
+  CUSTOM_CLAIMS_CLAIM,
   durationToMs,
   environmentIssuer,
+  jwtTemplateOfProfile,
   MAX_ACCESS_TOKEN_TTL,
+  type NamedJwtTemplate,
   type NamedSessionProfile,
+  type ProposalApprover,
   profileOfSession,
   REFRESH_TOKEN_PREFIX,
   resolveSessionProfile,
   type Session,
   type SessionClient,
   type SessionProfile,
+  type SessionSettings,
   type SessionTokens,
 } from '@tula/contract'
 import { SignJWT } from 'jose'
@@ -21,7 +28,10 @@ import { type Actor, cleanOrigin, type Origin, systemActor } from '~/lib/actor'
 import { sha256Hex } from '~/lib/crypto'
 import * as logger from '~/lib/logger'
 import * as Audit from '~/modules/audit/service'
+import * as Hooks from '~/modules/hook/service'
 import * as Jwks from '~/modules/jwks/service'
+import * as CustomClaims from '~/modules/session/custom-claims'
+import * as DeviceBinding from '~/modules/session/device-binding'
 import * as Settings from '~/modules/settings/service'
 import {
   authenticatedAt,
@@ -32,6 +42,7 @@ import {
   type SessionRecord,
   type SessionRevokeReason,
 } from '~/ports/session-store'
+import type { UserRecord } from '~/ports/user-repository'
 
 /** Keyed-hash purpose for deriving refresh tokens. */
 export const KEYED_HASH_PURPOSE = 'refresh-tokens'
@@ -51,6 +62,12 @@ export const MAX_COOKIE_AGE_SECONDS = 400 * 86_400
  */
 const LIMIT_ATTEMPTS = 4
 /**
+ * How many times a step-up asks the claims hook again because the session's methods moved
+ * while the hook was answering (another step-up of the same session). Each pass needs to lose
+ * a race.
+ */
+const STEP_UP_ATTEMPTS = 3
+/**
  * Refreshes per minute from one IP. A client refreshes about once a minute per tab; this leaves
  * room for offices behind one address while bounding unauthenticated database lookups.
  */
@@ -62,9 +79,13 @@ type TokenDeps = Pick<
   'clock' | 'ids' | 'config' | 'signingKeys' | 'environments' | 'secretBox'
 >
 type ProfileDeps = Pick<Deps, 'environmentSettings' | 'config'>
+/** What asking the claims hook needs (`Hooks.beforeToken`). */
+type HookDeps = Pick<Deps, 'hooks' | 'rateLimiter' | 'outbound' | 'secretBox' | 'ids' | 'clock'>
 type SessionDeps = TokenDeps &
   ProfileDeps &
   Pick<Deps, 'sessions' | 'revokedSessions' | 'keyedHash' | 'users'>
+/** What checking a bound session's proof needs (`DeviceBinding.atRefresh`). */
+type ProofDeps = Pick<Deps, 'proofReplay' | 'rateLimiter'>
 
 /**
  * What the service hands a router when a session is created, refreshed or stepped up.
@@ -78,6 +99,11 @@ export interface IssuedSession extends SessionTokens {
   sessionToken?: string
   /** How long the browser should keep the session's cookie, in seconds. */
   cookieMaxAge?: number
+  /**
+   * For a device-bound session (ADR 0043): the server's nonce for the client's next proof.
+   * The router sends it in the `DPoP-Nonce` header, **never** in a body.
+   */
+  proofNonce?: string
 }
 
 /**
@@ -96,6 +122,53 @@ export async function profileOf(
   session: Pick<SessionRecord, 'profile' | 'client'>
 ): Promise<NamedSessionProfile> {
   return profileOfSession((await Settings.current(deps, scope)).sessions, session)
+}
+
+/**
+ * Refuse a sign-in that its profile's device-binding option does not allow, **as the
+ * environment is configured now** (ADR 0043): the check `create` makes, for a caller that
+ * must make it before anything is spent. The flow service's `finish` calls it before it moves
+ * the attempt to `complete` and before a hook is asked, so that an attempt started before
+ * the option was changed is refused with its attempt still on its step, no hook asked and no
+ * session made.
+ *
+ * @param deps - Settings store and config.
+ * @param scope - The environment.
+ * @param input - The client kind, the profile the client asked for, and the key the
+ *   attempt's start accepted a proof for, if any.
+ * @throws AuthError `device.binding_not_supported` or `device.binding_required`.
+ */
+export async function requireBinding(
+  deps: ProfileDeps,
+  scope: Pick<Tenant, 'environmentId'>,
+  input: { client: SessionClient; profile?: string | null; deviceThumbprint?: string | null }
+): Promise<void> {
+  const { sessions } = await Settings.current(deps, scope)
+  const { profile } = resolveSessionProfile(sessions, {
+    client: input.client,
+    requested: input.profile,
+  })
+  DeviceBinding.hold(profile, input.client, (input.deviceThumbprint ?? null) !== null)
+}
+
+/**
+ * The name of the profile a new session of this client would get **as the environment is
+ * configured now**: the same rule {@link create} applies (`resolveSessionProfile`). It chooses
+ * nothing: `create` resolves the profile again when it stores the session. For a caller that
+ * must name the profile before the session exists (the `before_session` hook's question).
+ *
+ * @param deps - Settings store and config.
+ * @param scope - The environment.
+ * @param input - The client kind and the profile the client asked for, if any.
+ * @returns The profile's name.
+ */
+export async function profileNameFor(
+  deps: ProfileDeps,
+  scope: Pick<Tenant, 'environmentId'>,
+  input: { client: SessionClient; profile?: string | null }
+): Promise<string> {
+  const { sessions } = await Settings.current(deps, scope)
+  return resolveSessionProfile(sessions, { client: input.client, requested: input.profile }).name
 }
 
 /**
@@ -126,8 +199,140 @@ async function deriveSessionToken(
 
 type ClaimSource = Pick<
   SessionRecord,
-  'id' | 'userId' | 'profile' | 'factorVerifiedAt' | 'authMethods' | 'createdAt'
+  | 'id'
+  | 'userId'
+  | 'profile'
+  | 'client'
+  | 'factorVerifiedAt'
+  | 'authMethods'
+  | 'createdAt'
+  | 'deviceThumbprint'
 >
+
+/** A session's profile as configured now, with the settings it was read from. */
+interface Configured extends NamedSessionProfile {
+  settings: SessionSettings
+}
+
+async function configured(
+  deps: ProfileDeps,
+  scope: Pick<Tenant, 'environmentId'>,
+  session: Pick<SessionRecord, 'profile' | 'client'>
+): Promise<Configured> {
+  const { sessions: settings } = await Settings.current(deps, scope)
+  return { ...profileOfSession(settings, session), settings }
+}
+
+/**
+ * What a template's sources are read from, for one session. The user is read only when the
+ * template has a `user.*` source and the caller does not already hold the user (`known`: a
+ * refresh has loaded it to check for a ban).
+ */
+async function claimFacts(
+  deps: Pick<Deps, 'users'>,
+  scope: Pick<Tenant, 'environmentId'>,
+  template: NamedJwtTemplate | null,
+  session: Pick<SessionRecord, 'userId' | 'client' | 'createdAt'>,
+  known?: UserRecord | null
+): Promise<CustomClaims.ClaimFacts> {
+  let user = known ?? null
+  if (known === undefined && CustomClaims.needsUser(template)) {
+    // In the session's own environment only: another environment's user is nobody here.
+    user = await deps.users.findById(scope.environmentId, session.userId)
+  }
+  return { user, session, environmentId: scope.environmentId }
+}
+
+/**
+ * The custom claims of a session now, from its two sources:
+ *
+ * - what the JWT template of its profile says, as the environment has it configured at this
+ *   moment (ADR 0036). Read at every issue, never stored on the session, so a changed
+ *   template or a newly verified address shows up at the next token;
+ * - what its `before_token` hook said when the session was created or last stepped up
+ *   (ADR 0035), **read from the session's row and judged again** (`CustomClaims.stored`).
+ *   The hook is never asked here: this runs on every refresh and every stateful check.
+ *
+ * @returns The claims for the namespace claim, or `undefined` for none.
+ */
+async function customClaims(
+  deps: Pick<Deps, 'users'>,
+  scope: Pick<Tenant, 'environmentId'>,
+  { settings, profile }: Pick<Configured, 'settings' | 'profile'>,
+  session: Pick<SessionRecord, 'id' | 'userId' | 'client' | 'createdAt' | 'hookClaims'>,
+  known?: UserRecord | null
+): Promise<CustomClaims.Claims | undefined> {
+  const template = jwtTemplateOfProfile(settings, profile)
+  const hook = CustomClaims.stored(session.hookClaims, {
+    environmentId: scope.environmentId,
+    sessionId: session.id,
+  })
+  if (!template && !hook) {
+    return undefined
+  }
+  const facts = await claimFacts(deps, scope, template, session, known)
+  return CustomClaims.build(template, facts, hook ? [hook] : [])
+}
+
+/** What asking the claims hook for a session gave: its answer, and the claims of a token. */
+interface ProvenClaims {
+  /** What the hook said: stored on the session's row. */
+  hook: Hooks.TokenClaims
+  /** The template's claims with the hook's over them, when a token is to be signed. */
+  custom: CustomClaims.Claims | undefined
+}
+
+/**
+ * Ask the environment's `before_token` hook for the claims of a session that has just proven
+ * something: **the only place it is asked** (ADR 0035), called when a session is created and
+ * when its user proves a factor again, before anything is written.
+ *
+ * The hook's claims must fit beside the template's as it is configured now: the size cap is
+ * on the two merged, and claims that do not fit are a failed call, never stored and never
+ * cut. The question names the user, the session, the client kind, the profile and what the
+ * session has proven, and nothing else the service has at hand (no address, no user agent).
+ *
+ * @param signs - Whether a token is signed now (`hybrid`): only then are the merged claims
+ *   computed here. A `stateful` session's are read when it is checked.
+ * @throws AuthError `hook.unavailable` when the call failed and the hook refuses on failure.
+ */
+async function claimsAtProof(
+  deps: HookDeps & Pick<Deps, 'users'>,
+  scope: Pick<Tenant, 'environmentId'>,
+  { settings, profile }: Pick<Configured, 'settings' | 'profile'>,
+  session: Pick<
+    SessionRecord,
+    'id' | 'userId' | 'client' | 'createdAt' | 'profile' | 'authMethods'
+  >,
+  signs: boolean
+): Promise<ProvenClaims> {
+  const template = jwtTemplateOfProfile(settings, profile)
+  let read: Promise<CustomClaims.ClaimFacts> | undefined
+  // At most one read of the user, and none unless a token or a hook's answer needs it.
+  const facts = () => {
+    read ??= claimFacts(deps, scope, template, session)
+    return read
+  }
+  const hook = await Hooks.beforeToken(
+    deps,
+    scope,
+    {
+      userId: session.userId,
+      sessionId: session.id,
+      client: session.client,
+      profile: session.profile,
+      amr: session.authMethods,
+    },
+    async (claims) => CustomClaims.fits(template, await facts(), claims)
+  )
+  if (!signs || (!template && !hook.claims)) {
+    return { hook, custom: undefined }
+  }
+  return {
+    hook,
+    custom: CustomClaims.build(template, await facts(), hook.claims ? [hook.claims] : []),
+  }
+}
 
 /**
  * The claims of a session at `now`, for a token that lives as long as its profile says: what
@@ -138,7 +343,8 @@ function claimsOf(
   scope: Scope,
   session: ClaimSource,
   profile: SessionProfile,
-  now: Date
+  now: Date,
+  custom: CustomClaims.Claims | undefined
 ): AccessTokenClaims {
   const iat = Math.floor(now.getTime() / 1000)
   return {
@@ -156,6 +362,11 @@ function claimsOf(
     auth_time: Math.floor(authenticatedAt(session).getTime() / 1000),
     amr: session.authMethods,
     sp: session.profile,
+    // Only for a session bound to a device key (ADR 0043): absent, never `null`, so that the
+    // token of a session that is not bound is what it always was.
+    ...(session.deviceThumbprint && { cnf: { jkt: session.deviceThumbprint } }),
+    // Absent, never empty: a session without custom claims is what it always was.
+    ...(custom && { [CUSTOM_CLAIMS_CLAIM]: custom }),
   }
 }
 
@@ -174,9 +385,17 @@ async function signAccessToken(
   session: ClaimSource,
   profile: SessionProfile,
   now: Date,
-  { kid, privateKey }: SigningKey
+  { kid, privateKey }: SigningKey,
+  custom: CustomClaims.Claims | undefined
 ): Promise<{ accessToken: string; accessTokenExpiresAt: string }> {
-  const { iss, sub, aud, iat, exp, ...claims } = claimsOf(deps, scope, session, profile, now)
+  const { iss, sub, aud, iat, exp, ...claims } = claimsOf(
+    deps,
+    scope,
+    session,
+    profile,
+    now,
+    custom
+  )
   const accessToken = await new SignJWT(claims)
     .setProtectedHeader({ alg: ACCESS_TOKEN_ALGORITHM, kid, typ: 'JWT' })
     .setIssuer(iss)
@@ -198,14 +417,29 @@ function revoked(
   scope: Scope,
   session: { id: string; userId: string },
   reason: SessionRevokeReason,
-  actor: Actor
+  actor: Actor,
+  proposal?: CarriedOutProposal
 ) {
-  return Audit.entry(deps, scope, {
-    type: reason === 'reuse_detected' ? 'session.reuse_detected' : 'session.revoked',
-    actor,
-    target: { type: 'session', id: session.id },
-    data: { userId: session.userId, reason },
-  })
+  const target = { type: 'session', id: session.id } as const
+  // Two calls, not one with a computed type: each type's `reason` is checked against its own
+  // event schema.
+  return reason === 'reuse_detected'
+    ? Audit.entry(deps, scope, {
+        type: 'session.reuse_detected',
+        actor,
+        target,
+        data: { userId: session.userId, reason },
+      })
+    : Audit.entry(deps, scope, {
+        type: 'session.revoked',
+        actor,
+        target,
+        data: {
+          userId: session.userId,
+          reason,
+          ...(proposal && { proposalId: proposal.proposalId, approvedBy: proposal.approvedBy }),
+        },
+      })
 }
 
 /** `now + the profile's idle timeout`, never past the session's absolute limit. */
@@ -280,6 +514,16 @@ export interface CreateInput {
    * the environment marks it `clientSelectable`; anything else gets the client kind's built-in.
    */
   profile?: string | null
+  /**
+   * The sign-in's `before_session` hook failed and lets through on failure
+   * (`Hooks.beforeSession` answered `'bypassed'`): recorded on `session.created`.
+   */
+  hookBypassed?: boolean
+  /**
+   * The thumbprint of the key the session is bound to (ADR 0043): what the attempt's start
+   * accepted a proof for. `null` or absent for a session that is not bound.
+   */
+  deviceThumbprint?: string | null
 }
 
 /**
@@ -298,16 +542,36 @@ export interface CreateInput {
  * put on the revoked-session list **before** the store ends it; with `refuse_newest` nothing
  * is created.
  *
- * @param deps - Session store, settings, keyed hash, signing keys, clock and ids.
+ * **The environment's `before_token` hook is asked here** (ADR 0035), once, after the signing
+ * key is loaded and before anything is stored: its claims go on the session's row in the
+ * same insert and into the first token. A failed call refuses the session unless the hook
+ * lets through on failure, and then `session.created` says `claimsHookBypassed`. The hook is
+ * asked before the concurrent-session rule is applied, so it can be asked about a session
+ * that `refuse_newest` then refuses.
+ *
+ * @param deps - Session store, settings, keyed hash, signing keys, the hook store, the
+ *   limiter, the outbound guard's settings, clock and ids.
  * @param scope - The project and environment.
  * @param input - The user, the device and the profile asked for.
  * @returns The session id and its tokens.
  * @throws AuthError `session.limit_reached` when the user is at the limit and the environment
  *   refuses the newest.
+ * **A session is bound to a device key here and nowhere else** (ADR 0043): given a
+ * thumbprint, it is stored with the session in the same insert, the first access token
+ * carries it as `cnf.jkt`, and `session.created` says `deviceBound`. Only a `hybrid` session
+ * of a client that is not a browser can be bound: for any other the call is refused before
+ * anything is stored, never answered with a session that is silently not bound.
+ *
+ * @throws AuthError `hook.unavailable` when the claims hook failed and refuses on failure.
+ * @throws AuthError `device.binding_not_supported` when a key is given for a browser's
+ *   session, a `stateful` profile or a profile whose `deviceBinding` is `none`.
+ * @throws AuthError `device.binding_required` when no key is given for a session of a client
+ *   that is not a browser whose profile's `deviceBinding` is `required`.
+ * @throws RateLimitError when the environment's calls of its claims hook are over their ceiling.
  * @throws ServiceUnavailableError when sign-ins of the same user kept getting in between.
  */
 export async function create(
-  deps: SessionDeps,
+  deps: SessionDeps & HookDeps,
   scope: Scope,
   input: CreateInput
 ): Promise<IssuedSession> {
@@ -323,6 +587,11 @@ export async function create(
   const idleExpiresAt = idleExpiry(profile, now, absoluteExpiresAt)
   const sessionId = deps.ids.next()
   const stateful = profile.type === 'stateful'
+  const deviceThumbprint = input.deviceThumbprint ?? null
+  // The start already applied the profile's option, and `finish` again. This holds the rule
+  // where the session is made, whatever a caller passes and whatever the settings became
+  // since: before the hook is asked and before anything is stored.
+  DeviceBinding.hold(profile, input.client, deviceThumbprint !== null)
   const token = stateful
     ? await deriveSessionToken(deps, sessionId)
     : await deriveToken(deps, { sessionId })
@@ -330,6 +599,23 @@ export async function create(
   // A stateful session signs nothing, so it does not depend on the signing keys.
   const signingKey = stateful ? null : await Jwks.activeSigningKey(deps, scope.environmentId)
   const authMethods = mergeAuthMethods([], input.authMethods ?? [])
+  // Like the key, read and asked before the session is stored: a failed read, or a claims
+  // hook that refuses, must not leave a session the client was never given. A stateful
+  // session's token claims are read when it is checked; its hook is asked now all the same.
+  const { hook, custom } = await claimsAtProof(
+    deps,
+    scope,
+    { settings, profile },
+    {
+      id: sessionId,
+      userId: input.userId,
+      client: input.client,
+      createdAt: now,
+      profile: name,
+      authMethods,
+    },
+    !stateful
+  )
   const session = {
     id: sessionId,
     projectId: scope.projectId,
@@ -345,6 +631,8 @@ export async function create(
     // A session begins with a sign-in: that is its first proof.
     factorVerifiedAt: now,
     authMethods,
+    hookClaims: hook.claims,
+    deviceThumbprint,
     createdAt: now,
   }
   const root = {
@@ -359,7 +647,15 @@ export async function create(
     type: 'session.created',
     actor: { type: 'user', id: input.userId, ...origin },
     target: { type: 'session', id: sessionId },
-    data: { userId: input.userId, client: input.client },
+    data: {
+      userId: input.userId,
+      client: input.client,
+      // Present only when true: a session whose hooks answered is recorded as it always was.
+      ...(input.hookBypassed && { hookBypassed: true }),
+      ...(hook.bypassed && { claimsHookBypassed: true }),
+      // A boolean and nothing of the key: not its thumbprint, not a part of it.
+      ...(deviceThumbprint !== null && { deviceBound: true }),
+    },
   })
 
   if (settings.maxPerUser === null) {
@@ -374,12 +670,13 @@ export async function create(
   if (!signingKey) {
     return { sessionId, sessionToken: token, cookieMaxAge }
   }
-  const access = await signAccessToken(deps, scope, session, profile, now, signingKey)
+  const access = await signAccessToken(deps, scope, session, profile, now, signingKey, custom)
   return {
     sessionId,
     ...access,
     refreshToken: token,
     cookieMaxAge: durationToMs(profile.idleTimeout) / 1000,
+    ...(deviceThumbprint !== null && { proofNonce: await DeviceBinding.nonce(deps, scope) }),
   }
 }
 
@@ -465,7 +762,18 @@ async function createWithinLimit(
  * untouched: a step-up is not a rotation. This function **does not check any proof**: the
  * caller (`Mfa.stepUp`, or the confirmation of a new factor) has done that.
  *
- * @param deps - Session store, signing keys, clock and ids.
+ * **The environment's `before_token` hook is asked again here** (ADR 0035): what a session
+ * has proven is the one thing its question names that can change, so its claims are what the
+ * hook says about the session as it is now. The stored claims are **replaced**, never merged
+ * and never kept: by the hook's answer, or by none when there is no hook any more, it is
+ * off, or it failed and lets through on failure (`claimsHookBypassed` on
+ * `session.stepped_up`). A failed call of a hook that refuses on failure refuses the step-up,
+ * and then nothing about the session has changed. Claims are stored only for the methods
+ * they were asked about: when another step-up of the same session got in between, the hook
+ * is asked again.
+ *
+ * @param deps - Session store, signing keys, the hook store, the limiter, the outbound
+ *   guard's settings, clock and ids.
  * @param scope - The project and environment.
  * @param self - The signed-in user and their session, from the access token.
  * @param methods - What was just proven, e.g. `['otp', 'mfa']`.
@@ -473,44 +781,81 @@ async function createWithinLimit(
  * @returns The session id and a fresh access token (none for a `stateful` session, whose next
  *   request reads the row). No refresh token.
  * @throws AuthError `session.revoked` when the session has ended or is not this user's.
+ * @throws AuthError `hook.unavailable` when the claims hook failed and refuses on failure.
+ * @throws RateLimitError when the environment's calls of its claims hook are over their ceiling.
+ * @throws ServiceUnavailableError when step-ups of the same session kept getting in between.
  */
 export async function recordAuthentication(
-  deps: TokenDeps & ProfileDeps & Pick<Deps, 'sessions'>,
+  deps: TokenDeps & ProfileDeps & HookDeps & Pick<Deps, 'sessions' | 'users'>,
   scope: Scope,
   self: { userId: string; sessionId: string },
-  methods: readonly string[],
+  methods: readonly AuthenticationMethod[],
   actor: Actor
 ): Promise<SessionTokens> {
-  const now = deps.clock.now()
-  const current = await deps.sessions.findById(scope.environmentId, self.sessionId)
-  // Loaded before the write, like every signing key (see `signAccessToken`); a stateful
-  // session signs nothing.
-  const signingKey =
-    current?.type === 'stateful' ? null : await Jwks.activeSigningKey(deps, scope.environmentId)
-  const session =
-    current && current.userId === self.userId
-      ? await deps.sessions.recordAuthentication(
-          scope.environmentId,
-          self.sessionId,
-          { at: now, methods },
-          Audit.entry(deps, scope, {
-            type: 'session.stepped_up',
-            actor,
-            target: { type: 'session', id: self.sessionId },
-            data: { userId: self.userId, methods: [...methods] },
-          })
-        )
-      : null
-  if (!session) {
-    throw new AuthError('session.revoked')
+  for (let pass = 0; pass < STEP_UP_ATTEMPTS; pass++) {
+    const now = deps.clock.now()
+    const current = await deps.sessions.findById(scope.environmentId, self.sessionId)
+    // Judged before the hook is asked: a session that has ended, or is someone else's, is
+    // asked about by nobody.
+    if (!current || current.userId !== self.userId || !isActive(current, now)) {
+      throw new AuthError('session.revoked')
+    }
+    // Loaded before the write, like every signing key (see `signAccessToken`); a stateful
+    // session signs nothing.
+    const signingKey =
+      current.type === 'stateful' ? null : await Jwks.activeSigningKey(deps, scope.environmentId)
+    // Also before the write: what it reads (the profile, the user) the write does not change.
+    const issue = await configured(deps, scope, current)
+    const proven = { ...current, authMethods: mergeAuthMethods(current.authMethods, methods) }
+    const { hook, custom } = await claimsAtProof(deps, scope, issue, proven, signingKey !== null)
+    const session = await deps.sessions.recordAuthentication(
+      scope.environmentId,
+      self.sessionId,
+      {
+        at: now,
+        methods,
+        hookClaims: {
+          claims: hook.claims,
+          // An answer is about the methods it was asked about, and is stored for no others.
+          ...(hook.asked && { ifAuthMethods: current.authMethods }),
+        },
+      },
+      Audit.entry(deps, scope, {
+        type: 'session.stepped_up',
+        actor,
+        target: { type: 'session', id: self.sessionId },
+        data: {
+          userId: self.userId,
+          methods: [...methods],
+          ...(hook.bypassed && { claimsHookBypassed: true }),
+        },
+      })
+    )
+    if (session) {
+      if (!signingKey) {
+        // The next request reads `auth_time`, `amr` and the claims from the row just updated.
+        return { sessionId: session.id }
+      }
+      const access = await signAccessToken(
+        deps,
+        scope,
+        session,
+        issue.profile,
+        now,
+        signingKey,
+        custom
+      )
+      return { sessionId: session.id, ...access }
+    }
+    if (!hook.asked) {
+      // Nothing was compared: the session ended between the read and the write.
+      throw new AuthError('session.revoked')
+    }
+    // It ended, or its methods moved while the hook was answering: read it again.
   }
-  if (!signingKey) {
-    // The next request reads `auth_time` and `amr` from the row just updated.
-    return { sessionId: session.id }
-  }
-  const { profile } = await profileOf(deps, scope, session)
-  const access = await signAccessToken(deps, scope, session, profile, now, signingKey)
-  return { sessionId: session.id, ...access }
+  throw new ServiceUnavailableError({
+    internalMessage: 'step-ups of one session kept racing the claims hook',
+  })
 }
 
 /**
@@ -533,7 +878,7 @@ function rejectEnded(session: SessionRecord, profile: SessionProfile, now: Date)
 }
 
 /**
- * End the session of a user who has been banned since it was issued.
+ * End the session of a user who has been banned since it was issued, and return the user.
  *
  * Banning already revokes a user's sessions; this also catches a session created in the instant
  * between the ban and that revocation, so a banned user can never keep one alive.
@@ -544,7 +889,7 @@ async function rejectBanned(
   session: SessionRecord,
   now: Date,
   origin: Partial<Origin>
-): Promise<void> {
+): Promise<UserRecord | null> {
   const user = await deps.users.findById(scope.environmentId, session.userId)
   if (user?.bannedAt) {
     await denylist(deps, [session.id], now)
@@ -557,6 +902,8 @@ async function rejectBanned(
     )
     throw new AuthError('auth.user_banned')
   }
+  // Handed back so that a template's `user.*` claims cost a refresh no second read.
+  return user
 }
 
 /**
@@ -573,21 +920,41 @@ async function rejectBanned(
  * Rotation is one guarded transaction, so of several concurrent refreshes exactly one rotates
  * and the others take the grace path.
  *
- * @param deps - Session store, keyed hash, signing keys, clock and ids.
+ * **A session bound to a device key needs a proof of that key** (ADR 0043), and the order is
+ * fixed: the token is found, the session is seen to be alive, and then the proof is judged,
+ * **before** a ban is acted on, before reuse is judged and before anything is rotated. A
+ * refresh refused for its proof therefore changes nothing: the presented token is neither
+ * used nor replaced, the session lives on, and a token that had already been rotated revokes
+ * nothing, inside the grace window and outside it. With a valid proof everything is as for
+ * any session, reuse detection included: a rotated token replayed with a valid proof still
+ * ends the session, because then it was the device that replayed it. The proof is judged
+ * once per call, never again on the second pass of a lost rotation (its id is spent by then).
+ * A session that is not bound ignores a proof and behaves as it always did.
+ *
+ * @param deps - Session store, keyed hash, signing keys, clock and ids; for a bound session
+ *   also the store of used proof ids and the limiter.
  * @param scope - The environment the request resolved to.
  * @param refreshToken - The token the client presented.
  * @param origin - Where the request came from, recorded if the session has to be revoked.
- * @returns The session id, a new access token and the current refresh token.
+ * @param proof - The request's device-binding proof and what it must be for. Left out, a
+ *   bound session's refresh is refused as one with no proof.
+ * @returns The session id, a new access token and the current refresh token; for a bound
+ *   session also the nonce for the client's next proof.
  * @throws AuthError `session.invalid_token`, `session.revoked`, `session.expired`,
  *   `session.reuse_detected` or `auth.user_banned`.
+ * @throws AuthError `device.proof_invalid` or `device.nonce_required` when a bound session's
+ *   refresh does not prove its key: the session is not ended.
+ * @throws RateLimitError when a bound session's refused proofs are over their limit.
  */
 export async function refresh(
-  deps: SessionDeps,
+  deps: SessionDeps & ProofDeps,
   scope: Scope,
   refreshToken: string,
-  origin: Partial<Origin> = {}
+  origin: Partial<Origin> = {},
+  proof?: DeviceBinding.ProofRequest
 ): Promise<IssuedSession> {
   const tokenHash = sha256Hex(refreshToken)
+  let proven = false
   // A second pass only happens when a concurrent request won the rotation between our read and
   // our write; the re-read then sees the token as used and takes the grace path.
   for (let pass = 0; pass < 2; pass++) {
@@ -601,14 +968,30 @@ export async function refresh(
       // A stateful session's token is a cookie checked on every request, never exchanged.
       throw new AuthError('session.invalid_token')
     }
-    const { profile } = await profileOf(deps, scope, session)
+    const issue = await configured(deps, scope, session)
+    const { profile } = issue
     rejectEnded(session, profile, now)
-    await rejectBanned(deps, scope, session, now, origin)
+    const { deviceThumbprint } = session
+    if (deviceThumbprint !== null && !proven) {
+      // Before the ban's revocation, reuse detection and the rotation: none of them is
+      // reached, and nothing is written, for a request that does not prove the key.
+      await DeviceBinding.atRefresh(deps, scope, { ...session, deviceThumbprint }, proof, origin)
+      proven = true
+    }
+    const user = await rejectBanned(deps, scope, session, now, origin)
+    const custom = await customClaims(deps, scope, issue, session, user)
 
     // Reuse is judged before the token's own expiry: a rotated token replayed on a live session
     // is theft however old it is, and must not be waved through as merely "expired".
     if (token.usedAt !== null) {
-      return replayOrRevoke(deps, scope, { session, profile, token }, token.usedAt, now, origin)
+      return replayOrRevoke(
+        deps,
+        scope,
+        { session, profile, token, custom },
+        token.usedAt,
+        now,
+        origin
+      )
     }
     if (token.expiresAt.getTime() <= now.getTime()) {
       throw new AuthError('session.expired')
@@ -631,12 +1014,13 @@ export async function refresh(
       idleExpiresAt,
     })
     if (rotated) {
-      const access = await signAccessToken(deps, scope, session, profile, now, signingKey)
+      const access = await signAccessToken(deps, scope, session, profile, now, signingKey, custom)
       return {
         sessionId: session.id,
         ...access,
         refreshToken: child,
         cookieMaxAge: durationToMs(profile.idleTimeout) / 1000,
+        ...(deviceThumbprint !== null && { proofNonce: await DeviceBinding.nonce(deps, scope) }),
       }
     }
   }
@@ -646,12 +1030,17 @@ export async function refresh(
 async function replayOrRevoke(
   deps: SessionDeps,
   scope: Scope,
-  presented: { session: SessionRecord; profile: SessionProfile; token: RefreshTokenRecord },
+  presented: {
+    session: SessionRecord
+    profile: SessionProfile
+    token: RefreshTokenRecord
+    custom: CustomClaims.Claims | undefined
+  },
   usedAt: Date,
   now: Date,
   origin: Partial<Origin>
 ): Promise<IssuedSession> {
-  const { session, profile, token } = presented
+  const { session, profile, token, custom } = presented
   // No grace period (`null`) is strict rotation: every replay is reuse.
   const grace = profile.refresh.reuseGracePeriod
   const withinGrace = grace !== null && now.getTime() - usedAt.getTime() < durationToMs(grace)
@@ -661,12 +1050,15 @@ async function replayOrRevoke(
       : null
   if (child && child.usedAt === null) {
     const signingKey = await Jwks.activeSigningKey(deps, scope.environmentId)
-    const access = await signAccessToken(deps, scope, session, profile, now, signingKey)
+    const access = await signAccessToken(deps, scope, session, profile, now, signingKey, custom)
     return {
       sessionId: session.id,
       ...access,
       refreshToken: await deriveToken(deps, { parentId: token.id }),
       cookieMaxAge: durationToMs(profile.idleTimeout) / 1000,
+      ...(session.deviceThumbprint !== null && {
+        proofNonce: await DeviceBinding.nonce(deps, scope),
+      }),
     }
   }
   await denylist(deps, [session.id], now)
@@ -723,7 +1115,8 @@ export async function authenticate(
     throw new AuthError('session.invalid_token')
   }
   const { session } = found
-  const { profile } = await profileOf(deps, scope, session)
+  const issue = await configured(deps, scope, session)
+  const { profile } = issue
   rejectEnded(session, profile, now)
   const interval = durationToMs(profile.accessTokenTtl)
   const idleLeft = limitsNow(profile, session).idleExpiresAt.getTime() - now.getTime()
@@ -731,16 +1124,19 @@ export async function authenticate(
   // contract refuses a profile whose interval is longer than its idle timeout, but a document
   // stored before that rule can hold one, and an active user must never be timed out as idle.
   if (now.getTime() - session.lastActiveAt.getTime() < interval && idleLeft >= interval) {
-    return claimsOf(deps, scope, session, profile, now)
+    // The one read a template can add: the user, and only for a `user.*` source.
+    const custom = await customClaims(deps, scope, issue, session)
+    return claimsOf(deps, scope, session, profile, now, custom)
   }
-  await rejectBanned(deps, scope, session, now, origin)
+  const user = await rejectBanned(deps, scope, session, now, origin)
+  const custom = await customClaims(deps, scope, issue, session, user)
   const idleExpiresAt = idleExpiry(profile, now, limitsNow(profile, session).absoluteExpiresAt)
   if (!(await deps.sessions.touch(scope.environmentId, session.id, now, idleExpiresAt))) {
     // It ended between the read and the write.
     const ended = await deps.sessions.findById(scope.environmentId, session.id)
     throw new AuthError(ended?.revokedAt === null ? 'session.expired' : 'session.revoked')
   }
-  return claimsOf(deps, scope, session, profile, now)
+  return claimsOf(deps, scope, session, profile, now, custom)
 }
 
 function toSession(record: SessionRecord, currentSessionId: string): Session {
@@ -753,6 +1149,8 @@ function toSession(record: SessionRecord, currentSessionId: string): Session {
     lastActiveAt: record.lastActiveAt.toISOString(),
     expiresAt: record.idleExpiresAt.toISOString(),
     current: record.id === currentSessionId,
+    // A boolean and nothing of the key: the thumbprint never leaves the row and the token.
+    deviceBound: record.deviceThumbprint !== null,
   }
 }
 
@@ -775,6 +1173,38 @@ export async function list(
     deps.clock.now()
   )
   return records.map((record) => toSession(record, input.currentSessionId))
+}
+
+/**
+ * One session of an environment by its id, as an administrator reads it: whose it is, what
+ * kind of client, when it began and whether it is still active. An ended session is read
+ * too. A read: nothing is touched, extended or recorded.
+ *
+ * `active` is by the stored times alone (not ended, inside the limits written on the row),
+ * not by the session's profile as configured now: a profile tightened since may end a
+ * session answered as active at its next request.
+ *
+ * @param deps - Session store and clock.
+ * @param scope - The environment.
+ * @param sessionId - The session.
+ * @returns The session, with its user's id and whether it is active by what is stored.
+ * @throws NotFoundError when the environment has no such session (another environment's is
+ *   answered the same).
+ */
+export async function get(
+  deps: Pick<Deps, 'sessions' | 'clock'>,
+  scope: Pick<Tenant, 'environmentId'>,
+  sessionId: string
+): Promise<AdminSession> {
+  const record = await deps.sessions.findById(scope.environmentId, sessionId)
+  if (!record) {
+    throw new NotFoundError()
+  }
+  return {
+    ...toSession(record, ''),
+    userId: record.userId,
+    active: isActive(record, deps.clock.now()),
+  }
 }
 
 type RevokeDeps = Pick<Deps, 'sessions' | 'revokedSessions' | 'clock' | 'ids'>
@@ -804,16 +1234,72 @@ export async function revoke(deps: RevokeDeps, scope: Scope, input: RevokeInput)
   if (!session || session.userId !== input.userId) {
     throw new NotFoundError()
   }
+  await end(deps, scope, session, input.reason ?? 'revoked_by_user', input.actor)
+}
+
+/**
+ * Denylist one session and end it, with its entry: the one way a single session is ended.
+ *
+ * @returns What the store's guarded update said: `true` when this call ended the session
+ *   and wrote its entry, `false` when it had already ended and nothing was written.
+ */
+async function end(
+  deps: RevokeDeps,
+  scope: Scope,
+  session: { id: string; userId: string },
+  reason: SessionRevokeReason,
+  actor: Actor,
+  proposal?: CarriedOutProposal
+): Promise<boolean> {
   const now = deps.clock.now()
-  const reason = input.reason ?? 'revoked_by_user'
   await denylist(deps, [session.id], now)
-  await deps.sessions.revoke(
+  return deps.sessions.revoke(
     scope.environmentId,
     session.id,
     reason,
     now,
-    revoked(deps, scope, session, reason, input.actor)
+    revoked(deps, scope, session, reason, actor, proposal)
   )
+}
+
+/** The human-approved proposal a change carried out, as its audit entry names it (ADR 0053). */
+export interface CarriedOutProposal {
+  proposalId: string
+  approvedBy: ProposalApprover
+}
+
+/**
+ * End one session of the environment, named by its id alone: what an approved
+ * `end_session` proposal runs (ADR 0053). Exactly one session: there is no counterpart here
+ * that takes a user and ends all of theirs.
+ *
+ * It is the ending every other path makes ({@link revoke}): the session's id is denylisted
+ * first, then the row is ended with its `session.revoked` entry (`revoked_by_admin`), which
+ * names the proposal and who approved it. A session that had already ended is left as it
+ * was.
+ *
+ * @param deps - Session store, denylist, ids and clock.
+ * @param scope - The project and environment.
+ * @param sessionId - The session.
+ * @param actor - Who ends it, for the audit log: the agent whose proposal was approved.
+ * @param proposal - The approved proposal this carries out.
+ * @returns Whether this call ended the session, as the store's guarded update said it:
+ *   `false` when it had already ended, and then no entry was written.
+ * @throws NotFoundError when the environment has no such session (another environment's is
+ *   answered the same).
+ */
+export async function revokeForProposal(
+  deps: RevokeDeps,
+  scope: Scope,
+  sessionId: string,
+  actor: Actor,
+  proposal: CarriedOutProposal
+): Promise<boolean> {
+  const session = await deps.sessions.findById(scope.environmentId, sessionId)
+  if (!session) {
+    throw new NotFoundError()
+  }
+  return end(deps, scope, session, 'revoked_by_admin', actor, proposal)
 }
 
 /**

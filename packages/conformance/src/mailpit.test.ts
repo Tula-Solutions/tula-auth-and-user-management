@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { MAILPIT_TIMEOUT_MS, mailpitCodes, mailpitLinks } from './mailpit'
+import { MAILPIT_TIMEOUT_MS, mailpitCodes, mailpitLinks, mailpitMessages } from './mailpit'
 
 function fakeMailpit(responses: (object | number)[]) {
   const urls: string[] = []
@@ -186,6 +186,90 @@ describe('mailpitLinks', () => {
     await expect(failing.emailLink('maya@example.com')).rejects.toThrow('Mailpit answered 503')
     const { emailLink, urls } = fakeInbox([{ messages: [] }])
     await expect(emailLink('a" OR to:"victim@example.com')).rejects.toThrow(
+      'not an address the runner can search for'
+    )
+    expect(urls).toEqual([])
+  })
+})
+
+describe('mailpitMessages', () => {
+  function fakeInbox(
+    lists: (object | number)[],
+    text = 'Welcome.\r\n\r\n482913\r\n\r\n--\r\nAcme'
+  ) {
+    const urls: string[] = []
+    const sleeps: number[] = []
+    let searches = 0
+    const emailMessage = mailpitMessages('http://mailpit.test', {
+      fetch: (async (url: string) => {
+        urls.push(url)
+        if (url.includes('/api/v1/message/')) {
+          return new Response(JSON.stringify({ Text: text }))
+        }
+        const next = lists[Math.min(searches, lists.length - 1)]
+        searches += 1
+        return typeof next === 'number'
+          ? new Response('nope', { status: next })
+          : new Response(JSON.stringify(next))
+      }) as unknown as typeof fetch,
+      sleep: async (ms) => {
+        sleeps.push(ms)
+      },
+    })
+    return { emailMessage, urls, sleeps }
+  }
+
+  test('returns the newest message whose subject holds the marker, with plain line ends', async () => {
+    const { emailMessage, urls } = fakeInbox([
+      {
+        messages: [
+          { ID: 'm3', Subject: 'New sign-in to your Acme account' },
+          { ID: 'm2', Subject: 'Wording 71: your code' },
+          { ID: 'm1', Subject: 'Wording 71: an older one' },
+        ],
+      },
+    ])
+    expect(await emailMessage('maya@example.com', 'Wording 71')).toEqual({
+      subject: 'Wording 71: your code',
+      text: 'Welcome.\n\n482913\n\n--\nAcme',
+    })
+    expect(urls.at(-1)).toBe('http://mailpit.test/api/v1/message/m2')
+  })
+
+  test('waits for the message, and gives up naming the address', async () => {
+    const arriving = fakeInbox([
+      { messages: [{ ID: 'm1', Subject: 'Something else' }] },
+      { messages: [{ ID: 'm2', Subject: 'The marker' }] },
+    ])
+    expect((await arriving.emailMessage('maya@example.com', 'marker')).subject).toBe('The marker')
+    expect(arriving.sleeps).toEqual([100])
+    const never = fakeInbox([{ messages: [{ ID: 'm1', Subject: 'Something else' }] }])
+    await expect(never.emailMessage('maya@example.com', 'marker')).rejects.toThrow(
+      'no email with that subject arrived for maya@example.com'
+    )
+    expect(never.sleeps.reduce((total, ms) => total + ms, 0)).toBeGreaterThanOrEqual(
+      MAILPIT_TIMEOUT_MS
+    )
+  })
+
+  test('a message with no text reads as empty; an error and a hostile address are refused', async () => {
+    const emailMessage = mailpitMessages('http://mailpit.test', {
+      fetch: (async (url: string) =>
+        new Response(
+          JSON.stringify(
+            url.includes('/message/') ? {} : { messages: [{ ID: 'm1', Subject: 'marker' }] }
+          )
+        )) as unknown as typeof fetch,
+    })
+    expect(await emailMessage('maya@example.com', 'marker')).toEqual({
+      subject: 'marker',
+      text: '',
+    })
+    await expect(fakeInbox([503]).emailMessage('maya@example.com', 'x')).rejects.toThrow(
+      'Mailpit answered 503'
+    )
+    const { emailMessage: guarded, urls } = fakeInbox([{ messages: [] }])
+    await expect(guarded('a" OR to:"victim@example.com', 'x')).rejects.toThrow(
       'not an address the runner can search for'
     )
     expect(urls).toEqual([])

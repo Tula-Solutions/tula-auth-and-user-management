@@ -201,8 +201,15 @@ const { status } = await tula.signIn.handleEmailLink()
 ```
 <!-- /snippet -->
 
+The Swift client and the Kotlin client have no call that asks for an emailed link: a
+step that offers only a link is "not supported" there (`FlowScreen.notSupported`,
+`FlowScreen.NOT_SUPPORTED`), and the code in the same email is the way in
+([swift.md](../swift.md), [kotlin.md](../kotlin.md)).
+
 Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/react.md),
 [`@tula/nextjs`](../reference/nextjs.md).
+
+Native: [Swift](../reference/swift.md), [Kotlin](../reference/kotlin.md).
 
 ## Troubleshooting
 

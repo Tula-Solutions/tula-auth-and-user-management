@@ -1,0 +1,281 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "claims added by a hook",
+  "description": "An operator registers a `before_token` hook. It is asked when a session is created, with the contract's allow-list (the user's id, the session's id, the client kind, the session profile and what the session has proven: no address of any kind), and answers with claims. They are issued under the one namespace claim `ext` of the access token, where no claim Tula issues can be reached. The answer is stored on the session: a refresh issues the same claims and does not ask the hook, also when the endpoint would by then answer otherwise. A new sign-in is a new session, is asked about, and carries what the endpoint answers then. Needs a receiver the server can reach.",
+  "needsSecretKey": true,
+  "needsWebhookReceiver": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    }
+  },
+  "steps": [
+    {
+      "name": "start the operator's endpoint: it answers with two claims",
+      "hook": {
+        "receiver": "claims",
+        "captureUrl": "hookUrl",
+        "answer": {
+          "claims": {
+            "plan": "pro",
+            "seats": 5
+          }
+        }
+      }
+    },
+    {
+      "name": "register the hook that is asked before a token",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/hooks",
+        "auth": "secret",
+        "body": {
+          "point": "before_token",
+          "url": "{{hookUrl}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "point": "before_token",
+          "enabled": true,
+          "failureMode": "deny",
+          "secret": "$any"
+        }
+      },
+      "capture": {
+        "hookId": "id",
+        "secret": "secret"
+      }
+    },
+    {
+      "name": "start a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signUpId": "id",
+        "signUpSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "the start did not ask the hook",
+      "hook": {
+        "receiver": "claims",
+        "expect": {
+          "nothing": true
+        }
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "code"
+      }
+    },
+    {
+      "name": "the session's first access token carries the hook's claims under the namespace claim",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signUpSecret}}",
+        "body": {
+          "code": "{{code}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "$any",
+            "sessionId": "$any"
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "sub": "$any",
+            "plan": "$absent",
+            "ext": {
+              "plan": "pro",
+              "seats": 5
+            }
+          }
+        }
+      },
+      "capture": {
+        "userId": "step.userId",
+        "sessionId": "step.sessionId",
+        "refreshToken": "session.refreshToken"
+      }
+    },
+    {
+      "name": "the question was signed with the hook's secret and named the session, with no address in it",
+      "hook": {
+        "receiver": "claims",
+        "expect": {
+          "secret": "{{secret}}",
+          "body": {
+            "id": "$any",
+            "type": "hook.before_token",
+            "schemaVersion": 1,
+            "occurredAt": "$any",
+            "data": {
+              "userId": "{{userId}}",
+              "sessionId": "{{sessionId}}",
+              "client": "ios",
+              "profile": "mobile",
+              "amr": {
+                "$set": ["email"]
+              },
+              "email": "$absent",
+              "ipAddress": "$absent"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "the endpoint now answers otherwise",
+      "hook": {
+        "receiver": "claims",
+        "answer": {
+          "claims": {
+            "plan": "free"
+          }
+        }
+      }
+    },
+    {
+      "name": "a refresh issues the claims the session was given",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/refresh",
+        "body": {
+          "refreshToken": "{{refreshToken}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "claims": {
+          "accessToken": {
+            "sub": "{{userId}}",
+            "sid": "{{sessionId}}",
+            "ext": {
+              "plan": "pro",
+              "seats": 5
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "and did not ask the hook",
+      "hook": {
+        "receiver": "claims",
+        "expect": {
+          "nothing": true
+        }
+      }
+    },
+    {
+      "name": "start a sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": {
+          "identifier": "{{email}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signInId": "id",
+        "signInSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "a new session is asked about and carries what the endpoint answers now",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{signInId}}/password",
+        "attempt": "{{signInSecret}}",
+        "body": {
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "sub": "{{userId}}",
+            "ext": {
+              "plan": "free",
+              "seats": "$absent"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "the hook was asked once for it",
+      "hook": {
+        "receiver": "claims",
+        "expect": {
+          "secret": "{{secret}}",
+          "body": {
+            "type": "hook.before_token",
+            "data": {
+              "userId": "{{userId}}",
+              "amr": {
+                "$set": ["pwd"]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "and only once",
+      "hook": {
+        "receiver": "claims",
+        "expect": {
+          "nothing": true
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "remove the hook",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/hooks/{{hookId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    }
+  ]
+}

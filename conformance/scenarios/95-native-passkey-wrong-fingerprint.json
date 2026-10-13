@@ -1,0 +1,1115 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "passkey sign-in with a fingerprint that is not the registered one",
+  "description": "An Android app’s origin is its signing certificate, compared as one exact string with what the server derives from the registered fingerprints. A build whose certificate the operator takes away is refused from then on, at a sign-in (401 auth.invalid_credentials, the generic failed sign-in) and at a registration (422 passkey.registration_failed); the passkey stays on the account and the build whose certificate is still registered goes on using it. A certificate that never was registered is refused the same way, and so is the registered one in any other spelling: standard base64, padded, the hex fingerprint, a trailing slash. With no Origin header an Android client is accepted no other kind of origin either: not the one an iOS app presents, not an allowed page’s. No refusal locks anything: the registered build signs in afterwards. The software authenticator stands in for the platform: that a physical authenticator, an emulator or either platform accepts the association and writes these origins has not been shown here. Expects an environment with no other native app; cleanup removes the ones it registers and puts the settings back.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    },
+    "rpId": "native-passkeys.example",
+    "pageOrigin": "https://app.native-passkeys.example",
+    "teamId": "TULAC0NF02",
+    "bundleId": "com.tula.conformance.passkeys-ios",
+    "packageName": "com.tula.conformance.passkeys_android",
+    "fingerprint": "14:B6:C3:A1:E9:D0:7F:52:88:6A:4B:0C:3D:9E:1F:20:A7:B8:C9:D0:E1:F2:A3:B4:C5:D6:E7:F8:09:1A:2B:3C",
+    "secondFingerprint": "FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C",
+    "unregisteredFingerprint": "FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF:BE:FB:FF"
+  },
+  "steps": [
+    {
+      "name": "start a sign-up from the app",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "android",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signUpId": "id",
+        "signUpSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "signUpCode"
+      }
+    },
+    {
+      "name": "verify the address: the account exists and is signed in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "attempt": "{{signUpSecret}}",
+        "body": {
+          "code": "{{signUpCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          }
+        }
+      },
+      "capture": {
+        "userId": "step.userId",
+        "accessToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "revision": "$any"
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "app": "settings.app",
+        "passwordPolicy": "settings.password",
+        "passwordMethod": "settings.signIn.methods.password",
+        "emailCodeMethod": "settings.signIn.methods.emailCode",
+        "emailLinkMethod": "settings.signIn.methods.emailLink",
+        "signUpSettings": "settings.signUp",
+        "redirects": "settings.urls.allowedRedirectUrls",
+        "audit": "settings.audit",
+        "notifications": "settings.notifications",
+        "mfaSettings": "settings.mfa"
+      }
+    },
+    {
+      "name": "switch passkeys on, with a relying-party id and a page that belongs to it",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{app}}"
+          },
+          "password": {
+            "$json": "{{passwordPolicy}}"
+          },
+          "signIn": {
+            "methods": {
+              "password": {
+                "$json": "{{passwordMethod}}"
+              },
+              "emailCode": {
+                "$json": "{{emailCodeMethod}}"
+              },
+              "emailLink": {
+                "$json": "{{emailLinkMethod}}"
+              },
+              "passkey": {
+                "enabled": true
+              }
+            }
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "allowedOrigins": ["{{pageOrigin}}"],
+            "allowedRedirectUrls": {
+              "$json": "{{redirects}}"
+            }
+          },
+          "audit": {
+            "$json": "{{audit}}"
+          },
+          "notifications": {
+            "$json": "{{notifications}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "rpId": "{{rpId}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "passkeys": {
+              "rpId": "{{rpId}}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "register the Android app with the certificates of two builds",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/native-apps",
+        "auth": "secret",
+        "body": {
+          "platform": "android",
+          "packageName": "{{packageName}}",
+          "sha256CertFingerprints": ["{{fingerprint}}", "{{secondFingerprint}}"]
+        }
+      },
+      "expect": {
+        "status": 201
+      },
+      "capture": {
+        "androidAppId": "id"
+      }
+    },
+    {
+      "name": "the first build: ask for the options, with no Origin header",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys/options",
+        "accessToken": "{{accessToken}}",
+        "client": "android",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "rp": {
+            "id": "{{rpId}}",
+            "name": "$any"
+          },
+          "challenge": {
+            "$matches": "^[A-Za-z0-9_-]{43}$"
+          }
+        }
+      },
+      "captureJson": {
+        "androidCreation": ""
+      }
+    },
+    {
+      "name": "the first build: the authenticator makes a passkey",
+      "passkey": {
+        "authenticator": "phone",
+        "create": "{{androidCreation}}",
+        "capture": "androidRegistration",
+        "androidCertFingerprint": "{{fingerprint}}"
+      }
+    },
+    {
+      "name": "the first build: finish",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys",
+        "accessToken": "{{accessToken}}",
+        "client": "android",
+        "body": {
+          "credential": {
+            "$json": "{{androidRegistration}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 201
+      }
+    },
+    {
+      "name": "the first build: start a passkey sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "android",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["passkey"]
+            }
+          },
+          "options": {
+            "rpId": "{{rpId}}",
+            "userVerification": "required",
+            "allowCredentials": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "beforeId": "attempt.id",
+        "beforeSecret": "attempt.attemptSecret"
+      },
+      "captureJson": {
+        "beforeOptions": "options"
+      }
+    },
+    {
+      "name": "the first build: the authenticator signs the challenge",
+      "passkey": {
+        "authenticator": "phone",
+        "get": "{{beforeOptions}}",
+        "capture": "beforeAssertion",
+        "androidCertFingerprint": "{{fingerprint}}"
+      }
+    },
+    {
+      "name": "the first build: the answer",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{beforeId}}/passkey",
+        "attempt": "{{beforeSecret}}",
+        "body": {
+          "credential": {
+            "$json": "{{beforeAssertion}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "set-cookie": "$absent"
+        },
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "sub": "{{userId}}",
+            "amr": {
+              "$set": ["hwk", "user", "mfa"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "the operator takes the first build’s certificate away",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/native-apps/{{androidAppId}}",
+        "auth": "secret",
+        "body": {
+          "sha256CertFingerprints": ["{{secondFingerprint}}"]
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "sha256CertFingerprints": ["{{secondFingerprint}}"]
+        }
+      }
+    },
+    {
+      "name": "the first build, whose certificate is no longer registered: start a passkey sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "android",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["passkey"]
+            }
+          },
+          "options": {
+            "rpId": "{{rpId}}",
+            "userVerification": "required",
+            "allowCredentials": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "afterId": "attempt.id",
+        "afterSecret": "attempt.attemptSecret"
+      },
+      "captureJson": {
+        "afterOptions": "options"
+      }
+    },
+    {
+      "name": "the first build, whose certificate is no longer registered: the authenticator signs the challenge",
+      "passkey": {
+        "authenticator": "phone",
+        "get": "{{afterOptions}}",
+        "capture": "afterAssertion",
+        "androidCertFingerprint": "{{fingerprint}}"
+      }
+    },
+    {
+      "name": "the first build, whose certificate is no longer registered: the answer",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{afterId}}/passkey",
+        "attempt": "{{afterSecret}}",
+        "body": {
+          "credential": {
+            "$json": "{{afterAssertion}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials",
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "a registration from that build: ask for the options, with no Origin header",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys/options",
+        "accessToken": "{{accessToken}}",
+        "client": "android",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "rp": {
+            "id": "{{rpId}}",
+            "name": "$any"
+          },
+          "challenge": {
+            "$matches": "^[A-Za-z0-9_-]{43}$"
+          }
+        }
+      },
+      "captureJson": {
+        "lateCreation": ""
+      }
+    },
+    {
+      "name": "a registration from that build: the authenticator makes a passkey",
+      "passkey": {
+        "authenticator": "late",
+        "create": "{{lateCreation}}",
+        "capture": "lateRegistration",
+        "androidCertFingerprint": "{{fingerprint}}"
+      }
+    },
+    {
+      "name": "a registration from that build: finish",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/passkeys",
+        "accessToken": "{{accessToken}}",
+        "client": "android",
+        "body": {
+          "credential": {
+            "$json": "{{lateRegistration}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "status": 422,
+          "code": "passkey.registration_failed"
+        }
+      }
+    },
+    {
+      "name": "the build whose certificate is registered, with the same passkey: start a passkey sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "android",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["passkey"]
+            }
+          },
+          "options": {
+            "rpId": "{{rpId}}",
+            "userVerification": "required",
+            "allowCredentials": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "otherId": "attempt.id",
+        "otherSecret": "attempt.attemptSecret"
+      },
+      "captureJson": {
+        "otherOptions": "options"
+      }
+    },
+    {
+      "name": "the build whose certificate is registered, with the same passkey: the authenticator signs the challenge",
+      "passkey": {
+        "authenticator": "phone",
+        "get": "{{otherOptions}}",
+        "capture": "otherAssertion",
+        "androidCertFingerprint": "{{secondFingerprint}}"
+      }
+    },
+    {
+      "name": "the build whose certificate is registered, with the same passkey: the answer",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{otherId}}/passkey",
+        "attempt": "{{otherSecret}}",
+        "body": {
+          "credential": {
+            "$json": "{{otherAssertion}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "set-cookie": "$absent"
+        },
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "sub": "{{userId}}",
+            "amr": {
+              "$set": ["hwk", "user", "mfa"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "a certificate that never was registered: start a passkey sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "android",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["passkey"]
+            }
+          },
+          "options": {
+            "rpId": "{{rpId}}",
+            "userVerification": "required",
+            "allowCredentials": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "neverId": "attempt.id",
+        "neverSecret": "attempt.attemptSecret"
+      },
+      "captureJson": {
+        "neverOptions": "options"
+      }
+    },
+    {
+      "name": "a certificate that never was registered: the authenticator signs the challenge",
+      "passkey": {
+        "authenticator": "phone",
+        "get": "{{neverOptions}}",
+        "capture": "neverAssertion",
+        "androidCertFingerprint": "{{unregisteredFingerprint}}"
+      }
+    },
+    {
+      "name": "a certificate that never was registered: the answer",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{neverId}}/passkey",
+        "attempt": "{{neverSecret}}",
+        "body": {
+          "credential": {
+            "$json": "{{neverAssertion}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials",
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "the registered certificate’s hash in standard base64: start a passkey sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "android",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["passkey"]
+            }
+          },
+          "options": {
+            "rpId": "{{rpId}}",
+            "userVerification": "required",
+            "allowCredentials": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "standardId": "attempt.id",
+        "standardSecret": "attempt.attemptSecret"
+      },
+      "captureJson": {
+        "standardOptions": "options"
+      }
+    },
+    {
+      "name": "the registered certificate’s hash in standard base64: the authenticator signs the challenge",
+      "passkey": {
+        "authenticator": "phone",
+        "get": "{{standardOptions}}",
+        "capture": "standardAssertion",
+        "origin": "android:apk-key-hash:+sYXRdwJA3hvue3mKpYrOZ9zSPC7b4mbgzJmdZEDO5w"
+      }
+    },
+    {
+      "name": "the registered certificate’s hash in standard base64: the answer",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{standardId}}/passkey",
+        "attempt": "{{standardSecret}}",
+        "body": {
+          "credential": {
+            "$json": "{{standardAssertion}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials",
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "the same with its padding: start a passkey sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "android",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["passkey"]
+            }
+          },
+          "options": {
+            "rpId": "{{rpId}}",
+            "userVerification": "required",
+            "allowCredentials": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "paddedId": "attempt.id",
+        "paddedSecret": "attempt.attemptSecret"
+      },
+      "captureJson": {
+        "paddedOptions": "options"
+      }
+    },
+    {
+      "name": "the same with its padding: the authenticator signs the challenge",
+      "passkey": {
+        "authenticator": "phone",
+        "get": "{{paddedOptions}}",
+        "capture": "paddedAssertion",
+        "origin": "android:apk-key-hash:+sYXRdwJA3hvue3mKpYrOZ9zSPC7b4mbgzJmdZEDO5w="
+      }
+    },
+    {
+      "name": "the same with its padding: the answer",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{paddedId}}/passkey",
+        "attempt": "{{paddedSecret}}",
+        "body": {
+          "credential": {
+            "$json": "{{paddedAssertion}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials",
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "the hash as the fingerprint itself: start a passkey sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "android",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["passkey"]
+            }
+          },
+          "options": {
+            "rpId": "{{rpId}}",
+            "userVerification": "required",
+            "allowCredentials": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "hexId": "attempt.id",
+        "hexSecret": "attempt.attemptSecret"
+      },
+      "captureJson": {
+        "hexOptions": "options"
+      }
+    },
+    {
+      "name": "the hash as the fingerprint itself: the authenticator signs the challenge",
+      "passkey": {
+        "authenticator": "phone",
+        "get": "{{hexOptions}}",
+        "capture": "hexAssertion",
+        "origin": "android:apk-key-hash:{{secondFingerprint}}"
+      }
+    },
+    {
+      "name": "the hash as the fingerprint itself: the answer",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{hexId}}/passkey",
+        "attempt": "{{hexSecret}}",
+        "body": {
+          "credential": {
+            "$json": "{{hexAssertion}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials",
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "the right origin with a trailing slash: start a passkey sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "android",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["passkey"]
+            }
+          },
+          "options": {
+            "rpId": "{{rpId}}",
+            "userVerification": "required",
+            "allowCredentials": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "slashId": "attempt.id",
+        "slashSecret": "attempt.attemptSecret"
+      },
+      "captureJson": {
+        "slashOptions": "options"
+      }
+    },
+    {
+      "name": "the right origin with a trailing slash: the authenticator signs the challenge",
+      "passkey": {
+        "authenticator": "phone",
+        "get": "{{slashOptions}}",
+        "capture": "slashAssertion",
+        "origin": "android:apk-key-hash:-sYXRdwJA3hvue3mKpYrOZ9zSPC7b4mbgzJmdZEDO5w/"
+      }
+    },
+    {
+      "name": "the right origin with a trailing slash: the answer",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{slashId}}/passkey",
+        "attempt": "{{slashSecret}}",
+        "body": {
+          "credential": {
+            "$json": "{{slashAssertion}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials",
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "the origin an iOS app would present: start a passkey sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "android",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["passkey"]
+            }
+          },
+          "options": {
+            "rpId": "{{rpId}}",
+            "userVerification": "required",
+            "allowCredentials": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "iosformId": "attempt.id",
+        "iosformSecret": "attempt.attemptSecret"
+      },
+      "captureJson": {
+        "iosformOptions": "options"
+      }
+    },
+    {
+      "name": "the origin an iOS app would present: the authenticator signs the challenge",
+      "passkey": {
+        "authenticator": "phone",
+        "get": "{{iosformOptions}}",
+        "capture": "iosformAssertion",
+        "origin": "https://{{rpId}}"
+      }
+    },
+    {
+      "name": "the origin an iOS app would present: the answer",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{iosformId}}/passkey",
+        "attempt": "{{iosformSecret}}",
+        "body": {
+          "credential": {
+            "$json": "{{iosformAssertion}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials",
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "an allowed page’s origin, with no Origin header: start a passkey sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "android",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["passkey"]
+            }
+          },
+          "options": {
+            "rpId": "{{rpId}}",
+            "userVerification": "required",
+            "allowCredentials": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "pageformId": "attempt.id",
+        "pageformSecret": "attempt.attemptSecret"
+      },
+      "captureJson": {
+        "pageformOptions": "options"
+      }
+    },
+    {
+      "name": "an allowed page’s origin, with no Origin header: the authenticator signs the challenge",
+      "passkey": {
+        "authenticator": "phone",
+        "get": "{{pageformOptions}}",
+        "capture": "pageformAssertion",
+        "origin": "{{pageOrigin}}"
+      }
+    },
+    {
+      "name": "an allowed page’s origin, with no Origin header: the answer",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{pageformId}}/passkey",
+        "attempt": "{{pageformSecret}}",
+        "body": {
+          "credential": {
+            "$json": "{{pageformAssertion}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "status": 401,
+          "code": "auth.invalid_credentials",
+          "session": "$absent"
+        }
+      }
+    },
+    {
+      "name": "the passkey is still the account’s, and the only one",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/passkeys",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "passkeys": [
+            {
+              "id": "$any",
+              "lastUsedAt": {
+                "$not": null
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "the registered build, after every refusal: start a passkey sign-in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/passkey",
+        "client": "android",
+        "body": {}
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "attempt": {
+            "step": {
+              "status": "needs_first_factor",
+              "strategies": ["passkey"]
+            }
+          },
+          "options": {
+            "rpId": "{{rpId}}",
+            "userVerification": "required",
+            "allowCredentials": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "lastId": "attempt.id",
+        "lastSecret": "attempt.attemptSecret"
+      },
+      "captureJson": {
+        "lastOptions": "options"
+      }
+    },
+    {
+      "name": "the registered build, after every refusal: the authenticator signs the challenge",
+      "passkey": {
+        "authenticator": "phone",
+        "get": "{{lastOptions}}",
+        "capture": "lastAssertion",
+        "androidCertFingerprint": "{{secondFingerprint}}"
+      }
+    },
+    {
+      "name": "the registered build, after every refusal: the answer",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{lastId}}/passkey",
+        "attempt": "{{lastSecret}}",
+        "body": {
+          "credential": {
+            "$json": "{{lastAssertion}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "set-cookie": "$absent"
+        },
+        "body": {
+          "step": {
+            "status": "complete",
+            "userId": "{{userId}}"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "sub": "{{userId}}",
+            "amr": {
+              "$set": ["hwk", "user", "mfa"]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "remove the Android app",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/native-apps/{{androidAppId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    }
+  ]
+}

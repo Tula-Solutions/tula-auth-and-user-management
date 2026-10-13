@@ -1,10 +1,13 @@
 import { describe, expect, test } from 'bun:test'
+import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula/contract'
 import type { MemoryDiagnostics } from '~/adapters/memory/diagnostics'
+import { unconfiguredSmsSender } from '~/adapters/sms/unconfigured'
 import { createSecretBox } from '~/lib/secret-box'
 import * as Audit from '~/modules/audit/service'
 import * as Instance from '~/modules/instance/service'
 import * as Jwks from '~/modules/jwks/service'
 import * as OAuth from '~/modules/oauth/service'
+import * as Webhooks from '~/modules/webhook/service'
 import { createTestDeps, TEST_ACTOR, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
 import type { DiagnosticCheck } from './schema'
 
@@ -61,7 +64,22 @@ describe('Instance.diagnostics', () => {
       'clock',
       'public_url',
       'oauth_redirect_uris',
+      'webhook_worker',
+      'sms_sender',
+      'device_binding',
+      'native_app_identities',
+      'native_app_files',
+      'native_app_passkeys',
     ])
+    // No native app is registered.
+    for (const id of ['native_app_identities', 'native_app_files', 'native_app_passkeys']) {
+      expect(byId(result.checks, id).status).toBe('skipped')
+    }
+    expect(byId(result.checks, 'webhook_worker').status).toBe('ok')
+    // The test deployment has a sender (the memory one).
+    expect(byId(result.checks, 'sms_sender').status).toBe('ok')
+    // The test deployment's PUBLIC_URL is one a proof can name.
+    expect(byId(result.checks, 'device_binding').status).toBe('ok')
     expect(byId(result.checks, 'database').status).toBe('ok')
     expect(byId(result.checks, 'migrations').status).toBe('ok')
     expect(byId(result.checks, 'master_key').status).toBe('ok')
@@ -406,5 +424,806 @@ describe('Instance.diagnostics', () => {
     }
     await Instance.diagnostics(deps)
     expect(order.indexOf('redis:start')).toBeLessThan(order.indexOf('smtp:end'))
+  })
+})
+
+// TULA-52. `WEBHOOK_WORKER=separate` on every process and no worker started must not mean,
+// silently, that nobody delivers. An API instance cannot see a worker process; it can see
+// what a worker would have done: an event that has waited to be queued.
+describe('the webhook_worker check', () => {
+  const separate = { ...TEST_CONFIG, deliversWebhooks: false }
+  const worker = (deps: TestDeps) => byId0(Instance.diagnostics(deps))
+  const byId0 = async (result: ReturnType<typeof Instance.diagnostics>) =>
+    byId((await result).checks, 'webhook_worker')
+
+  /** Record that something happened in an environment: an outbox event, waiting. */
+  function happen(deps: TestDeps, environmentId: string = TEST_TENANT.environmentId) {
+    const activity = Audit.entry(
+      deps,
+      { projectId: TEST_TENANT.projectId, environmentId },
+      { type: 'user.deleted', actor: TEST_ACTOR, target: { type: 'user', id: deps.ids.next() } }
+    )
+    deps.activityLog.record([activity])
+  }
+
+  test('the API instances deliver and nothing waits: ok, and it says who delivers', async () => {
+    const { deps } = await setup()
+    expect(await worker(deps)).toEqual({
+      id: 'webhook_worker',
+      status: 'ok',
+      summary:
+        'No event has waited a minute or more to be queued for delivery. WEBHOOK_WORKER is `api`: the API instances make the deliveries.',
+    })
+  })
+
+  test('the worker is separate and nothing waits: ok, and it says what it did not look at', async () => {
+    const { deps } = await setup()
+    expect(await worker({ ...deps, config: separate })).toEqual({
+      id: 'webhook_worker',
+      status: 'ok',
+      summary:
+        'No event has waited a minute or more to be queued for delivery. WEBHOOK_WORKER is `separate`: a worker process makes the deliveries. This check sees what waits, not the worker.',
+    })
+  })
+
+  test('the worker is separate and none runs: an event that waits a minute fails the check, not a millisecond sooner', async () => {
+    const { deps } = await setup()
+    const api = { ...deps, config: separate }
+    happen(deps)
+    deps.clock.advance(Instance.WEBHOOK_WAITING_TOO_LONG_MS - 1)
+    expect((await worker(api)).status).toBe('ok')
+    deps.clock.advance(1)
+    expect(await worker(api)).toEqual({
+      id: 'webhook_worker',
+      status: 'fail',
+      summary:
+        'Events have waited a minute or more to be queued for delivery, in 1 environment: the worker is not running, or it cannot keep up or cannot work.',
+      // What the check knows is that events wait. It never saw a worker, running or not.
+      fix: 'WEBHOOK_WORKER is `separate`, so no API instance makes a delivery: only a worker process does, and this check sees what waits, not the worker. See whether one is running (the same image with the command `bun run src/worker.ts`; with Compose, `docker compose --profile app --profile worker up -d`). If one is, read its log: `could not run the webhook delivery job` or `webhook delivery failed in one environment` means it cannot work, and rounds that finish while events still wait mean it cannot keep up. Or set WEBHOOK_WORKER=api on every instance and restart them.',
+    })
+    expect(Instance.WEBHOOK_WAITING_TOO_LONG_MS).toBe(60_000)
+  })
+
+  test('once a worker’s round has taken the events, the check is ok again', async () => {
+    const { deps } = await setup()
+    const api = { ...deps, config: separate }
+    happen(deps)
+    deps.clock.advance('10m')
+    expect((await worker(api)).status).toBe('fail')
+    // The worker: the same stores, a process that delivers.
+    await Webhooks.run(deps)
+    expect((await worker(api)).status).toBe('ok')
+  })
+
+  test('it counts environments, never events, and names none', async () => {
+    const { deps } = await setup()
+    const other = '00000000-0000-7000-8000-00000000beef'
+    deps.environments.add({
+      id: other,
+      projectId: TEST_TENANT.projectId,
+      kind: 'production',
+      createdAt: deps.clock.now(),
+    })
+    for (let count = 0; count < 5; count += 1) {
+      happen(deps)
+    }
+    happen(deps, other)
+    deps.clock.advance('2m')
+    const check = await worker({ ...deps, config: separate })
+    expect(check.summary).toBe(
+      'Events have waited a minute or more to be queued for delivery, in 2 environments: the worker is not running, or it cannot keep up or cannot work.'
+    )
+    expect(JSON.stringify(check)).not.toContain(other)
+    expect(JSON.stringify(check)).not.toContain(TEST_TENANT.environmentId)
+  })
+
+  test('the API instances deliver and events still wait: a warning that points at the API’s log', async () => {
+    const { deps } = await setup()
+    happen(deps)
+    deps.clock.advance(Instance.WEBHOOK_WAITING_TOO_LONG_MS)
+    expect(await worker(deps)).toEqual({
+      id: 'webhook_worker',
+      status: 'warn',
+      summary:
+        'Events have waited a minute or more to be queued for delivery, in 1 environment: the delivery job is behind or failing.',
+      fix: 'WEBHOOK_WORKER is `api`, so every API instance runs the delivery job. Look in the API’s log for `could not run the webhook delivery job` and `webhook delivery failed in one environment`, and check that the database is reachable and not overloaded.',
+    })
+  })
+
+  test('a store that fails: skipped, with nothing of the driver’s message', async () => {
+    const { deps } = await setup()
+    const broken = {
+      oldestPendingEventAt: async () => {
+        throw new Error(`connection terminated ${CANARIES[0]}`)
+      },
+    }
+    const result = await Instance.diagnostics({
+      ...deps,
+      config: separate,
+      webhookDeliveries: broken as unknown as TestDeps['webhookDeliveries'],
+    })
+    expect(byId(result.checks, 'webhook_worker')).toEqual({
+      id: 'webhook_worker',
+      status: 'skipped',
+      summary: 'Not checked: the events waiting for delivery could not be read from the database.',
+    })
+    expectNoCanary(result)
+  })
+
+  test('it reads when the oldest event happened and no event: a payload never leaves the store', async () => {
+    const { deps } = await setup()
+    let asked = 0
+    const events = {
+      oldestPendingEventAt: async () => {
+        asked += 1
+        return new Date(deps.clock.now().getTime() - 3_600_000)
+      },
+      // The read that returns whole rows, payload included, is not the check's to make.
+      pendingEvents: async () => {
+        throw new Error('the check read an event: CANARY-payload')
+      },
+    }
+    const result = await Instance.diagnostics({
+      ...deps,
+      config: separate,
+      webhookDeliveries: events as unknown as TestDeps['webhookDeliveries'],
+    })
+    expect(byId(result.checks, 'webhook_worker').status).toBe('fail')
+    expect(asked).toBe(1)
+    expectNoCanary(result)
+  })
+
+  test('more environments than one run reads: it says how many it looked at, and asks once for each', async () => {
+    const { deps } = await setup()
+    for (let index = 1; index <= Instance.MAX_ENVIRONMENTS_CHECKED; index += 1) {
+      deps.environments.add({
+        id: `00000000-0000-7000-8000-${String(index).padStart(12, '0')}`,
+        projectId: TEST_TENANT.projectId,
+        kind: 'development',
+        createdAt: new Date(deps.clock.now().getTime() + index),
+      })
+    }
+    const asked: string[] = []
+    const oldest = deps.webhookDeliveries.oldestPendingEventAt.bind(deps.webhookDeliveries)
+    deps.webhookDeliveries.oldestPendingEventAt = async (environmentId) => {
+      asked.push(environmentId)
+      return oldest(environmentId)
+    }
+    const check = await worker({ ...deps, config: separate })
+    expect(check.status).toBe('warn')
+    expect(check.summary).toBe(
+      'Only the first 200 of 201 environments were looked at: no event of theirs has waited a minute or more to be queued for delivery. The other 1 was not read.'
+    )
+    expect(check.fix).toBeDefined()
+    // One question per environment, and only of the environments it says it looked at.
+    expect(asked).toHaveLength(Instance.MAX_ENVIRONMENTS_CHECKED)
+    expect(new Set(asked).size).toBe(Instance.MAX_ENVIRONMENTS_CHECKED)
+
+    // An overdue event among those it did read is still a failure, and says its scope.
+    happen(deps)
+    deps.clock.advance('5m')
+    const failing = await worker({ ...deps, config: separate })
+    expect(failing.status).toBe('fail')
+    expect(failing.summary).toBe(
+      'Events have waited a minute or more to be queued for delivery, in 1 environment of the first 200 of 201: the worker is not running, or it cannot keep up or cannot work.'
+    )
+  })
+
+  test('a scan cut off by the timeout reads no further environment’s events', async () => {
+    const { deps } = await setup()
+    for (let index = 1; index <= 5; index += 1) {
+      deps.environments.add({
+        id: `00000000-0000-7000-8000-${String(index).padStart(12, '0')}`,
+        projectId: TEST_TENANT.projectId,
+        kind: 'development',
+        createdAt: new Date(deps.clock.now().getTime() + index),
+      })
+    }
+    let calls = 0
+    const slow = {
+      oldestPendingEventAt: async () => {
+        calls += 1
+        await new Promise((resolve) => setTimeout(resolve, 80))
+        return null
+      },
+    }
+    const result = await Instance.diagnostics(
+      { ...deps, webhookDeliveries: slow as unknown as TestDeps['webhookDeliveries'] },
+      50
+    )
+    expect(byId(result.checks, 'webhook_worker').status).toBe('skipped')
+    expect(calls).toBe(1)
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    expect(calls).toBe(1)
+  })
+
+  test('a store that never answers: later runs do not read the events again on top of it', async () => {
+    const { deps } = await setup()
+    let calls = 0
+    const stuck = {
+      oldestPendingEventAt: () => {
+        calls += 1
+        return new Promise<never>(() => {})
+      },
+    }
+    const stuckDeps = {
+      ...deps,
+      webhookDeliveries: stuck as unknown as TestDeps['webhookDeliveries'],
+    }
+    expect(byId((await Instance.diagnostics(stuckDeps, 50)).checks, 'webhook_worker').status).toBe(
+      'skipped'
+    )
+    expect(byId((await Instance.diagnostics(stuckDeps, 50)).checks, 'webhook_worker').status).toBe(
+      'skipped'
+    )
+    expect(calls).toBe(1)
+  })
+})
+
+// TULA-29. "SMS on" is an environment's setting and the sender is the deployment's: the boot
+// sees only the second, so the diagnostics compare the two.
+describe('the sms_sender check', () => {
+  const NO_SENDER = { sms: unconfiguredSmsSender } as unknown as Partial<TestDeps>
+  const check = async (deps: Parameters<typeof Instance.diagnostics>[0]) =>
+    byId((await Instance.diagnostics(deps)).checks, 'sms_sender')
+
+  function switchOn(
+    deps: TestDeps,
+    environmentId: string = TEST_TENANT.environmentId,
+    sms = { enabled: true, allowedCountries: ['US'], dailyMessageLimit: 500, templates: {} }
+  ) {
+    deps.environmentSettings.seed(environmentId, {
+      revision: 1,
+      settings: { ...DEFAULT_ENVIRONMENT_SETTINGS, sms },
+    })
+  }
+
+  function addEnvironments(deps: TestDeps, count: number): string[] {
+    const ids: string[] = []
+    for (let index = 1; index <= count; index += 1) {
+      const id = `00000000-0000-7000-8000-${String(index).padStart(12, '0')}`
+      ids.push(id)
+      deps.environments.add({
+        id,
+        projectId: TEST_TENANT.projectId,
+        kind: 'development',
+        createdAt: new Date(deps.clock.now().getTime() + index),
+      })
+    }
+    return ids
+  }
+
+  test('no sender and no environment with text messages on: skipped, and it says both', async () => {
+    const { deps } = await setup(NO_SENDER)
+    expect(await check(deps)).toEqual({
+      id: 'sms_sender',
+      status: 'skipped',
+      summary:
+        'The deployment has no sender for text messages (SMS_PROVIDER is `none`), and no environment has them switched on.',
+    })
+  })
+
+  test('no sender and an environment with text messages on: a warning, with what to do', async () => {
+    const { deps } = await setup(NO_SENDER)
+    switchOn(deps)
+    expect(await check(deps)).toEqual({
+      id: 'sms_sender',
+      status: 'warn',
+      summary:
+        'SMS_PROVIDER is `none`, and 1 environment has text messages switched on: no message is sent, and a request that would send one is answered `sms.unavailable`.',
+      fix: 'Set SMS_PROVIDER=twilio and the TWILIO_* variables on every API instance and restart them (docs/self-host.md, “Text messages with Twilio”). Or switch text messages off in the settings of the environments that have them on.',
+    })
+  })
+
+  test('no sender and an environment that signs in with a texted code: a failure', async () => {
+    const { deps } = await setup(NO_SENDER)
+    deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+      revision: 1,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        signIn: {
+          methods: { ...DEFAULT_ENVIRONMENT_SETTINGS.signIn.methods, smsCode: { enabled: true } },
+        },
+        sms: { enabled: true, allowedCountries: ['US'], dailyMessageLimit: 500, templates: {} },
+      },
+    })
+    expect(await check(deps)).toEqual({
+      id: 'sms_sender',
+      status: 'fail',
+      summary:
+        'SMS_PROVIDER is `none`, and 1 environment has signing in with a texted code switched on: no message is sent, the method is not offered to anyone, and a user who signs in no other way cannot sign in.',
+      fix: 'Set SMS_PROVIDER=twilio and the TWILIO_* variables on every API instance and restart them (docs/self-host.md, “Text messages with Twilio”). Or switch the texted sign-in code off in the settings of the environments that have it on.',
+    })
+    // The method on with text messages off sends nothing and is offered nowhere: not a
+    // failure, and not even a warning.
+    deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+      revision: 2,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        signIn: {
+          methods: { ...DEFAULT_ENVIRONMENT_SETTINGS.signIn.methods, smsCode: { enabled: true } },
+        },
+      },
+    })
+    expect((await check(deps)).status).toBe('skipped')
+  })
+
+  test('counts environments, and names none of them', async () => {
+    const { deps } = await setup(NO_SENDER)
+    const [second, third] = addEnvironments(deps, 3)
+    switchOn(deps)
+    switchOn(deps, second)
+    switchOn(deps, third)
+    const result = await Instance.diagnostics(deps)
+    const found = byId(result.checks, 'sms_sender')
+    expect(found.status).toBe('warn')
+    expect(found.summary).toStartWith(
+      'SMS_PROVIDER is `none`, and 3 environments have text messages switched on'
+    )
+    const said = JSON.stringify(found)
+    for (const id of [TEST_TENANT.environmentId, second, third]) {
+      expect(said).not.toContain(String(id))
+    }
+    // Not a country either: which destinations an environment texts is its own business.
+    expect(said).not.toMatch(/\bUS\b/)
+    expect(found.values).toBeUndefined()
+  })
+
+  // What `Settings.requireSms` refuses is not "on": such an environment sends nothing with
+  // any sender, so the missing sender changes nothing for it.
+  test.each([
+    [
+      'switched off, with countries',
+      { enabled: false, allowedCountries: ['US'], dailyMessageLimit: 500, templates: {} },
+    ],
+    [
+      'switched on, with no country',
+      { enabled: true, allowedCountries: [], dailyMessageLimit: 500, templates: {} },
+    ],
+  ])('an environment with text messages %s is not counted', async (_name, sms) => {
+    const { deps } = await setup(NO_SENDER)
+    switchOn(deps, TEST_TENANT.environmentId, sms)
+    expect((await check(deps)).status).toBe('skipped')
+  })
+
+  test('with a sender it is ok, says what it did not ask, and reads no settings', async () => {
+    const { deps } = await setup()
+    switchOn(deps)
+    let read = 0
+    const get = deps.environmentSettings.get.bind(deps.environmentSettings)
+    deps.environmentSettings.get = async (...args) => {
+      read += 1
+      return get(...args)
+    }
+    expect(await check(deps)).toEqual({
+      id: 'sms_sender',
+      status: 'ok',
+      summary:
+        'The deployment has a sender for text messages (SMS_PROVIDER). No message was sent and the provider was not asked: this does not show that its credentials or its sender work.',
+    })
+    expect(read).toBe(0)
+    // And it sent nothing to find out.
+    expect(deps.sms.outbox).toEqual([])
+  })
+
+  test('the development inbox is said for what it is', async () => {
+    const { deps } = await setup()
+    expect(await check({ ...deps, smsInbox: deps.sms })).toEqual({
+      id: 'sms_sender',
+      status: 'ok',
+      summary:
+        'SMS_PROVIDER is `dev`: text messages are kept in the development inbox and reach no phone. Local development only.',
+    })
+  })
+
+  test('settings that cannot be read: skipped, the reason stays out of the answer, the other checks stand', async () => {
+    const { deps } = await setup(NO_SENDER)
+    switchOn(deps)
+    deps.environmentSettings.get = async () => {
+      throw new Error(`could not read settings: ${CANARIES[0]} CANARY-internal-message`)
+    }
+    const result = await Instance.diagnostics(deps)
+    expect(byId(result.checks, 'sms_sender')).toEqual({
+      id: 'sms_sender',
+      status: 'skipped',
+      summary: 'Not checked: the environments’ settings could not be read from the database.',
+    })
+    // The settings' failure is not the stored secrets' nor the outbox's.
+    expect(byId(result.checks, 'master_key').status).toBe('ok')
+    expect(byId(result.checks, 'webhook_worker').status).toBe('ok')
+    expectNoCanary(result)
+  })
+
+  test('after one failed read it asks no further environment', async () => {
+    const { deps } = await setup(NO_SENDER)
+    addEnvironments(deps, 5)
+    let read = 0
+    deps.environmentSettings.get = async () => {
+      read += 1
+      throw new Error('CANARY-internal-message')
+    }
+    expect((await check(deps)).status).toBe('skipped')
+    expect(read).toBe(1)
+  })
+
+  test('more environments than one run reads: one read each, of those it says it looked at', async () => {
+    const { deps } = await setup(NO_SENDER)
+    const ids = addEnvironments(deps, Instance.MAX_ENVIRONMENTS_CHECKED)
+    const asked: string[] = []
+    const get = deps.environmentSettings.get.bind(deps.environmentSettings)
+    deps.environmentSettings.get = async (environmentId, ...rest) => {
+      asked.push(environmentId)
+      return get(environmentId, ...rest)
+    }
+    // The newest environment, past the 200th, has text messages on: it is not read, and the
+    // check does not say "none".
+    switchOn(deps, ids.at(-1))
+    const none = await check(deps)
+    expect(none.status).toBe('warn')
+    expect(none.summary).toBe(
+      'SMS_PROVIDER is `none`. Only the first 200 of 201 environments were looked at: none of them has text messages switched on. The other 1 was not read.'
+    )
+    expect(none.fix).toBeDefined()
+    expect(asked).toHaveLength(Instance.MAX_ENVIRONMENTS_CHECKED)
+    expect(new Set(asked).size).toBe(Instance.MAX_ENVIRONMENTS_CHECKED)
+    expect(asked).not.toContain(ids.at(-1))
+
+    switchOn(deps)
+    expect((await check(deps)).summary).toBe(
+      'SMS_PROVIDER is `none`, and 1 environment of the first 200 of 201 has text messages switched on: no message is sent, and a request that would send one is answered `sms.unavailable`.'
+    )
+  })
+
+  test('a scan cut off by the timeout reads no further environment’s settings', async () => {
+    const { deps } = await setup(NO_SENDER)
+    addEnvironments(deps, 5)
+    let calls = 0
+    deps.environmentSettings.get = async () => {
+      calls += 1
+      await new Promise((resolve) => setTimeout(resolve, 80))
+      return null
+    }
+    const result = await Instance.diagnostics(deps, 50)
+    expect(byId(result.checks, 'sms_sender').status).toBe('skipped')
+    expect(calls).toBe(1)
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    expect(calls).toBe(1)
+  })
+
+  test('settings that never answer: later runs do not read them again on top of it', async () => {
+    const { deps } = await setup(NO_SENDER)
+    let calls = 0
+    deps.environmentSettings.get = () => {
+      calls += 1
+      return new Promise<never>(() => {})
+    }
+    expect(
+      (await Instance.diagnostics(deps, 50)).checks.find((check) => check.id === 'sms_sender')
+        ?.status
+    ).toBe('skipped')
+    expect(
+      (await Instance.diagnostics(deps, 50)).checks.find((check) => check.id === 'sms_sender')
+        ?.status
+    ).toBe('skipped')
+    expect(calls).toBe(1)
+  })
+})
+
+// TULA-72. Whether a sign-in must bring a device key is an environment's setting, and whether
+// one can be accepted at all is the deployment's (`PUBLIC_URL`): the boot sees only the
+// second, so the diagnostics compare the two.
+describe('the device_binding check', () => {
+  /** A `PUBLIC_URL` no proof can name (a space in its path), with a canary in it. */
+  const UNNAMEABLE = 'http://localhost:3003/CANARY-path my api'
+  const CANNOT_BIND = { config: { ...TEST_CONFIG, publicUrl: UNNAMEABLE } }
+  const check = async (deps: Parameters<typeof Instance.diagnostics>[0]) =>
+    byId((await Instance.diagnostics(deps)).checks, 'device_binding')
+  const { sessions } = DEFAULT_ENVIRONMENT_SETTINGS
+  const { mobile, web } = sessions.profiles
+  const CANNOT = 'PUBLIC_URL is not an address a device-binding proof can name'
+  const FIX =
+    'Set PUBLIC_URL, on every instance, to an address a proof can name, and restart them: a host name of letters, digits, full stops, hyphens and underscores, and no path (or a path of ASCII letters, digits, hyphens, full stops, underscores and slashes).'
+  const OR_LOOSEN =
+    'Or set `deviceBinding` to `optional` or `none` in the session profiles that require a key.'
+  const selectable = (deps: TestDeps, environmentId?: string, name = 'kiosk') =>
+    profiles(
+      deps,
+      { [name]: { ...mobile, clientSelectable: true, deviceBinding: 'required' } },
+      environmentId
+    )
+
+  function profiles(
+    deps: TestDeps,
+    changed: Record<string, unknown>,
+    environmentId: string = TEST_TENANT.environmentId
+  ) {
+    deps.environmentSettings.seed(environmentId, {
+      revision: 1,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        sessions: { ...sessions, profiles: { ...sessions.profiles, ...changed } },
+      } as typeof DEFAULT_ENVIRONMENT_SETTINGS,
+    })
+  }
+  const required = (deps: TestDeps, environmentId?: string) =>
+    profiles(deps, { mobile: { ...mobile, deviceBinding: 'required' } }, environmentId)
+
+  function addEnvironments(deps: TestDeps, count: number): string[] {
+    const ids: string[] = []
+    for (let index = 1; index <= count; index += 1) {
+      const id = `00000000-0000-7000-8000-${String(index).padStart(12, '0')}`
+      ids.push(id)
+      deps.environments.add({
+        id,
+        projectId: TEST_TENANT.projectId,
+        kind: 'development',
+        createdAt: new Date(deps.clock.now().getTime() + index),
+      })
+    }
+    return ids
+  }
+
+  test('a PUBLIC_URL a proof can name: ok, says what it did not do, and reads no settings', async () => {
+    const { deps } = await setup()
+    required(deps)
+    let read = 0
+    const get = deps.environmentSettings.get.bind(deps.environmentSettings)
+    deps.environmentSettings.get = async (...args) => {
+      read += 1
+      return get(...args)
+    }
+    expect(await check(deps)).toEqual({
+      id: 'device_binding',
+      status: 'ok',
+      summary:
+        'A device-binding proof can name PUBLIC_URL, so this deployment can bind a session to a device key. No proof was made or checked.',
+    })
+    expect(read).toBe(0)
+  })
+
+  test('a PUBLIC_URL no proof can name, and no profile that requires a key: a warning', async () => {
+    const { deps } = await setup(CANNOT_BIND)
+    expect(await check(deps)).toEqual({
+      id: 'device_binding',
+      status: 'warn',
+      summary: `${CANNOT}: no session is bound to a device key on this deployment, and a sign-in that brings a key is refused (\`device.binding_not_supported\`). No environment that was read has a session profile that requires one.`,
+      fix: FIX,
+    })
+  })
+
+  test('and an environment whose default native profile requires a key: a failure, with both answers a native app gets', async () => {
+    const { deps } = await setup(CANNOT_BIND)
+    required(deps)
+    expect(await check(deps)).toEqual({
+      id: 'device_binding',
+      status: 'fail',
+      summary: `${CANNOT}, and in 1 environment the session profile a native app gets requires a device key (\`deviceBinding: required\`): a native sign-in there is refused, without a key (\`device.binding_required\`) and with one (\`device.binding_not_supported\`), unless it asks for a profile that requires none.`,
+      fix: `${FIX} ${OR_LOOSEN}`,
+    })
+  })
+
+  // Review of TULA-72: "no native app can sign in" was said of an environment where only a
+  // profile a sign-in has to ask for requires a key. An ordinary native sign-in works there.
+  test('only a profile a sign-in can ask for requires a key: a warning that says what cannot succeed, not a failure', async () => {
+    const { deps } = await setup(CANNOT_BIND)
+    selectable(deps)
+    expect(await check(deps)).toEqual({
+      id: 'device_binding',
+      status: 'warn',
+      summary: `${CANNOT}, and in 1 environment a session profile that a sign-in can ask for requires a device key (\`deviceBinding: required\`): a native sign-in that asks for such a profile cannot succeed. One that asks for none is not held to it, and its session is not bound to a key.`,
+      fix: `${FIX} ${OR_LOOSEN}`,
+    })
+  })
+
+  test('the two are counted apart: the failure counts the default profile, and says how many more have only a profile to ask for', async () => {
+    const { deps } = await setup(CANNOT_BIND)
+    const [second, third, fourth] = addEnvironments(deps, 3)
+    required(deps)
+    selectable(deps, second)
+    selectable(deps, third)
+    // Both in one environment: counted once, as the default profile's.
+    profiles(
+      deps,
+      {
+        mobile: { ...mobile, deviceBinding: 'required' },
+        kiosk: { ...mobile, clientSelectable: true, deviceBinding: 'required' },
+      },
+      fourth
+    )
+    const found = await check(deps)
+    expect(found.status).toBe('fail')
+    expect(found.summary).toBe(
+      `${CANNOT}, and in 2 environments the session profile a native app gets requires a device key (\`deviceBinding: required\`): a native sign-in there is refused, without a key (\`device.binding_required\`) and with one (\`device.binding_not_supported\`), unless it asks for a profile that requires none. In 2 more, only a profile a sign-in has to ask for requires one.`
+    )
+  })
+
+  test.each([
+    [
+      'the web profile requires one (a browser is never held to it)',
+      { web: { ...web, deviceBinding: 'required' } },
+    ],
+    [
+      'a profile no client may ask for requires one',
+      { kiosk: { ...mobile, clientSelectable: false, deviceBinding: 'required' } },
+    ],
+    ['mobile says none', { mobile: { ...mobile, deviceBinding: 'none' } }],
+  ])('not counted: %s', async (_name, changed) => {
+    const { deps } = await setup(CANNOT_BIND)
+    profiles(deps, changed)
+    expect((await check(deps)).status).toBe('warn')
+  })
+
+  test('counts environments, and names none of them, no profile and never the value of PUBLIC_URL', async () => {
+    const { deps } = await setup(CANNOT_BIND)
+    const [second, third] = addEnvironments(deps, 3)
+    required(deps)
+    selectable(deps, second, 'canary-profile')
+    required(deps, third)
+    const found = await check(deps)
+    expect(found.status).toBe('fail')
+    expect(found.summary).toContain(
+      'and in 2 environments the session profile a native app gets requires a device key'
+    )
+    expect(found.summary).toEndWith(
+      ' In 1 more, only a profile a sign-in has to ask for requires one.'
+    )
+    const said = JSON.stringify(found)
+    for (const id of [TEST_TENANT.environmentId, second, third]) {
+      expect(said).not.toContain(String(id))
+    }
+    expect(said).not.toContain('canary')
+    expect(said).not.toContain('my api')
+    expect(said).not.toContain('localhost')
+    expect(found.values).toBeUndefined()
+    // The warning for a profile to ask for names none either.
+    const { deps: other } = await setup(CANNOT_BIND)
+    selectable(other, undefined, 'canary-profile')
+    const warned = await check(other)
+    expect(warned.status).toBe('warn')
+    expect(JSON.stringify(warned)).not.toContain('canary')
+    expect(JSON.stringify(warned)).not.toContain('localhost')
+  })
+
+  test('settings that cannot be read: skipped, the reason stays out of the answer, the other checks stand', async () => {
+    const { deps } = await setup(CANNOT_BIND)
+    required(deps)
+    deps.environmentSettings.get = async () => {
+      throw new Error(`could not read settings: ${CANARIES[0]} CANARY-internal-message`)
+    }
+    const result = await Instance.diagnostics(deps)
+    expect(byId(result.checks, 'device_binding')).toEqual({
+      id: 'device_binding',
+      status: 'skipped',
+      summary:
+        'PUBLIC_URL is not an address a device-binding proof can name, so no session is bound to a device key on this deployment. Whether an environment requires one was not checked: the environments’ settings could not be read from the database.',
+    })
+    expect(byId(result.checks, 'master_key').status).toBe('ok')
+    expect(byId(result.checks, 'webhook_worker').status).toBe('ok')
+    expectNoCanary(result.checks)
+  })
+
+  test('an environment’s settings are read once a run, shared with the other checks that read them', async () => {
+    const { deps } = await setup({ ...CANNOT_BIND, sms: unconfiguredSmsSender } as never)
+    addEnvironments(deps, 4)
+    const asked: string[] = []
+    const get = deps.environmentSettings.get.bind(deps.environmentSettings)
+    deps.environmentSettings.get = async (environmentId, ...rest) => {
+      asked.push(environmentId)
+      return get(environmentId, ...rest)
+    }
+    const result = await Instance.diagnostics(deps)
+    expect(byId(result.checks, 'device_binding').status).toBe('warn')
+    expect(byId(result.checks, 'sms_sender').status).toBe('skipped')
+    expect(asked).toHaveLength(5)
+    expect(new Set(asked).size).toBe(5)
+  })
+
+  test('after one failed read it asks no further environment', async () => {
+    const { deps } = await setup(CANNOT_BIND)
+    addEnvironments(deps, 5)
+    let read = 0
+    deps.environmentSettings.get = async () => {
+      read += 1
+      throw new Error('CANARY-internal-message')
+    }
+    expect((await check(deps)).status).toBe('skipped')
+    expect(read).toBe(1)
+  })
+
+  // A reader's tool keeps the start of a string: what was not read is said first, by the
+  // function the native checks use, in every answer about environments.
+  test('more environments than one run reads: what was not read is said first, in every answer, and never "none"', async () => {
+    const NOT_READ = 'Only the first 200 of 201 environments were read; the other 1 were not. '
+    const { deps } = await setup(CANNOT_BIND)
+    const ids = addEnvironments(deps, Instance.MAX_ENVIRONMENTS_CHECKED)
+    // The newest environment, past the 200th, requires a key: it is not read.
+    required(deps, ids.at(-1))
+    const none = await check(deps)
+    expect(none.status).toBe('warn')
+    expect(none.summary).toBe(
+      `${NOT_READ}${CANNOT}: no session is bound to a device key on this deployment, and a sign-in that brings a key is refused (\`device.binding_not_supported\`). No environment that was read has a session profile that requires one.`
+    )
+    expect(none.fix).toBe(FIX)
+    selectable(deps, ids[0])
+    const asked = await check(deps)
+    expect(asked.status).toBe('warn')
+    expect(asked.summary).toStartWith(
+      `${NOT_READ}${CANNOT}, and in 1 environment a session profile`
+    )
+    required(deps)
+    const one = await check(deps)
+    expect(one.status).toBe('fail')
+    expect(one.summary).toStartWith(
+      `${NOT_READ}${CANNOT}, and in 1 environment the session profile a native app gets requires`
+    )
+    expect(one.summary).toEndWith(
+      ' In 1 more, only a profile a sign-in has to ask for requires one.'
+    )
+  })
+
+  test('a scan cut off by the timeout reads no further environment’s settings', async () => {
+    const { deps } = await setup(CANNOT_BIND)
+    addEnvironments(deps, 5)
+    let calls = 0
+    deps.environmentSettings.get = async () => {
+      calls += 1
+      await new Promise((resolve) => setTimeout(resolve, 80))
+      return null
+    }
+    const result = await Instance.diagnostics(deps, 50)
+    expect(byId(result.checks, 'device_binding').status).toBe('skipped')
+    expect(calls).toBe(1)
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    expect(calls).toBe(1)
+  })
+
+  // `@tula/mcp` caps a string at 512 characters, and a reader's tool keeps the start.
+  test('every sentence it can say fits in 512 characters, at the largest counts', async () => {
+    const said: DiagnosticCheck[] = []
+    {
+      const { deps } = await setup()
+      said.push(await check(deps))
+    }
+    // What the environments that are read hold: nothing, the default profile in every one,
+    // a profile to ask for in every one, and half of each (the failure's longest sentence).
+    for (const state of ['none', 'by_default', 'when_asked', 'both'] as const) {
+      for (const truncated of [false, true]) {
+        const { deps } = await setup(CANNOT_BIND)
+        const ids = [
+          TEST_TENANT.environmentId,
+          ...addEnvironments(
+            deps,
+            truncated
+              ? Instance.MAX_ENVIRONMENTS_CHECKED + 999
+              : Instance.MAX_ENVIRONMENTS_CHECKED - 1
+          ),
+        ]
+        ids.forEach((id, index) => {
+          if (state === 'by_default' || (state === 'both' && index % 2 === 0)) {
+            required(deps, id)
+          } else if (state !== 'none') {
+            selectable(deps, id)
+          }
+        })
+        const answer = await check(deps)
+        expect(answer.status).toBe(state === 'by_default' || state === 'both' ? 'fail' : 'warn')
+        if (truncated) {
+          expect(answer.summary).toStartWith('Only the first 200 of 1200 environments were read; ')
+        }
+        said.push(answer)
+      }
+    }
+    {
+      const { deps } = await setup(CANNOT_BIND)
+      deps.environmentSettings.get = async () => {
+        throw new Error('no')
+      }
+      said.push(await check(deps))
+    }
+    expect(new Set(said.map((answer) => answer.summary)).size).toBe(10)
+    for (const answer of said) {
+      expect(answer.summary.length).toBeLessThanOrEqual(512)
+      expect((answer.fix ?? '').length).toBeLessThanOrEqual(512)
+    }
   })
 })

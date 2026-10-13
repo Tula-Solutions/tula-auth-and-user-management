@@ -31,6 +31,9 @@ function RenameProjectDialog({
   const [name, setName] = useState('')
   const [problem, setProblem] = useState<string>()
   const [seen, setSeen] = useState<string | null>(null)
+  // From the click until the dialog closes, which is after the list was read again: the
+  // request has succeeded before that, and a live button would send it a second time.
+  const [saving, setSaving] = useState(false)
   if (project !== null && seen !== project.id) {
     setSeen(project.id)
     setName(project.name)
@@ -38,19 +41,25 @@ function RenameProjectDialog({
   }
   function close() {
     setSeen(null)
+    setSaving(false)
     rename.reset()
     onClose()
   }
   function submit(event: FormEvent) {
     event.preventDefault()
+    if (saving) {
+      return
+    }
     const found = nameProblem(name)
     setProblem(found)
     if (found !== undefined || project === null) {
       return
     }
+    setSaving(true)
     rename.mutate(
       { projectId: project.id, data: { name: name.trim() } },
       {
+        onError: () => setSaving(false),
         onSuccess: async () => {
           await queryClient.invalidateQueries({ queryKey: ['/v1/instance/projects'] })
           notify('Project renamed')
@@ -79,7 +88,7 @@ function RenameProjectDialog({
           <ActionButton variant='outline' onClick={close}>
             Cancel
           </ActionButton>
-          <ActionButton type='submit' pending={rename.isPending}>
+          <ActionButton type='submit' pending={saving}>
             Rename
           </ActionButton>
         </div>
