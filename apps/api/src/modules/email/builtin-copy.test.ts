@@ -16,9 +16,9 @@ const CODES = (['email_verification', 'password_reset', 'sign_in', 'step_up'] as
   ]
 )
 
-const DECOYS = (['account_exists', 'no_account', 'no_account_sign_in'] as const).map(
-  (type): [string, EmailMessage] => [type, { type }]
-)
+const DECOYS = (
+  ['account_exists', 'no_account', 'no_account_sign_in', 'email_in_use'] as const
+).map((type): [string, EmailMessage] => [type, { type }])
 
 const PASSWORDS = (['self', 'reset', 'admin', 'verification'] as const).flatMap((by) =>
   [false, true].map((added): [string, EmailMessage] => [
@@ -62,12 +62,31 @@ const MESSAGES: [string, EmailMessage][] = [
     { type: 'new_sign_in', device: 'Chrome on Windows', at, ipAddress: '203.0.113.7' },
   ],
   ['new_sign_in with no address', { type: 'new_sign_in', device: 'Safari', at, ipAddress: null }],
+  ['email_added', { type: 'email_added', at }],
 ]
 
 const BRANDS: [string, EmailBrand][] = [
   ['with a support address', { name: 'Acme', supportEmail: 'help@acme.test' }],
   ['without one', { name: 'O’Neil & <Sons>', supportEmail: null }],
 ]
+
+// The notice of an added address (ADR 0059) goes to an account that, as a rule, has no
+// password, in an environment whose sign-in methods the copy cannot know.
+describe('the notice of an added address says only what holds in every environment', () => {
+  test.each(BRANDS)('%s', (_name, brand) => {
+    const { subject, text, html } = render(brand, { type: 'email_added', at })
+    for (const part of [subject, text, html]) {
+      // Whether an address signs anyone in is a setting (the emailed code is off by default).
+      expect(part).not.toContain('can now be used to sign in')
+      // There is, as a rule, no password to reset: the account was made through a provider.
+      expect(part).not.toContain('reset your password')
+    }
+    expect(text).toContain('where its emails are sent from now on')
+    // The closing still ends with the server's own sentence of what to do otherwise.
+    expect(text).toContain("If it wasn't you, or you did not expect it, open ")
+    expect(text).toContain('set a new password for this address from the sign-in screen')
+  })
+})
 
 describe('the built-in copy is what it was before wording became editable', () => {
   for (const [brandName, brand] of BRANDS) {

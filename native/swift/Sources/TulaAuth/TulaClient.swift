@@ -56,6 +56,8 @@ public final class TulaClient: Sendable, TulaRedacted {
     public var factors: TulaFactors { TulaFactors(context: context) }
     /// The provider accounts the signed-in user signs in with.
     public var identities: TulaIdentities { TulaIdentities(context: context) }
+    /// An email address for a signed-in user whose account has none (ADR 0059).
+    public var emailAddress: TulaEmailAddress { TulaEmailAddress(context: context) }
 
     private let transport: ApiTransport
     private let context: FlowContext

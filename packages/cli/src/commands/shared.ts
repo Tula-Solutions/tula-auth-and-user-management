@@ -1,4 +1,4 @@
-import type { AdminClient } from '@tula/admin'
+import { type AdminClient, isTulaAdminError } from '@tula/admin'
 import {
   DEFAULT_CONFIG_FILE,
   type EnvironmentConfig,
@@ -6,9 +6,17 @@ import {
   loadConfig,
   selectEnvironment,
 } from '@tula/config'
-import type { EnvironmentSettings, SettingsManagedBy } from '@tula/contract'
+import type { EnvironmentSettings, OAuthProvider, SettingsManagedBy } from '@tula/contract'
 import type { OptionSpec } from '../args'
-import { buildPlan, type Plan, type RemoteState } from '../diff'
+import {
+  buildPlan,
+  DEPENDENTS_UNREAD,
+  type Plan,
+  providersGoingOff,
+  type RemoteDependents,
+  type RemoteState,
+  readDependentCount,
+} from '../diff'
 import type { CommandContext } from '../framework'
 import { resolveTarget, type Target } from '../target'
 
@@ -105,6 +113,58 @@ export async function readRemote(
 }
 
 /**
+ * Whether a refused count is the answer of a server from before the count: the API's own
+ * answer for a route it does not have, which is a 404 in the contract's error envelope
+ * with the code `resource.not_found` (`notFound` in the API's handlers; it never answers
+ * 405).
+ *
+ * Nothing else is "this server has no count". A 404 or a 405 with another code, with a
+ * page or with no body is something in front of the API speaking (a proxy, an access
+ * wall), and says nothing about the server: like a refusal, a limit, a failure and no
+ * answer at all it is a count that exists and was not read. The admin client gives an
+ * answer that is not the envelope the code `response.invalid`, so the code alone tells.
+ */
+function isUnknownRoute(error: { status: number; code: string }): boolean {
+  return error.status === 404 && error.code === 'resource.not_found'
+}
+
+/**
+ * Ask the server how many accounts depend on each of some providers: the ones a run would
+ * switch off or remove, and no other (ADR 0059).
+ *
+ * A count that cannot be had is never zero and never the run's failure, and it is one of
+ * two things. A server from before the route (it answers its own 404 for an unknown route,
+ * {@link isUnknownRoute}) has no count to give: `null`, and the plan judges nothing for
+ * that provider. Anything else (a refusal, a limit, a server's failure, no answer, an
+ * answer of another shape, a 404 or 405 that is not the API's own) is a count that exists and was
+ * not read: `'unread'`, and the plan is flagged, so that `tula apply --yes` is not let
+ * through by a request that failed. Nothing of the failure is kept.
+ *
+ * @param admin - The admin client.
+ * @param providers - The providers to ask about.
+ * @returns What is known of each: a count, `'unread'` or `null`.
+ */
+export async function readDependents(
+  admin: AdminClient,
+  providers: readonly OAuthProvider[]
+): Promise<RemoteDependents> {
+  const dependents: RemoteDependents = {}
+  for (const provider of providers) {
+    try {
+      const answer = await admin.call('getOAuthProviderDependents', { params: { provider } })
+      // An answer that is no count is not a server without one: it had something to say.
+      dependents[provider] = readDependentCount(provider, answer.data) ?? DEPENDENTS_UNREAD
+    } catch (error) {
+      if (!isTulaAdminError(error)) {
+        throw error
+      }
+      dependents[provider] = isUnknownRoute(error) ? null : DEPENDENTS_UNREAD
+    }
+  }
+  return dependents
+}
+
+/**
  * Load the config, pick the environment, connect and make the plan: what `diff` prints and
  * `apply` executes.
  *
@@ -124,9 +184,16 @@ export async function prepare(context: CommandContext): Promise<Prepared> {
     hooks: environment.hooks !== undefined,
     nativeApps: environment.nativeApps !== undefined,
   })
-  const plan = buildPlan(remote, environment, {
+  const prune = flags.prune === true
+  // Counted only for the providers this run takes away from sign-in, before the plan is
+  // made: the engine is handed the numbers and asks nothing itself.
+  const dependents = await readDependents(
+    target.admin,
+    providersGoingOff(remote.providers, environment.providers, { prune })
+  )
+  const plan = buildPlan({ ...remote, dependents }, environment, {
     configHash: await hashEnvironmentConfig(environment),
-    prune: flags.prune === true,
+    prune,
     rotateSecrets: flags['rotate-secrets'] === true,
   })
   return { name, environment, target, plan }

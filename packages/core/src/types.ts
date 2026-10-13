@@ -266,6 +266,18 @@ export type SmsFactorCode = Schemas['SmsFactorCode']
 export type PhoneCodeSent = Schemas['PhoneCodeSent']
 
 /**
+ * The receipt of a code emailed to an address a user wants on their account: where it went
+ * (masked) and when it stops working. Never the code, and never the whole address.
+ *
+ * @example
+ * ```ts
+ * const sent: EmailCodeSent = await tula.user.email.request({ email: 'ada@example.com' })
+ * show(`We emailed a code to ${sent.destination}`)
+ * ```
+ */
+export type EmailCodeSent = Schemas['EmailCodeSent']
+
+/**
  * A way to step up. An `auth.step_up_required` error says which ones the user may use; see
  * `stepUpMethods`.
  *

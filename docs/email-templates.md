@@ -117,6 +117,7 @@ follow the [rules for notices](#notices).
 | `account_exists` | Someone tried to sign up with an address that already has an account. | `appName` |
 | `no_account` | A password reset was asked for an address with no account. | `appName` |
 | `no_account_sign_in` | A sign-in by email was asked for an address with no account. | `appName` |
+| `email_in_use` | A signed-in user of an account with no address asked to add an address that already has an account. Sent to that address instead of a code ([ADR 0059](adr/0059-email-for-accounts-without-one.md)). | `appName` |
 
 ### Security notices
 
@@ -143,6 +144,7 @@ Which of them are sent at all is the environment's `notifications` setting.
 | `passkey_removed` | A passkey was removed. | `appName`, `time` |
 | `identity_linked` | A provider account was connected. | `appName`, `time`, `provider` |
 | `identity_unlinked` | A provider account was disconnected. | `appName`, `time`, `provider` |
+| `email_added` | An account with no email address got one, confirmed with a code. Sent to the new address. Tula's own text says the address is now the account's and where its emails go; it does not say the address can sign in, because that depends on your sign-in methods. | `appName`, `time` |
 
 ### What a placeholder holds
 
@@ -213,7 +215,8 @@ name):
 | `password_removed` | If you did not just sign in, open {app} and reset your password from the sign-in screen right away. |
 | `new_sign_in` | If it wasn't you, open {app} and reset your password from the sign-in screen right away. Resetting the password signs every device out. |
 | `identity_linked`, `identity_unlinked` | If it wasn't you, or you did not expect it, open {app} and reset your password from the sign-in screen right away, then review the connected accounts in your profile. |
-| `account_exists` | If it wasn't you, you can safely ignore this email. Your account has not changed. |
+| `email_added` | If it wasn't you, or you did not expect it, open {app} and set a new password for this address from the sign-in screen right away: that signs every device out of the account. |
+| `account_exists`, `email_in_use` | If it wasn't you, you can safely ignore this email. Your account has not changed. |
 | `no_account`, `no_account_sign_in` | If it wasn't you, you can safely ignore this email. |
 
 What you do write is everything before it: what happened, and anything a reader who did do

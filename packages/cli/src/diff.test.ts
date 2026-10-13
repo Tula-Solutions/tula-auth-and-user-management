@@ -19,14 +19,18 @@ import {
   planNativeApps,
   planProviders,
   planWebhooks,
+  providersGoingOff,
+  type RemoteDependents,
   type RemoteHook,
   type RemoteNativeApp,
   type RemoteProvider,
   type RemoteState,
   type RemoteWebhook,
+  readDependentCount,
   type WebhookChange,
   webhookSnapshot,
 } from './diff'
+import { planWarnings } from './render'
 
 const HASH = `sha256:${'a1'.repeat(32)}`
 
@@ -560,6 +564,211 @@ describe('planProviders', () => {
     ])
     // Not configured and not in the file: nothing to say.
     expect(planProviders(NO_PROVIDERS, {}, { prune: true })).toEqual([])
+  })
+})
+
+describe('a provider that accounts depend on (ADR 0059)', () => {
+  const x = { clientId: 'x-client', clientSecret: env('X_CLIENT_SECRET') }
+  const stored = (enabled: boolean) => [
+    provider('x', { configured: true, enabled, clientId: 'x-client' }),
+  ]
+  const COUNTED = { accounts: 3, more: false }
+  const NOT_COUNTED =
+    'the accounts that can sign in only with x could not be counted (this server has no count): if there are any they are locked out'
+
+  const NOT_JUDGED = ', and this plan was not judged for them'
+
+  const NOT_READ =
+    'the accounts that can sign in only with x could not be counted (the count could not be read): if there are any they are locked out'
+
+  const TAKEN_AS_WEAKER = ', and this plan is taken to weaken security'
+
+  /** What the file does with the provider, the server's state, the count, and the outcome. */
+  type Row = [
+    name: string,
+    file: 'on' | 'off' | 'left out' | 'pruned',
+    enabledOnServer: boolean,
+    dependents: RemoteDependents,
+    weakened: string[],
+    line: string | null,
+  ]
+
+  test.each([
+    [
+      'switched off with dependents',
+      'off',
+      true,
+      { x: COUNTED },
+      ['providers.x.enabled'],
+      '3 accounts can sign in only with x: they are locked out while it is off',
+    ],
+    [
+      'switched off with one dependent',
+      'off',
+      true,
+      { x: { accounts: 1, more: false } },
+      ['providers.x.enabled'],
+      '1 account can sign in only with x: it is locked out while it is off',
+    ],
+    ['switched off with none', 'off', true, { x: { accounts: 0, more: false } }, [], null],
+    [
+      'switched off, none among the accounts looked at and more not looked at',
+      'off',
+      true,
+      { x: { accounts: 0, more: true } },
+      ['providers.x.enabled'],
+      'none of the accounts the server read can sign in only with x, and it did not read them all: the rest were not looked at, so how many there are is not known',
+    ],
+    [
+      'switched off, the scan’s limit found and more not looked at',
+      'off',
+      true,
+      { x: { accounts: 1000, more: true } },
+      ['providers.x.enabled'],
+      'at least 1000 accounts can sign in only with x: they are locked out while it is off',
+    ],
+    [
+      'switched off, exactly one found and more not looked at',
+      'off',
+      true,
+      { x: { accounts: 1, more: true } },
+      ['providers.x.enabled'],
+      'at least 1 account can sign in only with x: they are locked out while it is off',
+    ],
+    // A count that should have been there and could not be read is a floor nobody knows:
+    // the plan is flagged, as for a scan that did not look at every account.
+    [
+      'switched off, the count not read',
+      'off',
+      true,
+      { x: 'unread' },
+      ['providers.x.enabled'],
+      `${NOT_READ} while it is off${TAKEN_AS_WEAKER}`,
+    ],
+    [
+      'removed, the count not read',
+      'pruned',
+      true,
+      { x: 'unread' },
+      ['providers.x'],
+      `${NOT_READ} until it is configured again${TAKEN_AS_WEAKER}`,
+    ],
+    ['already off, the count not read', 'off', false, { x: 'unread' }, [], null],
+    ['removed while off, the count not read', 'pruned', false, { x: 'unread' }, [], null],
+    [
+      'switched off, not counted',
+      'off',
+      true,
+      { x: null },
+      [],
+      `${NOT_COUNTED} while it is off${NOT_JUDGED}`,
+    ],
+    // A count nobody asked for is not there to judge, and nothing is said of it.
+    ['switched off, not asked', 'off', true, {}, [], null],
+    // A count is for a provider the run takes away: handed one all the same, it is not used.
+    ['stays on', 'on', true, { x: COUNTED }, [], null],
+    ['already off', 'off', false, { x: COUNTED }, [], null],
+    ['left out of the file, without --prune', 'left out', true, { x: COUNTED }, [], null],
+    [
+      'removed with dependents',
+      'pruned',
+      true,
+      { x: COUNTED },
+      ['providers.x'],
+      '3 accounts can sign in only with x: they are locked out until it is configured again',
+    ],
+    ['removed with none', 'pruned', true, { x: { accounts: 0, more: false } }, [], null],
+    [
+      'removed, not counted',
+      'pruned',
+      true,
+      { x: null },
+      [],
+      `${NOT_COUNTED} until it is configured again${NOT_JUDGED}`,
+    ],
+    ['removed while off', 'pruned', false, { x: COUNTED }, [], null],
+  ] as Row[])('%s', (_name, file, enabledOnServer, dependents, weakened, line) => {
+    const providers = file === 'on' ? { x } : file === 'off' ? { x: { ...x, enabled: false } } : {}
+    const result = plan({ providers }, remote({ providers: stored(enabledOnServer), dependents }), {
+      prune: file === 'pruned',
+    })
+    expect(result.weakened).toEqual(weakened)
+    expect(result.providers.find((change) => change.provider === 'x')?.weakened).toEqual(weakened)
+    const lines = planWarnings(result).filter((warning) => warning.includes('sign in only with'))
+    expect(lines).toEqual(line === null ? [] : [line])
+    // A floor of none is no number: nobody was found, and nobody is said to be locked out.
+    expect(planWarnings(result).join('\n')).not.toMatch(/at least 0/i)
+    // A count that was not read is never said as a number.
+    if (dependents.x === null || dependents.x === 'unread') {
+      expect(planWarnings(result).join('\n')).not.toMatch(/\d+ accounts?/)
+    }
+  })
+
+  test('the count is asked for only where a provider that is on is switched off or removed', () => {
+    const state = [
+      provider('x', { configured: true, enabled: true, clientId: 'x-client' }),
+      provider('github', { configured: true, enabled: true, clientId: 'gh' }),
+      provider('discord', { configured: true, enabled: false, clientId: 'd' }),
+      provider('facebook', { configured: true, enabled: true, clientId: 'f' }),
+      provider('google', { configured: true, enabled: false, clientId: 'g' }),
+    ]
+    const desired = environment({
+      providers: {
+        x: { ...x, enabled: false },
+        github: { clientId: 'gh', clientSecret: env('GITHUB_CLIENT_SECRET') },
+        discord: { clientId: 'd', clientSecret: env('DISCORD_CLIENT_SECRET'), enabled: false },
+        linkedin: { clientId: 'l', clientSecret: env('LINKEDIN_CLIENT_SECRET'), enabled: false },
+      },
+    }).providers
+    // Facebook is left out and on: removed only with --prune. Google is left out and off.
+    expect(providersGoingOff(state, desired, {})).toEqual(['x'])
+    expect(providersGoingOff(state, desired, { prune: true })).toEqual(['facebook', 'x'])
+    expect(providersGoingOff(NO_PROVIDERS, desired, { prune: true })).toEqual([])
+  })
+
+  test('a client id gained and a switch-off are both named, the field first', () => {
+    const A = '1234567890-abc.apps.googleusercontent.com'
+    const google = { clientId: 'g', clientSecret: env('GOOGLE_CLIENT_SECRET') }
+    const result = plan(
+      { providers: { google: { ...google, additionalClientIds: [A], enabled: false } } },
+      remote({
+        providers: [provider('google', { configured: true, enabled: true, clientId: 'g' })],
+        dependents: { google: COUNTED },
+      })
+    )
+    expect(result.weakened).toEqual([
+      'providers.google.additionalClientIds',
+      'providers.google.enabled',
+    ])
+  })
+
+  test.each([
+    [
+      { provider: 'x', accounts: 3, more: false },
+      { accounts: 3, more: false },
+    ],
+    [
+      { provider: 'x', accounts: 0, more: true },
+      { accounts: 0, more: true },
+    ],
+    // Only the two values are kept, whatever else an answer holds.
+    [
+      { provider: 'x', accounts: 2, more: false, users: ['u1'] },
+      { accounts: 2, more: false },
+    ],
+    [{ provider: 'github', accounts: 3, more: false }, null],
+    [{ provider: 'x', accounts: -1, more: false }, null],
+    [{ provider: 'x', accounts: 1.5, more: false }, null],
+    [{ provider: 'x', accounts: '3', more: false }, null],
+    [{ provider: 'x', accounts: Number.NaN, more: false }, null],
+    [{ provider: 'x', accounts: 3 }, null],
+    [{ provider: 'x', accounts: 3, more: 'false' }, null],
+    [{ accounts: 3, more: false }, null],
+    [null, null],
+    ['3', null],
+    [[], null],
+  ] as [unknown, unknown][])('an answer %j is read as %j', (answer, count) => {
+    expect(readDependentCount('x', answer)).toEqual(count as never)
   })
 })
 

@@ -22,6 +22,7 @@ import {
   IdentityListSchema,
   IdentitySchema,
   OAuthExchangeRequestSchema,
+  OAuthProviderDependentsSchema,
   OAuthProviderSettingsListSchema,
   OAuthProviderSettingsSchema,
   OAuthProviderUpdateSchema,
@@ -151,8 +152,13 @@ router.delete(
     description:
       'Removes the stored credentials; sign-in stops offering the provider. Users keep their ' +
       'connected accounts of it, so configuring it again lets them back in. Refused (422) ' +
-      'when it would leave the environment with no way to sign in. It is not refused because ' +
-      'some user has no other way in: such a user sets a password through a password reset.',
+      'when it would leave the environment with no way to sign in. It is **not** refused ' +
+      'because some user has no other way in: the accounts whose only way in is this ' +
+      'provider are counted and, when there is one, the audit entry says `weakened: true` ' +
+      'with the count. Read `GET /v1/admin/oauth-providers/{provider}/dependents` first. A ' +
+      'user with an email address sets a password through a password reset; one with none ' +
+      'is locked out until the provider is back or an administrator gives the account an ' +
+      'address.',
     security: openapi.security.admin,
     responses: {
       204: { description: 'Removed.' },
@@ -167,6 +173,44 @@ router.delete(
   async (c) => {
     await OAuth.remove(c.get('deps'), c.get('tenant'), c.req.valid('param').provider, adminActor(c))
     return c.body(null, 204)
+  }
+)
+
+router.get(
+  '/admin/oauth-providers/:provider/dependents',
+  describeRoute({
+    operationId: 'getOAuthProviderDependents',
+    tags: ['OAuth'],
+    summary: 'Count the accounts that depend on a provider',
+    description:
+      'How many accounts have this provider connected and could not sign in without it, by ' +
+      'the environment’s settings and its other providers as they are now: what to look at ' +
+      'before switching the provider off or removing its credentials. A number and nothing ' +
+      'about who. At most 1,000 accounts of the provider are looked at; past that `more` ' +
+      'is `true` and `accounts` is a floor. Changes nothing. An account with an email ' +
+      'address can be recovered (a password reset, an administrator’s password); one with ' +
+      'none (a first sign-in with X or Facebook) cannot, until it is given an address.',
+    security: openapi.security.admin,
+    responses: {
+      200: {
+        description: 'The count.',
+        content: { 'application/json': { schema: resolver(OAuthProviderDependentsSchema) } },
+      },
+      422: openapi.responses[422],
+      ...errors,
+      ...openapi.adminResponses,
+    },
+  }),
+  adminRateLimit(),
+  secretKey(),
+  validator('param', ProviderParamSchema, validationHook),
+  async (c) => {
+    c.header('Cache-Control', 'no-store')
+    return c.json(
+      OAuthProviderDependentsSchema.parse(
+        await OAuth.dependents(c.get('deps'), c.get('tenant'), c.req.valid('param').provider)
+      )
+    )
   }
 )
 

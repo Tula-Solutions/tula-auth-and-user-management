@@ -449,8 +449,17 @@ the rest are what they were. A provider already off is left alone and nothing is
   `last_sign_in_method`. It is spent. The provider is still on.
 
 What an administrator's own change records is what this records: `oauth_provider.updated`
-with `changed: ['enabled']`. Switching a provider off is not a weakening on the admin
-route (`oauthProviderWeakenings`) and is not one here; nothing restates the rule.
+with `changed: ['enabled']`. Since [ADR 0059](0059-email-for-accounts-without-one.md)
+switching a provider off is a weakening on the admin route where accounts depend on the
+provider (`oauthProviderWeakenings`, the path `enabled`), and it is one here by the same
+function: `OAuth.switchOff` counts those accounts again inside the lock and the entry
+says `weakened: true` with `dependentAccounts` (and `dependentAccountsIncomplete` past the
+scan limit). Nothing restates the rule. It is not refused for them, as the route's change
+is not; a count that cannot be taken ends the proposal `failed` with `error`, the provider
+still on. The approval is spent, as for every failed operation: the agent has to ask
+again. `tula approve` reads the count with the operator's key before it asks and says
+it in the question (fixed words when it could not be read, or when the server has no
+count): that number is what the person saw, the entry's is the write's own.
 
 **No new activity type.** The change is the entry it always was (`user.unbanned`,
 `session.revoked` with the reason `revoked_by_admin`, `oauth_provider.updated`), with the

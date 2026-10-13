@@ -111,6 +111,9 @@ public enum TulaOperations {
     /// Rename a passkey (`PATCH /v1/client/me/passkeys/{passkeyId}`). Body: `PasskeyRenameRequest`. Answers `Passkey`.
     public static let renamePasskey = TulaOperation(id: "renamePasskey", method: "PATCH", path: "/v1/client/me/passkeys/{passkeyId}", requiresSession: true)
 
+    /// Email a code to an address to add to my account (`POST /v1/client/me/email`). Body: `EmailAddressRequest`. Answers `EmailCodeSent`.
+    public static let requestEmailAddressCode = TulaOperation(id: "requestEmailAddressCode", method: "POST", path: "/v1/client/me/email", requiresSession: true)
+
     /// Text a code to a phone number (`POST /v1/client/me/phone`). Body: `PhoneNumberRequest`. Answers `PhoneCodeSent`.
     public static let requestPhoneCode = TulaOperation(id: "requestPhoneCode", method: "POST", path: "/v1/client/me/phone", requiresSession: true)
 
@@ -201,6 +204,9 @@ public enum TulaOperations {
     /// Submit a second factor (`POST /v1/client/sign-ins/{attemptId}/second-factor`). Body: `SecondFactorRequest`. Answers `FlowAttempt`.
     public static let submitSignInSecondFactor = TulaOperation(id: "submitSignInSecondFactor", method: "POST", path: "/v1/client/sign-ins/{attemptId}/second-factor", requiresSession: false)
 
+    /// Confirm the address with its code (`POST /v1/client/me/email/verify`). Body: `EmailAddressVerifyRequest`. Answers `CurrentUser`.
+    public static let verifyEmailAddress = TulaOperation(id: "verifyEmailAddress", method: "POST", path: "/v1/client/me/email/verify", requiresSession: true)
+
     /// Confirm a phone number with its code (`POST /v1/client/me/phone/verify`). Body: `PhoneNumberVerifyRequest`. Answers `CurrentUser`.
     public static let verifyPhoneNumber = TulaOperation(id: "verifyPhoneNumber", method: "POST", path: "/v1/client/me/phone/verify", requiresSession: true)
 
@@ -246,6 +252,7 @@ public enum TulaOperations {
         removePasskey,
         removePhoneNumber,
         renamePasskey,
+        requestEmailAddressCode,
         requestPhoneCode,
         resendPasswordResetCode,
         resendSignInCode,
@@ -276,6 +283,7 @@ public enum TulaOperations {
         submitSignInPasskey,
         submitSignInPassword,
         submitSignInSecondFactor,
+        verifyEmailAddress,
         verifyPhoneNumber,
         verifySignInEmail,
         verifySignInLink,

@@ -312,7 +312,13 @@ client, when it was signed in and whether it is live now or has already ended (l
 what is stored; a profile tightened since may end it at its next request), a provider
 as it is now ("on now", "already off", "not configured now"). What could not be read is
 said in those words beside the id ("could not be read", "no such session now") and never
-guessed: you decide with that in front of you. It prints who asked, what approving does, to what and when the proposal
+guessed: you decide with that in front of you. For a provider that is on, the question
+also says how many accounts can sign in only with it, as the server counted them just
+then ("at least" when it did not look at every account; "no account was found" for none):
+they are locked out while the provider is off. When that count could not be read, or the
+server is from before the count, the question says so in fixed words and gives no number.
+The server counts again when it switches the provider off, and that count is the one in
+the audit entry. It prints who asked, what approving does, to what and when the proposal
 expires; asks; and approves exactly what it printed. The
 change is carried out at once and recorded with the agent as its actor and your key as the
 one that approved. When there was nothing left to change by then (the session had already

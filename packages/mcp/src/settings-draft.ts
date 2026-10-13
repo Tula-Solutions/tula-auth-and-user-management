@@ -276,6 +276,15 @@ const NOTES: readonly string[] = [
 ]
 
 /**
+ * Said beside a draft that switches off a provider the server has on (ADR 0059). Whether
+ * that weakens depends on a count only the server has, which this tool never reads (no
+ * operation of `READ_OPERATIONS` answers it, on purpose): without the note, `weakens:
+ * false` would read as "nobody is locked out". A constant: no provider's name, no number.
+ */
+const DEPENDENTS_NOT_JUDGED =
+  'Whether accounts can sign in only with a provider this draft switches off is not judged here: this tool does not read that count, so `weakened` and `weakens` say nothing about it. `tula diff` counts them for the person who applies the draft, and `tula apply --yes` refuses a plan that locks accounts out without --allow-weaker.'
+
+/**
  * One reason a draft was refused: where, and a closed word for why. Never a value, and never
  * a validator's own sentence.
  */
@@ -473,6 +482,8 @@ interface DraftedProviders {
   entries: Record<string, unknown>[]
   weakened: string[]
   problems: Problem[]
+  /** Whether an entry switches off a provider the server has on. */
+  switchesOff: boolean
 }
 
 /** The client ids a server lists beside a provider's own: none where it lists none. */
@@ -487,7 +498,12 @@ function clientIdsOf(current: Record<string, unknown> | undefined): string[] {
 function draftProvider(
   current: Record<string, unknown> | undefined,
   wanted: DraftSettingsChangeInput['providers'][number]
-): { entry?: Record<string, unknown>; weakened: string[]; problems: Problem[] } {
+): {
+  entry?: Record<string, unknown>
+  weakened: string[]
+  problems: Problem[]
+  switchesOff?: boolean
+} {
   const provider: OAuthProvider = wanted.provider
   const at = `providers.${provider}`
   const configured = current?.configured === true
@@ -552,7 +568,10 @@ function draftProvider(
     configured ? { additionalClientIds: clientIdsOf(current) } : null,
     { additionalClientIds: clientIdsOf(parsed) }
   ).map((field) => `${at}.${field}`)
-  return { entry, weakened, problems }
+  // On to off is the one change whose weakening rests on the dependents' count. The tool
+  // cannot draft a removal, so there is no second case.
+  const switchesOff = configured && current.enabled === true && parsed.enabled === false
+  return { entry, weakened, problems, switchesOff }
 }
 
 /**
@@ -597,7 +616,12 @@ export async function draftSettingsChange(
     throw new ToolError('response.invalid', 'The answer was not the Tula API’s.')
   }
   const settings = draftSettings(answer.settings, input.settings)
-  const providers: DraftedProviders = { entries: [], weakened: [], problems: [] }
+  const providers: DraftedProviders = {
+    entries: [],
+    weakened: [],
+    problems: [],
+    switchesOff: false,
+  }
   if (input.providers.length > 0) {
     const listed: unknown = await reads.read('listOAuthProviders')
     if (!isRecord(listed) || !Array.isArray(listed.data)) {
@@ -614,6 +638,7 @@ export async function draftSettingsChange(
       }
       providers.weakened.push(...drafted.weakened)
       providers.problems.push(...drafted.problems)
+      providers.switchesOff ||= drafted.switchesOff === true
     }
   }
   const problems = [...settings.problems, ...providers.problems]
@@ -624,7 +649,7 @@ export async function draftSettingsChange(
   return {
     changed: false,
     nextStep: NEXT_STEP,
-    notes: [...NOTES],
+    notes: [...NOTES, ...(providers.switchesOff ? [DEPENDENTS_NOT_JUDGED] : [])],
     revision: project(answer.revision, S.number),
     managedBy: project(answer.managedBy, MANAGED_BY_SHAPE),
     settings: settings.edits,

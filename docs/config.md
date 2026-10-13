@@ -607,7 +607,60 @@ Changes pending. Run `tula apply` to make them.
 - A [hook](#hooks) is flagged by the same rule the server records it by: created with or
   changed to `failureMode: 'allow'` (`hooks.<point>.failureMode`), switched off
   (`hooks.<point>.enabled`), or removed while it is on (`hooks.<point>`). The settings'
-  paths come first in the list, then the hooks', then the native apps'.
+  paths come first in the list, then the providers', then the hooks', then the native apps'.
+- A provider is flagged when it gains a client id (`providers.google.additionalClientIds`)
+  and when it is **switched off or removed while accounts can sign in only with it**
+  (`providers.<provider>.enabled`, and `providers.<provider>` for a removal with `--prune`;
+  [ADR 0059](adr/0059-email-for-accounts-without-one.md)). For each provider that is on at
+  the server and that the plan switches off or removes, and for no other, `tula` asks the
+  server how many accounts depend on it and prints the answer under the plan:
+
+  ```
+    ! weakens security: providers.x.enabled (`tula apply --yes` needs --allow-weaker)
+    ! 3 accounts can sign in only with x: they are locked out while it is off
+  ```
+
+  A removal says `locked out until it is configured again`. The count is a number and
+  nothing about who. An account is counted when the provider is its only way to sign in,
+  by the settings and the other providers **as they are on the server now** (not as the
+  same plan would leave them): no password, no verified address with the emailed code on,
+  no other enabled provider, no passkey. The server looks at no more than 1,000 of the
+  provider's accounts; with more than that the number is a floor, printed as `at least N
+  accounts` (`at least 1 account`). When it found none among those it looked at the plan
+  is flagged all the same and says so with no number: `none of the accounts the server
+  read can sign in only with x, and it did not read them all: the rest were not looked
+  at, so how many there are is not known`.
+  With no such account nothing is flagged and nothing is printed. An account with no email
+  address (one made through X or Facebook, which give none) has no recovery of its own:
+  it cannot sign in until the provider is back or it is given an address. The server does
+  not refuse the change; it records it as a weakening, as `tula` does.
+
+  **A count that is not known is said, never printed as no accounts, and is one of two
+  things.**
+
+  - **A server from before the count has none to give**: it answers the request with the
+    API's own 404 for a route it does not have (the JSON error envelope with the code
+    `resource.not_found`). Only then is the plan not judged: the run goes on, nothing is flagged for
+    that provider, `apply --yes` needs no flag for it, and the plan says `! the accounts
+    that can sign in only with x could not be counted (this server has no count): if
+    there are any they are locked out while it is off, and this plan was not judged for
+    them`.
+  - **A count the server has and `tula` could not read flags the plan**: a request that
+    was refused (401, 403), limited (429), failed (any 5xx) or got no answer, an
+    answer that is not a count, and **a 404 or a 405 that is not the API's own** (a
+    proxy's or an access wall's page, no body, another code: something in front of the
+    API answered, which says nothing about the server). The provider's path is in `weakened`
+    (`providers.<provider>.enabled`, or `providers.<provider>` for a removal), so
+    `apply --yes` refuses the plan without `--allow-weaker` before any write, and the
+    plan says `! the accounts that can sign in only with x could not be counted (the
+    count could not be read): if there are any they are locked out while it is off, and
+    this plan is taken to weaken security`. Nothing of the failure is printed. A count
+    that failed is not a reason to let a run through: run it again, or pass
+    `--allow-weaker` knowing nobody counted.
+
+  In `--json` the provider's entry has `dependents`: `{ "accounts", "more" }`,
+  `"unread"` for a count that could not be read, or `null` for a server with none to
+  give.
 - A [native app](#native-apps) is flagged when it is registered
   (`nativeApps.<platform>/<identifier>`), when an iOS app's team changes (`….teamId`) and
   when an Android app gains a fingerprint (`….sha256CertFingerprints`).
@@ -698,6 +751,12 @@ tula apply --env prod --yes    # no question: for CI
   `apply --yes` refuses it, before any write, without `--allow-weaker`. An id taken away is
   not. The key is sent only when the file names an id, so a file without one still applies
   to a server from before the field.
+- **Switching a provider off, or removing it, while accounts can sign in only with it is a
+  weaker policy** (`providers.<provider>.enabled`, `providers.<provider>`;
+  [ADR 0059](adr/0059-email-for-accounts-without-one.md)): those accounts are locked out
+  until it is back, so `apply --yes` refuses it, before any write, without
+  `--allow-weaker`, and at a terminal the question names it. What is counted, and what a
+  count that could not be read means, is under [`tula diff`](#tula-diff).
 - Errors show the API's code and, for a refused document, each field's path:
 
   ```
@@ -713,7 +772,7 @@ tula apply --env prod --yes    # no question: for CI
 | `--prune` | delete providers, and remove webhook endpoints, hooks and native apps, that the server has and the file does not list |
 | `--rotate-secrets` | send every managed provider's secret again |
 | `--expect-revision <n>` | apply only if the settings are still at this revision |
-| `--allow-weaker` | with `--yes`: apply a plan that weakens security (the settings, a client id added to Google's `additionalClientIds`, a [hook](#hooks), or a [native app](#native-apps) registered or widened) |
+| `--allow-weaker` | with `--yes`: apply a plan that weakens security (the settings, a client id added to Google's `additionalClientIds`, a provider switched off or removed while accounts can sign in only with it, a [hook](#hooks), or a [native app](#native-apps) registered or widened) |
 | `--allow-unknown` | apply although the server has settings this version does not know (they are reset) |
 | `--allow-webhook-removal` | with `--yes`: apply a plan that removes a webhook endpoint, with its pending deliveries and its delivery log |
 | `--secrets-file <path>` | write the signing secrets of the webhook endpoints and the hooks the run creates to a new file (mode 0600) |

@@ -43,6 +43,9 @@ export const ACTIVITY_TYPES = [
   // `provider` says which, `method` how (`auto`, `profile`).
   'user.identity_linked',
   'user.identity_unlinked',
+  // An email address stored on a user who had none (ADR 0059); `method` says who did it and
+  // `verified` whether its holder proved it. The address itself is never in an event.
+  'user.email_added',
   'user.passkey_added',
   'user.passkey_renamed',
   'user.passkey_removed',
@@ -149,6 +152,7 @@ export const EVENT_TARGET_TYPES = {
   'user.backup_codes_regenerated': 'user',
   'user.backup_code_used': 'user',
   'user.identity_linked': 'user',
+  'user.email_added': 'user',
   'user.identity_unlinked': 'user',
   'user.passkey_added': 'user',
   'user.passkey_renamed': 'user',

@@ -3,6 +3,7 @@ import { FirstFactorStrategySchema } from './flow'
 import { HOOK_SIGN_UP_METHODS } from './hook'
 import {
   AdditionalClientIdsSchema,
+  DEPENDENT_ACCOUNTS_SCAN_LIMIT,
   givesNoAddress,
   ID_TOKEN_CLIENT_KINDS,
   ID_TOKEN_PROVIDERS,
@@ -16,6 +17,7 @@ import {
   MicrosoftTenantSchema,
   OAUTH_PROVIDERS,
   OAUTH_PROVIDERS_WITHOUT_ADDRESS,
+  OAuthProviderDependentsSchema,
   OAuthProviderSettingsSchema,
   OAuthProviderUpdateSchema,
   oauthProviderWeakenings,
@@ -250,7 +252,7 @@ describe('native ID-token sign-in (ADR 0045)', () => {
     expect(AdditionalClientIdsSchema.safeParse([ID, 'com.example.app']).success).toBe(false)
   })
 
-  test.each<[string, string[] | null, string[], string[]]>([
+  test.each<[string, string[] | null, string[], ReturnType<typeof oauthProviderWeakenings>]>([
     ['an id gained', [], [ID], ['additionalClientIds']],
     ['a first id on a new provider', null, [ID], ['additionalClientIds']],
     ['one swapped for another', [ID], [OTHER], ['additionalClientIds']],
@@ -273,6 +275,79 @@ describe('native ID-token sign-in (ADR 0045)', () => {
     ['compared exactly: another case is another string', ID, [ID.toUpperCase()], -1],
   ])('where the own client id is among the additional ones: %s', (_name, own, ids, expected) => {
     expect(ownClientIdAmong(own, ids)).toBe(expected)
+  })
+
+  const some = { accounts: 2, more: false }
+  const none = { accounts: 0, more: false }
+  test.each<
+    [
+      string,
+      Parameters<typeof oauthProviderWeakenings>[0],
+      Parameters<typeof oauthProviderWeakenings>[1],
+      ReturnType<typeof oauthProviderWeakenings>,
+    ]
+  >([
+    ['switched off', { enabled: true, dependents: some }, { enabled: false }, ['enabled']],
+    ['removed', { enabled: true, dependents: some }, null, ['enabled']],
+    [
+      'one account is enough',
+      { enabled: true, dependents: { accounts: 1, more: false } },
+      null,
+      ['enabled'],
+    ],
+    [
+      'nobody found, and not every account looked at',
+      { enabled: true, dependents: { accounts: 0, more: true } },
+      { enabled: false },
+      ['enabled'],
+    ],
+    ['nobody depends on it', { enabled: true, dependents: none }, { enabled: false }, []],
+    ['nobody depends on it, removed', { enabled: true, dependents: none }, null, []],
+    ['it stays on', { enabled: true, dependents: some }, { enabled: true }, []],
+    ['it was off already', { enabled: false, dependents: some }, { enabled: false }, []],
+    ['it was off, and is removed', { enabled: false, dependents: some }, null, []],
+    ['switched on', { enabled: false, dependents: some }, { enabled: true }, []],
+    ['a new provider', null, { enabled: false }, []],
+    ['not counted: not judged', { enabled: true }, { enabled: false }, []],
+    ['not said whether it was on: not judged', { dependents: some }, { enabled: false }, []],
+    [
+      'after does not say whether it is on: not judged',
+      { enabled: true, dependents: some },
+      {},
+      [],
+    ],
+    [
+      'both rules at once, in their order',
+      { enabled: true, dependents: some, additionalClientIds: [] },
+      { enabled: false, additionalClientIds: [ID] },
+      ['additionalClientIds', 'enabled'],
+    ],
+  ])(
+    'switching a provider off under accounts that depend on it weakens: %s',
+    (_name, before, after, expected) => {
+      expect(oauthProviderWeakenings(before, after)).toEqual(expected)
+    }
+  )
+
+  test('the count of dependent accounts is a count, a flag and the provider, and nothing else', () => {
+    expect(
+      OAuthProviderDependentsSchema.safeParse({ provider: 'x', accounts: 3, more: false }).success
+    ).toBe(true)
+    expect(
+      OAuthProviderDependentsSchema.safeParse({ provider: 'x', accounts: -1, more: false }).success
+    ).toBe(false)
+    expect(
+      OAuthProviderDependentsSchema.safeParse({
+        provider: 'x',
+        accounts: DEPENDENT_ACCOUNTS_SCAN_LIMIT + 1,
+        more: true,
+      }).success
+    ).toBe(false)
+    expect(Object.keys(OAuthProviderDependentsSchema.shape).sort()).toEqual([
+      'accounts',
+      'more',
+      'provider',
+    ])
   })
 
   test('a record with no list has none', () => {

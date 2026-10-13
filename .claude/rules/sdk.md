@@ -550,7 +550,10 @@ paths:
   (`tools.ts`), which refuses an answer that is not the proposal asked for
   (`response.invalid`), and is run by both injection tests because they iterate
   `PROPOSE_TOOL_NAMES` over `testing/injection.ts` (invisible characters as `\u{…}`
-  escapes). `tula approve` has a `CONSEQUENCES` sentence per operation, shows a provider
+  escapes). For `disable_oauth_provider` and a provider that is on, the question also says
+  how many accounts depend on it (`dependentsOf`: one read through `readDependents`, fixed
+  words for a count that was not read and for a server without one, never a number then,
+  never a failed run). `tula approve` has a `CONSEQUENCES` sentence per operation, shows a provider
   as "on now", "already off" or "not configured now" and a session with its owner (id,
   address, name), client kind, sign-in time and "live now" or "already ended" (two reads
   with the operator's key; a failed read is fixed words beside the bare id, never a

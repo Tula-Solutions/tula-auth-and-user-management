@@ -8,8 +8,9 @@
  *
  * - `email_verification`, `password_reset`, `sign_in`, `step_up`: the messages that carry a
  *   6-digit code (`sign_in` can carry a link as well).
- * - `account_exists`, `no_account`, `no_account_sign_in`: what is sent instead of a code, so
- *   that a sign-up, a reset and a sign-in answer alike for every address.
+ * - `account_exists`, `no_account`, `no_account_sign_in`, `email_in_use`: what is sent
+ *   instead of a code, so that a sign-up, a reset, a sign-in and adding an address to an
+ *   account (ADR 0059) answer alike for every address.
  * - the rest: security notices (ADR 0023), one per thing that can have happened.
  *
  * A closed list. Later servers may add kinds: additive.
@@ -46,6 +47,8 @@ export const EMAIL_TEMPLATE_KINDS = [
   'passkey_removed',
   'identity_linked',
   'identity_unlinked',
+  'email_in_use',
+  'email_added',
 ] as const
 
 /** One of {@link EMAIL_TEMPLATE_KINDS}. */
@@ -177,6 +180,8 @@ export const EMAIL_TEMPLATE_RULES: Readonly<Record<EmailTemplateKind, EmailTempl
   passkey_removed: NOTICE,
   identity_linked: { ...NOTICE, optional: ['appName', 'time', 'provider'] },
   identity_unlinked: { ...NOTICE, optional: ['appName', 'time', 'provider'] },
+  email_in_use: DECOY,
+  email_added: NOTICE,
 }
 
 /** Longest subject of a template, in characters (UTF-16 code units). */

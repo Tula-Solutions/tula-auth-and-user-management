@@ -442,6 +442,79 @@ describe('switching environment', () => {
     expect(api.callsTo('PUT', '/v1/admin/oauth-providers/google')).toHaveLength(0)
   })
 
+  // ADR 0059: the question about the accounts that depend on a provider holds a count that
+  // is one environment's. Like the question above it, it is gone after a switch, nothing
+  // it would have sent is sent, and the other environment counts for itself.
+  test('the question about switching a provider off, and its count, do not follow the operator', async () => {
+    const api = installFakeApi()
+    api.override('GET', /^\/v1\/admin\/oauth-providers$/, () => ({
+      data: [
+        {
+          provider: 'x',
+          configured: true,
+          enabled: true,
+          clientId: 'x-client',
+          teamId: null,
+          keyId: null,
+          tenant: null,
+          callbackUrl: 'http://localhost:3003/v1/client/oauth/x/callback',
+          updatedAt: '2026-03-01T09:00:00.000Z',
+        },
+      ],
+    }))
+    api.override('GET', /^\/v1\/admin\/oauth-providers\/x\/dependents$/, (call) => ({
+      provider: 'x',
+      accounts: call.headers.get(ENVIRONMENT) === IDS.production ? 7 : 3,
+      more: false,
+    }))
+    const current = start(`${DEV_PATH}/sign-in-methods`, { api })
+    const { user, router, location } = current
+    const card = () => screen.getByRole('heading', { name: 'X' }).closest('li') as HTMLElement
+    const saveOff = async () => {
+      await user.click(within(card()).getByRole('switch', { name: 'Let users sign in with X' }))
+      await user.click(within(card()).getByRole('button', { name: 'Save X' }))
+    }
+    await screen.findByRole('heading', { name: 'X' })
+    await saveOff()
+    const asked = (await screen.findByRole('heading', { name: 'Switch X off?' })).closest(
+      'dialog'
+    ) as HTMLElement
+    expect(asked.textContent).toContain('3 accounts can sign in only with X.')
+    await waitFor(() => expect(openDialogs()).toBe(1))
+
+    // The question is modal: the address changes by the browser's own buttons.
+    await act(() => router.navigate({ href: `${PROD_PATH}/sign-in-methods` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/sign-in-methods`))
+    await waitFor(() =>
+      expect(api.callsTo('GET', '/v1/admin/oauth-providers').at(-1)?.headers.get(ENVIRONMENT)).toBe(
+        IDS.production
+      )
+    )
+    await screen.findByRole('heading', { name: 'X' })
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(api.callsTo('PUT', '/v1/admin/oauth-providers/x')).toHaveLength(0)
+    // The switch is as production's record has it, not as it was left in development.
+    expect(
+      within(card())
+        .getByRole('switch', { name: 'Let users sign in with X' })
+        .getAttribute('aria-checked')
+    ).toBe('true')
+
+    // Production counts its own accounts and asks its own question; nothing is sent before.
+    await saveOff()
+    const again = (await screen.findByRole('heading', { name: 'Switch X off?' })).closest(
+      'dialog'
+    ) as HTMLElement
+    expect(again.textContent).toContain('7 accounts can sign in only with X.')
+    expect((again.textContent ?? '').includes('3 accounts')).toBe(false)
+    expect(
+      api
+        .callsTo('GET', '/v1/admin/oauth-providers/x/dependents')
+        .map((call) => call.headers.get(ENVIRONMENT))
+    ).toEqual([IDS.development, IDS.production])
+    expect(api.callsTo('PUT', '/v1/admin/oauth-providers/x')).toHaveLength(0)
+  })
+
   test('an open destructive confirmation does not survive a switch', async () => {
     const current = start(`${DEV_PATH}/api-keys`)
     const { user, router, location } = current

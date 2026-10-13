@@ -166,6 +166,11 @@ Meta's brand guidelines.
 **A user who signed up with X or Facebook has no email address**: `useUser().user.email` is
 `null`, and `<UserButton>` and `<UserProfile>` draw the name instead, with no address line
 and no password section. Code of your own that reads `user.email` has to allow for `null`.
+For such a user `<UserProfile>` has an "Email address" section: they type an address, are
+emailed a code and confirm it, and the address is then the account's, verified. An address
+another account holds gets the same screen and is sent no code. A user who signed in more
+than ten minutes ago, with no passkey and no authenticator app, is told to sign out and
+sign in again first. The section never changes an address an account has.
 
 ### Passkeys
 

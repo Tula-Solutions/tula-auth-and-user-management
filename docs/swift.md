@@ -562,6 +562,25 @@ the largest text sizes was tried.
 [`examples/swiftui`](../examples/swiftui/README.md) is an iOS app whose sign-in, sign-up
 and reset are this view. It is also what the UI tests drive.
 
+## An email address for an account without one
+
+An account made by signing in with X or Facebook has no email address (`user.email` is
+`nil`). Its user adds one and proves it with an emailed code
+([ADR 0059](adr/0059-email-for-accounts-without-one.md)):
+
+```swift
+let receipt = try await tula.emailAddress.request("ada@example.com")
+// receipt.destination is the masked address; the code is in the email.
+let user = try await tula.emailAddress.verify(code: typed)
+```
+
+Both calls need a recent sign-in. An account with no passkey and no authenticator app has
+nothing to step up with, so more than ten minutes after its sign-in they throw
+`auth.step_up_required` with no method in `stepUpMethods`: the user signs in with the
+provider again. An address another account holds is answered like a free one and no code
+confirms it (`verification.invalid_code`). An account that has an address, verified or
+not, is `email.already_set`: nothing here changes one.
+
 ## Errors
 
 Everything the client throws after construction is a `TulaError`:

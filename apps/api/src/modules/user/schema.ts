@@ -7,6 +7,7 @@ export {
   CreateUserRequestSchema,
   CurrentUserSchema,
   SetPasswordRequestSchema,
+  SetUserEmailRequestSchema,
   UserAuthenticationSchema,
   UserListSchema,
   UserSchema,

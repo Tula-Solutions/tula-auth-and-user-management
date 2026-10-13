@@ -171,8 +171,15 @@ describe('what @tula/react costs a browser bundle', () => {
    * split out). Measured on the tree that has both this and the texted second step, the
    * bundle is 52,835 bytes, 563 more than the 52,272 before. The budget was set from that
    * measurement, to 53,271, so the 436 bytes of room are still what is left.
+   * An email address for an account without one (ADR 0059, TULA-69) came in two parts. The
+   * client's two calls and the message of `email.already_set` are `@tula/core`'s and landed
+   * inside the room there was: the bundle then measured 53,175 bytes, 340 more, with 96
+   * bytes of room left. The profile's section (a form, the code step, "sign in again" for a
+   * user with nothing to step up with, ten strings) is this package's: with it the bundle
+   * measures 53,997 bytes, 822 more. The budget was set from that measurement, to 54,433,
+   * so the 436 bytes of room are what is left again.
    */
-  const GZIP_BUDGET_BYTES = 53_271
+  const GZIP_BUDGET_BYTES = 54_433
   /**
    * The QR encoder, in a chunk of its own: loaded when an enrolment is first drawn, so an app
    * that never shows one does not pay for it.

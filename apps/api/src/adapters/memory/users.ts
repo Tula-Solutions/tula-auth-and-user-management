@@ -2,9 +2,12 @@ import { type OAuthProvider, TEST_ADDRESS_DOMAIN, TEST_ADDRESS_LOCAL_PREFIX } fr
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import { type Activity, activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import type {
+  AddEmailRefusal,
+  DependentAccounts,
   IdentityRecord,
   LinkGuard,
   LinkOutcome,
+  NewEmailAddress,
   NewIdentity,
   NewUser,
   PasswordHistoryRule,
@@ -575,6 +578,54 @@ export class MemoryUserRepository implements UserRepository {
     user.smsFactorEnabledAt = null
     this.#activityLog.record(recordedOf([recorded]))
     return true
+  }
+
+  /** @inheritdoc */
+  async addEmail(
+    environmentId: string,
+    userId: string,
+    address: NewEmailAddress,
+    _at: Date,
+    recorded: Recorded
+  ): Promise<UserRecord | AddEmailRefusal> {
+    // Checked and written without an `await` in between, like the database's unique key.
+    const user = this.#user(environmentId, userId)
+    if (!user) {
+      return 'not_found'
+    }
+    if (user.email !== null) {
+      return 'has_email'
+    }
+    if (this.#byEmail(environmentId, address.normalized)) {
+      return 'taken'
+    }
+    user.email = address.email
+    user.emailNormalized = address.normalized
+    user.emailVerifiedAt = address.verifiedAt === null ? null : new Date(address.verifiedAt)
+    const activity = activityOf(recorded)
+    this.#activityLog.record(activity ? [activity] : [])
+    return { ...user }
+  }
+
+  /** @inheritdoc */
+  async countDependentOn(
+    environmentId: string,
+    provider: OAuthProvider,
+    canStillSignIn: (means: SignInMeans) => boolean,
+    limit: number
+  ): Promise<DependentAccounts> {
+    const holders = [...this.#identities.values()]
+      .filter((identity) => identity.environmentId === environmentId)
+      .filter((identity) => identity.provider === provider)
+      .sort((a, b) => (a.subject < b.subject ? -1 : 1))
+    let accounts = 0
+    for (const { userId } of holders.slice(0, limit)) {
+      const means = this.signInMeans(environmentId, userId)
+      if (means && !canStillSignIn(means)) {
+        accounts += 1
+      }
+    }
+    return { accounts, more: holders.length > limit }
   }
 
   /** @inheritdoc */

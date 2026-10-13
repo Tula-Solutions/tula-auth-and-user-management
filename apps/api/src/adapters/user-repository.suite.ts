@@ -1964,6 +1964,381 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
           expect(await auditOf(ctx.a, nelly.id)).toEqual([])
         })
 
+        describe('given an email address (ADR 0059)', () => {
+          const address = (verifiedAt: Date | null = later(5)) => {
+            const tag = Bun.randomUUIDv7()
+            return {
+              email: `Nelly-${tag}@Northline.app`,
+              normalized: `nelly-${tag}@northline.app`,
+              verifiedAt,
+              identityId: Bun.randomUUIDv7(),
+            }
+          }
+
+          test('stores the address with its verification time, recorded once, and is found by it', async () => {
+            const nelly = addressless()
+            await ctx.users.create(nelly, Audit.none('fixture'))
+            const added = address()
+            const stored = await ctx.users.addEmail(
+              ctx.a.environmentId,
+              nelly.id,
+              added,
+              later(5),
+              activity(ctx.a, 'user.email_added', nelly.id)
+            )
+            expect(stored).toMatchObject({
+              id: nelly.id,
+              email: added.email,
+              emailNormalized: added.normalized,
+            })
+            expect(typeof stored === 'string' ? null : stored.emailVerifiedAt).toEqual(later(5))
+            expect(await ctx.users.findByEmail(ctx.a.environmentId, added.normalized)).toEqual(
+              typeof stored === 'string' ? null : stored
+            )
+            expect(await auditOf(ctx.a, nelly.id)).toEqual(['user.email_added'])
+            // The provider identity is still the user's, and still the only one listed.
+            expect(
+              (await ctx.users.listIdentities(ctx.a.environmentId, nelly.id)).map(
+                (entry) => entry.provider
+              )
+            ).toEqual(['x'])
+          })
+
+          test('an address nobody proved is stored unverified', async () => {
+            const nelly = addressless()
+            await ctx.users.create(nelly, Audit.none('fixture'))
+            const stored = await ctx.users.addEmail(
+              ctx.a.environmentId,
+              nelly.id,
+              address(null),
+              later(5),
+              activity(ctx.a, 'user.email_added', nelly.id)
+            )
+            expect(typeof stored === 'string' ? stored : stored.emailVerifiedAt).toBeNull()
+          })
+
+          test('an address another user has is refused, with nothing written or recorded', async () => {
+            const maya = user(ctx.a)
+            const nelly = addressless()
+            await ctx.users.create(maya, Audit.none('fixture'))
+            await ctx.users.create(nelly, Audit.none('fixture'))
+            expect(
+              await ctx.users.addEmail(
+                ctx.a.environmentId,
+                nelly.id,
+                { ...address(), email: maya.email, normalized: maya.emailNormalized },
+                later(5),
+                activity(ctx.a, 'user.email_added', nelly.id)
+              )
+            ).toBe('taken')
+            expect((await ctx.users.findById(ctx.a.environmentId, nelly.id))?.email).toBeNull()
+            expect(await auditOf(ctx.a, nelly.id)).toEqual([])
+            expect(
+              (await ctx.users.findByEmail(ctx.a.environmentId, maya.emailNormalized))?.id
+            ).toBe(maya.id)
+            // And the user is not left half-written: a free address still goes on.
+            expect(
+              typeof (await ctx.users.addEmail(
+                ctx.a.environmentId,
+                nelly.id,
+                address(),
+                later(6),
+                activity(ctx.a, 'user.email_added', nelly.id)
+              ))
+            ).toBe('object')
+          })
+
+          test('the same address in another environment is no conflict', async () => {
+            const maya = user(ctx.b)
+            const nelly = addressless()
+            await ctx.users.create(maya, Audit.none('fixture'))
+            await ctx.users.create(nelly, Audit.none('fixture'))
+            expect(
+              typeof (await ctx.users.addEmail(
+                ctx.a.environmentId,
+                nelly.id,
+                { ...address(), email: maya.email, normalized: maya.emailNormalized },
+                later(5),
+                Audit.none('fixture')
+              ))
+            ).toBe('object')
+          })
+
+          test('a user who has an address is refused, the same one and another alike', async () => {
+            const maya = user(ctx.a)
+            await ctx.users.create(maya, Audit.none('fixture'))
+            for (const next of [
+              address(),
+              { ...address(), email: maya.email, normalized: maya.emailNormalized },
+            ]) {
+              expect(
+                await ctx.users.addEmail(
+                  ctx.a.environmentId,
+                  maya.id,
+                  next,
+                  later(5),
+                  activity(ctx.a, 'user.email_added', maya.id)
+                )
+              ).toBe('has_email')
+            }
+            expect((await ctx.users.findById(ctx.a.environmentId, maya.id))?.email).toBe(maya.email)
+            expect(await auditOf(ctx.a, maya.id)).toEqual([])
+          })
+
+          test('an unknown user, and one of another environment, is not found', async () => {
+            const nelly = addressless()
+            await ctx.users.create(nelly, Audit.none('fixture'))
+            for (const [environmentId, userId] of [
+              [ctx.a.environmentId, Bun.randomUUIDv7()],
+              [ctx.b.environmentId, nelly.id],
+            ] as const) {
+              expect(
+                await ctx.users.addEmail(
+                  environmentId,
+                  userId,
+                  address(),
+                  later(5),
+                  Audit.none('fixture')
+                )
+              ).toBe('not_found')
+            }
+            expect((await ctx.users.findById(ctx.a.environmentId, nelly.id))?.email).toBeNull()
+          })
+
+          test('two users adding one address at once: exactly one gets it', async () => {
+            const one = addressless()
+            const two = addressless({
+              id: Bun.randomUUIDv7(),
+              oauthIdentity: { id: Bun.randomUUIDv7(), provider: 'x', subject: freshSubject() },
+            })
+            await ctx.users.create(one, Audit.none('fixture'))
+            await ctx.users.create(two, Audit.none('fixture'))
+            const wanted = address()
+            const outcomes = await Promise.all(
+              [one, two].map((who) =>
+                ctx.users.addEmail(
+                  ctx.a.environmentId,
+                  who.id,
+                  { ...wanted, identityId: Bun.randomUUIDv7() },
+                  later(5),
+                  activity(ctx.a, 'user.email_added', who.id)
+                )
+              )
+            )
+            expect(outcomes.filter((outcome) => typeof outcome === 'object')).toHaveLength(1)
+            expect(outcomes.filter((outcome) => outcome === 'taken')).toHaveLength(1)
+            expect([...(await auditOf(ctx.a, one.id)), ...(await auditOf(ctx.a, two.id))]).toEqual([
+              'user.email_added',
+            ])
+          })
+
+          test('two additions to one user at once: one address, recorded once', async () => {
+            const nelly = addressless()
+            await ctx.users.create(nelly, Audit.none('fixture'))
+            const outcomes = await Promise.all(
+              [0, 1].map(() =>
+                ctx.users.addEmail(
+                  ctx.a.environmentId,
+                  nelly.id,
+                  address(),
+                  later(5),
+                  activity(ctx.a, 'user.email_added', nelly.id)
+                )
+              )
+            )
+            expect(outcomes.filter((outcome) => typeof outcome === 'object')).toHaveLength(1)
+            expect(outcomes.filter((outcome) => outcome === 'has_email')).toHaveLength(1)
+            expect(await auditOf(ctx.a, nelly.id)).toEqual(['user.email_added'])
+          })
+
+          test('afterwards the account is an ordinary one: its address verifies a link guard', async () => {
+            const nelly = addressless()
+            await ctx.users.create(nelly, Audit.none('fixture'))
+            const added = address()
+            await ctx.users.addEmail(
+              ctx.a.environmentId,
+              nelly.id,
+              added,
+              later(5),
+              Audit.none('fixture')
+            )
+            expect(
+              await ctx.users.linkIdentity(
+                { ...identity(ctx.a, nelly.id), provider: 'google' },
+                Audit.none('fixture'),
+                { emailNormalized: added.normalized }
+              )
+            ).toBe('linked')
+          })
+        })
+
+        describe('counted as depending on its provider (ADR 0059)', () => {
+          /** A way to sign in, by the caller's rule: here, anything but the provider itself. */
+          const without =
+            (provider: string) =>
+            (means: {
+              hasPassword: boolean
+              emailVerified: boolean
+              providers: string[]
+              passkeys: number
+            }) =>
+              means.hasPassword ||
+              means.emailVerified ||
+              means.passkeys > 0 ||
+              means.providers.some((other) => other !== provider)
+
+          /** A provider nothing else in the shared tenant uses is counted from zero. */
+          async function discordOnly(tenant = ctx.a, overrides: Partial<NewUser> = {}) {
+            const input = {
+              ...addressless(),
+              projectId: tenant.projectId,
+              environmentId: tenant.environmentId,
+              id: Bun.randomUUIDv7(),
+              oauthIdentity: {
+                id: Bun.randomUUIDv7(),
+                provider: 'discord' as const,
+                subject: freshSubject(),
+              },
+              ...overrides,
+            }
+            expect(await ctx.users.create(input, Audit.none('fixture'))).toBe(true)
+            return input
+          }
+
+          const count = (limit = 1000, environmentId = ctx.a.environmentId) =>
+            ctx.users.countDependentOn(environmentId, 'discord', without('discord'), limit)
+
+          test('counts the users whose only way in is the provider, and nobody else', async () => {
+            const before = await count()
+            // Depends on it: nothing but the provider's identity.
+            await discordOnly()
+            await discordOnly()
+            // Does not: a password, a verified address, or another provider's identity.
+            const withPassword = user(ctx.a, {
+              emailVerifiedAt: null,
+              oauthIdentity: {
+                id: Bun.randomUUIDv7(),
+                provider: 'discord',
+                subject: freshSubject(),
+              },
+            })
+            const verified = user(ctx.a, {
+              passwordHash: null,
+              oauthIdentity: {
+                id: Bun.randomUUIDv7(),
+                provider: 'discord',
+                subject: freshSubject(),
+              },
+            })
+            await ctx.users.create(withPassword, Audit.none('fixture'))
+            await ctx.users.create(verified, Audit.none('fixture'))
+            const both = await discordOnly()
+            expect(
+              await ctx.users.linkIdentity(
+                { ...identity(ctx.a, both.id), provider: 'github' },
+                Audit.none('fixture')
+              )
+            ).toBe('linked')
+            // Has no account of the provider at all.
+            await ctx.users.create(addressless(), Audit.none('fixture'))
+            expect(await count()).toEqual({ accounts: before.accounts + 2, more: false })
+          })
+
+          test('the rule is the caller’s, asked with everything the user has', async () => {
+            const nelly = await discordOnly()
+            const seen: unknown[] = []
+            await ctx.users.countDependentOn(
+              ctx.a.environmentId,
+              'discord',
+              (means) => {
+                seen.push(means)
+                return true
+              },
+              1000
+            )
+            expect(seen).toContainEqual({
+              hasPassword: false,
+              emailVerified: false,
+              providers: ['discord'],
+              passkeys: 0,
+            })
+            // A rule that lets everyone in counts nobody.
+            expect(
+              (await ctx.users.countDependentOn(ctx.a.environmentId, 'discord', () => true, 1000))
+                .accounts
+            ).toBe(0)
+            expect(nelly.id).toBeString()
+          })
+
+          test('an unverified address is no way in, and one given and proven is', async () => {
+            const nelly = await discordOnly()
+            const before = await count()
+            await ctx.users.addEmail(
+              ctx.a.environmentId,
+              nelly.id,
+              {
+                email: `n-${nelly.id}@northline.app`,
+                normalized: `n-${nelly.id}@northline.app`,
+                verifiedAt: later(5),
+                identityId: Bun.randomUUIDv7(),
+              },
+              later(5),
+              Audit.none('fixture')
+            )
+            expect((await count()).accounts).toBe(before.accounts - 1)
+          })
+
+          test('looks at no more users than the limit, and says when some were left out', async () => {
+            // LinkedIn: a provider no other test of the shared tenants counts.
+            const linkedInOnly = async () =>
+              ctx.users.create(
+                {
+                  ...addressless(),
+                  id: Bun.randomUUIDv7(),
+                  oauthIdentity: {
+                    id: Bun.randomUUIDv7(),
+                    provider: 'linkedin',
+                    subject: freshSubject(),
+                  },
+                },
+                Audit.none('fixture')
+              )
+            const asked: unknown[] = []
+            const counted = (limit: number) =>
+              ctx.users.countDependentOn(
+                ctx.a.environmentId,
+                'linkedin',
+                (means) => {
+                  asked.push(means)
+                  return false
+                },
+                limit
+              )
+            const had = (await counted(1000)).accounts
+            for (let made = 0; made < 3; made += 1) {
+              await linkedInOnly()
+            }
+            asked.length = 0
+            expect(await counted(had + 2)).toEqual({ accounts: had + 2, more: true })
+            expect(asked).toHaveLength(had + 2)
+            expect(await counted(had + 3)).toEqual({ accounts: had + 3, more: false })
+          })
+
+          test('another environment’s users are never counted', async () => {
+            const before = await count(1000, ctx.b.environmentId)
+            await discordOnly(ctx.a)
+            expect(await count(1000, ctx.b.environmentId)).toEqual(before)
+            await discordOnly(ctx.b)
+            expect((await count(1000, ctx.b.environmentId)).accounts).toBe(before.accounts + 1)
+          })
+
+          test('a provider nobody has is nobody’s way in', async () => {
+            expect(
+              await ctx.users.countDependentOn(ctx.a.environmentId, 'apple', () => false, 1000)
+            ).toEqual({ accounts: 0, more: false })
+          })
+        })
+
         test('is never the target of an automatic link, whatever the guard says', async () => {
           const nelly = addressless()
           await ctx.users.create(nelly, Audit.none('fixture'))

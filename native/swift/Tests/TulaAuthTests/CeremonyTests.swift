@@ -476,6 +476,41 @@ final class CeremonyTests: XCTestCase {
             TulaError(code: "auth.invalid_credentials", status: 401, params: ["methods": .string("totp")]).stepUpMethods, [])
     }
 
+    func testAnAddressForAnAccountWithoutOneIsAskedForAndConfirmed() async throws {
+        let world = try await World.signedIn()
+        func known() async -> CurrentUser? {
+            if case .signedIn(_, let user) = await world.session.state { return user }
+            return nil
+        }
+        let ask = "POST /v1/client/me/email"
+        world.api.on(ask, Reply(json: #"{"destination":"m***@example.com","expiresAt":"2030-01-01T00:00:00.000Z"}"#))
+        let sent = try await world.client.emailAddress.request("maya@example.com")
+        XCTAssertEqual(sent.destination, "m***@example.com")
+        XCTAssertEqual(world.api.count(ask), 1)
+        // A receipt that names nothing is not one.
+        world.api.on(ask, Reply(json: #"{"destination":"","expiresAt":"2030-01-01T00:00:00.000Z"}"#))
+        let invalid = await thrownCode { _ = try await world.client.emailAddress.request("maya@example.com") }
+        XCTAssertEqual(invalid, "response.invalid")
+
+        // The server's refusal is thrown as it is, and the session's user is left alone.
+        let confirm = "POST /v1/client/me/email/verify"
+        let before = await known()
+        world.api.on(
+            confirm,
+            Reply(status: 400, json: #"{"status":400,"code":"verification.invalid_code","detail":"The code is not valid."}"#))
+        let refused = await thrownCode { _ = try await world.client.emailAddress.verify(code: "000000") }
+        XCTAssertEqual(refused, "verification.invalid_code")
+        let kept = await known()
+        XCTAssertEqual(kept?.email, before?.email)
+
+        // Confirmed: the session's state has the user the server answered.
+        world.api.on(confirm, Reply(json: Fixture.user.replacingOccurrences(of: "maya@example.com", with: "new@example.com")))
+        let user = try await world.client.emailAddress.verify(code: "123456")
+        XCTAssertEqual(user.email, "new@example.com")
+        let held = await known()
+        XCTAssertEqual(held?.email, "new@example.com")
+    }
+
     func testTheUsersFactorsAreReadEnrolledAndRemoved() async throws {
         let world = try await World.signedIn()
         world.api.on(

@@ -210,6 +210,15 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     target: aboutUser,
     data: { passkeyId: PASSKEY },
   },
+  'user.email_added': {
+    id: eventId(44),
+    type: 'user.email_added',
+    schemaVersion,
+    occurredAt,
+    actor: user,
+    target: aboutUser,
+    data: { method: 'self', verified: true },
+  },
   'user.phone_number_added': {
     id: eventId(36),
     type: 'user.phone_number_added',
@@ -346,6 +355,8 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
       created: true,
       additionalClientIdCount: 2,
       weakened: true,
+      dependentAccounts: 12,
+      dependentAccountsIncomplete: true,
     },
   },
   'oauth_provider.deleted': {
@@ -355,7 +366,12 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     occurredAt,
     actor: admin,
     target: aboutEnvironment,
-    data: { provider: 'apple' },
+    data: {
+      provider: 'apple',
+      weakened: true,
+      dependentAccounts: 3,
+      dependentAccountsIncomplete: true,
+    },
   },
   'webhook_endpoint.created': {
     id: eventId(27),

@@ -6,6 +6,7 @@ import {
 } from '@tula/contract'
 import {
   type Change,
+  DEPENDENTS_UNREAD,
   type HookChange,
   isTemplatePath,
   type NativeAppChange,
@@ -424,6 +425,50 @@ function countriesTakenOut(plan: Pick<Plan, 'settings'>): string[] {
     .sort()
 }
 
+/**
+ * What a plan says about the accounts that depend on a provider it switches off or removes
+ * (ADR 0059): one sentence per such provider. A count in words and nothing else, never an
+ * id, an address or a name; "at least" where the server did not look at every account. A
+ * count that is not known is said as that, never as none, in fixed words that hold nothing
+ * of why: a server with no count to give leaves the plan unjudged, a count that could not
+ * be read flags it. A count of none says nothing.
+ */
+function dependentAccountLines(plan: Pick<Plan, 'providers'>): string[] {
+  return plan.providers.flatMap((change): string[] => {
+    if (change.dependents === undefined) {
+      return []
+    }
+    const outcome = change.action === 'delete' ? 'until it is configured again' : 'while it is off'
+    if (change.dependents === null) {
+      return [
+        `the accounts that can sign in only with ${change.provider} could not be counted (this server has no count): if there are any they are locked out ${outcome}, and this plan was not judged for them`,
+      ]
+    }
+    if (change.dependents === DEPENDENTS_UNREAD) {
+      return [
+        `the accounts that can sign in only with ${change.provider} could not be counted (the count could not be read): if there are any they are locked out ${outcome}, and this plan is taken to weaken security`,
+      ]
+    }
+    const { accounts, more } = change.dependents
+    if (accounts === 0 && !more) {
+      return []
+    }
+    if (accounts === 0) {
+      // A scan that stopped early and found none: a floor of nothing is no number, and
+      // nobody found is nobody said to be locked out. The plan is flagged all the same.
+      return [
+        `none of the accounts the server read can sign in only with ${change.provider}, and it did not read them all: the rest were not looked at, so how many there are is not known`,
+      ]
+    }
+    // A scan that stopped early found a floor.
+    const count = `${more ? 'at least ' : ''}${accounts}`
+    const one = accounts === 1 && !more
+    return [
+      `${count} ${accounts === 1 ? 'account' : 'accounts'} can sign in only with ${change.provider}: ${one ? 'it is' : 'they are'} locked out ${outcome}`,
+    ]
+  })
+}
+
 /** Whether a plan switches text messages off where the server has them on. */
 function switchesTextMessagesOff(plan: Pick<Plan, 'settings'>): boolean {
   return plan.settings.some(
@@ -449,6 +494,8 @@ export function planWarnings(plan: Plan): string[] {
       `weakens security: ${plan.weakened.join(', ')} (\`tula apply --yes\` needs --allow-weaker)`
     )
   }
+  // What the provider paths above stand for, in words: who can no longer sign in.
+  warnings.push(...dependentAccountLines(plan))
   // "Weakens security" undersells this one: applying it destroys something. Only "for good"
   // is promised: a run deletes a bounded number of entries, so a backlog takes several.
   const doomed = deletedAuditAge(plan)

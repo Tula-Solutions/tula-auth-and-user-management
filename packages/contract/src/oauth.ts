@@ -230,40 +230,108 @@ export function ownClientIdAmong(clientId: string, additionalClientIds: readonly
 }
 
 /**
- * What of a provider's record decides whose ID tokens are accepted, for
- * {@link oauthProviderWeakenings}.
+ * The most accounts of one provider the server looks at when it counts the ones that depend
+ * on it ({@link OAuthProviderDependentsSchema}; ADR 0059). The count is a read an operator
+ * waits for, so its work is bounded: past this many accounts the answer says `more`.
+ */
+export const DEPENDENT_ACCOUNTS_SCAN_LIMIT = 1000
+
+/**
+ * How many accounts **depend** on a provider: have an account of it connected and no other
+ * way to sign in that the environment accepts (a password, a verified address with the
+ * emailed code on, another enabled provider, a passkey). Switching the provider off, or
+ * removing its credentials, locks those accounts out until it is back
+ * (`GET /v1/admin/oauth-providers/{provider}/dependents`; ADR 0059).
+ *
+ * A number and a boolean, and nothing about who: never an id, an address or a name.
+ *
+ * - `accounts`: how many were found among the accounts looked at.
+ * - `more`: `true` when the provider has more accounts than
+ *   {@link DEPENDENT_ACCOUNTS_SCAN_LIMIT}, so not all were looked at and `accounts` is a
+ *   floor: read it as "at least".
+ *
+ * @example
+ * ```ts
+ * OAuthProviderDependentsSchema.parse({ provider: 'x', accounts: 12, more: false })
+ * ```
+ */
+export const OAuthProviderDependentsSchema = z
+  .object({
+    provider: OAuthProviderSchema,
+    accounts: z.number().int().min(0).max(DEPENDENT_ACCOUNTS_SCAN_LIMIT),
+    more: z.boolean(),
+  })
+  .meta({ ref: 'OAuthProviderDependents' })
+
+/** How many accounts depend on a provider. */
+export type OAuthProviderDependents = z.infer<typeof OAuthProviderDependentsSchema>
+
+/**
+ * What of a provider's record {@link oauthProviderWeakenings} judges: whose ID tokens are
+ * accepted, and whether sign-in offers the provider while accounts depend on it.
  */
 export interface OAuthProviderAudiences {
   /** The client ids accepted beside the provider's own. Absent means none. */
   additionalClientIds?: readonly string[]
+  /** Whether sign-in offers the provider. Absent: not said, and not judged. */
+  enabled?: boolean
+  /**
+   * Of the record **before** the change: the accounts that depend on the provider, as the
+   * server counted them. Absent: not counted, and the rule about them is not judged.
+   */
+  dependents?: Pick<OAuthProviderDependents, 'accounts' | 'more'>
 }
 
 /**
- * The paths at which a change to a provider's record accepts more than it did: today, one
- * thing, a client id gained in `additionalClientIds`.
+ * The paths at which a change to a provider's record weakens something. Two things:
  *
- * Every accepted client id is another app whose ID tokens sign users in, so a new one is a
- * weakening in the sense of the settings' (`settingsWeakenings`): the audit entry says
- * `weakened: true`, the dashboard says so before it saves, and `tula apply --yes` refuses it
- * without `--allow-weaker`. An id taken away, and a reordering, are not. The path names the
- * field and never a client id.
+ * - **`additionalClientIds`: a client id gained.** Every accepted client id is another app
+ *   whose ID tokens sign users in. An id taken away, and a reordering, are not.
+ * - **`enabled`: the provider switched off, or its credentials removed, while accounts depend
+ *   on it** (ADR 0059): `before.enabled` is `true`, `after` is `null` or not enabled, and
+ *   `before.dependents` counted at least one account, or could not look at all of them
+ *   (`more`). Those accounts are locked out until the provider is back; one with no email
+ *   address (made through X or Facebook) has no recovery of its own. Nothing is judged where
+ *   `before.enabled` or `before.dependents` is left out.
+ *
+ * A weakening in the sense of the settings' (`settingsWeakenings`): the audit entry says
+ * `weakened: true`, the dashboard asks before it saves, and `tula apply --yes` refuses it
+ * without `--allow-weaker`. A path names a field and never a client id or an account.
  *
  * @param before - The record as stored, or `null` when the provider was not configured.
- * @param after - The record as it will be stored.
- * @returns `['additionalClientIds']`, or an empty list.
+ * @param after - The record as it will be stored, or `null` when it is being removed.
+ * @returns The weakened fields, of `additionalClientIds` and `enabled`, in that order.
  *
  * @example
  * ```ts
  * oauthProviderWeakenings({ additionalClientIds: [] }, { additionalClientIds: [id] })
  * // ['additionalClientIds']
+ * oauthProviderWeakenings(
+ *   { enabled: true, dependents: { accounts: 3, more: false } },
+ *   { enabled: false }
+ * ) // ['enabled']
  * ```
  */
 export function oauthProviderWeakenings(
   before: OAuthProviderAudiences | null,
-  after: OAuthProviderAudiences
-): string[] {
+  after: OAuthProviderAudiences | null
+): ('additionalClientIds' | 'enabled')[] {
+  const weakened: ('additionalClientIds' | 'enabled')[] = []
   const had = new Set(before?.additionalClientIds ?? [])
-  return (after.additionalClientIds ?? []).some((id) => !had.has(id)) ? ['additionalClientIds'] : []
+  if ((after?.additionalClientIds ?? []).some((id) => !had.has(id))) {
+    weakened.push('additionalClientIds')
+  }
+  const dependents = before?.dependents
+  if (
+    before?.enabled === true &&
+    // Removed (`null`) or said to be off: a record that does not say is not judged.
+    (after === null || after.enabled === false) &&
+    dependents !== undefined &&
+    (dependents.accounts > 0 || dependents.more)
+  ) {
+    weakened.push('enabled')
+  }
+  return weakened
 }
 
 /** Longest ID token a request may carry. Google's are under two thousand characters. */

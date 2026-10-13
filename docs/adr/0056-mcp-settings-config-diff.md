@@ -151,6 +151,13 @@ What the tool does not judge is said in its docs: what only the server knows at 
 (that some way to sign in remains, counting providers; that the revision is still the one
 read). `tula diff` and `tula apply` are the check.
 
+**One of them is also said in the answer** ([ADR 0059](0059-email-for-accounts-without-one.md)).
+Switching off a provider that accounts can only sign in with is a weakening, and it rests
+on a count the tool never reads (no operation of `READ_OPERATIONS` answers it, and none
+was added). For a draft that takes a provider from on to off, `weakens: false` would
+otherwise read as "nobody is locked out", so `notes` gains one constant entry: the count
+is not judged here, and `tula diff` counts. It holds no provider's name and no number.
+
 ### What the reader is told, in fixed words
 
 `changed: false` on every answer, a refusal included, and `nextStep`: nothing was changed
@@ -158,7 +165,8 @@ on the server or on disk; a person reviews the file, runs `tula diff` and `tula 
 with their own secret key; this server cannot apply it. `notes` says how the edits are
 read, that the file is the whole truth for settings (so an edit belongs in the file that
 manages the environment, and where `managedBy` is null a file of only these edits would
-reset the rest), and what `weakened` means. None of the four holds a value.
+reset the rest), and what `weakened` means, and, for a draft that switches a provider
+off, that the accounts that depend on it are not counted here. None of them holds a value.
 
 ### New dependencies of `@tula/mcp`
 

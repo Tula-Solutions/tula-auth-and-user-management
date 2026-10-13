@@ -5,6 +5,7 @@ import {
   DEFAULT_ENVIRONMENT_SETTINGS,
   type FlowAttempt,
   HOOK_QUESTION_SCHEMAS,
+  type OAuthProviderDependents,
   type OAuthProviderSettings,
   type OAuthStart,
   type User,
@@ -16,6 +17,7 @@ import { mockOAuthProviders } from '~/adapters/oauth/mock'
 import { AuthError } from '~/exceptions'
 import { createApp } from '~/index'
 import * as Audit from '~/modules/audit/service'
+import * as EmailAddress from '~/modules/email-address/service'
 import * as Hooks from '~/modules/hook/service'
 import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
@@ -631,10 +633,11 @@ describe.each(PROVIDERS)('%s', (provider, name, accountId) => {
       expect(decodeJwt(again.accessToken as string).ext).toEqual({ kind: 'ios' })
     })
 
-    // Pinned, not prevented (ADR 0026, "A user may now have no email address"): the server
-    // refuses a change that leaves the *environment* no sign-in method, and never asks whether
-    // some *user* depends on the provider. For an account with an address that is recoverable
-    // (a reset sets a first password, an administrator can set one); for this one it is not.
+    // Not prevented, and no longer silent (ADR 0059): the server refuses a change that leaves
+    // the *environment* no sign-in method, and a change that locks *users* out is a recorded
+    // weakening with their count, which the dashboard and `tula apply` ask about first. For
+    // an account with an address that is recoverable (a reset sets a first password, an
+    // administrator can set one); for this one it is not, until it is given an address.
     test.each([
       ['switches the provider off', () => configure(provider, { enabled: false }), 200],
       ['removes its credentials', () => admin('DELETE', `/oauth-providers/${provider}`), 204],
@@ -642,9 +645,19 @@ describe.each(PROVIDERS)('%s', (provider, name, accountId) => {
       'an account whose only way in is this provider is locked out when the operator %s',
       async (_n, takeAway, answered) => {
         const userId = session.userId as string
-        // Nothing refuses it and nothing warns: the password is still a method of the
-        // environment, which is all the server asks.
+        // What an operator is shown first: one account, and nothing about whose.
+        const before = await admin('GET', `/oauth-providers/${provider}/dependents`)
+        expect(before.status).toBe(200)
+        expect(await before.json()).toEqual({ provider, accounts: 1, more: false })
+        // Nothing refuses it: the password is still a method of the environment, which is
+        // all the server refuses for. It is recorded as a weakening, with the count.
         expect((await takeAway()).status).toBe(answered)
+        const entry = deps.activityLog.entries.findLast((recorded) =>
+          recorded.type.startsWith('oauth_provider.')
+        )
+        expect(entry?.data).toMatchObject({ provider, weakened: true, dependentAccounts: 1 })
+        expect(entry?.data).not.toHaveProperty('dependentAccountsIncomplete')
+        expect(JSON.stringify(entry?.data)).not.toContain(userId)
 
         // The one way in: closed at the start, before any redirect.
         const started = await app.request('/v1/client/sign-ins/oauth', {
@@ -711,6 +724,191 @@ describe.each(PROVIDERS)('%s', (provider, name, accountId) => {
         })
       }
     )
+
+    describe('the accounts that depend on the provider (ADR 0059)', () => {
+      const dependents = async () =>
+        (await (
+          await admin('GET', `/oauth-providers/${provider}/dependents`)
+        ).json()) as OAuthProviderDependents
+      const lastProviderEntry = () =>
+        deps.activityLog.entries.findLast((entry) => entry.type.startsWith('oauth_provider.'))
+      const emailCodeOn = () =>
+        deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+          revision: 7,
+          settings: {
+            ...DEFAULT_ENVIRONMENT_SETTINGS,
+            urls: { allowedOrigins: [], allowedRedirectUrls: [REDIRECT] },
+            signIn: {
+              methods: {
+                ...DEFAULT_ENVIRONMENT_SETTINGS.signIn.methods,
+                emailCode: { enabled: true },
+              },
+            },
+          },
+        })
+      const addAddress = async (email: string) => {
+        const self = { userId: session.userId as string }
+        let code = ''
+        const sent = spyOn(deps.mailer, 'send').mockImplementation(async (mail) => {
+          code = /^(\d{6}) /.exec(mail.subject)?.[1] ?? code
+        })
+        await EmailAddress.request(deps, tenant, self, { email })
+        sent.mockRestore()
+        await EmailAddress.verify(deps, tenant, self, { code })
+      }
+
+      test('are counted by the rule that judges a last way in, and the read changes nothing', async () => {
+        // A second account of the provider, and one that has a password too.
+        await signIn(provider, { subject: `${accountId}7` })
+        await account(true)
+        const entries = deps.activityLog.entries.length
+        expect(await dependents()).toEqual({ provider, accounts: 2, more: false })
+        expect(deps.activityLog.entries).toHaveLength(entries)
+        // Another provider nobody signed in with has none; nor has one that is not configured.
+        const other = provider === 'x' ? 'facebook' : 'x'
+        expect(await (await admin('GET', `/oauth-providers/${other}/dependents`)).json()).toEqual({
+          provider: other,
+          accounts: 0,
+          more: false,
+        })
+        expect((await admin('GET', '/oauth-providers/nobody/dependents')).status).toBe(422)
+      })
+
+      test('need a secret key', async () => {
+        const res = await app.request(`/v1/admin/oauth-providers/${provider}/dependents`)
+        expect(res.status).toBe(401)
+      })
+
+      test('an account that proved an address where emailed codes sign in no longer depends, and switching off is then no weakening', async () => {
+        await addAddress('nelly@northline.app')
+        // Proven, but with emailed codes off the address is a recovery path, not a way in.
+        expect(await dependents()).toEqual({ provider, accounts: 1, more: false })
+        emailCodeOn()
+        expect(await dependents()).toEqual({ provider, accounts: 0, more: false })
+
+        expect((await configure(provider, { enabled: false })).status).toBe(200)
+        const data = lastProviderEntry()?.data as Record<string, unknown>
+        expect(data.changed).toContain('enabled')
+        expect(data).not.toHaveProperty('weakened')
+        expect(data).not.toHaveProperty('dependentAccounts')
+      })
+
+      test('switching a provider on, or saving one that stays on, counts nobody', async () => {
+        const counted = spyOn(deps.users, 'countDependentOn')
+        expect((await configure(provider)).status).toBe(200)
+        expect((await configure(provider, { enabled: false })).status).toBe(200)
+        expect(counted).toHaveBeenCalledTimes(1)
+        expect((await configure(provider, { enabled: false })).status).toBe(200)
+        expect((await configure(provider, { enabled: true })).status).toBe(200)
+        expect(counted).toHaveBeenCalledTimes(1)
+        expect(lastProviderEntry()?.data).not.toHaveProperty('weakened')
+        // Removing one that is off locks nobody out who was not already.
+        expect((await configure(provider, { enabled: false })).status).toBe(200)
+        counted.mockClear()
+        expect((await admin('DELETE', `/oauth-providers/${provider}`)).status).toBe(204)
+        expect(counted).not.toHaveBeenCalled()
+        expect(lastProviderEntry()?.data).toEqual({ provider })
+        counted.mockRestore()
+      })
+
+      test('past the scan limit the count is a floor, and the entry says so', async () => {
+        const counted = spyOn(deps.users, 'countDependentOn').mockResolvedValue({
+          accounts: 1000,
+          more: true,
+        })
+        expect(await dependents()).toEqual({ provider, accounts: 1000, more: true })
+        expect(counted.mock.calls[0]?.[3]).toBe(1000)
+        expect((await admin('DELETE', `/oauth-providers/${provider}`)).status).toBe(204)
+        expect(lastProviderEntry()?.data).toEqual({
+          provider,
+          weakened: true,
+          dependentAccounts: 1000,
+          dependentAccountsIncomplete: true,
+        })
+        counted.mockRestore()
+      })
+    })
+
+    describe('an administrator gives it an address (ADR 0059)', () => {
+      const setEmail = (userId: string, body: unknown) =>
+        admin('PUT', `/users/${userId}/email`, body)
+      const added = () =>
+        deps.activityLog.entries.filter((entry) => entry.type === 'user.email_added')
+
+      test('unverified, recorded as the administrator’s, with nothing emailed and no session ended', async () => {
+        const userId = session.userId as string
+        deps.mailer.outbox.length = 0
+        const res = await setEmail(userId, { email: ' Nelly@Northline.app ' })
+        expect(res.status).toBe(200)
+        expect(await res.json()).toMatchObject({
+          id: userId,
+          email: 'Nelly@Northline.app',
+          emailVerifiedAt: null,
+        })
+        expect(await deps.users.findById(TEST_TENANT.environmentId, userId)).toMatchObject({
+          email: 'Nelly@Northline.app',
+          emailNormalized: 'nelly@northline.app',
+          emailVerifiedAt: null,
+        })
+        expect(added()).toHaveLength(1)
+        expect(added()[0]).toMatchObject({
+          actor: { type: 'admin' },
+          target: { type: 'user', id: userId },
+          data: { method: 'admin', verified: false },
+        })
+        expect(JSON.stringify(added())).not.toContain('orthline')
+        await Notices.settled()
+        expect(deps.mailer.outbox).toEqual([])
+        const profile = await me('GET', '', session.accessToken as string)
+        expect(profile.status).toBe(200)
+        // Unproven: it is nobody's way in, so the account still depends on its provider.
+        expect(
+          await (await admin('GET', `/oauth-providers/${provider}/dependents`)).json()
+        ).toMatchObject({ accounts: 1 })
+      })
+
+      test('never replaces an address, the user’s own or another’s', async () => {
+        const userId = session.userId as string
+        const other = await account(true)
+        const taken = await setEmail(userId, { email: EMAIL.toUpperCase() })
+        expect(taken.status).toBe(409)
+        expect(((await taken.json()) as { code: string }).code).not.toBe('email.already_set')
+        expect(await deps.users.findById(TEST_TENANT.environmentId, userId)).toMatchObject({
+          email: null,
+        })
+
+        const has = await setEmail(other, { email: 'new@northline.app' })
+        expect(has.status).toBe(409)
+        expect(((await has.json()) as { code: string }).code).toBe('email.already_set')
+        expect(await deps.users.findById(TEST_TENANT.environmentId, other)).toMatchObject({
+          email: EMAIL,
+        })
+
+        expect((await setEmail(userId, { email: 'first@northline.app' })).status).toBe(200)
+        const again = await setEmail(userId, { email: 'second@northline.app' })
+        expect(((await again.json()) as { code: string }).code).toBe('email.already_set')
+        expect(added()).toHaveLength(1)
+      })
+
+      test('refuses what is not an address, a field it does not take, an unknown user and a publishable key', async () => {
+        const userId = session.userId as string
+        expect((await setEmail(userId, { email: 'not an address' })).status).toBe(422)
+        expect(
+          (await setEmail(userId, { email: 'a@northline.app', emailVerified: true })).status
+        ).toBe(422)
+        expect(
+          (await setEmail('00000000-0000-7000-8000-00000000dead', { email: 'a@northline.app' }))
+            .status
+        ).toBe(404)
+        const keyed = await app.request(`/v1/admin/users/${userId}/email`, {
+          method: 'PUT',
+          headers: { authorization: `Bearer ${PK}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ email: 'a@northline.app' }),
+        })
+        expect(keyed.status).toBe(401)
+        expect(added()).toEqual([])
+      })
+    })
 
     test('an administrator sees it in the list, searches past it and sorts it last by address', async () => {
       await account(true, 'zoe@northline.app')

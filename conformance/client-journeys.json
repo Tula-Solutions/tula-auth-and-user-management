@@ -574,6 +574,22 @@
         "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
       }
     },
+    "accounts that depend on a provider are counted before it is switched off": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the journey makes its accounts by signing in with X and then tries a start with the provider switched off, and the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket are that ticket’s. The count itself is an administrator’s read."
+      }
+    },
     "admin ban and audit log": {
       "core": {
         "decision": "journey"
@@ -638,6 +654,22 @@
       "kotlin": {
         "decision": "not_applicable",
         "reason": "listing and ending a user’s sessions is done on the admin API with a secret key or a dashboard session, neither of which a client SDK holds; what the client observes when an administrator ends its session (signed out at its next refresh) is part of \"admin ban and audit log\"."
+      }
+    },
+    "an administrator gives an account an email address": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-61",
+        "reason": "what the client observes is that the user’s own call under `/v1/client/me/email` answers `email.already_set` once an administrator has given the account an address, and the Kotlin client has no account calls yet: they arrive with the account screen that needs them. The account itself is made by signing in with X, which this client cannot start before TULA-57."
       }
     },
     "an agent proposes a ban and a person approves it": {
@@ -710,6 +742,22 @@
       "kotlin": {
         "decision": "not_applicable",
         "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Kotlin client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. What an app observes of a provider that is off is that it is no longer in the client configuration; a sign-in with a provider is not built in this client yet (TULA-57), and is that journey’s when it is."
+      }
+    },
+    "an email address for an account without one": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-61",
+        "reason": "asking for a code at an address and proving it are calls under `/v1/client/me/email`, behind a recent authentication. The Kotlin client has no account calls yet: they arrive with the account screen that needs them. The account itself is made by signing in with X, which this client cannot start before TULA-57."
       }
     },
     "app link or custom scheme that is not listed": {

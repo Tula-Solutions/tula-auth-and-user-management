@@ -1262,6 +1262,18 @@ The built-in `web` profile until an environment changes it (§5.3).
 const DEFAULT_WEB_SESSION_PROFILE: SessionProfile
 ```
 
+### `DEPENDENT_ACCOUNTS_SCAN_LIMIT`
+
+_constant_, defined in `packages/contract/src/oauth.ts`
+
+The most accounts of one provider the server looks at when it counts the ones that depend
+on it ({@link OAuthProviderDependentsSchema}; ADR 0059). The count is a read an operator
+waits for, so its work is bounded: past this many accounts the answer says `more`.
+
+```ts
+const DEPENDENT_ACCOUNTS_SCAN_LIMIT: 1000
+```
+
 ### `DPOP_ALGORITHMS`
 
 _constant_, defined in `packages/contract/src/device-binding.ts`
@@ -1593,8 +1605,9 @@ server sends, so that a template never has to say two different things.
 
 - `email_verification`, `password_reset`, `sign_in`, `step_up`: the messages that carry a
   6-digit code (`sign_in` can carry a link as well).
-- `account_exists`, `no_account`, `no_account_sign_in`: what is sent instead of a code, so
-  that a sign-up, a reset and a sign-in answer alike for every address.
+- `account_exists`, `no_account`, `no_account_sign_in`, `email_in_use`: what is sent
+  instead of a code, so that a sign-up, a reset, a sign-in and adding an address to an
+  account (ADR 0059) answer alike for every address.
 - the rest: security notices (ADR 0023), one per thing that can have happened.
 
 A closed list. Later servers may add kinds: additive.
@@ -1806,6 +1819,87 @@ const EVENT_TARGET_TYPES: Record<any, any>
 
 ```ts
 EVENT_TARGET_TYPES['session.revoked'] // 'session'
+```
+
+### `EmailAddressRequest`
+
+_type_, defined in `packages/contract/src/user.ts`
+
+An address to email a code to.
+
+```ts
+export type EmailAddressRequest = z.infer<typeof EmailAddressRequestSchema>
+```
+
+### `EmailAddressRequestSchema`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+Ask for a code to be emailed to an address the signed-in user wants on their account
+(`POST /v1/client/me/email`; ADR 0059). Only for an account that has **no** address: one
+made by a first sign-in with a provider Tula takes no address from (X, Facebook).
+
+```ts
+const EmailAddressRequestSchema: z.ZodObject<{ email: z.ZodString; }, z.core.$strip>
+```
+
+**Example**
+
+```ts
+EmailAddressRequestSchema.parse({ email: 'ada@example.com' })
+```
+
+### `EmailAddressVerifyRequest`
+
+_type_, defined in `packages/contract/src/user.ts`
+
+The code that confirms an email address.
+
+```ts
+export type EmailAddressVerifyRequest = z.infer<typeof EmailAddressVerifyRequestSchema>
+```
+
+### `EmailAddressVerifyRequestSchema`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+The code an address is confirmed with (`POST /v1/client/me/email/verify`).
+
+```ts
+const EmailAddressVerifyRequestSchema: z.ZodObject<{ code: z.ZodString; }, z.core.$strip>
+```
+
+**Example**
+
+```ts
+EmailAddressVerifyRequestSchema.parse({ code: '482913' })
+```
+
+### `EmailCodeSent`
+
+_type_, defined in `packages/contract/src/user.ts`
+
+Where an emailed code went and when it expires.
+
+```ts
+export type EmailCodeSent = z.infer<typeof EmailCodeSentSchema>
+```
+
+### `EmailCodeSentSchema`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+What asking for that code answers: where it went, masked, and when it stops working. Never
+the code, and the same for an address that is free and one another account holds.
+
+```ts
+const EmailCodeSentSchema: z.ZodObject<{ destination: z.ZodString; expiresAt: z.ZodISODateTime; }, z.core.$strip>
+```
+
+**Example**
+
+```ts
+EmailCodeSentSchema.parse({ destination: 'a***@example.com', expiresAt: '2026-10-12T09:10:00.000Z' })
 ```
 
 ### `EmailLinkRequest`
@@ -4640,14 +4734,58 @@ export type OAuthProvider = z.infer<typeof OAuthProviderSchema>
 
 _interface_, defined in `packages/contract/src/oauth.ts`
 
-What of a provider's record decides whose ID tokens are accepted, for
-{@link oauthProviderWeakenings}.
+What of a provider's record {@link oauthProviderWeakenings} judges: whose ID tokens are
+accepted, and whether sign-in offers the provider while accounts depend on it.
 
 ```ts
 export interface OAuthProviderAudiences {
   /** The client ids accepted beside the provider's own. Absent means none. */
   additionalClientIds?: readonly string[]
+  /** Whether sign-in offers the provider. Absent: not said, and not judged. */
+  enabled?: boolean
+  /**
+   * Of the record **before** the change: the accounts that depend on the provider, as the
+   * server counted them. Absent: not counted, and the rule about them is not judged.
+   */
+  dependents?: Pick<OAuthProviderDependents, 'accounts' | 'more'>
 }
+```
+
+### `OAuthProviderDependents`
+
+_type_, defined in `packages/contract/src/oauth.ts`
+
+How many accounts depend on a provider.
+
+```ts
+export type OAuthProviderDependents = z.infer<typeof OAuthProviderDependentsSchema>
+```
+
+### `OAuthProviderDependentsSchema`
+
+_constant_, defined in `packages/contract/src/oauth.ts`
+
+How many accounts **depend** on a provider: have an account of it connected and no other
+way to sign in that the environment accepts (a password, a verified address with the
+emailed code on, another enabled provider, a passkey). Switching the provider off, or
+removing its credentials, locks those accounts out until it is back
+(`GET /v1/admin/oauth-providers/{provider}/dependents`; ADR 0059).
+
+A number and a boolean, and nothing about who: never an id, an address or a name.
+
+- `accounts`: how many were found among the accounts looked at.
+- `more`: `true` when the provider has more accounts than
+  {@link DEPENDENT_ACCOUNTS_SCAN_LIMIT}, so not all were looked at and `accounts` is a
+  floor: read it as "at least".
+
+```ts
+const OAuthProviderDependentsSchema: z.ZodObject<{ provider: z.ZodEnum<{}>; accounts: z.ZodNumber; more: z.ZodBoolean; }, z.core.$strip>
+```
+
+**Example**
+
+```ts
+OAuthProviderDependentsSchema.parse({ provider: 'x', accounts: 12, more: false })
 ```
 
 ### `OAuthProviderSchema`
@@ -6564,6 +6702,35 @@ Set a user's password from a server or the dashboard. Ends all of their sessions
 
 ```ts
 const SetPasswordRequestSchema: z.ZodObject<{ password: z.ZodString; }, z.core.$strip>
+```
+
+### `SetUserEmailRequest`
+
+_type_, defined in `packages/contract/src/user.ts`
+
+The address an administrator gives a user who has none.
+
+```ts
+export type SetUserEmailRequest = z.infer<typeof SetUserEmailRequestSchema>
+```
+
+### `SetUserEmailRequestSchema`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+Give a user who has no email address one, from a server or the dashboard
+(`PUT /v1/admin/users/{userId}/email`; ADR 0059). The address is stored **unverified**:
+nobody has shown that they read mail sent to it, and the first emailed code its holder
+enters is what verifies it.
+
+```ts
+const SetUserEmailRequestSchema: z.ZodObject<{ email: z.ZodString; }, z.core.$strict>
+```
+
+**Example**
+
+```ts
+SetUserEmailRequestSchema.parse({ email: 'ada@example.com' })
 ```
 
 ### `SettingsManagedBy`
@@ -9667,34 +9834,44 @@ export function normalizePassword(password: string): string
 
 _function_, defined in `packages/contract/src/oauth.ts`
 
-The paths at which a change to a provider's record accepts more than it did: today, one
-thing, a client id gained in `additionalClientIds`.
+The paths at which a change to a provider's record weakens something. Two things:
 
-Every accepted client id is another app whose ID tokens sign users in, so a new one is a
-weakening in the sense of the settings' (`settingsWeakenings`): the audit entry says
-`weakened: true`, the dashboard says so before it saves, and `tula apply --yes` refuses it
-without `--allow-weaker`. An id taken away, and a reordering, are not. The path names the
-field and never a client id.
+- **`additionalClientIds`: a client id gained.** Every accepted client id is another app
+  whose ID tokens sign users in. An id taken away, and a reordering, are not.
+- **`enabled`: the provider switched off, or its credentials removed, while accounts depend
+  on it** (ADR 0059): `before.enabled` is `true`, `after` is `null` or not enabled, and
+  `before.dependents` counted at least one account, or could not look at all of them
+  (`more`). Those accounts are locked out until the provider is back; one with no email
+  address (made through X or Facebook) has no recovery of its own. Nothing is judged where
+  `before.enabled` or `before.dependents` is left out.
+
+A weakening in the sense of the settings' (`settingsWeakenings`): the audit entry says
+`weakened: true`, the dashboard asks before it saves, and `tula apply --yes` refuses it
+without `--allow-weaker`. A path names a field and never a client id or an account.
 
 ```ts
 export function oauthProviderWeakenings(
   before: OAuthProviderAudiences | null,
-  after: OAuthProviderAudiences
-): string[]
+  after: OAuthProviderAudiences | null
+): ('additionalClientIds' | 'enabled')[]
 ```
 
 **Parameters**
 
 - `before`: The record as stored, or `null` when the provider was not configured.
-- `after`: The record as it will be stored.
+- `after`: The record as it will be stored, or `null` when it is being removed.
 
-**Returns** `['additionalClientIds']`, or an empty list.
+**Returns** The weakened fields, of `additionalClientIds` and `enabled`, in that order.
 
 **Example**
 
 ```ts
 oauthProviderWeakenings({ additionalClientIds: [] }, { additionalClientIds: [id] })
 // ['additionalClientIds']
+oauthProviderWeakenings(
+  { enabled: true, dependents: { accounts: 3, more: false } },
+  { enabled: false }
+) // ['enabled']
 ```
 
 ### `originMatchesRelyingParty`

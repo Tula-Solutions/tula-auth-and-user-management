@@ -45,6 +45,8 @@ const EVERY_MESSAGE: EmailMessage[] = [
   { type: 'account_exists' },
   { type: 'no_account' },
   { type: 'no_account_sign_in' },
+  { type: 'email_in_use' },
+  { type: 'email_added', at },
   newSignIn,
   ...(['self', 'reset', 'admin', 'verification'] as const).flatMap((by) =>
     [false, true].map((added): EmailMessage => ({ type: 'password_changed', by, added, at }))
@@ -112,7 +114,7 @@ describe('templateKind', () => {
 })
 
 function isSecurityNoticeKind(kind: EmailTemplateKind): boolean {
-  return !['account_exists', 'no_account', 'no_account_sign_in'].includes(kind)
+  return !['account_exists', 'no_account', 'no_account_sign_in', 'email_in_use'].includes(kind)
 }
 
 describe('the built-in copy', () => {
@@ -354,7 +356,9 @@ describe('renderTemplate', () => {
       const builtIn = render(acme, message)
       const paragraphs = (text: string) => text.split('\n\n')
       const supported =
-        templateKind(message).startsWith('no_account') || templateKind(message) === 'account_exists'
+        templateKind(message).startsWith('no_account') ||
+        templateKind(message) === 'account_exists' ||
+        templateKind(message) === 'email_in_use'
           ? 2
           : 3
       const sentence = paragraphs(builtIn.text).at(-supported) as string

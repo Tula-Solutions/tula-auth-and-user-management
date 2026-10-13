@@ -346,8 +346,11 @@ Everything read from a provider's site below was read on **2026-10-09**.
 
 For the product's owner to decide:
 
-- **A user with no email address cannot add one.** No route changes a user's address today,
-  for anyone. Until one exists, an account made through X or Facebook gets no security
+- ~~**A user with no email address cannot add one.**~~ Decided and built (TULA-69,
+  [ADR 0059](../adr/0059-email-for-accounts-without-one.md)): such a user adds an address
+  and proves it, and an administrator can set one. Asking at sign-up and merging accounts
+  are designed there (Part B) and not built. What this item said before: no route changes
+  a user's address today, for anyone. Until one exists, an account made through X or Facebook gets no security
   notice, cannot use an emailed code, a link or a password, and is lost with the provider
   account unless it has a passkey. Whether to add "add an email address" (a verified one,
   through the existing code flow), and whether to ask for one at sign-up, is open.
@@ -1140,3 +1143,38 @@ Not verified:
 | **Texted codes** | The journeys read them from the development inbox. No text message was sent, and the SMS autofill of a code on Android is not this ticket's. |
 | **The API 28 floor** | Android's passkey guide, read on 2026-10-12, gives Android 9 (API level 28) for Credential Manager's passkeys. Android's Keystore guide, read the same day, gives the same level for devices that can include StrongBox; the reference page of `setIsStrongBoxBacked` was not read. Nothing was built at or run on API 28: `minSdk` is a number in a build file. |
 | **The names** | `dev.tula:tula-auth`, `dev.tula.auth` and `dev.tula.auth.android` are placeholders until decision D2. Nothing is published and there is no publishing configuration. |
+
+## An email address for an account without one, and the accounts a provider's removal locks out (TULA-69, [ADR 0059](../adr/0059-email-for-accounts-without-one.md))
+
+What was run: the unit and route tests of the API on memory adapters and PGlite, the three
+conformance scenarios in process, the SDK journeys through `@tula/core` and `@tula/expo`,
+the CLI's, the dashboard's, the admin client's and the MCP server's own tests, and
+`swift test --package-path native/swift` on a Mac (the unit tests and the three new
+journeys against the real API in process), and, for the profile's section,
+`e2e/tests/email-address.spec.ts` in Chromium (the `chromium` Playwright project).
+
+| What | How far it was taken |
+| --- | --- |
+| **A real PostgreSQL server** | `users.addEmail` (the user's and the administrator's write) and `users.countDependentOn` are in the shared user-repository suite and ran on the memory adapter and on PGlite. `*.integration.ts` was **not run** from the worktree. Not observed on a real server: that the unique key on the normalised address decides two confirmations at once, and what the count costs on a table with many identities (the scan is bounded at 1,000 accounts of one provider). |
+| **No migration** | None was needed: `users.email` was already nullable and the token's `destination` column existed. `db:check` says the schema is unchanged. |
+| **A real inbox** | The two new emails (`email_in_use`, `email_added`) were read as text in the tests and the snapshot of the built-in copy. Neither was sent through a mail provider or looked at in a mail client. |
+| **The dashboard’s question, in a browser** | The provider card’s confirmation (the count in words, "at least" for a cut scan) is a component test in happy-dom against the fake API. No Playwright test was written for it, and the `dashboard` project was not run for this change. |
+| **`@tula/react`’s section, in a browser** | `<UserProfile>`’s "Email address" section has component tests in happy-dom and a browser test (`e2e/tests/email-address.spec.ts`, the `chromium` project: an account made with the mock X provider adds an address with the emailed code; a taken address gets the same screen and no code; ten minutes on, the "sign in again" dialog), with axe on each state in light and dark. Not run: any browser but Chromium, a screen reader, a phone. The fixture’s mailer is memory: no message reached a real inbox. |
+| **The count against a live change** | The dashboard's and the CLI's number is the read route's and the audit entry's is the write's own, taken under the lock. Nothing was run with accounts changing between the two. |
+| **The Kotlin client** | It has no call for an account’s email address and starts no provider sign-in, so the three scenarios are `not_built` in the `kotlin` column of the client-journey list: the two about the address under TULA-61 (the account calls), the count of a provider’s dependents under TULA-57 (its journey makes its accounts by signing in with X). 115 scenarios: 31 journeys, 24 not applicable, 60 not built (54 and 6). The generated Kotlin types were regenerated (`native:generate`) and compiled by `bun run native:kotlin:test` on a Mac after the rebase onto `develop` (`98ba3143`); the Android module was not built and CI’s two Kotlin jobs have not run on this branch. |
+| **`@tula/mcp`’s draft tool** | It does not judge this weakening (it never reads the count). A draft that switches a provider off says so in `notes`, and a test holds the sentence and that no request was added. No MCP client was connected: whether a client shows `notes` to a person is not known. |
+| **A count `tula` could not read** | That a refused, limited or failed count flags the plan (and that only a 404 or 405 leaves it unjudged) is tested against the CLI’s fake API, for a provider switched off and one removed. Not run against a real server that fails: the real API in process answers the count. |
+| **Part B of the ADR** | A design. Nothing of it was built or tried: no `needs_email` step, no setting, no merge. |
+
+For the product's owner to decide:
+
+- **Counted and asked first, or refused?** Switching off a provider that accounts depend on
+  is a recorded weakening (the dashboard asks, `tula apply --yes` needs `--allow-weaker`).
+  That reading of "the accounts are counted and shown first" was the lead architect's; a
+  refusal can replace it without a contract change.
+- **An administrator's address is unverified.** It receives notices and a reset; it is not
+  trusted for linking or the emailed step-up until the user proves it.
+- **Part B**: whether a sign-up with X or Facebook asks for an address as `off`,
+  `optional` or `required`; whether a proven address that already has an account signs in
+  to it only where the emailed code is on; and whether merging two existing accounts is an
+  end user's act or an administrator's.

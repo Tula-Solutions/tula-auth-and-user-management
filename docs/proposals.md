@@ -13,7 +13,7 @@ call:
 | `ban_user` | Bans one user: their sessions end and they cannot sign in. | Lifting the ban. |
 | `unban_user` | Lifts one user's ban. Sessions that were ended stay ended. | Banning them again. |
 | `end_session` | Ends **one** session, named by its id. | The user signing in again. |
-| `disable_oauth_provider` | Switches **one** provider off (`enabled: false`). Its credentials are kept. | Switching it on again (`PUT /v1/admin/oauth-providers/<provider>`, or the dashboard). |
+| `disable_oauth_provider` | Switches **one** provider off (`enabled: false`). Its credentials are kept. Accounts that can sign in only with it are locked out while it is off: `tula approve` says how many before it asks, and the audit entry records the count as a weakening. | Switching it on again (`PUT /v1/admin/oauth-providers/<provider>`, or the dashboard). |
 
 Nothing else can be proposed: nothing that cannot be undone (deleting a user, removing a
 provider, resetting two-step verification, revoking a key), nothing that returns or sets
@@ -116,7 +116,10 @@ shows: that a credential the agent's tools do not hold was used
   (`reason: "expired"`). The assistant can ask again.
 - **A proposal is approved once** (`reason: "already_decided"`), also when what it asked
   for could not be carried out (the user was deleted meanwhile: the proposal is `failed`,
-  and spent).
+  and spent). The same holds for switching a provider off when the server cannot count
+  the accounts that can sign in only with it: it does not switch the provider off on a
+  guess, the proposal is `failed` (`error`) with the provider still on, the approval is
+  spent, and the assistant has to ask again.
 - **An approval that found nothing left to change says so.** A proposal for what is
   already so is taken, and approving it is `executed`: the session had ended, the user was
   not banned, the provider was already off. The answer to that approval then carries

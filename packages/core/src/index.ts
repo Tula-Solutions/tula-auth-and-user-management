@@ -85,6 +85,7 @@ export type {
   BackupCodes,
   ClientConfig,
   ClientKind,
+  EmailCodeSent,
   FactorEnrolmentMethod,
   Factors,
   FetchLike,

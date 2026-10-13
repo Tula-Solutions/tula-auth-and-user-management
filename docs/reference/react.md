@@ -1231,6 +1231,55 @@ export interface TulaClient {
        */
       remove(): Promise<void>
     }
+    /**
+     * An email address for a signed-in user whose account has **none**: one made by a
+     * first sign-in with X or Facebook, which give no address. Proven with a 6-digit code
+     * emailed to it. Each call may answer `auth.step_up_required`; see `session.stepUp`.
+     * A user with no address, no passkey and no authenticator app has nothing to step up
+     * with (`params.methods` is empty): they sign in again and ask within the window.
+     *
+     * It never changes an address: for a user who has one, both calls answer
+     * `email.already_set`.
+     */
+    readonly email: {
+      /**
+       * Email a 6-digit code to the address the user wants on their account. The address
+       * is only pending until `verify`. The answer is the same whether or not another
+       * account has the address: that one is sent a notice with no code, and no code
+       * confirms it.
+       *
+       * @param input - The address.
+       * @returns The receipt: the address masked and when the code expires. Never the code.
+       * @throws TulaError `email.already_set` for a user who has an address,
+       *   `request.validation_failed` for what is not an address, `rate_limited` when a
+       *   code was sent too recently or too often.
+       *
+       * @example
+       * ```ts
+       * const sent = await tula.user.email.request({ email: 'ada@example.com' })
+       * ```
+       */
+      request(input: { email: string }): Promise<EmailCodeSent>
+      /**
+       * Prove the pending address with the code emailed to it. The address becomes the
+       * account's, verified, and the state's user is updated.
+       *
+       * @param input - The 6-digit code.
+       * @returns The user, with the address.
+       * @throws TulaError `verification.invalid_code` for a wrong code,
+       *   `verification.expired` when no code is waiting (none was asked for, or it
+       *   expired, was used or was replaced; also when the address was taken by another
+       *   account meanwhile), `verification.too_many_attempts` or `rate_limited` after
+       *   repeated wrong codes, `email.already_set` for a user who has an address.
+       *
+       * @example
+       * ```ts
+       * const user = await tula.user.email.verify({ code: '482913' })
+       * user.email // 'ada@example.com'
+       * ```
+       */
+      verify(input: { code: string }): Promise<User>
+    }
     /** The provider accounts (Google, GitHub, Apple, Microsoft, Discord, LinkedIn, X, Facebook) connected to the signed-in user. */
     readonly identities: {
       /**
@@ -1826,6 +1875,23 @@ export interface TulaLocalization {
     cancel: string
     added: string
     removed: string
+  }
+  /** The profile's "Email address" section, for an account that has none (ADR 0059). */
+  emailAddress: {
+    sectionTitle: string
+    none: string
+    add: string
+    addressLabel: string
+    send: string
+    /**
+     * `{destination}` is the server's mask of the address. Never worded as "we sent a
+     * code": an address another account holds is emailed a notice with no code.
+     */
+    checkInbox: string
+    verify: string
+    differentAddress: string
+    cancel: string
+    added: string
   }
   /** The dialog that asks a signed-in user to prove who they are before a sensitive change. */
   stepUp: {

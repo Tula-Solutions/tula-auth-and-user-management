@@ -166,6 +166,64 @@ export const PhoneNumberVerifyRequestSchema = z
   .object({ code: z.string().regex(/^\d{6}$/) })
   .meta({ ref: 'PhoneNumberVerifyRequest' })
 
+/**
+ * Ask for a code to be emailed to an address the signed-in user wants on their account
+ * (`POST /v1/client/me/email`; ADR 0059). Only for an account that has **no** address: one
+ * made by a first sign-in with a provider Tula takes no address from (X, Facebook).
+ *
+ * @example
+ * ```ts
+ * EmailAddressRequestSchema.parse({ email: 'ada@example.com' })
+ * ```
+ */
+export const EmailAddressRequestSchema = z
+  .object({ email: z.string().max(320) })
+  .meta({ ref: 'EmailAddressRequest' })
+
+/**
+ * What asking for that code answers: where it went, masked, and when it stops working. Never
+ * the code, and the same for an address that is free and one another account holds.
+ *
+ * @example
+ * ```ts
+ * EmailCodeSentSchema.parse({ destination: 'a***@example.com', expiresAt: '2026-10-12T09:10:00.000Z' })
+ * ```
+ */
+export const EmailCodeSentSchema = z
+  .object({
+    /** The address behind a mask, e.g. `a***@example.com`. */
+    destination: z.string(),
+    expiresAt: z.iso.datetime(),
+  })
+  .meta({ ref: 'EmailCodeSent' })
+
+/**
+ * The code an address is confirmed with (`POST /v1/client/me/email/verify`).
+ *
+ * @example
+ * ```ts
+ * EmailAddressVerifyRequestSchema.parse({ code: '482913' })
+ * ```
+ */
+export const EmailAddressVerifyRequestSchema = z
+  .object({ code: z.string().regex(/^\d{6}$/) })
+  .meta({ ref: 'EmailAddressVerifyRequest' })
+
+/**
+ * Give a user who has no email address one, from a server or the dashboard
+ * (`PUT /v1/admin/users/{userId}/email`; ADR 0059). The address is stored **unverified**:
+ * nobody has shown that they read mail sent to it, and the first emailed code its holder
+ * enters is what verifies it.
+ *
+ * @example
+ * ```ts
+ * SetUserEmailRequestSchema.parse({ email: 'ada@example.com' })
+ * ```
+ */
+export const SetUserEmailRequestSchema = z
+  .strictObject({ email: z.string().max(320) })
+  .meta({ ref: 'SetUserEmailRequest' })
+
 /** Paging details. */
 export type PaginationMeta = z.infer<typeof PaginationMetaSchema>
 /** A user. */
@@ -184,6 +242,14 @@ export type PhoneNumberRequest = z.infer<typeof PhoneNumberRequestSchema>
 export type PhoneCodeSent = z.infer<typeof PhoneCodeSentSchema>
 /** The code that confirms a phone number. */
 export type PhoneNumberVerifyRequest = z.infer<typeof PhoneNumberVerifyRequestSchema>
+/** An address to email a code to. */
+export type EmailAddressRequest = z.infer<typeof EmailAddressRequestSchema>
+/** Where an emailed code went and when it expires. */
+export type EmailCodeSent = z.infer<typeof EmailCodeSentSchema>
+/** The code that confirms an email address. */
+export type EmailAddressVerifyRequest = z.infer<typeof EmailAddressVerifyRequestSchema>
+/** The address an administrator gives a user who has none. */
+export type SetUserEmailRequest = z.infer<typeof SetUserEmailRequestSchema>
 /** Create-user request body. */
 export type CreateUserRequest = z.infer<typeof CreateUserRequestSchema>
 /** Set-password request body. */

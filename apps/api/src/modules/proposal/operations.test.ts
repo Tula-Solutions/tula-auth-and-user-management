@@ -758,6 +758,143 @@ describe('switching off the last way to sign in', () => {
   })
 })
 
+// ADR 0059: an approved proposal switches a provider off by the rule the provider route
+// has. The accounts whose only way in it is are counted again under the lock, and the
+// change is the recorded weakening an administrator's own would be.
+describe('switching off a provider accounts depend on', () => {
+  const GOOGLE = { type: 'oauth_provider', id: 'google' } as const
+
+  async function waiting(): Promise<Proposal> {
+    await configure('google')
+    await configure('github')
+    return propose('disable_oauth_provider', GOOGLE)
+  }
+
+  const providerEntry = () =>
+    recorded().findLast((entry) => entry.type === 'oauth_provider.updated')
+
+  test('is carried out and recorded as a weakening with the count, taken under the lock', async () => {
+    const proposal = await waiting()
+    const order: string[] = []
+    const run = deps.environmentLock.runExclusive.bind(deps.environmentLock)
+    const lock = spyOn(deps.environmentLock, 'runExclusive').mockImplementation(
+      async (environmentId, name, fn) => {
+        order.push(`locked ${name}`)
+        try {
+          return await run(environmentId, name, fn)
+        } finally {
+          order.push('released')
+        }
+      }
+    )
+    const counted = spyOn(deps.users, 'countDependentOn').mockImplementation(async () => {
+      order.push('counted')
+      return { accounts: 2, more: false }
+    })
+    try {
+      const res = await approve(proposal)
+      expect(await json<Proposal>(res)).toMatchObject({ status: 'executed' })
+      expect(order).toEqual(['locked sign_in_methods', 'counted', 'released'])
+      expect(counted.mock.calls[0]?.slice(0, 2)).toEqual([DEVELOPMENT.environmentId, 'google'])
+    } finally {
+      lock.mockRestore()
+      counted.mockRestore()
+    }
+    const approvedBy = { type: 'admin', id: secretKeyId }
+    const data = {
+      provider: 'google',
+      changed: ['enabled'],
+      weakened: true,
+      dependentAccounts: 2,
+      proposalId: proposal.id,
+      approvedBy,
+    }
+    expect(providerEntry()).toEqual({
+      type: 'oauth_provider.updated',
+      actor: { type: 'agent', id: agentKeyId },
+      target: { type: 'environment', id: DEVELOPMENT.environmentId },
+      data,
+    })
+    // The event a webhook delivers says the same, and names nobody.
+    const event = deps.activityLog.events.findLast((sent) => sent.type === 'oauth_provider.updated')
+    expect(event?.data).toEqual(data)
+    expect((await deps.oauthProviders.find(DEVELOPMENT.environmentId, 'google'))?.enabled).toBe(
+      false
+    )
+  })
+
+  test('past the scan limit the count is a floor, and the entry says so', async () => {
+    const proposal = await waiting()
+    const counted = spyOn(deps.users, 'countDependentOn').mockResolvedValue({
+      accounts: 1000,
+      more: true,
+    })
+    try {
+      expect(await json<Proposal>(await approve(proposal))).toMatchObject({ status: 'executed' })
+    } finally {
+      counted.mockRestore()
+    }
+    expect(providerEntry()?.data).toMatchObject({
+      weakened: true,
+      dependentAccounts: 1000,
+      dependentAccountsIncomplete: true,
+    })
+  })
+
+  test('with nobody depending on it the entry says no weakening and no count', async () => {
+    const proposal = await waiting()
+    const counted = spyOn(deps.users, 'countDependentOn')
+    try {
+      expect(await json<Proposal>(await approve(proposal))).toMatchObject({ status: 'executed' })
+      expect(counted).toHaveBeenCalledTimes(1)
+    } finally {
+      counted.mockRestore()
+    }
+    const data = providerEntry()?.data as Record<string, unknown>
+    expect(data).not.toHaveProperty('weakened')
+    expect(data).not.toHaveProperty('dependentAccounts')
+  })
+
+  test('a count that cannot be taken switches nothing off: failed, never recorded on a guess', async () => {
+    const proposal = await waiting()
+    const before = types()
+    const counted = spyOn(deps.users, 'countDependentOn').mockRejectedValue(
+      new ServiceUnavailableError({ internalMessage: 'the store did not answer' })
+    )
+    try {
+      expect(await json<Proposal>(await approve(proposal))).toMatchObject({
+        status: 'failed',
+        failureReason: 'error',
+      })
+    } finally {
+      counted.mockRestore()
+    }
+    expect(types().slice(before.length)).toEqual(['proposal.approved', 'proposal.failed'])
+    expect((await deps.oauthProviders.find(DEVELOPMENT.environmentId, 'google'))?.enabled).toBe(
+      true
+    )
+  })
+
+  test('a provider that is already off is not counted', async () => {
+    const proposal = await waiting()
+    expect(
+      (
+        await call('PUT', '/v1/admin/oauth-providers/google', SK, {
+          clientId: 'google-client-id',
+          enabled: false,
+        })
+      ).status
+    ).toBe(200)
+    const counted = spyOn(deps.users, 'countDependentOn')
+    try {
+      expect(await json<Proposal>(await approve(proposal))).toMatchObject({ status: 'executed' })
+      expect(counted).not.toHaveBeenCalled()
+    } finally {
+      counted.mockRestore()
+    }
+  })
+})
+
 describe('a production environment', () => {
   const optIn = (on: boolean) => saveSettings({ agents: { proposalsInProduction: on } }, PROD_SK)
 

@@ -16,6 +16,7 @@ import { useSession } from '../hooks/use-session'
 import { useStepUp } from '../hooks/use-step-up'
 import { useUser } from '../hooks/use-user'
 import { formatText } from '../localization'
+import { EmailAddressSection } from './email-address'
 import { useRetryAfter } from './flow-screens'
 import { fieldResolver, formatDuration, placeErrors } from './form-errors'
 import { BackupCodesPanel, EnrolmentConfirmForm, TextedCodeForm } from './mfa'
@@ -720,6 +721,7 @@ export function UserProfileSections(props: {
       {user ? (
         <>
           <ProfileSection user={user} />
+          <EmailAddressSection key={`email:${state.sessionId}`} user={user} />
           {/* Keyed by the session: half-typed passwords, a pending change and its messages
               belong to whoever was signed in when they began, and go with them. */}
           {passwordSection(user, state.sessionId, () => void sessions.reload())}

@@ -483,7 +483,15 @@ decision in ADR 0053.
   (`failed`, `last_sign_in_method`, the provider still on, the proposal spent). Never
   state that rule a second time, and never drop the one inside the lock because the
   first passed minutes ago. What is recorded is what the route records
-  (`oauth_provider.updated`, `changed: ['enabled']`, no weakening).
+  (`oauth_provider.updated`, `changed: ['enabled']`), **the weakening included, by the
+  route's own rule** (ADR 0059): the accounts whose only way in the provider is are
+  counted again under that lock (`countDependents`), judged by the contract's
+  `oauthProviderWeakenings`, and where there are any the entry says `weakened: true` with
+  `dependentAccounts`. A count that cannot be taken fails the operation (`error`, nothing
+  written): never record the change on a guess, and never refuse it for the count.
+  `tula approve` says the number in its question when it could read it (the read route,
+  the operator's key, only for a provider that is on) and fixed words when it could not;
+  never a guess, and never the read number after the approval.
 - **A production environment accepts proposals only where `agents.proposalsInProduction`
   is on, and that is asked twice, past the settings cache** (`requireAccepted`,
   `Settings.get(…, true)`): when a proposal is made (`auth.forbidden`) and when one is
@@ -1515,7 +1523,7 @@ keyed by kind). The layout is the server's.
   `renderTemplate`. A new rule goes there and nowhere else, with a row in
   `packages/contract/src/email-template.test.ts`.
 - **The only link in any email is the server's own `{{link}}`: nothing an operator writes
-  may read as one, in the subject or the body of any of the 26 kinds** (`readsAsLink`:
+  may read as one, in the subject or the body of any of the 28 kinds** (`readsAsLink`:
   `://`, a scheme of the closed list `EMAIL_LINK_SCHEMES` directly followed by something,
   `www.`, a letter or digit, a full stop and two letters with nothing between, or four
   groups of digits with full stops; combining marks are passed over wherever a letter may
@@ -3532,8 +3540,8 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
   has no step-up method until a passkey or an authenticator exists, and is named by
   `accountLabel` (`~/lib/account-label`) where a label is needed. Never write the string
   `null`, an empty string or a placeholder where an address would go, and never send mail
-  to one. There is no route that gives such a user an address yet; adding one is a
-  decision (ADR 0026).
+  to one. Such a user gets an address by the rules of "An email address for an account
+  without one" below, and by nothing else.
 - **A Microsoft account is `<tid>:<oid>`, its issuer is its own tenant's, and its address is
   verified only by `xms_edov`** (`adapters/oauth/microsoft.ts`). Never identify one by
   `sub`, `email`, `preferred_username` or `upn`. `iss` must equal
@@ -3645,6 +3653,82 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
     with no address, an unknown one with none is `oauth.email_missing`.
 - "At least one sign-in method" counts enabled providers: `Settings.replace` and the provider
   routes enforce it, not the settings schema.
+- **The accounts that depend on a provider are counted before it goes, and the count is a
+  number and nothing else** ([ADR 0059](docs/adr/0059-email-for-accounts-without-one.md)).
+  An account depends on a provider when it has it connected and `OAuth.canStillSignIn`
+  says no with that provider taken out of the enabled ones: never a second definition of
+  "a way to sign in". The count is `users.countDependentOn` (both adapters, the shared
+  suite), bounded by the contract's `DEPENDENT_ACCOUNTS_SCAN_LIMIT`; past it the answer
+  says `more` and every surface says "at least". `GET
+  /v1/admin/oauth-providers/:provider/dependents` answers `{ provider, accounts, more }`:
+  never an id, an address or a name, there, in an audit entry, an event or a log line.
+  **Switching off or removing a provider accounts depend on is a weakening, not a
+  refusal** (`oauthProviderWeakenings`, the path `enabled`): `OAuth.update` and
+  `OAuth.remove` count again under the `sign_in_methods` lock and record
+  `dependentAccounts` (and `dependentAccountsIncomplete` for a cut scan), the dashboard
+  reads the count and asks first, `tula diff` prints it and `tula apply --yes` refuses
+  without `--allow-weaker`. Turning it into a refusal is the owner's decision; the count
+  is already taken in the write's lock for it. **A count `tula` could not read is never a
+  count of none and never "not judged"**: only a server from before the route
+  leaves a plan unjudged (`null`), and it is known by the API's own answer for an unknown
+  route and nothing else (`isUnknownRoute`: a 404 in the contract's envelope with
+  `resource.not_found`; never by the status alone, a proxy's or an access wall's 404 or
+  405 is `'unread'`); a refusal, a limit, a failure, no answer and an answer
+  that is no count are `'unread'` (`readDependents`), handed to the contract's rule as a
+  floor of none (`{ accounts: 0, more: true }`: no rule of the CLI's own), so the path is
+  in `plan.weakened` and `apply --yes` needs `--allow-weaker`; the diff says it in fixed
+  words with nothing of the failure. Never widen the set of statuses that mean "no
+  count". `@tula/mcp`'s draft tool does not judge the weakening (it never reads the
+  count, and no operation is added to `READ_OPERATIONS` for it): a draft that takes a
+  provider from on to off says so in one constant entry of `notes` (no name, no number),
+  because `weakens: false` would otherwise read as "nobody is locked out".
+
+### An email address for an account without one (`modules/email-address`, see ADR 0059)
+
+- **The user's two routes are for an account with no address, and only that**
+  (`POST /v1/client/me/email`, `…/verify`, behind `requireRecentAuth()`). A user who has
+  one, verified or not, is `email.already_set` before anything is counted, sent or spent.
+  Changing an address is a decision of its own, not an extension of these routes.
+- **The address is stored only by confirming a code, with its activity, in one
+  transaction** (`users.addEmail`, `user.email_added`). Asking stores nothing on the user:
+  the pending address is the verification token's (purpose `email_addition`, a keyed hash
+  that covers the user and the normalised address), and a token of another purpose is
+  never honoured here, nor this one anywhere else. The unique key decides two users who
+  proved one address: the loser is `verification.expired`, its code spent.
+- **A taken address is answered and limited like a free one.** The request looks every
+  address up, answers the same receipt, emails the taken address a notice with no code
+  (`email_in_use`) and stores a decoy no code matches, so the verify step answers
+  `verification.invalid_code` as for a wrong code. Never answer, limit or word the two
+  apart; keep the side-by-side test in `modules/email-address/router.test.ts`.
+- **The order of the verify step is fixed**: the user exists, is not banned and has no
+  address; nothing pending is `verification.expired`, uncounted; the guess is counted
+  under `EmailAddress.codeLockKey` (a per-user key **of its own**, never the step-up key:
+  anyone with a session can succeed here with their own inbox, and a success clears the
+  key); the code is checked; the address is stored. The limits are per user (a minute's
+  cooldown, `EMAIL_ADDITION_EMAILS_PER_HOUR`) and per address under a keyed hash
+  (`EMAIL_ADDITION_EMAILS_PER_ADDRESS_PER_HOUR`), never the address itself in a key.
+  **`<UserProfile>`'s "Email address" section is drawn only for an account with no
+  address** (`components/email-address.tsx`): no rule of its own, every call through
+  `useStepUp`, words that never say a code was sent, keyed by the session id. A declined
+  step-up is not an error. Its browser test is `e2e/tests/email-address.spec.ts`.
+  **The `email_added` notice says only what holds in every environment**: never that the
+  address can sign in (a setting decides), and its closing tells the reader to set a new
+  password for the address, not to reset one the account does not have.
+  **The per-address budget is spent by whoever names the address, and that is accepted**:
+  one address-less account can make an address's owner wait up to an hour to add it
+  (`rate_limited`), and nothing else (the key is this purpose's own: no sign-in code or
+  reset is spent). Never word the limit as protecting the owner from that, and never drop
+  it to spare the wait (any number of accounts could then mail one inbox). A router test
+  pins the cost.
+- **An administrator's address is stored unverified, and never replaces one**
+  (`Users.setEmail`, `PUT /v1/admin/users/:userId/email`): `email.already_set` for a user
+  who has one, `resource.conflict` for an address another account holds, no session ended,
+  nothing emailed, `user.email_added` with `method: 'admin'`, `verified: false`. Never
+  let an administrator's word mark an address verified: automatic linking and the emailed
+  step-up trust that flag.
+- **Nothing here merges accounts or asks for an address in a sign-up.** Both are designed
+  in ADR 0059, Part B, and are decisions for the product's owner: do not build either as
+  an addition.
 
 ### Server-driven flows
 

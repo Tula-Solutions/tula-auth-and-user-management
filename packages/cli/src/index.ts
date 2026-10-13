@@ -28,7 +28,10 @@ export {
 export {
   buildPlan,
   type Change,
+  DEPENDENTS_UNREAD,
+  type DependentCount,
   diffValues,
+  type KnownDependents,
   MANAGING_TOOL,
   type MarkerPlan,
   type Operation,
@@ -37,8 +40,11 @@ export {
   type PlanOptions,
   type ProviderChange,
   planProviders,
+  providersGoingOff,
+  type RemoteDependents,
   type RemoteProvider,
   type RemoteState,
+  readDependentCount,
   SET_PATHS,
 } from './diff'
 export {

@@ -111,6 +111,9 @@ object TulaOperations {
     /** Rename a passkey (`PATCH /v1/client/me/passkeys/{passkeyId}`). Body: [PasskeyRenameRequest]. Answers [Passkey]. */
     val renamePasskey: TulaOperation = TulaOperation("renamePasskey", "PATCH", "/v1/client/me/passkeys/{passkeyId}", true)
 
+    /** Email a code to an address to add to my account (`POST /v1/client/me/email`). Body: [EmailAddressRequest]. Answers [EmailCodeSent]. */
+    val requestEmailAddressCode: TulaOperation = TulaOperation("requestEmailAddressCode", "POST", "/v1/client/me/email", true)
+
     /** Text a code to a phone number (`POST /v1/client/me/phone`). Body: [PhoneNumberRequest]. Answers [PhoneCodeSent]. */
     val requestPhoneCode: TulaOperation = TulaOperation("requestPhoneCode", "POST", "/v1/client/me/phone", true)
 
@@ -201,6 +204,9 @@ object TulaOperations {
     /** Submit a second factor (`POST /v1/client/sign-ins/{attemptId}/second-factor`). Body: [SecondFactorRequest]. Answers [FlowAttempt]. */
     val submitSignInSecondFactor: TulaOperation = TulaOperation("submitSignInSecondFactor", "POST", "/v1/client/sign-ins/{attemptId}/second-factor", false)
 
+    /** Confirm the address with its code (`POST /v1/client/me/email/verify`). Body: [EmailAddressVerifyRequest]. Answers [CurrentUser]. */
+    val verifyEmailAddress: TulaOperation = TulaOperation("verifyEmailAddress", "POST", "/v1/client/me/email/verify", true)
+
     /** Confirm a phone number with its code (`POST /v1/client/me/phone/verify`). Body: [PhoneNumberVerifyRequest]. Answers [CurrentUser]. */
     val verifyPhoneNumber: TulaOperation = TulaOperation("verifyPhoneNumber", "POST", "/v1/client/me/phone/verify", true)
 
@@ -246,6 +252,7 @@ object TulaOperations {
         removePasskey,
         removePhoneNumber,
         renamePasskey,
+        requestEmailAddressCode,
         requestPhoneCode,
         resendPasswordResetCode,
         resendSignInCode,
@@ -276,6 +283,7 @@ object TulaOperations {
         submitSignInPasskey,
         submitSignInPassword,
         submitSignInSecondFactor,
+        verifyEmailAddress,
         verifyPhoneNumber,
         verifySignInEmail,
         verifySignInLink,

@@ -1,6 +1,7 @@
 import {
   AT_LEAST_ONE_SIGN_IN_METHOD,
   BUNDLE_ID_PATTERN,
+  DEPENDENT_ACCOUNTS_SCAN_LIMIT,
   type EnvironmentSettings,
   type EventData,
   type FirstFactorStrategy,
@@ -11,6 +12,7 @@ import {
   MAX_BUNDLE_ID_LENGTH,
   OAUTH_PROVIDERS,
   type OAuthProvider,
+  type OAuthProviderDependents,
   type OAuthProviderSettings,
   type OAuthProviderUpdate,
   oauthProviderWeakenings,
@@ -38,7 +40,12 @@ import * as Settings from '~/modules/settings/service'
 import type { NativeAppRecord } from '~/ports/native-app-store'
 import type { OAuthCredentials, OAuthProfile } from '~/ports/oauth-provider'
 import type { OAuthProviderRecord } from '~/ports/oauth-provider-store'
-import type { IdentityRecord, SignInMeans, UserRecord } from '~/ports/user-repository'
+import type {
+  DependentAccounts,
+  IdentityRecord,
+  SignInMeans,
+  UserRecord,
+} from '~/ports/user-repository'
 
 /** Secret-box purpose of provider credentials: a key of their own, apart from every other secret. */
 export const OAUTH_SECRET_PURPOSE = 'oauth-credentials'
@@ -376,7 +383,71 @@ export async function requireWayIn(
 }
 
 /**
+ * Count the accounts that have this provider connected and could not sign in without it
+ * (ADR 0059): by {@link canStillSignIn}, the one definition of "a way to sign in", asked
+ * with the environment's settings as stored and its enabled providers **minus this one**.
+ *
+ * At most `DEPENDENT_ACCOUNTS_SCAN_LIMIT` accounts of the provider are looked at; past that
+ * the answer says `more` and the count is a floor.
+ */
+async function countDependents(
+  deps: Pick<Deps, 'oauthProviders' | 'environmentSettings' | 'config' | 'users'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  provider: OAuthProvider
+): Promise<DependentAccounts> {
+  const { settings } = await Settings.get(deps, tenant, true)
+  const others = (await enabledProviders(deps, tenant)).filter((other) => other !== provider)
+  return deps.users.countDependentOn(
+    tenant.environmentId,
+    provider,
+    (means) => canStillSignIn(settings, others, means),
+    DEPENDENT_ACCOUNTS_SCAN_LIMIT
+  )
+}
+
+/**
+ * How many accounts depend on a provider: what an operator is shown before the provider is
+ * switched off or its credentials are removed (ADR 0059). A number and whether it is
+ * complete, and nothing about who: never an id, an address or a name.
+ *
+ * A read. It is what was true when it was read; {@link update}, {@link switchOff} and
+ * {@link remove} count again, under the environment's lock, for what they record. It answers for any provider,
+ * configured or not: an account whose provider is already off depends on it all the same.
+ *
+ * @param deps - Provider store, settings and users.
+ * @param tenant - The environment.
+ * @param provider - The provider.
+ * @returns The count and whether accounts were left unlooked at.
+ */
+export async function dependents(
+  deps: Pick<Deps, 'oauthProviders' | 'environmentSettings' | 'config' | 'users'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  provider: OAuthProvider
+): Promise<OAuthProviderDependents> {
+  return { provider, ...(await countDependents(deps, tenant, provider)) }
+}
+
+/**
+ * What an entry says of the accounts a change locks out: a count, and that it is a floor
+ * when not every account was looked at. Never who.
+ */
+function dependentData(counted: DependentAccounts): {
+  dependentAccounts: number
+  dependentAccountsIncomplete?: true
+} {
+  return {
+    dependentAccounts: counted.accounts,
+    ...(counted.more && { dependentAccountsIncomplete: true as const }),
+  }
+}
+
+/**
  * Set a provider's credentials and whether sign-in offers it.
+ *
+ * **Switching a provider off while accounts depend on it is a recorded weakening, not a
+ * refusal** (ADR 0059): the accounts whose only way in it is are counted under the lock
+ * ({@link dependents}'s rule) and, when there is one, the entry says `weakened: true` with
+ * the count. The dashboard and `tula apply` ask first, from the read.
  *
  * Microsoft also takes `tenant` (which accounts may sign in); it is required and not a secret.
  *
@@ -414,6 +485,7 @@ export async function update(
     | 'config'
     | 'ids'
     | 'clock'
+    | 'users'
   >,
   tenant: Scope,
   provider: OAuthProvider,
@@ -477,9 +549,17 @@ export async function update(
         : []),
       ...(existing?.enabled !== input.enabled ? (['enabled'] as const) : []),
     ]
+    // Counted only for the change that asks: a provider that was on and is now off.
+    const counted =
+      existing?.enabled && !input.enabled
+        ? await countDependents(deps, tenant, provider)
+        : undefined
     // Judged against the row read under the lock, by the contract's one rule.
-    const weakened =
-      oauthProviderWeakenings({ additionalClientIds: before }, { additionalClientIds }).length > 0
+    const weakenings = oauthProviderWeakenings(
+      { additionalClientIds: before, enabled: existing?.enabled ?? false, dependents: counted },
+      { additionalClientIds, enabled: input.enabled }
+    )
+    const weakened = weakenings.length > 0
     const record: OAuthProviderRecord = {
       id: existing?.id ?? deps.ids.next(),
       projectId: tenant.projectId,
@@ -517,6 +597,8 @@ export async function update(
             additionalClientIdCount: additionalClientIds.length,
           }),
           ...(weakened && { weakened: true }),
+          // A number: never which accounts (ADR 0059).
+          ...(counted && weakenings.includes('enabled') && dependentData(counted)),
         },
       })
     )
@@ -540,12 +622,18 @@ export interface CarriedOutProposal {
  * It is held to what an administrator's own change is held to, by the same function, in the
  * same place: {@link requireWayIn} inside the environment's `sign_in_methods` lock, which
  * `Settings.replace` takes too. Like {@link update} it records `oauth_provider.updated` with
- * `changed: ['enabled']` in the transaction of the write; switching a provider off is not a
- * weakening there, and is not one here.
+ * `changed: ['enabled']` in the transaction of the write.
  *
- * A provider that is already off is left alone and nothing is recorded.
+ * **And it is the weakening {@link update}'s is, by the same rule** (ADR 0059): the accounts
+ * whose only way in the provider is are counted again under that lock ({@link dependents}'s
+ * rule), judged by the contract's `oauthProviderWeakenings`, and where there is one the
+ * entry says `weakened: true` with the count. It is not refused for them, as the route's
+ * change is not. A count that cannot be taken throws, before anything is written: the
+ * change is never recorded on a guess.
  *
- * @param deps - Provider store, settings, the environment lock, ids and clock.
+ * A provider that is already off is left alone: nothing is counted and nothing recorded.
+ *
+ * @param deps - Provider store, settings, users, the environment lock, ids and clock.
  * @param tenant - The environment.
  * @param provider - The provider.
  * @param actor - Who switches it off, for the audit log.
@@ -558,7 +646,13 @@ export interface CarriedOutProposal {
 export async function switchOff(
   deps: Pick<
     Deps,
-    'oauthProviders' | 'environmentSettings' | 'environmentLock' | 'config' | 'ids' | 'clock'
+    | 'oauthProviders'
+    | 'environmentSettings'
+    | 'environmentLock'
+    | 'config'
+    | 'ids'
+    | 'clock'
+    | 'users'
   >,
   tenant: Scope,
   provider: OAuthProvider,
@@ -574,6 +668,14 @@ export async function switchOff(
       return false
     }
     await requireWayIn(deps, tenant, provider)
+    // As `update` does for the same change: counted under the lock, judged by the
+    // contract's one rule against the row that was read.
+    const counted = await countDependents(deps, tenant, provider)
+    const before = additionalClientIdsOf(existing)
+    const weakened = oauthProviderWeakenings(
+      { additionalClientIds: before, enabled: true, dependents: counted },
+      { additionalClientIds: before, enabled: false }
+    ).includes('enabled')
     await deps.oauthProviders.upsert(
       // The row as it was read under the lock, with the switch turned: nothing of it is
       // built from a request.
@@ -585,6 +687,8 @@ export async function switchOff(
         data: {
           provider,
           changed: ['enabled'],
+          // A number: never which accounts (ADR 0059).
+          ...(weakened && { weakened: true, ...dependentData(counted) }),
           ...(proposal && { proposalId: proposal.proposalId, approvedBy: proposal.approvedBy }),
         },
       })
@@ -597,15 +701,19 @@ export async function switchOff(
  * Remove a provider's credentials.
  *
  * Users keep their identities of that provider: configuring it again lets them back in. The
- * removal is **not** refused because some user has no other way to sign in. Deciding that would
- * mean reading every user. A user with an email address is not locked out for good (a password
- * reset sets a first password; an administrator can set one). A user with **no** address (one
- * made by a first sign-in with X or Facebook, ADR 0026) is: there is nothing to send a reset
- * to and no password can be set, so until the provider is configured again that account has
- * no way in. The same holds for switching a provider off ({@link update}). It **is** refused
- * when it would leave the whole environment with no sign-in method.
+ * removal is **not** refused because some user has no other way to sign in: **it is a
+ * recorded weakening** (ADR 0059). The accounts whose only way in is this provider are
+ * counted under the lock ({@link dependents}'s rule, at most
+ * `DEPENDENT_ACCOUNTS_SCAN_LIMIT` looked at) and, when there is one, the entry says
+ * `weakened: true` with the count; the dashboard and `tula apply` ask first, from the read.
+ * A user with an email address is not locked out for good (a password reset sets a first
+ * password; an administrator can set one). A user with **no** address (one made by a first
+ * sign-in with X or Facebook, ADR 0026) is, until the provider is configured again, they
+ * sign in some other way they have, or an administrator gives the account an address
+ * (`Users.setEmail`). The same holds for switching a provider off ({@link update}). It
+ * **is** refused when it would leave the whole environment with no sign-in method.
  *
- * @param deps - Provider store, settings, the environment lock, ids and clock.
+ * @param deps - Provider store, settings, users, the environment lock, ids and clock.
  * @param tenant - The environment.
  * @param provider - The provider.
  * @param actor - Who is removing it, for the audit log.
@@ -615,7 +723,13 @@ export async function switchOff(
 export async function remove(
   deps: Pick<
     Deps,
-    'oauthProviders' | 'environmentSettings' | 'environmentLock' | 'config' | 'ids' | 'clock'
+    | 'oauthProviders'
+    | 'environmentSettings'
+    | 'environmentLock'
+    | 'config'
+    | 'ids'
+    | 'clock'
+    | 'users'
   >,
   tenant: Scope,
   provider: OAuthProvider,
@@ -629,6 +743,13 @@ export async function remove(
     if (existing.enabled) {
       await requireWayIn(deps, tenant, provider)
     }
+    // A provider that is off locks nobody out by going: nothing to count.
+    const counted = existing.enabled ? await countDependents(deps, tenant, provider) : undefined
+    const weakened =
+      oauthProviderWeakenings(
+        { additionalClientIds: [], enabled: existing.enabled, dependents: counted },
+        null
+      ).length > 0
     const deleted = await deps.oauthProviders.delete(
       tenant.environmentId,
       provider,
@@ -636,7 +757,10 @@ export async function remove(
         type: 'oauth_provider.deleted',
         actor,
         target: { type: 'environment', id: tenant.environmentId },
-        data: { provider },
+        data: {
+          provider,
+          ...(weakened && counted && { weakened: true, ...dependentData(counted) }),
+        },
       })
     )
     if (!deleted) {

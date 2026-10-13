@@ -1,7 +1,9 @@
 /**
  * What a verification token proves: control of an address being verified, the right to reset
  * its account's password, (`sign_in`) the email first factor of a sign-in, (`step_up`) that
- * a signed-in user without a second factor can still read their mail, or
+ * a signed-in user without a second factor can still read their mail,
+ * (`email_addition`) that a signed-in user whose account has no address reads the mail of
+ * the one they want on it (ADR 0059), or
  * (`phone_verification`) that a signed-in user holds the phone a code was texted to. A token
  * issued for one purpose is never honoured for another.
  */
@@ -10,6 +12,7 @@ export type VerificationPurpose =
   | 'password_reset'
   | 'sign_in'
   | 'step_up'
+  | 'email_addition'
   | 'phone_verification'
   | 'sms_sign_in'
   // A texted code as a second factor (ADR 0025): making it one, proving it at a sign-in or a

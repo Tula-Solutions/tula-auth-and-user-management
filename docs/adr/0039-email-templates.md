@@ -45,7 +45,7 @@ than 255 characters is not used.
 ### Kinds and placeholders are closed lists in the contract
 
 `EMAIL_TEMPLATE_KINDS` (`packages/contract/src/email-template.ts`, plain data, no Zod) has
-one entry per message the server words differently: 26 today. `EMAIL_TEMPLATE_RULES` gives
+one entry per message the server words differently: 28 today (26 when this was written; ADR 0059 added two). `EMAIL_TEMPLATE_RULES` gives
 each kind its category (`code` or `notice`), the placeholders it must have and the ones it
 may have. `templateKind(message)` in the email module maps every message `Email.send` takes
 to its kind with an exhaustive `switch`; a test fails when the two lists differ, so a new
@@ -132,7 +132,7 @@ The pattern is one character class matched with the `u` flag, so its cost is lin
 
 ### The only link in an email is the server's own
 
-**One rule for all 26 kinds**: the subject and the body of a template are refused when they
+**One rule for all 28 kinds**: the subject and the body of a template are refused when they
 **read as a link** (`readsAsLink`). The only link in any message is the one the server
 draws for `{{link}}`, and only `sign_in` has that placeholder.
 
@@ -255,11 +255,12 @@ gets everything the settings already have: the revision and `If-Match`, the audi
 the config file, the "managed by" record, the per-instance cache.
 
 **Size.** Every request body is capped at 64 KiB (`MAX_BODY_BYTES`), and the settings are
-replaced whole, so a section that could grow to 26 kinds at 2,200 characters each (57,200
-characters, more in bytes) could make a document that can be stored once and never saved
+replaced whole, so a section that could grow to 28 kinds at 2,200 characters each (61,600
+characters, more in bytes; 26 kinds and 57,200 when this was written) could make a document that can be stored once and never saved
 again. The section is therefore capped as a whole: `MAX_EMAIL_TEMPLATES_BYTES`, **40 KiB**
 of UTF-8 JSON. That is the worst case of the section, and it leaves 24 KiB for the rest of
-the document.
+the document. The cap did not move with the two kinds ADR 0059 added: it is a number of
+bytes, not of kinds.
 
 **The two caps do not count the same bytes.** The section's is the UTF-8 of its compact
 JSON, as the server would write it; the request's 64 KiB is what arrived on the wire. A
@@ -267,7 +268,8 @@ client that escapes every character outside ASCII as `\uXXXX` (six bytes for a c
 that is two or three in UTF-8), or sends the document indented, can be answered 413 for a
 section that is under its own cap. Nothing is stored and nothing is lost; the answer is to
 send UTF-8, compact, which `@tula/admin` and `tula apply` do. Not changed: counting the
-section the way a client happened to spell it would make the cap depend on the client. All 26 kinds at full length do not fit; about eighteen do, fewer in a script that takes
+section the way a client happened to spell it would make the cap depend on the client. All 28 kinds at full length do not fit (they did not at 26 either); about eighteen do
+(40,960 bytes over 2,200 characters and the JSON around them), fewer in a script that takes
 more than one byte a character. A table of its own was
 the alternative and was not built: it buys size nobody has asked for and loses the
 revision, the single replace and the config file's one document.

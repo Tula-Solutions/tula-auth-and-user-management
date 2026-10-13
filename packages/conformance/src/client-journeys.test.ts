@@ -100,8 +100,9 @@ describe('the committed list', () => {
       perTicket.set(ticket, (perTicket.get(ticket) ?? 0) + 1)
     }
     // TULA-57: passkeys, providers, native Google, device binding, the second-factor and
-    // step-up calls. TULA-61: the account calls (a phone number on an account).
-    expect(Object.fromEntries(perTicket)).toEqual({ 'TULA-57': 53, 'TULA-61': 4 })
+    // step-up calls. TULA-61: the account calls (a phone number on an account, an email
+    // address for an account without one).
+    expect(Object.fromEntries(perTicket)).toEqual({ 'TULA-57': 54, 'TULA-61': 6 })
   })
 
   test('what each client has not built yet: nothing for @tula/core, and for @tula/expo a number per ticket that only this line lets change', async () => {

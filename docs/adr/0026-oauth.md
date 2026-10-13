@@ -510,11 +510,12 @@ stays, the admin API still shows the user, and the sessions it has run their cou
 (disabling a provider ends none). Facebook's id is scoped to the app, so "again" means the
 same Facebook app.
 
-This is documented and pinned, not prevented (`modules/oauth/x-facebook.test.ts`, "an
-account whose only way in is this provider is locked out when the operator …"). The
-provider pages warn before "switch it off". A refusal or a count of dependent accounts on
-the provider's card would need a query over identities per environment and is not part of
-this change; it belongs with the route that adds an address.
+This was documented and pinned, not prevented, when the two providers were added.
+**[ADR 0059](0059-email-for-accounts-without-one.md) changed it**: such an account's user
+can add an address and prove it, an administrator can set one, and the accounts that depend
+on a provider are counted (a bounded read over the provider's identities) and shown before
+it is switched off or removed, which is then recorded as a weakening. It is still not
+refused; that ADR says why and how a refusal could replace the question.
 
 **X** (`adapters/oauth/x.ts`):
 

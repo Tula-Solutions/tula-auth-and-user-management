@@ -16,6 +16,7 @@ public enum ErrorCode: Codable, Hashable, Sendable {
     case flowNotFound
     case flowInvalidStep
     case emailInvalid
+    case emailAlreadySet
     case passwordTooShort
     case passwordTooLong
     case passwordMissingLowercase
@@ -106,6 +107,7 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         .flowNotFound,
         .flowInvalidStep,
         .emailInvalid,
+        .emailAlreadySet,
         .passwordTooShort,
         .passwordTooLong,
         .passwordMissingLowercase,
@@ -196,6 +198,7 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case "flow.not_found": self = .flowNotFound
         case "flow.invalid_step": self = .flowInvalidStep
         case "email.invalid": self = .emailInvalid
+        case "email.already_set": self = .emailAlreadySet
         case "password.too_short": self = .passwordTooShort
         case "password.too_long": self = .passwordTooLong
         case "password.missing_lowercase": self = .passwordMissingLowercase
@@ -288,6 +291,7 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case .flowNotFound: return "flow.not_found"
         case .flowInvalidStep: return "flow.invalid_step"
         case .emailInvalid: return "email.invalid"
+        case .emailAlreadySet: return "email.already_set"
         case .passwordTooShort: return "password.too_short"
         case .passwordTooLong: return "password.too_long"
         case .passwordMissingLowercase: return "password.missing_lowercase"
@@ -426,6 +430,9 @@ public enum TulaErrorDefinitions {
 
     /// `email.invalid`
     public static let emailInvalid = TulaErrorDefinition(code: .emailInvalid, status: 422, message: "Enter a valid email address.")
+
+    /// `email.already_set`
+    public static let emailAlreadySet = TulaErrorDefinition(code: .emailAlreadySet, status: 409, message: "This account already has an email address.")
 
     /// `password.too_short`
     public static let passwordTooShort = TulaErrorDefinition(code: .passwordTooShort, status: 422, message: "Password is too short.")
@@ -664,6 +671,7 @@ public enum TulaErrorDefinitions {
         flowNotFound,
         flowInvalidStep,
         emailInvalid,
+        emailAlreadySet,
         passwordTooShort,
         passwordTooLong,
         passwordMissingLowercase,

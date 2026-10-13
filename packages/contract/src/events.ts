@@ -15,7 +15,11 @@ import {
   NATIVE_APP_FIELDS,
   NATIVE_APP_PLATFORMS,
 } from './native-app'
-import { MAX_ADDITIONAL_CLIENT_IDS, OAuthProviderSchema } from './oauth'
+import {
+  DEPENDENT_ACCOUNTS_SCAN_LIMIT,
+  MAX_ADDITIONAL_CLIENT_IDS,
+  OAuthProviderSchema,
+} from './oauth'
 import {
   PROPOSAL_FAILURE_REASONS,
   PROPOSAL_OPERATIONS,
@@ -97,6 +101,9 @@ function passkeyRemovalIsWhole(removal: {
 }
 
 const provider = OAuthProviderSchema
+
+/** How many accounts depended on a provider when it went (ADR 0059). A count and nothing else. */
+const dependentAccounts = z.number().int().min(0).max(DEPENDENT_ACCOUNTS_SCAN_LIMIT)
 
 /**
  * What every proposal event says of the proposal: the operation, and the kind and id of what
@@ -320,6 +327,19 @@ export const EVENT_DATA_SCHEMAS = {
   ),
   // Neither phone event has a field, on purpose: a number is personal data, and its country
   // or last digits narrow it down. The target says whose it is; that is all a receiver gets.
+  'user.email_added': data(
+    'UserEmailAdded',
+    'An email address was stored on a user who had none. The address is not in the event.',
+    {
+      /**
+       * Who stored it: the user, with a code emailed to the address (`self`), or an
+       * administrator (`admin`).
+       */
+      method: z.enum(['self', 'admin']),
+      /** Whether the address is verified: `true` for `self`, `false` for `admin`. */
+      verified: z.boolean(),
+    }
+  ),
   'user.phone_number_added': data(
     'UserPhoneNumberAdded',
     'A user verified a phone number, which is now the account’s (replacing an earlier one).',
@@ -510,10 +530,18 @@ export const EVENT_DATA_SCHEMAS = {
        */
       additionalClientIdCount: z.number().int().min(0).max(MAX_ADDITIONAL_CLIENT_IDS).optional(),
       /**
-       * `true` when the change accepts ID tokens of a client id it did not accept before
+       * `true` when the change accepts ID tokens of a client id it did not accept before, or
+       * switches the provider off while accounts have no other way to sign in
        * (`oauthProviderWeakenings`); absent otherwise.
        */
       weakened: z.boolean().optional(),
+      /**
+       * When the provider was switched off: how many accounts were found whose only way to
+       * sign in it was (ADR 0059). A count, never an id; absent when it was not switched off.
+       */
+      dependentAccounts: dependentAccounts.optional(),
+      /** `true` when not every account of the provider was looked at: the count is a floor. */
+      dependentAccountsIncomplete: z.boolean().optional(),
       // Only for a provider switched off by an approved `disable_oauth_provider` proposal.
       ...carriedOut(),
     })
@@ -526,7 +554,18 @@ export const EVENT_DATA_SCHEMAS = {
   'oauth_provider.deleted': data(
     'OAuthProviderDeleted',
     'An OAuth provider’s credentials were removed.',
-    { provider }
+    {
+      provider,
+      /**
+       * `true` when the provider was on and accounts had no other way to sign in
+       * (`oauthProviderWeakenings`); absent otherwise.
+       */
+      weakened: z.boolean().optional(),
+      /** As for `oauth_provider.updated`; absent when the provider was already off. */
+      dependentAccounts: dependentAccounts.optional(),
+      /** As for `oauth_provider.updated`. */
+      dependentAccountsIncomplete: z.boolean().optional(),
+    }
   ),
   'webhook_endpoint.created': data(
     'WebhookEndpointCreated',

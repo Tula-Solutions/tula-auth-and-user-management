@@ -152,27 +152,58 @@ claim taken from the address (`user.email`) or from whether it is proven
 ## Before you switch it off
 
 > **Warning.** Switching Facebook off, or removing its credentials, locks out every account
-> whose only way to sign in is Facebook, and nothing warns you first.
+> whose only way to sign in is Facebook. Tula counts those accounts and asks first; it does
+> not refuse.
 
-Tula refuses a change that would leave the **environment** with no way to sign in. It does
-not look at whether some **user** depends on the provider: that would mean reading every
-user. For an account with an email address the lockout can be undone from either side (the
+Tula refuses a change that would leave the **environment** with no way to sign in. A change
+that leaves some **users** with none is not refused: it is counted, shown and recorded
+([ADR 0059](../adr/0059-email-for-accounts-without-one.md)):
+
+- the dashboard reads the count before it saves and asks you to confirm, with the number;
+- `tula diff` prints the count, and `tula apply --yes` refuses the plan without
+  `--allow-weaker`;
+- `GET /v1/admin/oauth-providers/facebook/dependents` answers
+  `{ provider, accounts, more }`: how many accounts have Facebook connected and could not sign
+  in without it, and nothing about who. At most 1,000 accounts are looked at; past that
+  `more` is `true` and the number is "at least";
+- the audit entry of the change says `weakened: true` and the count.
+
+The count is of accounts that could not **sign in**, by the settings as they are: where the
+emailed code is off, an account with an address and no password counts too, although its
+owner can still reset a password. For an account with an email address the lockout can be undone from either side (the
 person resets their password, or you set one). An account made by signing in with Facebook has
 no address, so for it:
 
 - there is no password, and "set password" is refused (409);
-- there is no address to send a code, a link or a reset to;
-- there is no route that gives it an address.
+- there is no address to send a code, a link or a reset to.
 
-Such an account has a way in again only if it added a passkey (and passkeys are on), or it
+**Give such accounts an address before you switch Facebook off.** Either side can:
+
+- the user, signed in, asks for a code at a new address and confirms it
+  (`POST /v1/client/me/email`, then `/v1/client/me/email/verify`). Both need a recent
+  sign-in: a user with no passkey and no authenticator app who signed in more than ten
+  minutes ago signs in with Facebook again first. The address is then verified. An address
+  another account holds is answered like a free one and confirms nothing. An address is
+  sent at most five of these codes an hour, **whoever asks**: someone else's account that
+  names a person's address five times makes that person wait up to an hour before they
+  can add it themselves (429 `rate_limited`). It costs them nothing else: their sign-in
+  codes and password resets are counted apart, and you can set the address for them;
+- you, with `PUT /v1/admin/users/{userId}/email`. The address is stored **unverified**
+  (you have not shown that the person reads that inbox); it receives notices and a password
+  reset, and the user proves it by signing in with an emailed code or by resetting. The
+  route never replaces an address (409 `email.already_set`) and refuses one another
+  account holds (409 `resource.conflict`).
+
+Neither merges accounts: a person who already has an account under that address keeps two.
+
+An account that got no address has a way in again only if it added a passkey (and passkeys are on), or it
 connected another provider that is still on, or you configure Facebook again. Nothing is
 deleted meanwhile: the account, its Facebook identity and its data stay, the admin API and the
 dashboard still show it, and sessions it already has last as long as their profile allows.
 Configuring Facebook again with credentials of the **same** Facebook app signs the same people
 in to the same accounts. Another app would not: the id Facebook gives is scoped to the app.
 
-There is no count of such accounts in the dashboard or the API today. In the users list
-they are the rows with no email address.
+In the users list the accounts with no address are the rows with no email address.
 
 ## Limits
 

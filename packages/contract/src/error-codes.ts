@@ -48,6 +48,10 @@ export const ERROR_DEFINITIONS = {
   },
 
   'email.invalid': { status: 422, message: 'Enter a valid email address.' },
+  // Adding an address to an account that has one (ADR 0059). Changing an address is another
+  // operation, which does not exist. Only ever told to the account's own signed-in user, or
+  // to an administrator, about that account.
+  'email.already_set': { status: 409, message: 'This account already has an email address.' },
 
   'password.too_short': { status: 422, message: 'Password is too short.' },
   'password.too_long': { status: 422, message: 'Password is too long.' },

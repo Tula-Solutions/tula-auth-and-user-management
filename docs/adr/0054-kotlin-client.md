@@ -284,7 +284,10 @@ excluded: its tests are the generator's), with a bound of 90%. It was 98% when s
 - CI gains a job that needs a JDK and downloads Gradle and the pinned dependencies on every
   run (uncached, on purpose).
 - The Kotlin column of the client-journey list is decided: 31 journeys, 4 behaviours, 24 not
-  applicable, 57 not built (53 for TULA-57, 4 for TULA-61), of 112 scenarios.
+  applicable, 60 not built (54 for TULA-57, 6 for TULA-61), of 115 scenarios. (Three of
+  them are the scenarios of [ADR 0059](0059-email-for-accounts-without-one.md): the
+  account's email address needs the account calls of TULA-61, and the count of a
+  provider's dependents is observed through a provider sign-in, which is TULA-57's.)
 - Two things are care and not checks: the JVM module's use of Java APIs that Android has,
   and that the client's rules stay those of `@tula/core` beyond the one constant a test
   holds equal. A change to `@tula/core`'s session rules is made here in the same change.
