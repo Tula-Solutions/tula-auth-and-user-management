@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import type { FlowAttemptStore, NewFlowAttempt } from '~/ports/flow-attempt-store'
+import { comparable } from '~/testing/comparable'
 
 /** A tenant plus the rows the store's foreign keys need. */
 export interface FlowSuiteTenant {
@@ -117,12 +118,14 @@ export function describeFlowAttemptStore(
           later(2_000)
         )
       ).toBe(true)
-      expect(await ctx.store.findById(ctx.a.environmentId, input.id)).toMatchObject({
-        status: 'complete',
-        userId,
-        state: { client: 'web', done: true },
-        completedAt: later(2_000),
-      })
+      expect(comparable(await ctx.store.findById(ctx.a.environmentId, input.id))).toMatchObject(
+        comparable({
+          status: 'complete',
+          userId,
+          state: { client: 'web', done: true },
+          completedAt: later(2_000),
+        })
+      )
     })
 
     test('a transition can give the attempt an identifier, and otherwise keeps the one it has', async () => {

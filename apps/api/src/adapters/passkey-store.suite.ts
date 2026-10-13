@@ -4,6 +4,7 @@ import * as Audit from '~/modules/audit/service'
 import type { Activity, ActivityLog } from '~/ports/activity-log'
 import type { PasskeyChallengeRecord, PasskeyRecord, PasskeyStore } from '~/ports/passkey-store'
 import type { SignInMeans } from '~/ports/user-repository'
+import { comparable } from '~/testing/comparable'
 
 /** A tenant plus the rows the store's foreign keys need. */
 export interface PasskeySuiteTenant {
@@ -243,13 +244,15 @@ export function describePasskeyStore(
         ])
         expect(outcomes.sort()).toEqual([false, true])
         expect(
-          await ctx.store.findByCredentialId(ctx.a.environmentId, record.credentialId)
-        ).toMatchObject({
-          signCount: 5,
-          backupEligible: true,
-          backedUp: true,
-          lastUsedAt: later(5_000),
-        })
+          comparable(await ctx.store.findByCredentialId(ctx.a.environmentId, record.credentialId))
+        ).toMatchObject(
+          comparable({
+            signCount: 5,
+            backupEligible: true,
+            backedUp: true,
+            lastUsedAt: later(5_000),
+          })
+        )
         expect(await ctx.store.recordUse(ctx.a.environmentId, Bun.randomUUIDv7(), use)).toBe(false)
       })
 
