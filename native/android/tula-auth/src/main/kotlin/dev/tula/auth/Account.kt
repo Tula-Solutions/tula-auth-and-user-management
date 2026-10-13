@@ -1,6 +1,10 @@
 package dev.tula.auth
 
 import dev.tula.auth.generated.BackupCodes
+import dev.tula.auth.generated.CurrentUser
+import dev.tula.auth.generated.EmailAddressRequest
+import dev.tula.auth.generated.EmailAddressVerifyRequest
+import dev.tula.auth.generated.EmailCodeSent
 import dev.tula.auth.generated.Factors
 import dev.tula.auth.generated.Identity
 import dev.tula.auth.generated.IdentityList
@@ -304,6 +308,56 @@ class TulaFactors internal constructor(private val context: FlowContext) {
     }
 
     override fun toString(): String = "TulaFactors"
+}
+
+/**
+ * An email address for a signed-in account that has none (ADR 0059): an account whose first
+ * sign-in was with a provider that gives no address.
+ *
+ * Both calls are refused `email.already_set` for an account that has an address, and need a
+ * recent authentication (`auth.step_up_required`; a user with nothing to step up with signs
+ * in again with their provider).
+ */
+class TulaEmailAddress internal constructor(private val context: FlowContext) {
+    /**
+     * Email a code to an address to add to the account. Nothing is stored on the account
+     * until [verify]. An address another account holds is answered like a free one, and no
+     * code confirms it.
+     *
+     * @param email The address to prove.
+     * @return The masked address and when the code stops working. Never the code.
+     * @throws TulaError `email.invalid`, `email.already_set`, `rate_limited`,
+     *   `auth.step_up_required`.
+     */
+    suspend fun request(email: String): EmailCodeSent {
+        val sent = context.transport.decode(
+            EmailCodeSent.serializer(),
+            context.session.authorized(
+                TulaOperations.requestEmailAddressCode,
+                CallInput(body = encode(EmailAddressRequest.serializer(), EmailAddressRequest(email))),
+            ),
+        )
+        if (sent.destination.isEmpty() || sent.expiresAt.isEmpty()) {
+            throw context.transport.invalid()
+        }
+        return sent
+    }
+
+    /**
+     * Confirm the address with the emailed code. The account then has it, verified, and the
+     * client's state shows the user with it.
+     *
+     * @param code The code from the email.
+     * @return The user after the change.
+     * @throws TulaError `verification.invalid_code`, `verification.expired`,
+     *   `email.already_set`.
+     */
+    suspend fun verify(code: String): CurrentUser = context.session.userFrom(
+        TulaOperations.verifyEmailAddress,
+        CallInput(body = encode(EmailAddressVerifyRequest.serializer(), EmailAddressVerifyRequest(code))),
+    )
+
+    override fun toString(): String = "TulaEmailAddress"
 }
 
 /** The provider accounts the signed-in user signs in with (ADR 0026). */

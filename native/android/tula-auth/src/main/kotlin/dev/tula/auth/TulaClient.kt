@@ -403,6 +403,9 @@ class TulaClient internal constructor(
     /** The signed-in user's passkeys. */
     val passkeys: TulaPasskeys get() = TulaPasskeys(flows)
 
+    /** An email address for a signed-in account that has none. */
+    val emailAddress: TulaEmailAddress get() = TulaEmailAddress(flows)
+
     /** The provider accounts the signed-in user signs in with. */
     val identities: TulaIdentities get() = TulaIdentities(flows)
 

@@ -789,11 +789,22 @@ internal class SessionManager(
      * A result belongs to the session it was asked for: an answer that arrives after a
      * sign-out and another user's sign-in is returned to its caller and shown nowhere.
      */
-    suspend fun fetchUser(): CurrentUser = withContext(confined) {
+    suspend fun fetchUser(): CurrentUser = userFrom(TulaOperations.getMe)
+
+    /**
+     * Makes an authorized call whose answer is the signed-in user, and shows that answer in
+     * the state under [fetchUser]'s rule (the one place a user reaches the state after a
+     * sign-in).
+     *
+     * @param operation A client operation that answers `CurrentUser`.
+     * @param input Its body.
+     * @return The user the server answered.
+     */
+    suspend fun userFrom(operation: TulaOperation, input: CallInput = CallInput()): CurrentUser = withContext(confined) {
         // A token first, so that a client still loading has its session before it is named.
         getToken() ?: throw unauthenticated()
         val asked = (current.value as? AuthState.SignedIn)?.sessionId
-        val user = transport.decode(CurrentUser.serializer(), authorized(TulaOperations.getMe))
+        val user = transport.decode(CurrentUser.serializer(), authorized(operation, input))
         val now = current.value
         if (now is AuthState.SignedIn && now.sessionId == asked) {
             setState(now.copy(user = user))

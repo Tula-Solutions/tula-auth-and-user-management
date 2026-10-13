@@ -205,11 +205,17 @@ async function worldRoute(world: World, route: string, request: Request): Promis
     if (body.provider !== 'google' && body.provider !== 'apple') {
       return json({ error: 'no such ID-token provider' }, 422)
     }
+    // The claims are sealed into the token as they are: anything but an object written out
+    // by the journey is a mistake in the journey, said here and not by the mock.
+    const claims = body.claims
+    if (typeof claims !== 'object' || claims === null || Array.isArray(claims)) {
+      return json({ error: 'claims must be an object' }, 422)
+    }
     const token = await issueMockIdToken(
       deps.secretBox,
       deps.clock,
       body.provider,
-      body.claims as MockIdTokenClaims,
+      claims as MockIdTokenClaims,
       { expired: body.expired === true }
     )
     return json({ token })

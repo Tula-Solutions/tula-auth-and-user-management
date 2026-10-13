@@ -537,9 +537,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the journey makes its accounts by signing in with X and then tries a start with the provider switched off, and the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket are that ticket’s. The count itself is an administrator’s read."
+        "decision": "journey"
       }
     },
     "admin ban and audit log": {
@@ -617,9 +615,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-61",
-        "reason": "what the client observes is that the user’s own call under `/v1/client/me/email` answers `email.already_set` once an administrator has given the account an address, and the Kotlin client has no account calls yet: they arrive with the account screen that needs them. The account itself is made by signing in with X, which this client cannot start before TULA-57."
+        "decision": "journey"
       }
     },
     "an agent proposes a ban and a person approves it": {
@@ -691,7 +687,7 @@
       },
       "kotlin": {
         "decision": "not_applicable",
-        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Kotlin client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. What an app observes of a provider that is off is that it is no longer in the client configuration; a sign-in with a provider is not built in this client yet (TULA-57), and is that journey’s when it is."
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Kotlin client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. What an app observes of a provider that is off (it is no longer in the client configuration, and a sign-in with it is `auth.method_disabled`) is the provider sign-in journeys’."
       }
     },
     "an email address for an account without one": {
@@ -705,9 +701,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-61",
-        "reason": "asking for a code at an address and proving it are calls under `/v1/client/me/email`, behind a recent authentication. The Kotlin client has no account calls yet: they arrive with the account screen that needs them. The account itself is made by signing in with X, which this client cannot start before TULA-57."
+        "decision": "journey"
       }
     },
     "app link or custom scheme that is not listed": {
@@ -855,8 +849,8 @@
       },
       "kotlin": {
         "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the server honours an emailed link only in the client that asked for it, with a binding that client keeps, and a link in an email opens a browser unless it is an app link. The Kotlin client has no call that asks for a link (`CodeStrategy` has none): a step that offers only one is the screen `NOT_SUPPORTED`, and the code in the same email is the path (\"email code sign-in\"). TULA-57 built the app-link return of a provider sign-in, whose binding lives in memory for one round trip; an emailed link needs a binding that outlives the app and a link the app judges, and neither is decided (the Swift client leaves it out for the same reason, TULA-56). No ticket names it by itself."
+        "ticket": "TULA-76",
+        "reason": "the server honours an emailed link only in the client that asked for it, with a binding that client keeps, and a link in an email opens a browser unless it is an app link. The Kotlin client has no call that asks for a link (`CodeStrategy` has none): a step that offers only one is the screen `NOT_SUPPORTED`, and the code in the same email is the path (\"email code sign-in\"). An emailed link needs a binding that outlives one round trip and an app link the client judges as it judges a provider's return; TULA-76 (the native clients' emailed link, Swift and Kotlin) decides and builds both."
       }
     },
     "email wording": {

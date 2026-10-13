@@ -3235,6 +3235,119 @@ class JourneysTest {
             neverLinksByAddress(world, OAuthProvider.Facebook, "facebook")
         }
 
+    /** A world with X configured: an account made through it has no email address (ADR 0059). */
+    private fun xJourney(run: suspend CoroutineScope.(World) -> Unit) = oauthJourney { world ->
+        world.provider("x")
+        run(world)
+    }
+
+    /** A new account made by a first sign-in with X: signed in, with no address. */
+    private suspend fun withX(world: World): Returned {
+        val returned = continueWith(world, OAuthProvider.X, mapOf("subject" to snowflake()))
+        assertEquals("signed_in", returned.outcome.word)
+        assertNull(signedIn(returned.device).user?.email)
+        return returned
+    }
+
+    private fun dependents(world: World): JsonObject {
+        val read = world.admin("GET", "/v1/admin/oauth-providers/x/dependents")
+        World.expect(200, read)
+        return read.json.jsonObject
+    }
+
+    @Test
+    @Journey("an email address for an account without one")
+    fun `an account with no address - its user asks for a code, proves the address and has it, a taken address is answered like a free one and confirms nothing, and an old session is told to sign in again`() =
+        xJourney { world ->
+            val tula = withX(world).tula
+            val address = world.freshEmail()
+
+            assertEquals("email.invalid", caught { tula.emailAddress.request("not an address") }.code)
+            val receipt = tula.emailAddress.request(address)
+            assertTrue(Regex("^.\\*\\*\\*@.*").matches(receipt.destination), receipt.destination)
+            assertTrue(receipt.expiresAt.isNotEmpty())
+            val code = world.code(address)
+            // The code is in the inbox and in nothing the client was sent.
+            assertFalse(world.sent("/v1/client/me/email").last().responseBody.contains(code))
+            // Asking stores nothing on the account.
+            assertNull(tula.user().email)
+            val again = caught { tula.emailAddress.request(address) }
+            assertEquals("rate_limited" to 429, again.code to again.status)
+
+            val wrong = if (code == "000000") "111111" else "000000"
+            assertEquals("verification.invalid_code", caught { tula.emailAddress.verify(wrong) }.code)
+            val user = tula.emailAddress.verify(code)
+            assertEquals(address, user.email)
+            assertFalse(user.hasPassword)
+            assertNotNull(user.emailVerifiedAt)
+            // The client shows the address without asking again.
+            assertEquals(address, assertIs<AuthState.SignedIn>(tula.state.value).user?.email)
+            // The calls are for an account with no address only.
+            assertEquals("email.already_set", caught { tula.emailAddress.request(world.freshEmail()) }.code)
+            assertEquals("email.already_set", caught { tula.emailAddress.verify(code) }.code)
+
+            // Another person asks for that address: the same receipt, and no code confirms it.
+            val other = withX(world).tula
+            val taken = other.emailAddress.request(address)
+            assertEquals(receipt.destination, taken.destination)
+            assertTrue(taken.expiresAt.isNotEmpty())
+            assertEquals("verification.invalid_code", caught { other.emailAddress.verify(code) }.code)
+            assertNull(other.user().email)
+
+            // Past the step-up window a user with nothing to step up with is told so: no
+            // method is listed, and they sign in again with their provider.
+            val late = withX(world).tula
+            world.advance(11 * 60_000L)
+            val refused = caught { late.emailAddress.request(world.freshEmail()) }
+            assertEquals("auth.step_up_required", refused.code)
+            assertEquals(emptyList(), refused.stepUpMethods)
+            assertNull(late.user().email)
+        }
+
+    @Test
+    @Journey("an administrator gives an account an email address")
+    fun `an administrator gives an account with no address one - the client sees it unverified, and the user's own call then answers that the account has an address`() =
+        xJourney { world ->
+            val tula = withX(world).tula
+            val id = tula.user().id
+            val address = world.freshEmail()
+            val set = world.admin("PUT", "/v1/admin/users/$id/email", """{"email":"$address"}""")
+            World.expect(200, set)
+            assertEquals(id, set.json.jsonObject.text("id"))
+            assertEquals(address, set.json.jsonObject.text("email"))
+            assertTrue(set.json.jsonObject["emailVerifiedAt"] is JsonNull)
+
+            val seen = tula.user()
+            assertEquals(address, seen.email)
+            assertNull(seen.emailVerifiedAt)
+            assertEquals("email.already_set", caught { tula.emailAddress.request(world.freshEmail()) }.code)
+            // Never a replacement, and never an address another account holds.
+            val again = world.admin("PUT", "/v1/admin/users/$id/email", """{"email":"${world.freshEmail()}"}""")
+            assertEquals(409, again.status)
+            assertEquals("email.already_set", again.json.jsonObject.text("code"))
+            val other = withX(world).tula
+            val conflict = world.admin("PUT", "/v1/admin/users/${other.user().id}/email", """{"email":"$address"}""")
+            assertEquals(409, conflict.status)
+            assertEquals("resource.conflict", conflict.json.jsonObject.text("code"))
+            assertNull(other.user().email)
+        }
+
+    @Test
+    @Journey("accounts that depend on a provider are counted before it is switched off")
+    fun `the accounts that could not sign in without a provider are counted - switching it off is not refused, and the client is then told the method is off`() =
+        xJourney { world ->
+            assertEquals(j("""{"provider":"x","accounts":0,"more":false}"""), dependents(world))
+            withX(world)
+            withX(world)
+            assertEquals(j("""{"provider":"x","accounts":2,"more":false}"""), dependents(world))
+
+            world.provider("x", ""","enabled":false""")
+            // What the client observes: the provider is no longer offered, and a start says so.
+            assertEquals(listOf("google"), world.client().tula.config().signIn.oauth)
+            val refused = caught { continueWith(world, OAuthProvider.X, mapOf("subject" to snowflake())) }
+            assertEquals("auth.method_disabled", refused.code)
+        }
+
     private fun String.refreshToken(): String? =
         (j(this).jsonObject["refreshToken"] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content
 
