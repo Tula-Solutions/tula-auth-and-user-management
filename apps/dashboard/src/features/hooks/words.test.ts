@@ -4,7 +4,9 @@ import { join } from 'node:path'
 import {
   HOOK_FAILURE_MODES,
   HOOK_FAILURE_REASONS,
+  HOOK_OUTCOMES,
   HOOK_POINTS,
+  hookLastCallFailed,
   hookWeakenings,
 } from '@tula/contract'
 import { ApiError } from '~/api/errors'
@@ -15,8 +17,12 @@ import {
   failureModeText,
   failureOutcome,
   failureReasonText,
+  hookHealth,
   hookMessageFor,
   hookState,
+  lastOutcomeText,
+  OUTCOME_WINDOW_TEXT,
+  outcomeCounts,
   pointWords,
   strengthOf,
   weakeningSentences,
@@ -130,6 +136,123 @@ describe('a hook’s state and its last failed call in words', () => {
         failureOutcome({ lastFailedAt: '2026-10-03T09:00:00.000Z', lastFailureReason: reason })
       ).toBe(reason === 'timeout' ? 'timed-out' : 'failed')
     }
+  })
+})
+
+describe('recent outcomes in words', () => {
+  const recent = (over: Partial<Parameters<typeof outcomeCounts>[0]> = {}) => ({
+    since: '2026-10-03T13:00:00.000Z',
+    allowed: 0,
+    denied: 0,
+    failed: 0,
+    timedOut: 0,
+    lastCallAt: null,
+    lastOutcome: null,
+    ...over,
+  })
+  const called = (lastOutcome: string) =>
+    recent({ lastCallAt: '2026-10-04T11:58:00.000Z', lastOutcome })
+
+  test('the four counts are the server\u2019s numbers, in one order, with nothing worked out from them', () => {
+    expect(outcomeCounts(recent({ allowed: 412, denied: 9, failed: 3, timedOut: 1 }))).toEqual([
+      { key: 'allowed', label: 'Allowed', count: 412 },
+      { key: 'denied', label: 'Denied', count: 9 },
+      { key: 'failed', label: 'Failed', count: 3 },
+      { key: 'timedOut', label: 'Timed out', count: 1 },
+    ])
+  })
+
+  test('every outcome the contract defines has words of its own; another is quoted', () => {
+    const words = HOOK_OUTCOMES.map(lastOutcomeText)
+    expect(words.filter((text) => text.startsWith('came to what'))).toEqual([])
+    expect(new Set(words).size).toBe(HOOK_OUTCOMES.length)
+    expect(lastOutcomeText('throttled')).toBe('came to what the server calls: throttled')
+  })
+
+  test('whether the last call failed is the contract\u2019s rule, for every outcome, and each is said as what that call came to', () => {
+    for (const outcome of HOOK_OUTCOMES) {
+      const health = hookHealth({ enabled: true, recentOutcomes: called(outcome) })
+      expect(health.kind === 'failed' || health.kind === 'timed-out').toBe(
+        hookLastCallFailed(outcome)
+      )
+      expect(health.at).toBe('2026-10-04T11:58:00.000Z')
+    }
+    const said = (outcome: string) =>
+      hookHealth({ enabled: true, recentOutcomes: called(outcome) }).label
+    expect(said('allowed')).toBe('Last call answered')
+    expect(said('denied')).toBe('Last call answered')
+    expect(said('failed')).toBe('Last call failed')
+    expect(said('timed_out')).toBe('Last call timed out')
+  })
+
+  // Review of TULA-67: the label was "Failing now" for a hook whose last call, 23 hours
+  // ago, failed. The screen has one call and its time; it does not know about now.
+  test('a last call that failed 23 hours ago is said as that call, with its time, and never as "now"', () => {
+    const old = '2026-10-03T13:02:00.000Z'
+    for (const enabled of [true, false]) {
+      for (const outcome of [...HOOK_OUTCOMES, 'throttled']) {
+        const health = hookHealth({
+          enabled,
+          recentOutcomes: recent({ failed: 1, lastCallAt: old, lastOutcome: outcome }),
+        })
+        expect(health.at).toBe(old)
+        for (const text of [health.label, health.detail, health.kind]) {
+          expect(text).not.toMatch(/\bnow\b(?! would)|failing|answering/i)
+        }
+      }
+    }
+    expect(
+      hookHealth({
+        enabled: true,
+        recentOutcomes: recent({ failed: 1, lastCallAt: old, lastOutcome: 'failed' }),
+      })
+    ).toEqual({
+      kind: 'failed',
+      label: 'Last call failed',
+      at: old,
+      detail:
+        'Its most recent call got no usable answer. That is one call, at the time shown: it does not say what a call made now would come to.',
+    })
+  })
+
+  test('many failures and then an answer is an answered last call, and many answers and then a failure a failed one', () => {
+    expect(
+      hookHealth({
+        enabled: true,
+        recentOutcomes: { ...called('allowed'), failed: 500, timedOut: 500, allowed: 1 },
+      }).kind
+    ).toBe('answered')
+    expect(
+      hookHealth({
+        enabled: true,
+        recentOutcomes: { ...called('failed'), allowed: 5000, failed: 1 },
+      }).kind
+    ).toBe('failed')
+  })
+
+  test('a hook nobody called is not said to answer or to fail, and the window is said as what it is', () => {
+    const health = hookHealth({ enabled: true, recentOutcomes: recent() })
+    expect(health.kind).toBe('not-called')
+    expect(health.at).toBeNull()
+    expect(health.detail).toBe(
+      'The server made no call of it in the current hour and the 23 before it, so nothing says whether it answers.'
+    )
+    expect(OUTCOME_WINDOW_TEXT).not.toContain('24')
+  })
+
+  test('a hook that is off says so beside its last call', () => {
+    const health = hookHealth({ enabled: false, recentOutcomes: called('failed') })
+    expect(health.kind).toBe('failed')
+    expect(health.label).toBe('Last call failed')
+    expect(health.detail).toBe(
+      'Its most recent call got no usable answer. It is switched off, so it has not been asked since.'
+    )
+  })
+
+  test('a word a later server wrote is neither an answered nor a failed last call', () => {
+    const health = hookHealth({ enabled: true, recentOutcomes: called('throttled') })
+    expect(health.kind).toBe('unknown')
+    expect(health.label).toBe('Last call: not known to this version')
   })
 })
 
@@ -267,6 +390,15 @@ describe('the cards of the list', () => {
     failureMode: 'deny',
     lastFailedAt: null,
     lastFailureReason: null,
+    recentOutcomes: {
+      since: '2026-10-03T13:00:00.000Z',
+      allowed: 0,
+      denied: 0,
+      failed: 0,
+      timedOut: 0,
+      lastCallAt: null,
+      lastOutcome: null,
+    },
     createdAt: '2026-10-04T12:00:00.000Z',
     updatedAt: '2026-10-04T12:00:00.000Z',
   })

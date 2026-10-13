@@ -162,6 +162,72 @@ export const HOOK_FAILURE_REASONS = [
 export type HookFailureReason = (typeof HOOK_FAILURE_REASONS)[number]
 
 /**
+ * What a call of a hook came to, as a hook's `recentOutcomes` counts it (ADR 0035, "Recent
+ * outcomes"). A closed list, and all the server keeps of a call:
+ *
+ * - `allowed`: the hook answered as its point's contract says and did not refuse. For
+ *   `before_token`, which cannot refuse, every usable answer is this one.
+ * - `denied`: a deciding hook answered `deny`.
+ * - `timed_out`: no answer inside the hook's deadline (the failure reason `timeout`).
+ * - `failed`: every other failed call ({@link HOOK_FAILURE_REASONS}).
+ *
+ * A failed or timed-out call is counted whatever the hook's failure mode then did with it.
+ *
+ * @example
+ * ```ts
+ * const lastCallFailed = hookLastCallFailed(hook.recentOutcomes.lastOutcome)
+ * ```
+ */
+export const HOOK_OUTCOMES = ['allowed', 'denied', 'failed', 'timed_out'] as const
+
+/** One of {@link HOOK_OUTCOMES}. */
+export type HookOutcome = (typeof HOOK_OUTCOMES)[number]
+
+/**
+ * How many hours of calls a hook's `recentOutcomes` covers: the hour the answer is made in
+ * and the ones before it, so between one hour less than this and this many. The server
+ * counts by the hour and keeps no call by itself.
+ */
+export const HOOK_OUTCOME_WINDOW_HOURS = 24
+
+/**
+ * The outcome a failed call is counted as: `timed_out` for the reason `timeout`, `failed`
+ * for every other.
+ *
+ * @param reason - One of {@link HOOK_FAILURE_REASONS}.
+ * @returns `timed_out` or `failed`.
+ *
+ * @example
+ * ```ts
+ * hookFailureOutcome('timeout') // 'timed_out'
+ * hookFailureOutcome('status_not_ok') // 'failed'
+ * ```
+ */
+export function hookFailureOutcome(reason: HookFailureReason): 'failed' | 'timed_out' {
+  return reason === 'timeout' ? 'timed_out' : 'failed'
+}
+
+/**
+ * Whether a hook's most recent call got no usable answer: it failed or timed out. That is
+ * what the data shows and all it shows: **not that the hook is failing now**. The call may
+ * be up to a day old (`recentOutcomes.lastCallAt` says when it was), and a hook that has
+ * not been asked since has not been shown to be still broken, or mended. `null` (no call
+ * in the window) is `false`: a hook nobody asked has not been shown to be broken.
+ *
+ * @param lastOutcome - A hook's `recentOutcomes.lastOutcome`.
+ * @returns Whether the most recent call of the window failed or timed out.
+ *
+ * @example
+ * ```ts
+ * hookLastCallFailed('timed_out') // true
+ * hookLastCallFailed('denied') // false: a denial is an answer
+ * ```
+ */
+export function hookLastCallFailed(lastOutcome: string | null): boolean {
+  return lastOutcome === 'failed' || lastOutcome === 'timed_out'
+}
+
+/**
  * The fields of a hook an update can change, as `hook.updated` names them. `url` says the
  * address changed, never what it is or was.
  *
@@ -207,6 +273,40 @@ const url = () =>
 const deadlineMs = () => z.number().int().min(HOOK_MIN_DEADLINE_MS).max(HOOK_MAX_DEADLINE_MS)
 
 /**
+ * What a hook's calls of the current hour and the {@link HOOK_OUTCOME_WINDOW_HOURS} - 1
+ * before it came to: four
+ * counts, and when the most recent call was and what it came to. **Counts only.** Nothing of
+ * a question (it holds an email address and an IP address) and nothing of an answer but
+ * which of the four it was: not the operator's code of a denial, not a claim, not a status.
+ * The server counts by the hour, so there is no time of any call but the most recent.
+ */
+export const HookRecentOutcomesSchema = z
+  .object({
+    /** The start of the window: the beginning of an hour, {@link HOOK_OUTCOME_WINDOW_HOURS} - 1 hours before the current one. */
+    since: z.iso.datetime(),
+    /** Calls the hook answered without refusing. */
+    allowed: z.number().int().min(0),
+    /** Calls a deciding hook answered with `deny`. */
+    denied: z.number().int().min(0),
+    /** Calls that failed for any reason but the deadline. */
+    failed: z.number().int().min(0),
+    /** Calls that got no answer inside the hook's deadline. */
+    timedOut: z.number().int().min(0),
+    /**
+     * When the hook was last asked in the window: the moment the server started that call,
+     * not the moment an answer came. `null` when it was not asked.
+     */
+    lastCallAt: z.iso.datetime().nullable(),
+    /**
+     * What that call came to: one of {@link HOOK_OUTCOMES}. A plain string, so a client built
+     * against this version keeps reading what a later server wrote. `null` exactly when
+     * `lastCallAt` is. {@link hookLastCallFailed} says whether that call got no usable answer.
+     */
+    lastOutcome: z.string().nullable(),
+  })
+  .meta({ ref: 'HookRecentOutcomes' })
+
+/**
  * A hook as the admin API lists it. The signing secret is never part of it: it is returned
  * once, by the call that registered the hook.
  */
@@ -226,13 +326,19 @@ export const HookSchema = z
     deadlineMs: z.number().int(),
     /** One of {@link HOOK_FAILURE_MODES}. A plain string, for the same reason as `point`. */
     failureMode: z.string(),
-    /** When a call of the hook last failed, whenever that was; `null` when none ever has. */
+    /**
+     * When a call of the hook last failed, whenever that was; `null` when none ever has. It
+     * is never cleared, so it does not say the hook is failing: `recentOutcomes.lastOutcome`
+     * says what the most recent call came to.
+     */
     lastFailedAt: z.iso.datetime().nullable(),
     /**
      * Why that call failed: one of {@link HOOK_FAILURE_REASONS}, a fixed word of the server's
      * own and never anything the endpoint said. `null` exactly when `lastFailedAt` is.
      */
     lastFailureReason: z.string().nullable(),
+    /** What the calls of the last {@link HOOK_OUTCOME_WINDOW_HOURS} hours came to. */
+    recentOutcomes: HookRecentOutcomesSchema,
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
   })
@@ -637,6 +743,8 @@ export function readHookClaimsAnswer(body: unknown): HookClaimsRead {
 export type HookAnswer = z.infer<typeof HookAnswerSchema>
 /** A hook as listed. */
 export type Hook = z.infer<typeof HookSchema>
+/** A hook's `recentOutcomes`: see {@link HookRecentOutcomesSchema}. */
+export type HookRecentOutcomes = z.infer<typeof HookRecentOutcomesSchema>
 /** A hook with its secret, as its registration returns it. */
 export type CreatedHook = z.infer<typeof CreatedHookSchema>
 /** Body of a hook's registration. */

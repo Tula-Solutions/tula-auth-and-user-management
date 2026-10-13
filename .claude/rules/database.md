@@ -59,7 +59,13 @@ paths:
   hook answered with, nullable jsonb held by the check `sessions_hook_claims_bounds` to an
   object of at most 4,096 bytes of its text (the claims' own rules are the service's, on
   write and again on read). `hooks.point` is text with no check: a new point needs no
-  migration. Three tables have a
+  migration. `hook_call_counts` (migration 0034, ADR 0035 "Recent outcomes"): one row per
+  hook, UTC hour and outcome; SELECT, INSERT and DELETE, and UPDATE of `calls`, `last_at`
+  and `updated_at` only (never the hook, the hour, the outcome or the tenant columns); the
+  outcome one of four words (`hook_call_counts_outcome_known`), the hour whole and
+  `last_at` inside it; a composite reference to its hook (`hooks` declares
+  `tenantParentKey`), cascading; and **no column for anything of a call**: never add one.
+  It has no retention floor policy, on purpose: nothing is decided by its rows. Three tables have a
   second policy (`audit_logs`, `events`, `webhook_deliveries`), and a second policy is always
   restrictive and `FOR DELETE`. `webhook_deliveries.event_id` is deliberately **not** a
   foreign key (the log outlives the event). Admin deletes run under the owner

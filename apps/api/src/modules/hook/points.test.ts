@@ -638,3 +638,113 @@ describe('a hook for one of the later points', () => {
     }
   )
 })
+
+// TULA-67 (review). What a call came to is counted in the background: the write has no
+// deadline of its own, and a sign-in must not wait for a database to learn what the hook
+// already decided. `Hooks.settled()` is what a test and a stopping process wait with.
+describe('the count of what a call came to is never waited for', () => {
+  // The counts on their way are the module's, not a test's: one left held by a test that
+  // failed would keep every later `settled()` of the run waiting. Let go of them all.
+  const holds: (() => void)[] = []
+  afterEach(() => {
+    for (const land of holds.splice(0)) {
+      land()
+    }
+  })
+  /** A count that lands only when the test says so (or when the test ends). */
+  function heldCount(): { held: Promise<void>; land: () => void } {
+    let land: () => void = () => undefined
+    const held = new Promise<void>((resolve) => {
+      land = resolve
+    })
+    holds.push(land)
+    return { held, land }
+  }
+
+  const asked = (point: Point): Promise<unknown> => {
+    if (point === 'before_sign_up') {
+      return Hooks.beforeSignUp(deps, tenant, {
+        email: 'maya@northline.app',
+        method: 'password',
+        client: 'web',
+        ipAddress: '203.0.113.7',
+      })
+    }
+    return point === 'before_session' ? askSession() : askToken()
+  }
+
+  test.each([['before_sign_up'], ['before_session'], ['before_token']] as const)(
+    '%s: the decision is given while its count is still on its way, and settled() waits for it',
+    async (point) => {
+      await register(point)
+      respond = point === 'before_token' ? answers({ claims: {} }) : answers({ decision: 'allow' })
+      const { held, land } = heldCount()
+      const count = spyOn(deps.hooks, 'countCall').mockImplementation(() => held)
+      spies.push(count)
+      // Awaited outright: with the count awaited inside, this never comes back.
+      await asked(point)
+      expect(count).toHaveBeenCalledTimes(1)
+      let done = false
+      const waiting = Hooks.settled().then(() => {
+        done = true
+      })
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(done).toBe(false)
+      land()
+      await waiting
+      expect(done).toBe(true)
+    }
+  )
+
+  test('a denial and a failure are not delayed by it either', async () => {
+    await register('before_session')
+    const { held, land } = heldCount()
+    spies.push(spyOn(deps.hooks, 'countCall').mockImplementation(() => held))
+    respond = answers({ decision: 'deny', code: 'country_blocked' })
+    expect((await failure(askSession())).code).toBe('hook.denied')
+    respond = answers({}, 500)
+    expect((await failure(askSession())).code).toBe('hook.unavailable')
+    land()
+    await Hooks.settled()
+  })
+
+  test('a store that throws at the call, instead of rejecting, fails nothing and is said by name only', async () => {
+    await register('before_session')
+    spies.push(
+      spyOn(deps.hooks, 'countCall').mockImplementation(() => {
+        throw new RangeError(`pool exhausted at db.internal ${CANARY}`)
+      })
+    )
+    respond = answers({ decision: 'allow' })
+    expect(await askSession()).toBe('clear')
+    await Hooks.settled()
+    expect(logged()).toContain('could not count what a call of a hook came to')
+    expect(logged()).toContain('RangeError')
+    expect(logged()).not.toContain(CANARY)
+    expect(logged()).not.toContain('db.internal')
+  })
+
+  test('a call is counted at the moment its question was asked, not when the answer came', async () => {
+    const { id } = await register('before_session')
+    // Onto a whole hour less a minute: the answer arrives in the next hour.
+    const HOUR = 3_600_000
+    const now = deps.clock.now().getTime()
+    deps.clock.advance(`${(HOUR - (now % HOUR)) / 1000 - 60}s`)
+    const askedAt = deps.clock.now()
+    respond = () => {
+      deps.clock.advance('2m')
+      return Response.json({ decision: 'allow' })
+    }
+    expect(await askSession()).toBe('clear')
+    await Hooks.settled()
+    const [count] = await deps.hooks.callCounts(tenant.environmentId, new Date(0))
+    expect(count?.lastAt.toISOString()).toBe(askedAt.toISOString())
+    expect(count?.hour.toISOString()).toBe(
+      new Date(askedAt.getTime() - (HOUR - 60_000)).toISOString()
+    )
+    expect((await Hooks.get(deps, tenant, id)).recentOutcomes.lastCallAt).toBe(
+      askedAt.toISOString()
+    )
+  })
+})

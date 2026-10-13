@@ -698,3 +698,210 @@ describe('asking before a sign-up', () => {
     expect(hit).not.toHaveBeenCalled()
   })
 })
+
+describe('recent outcomes', () => {
+  const HOUR = 3_600_000
+  // A count is written after its call was answered and is not waited for: wait here.
+  const outcomes = async (id: string, scope: Tenant = tenant) => {
+    await Hooks.settled()
+    return (await Hooks.get(deps, scope, id)).recentOutcomes
+  }
+  /** Every count the store holds for `tenant`, as text. */
+  const counted = async () => {
+    await Hooks.settled()
+    return JSON.stringify(await deps.hooks.callCounts(tenant.environmentId, new Date(0)))
+  }
+
+  test('a hook nobody asked has four zeros, no last call, and a window of a day', async () => {
+    const created = await register()
+    const since = new Date(
+      Math.floor(deps.clock.now().getTime() / HOUR) * HOUR - 23 * HOUR
+    ).toISOString()
+    const empty = {
+      since,
+      allowed: 0,
+      denied: 0,
+      failed: 0,
+      timedOut: 0,
+      lastCallAt: null,
+      lastOutcome: null,
+    }
+    expect(created.recentOutcomes).toEqual(empty)
+    expect(await outcomes(created.id)).toEqual(empty)
+    expect((await Hooks.list(deps, tenant))[0]?.recentOutcomes).toEqual(empty)
+  })
+
+  test('each call is counted as what it came to: allowed, denied, failed, timed out', async () => {
+    quietLogs()
+    const { id } = await register()
+    await ask()
+    deps.clock.advance('1m')
+    await ask()
+    deps.clock.advance('1m')
+    respond = answers({ decision: 'deny', code: 'country_blocked' })
+    await failure(ask())
+    deps.clock.advance('1m')
+    respond = answers({ decision: 'allow' }, 500)
+    await failure(ask())
+    deps.clock.advance('1m')
+    respond = answers({ decision: 'maybe' })
+    await failure(ask())
+    deps.clock.advance('1m')
+    respond = () => new Promise(() => undefined)
+    await failure(ask())
+    expect(await outcomes(id)).toMatchObject({
+      allowed: 2,
+      denied: 1,
+      failed: 2,
+      timedOut: 1,
+      lastCallAt: deps.clock.now().toISOString(),
+      lastOutcome: 'timed_out',
+    })
+  })
+
+  test('a failure is counted whichever way the failure mode then decides', async () => {
+    quietLogs()
+    const { id } = await register(tenant, { failureMode: 'allow' })
+    respond = answers({}, 503)
+    expect(await ask()).toBe('bypassed')
+    expect(await outcomes(id)).toMatchObject({ allowed: 0, failed: 1, lastOutcome: 'failed' })
+  })
+
+  test('an answered call after a failure is the last outcome, though the hook still says when it last failed', async () => {
+    quietLogs()
+    const { id } = await register()
+    respond = answers({}, 500)
+    await failure(ask())
+    const failedAt = deps.clock.now().toISOString()
+    deps.clock.advance('1m')
+    respond = allow
+    await ask()
+    const hook = await Hooks.get(deps, tenant, id)
+    expect(hook.lastFailedAt).toBe(failedAt)
+    expect(hook.recentOutcomes).toMatchObject({
+      failed: 1,
+      allowed: 1,
+      lastCallAt: deps.clock.now().toISOString(),
+      lastOutcome: 'allowed',
+    })
+  })
+
+  test('of two calls of the same instant, the failure is taken for the last', async () => {
+    quietLogs()
+    const { id } = await register()
+    respond = answers({}, 500)
+    await failure(ask())
+    respond = allow
+    await ask()
+    expect((await outcomes(id)).lastOutcome).toBe('failed')
+  })
+
+  test('the window is the current hour and the twenty-three before it', async () => {
+    quietLogs()
+    const { id } = await register()
+    // Onto a whole hour, so the boundary is where the test says it is.
+    const now = deps.clock.now().getTime()
+    deps.clock.advance(`${(HOUR - (now % HOUR)) / 1000}s`)
+    await ask()
+    deps.clock.advance('23h')
+    deps.clock.advance('59m')
+    expect(await outcomes(id)).toMatchObject({ allowed: 1, lastOutcome: 'allowed' })
+    deps.clock.advance('1m')
+    expect(await outcomes(id)).toMatchObject({ allowed: 0, lastCallAt: null, lastOutcome: null })
+  })
+
+  test('a hook that is off, a call over the ceiling and a secret that does not open: only a call that was tried is counted', async () => {
+    quietLogs()
+    const { id } = await register()
+    await Hooks.update(deps, tenant, id, { enabled: false }, TEST_ACTOR)
+    await ask()
+    expect(await counted()).toBe('[]')
+    await Hooks.update(deps, tenant, id, { enabled: true }, TEST_ACTOR)
+    spies.push(
+      spyOn(deps.rateLimiter, 'hit').mockResolvedValue({
+        allowed: false,
+        remaining: 0,
+        retryAfterMs: 1000,
+      })
+    )
+    expect(await failure(ask())).toBeInstanceOf(RateLimitError)
+    expect(await counted()).toBe('[]')
+    expect(received).toHaveLength(0)
+  })
+
+  test('a secret that does not open is a failed call, counted, with no request made', async () => {
+    quietLogs()
+    const { id } = await register()
+    spies.push(spyOn(deps.secretBox, 'open').mockRejectedValue(new Error('bad key')))
+    await failure(ask())
+    expect(received).toHaveLength(0)
+    expect(await outcomes(id)).toMatchObject({ failed: 1, lastOutcome: 'failed' })
+  })
+
+  test('nothing of a question or an answer is in what is counted or shown: not the address, the IP address, the code, a header or a body', async () => {
+    quietLogs()
+    const { id } = await register()
+    const deny = () =>
+      Response.json(
+        { decision: 'deny', code: 'canary_code_7f3a' },
+        { headers: { 'x-canary': CANARY } }
+      )
+    respond = deny
+    await failure(ask())
+    deps.clock.advance('1m')
+    respond = () =>
+      new Response(`{"decision":"allow","note":"${CANARY}"}`, { headers: { 'x-canary': CANARY } })
+    await failure(ask())
+    deps.clock.advance('1m')
+    respond = () => new Response(CANARY, { status: 500, headers: { 'x-canary': CANARY } })
+    await failure(ask())
+    const kept =
+      (await counted()) +
+      JSON.stringify(await Hooks.get(deps, tenant, id)) +
+      JSON.stringify(await Hooks.list(deps, tenant))
+    for (const secret of [
+      CANARY,
+      'canary_code_7f3a',
+      question.email,
+      'northline',
+      question.ipAddress,
+      'password',
+      'x-canary',
+    ]) {
+      expect(kept).not.toContain(secret)
+    }
+    // And a count is exactly five fields: a hook, an hour, one of four words, a number, a time.
+    for (const count of await deps.hooks.callCounts(tenant.environmentId, new Date(0))) {
+      expect(Object.keys(count).sort()).toEqual(['calls', 'hookId', 'hour', 'lastAt', 'outcome'])
+      expect(['allowed', 'denied', 'failed', 'timed_out']).toContain(count.outcome)
+    }
+  })
+
+  test('a count that cannot be written changes no decision: an allow is an allow, a denial a denial, a failure a failure', async () => {
+    quietLogs()
+    await register()
+    spies.push(
+      spyOn(deps.hooks, 'countCall').mockRejectedValue(
+        new Error(`connection to db.internal refused ${CANARY}`)
+      )
+    )
+    expect(await ask()).toBe('clear')
+    respond = answers({ decision: 'deny', code: 'country_blocked' })
+    expect((await failure(ask())).code).toBe('hook.denied')
+    respond = answers({}, 500)
+    expect((await failure(ask())).code).toBe('hook.unavailable')
+    expect(logged()).toContain('could not count what a call of a hook came to')
+    expect(logged()).not.toContain(CANARY)
+    expect(logged()).not.toContain('db.internal')
+  })
+
+  test('another environment\u2019s calls are not this hook\u2019s', async () => {
+    quietLogs()
+    const mine = await register()
+    const theirs = await register(otherTenant)
+    await ask(otherTenant)
+    await ask(otherTenant)
+    expect(await outcomes(mine.id)).toMatchObject({ allowed: 0, lastOutcome: null })
+    expect(await outcomes(theirs.id, otherTenant)).toMatchObject({ allowed: 2 })
+  })
+})

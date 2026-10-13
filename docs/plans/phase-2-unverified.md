@@ -827,3 +827,19 @@ process, and the conformance scenario in process. Nothing else.
 6. In another terminal, with the secret key: `bun run tula -- approve <proposal id>`, and read what
    it prints. Then `claude mcp remove tula-dev` and revoke the agent key.
 | **Production** | Refused, by a test. The opt-in is TULA-39 and does not exist. |
+
+## Recent outcomes of a hook (TULA-67)
+
+Counts of what a hook's calls came to, by the hour ([ADR 0035](../adr/0035-hooks.md),
+"Recent outcomes"). What ran: the store suite on the memory adapter and on PGlite (Postgres
+with every migration, as the runtime role), the service's tests against a listener in
+process, and the dashboard's browser test, where a real sign-up asks a hook that answers 500
+and the screen then shows one failed call and "Last call failed" with its time.
+
+Not verified:
+
+| What | How far it was taken |
+| --- | --- |
+| **Contention on a count's row under load** | Reasoned, not measured. Calls of one hook and one outcome in one hour update one row; twelve at once are counted right on PGlite. No run against a real Postgres at the ceiling (3,000 calls a minute), and no measurement of what the extra statement adds to a sign-in. |
+| **A real Postgres server** | PGlite only. There is no `*.integration.ts` for the counts; the statement is an `INSERT … SELECT … ON CONFLICT DO UPDATE`, which is the same SQL on both. |
+| **The dashboard's committed screenshots** | Not regenerated (`bun run e2e:screenshots`): the Hooks screen in `apps/dashboard/docs` is the one from before the counts. |

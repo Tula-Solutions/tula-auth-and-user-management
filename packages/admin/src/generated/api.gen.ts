@@ -169,6 +169,7 @@ export interface Schemas {
     failureMode: string
     lastFailedAt: string | null
     lastFailureReason: string | null
+    recentOutcomes: Schemas['HookRecentOutcomes']
     createdAt: string
     updatedAt: string
     /** The signing secret. Store it now: it is shown only once. */
@@ -421,6 +422,7 @@ export interface Schemas {
     failureMode: string
     lastFailedAt: string | null
     lastFailureReason: string | null
+    recentOutcomes: Schemas['HookRecentOutcomes']
     createdAt: string
     updatedAt: string
   }
@@ -517,6 +519,15 @@ export interface Schemas {
     data: Schemas['Hook'][]
   }
   HookQuestion: Schemas['HookBeforeSignUpQuestion'] | Schemas['HookBeforeSessionQuestion'] | Schemas['HookBeforeTokenQuestion']
+  HookRecentOutcomes: {
+    since: string
+    allowed: number
+    denied: number
+    failed: number
+    timedOut: number
+    lastCallAt: string | null
+    lastOutcome: string | null
+  }
   HookUpdatedEvent: {
     id: string
     type: 'hook.updated'

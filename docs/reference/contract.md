@@ -2695,6 +2695,43 @@ const HOOK_MIN_DEADLINE_MS: 100
 deadlineMs >= HOOK_MIN_DEADLINE_MS
 ```
 
+### `HOOK_OUTCOMES`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+What a call of a hook came to, as a hook's `recentOutcomes` counts it (ADR 0035, "Recent
+outcomes"). A closed list, and all the server keeps of a call:
+
+- `allowed`: the hook answered as its point's contract says and did not refuse. For
+  `before_token`, which cannot refuse, every usable answer is this one.
+- `denied`: a deciding hook answered `deny`.
+- `timed_out`: no answer inside the hook's deadline (the failure reason `timeout`).
+- `failed`: every other failed call ({@link HOOK_FAILURE_REASONS}).
+
+A failed or timed-out call is counted whatever the hook's failure mode then did with it.
+
+```ts
+const HOOK_OUTCOMES: readonly ["allowed", "denied", "failed", "timed_out"]
+```
+
+**Example**
+
+```ts
+const lastCallFailed = hookLastCallFailed(hook.recentOutcomes.lastOutcome)
+```
+
+### `HOOK_OUTCOME_WINDOW_HOURS`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+How many hours of calls a hook's `recentOutcomes` covers: the hour the answer is made in
+and the ones before it, so between one hour less than this and this many. The server
+counts by the hour and keeps no call by itself.
+
+```ts
+const HOOK_OUTCOME_WINDOW_HOURS: 24
+```
+
 ### `HOOK_POINTS`
 
 _constant_, defined in `packages/contract/src/hook.ts`
@@ -3010,6 +3047,16 @@ An environment's hooks, oldest first: at most one per point.
 const HookListSchema
 ```
 
+### `HookOutcome`
+
+_type_, defined in `packages/contract/src/hook.ts`
+
+One of {@link HOOK_OUTCOMES}.
+
+```ts
+export type HookOutcome = (typeof HOOK_OUTCOMES)[number]
+```
+
 ### `HookPoint`
 
 _type_, defined in `packages/contract/src/hook.ts`
@@ -3064,6 +3111,31 @@ const HookQuestionSchema: z.ZodDiscriminatedUnion<[any, any, any], "type">
 
 ```ts
 const question = HookQuestionSchema.parse(JSON.parse(body))
+```
+
+### `HookRecentOutcomes`
+
+_type_, defined in `packages/contract/src/hook.ts`
+
+A hook's `recentOutcomes`: see {@link HookRecentOutcomesSchema}.
+
+```ts
+export type HookRecentOutcomes = z.infer<typeof HookRecentOutcomesSchema>
+```
+
+### `HookRecentOutcomesSchema`
+
+_constant_, defined in `packages/contract/src/hook.ts`
+
+What a hook's calls of the current hour and the {@link HOOK_OUTCOME_WINDOW_HOURS} - 1
+before it came to: four
+counts, and when the most recent call was and what it came to. **Counts only.** Nothing of
+a question (it holds an email address and an IP address) and nothing of an answer but
+which of the four it was: not the operator's code of a denial, not a claim, not a status.
+The server counts by the hour, so there is no time of any call but the most recent.
+
+```ts
+const HookRecentOutcomesSchema
 ```
 
 ### `HookSchema`
@@ -8470,6 +8542,57 @@ export function hasInvisibleCharacter(text: string): boolean
 ```ts
 hasInvisibleCharacter('a\u{200B}b') // true
 hasInvisibleCharacter('münchen') // false
+```
+
+### `hookFailureOutcome`
+
+_function_, defined in `packages/contract/src/hook.ts`
+
+The outcome a failed call is counted as: `timed_out` for the reason `timeout`, `failed`
+for every other.
+
+```ts
+export function hookFailureOutcome(reason: HookFailureReason): 'failed' | 'timed_out'
+```
+
+**Parameters**
+
+- `reason`: One of {@link HOOK_FAILURE_REASONS}.
+
+**Returns** `timed_out` or `failed`.
+
+**Example**
+
+```ts
+hookFailureOutcome('timeout') // 'timed_out'
+hookFailureOutcome('status_not_ok') // 'failed'
+```
+
+### `hookLastCallFailed`
+
+_function_, defined in `packages/contract/src/hook.ts`
+
+Whether a hook's most recent call got no usable answer: it failed or timed out. That is
+what the data shows and all it shows: **not that the hook is failing now**. The call may
+be up to a day old (`recentOutcomes.lastCallAt` says when it was), and a hook that has
+not been asked since has not been shown to be still broken, or mended. `null` (no call
+in the window) is `false`: a hook nobody asked has not been shown to be broken.
+
+```ts
+export function hookLastCallFailed(lastOutcome: string | null): boolean
+```
+
+**Parameters**
+
+- `lastOutcome`: A hook's `recentOutcomes.lastOutcome`.
+
+**Returns** Whether the most recent call of the window failed or timed out.
+
+**Example**
+
+```ts
+hookLastCallFailed('timed_out') // true
+hookLastCallFailed('denied') // false: a denial is an answer
 ```
 
 ### `hookWeakenings`

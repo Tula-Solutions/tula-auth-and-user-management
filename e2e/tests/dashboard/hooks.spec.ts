@@ -97,6 +97,11 @@ test('a hook: asked about before it lets through, its secret shown once, a faile
   const signUp = card(page, 'before_sign_up')
   await expect(signUp.getByTestId('hook-state')).toHaveAttribute('data-state', 'on-allowing')
   await expect(signUp.getByTestId('hook-last-failure')).toHaveAttribute('data-outcome', 'none')
+  // Nobody has asked it yet: four zeros, and no last call to say anything of.
+  await expect(signUp.getByTestId('hook-health')).toHaveAttribute('data-health', 'not-called')
+  for (const key of ['allowed', 'denied', 'failed', 'timedOut']) {
+    await expect(signUp.getByTestId(`hook-count-${key}`)).toHaveText('0')
+  }
   await expect(signUp).toContainText('1500 ms')
   await page.reload()
   await expect(card(page, 'before_sign_up')).toContainText(failing)
@@ -111,7 +116,22 @@ test('a hook: asked about before it lets through, its secret shown once, a faile
   await expect(failed).toHaveAttribute('data-outcome', 'failed')
   await expect(failed).toContainText('The endpoint answered with a status that is not 2xx.')
   await expect(failed).toContainText(
-    'A call that was answered, with an allow or a denial, leaves no record here.'
+    'A reason is kept for the last call that failed only, however long ago that was.'
+  )
+  // The call was counted as what it came to, though the sign-up was let through, and the
+  // row says what that call came to and when: never that the hook is failing now.
+  const counted = card(page, 'before_sign_up')
+  await expect(counted.getByTestId('hook-health')).toHaveAttribute('data-health', 'failed')
+  await expect(counted.getByTestId('hook-health')).toContainText('Last call failed')
+  await expect(counted.getByTestId('hook-health-at')).toContainText('on ')
+  await expect(counted.getByTestId('hook-health')).not.toContainText('Failing')
+  await expect(counted.getByTestId('hook-count-failed')).toHaveText('1')
+  await expect(counted.getByTestId('hook-count-allowed')).toHaveText('0')
+  await expect(counted.getByTestId('hook-count-denied')).toHaveText('0')
+  await expect(counted.getByTestId('hook-count-timedOut')).toHaveText('0')
+  await expect(counted.getByTestId('hook-last-call')).toContainText('failed.')
+  await expect(counted.getByTestId('hook-recent-outcomes')).toContainText(
+    'These are counts and nothing more'
   )
   await expectScreenAccessible(page, 'a hook whose last call failed')
   await page.setViewportSize({ width: 375, height: 812 })

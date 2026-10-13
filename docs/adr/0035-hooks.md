@@ -280,7 +280,9 @@ call and one of `HOOK_FAILURE_REASONS` (the outbound guard's eight words, `statu
 `answer_invalid`, `secret_unreadable`). Written by `HookStore.noteFailure`, a method of its
 own that takes no activity (bookkeeping; a line in ADR 0012), and failing to write it changes
 no decision. It is never cleared: it says when a call last failed, whenever that was. A
-denial is not a failure and writes nothing.
+denial is not a failure and writes nothing there. Since TULA-67 every call is also counted
+by what it came to ("Recent outcomes", the last section), which says what the most recent
+call came to and when. Nothing says whether a hook is failing now.
 
 ### The admin API
 
@@ -333,7 +335,8 @@ journey through `@tula/core`.
 ## Not built yet
 
 - Secret rotation for a hook.
-- A log of calls, counts of outcomes, and a "test this hook" request.
+- A log of calls and a "test this hook" request. (Counts of outcomes were built in
+  TULA-67: the last section. A log of calls is still not built, on purpose.)
 
 Built since: a hook in `tula.config.ts`, `tula apply` refusing `hookWeakenings` under
 `--yes`, and the dashboard screen with its confirmation for a weakening (TULA-59, the last
@@ -761,6 +764,9 @@ other shape). A list of recent calls is a table with retention, like
 `webhook_delivery_attempts`, and must hold nothing of the question (it carries an email
 and an IP address) and nothing of the answer but the decision.
 
+Built in TULA-67, in another shape than the columns proposed here: the last section of
+this record.
+
 ### Tests
 
 `apps/dashboard/src/hooks.test.tsx` (the screen against the fake API),
@@ -772,3 +778,183 @@ and refusal has words; no file of the feature says "webhook" of a hook), and
 about first) at a receiver that answers 500, a real sign-up in the example app that asks
 it, the failed call then shown on the screen, the hook edited, switched off and removed,
 with axe on every state and dialog.
+
+## 2026-10-12: Recent outcomes (TULA-67)
+
+An operator could see when a call of a hook last failed and nothing else: not that a hook
+answers, not what it allows and denies, and not whether a failure from last week is still
+going on. The server now counts every call of a hook by what it came to, and a hook's read
+answer carries the counts of the last day.
+
+### What is counted
+
+Every call the server makes of a hook comes to one of four **outcomes**
+(`HOOK_OUTCOMES`, a closed list in the contract):
+
+| Outcome | When |
+| --- | --- |
+| `allowed` | The hook answered as its point's contract says and did not refuse. For `before_token`, which cannot refuse, every usable answer (claims, or none). |
+| `denied` | A deciding hook answered `deny`. |
+| `timed_out` | No answer inside the hook's deadline (the failure reason `timeout`). |
+| `failed` | Every other failed call: one of the other `HOOK_FAILURE_REASONS`, a secret that does not open included. |
+
+`hookFailureOutcome(reason)` is the one mapping of a failure to its outcome. A failure is
+counted **whatever the failure mode then does with it**: the count is of what the endpoint
+did, not of what the server made of it (that is `hookBypassed` on the event). **A call that
+was not made is not counted**: no hook, a hook that is off, and a call the environment's
+ceiling refused.
+
+### Where it is kept: a table of counts by the hour, not a log and not the hook's row
+
+`hook_call_counts` has one row per hook, hour (UTC) and outcome: `calls` and `last_at`
+(when the latest call of that hour and outcome was made). At most four rows an hour for a
+hook. Three shapes were weighed:
+
+- **Columns on `hooks`** (the shape proposed with TULA-59, above). Not taken: it is a
+  write, at every sign-in, on the row every sign-in reads to find the hook, so every
+  sign-in would wait for the row lock of the one before it; and counters "since the hook
+  was last changed" are a number with no period, which reads as a rate and is not one.
+- **A row per call** (a call log, as `webhook_delivery_attempts` is for a delivery). Not
+  taken: a row per sign-in, for ever growing between purges, whose only safe columns are
+  the four words and a time. It would say when each person signed in, per environment,
+  to anyone who reads the admin API, and that is more than "how is my hook doing" needs.
+- **Counts by the hour, in a table of their own.** Taken. The write is one statement
+  (`INSERT … SELECT … FROM hooks … ON CONFLICT DO UPDATE`), made after the call was
+  answered, on a row no reader of the sign-in path touches. Calls of one hook and one
+  outcome in one hour do wait for each other's row lock, for the length of that one
+  statement; at the ceiling of 3,000 calls a minute that is fifty short updates a second
+  on one row, which Postgres carries. Not in the rate limiter's store: per instance
+  without Redis, and forgotten on a restart, as the day's count of text messages would be
+  ([ADR 0037](0037-phone-numbers-and-sms.md)).
+
+**There is no column for anything of a call.** Not the question (an email address and an
+IP address are in it), not the operator's code of a denial, not a claim, not a status
+code, not a failure's reason, not a duration. The outcome is one of four fixed words, held
+by the check `hook_call_counts_outcome_known`; `hour` is the beginning of an hour and
+`last_at` lies inside it (two more checks). The store method that writes
+(`HookStore.countCall(environment, hook, at, outcome)`) has no parameter through which
+anything else could arrive, and the service hands it a word chosen from the answer by a
+function that returns one of two (`Answering.counted`). The runtime role may update
+`calls`, `last_at` and `updated_at` only: a row cannot be moved to another hook, hour or
+outcome. Rows go with their hook by cascade, and the reference is the tenant's composite
+key, so a count cannot be of another environment's hook.
+
+**The latest call is a time and a word, and nothing else about any call is kept.** Said
+plainly, because it is a disclosure: **`lastCallAt` tells an administrator when the latest
+hooked sign-in or sign-up was asked about, to the millisecond**, and the table holds the
+same for the latest call of each outcome in each hour. For a `before_session` hook that is
+when somebody last signed in. It is of no user, it is the time the question was asked (not
+when an answer came), and it is answered **through the admin API only**: not in an event,
+an audit entry, a log line, `@tula/mcp` or anything a client of `/v1/client/*` can read.
+An administrator who can read it can read the audit log, which has every sign-in with its
+user.
+
+### The write is bookkeeping
+
+`countCall` is started from the hook service's `ask`, after the call and before the failure
+mode is applied: **failing to write it changes no decision** (an allow is an allow, a
+denial a denial, a failure a failure), and what is logged then is fixed words, the
+environment, the hook and the error's name, never its message. It takes no `Activity` and
+is not recorded ([ADR 0012](0012-events-and-audit-log.md)): nobody's access changed. It
+does not move the hook's `updated_at`.
+
+**It is detached work, as a security notice and a sign-in's text message are.** The first
+version awaited it, so that a stopping process lost no count; a review pointed out what
+that cost: a database write with no deadline of its own on every hooked sign-in, after the
+hook had already decided. So the count is started once the decision is known and **never
+awaited by the request** (`noteOutcome`), nothing it throws leaves it (also when the store
+throws at the call instead of rejecting), and it is registered with `Hooks.settled()`,
+which tests await before they read a count and which `closeApi`
+(`apps/api/src/server-close.ts`) awaits after the listener stops and before the pool
+closes. What follows from that, and is accepted:
+
+- **A count may land just after the answer it belongs to.** A read of the hook made in
+  that moment does not have it yet.
+- **A process killed hard loses the counts that were on their way** (`SIGKILL`, a crash, a
+  shutdown that ran into its timeout): those calls are missing from the day's numbers.
+  The counts are a picture of recent calls, not a ledger, and nothing is decided by them.
+
+**A call is counted at the moment its question was asked**: `ask` reads the clock before
+the call and counts with that, so the hour a call is counted under, and `lastCallAt`, are
+the question's and not the moment a slow endpoint answered or the deadline ran out.
+
+### What the admin API answers
+
+A hook's read answers (`GET /v1/admin/hooks`, `GET …/:id`, the answers of a registration
+and a change) carry `recentOutcomes`:
+
+```json
+{
+  "since": "2026-10-11T10:00:00.000Z",
+  "allowed": 412, "denied": 9, "failed": 3, "timedOut": 1,
+  "lastCallAt": "2026-10-12T09:58:11.000Z",
+  "lastOutcome": "allowed"
+}
+```
+
+The window is the current hour and the 23 before it (`HOOK_OUTCOME_WINDOW_HOURS`, a
+constant, not a parameter), so it covers between 23 and 24 hours and `since` says where it
+starts. The list makes one read of the counts for all of an environment's hooks (at most
+3 hooks × 24 hours × 4 outcomes rows). `lastOutcome` is a string, not an enum, in the
+answer, so that a client built today reads a later server.
+
+**"The last call failed" is one rule, the contract's `hookLastCallFailed(lastOutcome)`**:
+the most recent call in the window failed or timed out. Not `lastFailedAt` (never
+cleared), and not a share of the counts (a hook that failed 500 times and then answered
+has an answered last call; one that answered 5,000 times and then timed out has a last
+call that timed out). No call in the window is `false`: a hook nobody asked has not been
+shown to be broken. Of two calls of the same millisecond the failure is taken for the
+latest: the server kept no order for them.
+
+**It is not "failing now", and nothing is.** The first version named the function
+`hookIsFailing` and the dashboard said *Failing now*; a review pointed out that the label
+then stood on a hook whose last call, 23 hours ago, failed and which had not been asked
+since. The data is one call and its time, so that is what is said: the function is
+`hookLastCallFailed`, and a reader shows `lastCallAt` beside it.
+
+`lastFailedAt` and `lastFailureReason` stay as they were: the one failure whose **reason**
+is kept.
+
+### Retention
+
+The retention job deletes counts of hours more than `HOOK_CALL_COUNT_RETENTION` (7 days)
+ago, per environment, in batches (`HookStore.deleteCallCountsBefore`;
+[ADR 0017](0017-retention.md)). Seven times what is read back, so that a late purge loses
+nothing shown. There is no restrictive floor policy on the delete, unlike
+`sms_code_counts`: nothing is decided by these rows, so deleting them reopens nothing.
+
+### The dashboard
+
+The Hooks screen's "Recent outcomes" row now shows the server's four numbers, the most
+recent call and what it came to, and that call in a few words **with when it was**: *Not
+called*, *Last call answered*, *Last call failed*, *Last call timed out* (and, for a word
+a later server wrote, that this version does not know it). **Never "failing now", "now"
+or "answering"**: the call may be most of a day old, and the row says that one call does
+not say what a call made now would come to; for a hook that is off it says the hook has
+not been asked since. The window is said as what it is, "the current hour and the 23
+before it", never "the last 24 hours". The numbers are the answer's own, in one order:
+**no rate, share, trend or sum is drawn from them**, and the row says what the counts are
+not (no call by itself, nothing of a question or an answer). Whether the last call failed
+is `hookLastCallFailed`, never a rule of the screen's. The last failed call, with its
+reason, is a row of its own.
+
+### Not in this ticket
+
+- A log of calls, a duration, a status code or a failure's reason per call: each needs a
+  row per call and an argument about what it reveals.
+- Counts over a longer or a chosen window, and counts in `@tula/mcp`'s hook projection or
+  in `tula doctor`.
+- An alert or a webhook event for a hook that starts failing.
+- Counting a call the ceiling refused: it would be a count of what the server did not do.
+
+### Tests
+
+`packages/db/src/hook-call-counts.test.ts` (the columns, the checks, row-level security,
+the composite reference, the column-level `UPDATE`), the shared store suite in both
+adapters (`adapters/hook-store.suite.ts`: the hour's boundaries, calls at once, another
+environment, a hook that is gone, the batched delete), `modules/hook/service.test.ts`
+("recent outcomes": each outcome, the window's edge, a call that was not made, a canary
+for the question's address and IP address, the answer's code, header and body, and that a
+count that cannot be written changes no decision), `modules/retention/service.test.ts`,
+the contract's `hook.test.ts`, and the dashboard's `hooks.test.tsx` and
+`features/hooks/words.test.ts`.

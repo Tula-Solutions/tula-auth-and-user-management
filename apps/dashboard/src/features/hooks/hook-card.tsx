@@ -17,8 +17,12 @@ import {
   failureModeText,
   failureOutcome,
   failureReasonText,
+  hookHealth,
   hookMessageFor,
   hookState,
+  lastOutcomeText,
+  OUTCOME_WINDOW_TEXT,
+  outcomeCounts,
   pointWords,
   strengthOf,
   weakeningSentences,
@@ -58,12 +62,74 @@ export function HookStateBadge({ hook }: { hook: Hook }) {
 }
 
 /**
- * What the server has recorded of a hook's calls: the last one that failed, and nothing
- * else. Said as that, so that an old failure is not read as "failing now" and silence is not
- * read as "never asked".
+ * What a hook's recent calls came to: the server's four counts, and its most recent call
+ * with when it was. The numbers are the answer's own, in a fixed order: no rate, share,
+ * trend or sum is drawn from them. **Nothing here says how the hook is doing now**: the
+ * line is "Last call failed" with its time, by the contract's `hookLastCallFailed`, in
+ * words and never colour alone.
  *
  * @param props - `hook`: the hook as the API lists it.
- * @returns The last failed call in words, and what is not recorded.
+ * @returns The counts, the most recent call and the health, as text.
+ */
+export function RecentOutcomes({ hook }: { hook: Hook }) {
+  const recent = hook.recentOutcomes
+  const health = hookHealth(hook)
+  const failing = health.kind === 'failed' || health.kind === 'timed-out'
+  return (
+    <div data-testid='hook-recent-outcomes' className='flex flex-col gap-2'>
+      <p
+        data-testid='hook-health'
+        data-health={health.kind}
+        className='flex flex-col items-start gap-1'
+      >
+        <span
+          className={cn(
+            'rounded-full border px-2 py-0.5 text-xs font-semibold',
+            failing ? 'border-destructive bg-destructive-surface text-destructive' : 'border-input'
+          )}
+        >
+          {health.label}
+        </span>
+        {health.at !== null ? (
+          <span data-testid='hook-health-at'>on {formatDateTime(health.at)}</span>
+        ) : null}
+        <span className='text-muted-foreground'>{health.detail}</span>
+      </p>
+      <p>
+        Calls in {OUTCOME_WINDOW_TEXT}, counted by the hour since {formatDateTime(recent.since)}:
+      </p>
+      <dl className='grid grid-cols-2 gap-2 sm:grid-cols-4'>
+        {outcomeCounts(recent).map((entry) => (
+          <div key={entry.key} className='flex flex-col gap-0.5'>
+            <dt className='text-xs font-medium text-muted-foreground'>{entry.label}</dt>
+            <dd data-testid={`hook-count-${entry.key}`}>{entry.count}</dd>
+          </div>
+        ))}
+      </dl>
+      {recent.lastCallAt !== null && recent.lastOutcome !== null ? (
+        <p data-testid='hook-last-call'>
+          {/* Server text (an outcome a later server knows) is rendered as text. */}
+          The most recent call, on {formatDateTime(recent.lastCallAt)},{' '}
+          {lastOutcomeText(recent.lastOutcome)}.
+        </p>
+      ) : null}
+      <p className='text-muted-foreground'>
+        These are counts and nothing more: the server keeps no call by itself, nothing of what was
+        asked, and nothing of an answer but which of the four it was. A call the server did not make
+        (the hook was off, or the calls were over their limit) is not counted.
+      </p>
+    </div>
+  )
+}
+
+/**
+ * The last call of a hook that failed, with its reason: the one failure whose reason the
+ * server keeps. It is never cleared, so it is said as "the last one that failed" and never
+ * as how the hook is doing now. Nothing on the screen says that: {@link RecentOutcomes}
+ * has the most recent call, with its time.
+ *
+ * @param props - `hook`: the hook as the API lists it.
+ * @returns The last failed call in words.
  */
 export function LastFailure({ hook }: { hook: Hook }) {
   const outcome = failureOutcome(hook)
@@ -87,8 +153,7 @@ export function LastFailure({ hook }: { hook: Hook }) {
         </>
       )}
       <span className='text-muted-foreground'>
-        Only the last call that failed is recorded. A call that was answered, with an allow or a
-        denial, leaves no record here.
+        A reason is kept for the last call that failed only, however long ago that was.
       </span>
     </div>
   )
@@ -107,7 +172,8 @@ export interface HookCardProps {
 
 /**
  * One point at which a hook is asked: what the point is, the hook registered for it (its
- * address, how it is set, its last failed call) and everything an operator can do to it; or
+ * address, how it is set, what its recent calls came to, its last failed call) and
+ * everything an operator can do to it; or
  * that it has none, and a way to add one.
  *
  * @param props - See {@link HookCardProps}.
@@ -303,6 +369,12 @@ export function HookCard({ point, hook }: HookCardProps) {
             </div>
             <div className='flex flex-col gap-0.5 sm:col-span-2'>
               <dt className='text-xs font-medium text-muted-foreground'>Recent outcomes</dt>
+              <dd>
+                <RecentOutcomes hook={hook} />
+              </dd>
+            </div>
+            <div className='flex flex-col gap-0.5 sm:col-span-2'>
+              <dt className='text-xs font-medium text-muted-foreground'>Last failed call</dt>
               <dd>
                 <LastFailure hook={hook} />
               </dd>

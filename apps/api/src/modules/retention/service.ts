@@ -4,6 +4,7 @@ import * as logger from '~/lib/logger'
 import { errorReason } from '~/lib/safe-error'
 import * as Passwords from '~/modules/password/service'
 import * as Settings from '~/modules/settings/service'
+import { hourOf } from '~/ports/hook-store'
 
 /**
  * How long a session is kept after it ended (was revoked, or passed its idle or absolute
@@ -54,6 +55,15 @@ export const SMS_COUNT_RETENTION = '90d'
 export const EXPIRED_PROPOSAL_RETENTION = '30d'
 
 /**
+ * How long the counts of a hook's calls are kept (`hook_call_counts`, ADR 0035, "Recent
+ * outcomes"), from the hour they are of. A week: seven times the day the admin API reads
+ * back (`HOOK_OUTCOME_WINDOW_HOURS`), so that a purge that is late, or a window that is
+ * later made longer, loses nothing an operator is shown. The rows hold counts by hook, hour
+ * and outcome and nothing else, at most four an hour for a hook.
+ */
+export const HOOK_CALL_COUNT_RETENTION = '7d'
+
+/**
  * How often the retention job runs. Expired sign-up attempts hold the hash of a password that
  * was never used, so they should not outlive their expiry by long; the other tables only need
  * a daily pass, and an idle pass costs a handful of indexed queries per environment.
@@ -97,6 +107,8 @@ export interface RetentionCounts {
   passwordHistory: number
   /** Agents' proposals that expired more than {@link EXPIRED_PROPOSAL_RETENTION} ago. */
   proposals: number
+  /** Rows of hook call counts of hours more than {@link HOOK_CALL_COUNT_RETENTION} ago. */
+  hookCallCounts: number
 }
 
 /** The outcome of one retention run. Counts only: nothing here identifies a user. */
@@ -120,6 +132,7 @@ type RetentionDeps = Pick<
   | 'webhookDeliveries'
   | 'smsUsage'
   | 'proposals'
+  | 'hooks'
   | 'users'
   | 'environmentSettings'
   | 'config'
@@ -264,6 +277,8 @@ async function purgePasswordHistory(
  * - previous passwords beyond what the environment's `password.history` keeps today;
  * - agents' proposals whose expiry is more than {@link EXPIRED_PROPOSAL_RETENTION} past,
  *   approved or not.
+ * - counts of a hook's calls (by hook, hour and outcome) of hours more than
+ *   {@link HOOK_CALL_COUNT_RETENTION} ago.
  *
  * It also deletes instance audit entries (the control plane's log: dashboard sign-ins,
  * workspaces, projects) older than the deployment's `INSTANCE_AUDIT_RETENTION_DAYS`.
@@ -292,6 +307,8 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
     .toISOString()
     .slice(0, 10)
   const proposalsBefore = new Date(now.getTime() - durationToMs(EXPIRED_PROPOSAL_RETENTION))
+  // An hour (UTC), as the counts are kept: the first one that stays.
+  const hookCountsBefore = hourOf(new Date(now.getTime() - durationToMs(HOOK_CALL_COUNT_RETENTION)))
   const report: RetentionReport = {
     environments: 0,
     failed: 0,
@@ -307,6 +324,7 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
     smsCodeCounts: 0,
     passwordHistory: 0,
     proposals: 0,
+    hookCallCounts: 0,
   }
   // The instance audit log belongs to no environment, and its period is the deployment's:
   // anyone who can reach the sign-in can add to it, so it always has an end. An environment's
@@ -357,6 +375,9 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
       report.proposals += await drain((limit) =>
         deps.proposals.deleteExpiredBefore(id, proposalsBefore, limit)
       )
+      report.hookCallCounts += await drain((limit) =>
+        deps.hooks.deleteCallCountsBefore(id, hookCountsBefore, limit)
+      )
     } catch (error) {
       report.failed += 1
       logger.warn('retention failed in one environment', {
@@ -398,7 +419,8 @@ export async function run(
     report.events +
     report.smsCodeCounts +
     report.passwordHistory +
-    report.proposals
+    report.proposals +
+    report.hookCallCounts
   // An idle run is routine; one that deleted something, or could not, is worth a line.
   const log = report.failed > 0 ? logger.warn : removed > 0 ? logger.info : logger.debug
   log('retention run finished', { ...report })

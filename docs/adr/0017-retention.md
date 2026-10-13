@@ -326,6 +326,19 @@ held against, and the database holds that itself: `sms_code_counts_retention_flo
 restrictive policy `FOR DELETE` like the three above, lets the runtime role delete only
 rows of days more than seven days before today (UTC), whatever a statement asks.
 
+### Counts of a hook's calls (added 2026-10-12)
+
+With the recent outcomes of a hook (TULA-67, [ADR 0035](0035-hooks.md)). `hook_call_counts`
+has one row per hook, UTC hour and outcome. Rows of hours more than
+`HOOK_CALL_COUNT_RETENTION` (7 days) ago are deleted per environment, in batches, through
+`HookStore.deleteCallCountsBefore(environment, hour, limit)`; the hour seven days back is
+the first that stays. Seven days is seven times what the admin API reads back (24 hours),
+so a purge that is late loses nothing an operator is shown. The rows hold counts and one
+of four fixed words, nothing of a call; the period is about the table's size. There is no
+restrictive policy on this delete: no limit and no decision is held against these rows, so
+a delete of them reopens nothing. The summary line counts them as `hookCallCounts`. Rows
+of a removed hook go with it, by cascade.
+
 ## Consequences
 
 - The lock is a session-level advisory lock, so `DATABASE_URL` must be a direct connection or a
