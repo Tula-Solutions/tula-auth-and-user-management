@@ -907,6 +907,12 @@ class TulaAuthModel(
                 if (it.value.reason == null) TulaAuthScreen.NewPassword(it.value.destination) else TulaAuthScreen.ExpiredPassword
             }
             FlowScreen.COMPLETE -> TulaAuthScreen.SignedIn
+            // The client has calls for the second step and for the enrolment of an
+            // authenticator, and these screens have no form for either yet (TULA-61): each is
+            // named here, so that a step the client gains a call for never falls through to a
+            // form or to nothing.
+            FlowScreen.NEEDS_SECOND_FACTOR -> null
+            FlowScreen.NEEDS_FACTOR_ENROLMENT -> null
             FlowScreen.NOT_SUPPORTED -> null
         } ?: TulaAuthScreen.NotSupported(step.status)
     }

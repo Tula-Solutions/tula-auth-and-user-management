@@ -200,8 +200,16 @@ class ModelTest {
     @Test
     fun `a step with no screen is not supported and never blank`() = runTest {
         val steps = mapOf(
-            // The client has no action for either, and neither have the screens.
+            // The client has a call for each of these, and the screens no form yet (TULA-61):
+            // a second step by an authenticator, a backup code or a texted code, and the
+            // enrolment of an authenticator.
             SECOND_FACTOR to "needs_second_factor",
+            """{"status":"needs_second_factor","options":["totp","backup_code","passkey"]}""" to "needs_second_factor",
+            """{"status":"needs_second_factor","options":["sms_code"]}""" to "needs_second_factor",
+            """{"status":"needs_factor_enrolment","methods":["totp"]}""" to "needs_factor_enrolment",
+            // Neither the client, as the screens ask it, nor the screens have anything for these.
+            """{"status":"needs_second_factor","options":["passkey"]}""" to "needs_second_factor",
+            """{"status":"needs_factor_enrolment","methods":["retina"]}""" to "needs_factor_enrolment",
             """{"status":"needs_something_newer","with":"fields"}""" to "needs_something_newer",
             // Ways the client cannot prove.
             firstFactor("passkey", "email_link") to "needs_first_factor",
