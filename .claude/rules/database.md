@@ -59,7 +59,7 @@ paths:
   hook answered with, nullable jsonb held by the check `sessions_hook_claims_bounds` to an
   object of at most 4,096 bytes of its text (the claims' own rules are the service's, on
   write and again on read). `hooks.point` is text with no check: a new point needs no
-  migration. `hook_call_counts` (migration 0033, ADR 0035 "Recent outcomes"): one row per
+  migration. `hook_call_counts` (migration 0034, ADR 0035 "Recent outcomes"): one row per
   hook, UTC hour and outcome; SELECT, INSERT and DELETE, and UPDATE of `calls`, `last_at`
   and `updated_at` only (never the hook, the hour, the outcome or the tenant columns); the
   outcome one of four words (`hook_call_counts_outcome_known`), the hour whole and
