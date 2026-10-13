@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
-import { chmod, lstat, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname, join, relative, resolve } from 'node:path'
+import { chmod, lstat, mkdir, readdir, readFile, realpath, writeFile } from 'node:fs/promises'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /**
@@ -16,14 +16,16 @@ export const VERSION = '0.0.0'
 
 /**
  * The frameworks a project can be scaffolded for. Each has a template made from an example app
- * of the Tula repository (`scripts/sync-templates.ts`).
+ * of the Tula repository (`scripts/sync-templates.ts`). The first two are web apps; `expo`,
+ * `swiftui` and `compose` are native ones, whose app gets a directory of its own beside the
+ * server's files.
  *
  * @example
  * ```ts
  * FRAMEWORKS.includes('nextjs') // true
  * ```
  */
-export const FRAMEWORKS = ['react-vite', 'nextjs'] as const
+export const FRAMEWORKS = ['react-vite', 'nextjs', 'expo', 'swiftui', 'compose'] as const
 
 /**
  * A scaffoldable framework.
@@ -47,9 +49,76 @@ export type Framework = (typeof FRAMEWORKS)[number]
  */
 export const DEFAULT_API_IMAGE = 'tula-api:local'
 
-const FRAMEWORK_DETAILS: Record<Framework, { label: string; appUrl: string }> = {
-  'react-vite': { label: 'Vite + React', appUrl: 'http://localhost:5174' },
-  nextjs: { label: 'Next.js', appUrl: 'http://localhost:3000' },
+/** What create-tula knows of a framework beyond its template. */
+interface FrameworkDetails {
+  /** The framework's name as a README says it. */
+  label: string
+  /** Where a web app is served; `null` for a native app, which no browser opens. */
+  appUrl: string | null
+  /** The commands that start the app once the project is made, each with what it does. A command may hold a placeholder. */
+  start: readonly (readonly [command: string, what: string])[]
+  /**
+   * A file of the Tula repository that a checkout has, for a framework whose SDK is taken from
+   * one by path (nothing is published, and create-tula invents no registry to name instead).
+   */
+  checkout?: string
+}
+
+const FRAMEWORK_DETAILS: Record<Framework, FrameworkDetails> = {
+  'react-vite': {
+    label: 'Vite + React',
+    appUrl: 'http://localhost:5174',
+    start: [['bun run dev', 'the app, on http://localhost:5174']],
+  },
+  nextjs: {
+    label: 'Next.js',
+    appUrl: 'http://localhost:3000',
+    start: [['bun run dev', 'the app, on http://localhost:3000']],
+  },
+  expo: {
+    label: 'Expo',
+    appUrl: null,
+    start: [
+      ['cd app && bun install', 'Expo, React Native and the native modules'],
+      ['cp .env.example .env.local', 'then fill in its two values: the README says which'],
+      ['bunx expo run:ios', 'a development build, in a simulator (or run:android)'],
+    ],
+  },
+  swiftui: {
+    label: 'SwiftUI',
+    appUrl: null,
+    start: [['open ios/TulaExample.xcodeproj', 'then run the TulaExample scheme in a simulator']],
+    checkout: 'native/swift/Package.swift',
+  },
+  compose: {
+    label: 'Jetpack Compose',
+    appUrl: null,
+    start: [
+      [
+        '{{tulaRepoFromProject}}/native/android/gradlew -p android :app:installDebug',
+        'onto a running emulator (needs ANDROID_HOME)',
+      ],
+    ],
+    checkout: 'native/android/settings.gradle.kts',
+  },
+}
+
+/**
+ * Whether a framework's SDK is taken from a checkout of the Tula repository by path, so that
+ * scaffolding it needs `tulaRepo`. True for `swiftui` and `compose`: neither the Swift package
+ * nor the Kotlin SDK is published.
+ *
+ * @param framework - The framework.
+ * @returns Whether `tulaRepo` is required for it.
+ *
+ * @example
+ * ```ts
+ * needsTulaRepo('swiftui') // true
+ * needsTulaRepo('expo')    // false
+ * ```
+ */
+export function needsTulaRepo(framework: Framework): boolean {
+  return FRAMEWORK_DETAILS[framework].checkout !== undefined
 }
 
 /** Every Tula package a project can depend on, directly or through another. */
@@ -58,6 +127,7 @@ const TULA_PACKAGES = [
   'core',
   'react',
   'nextjs',
+  'expo',
   'admin',
   'config',
   'mcp',
@@ -136,6 +206,13 @@ export interface ScaffoldOptions {
    * nothing is published.
    */
   tulaPackages?: string
+  /**
+   * A checkout of the Tula repository, relative to `cwd` or absolute. Required for `swiftui`
+   * and `compose`, refused for the others: the Swift package and the Kotlin SDK are not
+   * published, so the project's Xcode project or Gradle build names them by a path into the
+   * checkout, written relative to the project.
+   */
+  tulaRepo?: string
   /** Write into a directory that is not empty. `.env` and `.env.local` are still never replaced. */
   force?: boolean
   /** Random bytes. Default: `crypto.getRandomValues`. */
@@ -157,8 +234,10 @@ export interface ScaffoldResult {
   files: string[]
   /** Whether an existing `.env` was kept instead of generating one (`force` only). */
   keptEnv: boolean
-  /** Where the app is served once it runs. */
-  appUrl: string
+  /** Where a web app is served once it runs; `null` for a native app. */
+  appUrl: string | null
+  /** The commands that start the app, in order, each with what it does. */
+  start: readonly (readonly [command: string, what: string])[]
 }
 
 /**
@@ -310,10 +389,66 @@ async function tulaSpecs(tulaPackages: string | undefined, cwd: string) {
 }
 
 /**
+ * A path that can be written into an Xcode project and a Gradle properties file as it is, and
+ * pasted into a shell line: the Compose project's start command prints it unquoted.
+ *
+ * No space: both files would take one, the pasted command would split at it, and nobody built
+ * a project whose checkout sits under such a name.
+ */
+const PLAIN_PATH = /^[A-Za-z0-9._/-]+$/
+
+/**
+ * Where the checkout is, from the project and from the two directories that name it. The
+ * paths are relative, so that a project and a checkout that move together keep working, and
+ * are worked out from real paths: a relative path through a symbolic link leads elsewhere.
+ */
+async function checkoutPaths(
+  options: ScaffoldOptions,
+  details: FrameworkDetails
+): Promise<Record<string, string>> {
+  if (details.checkout === undefined) {
+    if (options.tulaRepo !== undefined) {
+      throw new ScaffoldError(
+        '--tula-repo is for swiftui and compose, whose SDK is taken from a checkout. Leave it out.'
+      )
+    }
+    return {}
+  }
+  if (options.tulaRepo === undefined) {
+    throw new ScaffoldError(
+      `${details.label} needs --tula-repo <directory>: a checkout of the Tula repository. Its SDK is not published anywhere yet, so the project names it by a path into the checkout.`
+    )
+  }
+  const checkout = await realpath(resolve(options.cwd, options.tulaRepo)).catch(() => null)
+  if (checkout === null || !(await exists(join(checkout, details.checkout)))) {
+    throw new ScaffoldError(
+      `--tula-repo does not lead to a checkout of the Tula repository (there is no ${details.checkout} there).`
+    )
+  }
+  // The project's directory may not exist yet; the one it is made in does.
+  const project = join(await realpath(options.cwd), options.name)
+  const from = (directory: string, target: string) =>
+    relative(join(project, directory), target).split(sep).join('/') || '.'
+  const paths = {
+    tulaRepoFromProject: from('', checkout),
+    tulaRepoFromAndroid: from('android', checkout),
+    tulaSwiftPackage: from('ios', join(checkout, 'native', 'swift')),
+  }
+  if (!Object.values(paths).every((path) => PLAIN_PATH.test(path))) {
+    throw new ScaffoldError(
+      'The path from the project to --tula-repo has a character that cannot be written into an Xcode project, a Gradle file or a command line as it is. Use directories named with letters, digits, dots, dashes and underscores: no space.'
+    )
+  }
+  return paths
+}
+
+/**
  * Scaffold a Tula project: a Compose file with pinned service images, a `.env` with a freshly
  * generated master key, instance admin token and database passwords (readable by its owner
  * only, and ignored by the project's `.gitignore`), a `tula.config.ts`, a README and the
- * example app of the chosen framework.
+ * example app of the chosen framework. A web app is the project; a native app is in a
+ * directory of its own (`app`, `ios`, `android`) beside the server's files, and `swiftui` and
+ * `compose` name their SDK by a path into a checkout of the Tula repository (`tulaRepo`).
  *
  * Nothing is written unless everything can be: the name, the options and the tarballs are
  * checked first. A directory that has files is refused unless `force` is set, and even then
@@ -349,6 +484,8 @@ export async function scaffold(options: ScaffoldOptions): Promise<ScaffoldResult
   }
   const apiPort = port(options.apiPort, 3003, '--api-port')
   const mailpitPort = port(options.mailpitPort, 8025, '--mailpit-port')
+  const details = FRAMEWORK_DETAILS[options.framework]
+  const checkout = await checkoutPaths(options, details)
   const { specs, local } = await tulaSpecs(options.tulaPackages, options.cwd)
 
   const directory = join(options.cwd, options.name)
@@ -368,63 +505,82 @@ export async function scaffold(options: ScaffoldOptions): Promise<ScaffoldResult
     )
   }
 
-  const details = FRAMEWORK_DETAILS[options.framework]
-  const values = {
+  const values: Record<string, string> = {
     name: options.name,
     displayName: options.name,
     apiImage,
     apiPort: String(apiPort),
     mailpitPort: String(mailpitPort),
     frameworkLabel: details.label,
-    appUrl: details.appUrl,
+    ...(details.appUrl === null ? {} : { appUrl: details.appUrl }),
+    ...checkout,
   }
   const random =
     options.random ?? ((bytes: number) => crypto.getRandomValues(new Uint8Array(bytes)))
 
   /** Path in the project → contents and mode. Built completely before anything is written. */
   const output = new Map<string, { contents: Uint8Array | string; mode: number }>()
-  const add = async (source: string, target: string) => {
-    const templated = target.endsWith('.tmpl')
-    const path = (templated ? target.slice(0, -'.tmpl'.length) : target).replace(
-      /(^|\/)_(gitignore|env\.example)$/,
-      '$1.$2'
-    )
-    const contents = templated
-      ? fill(await readFile(source, 'utf8'), values)
-      : await readFile(source)
+  /** Path in the project → its template file. A later layer's file replaces an earlier one's. */
+  const sources = new Map<string, { file: string; templated: boolean }>()
+  const frameworkRoot = join(templatesRoot, options.framework)
+  for (const root of [
+    join(templatesRoot, 'base'),
+    join(frameworkRoot, 'app'),
+    join(frameworkRoot, 'overlay'),
+  ]) {
+    for (const file of await filesUnder(root)) {
+      const target = relative(root, file).split(sep).join('/')
+      const templated = target.endsWith('.tmpl')
+      const path = (templated ? target.slice(0, -'.tmpl'.length) : target).replace(
+        /(^|\/)_(gitignore|env\.example)$/,
+        '$1.$2'
+      )
+      sources.set(path, { file, templated })
+    }
+  }
+  for (const [path, { file, templated }] of sources) {
+    // Only a `.tmpl` has placeholders; everything else is copied byte for byte.
+    const contents = templated ? fill(await readFile(file, 'utf8'), values) : await readFile(file)
     output.set(path, { contents, mode: path.endsWith('.sh') ? 0o755 : 0o644 })
   }
-  const frameworkRoot = join(templatesRoot, options.framework)
-  for (const [root, strip] of [
-    [join(templatesRoot, 'base'), join(templatesRoot, 'base')],
-    [join(frameworkRoot, 'app'), join(frameworkRoot, 'app')],
-    [join(frameworkRoot, 'overlay'), join(frameworkRoot, 'overlay')],
-  ] as const) {
-    for (const file of await filesUnder(root)) {
-      await add(file, relative(strip, file))
-    }
-  }
 
-  const manifest = JSON.parse(await readFile(join(frameworkRoot, 'package.json'), 'utf8')) as {
-    name: string
-    dependencies: Record<string, string>
-    devDependencies: Record<string, string>
-    overrides?: Record<string, string>
-  }
-  manifest.name = options.name
-  for (const dependencies of [manifest.dependencies, manifest.devDependencies]) {
-    for (const name of Object.keys(dependencies)) {
-      if (name.startsWith('@tula/')) {
-        dependencies[name] = specs.get(name) ?? VERSION
+  /** A manifest of the template with its name and its Tula packages as this project has them. */
+  const pinned = (text: string, name: string): string => {
+    const manifest = JSON.parse(text) as {
+      name: string
+      dependencies?: Record<string, string>
+      devDependencies?: Record<string, string>
+      overrides?: Record<string, string>
+    }
+    manifest.name = name
+    for (const dependencies of [manifest.dependencies ?? {}, manifest.devDependencies ?? {}]) {
+      for (const dependency of Object.keys(dependencies)) {
+        if (dependency.startsWith('@tula/')) {
+          dependencies[dependency] = specs.get(dependency) ?? VERSION
+        }
       }
     }
+    if (local) {
+      // Tula packages depend on each other by version; with nothing published, those have to
+      // resolve to the tarballs too.
+      manifest.overrides = Object.fromEntries(specs)
+    }
+    return `${JSON.stringify(manifest, null, 2)}\n`
   }
-  if (local) {
-    // Tula packages depend on each other by version; with nothing published, those have to
-    // resolve to the tarballs too.
-    manifest.overrides = Object.fromEntries(specs)
+  // A native app can have a manifest of its own, in its own directory (the Expo app's): it
+  // installs by itself, and its Tula packages are pinned as the project's are.
+  for (const [path, file] of output) {
+    if (path.endsWith('/package.json')) {
+      output.set(path, {
+        contents: pinned(Buffer.from(file.contents).toString('utf8'), `${options.name}-app`),
+        mode: file.mode,
+      })
+    }
   }
-  output.set('package.json', { contents: `${JSON.stringify(manifest, null, 2)}\n`, mode: 0o644 })
+  output.set('package.json', {
+    contents: pinned(await readFile(join(frameworkRoot, 'package.json'), 'utf8'), options.name),
+    mode: 0o644,
+  })
 
   const keptEnv = await exists(join(directory, '.env'))
   if (!keptEnv) {
@@ -481,5 +637,12 @@ export async function scaffold(options: ScaffoldOptions): Promise<ScaffoldResult
     await chmod(target, file.mode)
     written.push(path)
   }
-  return { directory, files: written, keptEnv, appUrl: details.appUrl }
+  return {
+    directory,
+    files: written,
+    keptEnv,
+    appUrl: details.appUrl,
+    // A command may name the checkout: by the same path the project's own files do.
+    start: details.start.map(([command, what]) => [fill(command, values), what] as const),
+  }
 }

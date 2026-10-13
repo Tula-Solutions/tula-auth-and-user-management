@@ -1,8 +1,10 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
-// The Compose example: a module of the Kotlin SDK's build (native/android/settings.gradle.kts
-// names this directory), so that it has that build's wrapper and its pinned versions. It is
-// not a workspace package: there is no package.json here.
+// The Compose example: a module of a Gradle build whose settings name the Kotlin SDK's
+// modules and its version catalog, so that it has that build's pinned versions and names none
+// of its own. In the Tula repository that build is native/android (its settings.gradle.kts
+// names this directory, and the example is not a workspace package: there is no package.json
+// here); in a project made by create-tula it is the settings.gradle.kts one directory up.
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)

@@ -216,7 +216,17 @@ describe('scaffold', () => {
   test('local tarballs: every Tula package, direct or transitive, comes from the directory', async () => {
     const tarballs = join(dir, 'release')
     await mkdir(tarballs)
-    for (const name of ['react', 'core', 'contract', 'cli', 'config', 'admin', 'nextjs', 'mcp']) {
+    for (const name of [
+      'react',
+      'core',
+      'contract',
+      'cli',
+      'config',
+      'admin',
+      'nextjs',
+      'expo',
+      'mcp',
+    ]) {
       await writeFile(join(tarballs, `tula-${name}-${VERSION}.tgz`), '')
     }
     await scaffold({ cwd: dir, name: 'shop', framework: 'react-vite', tulaPackages: tarballs })
@@ -474,8 +484,8 @@ describe('the templates', () => {
     expect(await templateDrift()).toEqual([])
   })
 
-  test('there is one per framework', () => {
-    expect(FRAMEWORKS).toEqual(['react-vite', 'nextjs'])
+  test('there is one per framework: two web apps, then the three native ones', () => {
+    expect(FRAMEWORKS).toEqual(['react-vite', 'nextjs', 'expo', 'swiftui', 'compose'])
   })
 })
 

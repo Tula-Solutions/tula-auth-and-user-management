@@ -1,0 +1,13 @@
+{
+  "name": "tula-app",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {},
+  "dependencies": {},
+  "devDependencies": {
+    "@tula/cli": "*",
+    "@tula/config": "*",
+    "typescript": "^7.0.2"
+  }
+}

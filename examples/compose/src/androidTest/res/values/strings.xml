@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What the documentation's sample of an app's own strings names (DocsSnippets.kt). -->
+<resources>
+    <string name="sign_in_title">Welcome back</string>
+    <string name="continue_button">Continue</string>
+</resources>

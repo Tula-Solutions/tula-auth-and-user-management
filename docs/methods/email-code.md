@@ -253,8 +253,35 @@ export function SignInScreen(props: { onSignUp(): void }) {
 ```
 <!-- /snippet -->
 
+The Swift client ([swift.md](../swift.md)): the code is asked for by a call of its own,
+never sent by arriving at the step.
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#email-code -->
+```swift
+let signIn = try await tula.startSignIn(identifier: email)
+if case .firstFactor = signIn.screen {
+    try await signIn.prepareEmailCode()  // nothing is emailed until this is called
+    try await signIn.attemptEmailCode(typed)
+}
+```
+<!-- /snippet -->
+
+The Kotlin client ([kotlin.md](../kotlin.md)):
+
+<!-- snippet: native/android/tula-auth/src/test/kotlin/dev/tula/auth/DocsSnippets.kt#email-code -->
+```kotlin
+val flow = tula.signIn(email)
+if (flow.screen == FlowScreen.NEEDS_FIRST_FACTOR) {
+    flow.prepareFirstFactor(CodeStrategy.EMAIL_CODE) // nothing is emailed until this is called
+    flow.attemptFirstFactor(CodeStrategy.EMAIL_CODE, code)
+}
+```
+<!-- /snippet -->
+
 Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/react.md),
 [`@tula/expo`](../reference/expo.md).
+
+Native: [Swift](../reference/swift.md), [Kotlin](../reference/kotlin.md).
 
 ## Troubleshooting
 

@@ -97,3 +97,166 @@ exports[`the scaffolds scaffold_provider for nextjs: files with their paths, the
   ],
 }
 `;
+
+exports[`the scaffolds scaffold_provider for expo: files with their paths, the same every time 1`] = `
+{
+  "dependencies": [
+    "@tula/expo",
+    "expo-secure-store",
+    "react-native-passkey",
+    "expo-web-browser",
+    "expo-apple-authentication",
+    "react-native-nitro-google-signin",
+    "@pagopa/io-react-native-crypto",
+  ],
+  "environment": [
+    "EXPO_PUBLIC_TULA_PUBLISHABLE_KEY",
+    "EXPO_PUBLIC_TULA_API_URL",
+  ],
+  "framework": "expo",
+  "notes": 5,
+  "paths": [
+    "app/src/tula.ts",
+    "app/src/setup.ts",
+  ],
+}
+`;
+
+exports[`the scaffolds scaffold_protected_route for expo: files with their paths, the same every time 1`] = `
+{
+  "dependencies": [
+    "@tula/expo",
+    "expo-secure-store",
+    "react-native-passkey",
+    "expo-web-browser",
+    "expo-apple-authentication",
+    "react-native-nitro-google-signin",
+    "@pagopa/io-react-native-crypto",
+  ],
+  "environment": [],
+  "framework": "expo",
+  "notes": 2,
+  "paths": [
+    "app/App.tsx",
+  ],
+}
+`;
+
+exports[`the scaffolds scaffold_sign_in_page for expo: files with their paths, the same every time 1`] = `
+{
+  "dependencies": [
+    "@tula/expo",
+    "expo-secure-store",
+    "react-native-passkey",
+    "expo-web-browser",
+    "expo-apple-authentication",
+    "react-native-nitro-google-signin",
+    "@pagopa/io-react-native-crypto",
+  ],
+  "environment": [],
+  "framework": "expo",
+  "notes": 3,
+  "paths": [
+    "app/src/screens.tsx",
+    "app/src/ways.tsx",
+    "app/src/ui.tsx",
+  ],
+}
+`;
+
+exports[`the scaffolds scaffold_provider for swiftui: files with their paths, the same every time 1`] = `
+{
+  "dependencies": [
+    "TulaAuth",
+    "TulaAuthUI",
+  ],
+  "environment": [
+    "TULA_API_URL",
+    "TULA_PUBLISHABLE_KEY",
+  ],
+  "framework": "swiftui",
+  "notes": 5,
+  "paths": [
+    "ios/TulaExample/TulaExampleApp.swift",
+    "ios/TulaExample/SetupView.swift",
+  ],
+}
+`;
+
+exports[`the scaffolds scaffold_protected_route for swiftui: files with their paths, the same every time 1`] = `
+{
+  "dependencies": [
+    "TulaAuth",
+    "TulaAuthUI",
+  ],
+  "environment": [],
+  "framework": "swiftui",
+  "notes": 2,
+  "paths": [
+    "ios/TulaExample/SessionView.swift",
+  ],
+}
+`;
+
+exports[`the scaffolds scaffold_sign_in_page for swiftui: files with their paths, the same every time 1`] = `
+{
+  "dependencies": [
+    "TulaAuth",
+    "TulaAuthUI",
+  ],
+  "environment": [],
+  "framework": "swiftui",
+  "notes": 2,
+  "paths": [
+    "ios/TulaExample/SessionView.swift",
+  ],
+}
+`;
+
+exports[`the scaffolds scaffold_provider for compose: files with their paths, the same every time 1`] = `
+{
+  "dependencies": [
+    "tula-auth-compose",
+    "tula-auth-android",
+  ],
+  "environment": [
+    "tula_api_url",
+    "tula_publishable_key",
+  ],
+  "framework": "compose",
+  "notes": 5,
+  "paths": [
+    "android/app/src/main/kotlin/dev/tula/example/compose/MainActivity.kt",
+  ],
+}
+`;
+
+exports[`the scaffolds scaffold_protected_route for compose: files with their paths, the same every time 1`] = `
+{
+  "dependencies": [
+    "tula-auth-compose",
+    "tula-auth-android",
+  ],
+  "environment": [],
+  "framework": "compose",
+  "notes": 2,
+  "paths": [
+    "android/app/src/main/kotlin/dev/tula/example/compose/MainActivity.kt",
+  ],
+}
+`;
+
+exports[`the scaffolds scaffold_sign_in_page for compose: files with their paths, the same every time 1`] = `
+{
+  "dependencies": [
+    "tula-auth-compose",
+    "tula-auth-android",
+  ],
+  "environment": [],
+  "framework": "compose",
+  "notes": 2,
+  "paths": [
+    "android/app/src/main/kotlin/dev/tula/example/compose/MainActivity.kt",
+  ],
+}
+`;

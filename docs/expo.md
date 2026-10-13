@@ -56,6 +56,12 @@ refuses to create a client there; a web build uses [`@tula/react`](../packages/r
 `@tula/expo` works with Expo SDK 57 (`expo-secure-store` 57, React 19, React Native 0.86)
 and needs no native module beyond `expo-secure-store`, which Expo Go includes.
 
+To start from a project that already has the stack and an app, see [the native path of the
+quickstart](quickstart.md#the-native-path) (`create-tula --framework expo`). A simulator and
+an emulator need no account; a phone, a passkey, Apple's and Google's own sheets and an app
+link each need an Apple or a Google account and an identifier of your own, and [one
+table](native-apps.md#what-needs-your-own-accounts) says which needs what.
+
 ```bash
 bunx expo install expo-secure-store
 bun add @tula/expo
@@ -841,7 +847,10 @@ bun add @tula/expo
 ```
 
 The native module is part of `@tula/expo` (`ios/` and `android/` of the package) and is
-linked by Expo's autolinking: there is no further package to install. It is **not in Expo
+linked by Expo's autolinking: there is no further package to install. **That holds for
+every app that installs `@tula/expo`, also one that never imports
+`@tula/expo/native-screens`**: its development build links and compiles the module too
+(on iOS that includes the one file nobody has compiled, below). It is **not in Expo
 Go**: the app needs a development build, and importing `@tula/expo/native-screens` in a
 build made before the package was installed throws. iOS 16 and Android 9 (API 28) are the
 lowest versions; [the config plugin](#the-config-plugin) raises an Expo project's Android

@@ -1,0 +1,121 @@
+# {{displayName}}
+
+An Android app with [Tula Auth](https://github.com/Tula-Solutions), and the Tula API it signs
+in to, which runs on your machine in Docker. The server's files are here, at the project's
+root; the app is in `android/app`, a copy of the Tula repository's Compose example
+(`examples/compose`).
+
+**The Kotlin SDK is not published.** `android/settings.gradle.kts` takes its four modules
+and its version catalog from a checkout of the Tula repository, named by `tulaRepo` in
+`android/gradle.properties`: `{{tulaRepoFromAndroid}}`, from `android/`. That is where the
+checkout was when this project was made (`--tula-repo`). If you move either, change that
+line; a teammate needs a checkout at the same relative place. The build has no Gradle
+wrapper of its own either: run the checkout's, as below. Gradle writes the SDK modules'
+build output into the checkout (`native/android/*/build`, which its `.gitignore` covers).
+
+`--tula-repo` must be a checkout you trust: building the project runs its build scripts.
+Gradle runs the checkout's settings, its modules' build files and its wrapper on your
+machine.
+
+**Nobody has run this app from a project made this way.** The example it is copied from was
+run on one emulator; nothing was run on a phone. The Tula repository's
+`examples/compose/README.md` says what was run.
+
+## Start the server
+
+```sh
+bun install
+bunx tula dev        # starts the stack, migrates, seeds, mints development keys
+```
+
+`tula dev` prints the URLs: the API, its reference, and Mailpit, the inbox every email the
+API sends lands in (verification codes included). It writes the development keys to
+`.env.local`; run it again any time, it changes nothing that is already there.
+
+## Start the app in an emulator
+
+You need a JDK (17 or later), an Android SDK with platform 36.1 and build tools 36.1.0, and
+an emulator. From the project's root:
+
+```sh
+ANDROID_HOME=<your SDK> {{tulaRepoFromProject}}/native/android/gradlew -p android :app:installDebug
+adb shell am start -n dev.tula.example.compose/.MainActivity \
+  -e tula_api_url http://10.0.2.2:{{apiPort}} \
+  -e tula_publishable_key <TULA_PUBLISHABLE_KEY from .env.local>
+```
+
+`10.0.2.2` is an emulator's name for the machine it runs on. The two extras are read by a
+debuggable build only; without them the app asks for both on its setup screen and keeps
+them in its own preferences. A publishable key is made to ship in an app; **never give it
+the secret key**. Plain `http` is allowed to `127.0.0.1`, `localhost` and `10.0.2.2` only
+(`android/app/src/main/res/xml/network_security_config.xml`); anything else has to be
+`https`.
+
+## On a phone
+
+A phone cannot reach `localhost` or `10.0.2.2`, and a passkey and an app link need `https`
+on a name the phone trusts. From the project's root:
+
+```sh
+bunx tula dev --tunnel   # the stack under this machine's Tailscale Funnel address
+```
+
+It needs your own Tailscale account, signed in on this machine, and it prints the address
+and the settings it did not change. Install the app on the phone (`:app:installDebug` with
+the phone connected) and give it the address as the API's. Close the tunnel with
+`bunx tula dev down`. Nobody has run `tula dev --tunnel` against a phone.
+
+## What needs your own accounts
+
+| For | You need | Where it goes |
+| --- | --- | --- |
+| An app of your own | An `applicationId` and a `namespace` of your own (both are `dev.tula.example.compose` here), and a signing key for a release build | `android/app/build.gradle.kts` |
+| Passkeys | A public `https` domain (the tunnel's will do), and the app registered under `nativeApps` in `tula.config.ts` with your package name and the SHA-256 fingerprint of your signing certificate (`keytool -list -v -keystore <keystore>`; the debug keystore has one of its own) | `tula.config.ts`, then `bunx tula apply` |
+| Sign in with Google | A Google Cloud project of your own: a web OAuth client ID, and an Android client ID made from your package name and SHA-256 fingerprint | Your app; the Google provider in `tula.config.ts` |
+| A provider in a browser tab | The provider's own OAuth client, and the app's redirect URL among the environment's allowed redirect URLs | `tula.config.ts` |
+| The tunnel | A Tailscale account | `tailscale up` on this machine |
+
+None of these is made for you, and no identifier here is yours. A password, an emailed
+code, a texted code, the second step and an authenticator set up inside a sign-in need
+nothing of the app. A passkey button is drawn where the environment has passkeys on;
+whether the sheet then works needs the registration in the table. Google's button is drawn
+only when the app is also told the provider's client id (`-e tula_google_client_id …`).
+No provider that needs a browser is offered: the manifest claims no redirect URL and the
+activity wires no browser session. A step these screens have no form for ends on their
+"not supported" screen.
+
+## What is here
+
+| File | What |
+| --- | --- |
+| `android/settings.gradle.kts` | The build: this app, and the Kotlin SDK's modules from the checkout. |
+| `android/gradle.properties` | The SDK build's own properties, and `tulaRepo`. |
+| `android/build.gradle.kts` | The plugins, at the versions the SDK's catalog pins. |
+| `android/app/` | The app: one activity, a setup screen, `TulaAuth(client, …)` for the sign-in and `TulaAccount` for a signed-in user. |
+| `android/app/src/debug`, `src/release` | `ExampleSheets`, as the example has it: in the debug build a place the example's own UI tests (which are not in this project) put a scripted sheet, in the release build four properties that are always `null`. Your app needs neither: give the client the adapters and delete both. |
+| `compose.yaml` | The local stack (Docker Compose, not Jetpack Compose): Postgres, Redis, Mailpit, the migrations and the Tula API. |
+| `.env` | The stack's secrets, generated for this project: the master key, the instance admin token, the database passwords. Ignored by git. **Back up `TULA_MASTER_KEY`**: without it the stored signing keys and provider credentials cannot be opened. |
+| `.env.local` | Written by `tula dev`: the API URL and the development keys. Ignored by git. |
+| `.env.example` | What `.env` holds, without the values. Commit this one. |
+| `tula.config.ts` | The environment's settings as code. |
+
+## Everyday commands
+
+```sh
+bunx tula doctor          # checks the stack: database, migrations, master key, mail, Redis
+bunx tula diff            # what tula.config.ts would change on the server
+bunx tula apply           # make the server match tula.config.ts
+bunx tula dev down        # stop the stack, and close a tunnel (the data is kept)
+```
+
+## The API image
+
+`TULA_API_IMAGE` in `.env` names the Tula API image; it is `{{apiImage}}` here. Nothing is
+published to a registry yet, so build it from the Tula repository and tag it with that name:
+
+```sh
+docker build -f apps/api/Dockerfile -t {{apiImage}} .   # in the Tula repository
+```
+
+The API is on port `{{apiPort}}` and Mailpit on `{{mailpitPort}}` (`API_PORT` and
+`MAILPIT_UI_PORT` in `.env`).

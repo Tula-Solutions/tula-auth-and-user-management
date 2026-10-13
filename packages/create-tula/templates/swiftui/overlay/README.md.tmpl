@@ -1,0 +1,110 @@
+# {{displayName}}
+
+An iOS app with [Tula Auth](https://github.com/Tula-Solutions), and the Tula API it signs in
+to, which runs on your machine in Docker. The server's files are here, at the project's root;
+the app is in `ios/`, a copy of the Tula repository's SwiftUI example (`examples/swiftui`).
+
+**The Swift package is not published.** The Xcode project takes it from a checkout of the
+Tula repository, by a path: `{{tulaSwiftPackage}}`, from `ios/`. That is where the checkout
+was when this project was made (`--tula-repo`). If you move either, change the path in
+Xcode (the project's Package Dependencies) or in `ios/TulaExample.xcodeproj/project.pbxproj`
+(`relativePath`, and the two comments that repeat it). A teammate needs a checkout at the
+same relative place.
+
+`--tula-repo` must be a checkout you trust: building the project runs its build scripts.
+Xcode evaluates the checkout's `Package.swift` on your machine when it resolves the
+package.
+
+**Nobody has run this project.** The example it is copied from was run in one iOS
+simulator; nothing was run on a device, and no passkey sheet, Sign in with Apple sheet or
+browser session has been shown by the Swift package. The Tula repository's
+`examples/swiftui/README.md` says what was run.
+
+## Start the server
+
+```sh
+bun install
+bunx tula dev        # starts the stack, migrates, seeds, mints development keys
+```
+
+`tula dev` prints the URLs: the API, its reference, and Mailpit, the inbox every email the
+API sends lands in (verification codes included). It writes the development keys to
+`.env.local`; run it again any time, it changes nothing that is already there.
+
+## Start the app in a simulator
+
+Open `ios/TulaExample.xcodeproj` in Xcode, pick an iPhone simulator and run the
+`TulaExample` scheme. The app asks for two things on its first screen and keeps them in its
+own defaults:
+
+- **the API's address**: `http://localhost:{{apiPort}}` (a simulator shares this machine's
+  loopback address);
+- **the publishable key**: the value of `TULA_PUBLISHABLE_KEY` in `.env.local`. A
+  publishable key is made to ship in an app; a secret key is refused when the client is
+  made, and never belongs in one.
+
+Or give both to the scheme as the environment variables `TULA_API_URL` and
+`TULA_PUBLISHABLE_KEY` (Product, Scheme, Edit Scheme, Run, Arguments). **Do not commit a
+scheme or a file that holds a key**: the shared scheme here holds none.
+
+## On a phone
+
+A phone cannot reach `localhost`, and the app's `Info.plist` allows plain `http` to this
+machine and the local network only. A passkey and an app link need `https` on a name the
+phone trusts. From the project's root:
+
+```sh
+bunx tula dev --tunnel   # the stack under this machine's Tailscale Funnel address
+```
+
+It needs your own Tailscale account, signed in on this machine, and it prints the address
+and the settings it did not change. Type the address into the app as the API's address.
+Building onto an iPhone needs your Apple Developer team in the target's signing settings
+and a bundle ID of your own. Close the tunnel with `bunx tula dev down`. Nobody has run
+`tula dev --tunnel` against a phone.
+
+## What needs your own accounts
+
+| For | You need | Where it goes |
+| --- | --- | --- |
+| A build on an iPhone | An Apple Developer account: a team, and a bundle ID of your own (it is `dev.tula.example.swiftui` here) | The target's Signing & Capabilities |
+| Passkeys | A public `https` domain (the tunnel's will do); the Associated Domains capability with `webcredentials:<domain>`; the app registered under `nativeApps` in `tula.config.ts` with your team ID and bundle ID | Xcode; `tula.config.ts`, then `bunx tula apply` |
+| Sign in with Apple | The Sign in with Apple capability for your bundle ID | Apple's developer site and Xcode; the Apple provider and the iOS app in `tula.config.ts` |
+| Sign in with Google | A Google Cloud project of your own, with an iOS OAuth client ID for your bundle ID. The Swift package does not include Google's SDK: your app asks Google for the ID token | Your app; the Google provider in `tula.config.ts` |
+| The tunnel | A Tailscale account | `tailscale up` on this machine |
+
+None of these is made for you, and no identifier here is yours.
+
+## What is here
+
+| File | What |
+| --- | --- |
+| `ios/TulaExample.xcodeproj` | The Xcode project. |
+| `ios/TulaExample/` | The app: where its configuration comes from, the client, the sign-in screens (`TulaAuthView`) and the account's (`TulaAccountView`). |
+| `ios/TulaExampleUITests/` | The example's UI tests. **They do not run from here**: they need the Tula repository's own test fixture, which its `native/swift/fixture/ui-tests.ts` starts for `examples/swiftui`, and they fail saying so without it. Keep them as a model for tests of your own, or remove the target. |
+| `compose.yaml` | The local stack: Postgres, Redis, Mailpit, the migrations and the Tula API. |
+| `.env` | The stack's secrets, generated for this project: the master key, the instance admin token, the database passwords. Ignored by git. **Back up `TULA_MASTER_KEY`**: without it the stored signing keys and provider credentials cannot be opened. |
+| `.env.local` | Written by `tula dev`: the API URL and the development keys. Ignored by git. |
+| `.env.example` | What `.env` holds, without the values. Commit this one. |
+| `tula.config.ts` | The environment's settings as code. |
+
+## Everyday commands
+
+```sh
+bunx tula doctor          # checks the stack: database, migrations, master key, mail, Redis
+bunx tula diff            # what tula.config.ts would change on the server
+bunx tula apply           # make the server match tula.config.ts
+bunx tula dev down        # stop the stack, and close a tunnel (the data is kept)
+```
+
+## The API image
+
+`TULA_API_IMAGE` in `.env` names the Tula API image; it is `{{apiImage}}` here. Nothing is
+published to a registry yet, so build it from the Tula repository and tag it with that name:
+
+```sh
+docker build -f apps/api/Dockerfile -t {{apiImage}} .   # in the Tula repository
+```
+
+The API is on port `{{apiPort}}` and Mailpit on `{{mailpitPort}}` (`API_PORT` and
+`MAILPIT_UI_PORT` in `.env`).

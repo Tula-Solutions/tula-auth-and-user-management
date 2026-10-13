@@ -20,3 +20,13 @@ Written and partly compiled, never run: the Android module was compiled inside a
 Expo SDK 57 app; on iOS the two libraries were compiled and the file that uses Expo's
 module API was not. No screen has been drawn through this entry point in a simulator, an
 emulator or on a phone.
+
+After a review: the native module passes on only an error code of a closed set (its own,
+the native client's, and the contract's as the package was generated; anything else,
+a code a newer server gained included, is `internal`), under one fixed sentence that does
+not hold the code; on Android every `configure` replaces the activity provider, so a
+JavaScript reload does not leave the sheets with a dead context's; on iOS the module ends
+its watching task when it is destroyed. The Android module compiles the Kotlin SDK against
+older libraries than the SDK is tested on (listed in `docs/expo.md`), and the config
+plugin's `nativeScreens` is said as what it is: it adds, and raises one value
+(`android.minSdkVersion` below 28), never lowers.
