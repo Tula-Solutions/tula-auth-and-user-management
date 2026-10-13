@@ -9,7 +9,7 @@ step the server answers with and hold no flow logic of their own.
 bun add @tula-tech/react@latest       # or: npm install @tula-tech/react@latest
 ```
 
-> **Early release (0.x).** the API may change from one release to the next. The components talk to a Tula API, which you host yourself
+> **Early release (0.x).** The API may change from one release to the next. The components talk to a Tula API, which you host yourself
 > ([docs/self-host.md](../../docs/self-host.md)); everything else is in the
 > [repository](https://github.com/Tula-Solutions/tula-auth-and-user-management#readme).
 

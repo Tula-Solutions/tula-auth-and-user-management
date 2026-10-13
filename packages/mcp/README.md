@@ -9,7 +9,7 @@ takes (under a minute) and only where the environment allows it: `test_signin` h
 throwaway user up and in and delete it. **No other tool changes live data, and no tool
 returns a secret.**
 
-> **Early release (0.x).** the tools and what they return may change
+> **Early release (0.x).** The tools and what they return may change
 > from one release to the next. Everything else is in the
 > [repository](https://github.com/Tula-Solutions/tula-auth-and-user-management#readme).
 

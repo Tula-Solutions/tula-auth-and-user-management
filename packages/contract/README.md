@@ -10,7 +10,7 @@ against it, so it is the one place the protocol is written down.
 bun add @tula-tech/contract@latest    # or: npm install @tula-tech/contract@latest
 ```
 
-> **Early release (0.x).** the protocol may change from one release to the next, and every `@tula-tech/*` package of a release shares one version, so install them at
+> **Early release (0.x).** The protocol may change from one release to the next, and every `@tula-tech/*` package of a release shares one version, so install them at
 > the same one. Everything else is in the
 > [repository](https://github.com/Tula-Solutions/tula-auth-and-user-management#readme).
 

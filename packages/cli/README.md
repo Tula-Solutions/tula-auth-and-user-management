@@ -19,7 +19,7 @@ named `tula` on npm, which would be downloaded and run with whatever is in your 
 Where there is no project to install into (an MCP client's configuration, a one-off check),
 name the package: `bunx --package @tula-tech/cli@latest tula <command>`.
 
-> **Early release (0.x).** commands and flags may change from one release to the next. The executable runs on [Bun](https://bun.sh) 1.2 or later, not on Node.
+> **Early release (0.x).** Commands and flags may change from one release to the next. The executable runs on [Bun](https://bun.sh) 1.2 or later, not on Node.
 > Inside this repository it is `bun run tula -- <command>`. Everything else is in the
 > [repository](https://github.com/Tula-Solutions/tula-auth-and-user-management#readme).
 

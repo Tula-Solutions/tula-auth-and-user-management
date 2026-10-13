@@ -10,7 +10,7 @@ generated from the OpenAPI contract, so it cannot drift from the API it calls. I
 bun add @tula-tech/admin@latest       # or: npm install @tula-tech/admin@latest
 ```
 
-> **Early release (0.x).** the API may change from one release to the next. It calls a Tula API, which you host yourself
+> **Early release (0.x).** The API may change from one release to the next. It calls a Tula API, which you host yourself
 > ([docs/self-host.md](../../docs/self-host.md)); everything else is in the
 > [repository](https://github.com/Tula-Solutions/tula-auth-and-user-management#readme).
 
