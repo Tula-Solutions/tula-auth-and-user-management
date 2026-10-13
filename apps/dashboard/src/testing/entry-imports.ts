@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path'
 // into a chunk of its own and leaves the rest of the file in the entry chunk, whose imports
 // are evaluated before `lib/zod-csp.ts` has told Zod not to probe for `eval`.
 
-/** The contract's entry points that hold no Zod schema (AGENTS.md, "Publishable packages"). */
+/** The contract's entry points that hold no Zod schema (`.claude/rules/publishable-packages.md`). */
 const ZOD_FREE_CONTRACT = new Set([
   '@tula/contract/error-codes',
   '@tula/contract/event-types',

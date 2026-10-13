@@ -8,7 +8,7 @@ import { createTestDeps, seedApiKey, TEST_TENANT } from '~/testing'
 // than a list someone has to remember to extend:
 //
 // (a) a `/v1/client/*` route that changes state is behind `publishableKey()`: the custom
-//     header is what a cross-site form cannot send (AGENTS.md, stateful sessions);
+//     header is what a cross-site form cannot send (`.claude/rules/sessions.md`, stateful sessions);
 // (b) a route that accepts a credential, or does costly work for whoever asks, has a rate
 //     limit of its own on top of the group's shared per-IP ceiling.
 //

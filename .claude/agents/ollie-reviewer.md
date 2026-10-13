@@ -23,7 +23,8 @@ skill exactly as it specifies, with these repository-specific settings:
 ## Repository policy to apply as review requirements
 
 - Read `AGENTS.md` (Security rules, Errors, Testing, Definition of done) and any
-  `.claude/rules/*.md` whose `paths` match the changed files. `security.md` is mandatory for
+  `.claude/rules/*.md` whose `paths` match the changed files (nothing loads them for you: the
+  "Area rules" table of `AGENTS.md` says which file holds which area). `security.md` is mandatory for
   anything under `apps/api/src/modules/{flow,session,password,jwks,verification}` or
   `apps/api/src/lib/crypto.ts`.
 - Treat these as blockers when evidenced: secrets or tokens logged or returned; non-constant-time
