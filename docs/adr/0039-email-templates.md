@@ -45,7 +45,7 @@ than 255 characters is not used.
 ### Kinds and placeholders are closed lists in the contract
 
 `EMAIL_TEMPLATE_KINDS` (`packages/contract/src/email-template.ts`, plain data, no Zod) has
-one entry per message the server words differently: 26 today. `EMAIL_TEMPLATE_RULES` gives
+one entry per message the server words differently: 28 today (26 when this was written; ADR 0059 added two). `EMAIL_TEMPLATE_RULES` gives
 each kind its category (`code` or `notice`), the placeholders it must have and the ones it
 may have. `templateKind(message)` in the email module maps every message `Email.send` takes
 to its kind with an exhaustive `switch`; a test fails when the two lists differ, so a new

@@ -168,7 +168,10 @@ run `tula diff` and `tula apply` with your own secret key. `changed` is always `
 - **`weakened`** lists what the change would weaken, by the names `tula diff` prints
   (`password.minLength`, `mfa.policy`, `providers.google.additionalClientIds`, …); `weakens`
   is whether there is any. `tula apply --yes` refuses such a plan without `--allow-weaker`.
-  The rule is the contract's, the one the API, the dashboard and the CLI share.
+  The rule is the contract's, the one the API, the dashboard and the CLI share. **One
+  weakening is not judged here**: switching off a provider that accounts depend on
+  ([ADR 0059](adr/0059-email-for-accounts-without-one.md)). The tool never reads that
+  count; `tula diff` prints it for the person who applies the draft.
 - **The config file is the whole truth for settings**: a setting the file leaves out goes
   back to its default when it is applied. The edits belong in the file that already manages
   the environment. Where `managedBy` is `null` no file is on record, and a file holding

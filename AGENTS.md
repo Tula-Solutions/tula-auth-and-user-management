@@ -1515,7 +1515,7 @@ keyed by kind). The layout is the server's.
   `renderTemplate`. A new rule goes there and nowhere else, with a row in
   `packages/contract/src/email-template.test.ts`.
 - **The only link in any email is the server's own `{{link}}`: nothing an operator writes
-  may read as one, in the subject or the body of any of the 26 kinds** (`readsAsLink`:
+  may read as one, in the subject or the body of any of the 28 kinds** (`readsAsLink`:
   `://`, a scheme of the closed list `EMAIL_LINK_SCHEMES` directly followed by something,
   `www.`, a letter or digit, a full stop and two letters with nothing between, or four
   groups of digits with full stops; combining marks are passed over wherever a letter may
@@ -3532,8 +3532,8 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
   has no step-up method until a passkey or an authenticator exists, and is named by
   `accountLabel` (`~/lib/account-label`) where a label is needed. Never write the string
   `null`, an empty string or a placeholder where an address would go, and never send mail
-  to one. There is no route that gives such a user an address yet; adding one is a
-  decision (ADR 0026).
+  to one. Such a user gets an address by the rules of "An email address for an account
+  without one" below, and by nothing else.
 - **A Microsoft account is `<tid>:<oid>`, its issuer is its own tenant's, and its address is
   verified only by `xms_edov`** (`adapters/oauth/microsoft.ts`). Never identify one by
   `sub`, `email`, `preferred_username` or `upn`. `iss` must equal
@@ -3645,6 +3645,57 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
     with no address, an unknown one with none is `oauth.email_missing`.
 - "At least one sign-in method" counts enabled providers: `Settings.replace` and the provider
   routes enforce it, not the settings schema.
+- **The accounts that depend on a provider are counted before it goes, and the count is a
+  number and nothing else** ([ADR 0059](docs/adr/0059-email-for-accounts-without-one.md)).
+  An account depends on a provider when it has it connected and `OAuth.canStillSignIn`
+  says no with that provider taken out of the enabled ones: never a second definition of
+  "a way to sign in". The count is `users.countDependentOn` (both adapters, the shared
+  suite), bounded by the contract's `DEPENDENT_ACCOUNTS_SCAN_LIMIT`; past it the answer
+  says `more` and every surface says "at least". `GET
+  /v1/admin/oauth-providers/:provider/dependents` answers `{ provider, accounts, more }`:
+  never an id, an address or a name, there, in an audit entry, an event or a log line.
+  **Switching off or removing a provider accounts depend on is a weakening, not a
+  refusal** (`oauthProviderWeakenings`, the path `enabled`): `OAuth.update` and
+  `OAuth.remove` count again under the `sign_in_methods` lock and record
+  `dependentAccounts` (and `dependentAccountsIncomplete` for a cut scan), the dashboard
+  reads the count and asks first, `tula diff` prints it and `tula apply --yes` refuses
+  without `--allow-weaker`. Turning it into a refusal is the owner's decision; the count
+  is already taken in the write's lock for it. `@tula/mcp`'s draft tool does not judge it
+  (it never reads the count) and `docs/mcp.md` says so.
+
+### An email address for an account without one (`modules/email-address`, see ADR 0059)
+
+- **The user's two routes are for an account with no address, and only that**
+  (`POST /v1/client/me/email`, `…/verify`, behind `requireRecentAuth()`). A user who has
+  one, verified or not, is `email.already_set` before anything is counted, sent or spent.
+  Changing an address is a decision of its own, not an extension of these routes.
+- **The address is stored only by confirming a code, with its activity, in one
+  transaction** (`users.addEmail`, `user.email_added`). Asking stores nothing on the user:
+  the pending address is the verification token's (purpose `email_addition`, a keyed hash
+  that covers the user and the normalised address), and a token of another purpose is
+  never honoured here, nor this one anywhere else. The unique key decides two users who
+  proved one address: the loser is `verification.expired`, its code spent.
+- **A taken address is answered and limited like a free one.** The request looks every
+  address up, answers the same receipt, emails the taken address a notice with no code
+  (`email_in_use`) and stores a decoy no code matches, so the verify step answers
+  `verification.invalid_code` as for a wrong code. Never answer, limit or word the two
+  apart; keep the side-by-side test in `modules/email-address/router.test.ts`.
+- **The order of the verify step is fixed**: the user exists, is not banned and has no
+  address; nothing pending is `verification.expired`, uncounted; the guess is counted
+  under `EmailAddress.codeLockKey` (a per-user key **of its own**, never the step-up key:
+  anyone with a session can succeed here with their own inbox, and a success clears the
+  key); the code is checked; the address is stored. The limits are per user (a minute's
+  cooldown, `EMAIL_ADDITION_EMAILS_PER_HOUR`) and per address under a keyed hash
+  (`EMAIL_ADDITION_EMAILS_PER_ADDRESS_PER_HOUR`), never the address itself in a key.
+- **An administrator's address is stored unverified, and never replaces one**
+  (`Users.setEmail`, `PUT /v1/admin/users/:userId/email`): `email.already_set` for a user
+  who has one, `resource.conflict` for an address another account holds, no session ended,
+  nothing emailed, `user.email_added` with `method: 'admin'`, `verified: false`. Never
+  let an administrator's word mark an address verified: automatic linking and the emailed
+  step-up trust that flag.
+- **Nothing here merges accounts or asks for an address in a sign-up.** Both are designed
+  in ADR 0059, Part B, and are decisions for the product's owner: do not build either as
+  an addition.
 
 ### Server-driven flows
 
