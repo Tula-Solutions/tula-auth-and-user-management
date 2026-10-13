@@ -37,4 +37,9 @@ val androidSdk: String? =
             ?.firstOrNull { it.startsWith("sdk.dir=") }
 if (androidSdk != null) {
     include(":tula-auth-android")
+    include(":tula-auth-compose")
+    // The example app is a module of this build, so that it has one wrapper and one catalog,
+    // and lives beside the other examples.
+    include(":compose-example")
+    project(":compose-example").projectDir = file("../../examples/compose")
 }
