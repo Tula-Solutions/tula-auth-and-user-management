@@ -2,7 +2,6 @@ import { type AdminClient, type AdminOperations, isTulaAdminError } from '@tula/
 import { UsageError } from '../args'
 import { printable } from '../doctor'
 import { type Command, type CommandContext, EXIT } from '../framework'
-import type { Output } from '../output'
 import { resolveTarget } from '../target'
 
 type Proposal = AdminOperations['getProposal']['response']
@@ -17,6 +16,25 @@ const PROPOSAL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
  */
 const CONSEQUENCES: Readonly<Record<string, string>> = {
   ban_user: 'The user is banned at once: every session of theirs ends and they cannot sign in.',
+  unban_user:
+    'The user’s ban is lifted at once: they can sign in again. Sessions that were ended stay ended.',
+  end_session:
+    'That one session is ended at once: whoever holds it is signed out and has to sign in again.',
+  disable_oauth_provider:
+    'Sign-in with that provider is switched off at once: nobody signs in or signs up with it until it is switched on again. Its credentials are kept.',
+}
+
+/** What each kind of target is called, in this CLI's own words. */
+const TARGET_WORDS: Readonly<Record<string, string>> = {
+  user: 'user',
+  session: 'session',
+  oauth_provider: 'provider',
+}
+
+/** What a target of a proposal is called here; a kind this version does not know, as sent. */
+function targetWord(proposal: Proposal): string {
+  const type = String(proposal.target.type)
+  return Object.hasOwn(TARGET_WORDS, type) ? (TARGET_WORDS[type] as string) : printable(type, 40)
 }
 
 /** Why an approval was refused, by the server's fixed word. */
@@ -28,6 +46,8 @@ const REFUSALS: Readonly<Record<string, string>> = {
     'The proposal is not the one that was shown: its operation or its target differs. Nothing was changed.',
   agent_key_revoked:
     'The agent key that asked for this was revoked: what a revoked key asked for is never carried out. Nothing was changed.',
+  production_environment:
+    'This is a production environment, and its settings do not (or no longer) accept proposals from an agent (agents.proposalsInProduction). Nothing was changed, and the proposal is not spent: it can still be approved before it expires if the setting is switched on.',
 }
 
 /** Why a proposal is expired, by the server's fixed word. */
@@ -54,12 +74,19 @@ function failureWords(proposal: Proposal): string {
   if (reason === 'incomplete') {
     return `Approved, and only partly carried out: the change was made and a later step failed. Check the target. ${spent}`
   }
+  const what = targetWord(proposal)
   if (reason === 'target_not_found') {
-    return `Approved, but nothing was changed: the user no longer exists. ${spent}`
+    return `Approved, but nothing was changed: the ${what} no longer exists. ${spent}`
+  }
+  if (reason === 'last_sign_in_method') {
+    return (
+      'Approved, but nothing was changed: switching this provider off would leave the environment ' +
+      `with no way to sign in, which the server refuses for an administrator too. The provider is still on. ${spent}`
+    )
   }
   return (
     `Approved, but the operation failed on the server (${reason === '' ? 'unknown' : printable(reason, 40)}). ` +
-    `Read the user to see where they stand, and have the agent ask again if the change is still wanted. ${spent}`
+    `Check the ${what} as it is now, and have the agent ask again if the change is still wanted. ${spent}`
   )
 }
 
@@ -97,18 +124,94 @@ function timeLeft(expiresAt: string, now: Date): string {
   return seconds >= 60 ? `in about ${Math.round(seconds / 60)} min` : `in ${seconds} s`
 }
 
-/** Who the proposal is about, read with the operator's own key, for the eye only. */
+/**
+ * A provider as the environment has it now, read with the operator's own key. The name is
+ * the proposal's, made printable; what is said of it is this CLI's words for two booleans.
+ */
+async function describeProvider(admin: AdminClient, id: string): Promise<string> {
+  const { data } = await admin.call('listOAuthProviders', {})
+  const found = data.data.find((one) => one.provider === id)
+  const name = printable(id, 64)
+  if (!found?.configured) {
+    return `provider ${name} (not configured now)`
+  }
+  return `provider ${name} (${found.enabled ? 'on now' : 'already off'})`
+}
+
+/** A user's address and name as this command shows them: the server's text, made printable. */
+function userLabel(user: {
+  email?: string | null
+  firstName?: string | null
+  lastName?: string | null
+}): string {
+  const email = printable(user.email ?? '', 320)
+  const name = printable([user.firstName, user.lastName].filter(Boolean).join(' '), 200)
+  return [email || 'no email address', name].filter(Boolean).join(', ')
+}
+
+/**
+ * A session as the environment has it now, read with the operator's own key: whose it is,
+ * what kind of client, when it began and whether it is still live.
+ *
+ * "Live" is the server's `active`: live by what is stored (not ended, inside the stored
+ * limits). The session's profile as configured now is not asked, so a profile tightened
+ * since may end a session shown as live at its next request.
+ *
+ * An agent's account of a session ("my stale session") is a claim; the id alone gives a
+ * person nothing to check it against. Two reads and nothing else: neither touches the
+ * proposal or the session. What could not be read is said in fixed words beside the bare
+ * id, never guessed, and nothing of a failure's own text is shown. Of the device only its
+ * kind is printed: a user agent is text the session's holder chose.
+ */
+async function describeSession(admin: AdminClient, sessionId: string): Promise<string> {
+  const id = printable(sessionId, 64)
+  let session: Awaited<ReturnType<typeof readSession>>
+  try {
+    session = await readSession(admin, sessionId)
+  } catch (error) {
+    if (isTulaAdminError(error) && error.code === 'resource.not_found') {
+      return `session ${id} (no such session now)`
+    }
+    return `session ${id} (could not be read)`
+  }
+  let whose: string
+  try {
+    const { data } = await admin.call('getUser', { params: { userId: session.userId } })
+    whose = userLabel(data)
+  } catch (error) {
+    whose =
+      isTulaAdminError(error) && error.code === 'resource.not_found'
+        ? 'no such user now'
+        : 'the user could not be read'
+  }
+  const owner = printable(session.userId, 64)
+  const client = printable(session.client, 40)
+  const since = printable(session.createdAt, 40)
+  const state = session.active === true ? 'live now' : 'already ended'
+  return `session ${id} (of user ${owner}: ${whose}; ${client} client, signed in ${since}; ${state})`
+}
+
+async function readSession(admin: AdminClient, sessionId: string) {
+  const { data } = await admin.call('getSession', { params: { sessionId } })
+  return data
+}
+
+/** Who or what the proposal is about, read with the operator's own key, for the eye only. */
 async function describeTarget(admin: AdminClient, proposal: Proposal): Promise<string> {
   const id = printable(proposal.target.id, 64)
+  if (proposal.target.type === 'oauth_provider') {
+    return describeProvider(admin, proposal.target.id)
+  }
+  if (proposal.target.type === 'session') {
+    return describeSession(admin, proposal.target.id)
+  }
   if (proposal.target.type !== 'user') {
-    return `${printable(proposal.target.type, 40)} ${id}`
+    // A kind of target this version does not know: named by its id and nothing more.
+    return `${targetWord(proposal)} ${id}`
   }
   try {
     const { data } = await admin.call('getUser', { params: { userId: proposal.target.id } })
-    const email = printable(data.email ?? '', 320)
-    const name = printable([data.firstName, data.lastName].filter(Boolean).join(' '), 200)
-    const label = [email || 'no email address', name].filter(Boolean).join(', ')
-    return `user ${id} (${label}${data.bannedAt ? '; already banned' : ''})`
+    return `user ${id} (${userLabel(data)}${data.bannedAt ? '; already banned' : ''})`
   } catch (error) {
     if (isTulaAdminError(error) && error.code === 'resource.not_found') {
       return `user ${id} (no such user now)`
@@ -117,20 +220,47 @@ async function describeTarget(admin: AdminClient, proposal: Proposal): Promise<s
   }
 }
 
-function render(output: Output, proposal: Proposal, about: string, now: Date): void {
+/**
+ * What a target already was when an approved operation found nothing to change
+ * (`changed: false` in the approval's answer): the words after "carried out".
+ *
+ * No row for `ban_user`: the server never answers `changed: false` for a ban, which always
+ * writes its entry and ends the sessions made since.
+ */
+const ALREADY_SO: Record<string, string> = {
+  unban_user: 'the user was not banned',
+  end_session: 'the session had already ended',
+  disable_oauth_provider: 'the provider was already off',
+}
+
+/**
+ * The proposal as a person reads it before the question. `line` is standard output, or
+ * standard error under `--json` (standard output is then the JSON alone): the question is
+ * never asked about a proposal that was not shown.
+ */
+function render(line: (text: string) => void, proposal: Proposal, about: string, now: Date): void {
   const status = String(proposal.status)
-  output.line(`Proposal ${printable(proposal.id, 64)}`)
-  output.line(`  Asked for by   an agent (agent key ${printable(proposal.proposedBy.id, 64)})`)
-  output.line(`  Operation      ${printable(proposal.operation, 40)}`)
-  output.line(`  About          ${about}`)
-  output.line(`  What it does   ${printable(proposal.summary, 400)}`)
-  output.line(`  Status         ${statusWords(proposal)}`)
+  line(`Proposal ${printable(proposal.id, 64)}`)
+  line(`  Asked for by   an agent (agent key ${printable(proposal.proposedBy.id, 64)})`)
+  line(`  Operation      ${printable(proposal.operation, 40)}`)
+  line(`  About          ${about}`)
+  line(`  What it does   ${printable(proposal.summary, 400)}`)
+  line(`  Status         ${statusWords(proposal)}`)
   if (status === 'pending') {
-    output.line(
+    line(
       `  Expires        ${timeLeft(proposal.expiresAt, now)} (${printable(proposal.expiresAt, 40)})`
     )
   }
 }
+
+/**
+ * Why a run away from a terminal is refused: one fixed sentence, whatever the options.
+ * It repeats nothing it was given.
+ */
+const NOT_A_TERMINAL =
+  'tula approve asks its question at a terminal and takes the answer typed there: standard ' +
+  'input and standard error are not both a terminal, so there is nobody to ask. There is no ' +
+  'option that answers for you. Nothing was read or changed.'
 
 /** The proposal as `--json` prints it: named field by field, server text made printable. */
 function toJson(proposal: Proposal): Record<string, unknown> {
@@ -152,6 +282,8 @@ function toJson(proposal: Proposal): Record<string, unknown> {
           id: proposal.approvedBy.id === null ? null : printable(proposal.approvedBy.id, 64),
         }
       : null,
+    // Only the approval's answer has it: whether the operation changed its target.
+    ...(typeof proposal.changed === 'boolean' ? { changed: proposal.changed } : {}),
     approvedAt: proposal.approvedAt === null ? null : printable(proposal.approvedAt, 40),
     failureReason: proposal.failureReason === null ? null : printable(proposal.failureReason, 40),
     expiryReason: proposal.expiryReason === null ? null : printable(proposal.expiryReason, 40),
@@ -169,11 +301,21 @@ async function run(context: CommandContext): Promise<number> {
       'That is not a proposal id (a UUID, as the agent reported it). Nothing was read or changed.'
     )
   }
-  if (flags['secret-key-file'] === '-' && flags.yes !== true) {
+  // An approval is a person's act (ADR 0053, "An approval cannot be scripted"): whoever can
+  // run this command without a terminal, an agent with a shell among them, must not be able
+  // to approve by running it. So the refusal comes before the key is resolved and before
+  // any request, and no option stands in for the typed answer. `io.isTTY` is the injected
+  // "standard input and standard error are both a terminal" (`process-io.ts`).
+  if (flags['secret-key-file'] === '-') {
     throw new UsageError(
-      '--secret-key-file - takes standard input for the key, which leaves nothing to answer the ' +
-        'confirmation: pass --yes as well. Nothing was read or changed.'
+      '--secret-key-file - takes the key from standard input, which is where the question of ' +
+        'tula approve is answered: put the key in a file or in the environment. Nothing was ' +
+        'read or changed.'
     )
+  }
+  const ask = io.isTTY === true ? io.prompt : undefined
+  if (ask === undefined) {
+    throw new UsageError(NOT_A_TERMINAL)
   }
   const name = typeof flags.env === 'string' ? flags.env : 'default'
   const target = await resolveTarget({ name, environment: {}, flags, io, output }).catch(
@@ -193,10 +335,8 @@ async function run(context: CommandContext): Promise<number> {
 
   const { data: proposal } = await target.admin.call('getProposal', { params: { id } })
   const about = await describeTarget(target.admin, proposal)
-  if (!json) {
-    render(output, proposal, about, now)
-    output.line()
-  }
+  render(say, proposal, about, now)
+  say('')
   const consequence = Object.hasOwn(CONSEQUENCES, proposal.operation)
     ? CONSEQUENCES[proposal.operation]
     : undefined
@@ -217,19 +357,14 @@ async function run(context: CommandContext): Promise<number> {
     return EXIT.error
   }
 
-  if (flags.yes !== true) {
-    if (!io.isTTY || !io.prompt) {
-      throw new UsageError(
-        'Not at a terminal, so there is nobody to confirm: pass --yes to approve without asking. Nothing was changed.'
-      )
-    }
-    const answer = await io.prompt(
-      `${consequence} Approve this for ${about} at ${target.apiUrl}? Type yes to continue: `
-    )
-    if (answer.trim().toLowerCase() !== 'yes') {
-      output.error('Cancelled. Nothing was changed.')
-      return EXIT.error
-    }
+  // Always asked: nothing in this command skips it. The question names the operation and
+  // the target it would be carried out on, both made printable, and the word is typed out.
+  const answer = await ask(
+    `${consequence} Approve ${printable(proposal.operation, 40)} for ${about} at ${target.apiUrl}? Type yes to continue: `
+  )
+  if (answer.trim().toLowerCase() !== 'yes') {
+    output.error('Cancelled. Nothing was changed.')
+    return EXIT.error
   }
 
   let decided: Proposal
@@ -256,13 +391,23 @@ async function run(context: CommandContext): Promise<number> {
     output.line(JSON.stringify(toJson(decided), null, 2))
   }
   if (decided.status === 'executed') {
+    if (decided.changed === false) {
+      // The operation's own write did nothing: the target was already so when it got there
+      // (it changed after it was shown, or was shown so). The consequence sentence would
+      // describe a change nobody made.
+      const already = Object.hasOwn(ALREADY_SO, decided.operation)
+        ? ALREADY_SO[decided.operation]
+        : 'it was already so'
+      say(`Approved and carried out; ${already}, so nothing changed. The proposal is spent.`)
+      return EXIT.ok
+    }
     say(`Approved and carried out. ${consequence}`)
     return EXIT.ok
   }
   if (decided.status !== 'failed') {
     // `approved`: the server could not record how the operation ended.
     output.error(
-      `${output.errorStyle.red('error:')} Approved, and the server could not record how the operation ended. Read the user to see where they stand. The proposal is spent: it cannot be approved again.`
+      `${output.errorStyle.red('error:')} Approved, and the server could not record how the operation ended. Check the ${targetWord(decided)} as it is now. The proposal is spent: it cannot be approved again.`
     )
     return EXIT.error
   }
@@ -281,6 +426,12 @@ async function run(context: CommandContext): Promise<number> {
  * proposal would do and to whom, asks, and approves exactly what it showed: the approval
  * repeats the operation and the target, and the server refuses it for anything else.
  *
+ * It runs at a terminal or not at all: where standard input and standard error are not both
+ * a terminal it refuses before any request, and it has no option that answers the question
+ * (no `--yes`), so a program that can run commands cannot approve by running this one. A
+ * key on standard input (`--secret-key-file -`) is refused for the same reason: the answer
+ * is typed there.
+ *
  * @example
  * ```sh
  * TULA_API_URL=https://auth.example.com TULA_SECRET_KEY=… tula approve 0199c2f4-7a10-7c3e-9b1a-5d2e8f4a6c01
@@ -290,17 +441,23 @@ export const approveCommand: Command = {
   name: 'approve',
   summary: 'Approve a change an AI agent proposed, after showing what it does.',
   usage:
-    'tula approve <proposal id> [--env <name>] [--api-url <url>] [--secret-key-file <path>] [--yes] [--json]',
+    'tula approve <proposal id> [--env <name>] [--api-url <url>] [--secret-key-file <path>] [--json]',
   description:
     'Shows a proposal an agent made through `tula mcp` (what it would do, to whom, and when it ' +
-    'expires), asks for confirmation, then approves it: the operation is carried out at once, ' +
+    'expires), asks, then approves it on a typed yes: the operation is carried out at once, ' +
     'and recorded with the agent as its actor and you as the one who approved. A proposal is ' +
     'approved once, and only before it expires.\n\n' +
+    'It needs a terminal: the question is asked there and the answer typed, and no option ' +
+    'answers it (there is no --yes). Away from a terminal, in a script or in CI, it refuses ' +
+    'before it reads or changes anything.\n\n' +
     'The secret key decides the environment and is what makes the approval yours: ' +
     '--secret-key-file, TULA_SECRET_KEY_<NAME> or TULA_SECRET_KEY, never the command line. An ' +
     'agent key cannot approve. Keep the secret key out of the environment the agent runs in.\n\n' +
     'Exit codes: 0 approved and carried out, 1 anything else (declined, expired, already ' +
-    'approved, not carried out, an error).',
+    'approved, not carried out, an error).\n\n' +
+    'What an agent can propose: banning a user, lifting a ban, ending one session, switching ' +
+    'one OAuth provider off. A production environment accepts proposals only where its ' +
+    'settings say so (agents.proposalsInProduction, off by default).',
   maxPositionals: 1,
   options: {
     env: {
@@ -323,16 +480,12 @@ export const approveCommand: Command = {
       type: 'string',
       value: '<path>',
       description:
-        'Read the secret key from a file (- for standard input, piped; then --yes is needed). Default: TULA_SECRET_KEY_<NAME>, then TULA_SECRET_KEY.',
-    },
-    yes: {
-      type: 'boolean',
-      short: 'y',
-      description: 'Approve without asking. The proposal is still printed first.',
+        'Read the secret key from a file (never - for standard input: the answer is typed there). Default: TULA_SECRET_KEY_<NAME>, then TULA_SECRET_KEY.',
     },
     json: {
       type: 'boolean',
-      description: 'Print the proposal as it stands after the run as JSON.',
+      description:
+        'Print the proposal as it stands after the run as JSON. The question is still asked, and the proposal shown first, on standard error.',
     },
   },
   run,

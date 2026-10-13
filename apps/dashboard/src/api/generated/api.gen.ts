@@ -161,9 +161,13 @@ export interface UserBannedEvent {
 }
 
 /**
- * A user’s ban was lifted.
+ * A user’s ban was lifted. With `proposalId` and `approvedBy` (both or neither) when that carried out an agent’s proposal a human approved.
  */
-export interface UserUnbannedEventData { [key: string]: unknown }
+export interface UserUnbannedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  proposalId?: string;
+  approvedBy?: ProposalApprover;
+}
 
 export type UserUnbannedEventTarget = {
   type: 'user';
@@ -172,7 +176,7 @@ export type UserUnbannedEventTarget = {
 };
 
 /**
- * A user’s ban was lifted.
+ * A user’s ban was lifted. With `proposalId` and `approvedBy` (both or neither) when that carried out an agent’s proposal a human approved.
  */
 export interface UserUnbannedEvent {
   /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
@@ -773,12 +777,15 @@ export const SessionRevokedEventDataReason = {
 } as const;
 
 /**
- * A session was ended before it expired.
+ * A session was ended before it expired. With `proposalId` and `approvedBy` (both or neither) when ending it carried out an agent’s proposal a human approved.
  */
 export interface SessionRevokedEventData {
   /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
   userId: string;
   reason: SessionRevokedEventDataReason;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  proposalId?: string;
+  approvedBy?: ProposalApprover;
 }
 
 export type SessionRevokedEventTarget = {
@@ -788,7 +795,7 @@ export type SessionRevokedEventTarget = {
 };
 
 /**
- * A session was ended before it expired.
+ * A session was ended before it expired. With `proposalId` and `approvedBy` (both or neither) when ending it carried out an agent’s proposal a human approved.
  */
 export interface SessionRevokedEvent {
   /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
@@ -1081,7 +1088,7 @@ export const OAuthProviderUpdatedEventDataChangedItem = {
 } as const;
 
 /**
- * An OAuth provider’s credentials were set or changed.
+ * An OAuth provider’s credentials were set or changed, or it was switched on or off. With `proposalId` and `approvedBy` (both or neither) when switching it off carried out an agent’s proposal a human approved.
  */
 export interface OAuthProviderUpdatedEventData {
   provider: OAuthProvider;
@@ -1094,6 +1101,9 @@ export interface OAuthProviderUpdatedEventData {
      */
   additionalClientIdCount?: number;
   weakened?: boolean;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  proposalId?: string;
+  approvedBy?: ProposalApprover;
 }
 
 export type OAuthProviderUpdatedEventTarget = {
@@ -1103,7 +1113,7 @@ export type OAuthProviderUpdatedEventTarget = {
 };
 
 /**
- * An OAuth provider’s credentials were set or changed.
+ * An OAuth provider’s credentials were set or changed, or it was switched on or off. With `proposalId` and `approvedBy` (both or neither) when switching it off carried out an agent’s proposal a human approved.
  */
 export interface OAuthProviderUpdatedEvent {
   /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
@@ -1638,6 +1648,9 @@ export type ProposalCreatedEventDataOperation = typeof ProposalCreatedEventDataO
 
 export const ProposalCreatedEventDataOperation = {
   ban_user: 'ban_user',
+  unban_user: 'unban_user',
+  end_session: 'end_session',
+  disable_oauth_provider: 'disable_oauth_provider',
 } as const;
 
 export type ProposalCreatedEventDataTargetType = typeof ProposalCreatedEventDataTargetType[keyof typeof ProposalCreatedEventDataTargetType];
@@ -1645,6 +1658,8 @@ export type ProposalCreatedEventDataTargetType = typeof ProposalCreatedEventData
 
 export const ProposalCreatedEventDataTargetType = {
   user: 'user',
+  session: 'session',
+  oauth_provider: 'oauth_provider',
 } as const;
 
 /**
@@ -1653,8 +1668,7 @@ export const ProposalCreatedEventDataTargetType = {
 export interface ProposalCreatedEventData {
   operation: ProposalCreatedEventDataOperation;
   targetType: ProposalCreatedEventDataTargetType;
-  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
-  targetId: string;
+  targetId: string | OAuthProvider;
 }
 
 export type ProposalCreatedEventTarget = {
@@ -1684,6 +1698,9 @@ export type ProposalApprovedEventDataOperation = typeof ProposalApprovedEventDat
 
 export const ProposalApprovedEventDataOperation = {
   ban_user: 'ban_user',
+  unban_user: 'unban_user',
+  end_session: 'end_session',
+  disable_oauth_provider: 'disable_oauth_provider',
 } as const;
 
 export type ProposalApprovedEventDataTargetType = typeof ProposalApprovedEventDataTargetType[keyof typeof ProposalApprovedEventDataTargetType];
@@ -1691,6 +1708,8 @@ export type ProposalApprovedEventDataTargetType = typeof ProposalApprovedEventDa
 
 export const ProposalApprovedEventDataTargetType = {
   user: 'user',
+  session: 'session',
+  oauth_provider: 'oauth_provider',
 } as const;
 
 /**
@@ -1699,8 +1718,7 @@ export const ProposalApprovedEventDataTargetType = {
 export interface ProposalApprovedEventData {
   operation: ProposalApprovedEventDataOperation;
   targetType: ProposalApprovedEventDataTargetType;
-  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
-  targetId: string;
+  targetId: string | OAuthProvider;
   /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
   proposedBy: string;
 }
@@ -1732,6 +1750,9 @@ export type ProposalExecutedEventDataOperation = typeof ProposalExecutedEventDat
 
 export const ProposalExecutedEventDataOperation = {
   ban_user: 'ban_user',
+  unban_user: 'unban_user',
+  end_session: 'end_session',
+  disable_oauth_provider: 'disable_oauth_provider',
 } as const;
 
 export type ProposalExecutedEventDataTargetType = typeof ProposalExecutedEventDataTargetType[keyof typeof ProposalExecutedEventDataTargetType];
@@ -1739,6 +1760,8 @@ export type ProposalExecutedEventDataTargetType = typeof ProposalExecutedEventDa
 
 export const ProposalExecutedEventDataTargetType = {
   user: 'user',
+  session: 'session',
+  oauth_provider: 'oauth_provider',
 } as const;
 
 /**
@@ -1747,9 +1770,9 @@ export const ProposalExecutedEventDataTargetType = {
 export interface ProposalExecutedEventData {
   operation: ProposalExecutedEventDataOperation;
   targetType: ProposalExecutedEventDataTargetType;
-  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
-  targetId: string;
+  targetId: string | OAuthProvider;
   approvedBy: ProposalApprover;
+  changed?: boolean;
 }
 
 export type ProposalExecutedEventTarget = {
@@ -1779,6 +1802,9 @@ export type ProposalFailedEventDataOperation = typeof ProposalFailedEventDataOpe
 
 export const ProposalFailedEventDataOperation = {
   ban_user: 'ban_user',
+  unban_user: 'unban_user',
+  end_session: 'end_session',
+  disable_oauth_provider: 'disable_oauth_provider',
 } as const;
 
 export type ProposalFailedEventDataTargetType = typeof ProposalFailedEventDataTargetType[keyof typeof ProposalFailedEventDataTargetType];
@@ -1786,6 +1812,8 @@ export type ProposalFailedEventDataTargetType = typeof ProposalFailedEventDataTa
 
 export const ProposalFailedEventDataTargetType = {
   user: 'user',
+  session: 'session',
+  oauth_provider: 'oauth_provider',
 } as const;
 
 export type ProposalFailedEventDataReason = typeof ProposalFailedEventDataReason[keyof typeof ProposalFailedEventDataReason];
@@ -1795,6 +1823,7 @@ export const ProposalFailedEventDataReason = {
   target_not_found: 'target_not_found',
   error: 'error',
   incomplete: 'incomplete',
+  last_sign_in_method: 'last_sign_in_method',
 } as const;
 
 /**
@@ -1803,8 +1832,7 @@ export const ProposalFailedEventDataReason = {
 export interface ProposalFailedEventData {
   operation: ProposalFailedEventDataOperation;
   targetType: ProposalFailedEventDataTargetType;
-  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
-  targetId: string;
+  targetId: string | OAuthProvider;
   approvedBy: ProposalApprover;
   reason: ProposalFailedEventDataReason;
 }
@@ -2442,6 +2470,25 @@ export interface VerifySessionRequest {
      * @maxLength 4096
      */
   token: string;
+}
+
+export interface AdminSession {
+  id: string;
+  client: SessionClient;
+  /** @nullable */
+  userAgent: string | null;
+  /** @nullable */
+  ipAddress: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  lastActiveAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  expiresAt: string;
+  current: boolean;
+  deviceBound: boolean;
+  userId: string;
+  active: boolean;
 }
 
 export type FlowKind = typeof FlowKind[keyof typeof FlowKind];
@@ -3299,6 +3346,10 @@ export type EnvironmentSettingsStateSettingsAudit = {
   retentionDays?: number | null;
 };
 
+export type EnvironmentSettingsStateSettingsAgents = {
+  proposalsInProduction?: boolean;
+};
+
 export type EnvironmentSettingsStateSettingsNotifications = {
   passwordChanged?: boolean;
   newSignIn?: boolean;
@@ -3340,6 +3391,7 @@ export type EnvironmentSettingsStateSettings = {
   signUp?: EnvironmentSettingsStateSettingsSignUp;
   urls: EnvironmentSettingsStateSettingsUrls;
   audit?: EnvironmentSettingsStateSettingsAudit;
+  agents?: EnvironmentSettingsStateSettingsAgents;
   notifications?: EnvironmentSettingsStateSettingsNotifications;
   mfa?: EnvironmentSettingsStateSettingsMfa;
   passkeys?: EnvironmentSettingsStateSettingsPasskeys;
@@ -3424,6 +3476,10 @@ export type EnvironmentSettingsInputAudit = {
   retentionDays?: number | null;
 };
 
+export type EnvironmentSettingsInputAgents = {
+  proposalsInProduction?: boolean;
+};
+
 export type EnvironmentSettingsInputNotifications = {
   passwordChanged?: boolean;
   newSignIn?: boolean;
@@ -3465,6 +3521,7 @@ export interface EnvironmentSettingsInput {
   signUp?: EnvironmentSettingsInputSignUp;
   urls?: EnvironmentSettingsInputUrls;
   audit?: EnvironmentSettingsInputAudit;
+  agents?: EnvironmentSettingsInputAgents;
   notifications?: EnvironmentSettingsInputNotifications;
   mfa?: EnvironmentSettingsInputMfa;
   passkeys?: EnvironmentSettingsInputPasskeys;
@@ -4483,6 +4540,9 @@ export type ProposalOperation = typeof ProposalOperation[keyof typeof ProposalOp
 
 export const ProposalOperation = {
   ban_user: 'ban_user',
+  unban_user: 'unban_user',
+  end_session: 'end_session',
+  disable_oauth_provider: 'disable_oauth_provider',
 } as const;
 
 export type ProposalTargetType = typeof ProposalTargetType[keyof typeof ProposalTargetType];
@@ -4490,12 +4550,13 @@ export type ProposalTargetType = typeof ProposalTargetType[keyof typeof Proposal
 
 export const ProposalTargetType = {
   user: 'user',
+  session: 'session',
+  oauth_provider: 'oauth_provider',
 } as const;
 
 export interface ProposalTarget {
   type: ProposalTargetType;
-  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
-  id: string;
+  id: string | 'google' | 'github' | 'apple' | 'microsoft' | 'discord' | 'linkedin' | 'x' | 'facebook';
 }
 
 export type ProposalStatus = typeof ProposalStatus[keyof typeof ProposalStatus];
@@ -4522,6 +4583,7 @@ export const ProposalFailureReason = {
   target_not_found: 'target_not_found',
   error: 'error',
   incomplete: 'incomplete',
+  last_sign_in_method: 'last_sign_in_method',
 } as const;
 
 export type ProposalExpiryReason = typeof ProposalExpiryReason[keyof typeof ProposalExpiryReason] | null;
@@ -4548,6 +4610,7 @@ export interface Proposal {
   approvedAt: string | null;
   failureReason: ProposalFailureReason;
   expiryReason: ProposalExpiryReason;
+  changed?: boolean;
 }
 
 export interface CreateProposalRequest {
@@ -5762,6 +5825,108 @@ export function useListUserSessions<TData = Awaited<ReturnType<typeof listUserSe
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getListUserSessionsQueryOptions(userId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetSessionUrl = (sessionId: string,) => {
+
+
+
+
+  return `/v1/admin/sessions/${sessionId}`
+}
+
+/**
+ * One session of the environment by its own id: the user it belongs to, the client kind, user agent, IP address and times, and whether it is still active (`active`: not revoked and not past its stored expiry). An ended session is answered too, so that whoever is asked to end a session can see whose it is and that it is still there to end. Never token material. `current` is always `false`. A session that does not exist or belongs to another environment answers the same 404. A read: nothing is changed or recorded.
+ * @summary Read one session by its id
+ */
+export const getSession = async (sessionId: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<AdminSession> => {
+
+  return dashboardFetch<AdminSession>(getGetSessionUrl(sessionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSessionQueryKey = (sessionId: string,) => {
+    return [
+    `/v1/admin/sessions/${sessionId}`
+    ] as const;
+    }
+
+
+export const getGetSessionQueryOptions = <TData = Awaited<ReturnType<typeof getSession>>, TError = ErrorEnvelope>(sessionId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSession>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSessionQueryKey(sessionId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSession>>> = ({ signal }) => getSession(sessionId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: sessionId !== null && sessionId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSession>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSessionQueryResult = NonNullable<Awaited<ReturnType<typeof getSession>>>
+export type GetSessionQueryError = ErrorEnvelope
+
+
+export function useGetSession<TData = Awaited<ReturnType<typeof getSession>>, TError = ErrorEnvelope>(
+ sessionId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSession>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSession>>,
+          TError,
+          Awaited<ReturnType<typeof getSession>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSession<TData = Awaited<ReturnType<typeof getSession>>, TError = ErrorEnvelope>(
+ sessionId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSession>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSession>>,
+          TError,
+          Awaited<ReturnType<typeof getSession>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSession<TData = Awaited<ReturnType<typeof getSession>>, TError = ErrorEnvelope>(
+ sessionId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSession>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read one session by its id
+ */
+
+export function useGetSession<TData = Awaited<ReturnType<typeof getSession>>, TError = ErrorEnvelope>(
+ sessionId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSession>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetSessionQueryOptions(sessionId,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -9542,7 +9707,7 @@ export const getApproveProposalUrl = (id: string,) => {
 }
 
 /**
- * Approve a proposal and carry out its operation, now. It takes a secret key or a dashboard session, **never an agent key** (`auth.invalid_key`): the approval is a human’s. The body names the operation and the target the human was shown; what is carried out is what the proposal holds, and only when the two are the same. Refused with `resource.conflict` and a fixed `params.reason`: `mismatch` (the body names something else), `already_decided` (a proposal is approved at most once) or `expired`. Nothing is changed by a refused approval. The answer is the proposal afterwards: `executed`, or `failed` with `failureReason` when the operation could not be carried out (the proposal is spent either way). The operation is recorded with the agent as its actor and the approver beside it; the approval itself with the approver as its actor.
+ * Approve a proposal and carry out its operation, now. It takes a secret key or a dashboard session, **never an agent key** (`auth.invalid_key`): the approval is a human’s. The body names the operation and the target the human was shown; what is carried out is what the proposal holds, and only when the two are the same. Refused with `resource.conflict` and a fixed `params.reason`: `mismatch` (the body names something else), `already_decided` (a proposal is approved at most once), `expired`, `agent_key_revoked` or `production_environment` (a production environment whose settings do not, or no longer, accept proposals). Nothing is changed by a refused approval. The answer is the proposal afterwards: `executed`, or `failed` with `failureReason` when the operation could not be carried out (the proposal is spent either way; `last_sign_in_method` when switching a provider off would have left no way to sign in). The operation is recorded with the agent as its actor and the approver beside it; the approval itself with the approver as its actor.
  * @summary Approve a proposal
  */
 export const approveProposal = async (id: string,

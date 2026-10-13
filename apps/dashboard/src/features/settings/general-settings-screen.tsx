@@ -123,6 +123,21 @@ function GeneralFields({ draft, update, errors }: SettingsEditor) {
           ))}
         </div>
       </Section>
+      <Section
+        title='AI agents'
+        description='What an agent that holds an agent key of this environment may ask for. An agent key reads; a change it asks for is a proposal, and nothing happens until a person approves it with a secret key.'
+      >
+        <div>
+          <SwitchRow
+            label='Accept proposals in production'
+            description='Off: where this is a production environment, every proposal is refused, when it is made and when it is approved. An environment that is not a production one accepts proposals whatever this says.'
+            checked={draft.agents?.proposalsInProduction ?? false}
+            onChange={(checked) =>
+              update((current) => ({ ...current, agents: { proposalsInProduction: checked } }))
+            }
+          />
+        </div>
+      </Section>
       <Section title='Audit log'>
         <TextField
           label='Keep audit entries for (days)'
@@ -147,8 +162,9 @@ function GeneralFields({ draft, update, errors }: SettingsEditor) {
 }
 
 /**
- * General settings of an environment: its name, URLs, notices and audit retention. (Text
- * messages have a screen of their own, `features/sms`.)
+ * General settings of an environment: its name, URLs, notices, whether a production
+ * environment accepts an agent's proposals, and audit retention. (Text messages have a
+ * screen of their own, `features/sms`.)
  *
  * @returns The screen.
  */

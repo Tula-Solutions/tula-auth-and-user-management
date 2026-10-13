@@ -576,7 +576,11 @@ Changes pending. Run `tula apply` to make them.
   (`sessions.profiles.<name>.deviceBinding`: `required` to `optional` or `none`, `optional`
   to `none`; a native app's refresh token is then usable without the device. Asking more is
   an ordinary change. A profile that leaves `deviceBinding` out asks for the default,
-  `optional` (`none` for `web`), which is flagged where the server has `required`), an audit retention period set or shortened, a higher daily limit of
+  `optional` (`none` for `web`), which is flagged where the server has `required`), an audit retention period set or shortened, a production environment
+  that starts accepting an agent's proposals (`agents.proposalsInProduction`: `false` to
+  `true`; [proposals.md](proposals.md#production-environments). Left out of the file it is
+  `false`, and managed: a file that says nothing switches it off where the server has it
+  on, which is an ordinary change), a higher daily limit of
   text messages (`sms.dailyMessageLimit`: it is the most an attack on the environment can
   make it send in a day; a file that leaves it out asks for the default, 500, which is
   flagged where the server has a lower one), and a texted code that can sign someone in

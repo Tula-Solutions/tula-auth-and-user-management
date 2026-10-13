@@ -51,6 +51,11 @@ describe('fixtures', () => {
     // Fields that belong to another `method` of the same type than the one the fixture shows.
     const elsewhere: Partial<Record<(typeof ACTIVITY_TYPES)[number], string[]>> = {
       'user.passkey_removed': ['canStillSignIn'],
+      // The fixtures show a person's own change; one that carried out an agent's proposal
+      // names it and who approved it (`user.banned`'s fixture shows that shape).
+      'user.unbanned': ['proposalId', 'approvedBy'],
+      'session.revoked': ['proposalId', 'approvedBy'],
+      'oauth_provider.updated': ['proposalId', 'approvedBy'],
     }
     for (const type of ACTIVITY_TYPES) {
       expect(
@@ -248,6 +253,75 @@ describe('user.banned', () => {
     expect(sorted(Object.keys(data.shape))).toEqual(['approvedBy', 'proposalId'])
     expect(z.globalRegistry.get(data)?.ref).toBe('UserBannedEventData')
   })
+})
+
+// The three later operations of a proposal (ADR 0053): each is recorded by the entry the
+// change always had, which names the proposal and who approved it, both or neither.
+describe.each([
+  ['user.unbanned', {}, 'UserUnbannedEventData'],
+  [
+    'session.revoked',
+    { userId: '0199c2f4-7a10-7c3e-9b1a-5d2e8f4a6c01', reason: 'revoked_by_admin' },
+    'SessionRevokedEventData',
+  ],
+  [
+    'oauth_provider.updated',
+    { provider: 'github', changed: ['enabled'] },
+    'OAuthProviderUpdatedEventData',
+  ],
+] as const)('%s carrying out a proposal', (type, own, ref) => {
+  const fixture = EVENT_FIXTURES[type]
+  const { proposalId, approvedBy } = EVENT_FIXTURES['user.banned'].data
+  const withData = (data: Record<string, unknown>) =>
+    EVENT_SCHEMAS[type].safeParse({ ...fixture, data: { ...own, ...data } }).success
+
+  test('a person’s own change names no proposal', () => {
+    expect(withData({})).toBe(true)
+  })
+
+  test('one that carried out a proposal names it and who approved it', () => {
+    expect(withData({ proposalId, approvedBy })).toBe(true)
+  })
+
+  test('one of the two without the other is refused', () => {
+    expect(withData({ proposalId })).toBe(false)
+    expect(withData({ approvedBy })).toBe(false)
+  })
+
+  test('an agent is never the approver, and the proposal is named by an id', () => {
+    expect(withData({ proposalId, approvedBy: { type: 'agent', id: proposalId } })).toBe(false)
+    expect(withData({ proposalId: 'the proposal', approvedBy })).toBe(false)
+  })
+
+  test('the data schema still has a shape and its ref', () => {
+    const data = EVENT_DATA_SCHEMAS[type]
+    expect(Object.keys(data.shape)).toContain('proposalId')
+    expect(Object.keys(data.shape)).toContain('approvedBy')
+    expect(z.globalRegistry.get(data)?.ref).toBe(ref)
+  })
+})
+
+describe('what a proposal event says of its target', () => {
+  const fixture = EVENT_FIXTURES['proposal.created']
+  const withData = (data: Record<string, unknown>) =>
+    EVENT_SCHEMAS['proposal.created'].safeParse({ ...fixture, data }).success
+
+  test.each([
+    ['a session by its id', { operation: 'end_session', targetType: 'session' }],
+    [
+      'a provider by its name from the closed list',
+      { operation: 'disable_oauth_provider', targetType: 'oauth_provider', targetId: 'github' },
+    ],
+  ])('%s', (_what, data) => {
+    expect(withData({ ...fixture.data, ...data })).toBe(true)
+  })
+
+  test.each(['okta', 'Google', 'google ', 'maya@example.com', ''])(
+    'a target id that is neither an id nor a provider’s name is refused: %j',
+    (targetId) => {
+      expect(withData({ ...fixture.data, targetId })).toBe(false)
+    }
+  )
 })
 
 describe('environment.settings_updated', () => {

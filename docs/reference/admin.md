@@ -241,6 +241,8 @@ export interface Operations {
   getNativeApp: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['NativeApp'] }
   /** Read a proposal (`GET /v1/admin/proposals/{id}`). */
   getProposal: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['Proposal'] }
+  /** Read one session by its id (`GET /v1/admin/sessions/{sessionId}`). */
+  getSession: { params: { sessionId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['AdminSession'] }
   /** Codes texted and used, by destination prefix (`GET /v1/admin/sms/usage`). */
   getSmsUsage: { params: Record<string, never>; query: { days?: number }; headers: Record<string, never>; body: undefined; response: Schemas['SmsUsage'] }
   /** Get a user (`GET /v1/admin/users/{userId}`). */
@@ -370,6 +372,19 @@ export interface Schemas {
   }
   ActivityType: 'user.created' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed'
   AdditionalClientIds: string[]
+  AdminSession: {
+    id: string
+    client: Schemas['SessionClient']
+    userAgent: string | null
+    ipAddress: string | null
+    createdAt: string
+    lastActiveAt: string
+    expiresAt: string
+    current: boolean
+    deviceBound: boolean
+    userId: string
+    active: boolean
+  }
   AndroidApp: {
     id: string
     createdAt: string
@@ -629,6 +644,9 @@ export interface Schemas {
     audit?: {
       retentionDays?: number | null
     }
+    agents?: {
+      proposalsInProduction?: boolean
+    }
     notifications?: {
       passwordChanged?: boolean
       newSignIn?: boolean
@@ -690,6 +708,9 @@ export interface Schemas {
       }
       audit?: {
         retentionDays?: number | null
+      }
+      agents?: {
+        proposalsInProduction?: boolean
       }
       notifications?: {
         passwordChanged?: boolean
@@ -1082,6 +1103,8 @@ export interface Schemas {
     created?: boolean
     additionalClientIdCount?: number
     weakened?: boolean
+    proposalId?: string
+    approvedBy?: Schemas['ProposalApprover']
   }
   PaginationMeta: {
     totalCount: number
@@ -1139,8 +1162,9 @@ export interface Schemas {
     expiresAt: string
     approvedBy: Schemas['ProposalApprover'] | null
     approvedAt: string | null
-    failureReason: 'target_not_found' | 'error' | 'incomplete' | null
+    failureReason: 'target_not_found' | 'error' | 'incomplete' | 'last_sign_in_method' | null
     expiryReason: 'time' | 'agent_key_revoked' | null
+    changed?: boolean
   }
   ProposalApprovedEvent: {
     id: string
@@ -1156,9 +1180,9 @@ export interface Schemas {
     test?: true
   }
   ProposalApprovedEventData: {
-    operation: 'ban_user'
-    targetType: 'user'
-    targetId: string
+    operation: 'ban_user' | 'unban_user' | 'end_session' | 'disable_oauth_provider'
+    targetType: 'user' | 'session' | 'oauth_provider'
+    targetId: string | Schemas['OAuthProvider']
     proposedBy: string
   }
   ProposalApprover: {
@@ -1179,9 +1203,9 @@ export interface Schemas {
     test?: true
   }
   ProposalCreatedEventData: {
-    operation: 'ban_user'
-    targetType: 'user'
-    targetId: string
+    operation: 'ban_user' | 'unban_user' | 'end_session' | 'disable_oauth_provider'
+    targetType: 'user' | 'session' | 'oauth_provider'
+    targetId: string | Schemas['OAuthProvider']
   }
   ProposalExecutedEvent: {
     id: string
@@ -1197,10 +1221,11 @@ export interface Schemas {
     test?: true
   }
   ProposalExecutedEventData: {
-    operation: 'ban_user'
-    targetType: 'user'
-    targetId: string
+    operation: 'ban_user' | 'unban_user' | 'end_session' | 'disable_oauth_provider'
+    targetType: 'user' | 'session' | 'oauth_provider'
+    targetId: string | Schemas['OAuthProvider']
     approvedBy: Schemas['ProposalApprover']
+    changed?: boolean
   }
   ProposalFailedEvent: {
     id: string
@@ -1216,20 +1241,20 @@ export interface Schemas {
     test?: true
   }
   ProposalFailedEventData: {
-    operation: 'ban_user'
-    targetType: 'user'
-    targetId: string
+    operation: 'ban_user' | 'unban_user' | 'end_session' | 'disable_oauth_provider'
+    targetType: 'user' | 'session' | 'oauth_provider'
+    targetId: string | Schemas['OAuthProvider']
     approvedBy: Schemas['ProposalApprover']
-    reason: 'target_not_found' | 'error' | 'incomplete'
+    reason: 'target_not_found' | 'error' | 'incomplete' | 'last_sign_in_method'
   }
   ProposalList: {
     data: Schemas['Proposal'][]
   }
-  ProposalOperation: 'ban_user'
+  ProposalOperation: 'ban_user' | 'unban_user' | 'end_session' | 'disable_oauth_provider'
   ProposalStatus: 'pending' | 'expired' | 'approved' | 'executed' | 'failed'
   ProposalTarget: {
-    type: 'user'
-    id: string
+    type: 'user' | 'session' | 'oauth_provider'
+    id: string | 'google' | 'github' | 'apple' | 'microsoft' | 'discord' | 'linkedin' | 'x' | 'facebook'
   }
   RedirectUrl: string
   RevokedSessions: {
@@ -1354,6 +1379,8 @@ export interface Schemas {
   SessionRevokedEventData: {
     userId: string
     reason: 'sign_out' | 'revoked_by_user' | 'revoked_by_admin' | 'password_changed' | 'user_banned' | 'mfa_changed' | 'session_limit'
+    proposalId?: string
+    approvedBy?: Schemas['ProposalApprover']
   }
   SessionSettings: {
     profiles?: {
@@ -1814,7 +1841,10 @@ export interface Schemas {
     data: Schemas['UserUnbannedEventData']
     test?: true
   }
-  UserUnbannedEventData: Record<string, never>
+  UserUnbannedEventData: {
+    proposalId?: string
+    approvedBy?: Schemas['ProposalApprover']
+  }
   VerifySessionRequest: {
     token: string
   }

@@ -1,7 +1,8 @@
+import { OAUTH_PROVIDERS } from '@tula/contract'
 import * as z from 'zod'
 import { detectFramework, SCAFFOLD_FRAMEWORKS, type ScaffoldFramework } from './detect'
 import { ToolError } from './errors'
-import type { ProposingAdmin } from './proposing'
+import type { ProposalRequest, ProposingAdmin } from './proposing'
 import type { ReadOnlyAdmin } from './read-only'
 import { project, S, type Shape } from './sanitize'
 import { SCAFFOLD_FILES } from './scaffolds.gen'
@@ -232,6 +233,32 @@ function shaped(value: unknown, shape: Shape): Record<string, unknown> {
   return projected as Record<string, unknown>
 }
 
+/**
+ * Ask for one change and answer what a propose tool answers: the proposal, projected, and
+ * the two fixed fields that say nothing has happened.
+ *
+ * The answer must be **the proposal that was asked for**: the same operation on the same
+ * target. One that names anything else is a failure, never a result: a reader would
+ * otherwise be told, in the API's name, that something else is waiting for approval. What
+ * is left of an answer after that is ids, times, a status and the server's sentence, each
+ * cleaned and capped by the projection.
+ */
+async function ask(
+  proposals: ProposingAdmin,
+  request: ProposalRequest
+): Promise<Record<string, unknown>> {
+  const proposal = shaped(await proposals.propose(request), PROPOSAL)
+  const target = proposal.target as { type?: unknown; id?: unknown } | undefined
+  if (
+    proposal.operation !== request.operation ||
+    target?.type !== request.target.type ||
+    target.id !== request.target.id
+  ) {
+    throw new ToolError('response.invalid', 'The answer was not the proposal that was asked for.')
+  }
+  return { proposal, changed: false, nextStep: NEXT_STEP }
+}
+
 /** Leave out what was not given, so that the API applies its own defaults. */
 function given<T extends Record<string, unknown>>(query: T): T {
   return Object.fromEntries(Object.entries(query).filter(([, value]) => value !== undefined)) as T
@@ -247,6 +274,14 @@ const listUsersInput = z.strictObject({
     .describe('The order; a leading "-" is descending.'),
 })
 const userInput = z.strictObject({ userId: id.describe('The user’s id.') })
+const sessionInput = z.strictObject({
+  sessionId: id.describe('The session’s id, as list_user_sessions returns it.'),
+})
+// The provider is one of the API's closed list: a name that is not on it is refused here,
+// before any request.
+const providerInput = z.strictObject({
+  provider: z.enum(OAUTH_PROVIDERS).describe('The provider, as list_oauth_providers names it.'),
+})
 const auditInput = z.strictObject({
   action: z
     .string()
@@ -457,7 +492,7 @@ export const TOOLS: readonly ToolDefinition[] = [
     name: 'get_settings',
     title: 'Get the environment’s settings',
     group: 'read',
-    description: `The environment’s settings document (password policy, sign-in methods, allowed origins and redirect URLs, sessions, two-step verification), its revision, and which tool manages it (managedBy).${UNTRUSTED}`,
+    description: `The environment’s settings document (password policy, sign-in methods, allowed origins and redirect URLs, sessions, two-step verification, whether a production environment accepts proposals: agents.proposalsInProduction), its revision, and which tool manages it (managedBy).${UNTRUSTED}`,
     input: noInput,
     run: async ({ reads }) => shaped(await reads().read('getEnvironmentSettings'), SETTINGS_SHAPE),
   },
@@ -487,13 +522,41 @@ export const TOOLS: readonly ToolDefinition[] = [
     group: 'propose',
     description: `Ask for a user to be banned (every session of theirs ends and they cannot sign in until an administrator lifts the ban).${PROPOSES}`,
     input: userInput,
-    run: async ({ proposals }, input: z.infer<typeof userInput>) => {
-      const answer = await proposals().propose({
-        operation: 'ban_user',
-        target: { type: 'user', id: input.userId },
-      })
-      return { proposal: shaped(answer, PROPOSAL), changed: false, nextStep: NEXT_STEP }
-    },
+    run: ({ proposals }, input: z.infer<typeof userInput>) =>
+      ask(proposals(), { operation: 'ban_user', target: { type: 'user', id: input.userId } }),
+  },
+  {
+    name: 'propose_unban_user',
+    title: 'Propose lifting a user’s ban',
+    group: 'propose',
+    description: `Ask for a user’s ban to be lifted (they can sign in again; the sessions that ended when they were banned stay ended).${PROPOSES}`,
+    input: userInput,
+    run: ({ proposals }, input: z.infer<typeof userInput>) =>
+      ask(proposals(), { operation: 'unban_user', target: { type: 'user', id: input.userId } }),
+  },
+  {
+    name: 'propose_end_session',
+    title: 'Propose ending one session',
+    group: 'propose',
+    description: `Ask for one session to be ended, by its id (whoever holds it is signed out and has to sign in again; the user’s other sessions and the account are left as they are). One session a proposal: there is no tool that ends every session of a user.${PROPOSES}`,
+    input: sessionInput,
+    run: ({ proposals }, input: z.infer<typeof sessionInput>) =>
+      ask(proposals(), {
+        operation: 'end_session',
+        target: { type: 'session', id: input.sessionId },
+      }),
+  },
+  {
+    name: 'propose_disable_oauth_provider',
+    title: 'Propose switching an OAuth provider off',
+    group: 'propose',
+    description: `Ask for sign-in with one OAuth provider to be switched off (nobody can sign in or sign up with it until an administrator switches it on again; its credentials are kept). The API refuses it, here and again when it is approved, where it would leave the environment with no way to sign in. There is no tool that switches a provider on, removes one or changes its credentials.${PROPOSES}`,
+    input: providerInput,
+    run: ({ proposals }, input: z.infer<typeof providerInput>) =>
+      ask(proposals(), {
+        operation: 'disable_oauth_provider',
+        target: { type: 'oauth_provider', id: input.provider },
+      }),
   },
   {
     name: 'draft_settings_change',

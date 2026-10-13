@@ -33,6 +33,23 @@ export const SessionSchema = z
   })
   .meta({ ref: 'Session' })
 
+/**
+ * One session as an administrator reads it by its id
+ * (`GET /v1/admin/sessions/{sessionId}`): a {@link SessionSchema} with whose session it is
+ * and whether it is still active. An ended session is read too, which is what tells an
+ * administrator that there is nothing left to end. Never token material; `current` is
+ * always `false`.
+ */
+export const AdminSessionSchema = SessionSchema.extend({
+  /** The user the session belongs to. */
+  userId: z.string(),
+  /**
+   * Whether the session is active by what is stored: not revoked and not past its stored
+   * expiry. A session profile tightened since can still end it at its next request.
+   */
+  active: z.boolean(),
+}).meta({ ref: 'AdminSession' })
+
 /** The signed-in user's active sessions, most recently active first. */
 export const SessionListSchema = z
   .object({ data: z.array(SessionSchema) })
@@ -71,6 +88,8 @@ export const RevokedSessionsSchema = z
 export type SessionClient = z.infer<typeof SessionClientSchema>
 /** A signed-in device. */
 export type Session = z.infer<typeof SessionSchema>
+/** One session as an administrator reads it by its id. See {@link AdminSessionSchema}. */
+export type AdminSession = z.infer<typeof AdminSessionSchema>
 /** List of sessions. */
 export type SessionList = z.infer<typeof SessionListSchema>
 /** Refresh / sign-out request body. */

@@ -246,6 +246,20 @@ const Audit = z.object({
   retentionDays: z.number().int().min(1).max(MAX_AUDIT_RETENTION_DAYS).nullable().default(null),
 })
 
+const Agents = z.object({
+  /**
+   * Whether a **production** environment accepts proposals from an AI agent (ADR 0053):
+   * `false` (the default) refuses every one, when it is asked for and again when it is
+   * approved, so switching this off also stops what was asked for and nobody has approved.
+   * It says nothing about an environment that is not a production one: there an agent key
+   * proposes whatever this is. A proposal still changes nothing until a person approves it
+   * with their own credential; switching this on is a weakening all the same
+   * (`settingsWeakenings`), because it lets an agent put changes to production in front of
+   * a person at all.
+   */
+  proposalsInProduction: z.boolean().default(false),
+})
+
 const Notifications = z.object({
   /**
    * Email the account's address when its password is changed, reset, set by an administrator or
@@ -491,6 +505,8 @@ const minLengthFloor = {
  * - `urls`: browser origins allowed by CORS, and URLs flows may redirect to.
  * - `audit.retentionDays`: how many days audit entries are kept before the server deletes
  *   them for good; `null` (the default) keeps them for ever.
+ * - `agents.proposalsInProduction`: whether a production environment accepts proposals from
+ *   an AI agent (`false` by default; ADR 0053). Switching it on is a weakening.
  * - `notifications`: which security notices are emailed to an account's owner
  *   (`passwordChanged`, `newSignIn`, `mfaChanged`, `identityChanged`). All are on unless switched off.
  * - `mfa.policy`: whether two-step verification is `off`, `optional` (the default) or
@@ -518,6 +534,7 @@ export const EnvironmentSettingsSchema = z
     signUp: SignUp.strict().prefault({}),
     urls: Urls.strict().prefault({}),
     audit: Audit.strict().prefault({}),
+    agents: Agents.strict().prefault({}),
     notifications: Notifications.strict().prefault({}),
     mfa: MfaInput.prefault({}),
     passkeys: Passkeys.strict().prefault({}),
@@ -570,6 +587,7 @@ export const EnvironmentSettingsInputSchema = z
       })
       .prefault({}),
     audit: Audit.strict().prefault({}),
+    agents: Agents.strict().prefault({}),
     notifications: Notifications.strict().prefault({}),
     mfa: MfaInput.prefault({}),
     passkeys: Passkeys.strict().prefault({}),
@@ -614,6 +632,7 @@ const Stored = z.object({
   signUp: SignUp.prefault({}),
   urls: Urls.prefault({}),
   audit: Audit.prefault({}),
+  agents: Agents.prefault({}),
   notifications: Notifications.prefault({}),
   mfa: Mfa.prefault({}),
   passkeys: Passkeys.prefault({}),

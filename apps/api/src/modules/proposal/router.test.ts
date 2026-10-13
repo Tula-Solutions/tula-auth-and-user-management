@@ -175,6 +175,20 @@ describe('proposing', () => {
     expect(await deps.proposals.list(TEST_TENANT.environmentId, 10)).toEqual([])
   })
 
+  test('an existing user named in upper case is a refused request, never a stored proposal', async () => {
+    // The test ids count up: make users until one's id has a letter to put in upper case.
+    let maya = await createUser()
+    for (let n = 0; maya.id === maya.id.toUpperCase() && n < 40; n += 1) {
+      maya = await createUser(`maya+${n}@northline.app`)
+    }
+    expect(maya.id.toUpperCase()).not.toBe(maya.id)
+    const res = await call('POST', '/v1/agent/proposals', AK, banOf(maya.id.toUpperCase()))
+    expect(res.status).toBe(422)
+    // The same user in the server's own spelling is still proposed about, as a first one.
+    const proposal = await propose(maya.id)
+    expect(proposal.target.id).toBe(maya.id)
+  })
+
   test('a dashboard session cannot propose', async () => {
     const maya = await createUser()
     const cookie = await dashboardSignIn(app)
@@ -243,11 +257,25 @@ describe('proposing', () => {
     for (let i = 0; i <= Proposals.PROPOSALS_PER_MINUTE; i++) {
       users.push(await createUser(`user${i}@northline.app`))
     }
+    // Two operations, so that neither reaches its own count
+    // (`PROPOSALS_PER_OPERATION_PER_MINUTE`) before the environment reaches the one all
+    // operations share.
+    expect(Proposals.PROPOSALS_PER_OPERATION_PER_MINUTE * 2).toBeGreaterThanOrEqual(
+      Proposals.PROPOSALS_PER_MINUTE
+    )
     for (let i = 0; i < Proposals.PROPOSALS_PER_MINUTE; i++) {
-      await propose((users[i] as User).id, i % 2 === 0 ? AK : SECOND_AK)
+      const res = await call('POST', '/v1/agent/proposals', i % 2 === 0 ? AK : SECOND_AK, {
+        operation: i < Proposals.PROPOSALS_PER_MINUTE / 2 ? 'ban_user' : 'unban_user',
+        target: { type: 'user', id: (users[i] as User).id },
+      })
+      expect(res.status).toBe(201)
     }
     const last = users[Proposals.PROPOSALS_PER_MINUTE] as User
-    const refused = await call('POST', '/v1/agent/proposals', AK, banOf(last.id))
+    // A third operation, of which none was asked: it is the shared count that refuses.
+    const refused = await call('POST', '/v1/agent/proposals', AK, {
+      operation: 'end_session',
+      target: { type: 'session', id: UNKNOWN },
+    })
     expect(refused.status).toBe(429)
     // Another environment has its own allowance.
     const elsewhere = await createUser('maya@northline.app', OTHER_SK)
@@ -295,7 +323,7 @@ describe('approving', () => {
         type: 'proposal.executed',
         actor: agent,
         target: { type: 'proposal', id: proposal.id },
-        data: { ...about, approvedBy },
+        data: { ...about, approvedBy, changed: true },
       },
     ])
     // The events a webhook would deliver say the same: the agent, and the human beside it.

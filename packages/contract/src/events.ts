@@ -60,10 +60,29 @@ function data<Shape extends z.ZodRawShape>(name: string, description: string, sh
   return z.object(shape).meta({ ref: `${name}EventData`, description })
 }
 
-/** A ban names the proposal it carried out and who approved it together, or neither. */
-function banIsWhole(ban: { proposalId?: string; approvedBy?: unknown }): boolean {
-  return (ban.proposalId === undefined) === (ban.approvedBy === undefined)
+/**
+ * A change names the proposal it carried out and who approved it together, or neither
+ * (`user.banned`, `user.unbanned`, `session.revoked`, `oauth_provider.updated`).
+ */
+function proposalIsWhole(change: { proposalId?: string; approvedBy?: unknown }): boolean {
+  return (change.proposalId === undefined) === (change.approvedBy === undefined)
 }
+
+const PROPOSAL_IS_WHOLE = { message: '`proposalId` and `approvedBy` go together' }
+
+/**
+ * What the entry of a change says when the change carried out an agent's proposal a human
+ * approved (ADR 0053): both fields, or neither for a change an administrator or a user made.
+ */
+const carriedOut = () => ({
+  /**
+   * The proposal this change carried out: present exactly when the actor is an `agent`,
+   * whose proposal a human approved. Absent otherwise.
+   */
+  proposalId: id().optional(),
+  /** The human who approved that proposal. Present exactly when `proposalId` is. */
+  approvedBy: ProposalApproverSchema.optional(),
+})
 
 /** Which passkey removal carries which fields; see `user.passkey_removed`. */
 function passkeyRemovalIsWhole(removal: {
@@ -85,7 +104,8 @@ const provider = OAuthProviderSchema
 const proposed = {
   operation: z.enum(PROPOSAL_OPERATIONS),
   targetType: z.enum(PROPOSAL_TARGET_TYPES),
-  targetId: id(),
+  // A user's or a session's id, or a provider's name: a UUID or a value of a closed list.
+  targetId: z.union([id(), provider]),
 }
 
 /**
@@ -189,13 +209,17 @@ export const EVENT_DATA_SCHEMAS = {
       /** The human who approved that proposal. Present exactly when `proposalId` is. */
       approvedBy: ProposalApproverSchema.optional(),
     })
-    .refine(banIsWhole, { message: '`proposalId` and `approvedBy` go together' })
+    .refine(proposalIsWhole, PROPOSAL_IS_WHOLE)
     .meta({
       ref: 'UserBannedEventData',
       description:
         'A user was banned; their sessions end. With `proposalId` and `approvedBy` (both or neither) when the ban carried out an agent’s proposal a human approved.',
     }),
-  'user.unbanned': data('UserUnbanned', 'A user’s ban was lifted.', {}),
+  'user.unbanned': z.object(carriedOut()).refine(proposalIsWhole, PROPOSAL_IS_WHOLE).meta({
+    ref: 'UserUnbannedEventData',
+    description:
+      'A user’s ban was lifted. With `proposalId` and `approvedBy` (both or neither) when that carried out an agent’s proposal a human approved.',
+  }),
   'user.deleted': data('UserDeleted', 'A user account was deleted.', {}),
   'user.password_changed': data(
     'UserPasswordChanged',
@@ -341,18 +365,28 @@ export const EVENT_DATA_SCHEMAS = {
      */
     deviceBound: z.boolean().optional(),
   }),
-  'session.revoked': data('SessionRevoked', 'A session was ended before it expired.', {
-    userId: id(),
-    reason: z.enum([
-      'sign_out',
-      'revoked_by_user',
-      'revoked_by_admin',
-      'password_changed',
-      'user_banned',
-      'mfa_changed',
-      'session_limit',
-    ]),
-  }),
+  'session.revoked': z
+    .object({
+      userId: id(),
+      reason: z.enum([
+        'sign_out',
+        'revoked_by_user',
+        'revoked_by_admin',
+        'password_changed',
+        'user_banned',
+        'mfa_changed',
+        'session_limit',
+      ]),
+      // Only for the one session an approved `end_session` proposal named: never for the
+      // sessions a ban or a lifted ban ended on the way (their own entry names the proposal).
+      ...carriedOut(),
+    })
+    .refine(proposalIsWhole, PROPOSAL_IS_WHOLE)
+    .meta({
+      ref: 'SessionRevokedEventData',
+      description:
+        'A session was ended before it expired. With `proposalId` and `approvedBy` (both or neither) when ending it carried out an agent’s proposal a human approved.',
+    }),
   'session.reuse_detected': data(
     'SessionReuseDetected',
     'A rotated refresh token was presented again: the session was ended as possibly stolen.',
@@ -444,10 +478,8 @@ export const EVENT_DATA_SCHEMAS = {
       outsideConfig: z.boolean().optional(),
     }
   ),
-  'oauth_provider.updated': data(
-    'OAuthProviderUpdated',
-    'An OAuth provider’s credentials were set or changed.',
-    {
+  'oauth_provider.updated': z
+    .object({
       provider,
       /** Which fields changed. Names only: `secret` says a secret changed, never what it is. */
       changed: z
@@ -475,8 +507,15 @@ export const EVENT_DATA_SCHEMAS = {
        * (`oauthProviderWeakenings`); absent otherwise.
        */
       weakened: z.boolean().optional(),
-    }
-  ),
+      // Only for a provider switched off by an approved `disable_oauth_provider` proposal.
+      ...carriedOut(),
+    })
+    .refine(proposalIsWhole, PROPOSAL_IS_WHOLE)
+    .meta({
+      ref: 'OAuthProviderUpdatedEventData',
+      description:
+        'An OAuth provider’s credentials were set or changed, or it was switched on or off. With `proposalId` and `approvedBy` (both or neither) when switching it off carried out an agent’s proposal a human approved.',
+    }),
   'oauth_provider.deleted': data(
     'OAuthProviderDeleted',
     'An OAuth provider’s credentials were removed.',
@@ -604,7 +643,16 @@ export const EVENT_DATA_SCHEMAS = {
   'proposal.executed': data(
     'ProposalExecuted',
     'An approved proposal’s operation was carried out. The actor is the agent that asked.',
-    { ...proposed, approvedBy: ProposalApproverSchema }
+    {
+      ...proposed,
+      approvedBy: ProposalApproverSchema,
+      /**
+       * Whether the operation changed its target. `false` when the target was already so
+       * when it ran: the operation's own entry (`user.unbanned`, …) was then not written.
+       * Absent from entries recorded before the field.
+       */
+      changed: z.boolean().optional(),
+    }
   ),
   'proposal.failed': data(
     'ProposalFailed',

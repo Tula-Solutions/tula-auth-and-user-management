@@ -341,6 +341,10 @@ function redirectWeakenings(
  * - `audit.retentionDays`: a period is set where there was none, or is made shorter. The
  *   server then deletes the audit entries older than it, for good: the record of what
  *   happened gets shorter. A longer period, or none where there was one, is not listed;
+ * - `agents.proposalsInProduction`: switched on (ADR 0053). A production environment then
+ *   accepts changes an AI agent asks for, each still waiting for a person's approval. It is
+ *   listed whatever kind the environment is (this function sees the document alone), and
+ *   switching it off never is;
  * - `notifications.*`: a security notice that was on is switched off (the owner would no
  *   longer be told);
  * - `mfa.policy`: the policy moves towards `off` (`required` → `optional` → `off`);
@@ -398,6 +402,9 @@ export function settingsWeakenings(
   const paths = passwordWeakenings(before.password, after.password)
   if (shorterRetention(before.audit.retentionDays, after.audit.retentionDays)) {
     paths.push('audit.retentionDays')
+  }
+  if (!before.agents.proposalsInProduction && after.agents.proposalsInProduction) {
+    paths.push('agents.proposalsInProduction')
   }
   for (const notice of NOTICES) {
     if (before.notifications[notice] && !after.notifications[notice]) {

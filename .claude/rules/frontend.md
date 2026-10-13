@@ -101,6 +101,10 @@ constraints (no Tailwind, no generated API hooks): see `sdk.md`. The reasons are
   `sms_sender` diagnostic in the server's words; do not infer it.
 - Settings screens are a `SettingsFrame` (one save model: `If-Match`, 412, weakening and
   managed-by confirmations). Do not write another save path.
+- Whether a production environment accepts an agent's proposals (ADR 0053) is one switch
+  on the general settings screen ("AI agents"), inside the same draft. Switching it on is
+  the contract's weakening `agents.proposalsInProduction`, said by `describeWeakening`;
+  the screen has no rule of its own, and no screen approves a proposal (TULA-40).
 - A destructive action goes through `ConfirmDialog`, names what it acts on, and passes
   `requireText` in a production environment.
 - Server text is rendered as text: no `dangerouslySetInnerHTML`. A link is a route of the app

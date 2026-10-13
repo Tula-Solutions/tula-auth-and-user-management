@@ -270,7 +270,8 @@ Serves Tula's [Model Context Protocol](https://modelcontextprotocol.io) server o
 input and output, for an MCP client to start as a child process. It has read tools (users,
 sessions, audit entries, settings, OAuth providers, the doctor's checks), scaffold tools
 (the provider, a protected route, a sign-in page) and, with an agent key, propose tools
-(ask for a user to be banned). **No tool changes live data and none returns a secret**: a
+(ask for a user to be banned or a ban lifted, one session ended, one provider switched
+off). **No tool changes live data and none returns a secret**: a
 proposal does nothing until a person approves it with [`tula approve`](#tula-approve). The
 tools, the client configuration and exactly what is returned are in [docs/mcp.md](mcp.md).
 
@@ -303,21 +304,43 @@ tula approve 0199c2f4-7a10-7c3e-9b1a-5d2e8f4a6c01
 
 A person's answer to a change an assistant proposed through `tula mcp`
 ([proposals.md](proposals.md), [ADR 0053](adr/0053-proposals.md)). It reads the proposal,
-and the user it is about, with **your secret key**; prints who asked, what approving does,
-to whom and when the proposal expires; asks; and approves exactly what it printed. The
+and what it is about, with **your secret key**: a user with their address and whether they
+are banned, a session with whose it is (the user's id, address and name), the kind of
+client, when it was signed in and whether it is live now or has already ended (live by
+what is stored; a profile tightened since may end it at its next request), a provider
+as it is now ("on now", "already off", "not configured now"). What could not be read is
+said in those words beside the id ("could not be read", "no such session now") and never
+guessed: you decide with that in front of you. It prints who asked, what approving does, to what and when the proposal
+expires; asks; and approves exactly what it printed. The
 change is carried out at once and recorded with the agent as its actor and your key as the
-one that approved.
+one that approved. When there was nothing left to change by then (the session had already
+ended, the user was not banned, the provider was already off) the command says so, in
+place of the sentence that describes the change, and exits 0.
+
+**It needs a terminal.** The question names the operation and what it is carried out on,
+and the answer is the word `yes`, typed. Where standard input and standard error are not
+both a terminal (a pipe, a redirect, a script, CI, an assistant's shell tool) the command
+refuses before it reads or changes anything, whatever options it was given. There is no
+`--yes`: an approval is yours to give, and an assistant that can run commands must not be
+able to give it by running this one. The cost is that nothing can approve through this
+command unattended; a program that must calls `POST /v1/admin/proposals/:id/approve` with
+a secret key, and then nobody was asked.
 
 | Option | |
 | --- | --- |
 | `--env <name>` | Read `TULA_SECRET_KEY_<NAME>` and `TULA_API_URL_<NAME>` first. |
 | `--api-url <url>` | The API. Default: `TULA_API_URL_<NAME>`, then `TULA_API_URL`. |
-| `--secret-key-file <path>` | Read the secret key from a file (`-` for a pipe; then `--yes` is needed). |
-| `--yes`, `-y` | Approve without asking. The proposal is still printed first. |
-| `--json` | Print the proposal as it stands after the run as JSON; everything else goes to standard error. |
+| `--secret-key-file <path>` | Read the secret key from a file. Not `-`: standard input is where the answer is typed. |
+| `--json` | Print the proposal as it stands after the run as JSON; everything else, the proposal as shown and the question among it, goes to standard error. |
 | `--insecure-http` | Allow a plain http API URL that is not localhost. |
 
-- Not at a terminal there is nobody to ask: without `--yes` nothing is changed.
+- Not at a terminal there is nobody to ask: nothing is read and nothing is changed, and
+  no option changes that. `--yes` and `-y` are unknown options here (they are
+  [`tula apply`](config.md)'s).
+- A terminal is not proof of a person: a program that drives a pseudo-terminal can type
+  the answer. What keeps an assistant from approving is that its agent key cannot, and
+  that your secret key is not where it can read it
+  ([what approval does not protect against](proposals.md#what-approval-does-not-protect-against)).
 - An agent key cannot approve, and is refused before any request.
 - A proposal is approved once and only before it expires (ten minutes). An expired one,
   one already approved, and one that changed since it was printed are each said as what
@@ -329,6 +352,14 @@ one that approved.
   that their sessions may still be live, and how to end them
   (`DELETE /v1/admin/users/<id>/sessions`, or the dashboard). It never reports this as
   carried out, and nothing is tried again.
+- **A provider that is the last way to sign in is not switched off.** The server judges
+  that when the proposal is approved; `tula approve` then prints that it was approved,
+  that nothing was changed, that the provider is still on and that the proposal is spent,
+  and exits 1.
+- **A production environment that does not accept proposals approves none**
+  (`agents.proposalsInProduction`, off by default): said as that, nothing changed, and
+  the proposal is not spent, so it can still be approved before it expires if the setting
+  is switched on.
 - A proposal whose operation this version of `tula` does not know is not approved: update
   `tula`.
 - Text from the server (the summary, the user's address and name) is printed with what a
@@ -341,8 +372,8 @@ one that approved.
   [what approval does not protect against](proposals.md#what-approval-does-not-protect-against).
 
 Exit codes: 0 approved and carried out; 1 anything else (declined, expired, the agent key
-revoked, already approved, approved but not carried out or only half carried out, an
-error).
+revoked, already approved, refused for a production environment, approved but not carried
+out or only half carried out, an error).
 
 ## `tula diff` and `tula apply`
 

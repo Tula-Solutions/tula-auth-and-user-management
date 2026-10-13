@@ -403,6 +403,9 @@ Steps run in order and a scenario stops at its first failing step (its cleanup s
 | `106-native-apple-id-token-refused` | A token for another app's bundle id, a token for the provider's Services ID, a token that carries the nonce itself instead of its SHA-256, a token with another nonce or none, an expired token, a Google token for the same audience, a string that is no token and a token for an app nobody registered are each `auth.invalid_credentials`: the same answer whichever check failed, no account, no session. Once an administrator registers the second app, its tokens are accepted. Uses the mock provider (needs a secret key); expects an environment with no other native app. |
 | `107-native-apple-id-token-used-once` | A token is judged once per attempt (`flow.not_found` on its finished attempt, `auth.invalid_credentials` on another, and a right token after a wrong one refused too). An app removed between the start and the exchange takes its bundle id away at once: where it was the only iOS app the exchange and a start are `auth.method_disabled` with nothing used up, and the same attempt and token complete once it is registered again; where another app remains, the removed app's token is `auth.invalid_credentials`. An attempt started with an identifier takes no ID token. Uses the mock provider (needs a secret key); expects an environment with no other native app. |
 | `108-agent-proposal-ban-user` | An agent key reads the admin API and changes nothing (a ban and a new key are `auth.invalid_key`); a secret key does not propose. The agent asks for a ban: a pending proposal, the user untouched, and asking again is the same proposal. The agent cannot approve it, an approval that names another target is `resource.conflict` (`mismatch`) and spends nothing, and the secret key approves exactly what was proposed, once: the user is banned, and the audit entries name the agent as the actor and the approver beside it. Revoking the agent key ends what it asked for and nobody approved (`agent_key_revoked`; read as `expired` for that reason), and undoes nothing that was carried out. Development environment only. |
+| `109-agent-proposal-unban-user` | An agent key cannot lift a ban (`auth.invalid_key`): it asks, and the user stays banned. An approval that names another operation for the same user is `resource.conflict` (`mismatch`) and spends nothing. The secret key approves, the ban is lifted, and the audit log names the agent as the one who lifted it, with the proposal and the approving key. |
+| `110-agent-proposal-end-session` | An agent key cannot end a session, one or all of a user's. It asks for the end of one session by its id, and both of the user's sessions go on working. The secret key approves: that session's access token is `session.revoked` at once, on the other instance too, the other session is untouched, and the audit log names the agent. |
+| `111-agent-proposal-disable-provider` | An agent key cannot change or remove a provider. It asks for a provider to be switched off, and the provider stays offered. The secret key approves and it is no longer offered. Switching off the last way to sign in is refused twice: when it is proposed (the 422 the provider route answers), and when a proposal that was fine is approved after the other ways went (`failed`, `last_sign_in_method`, the provider still on). Changes the sign-in methods and the google and github credentials, and puts them back. |
 
 Scenarios assume the default settings (the `recommended` password policy and the default
 session profile). `12-environment-settings` changes the environment's settings while it runs
@@ -542,6 +545,32 @@ that says it is the dashboard's but has no session. Signing in to the dashboard 
 and a cookie carried from one step to the next, and the format has neither (there is no
 `instance` credential). They are covered by the API's route tests
 (`modules/control-plane/*.test.ts`, `admin-via-dashboard.test.ts`).
+
+### Proposals and the limit they share
+
+An environment takes ten proposals a minute from its agents, all operations together, and
+five of any one operation (`PROPOSALS_PER_MINUTE`, `PROPOSALS_PER_OPERATION_PER_MINUTE`).
+What is counted is every `POST /v1/agent/proposals` that carries an agent key: one that is
+answered with a proposal that already waits, and one that is refused with a 422, count like
+one that made a proposal. A request with any other key is refused before it is counted. In
+process every scenario has a server of its own; against a live server the four scenarios
+run one after another against one environment, well inside a minute, so they share the
+count:
+
+| Scenario | Requests counted | Of which, per operation |
+| --- | --- | --- |
+| `108-agent-proposal-ban-user` | 3 | `ban_user` 3 |
+| `109-agent-proposal-unban-user` | 1 | `unban_user` 1 |
+| `110-agent-proposal-end-session` | 1 | `end_session` 1 |
+| `111-agent-proposal-disable-provider` | 3 | `disable_oauth_provider` 3 |
+| Together | **8 of 10** | at most 3 of 5 |
+
+That leaves two requests, and two of any operation. The limit is not raised for a scenario
+and has no setting. A step that asks for a proposal is added only where no step that is
+there already shows its point, and what a route test shows as well (an operation that is
+not on the list is a 422) stays there. A new scenario that proposes adds its row and takes
+from the same ten. A second run against the same server inside the minute is refused
+(`rate_limited`): wait for the minute to pass.
 
 ## The client-journey list
 

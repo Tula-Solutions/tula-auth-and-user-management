@@ -32,7 +32,27 @@ paths:
   `expired` with `expiryReason: 'agent_key_revoked'`. A run whose own write was made and
   whose later step failed is `failed` with `incomplete` (the target is read before and after), never
   `executed` and never retried. `agentKey` reaches an admin read's `security` only
-  through `documentAgentReads`.
+  through `documentAgentReads`. `run` has a default that throws (an operation with no
+  branch is `failed` with `error`, never `executed`), and an approval that found its
+  target already so answers `changed: false`, also on `proposal.executed`: a boolean, not
+  stored, and what the operation said of its own write (`run` returns it; an operation
+  that does not say is `true`), never the read made before the operation.
+- `GET /v1/admin/sessions/:sessionId` (`Sessions.get`) reads one session of the
+  environment in scope by its id and answers `AdminSessionSchema` (the list's shape with
+  `userId` and `active`): no token, hash, family or thumbprint, and the same 404 for an
+  unknown id and another environment's.
+- A proposal's operation (ADR 0053, "The other reversible operations") is one of the
+  contract's four, each with its own kind of target (a session by its own id, never by its
+  user; a provider by its name), and runs one function an administrator's route also
+  reaches: `Users.ban`, `Users.unban`, `Sessions.revokeForProposal`, `OAuth.switchOff`
+  (`enabled: false` on the row as read under the `sign_in_methods` lock, after
+  `OAuth.requireWayIn`; the same function is asked at the proposal as a courtesy). Never
+  a branch that deletes, sets or returns a secret, switches something on or acts on more
+  than one target. A production environment (its own `kind`) is asked for
+  `agents.proposalsInProduction` past the settings cache at the proposal
+  (`auth.forbidden`) and at the approval (`resource.conflict`, before the compare-and-set:
+  not spent). The create route is limited per environment and again per operation, the
+  second after the validator; both refuse when the limiter cannot count.
 - `/v1/instance/*` routes use `instanceAdmin()` (the admin token or a dashboard session),
   `instanceActor(c)`, and record their writes through `deps.controlPlane` with an
   `InstanceActivity` in the same transaction.

@@ -317,6 +317,8 @@ export async function ban(
  * @param scope - The project and environment.
  * @param userId - The user.
  * @param actor - Who is lifting the ban, for the audit log.
+ * @param proposal - The approved proposal this carries out (ADR 0053), named in the entry;
+ *   left out for an administrator's own change.
  * @returns The user.
  * @throws NotFoundError when they do not exist in this environment.
  */
@@ -324,12 +326,40 @@ export async function unban(
   deps: RevocationDeps,
   scope: Scope,
   userId: string,
-  actor: Actor
+  actor: Actor,
+  proposal?: { proposalId: string; approvedBy: ProposalApprover }
 ): Promise<User> {
+  return (await liftBan(deps, scope, userId, actor, proposal)).user
+}
+
+/**
+ * Lift a ban and say whether one was lifted: {@link unban}, for a caller that reports what
+ * the call did (an approved proposal, ADR 0053).
+ *
+ * `lifted` is said by the branch that writes, not by a look a caller made earlier: it is
+ * `true` exactly when this call cleared the ban and wrote its `user.unbanned` entry.
+ *
+ * @param deps - Users, sessions, denylist, ids and clock.
+ * @param scope - The project and environment.
+ * @param userId - The user.
+ * @param actor - Who is lifting the ban, for the audit log.
+ * @param proposal - The approved proposal this carries out, named in the entry; left out
+ *   for an administrator's own change.
+ * @returns The user, and whether this call lifted a ban (`false`: nobody had banned them,
+ *   nothing was written and nobody was signed out).
+ * @throws NotFoundError when they do not exist in this environment.
+ */
+export async function liftBan(
+  deps: RevocationDeps,
+  scope: Scope,
+  userId: string,
+  actor: Actor,
+  proposal?: { proposalId: string; approvedBy: ProposalApprover }
+): Promise<{ user: User; lifted: boolean }> {
   const current = await requireUser(deps, scope, userId)
   if (current.bannedAt === null) {
     // Not banned: nothing to lift, and no reason to sign them out.
-    return toUser(current)
+    return { user: toUser(current), lifted: false }
   }
   await Sessions.revokeAllForUser(deps, scope, userId, 'user_banned', actor)
   const user = await deps.users.setBanned(
@@ -337,12 +367,17 @@ export async function unban(
     userId,
     null,
     deps.clock.now(),
-    Audit.entry(deps, scope, { type: 'user.unbanned', actor, target: { type: 'user', id: userId } })
+    Audit.entry(deps, scope, {
+      type: 'user.unbanned',
+      actor,
+      target: { type: 'user', id: userId },
+      data: proposal ? { proposalId: proposal.proposalId, approvedBy: proposal.approvedBy } : {},
+    })
   )
   if (!user) {
     throw new NotFoundError()
   }
-  return toUser(user)
+  return { user: toUser(user), lifted: true }
 }
 
 /**

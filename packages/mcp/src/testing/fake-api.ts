@@ -5,6 +5,7 @@ import {
   createAdminClient,
   createAgentClient,
 } from '@tula/admin'
+import { type ProposalOperation, type ProposalTarget, proposalSummary } from '@tula/contract'
 import { createTulaMcpServer, type TulaMcpServerOptions } from '../server'
 
 /** A secret key no deployment has: the tests look for it in every output. */
@@ -33,8 +34,43 @@ export interface Recorded {
   headers: Record<string, string>
 }
 
-/** What a fake answers for a path: a JSON body, or a whole `Response`. */
-export type Answers = Record<string, unknown | (() => Response)>
+/**
+ * What a fake answers for a path: a JSON body, or a function that makes the `Response`
+ * (handed the request's body, when it had one).
+ */
+export type Answers = Record<string, unknown | ((body?: string) => Response)>
+
+/** What the default proposal is about: a ban of the default user. */
+const DEFAULT_PROPOSAL = { operation: 'ban_user', target: { type: 'user', id: USER_ID } } as const
+
+/**
+ * A pending proposal as the real API answers it, for what was asked: the operation and the
+ * target of the request, and the server's own sentence for them.
+ *
+ * @param request - The operation and target; a ban of the default user when left out.
+ * @returns The proposal's JSON.
+ */
+export function proposalAnswer(
+  request: { operation: ProposalOperation; target: ProposalTarget } = DEFAULT_PROPOSAL
+): Record<string, unknown> {
+  return {
+    id: TEST_PROPOSAL_ID,
+    operation: request.operation,
+    target: request.target,
+    summary: proposalSummary(request.operation, request.target),
+    status: 'pending',
+    proposedBy: { type: 'agent', id: '0198c1de-0000-7000-8000-0000000000a9' },
+    createdAt: '2026-03-01T00:00:00.000Z',
+    expiresAt: '2026-03-01T00:10:00.000Z',
+    approvedBy: null,
+    approvedAt: null,
+    failureReason: null,
+    expiryReason: null,
+  }
+}
+
+/** A session of the default user. */
+export const TEST_SESSION_ID = '0198c1de-0000-7000-8000-0000000000c1'
 
 /** Add a canary under an unexpected key to every object of a value, at every depth. */
 export function withCanaries(value: unknown, path = 'root'): unknown {
@@ -68,20 +104,11 @@ export function defaultAnswers(): Answers {
     createdAt: '2026-01-01T00:00:00.000Z',
   }
   return {
-    'POST /v1/agent/proposals': {
-      id: TEST_PROPOSAL_ID,
-      operation: 'ban_user',
-      target: { type: 'user', id: USER_ID },
-      summary: `Ban the user ${USER_ID}: every session of theirs ends now, and they cannot sign in until an administrator lifts the ban.`,
-      status: 'pending',
-      proposedBy: { type: 'agent', id: '0198c1de-0000-7000-8000-0000000000a9' },
-      createdAt: '2026-03-01T00:00:00.000Z',
-      expiresAt: '2026-03-01T00:10:00.000Z',
-      approvedBy: null,
-      approvedAt: null,
-      failureReason: null,
-      expiryReason: null,
-    },
+    // The proposal that was asked for, as the real API answers.
+    'POST /v1/agent/proposals': (body?: string) =>
+      Response.json(proposalAnswer(body === undefined ? undefined : JSON.parse(body)), {
+        status: 201,
+      }),
     'GET /v1/admin/users': {
       meta: { totalCount: 1, totalPages: 1, page: 1, perPage: 20 },
       data: [user],
@@ -273,7 +300,9 @@ export function fakeFetch(answers: Answers = defaultAnswers()): {
       })
     }
     if (typeof answer === 'function') {
-      return (answer as () => Response)()
+      return (answer as (body?: string) => Response)(
+        typeof init?.body === 'string' ? init.body : undefined
+      )
     }
     if (answer === undefined) {
       return Response.json(

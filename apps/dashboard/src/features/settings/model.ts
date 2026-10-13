@@ -86,6 +86,8 @@ const WEAKENINGS: Record<string, string> = {
   'mfa.smsCode':
     'The second step this environment requires may be a texted code: whoever receives the messages of a user’s number passes it. A text message cannot be taken back once it is sent',
   'sessions.maxPerUser': 'A user may have more sessions at once',
+  'agents.proposalsInProduction':
+    'An AI agent that holds an agent key of this environment may propose changes to it where it is a production environment: banning a user, lifting a ban, ending a session, switching a sign-in provider off. A proposal changes nothing until a person approves it, and whoever approves one without reading it has made the change',
   'sms.dailyMessageLimit':
     'More text messages may be sent in a day. The limit is what a day can cost at most (in messages: your provider’s prices turn that into money), so abuse of this environment’s SMS can cost more, and a message that was sent cannot be un-sent',
   'signIn.methods.smsCode':

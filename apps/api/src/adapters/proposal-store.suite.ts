@@ -355,6 +355,50 @@ export function describeProposalStore(
       expect(await ctx.store.findPending(ctx.a.environmentId, like, now)).toBeNull()
     })
 
+    // A provider is named as the admin API names one, by its name: the target's column
+    // holds a UUID or such a name, and is compared as the text it is.
+    test('a proposal about a provider is stored under the provider’s name, and one about a session under its id', async () => {
+      const SESSION = '00000000-0000-7000-8000-0000000000d1'
+      const provider = await stored(ctx.a, {
+        operation: 'disable_oauth_provider',
+        targetType: 'oauth_provider',
+        targetId: 'google',
+      })
+      const session = await stored(ctx.a, {
+        operation: 'end_session',
+        targetType: 'session',
+        targetId: SESSION,
+      })
+      expect(await ctx.store.find(ctx.a.environmentId, provider.id)).toMatchObject({
+        operation: 'disable_oauth_provider',
+        targetType: 'oauth_provider',
+        targetId: 'google',
+      })
+      expect(await ctx.store.find(ctx.a.environmentId, session.id)).toMatchObject({
+        operation: 'end_session',
+        targetType: 'session',
+        targetId: SESSION,
+      })
+      const like = {
+        operation: 'disable_oauth_provider',
+        targetType: 'oauth_provider',
+        targetId: 'google',
+        proposedBy: AGENT,
+      } as const
+      expect((await ctx.store.findPending(ctx.a.environmentId, like, now))?.id).toBe(provider.id)
+      // Another provider, and the same name under another operation or kind, wait for nothing.
+      for (const other of [
+        { ...like, targetId: 'github' },
+        { ...like, operation: 'end_session' },
+        { ...like, targetType: 'session' },
+      ] as const) {
+        expect(await ctx.store.findPending(ctx.a.environmentId, other, now)).toBeNull()
+      }
+      expect(await ctx.store.findPending(ctx.b.environmentId, like, now)).toBeNull()
+      // Approved and finished like any other.
+      expect((await approve(ctx.a, provider.id))?.targetId).toBe('google')
+    })
+
     test('the purge deletes what expired strictly before the cutoff, a batch at a time', async () => {
       const old = new Date('2025-06-01T00:10:00.000Z')
       const oldCreated = new Date('2025-06-01T00:00:00.000Z')

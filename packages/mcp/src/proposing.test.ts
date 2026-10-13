@@ -49,10 +49,99 @@ describe('the proposing facade', () => {
     // The keys are held to the API's own enumeration by the type (`satisfies Record<…>` over
     // the generated request body: a missing or an extra operation does not compile). This
     // pins the list, so that a new proposal is added here on purpose.
-    expect(PROPOSABLE).toEqual({ ban_user: 'user' })
-    const every: Record<ProposalRequest['operation'], true> = { ban_user: true }
+    expect(PROPOSABLE).toEqual({
+      ban_user: 'user',
+      unban_user: 'user',
+      end_session: 'session',
+      disable_oauth_provider: 'oauth_provider',
+    })
+    const every: Record<ProposalRequest['operation'], true> = {
+      ban_user: true,
+      unban_user: true,
+      end_session: true,
+      disable_oauth_provider: true,
+    }
     expect(Object.keys(every)).toEqual(Object.keys(PROPOSABLE))
   })
+
+  // The type-level allow-list: each line below is an operation the facade must never
+  // carry. If one of them were added to the API's list and to `PROPOSABLE`, its line would
+  // compile, the `@ts-expect-error` above it would fail the type check, and this test with
+  // it: nothing irreversible, nothing that returns or sets a secret, nothing in bulk.
+  test('nothing irreversible, nothing with a secret and nothing in bulk is an operation', async () => {
+    const { agent, requests } = fakeClients()
+    const facade = proposingAdmin(agent)
+    const user = { type: 'user', id: TEST_USER_ID } as const
+    const provider = { type: 'oauth_provider', id: 'google' } as const
+    const key = { type: 'api_key', id: 'x' } as const
+    const many = { type: 'session', id: ['a', 'b'] } as const
+    const all = { type: 'all', id: '*' } as const
+    const refused = [
+      // Irreversible.
+      // @ts-expect-error a user is never deleted by a proposal
+      () => facade.propose({ operation: 'delete_user', target: user }),
+      // @ts-expect-error a provider is never removed by a proposal
+      () => facade.propose({ operation: 'delete_oauth_provider', target: provider }),
+      // @ts-expect-error a second factor is never reset by a proposal
+      () => facade.propose({ operation: 'reset_mfa', target: user }),
+      // @ts-expect-error a key is never revoked by a proposal
+      () => facade.propose({ operation: 'revoke_api_key', target: key }),
+      // Returns or sets a secret.
+      // @ts-expect-error a key is never made by a proposal
+      () => facade.propose({ operation: 'create_api_key', target: user }),
+      // @ts-expect-error a password is never set by a proposal
+      () => facade.propose({ operation: 'set_password', target: user }),
+      // @ts-expect-error a provider's credentials are never written by a proposal
+      () => facade.propose({ operation: 'update_oauth_provider', target: provider }),
+      // @ts-expect-error a provider is never switched on by a proposal
+      () => facade.propose({ operation: 'enable_oauth_provider', target: provider }),
+      // @ts-expect-error a signing secret is never rotated by a proposal
+      () => facade.propose({ operation: 'rotate_webhook_secret', target: user }),
+      // @ts-expect-error the settings are never replaced by a proposal
+      () => facade.propose({ operation: 'update_settings', target: user }),
+      // In bulk.
+      // @ts-expect-error every session of a user is never ended by one proposal
+      () => facade.propose({ operation: 'end_sessions', target: user }),
+      // @ts-expect-error a proposal has one target, never a list
+      () => facade.propose({ operation: 'ban_user', targets: [user] }),
+      // @ts-expect-error a target is one id, never a list of them
+      () => facade.propose({ operation: 'end_session', target: many }),
+      // @ts-expect-error a session is ended by its own id, never by its user
+      () => facade.propose({ operation: 'end_session', target: user }),
+      // @ts-expect-error a provider is named, never "all"
+      () => facade.propose({ operation: 'disable_oauth_provider', target: all }),
+    ]
+    for (const attempt of refused) {
+      await expect(attempt()).rejects.toThrow(/^not a/)
+    }
+    expect(requests).toEqual([])
+  })
+
+  test.each([
+    ['unban_user', { type: 'user', id: TEST_USER_ID }],
+    ['end_session', { type: 'session', id: TEST_USER_ID }],
+    ['disable_oauth_provider', { type: 'oauth_provider', id: 'google' }],
+  ] as const)(
+    '%s reaches the API as the same one POST, with its target and nothing else',
+    async (operation, target) => {
+      const { agent, requests, bodies } = fakeClients()
+      const propose = proposingAdmin(agent).propose as unknown as (
+        request: unknown
+      ) => Promise<{ operation: string }>
+      // What a mistaken tool would hand over beside the request: none of it is sent.
+      const proposal = await propose({
+        operation,
+        target: { ...target, enabled: true, clientSecret: 'x', ids: ['a'] },
+        approve: true,
+        reason: 'because',
+      })
+      expect(proposal.operation).toBe(operation)
+      expect(requests.map((request) => `${request.method} ${request.path}`)).toEqual([
+        'POST /v1/agent/proposals',
+      ])
+      expect(bodies.map((body) => JSON.parse(body))).toEqual([{ operation, target }])
+    }
+  )
 
   test('a proposal reaches the API as one POST to the agent route, with the agent key', async () => {
     const { agent, requests, bodies } = fakeClients()
@@ -112,6 +201,29 @@ describe('the proposing facade', () => {
     [
       'a target of another kind',
       { operation: 'ban_user', target: { type: 'session', id: TEST_USER_ID } },
+    ],
+    [
+      'a session where a user belongs',
+      { operation: 'unban_user', target: { type: 'session', id: TEST_USER_ID } },
+    ],
+    [
+      'a user where a session belongs',
+      { operation: 'end_session', target: { type: 'user', id: TEST_USER_ID } },
+    ],
+    [
+      'a user where a provider belongs',
+      { operation: 'disable_oauth_provider', target: { type: 'user', id: TEST_USER_ID } },
+    ],
+    [
+      'a provider named by a sentence',
+      {
+        operation: 'disable_oauth_provider',
+        target: { type: 'oauth_provider', id: 'google and github' },
+      },
+    ],
+    [
+      'a list of sessions',
+      { operation: 'end_session', target: { type: 'session', id: [TEST_USER_ID] } },
     ],
     ['a target with no id', { operation: 'ban_user', target: { type: 'user' } }],
     ['a target id that is a path', { operation: 'ban_user', target: { type: 'user', id: '../x' } }],

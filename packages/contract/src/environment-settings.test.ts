@@ -69,6 +69,7 @@ describe('EnvironmentSettingsSchema', () => {
       signUp: { password: 'required' },
       urls: { allowedOrigins: [], allowedRedirectUrls: [] },
       audit: { retentionDays: null },
+      agents: { proposalsInProduction: false },
       notifications: {
         passwordChanged: true,
         newSignIn: true,
@@ -432,6 +433,7 @@ describe('EnvironmentSettingsInputSchema', () => {
       signUp: { password: 'required' },
       urls: { allowedRedirectUrls: [] },
       audit: { retentionDays: null },
+      agents: { proposalsInProduction: false },
       notifications: {
         passwordChanged: true,
         newSignIn: true,

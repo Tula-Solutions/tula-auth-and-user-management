@@ -631,6 +631,32 @@ describe('buildPlan', () => {
     }
   )
 
+  // Whether a production environment accepts an agent's proposals (ADR 0053). Left out of
+  // the file it is off, and managed: a file that says nothing switches it off.
+  test.each([
+    ['switched on', false, true, ['agents.proposalsInProduction'], true],
+    ['switched off', true, false, [], true],
+    ['on in both', true, true, [], false],
+    ['off in both', false, false, [], false],
+    ['left out of the file where it is on', true, null, [], true],
+    ['left out of the file where it is off', false, null, [], false],
+  ] as [string, boolean, boolean | null, string[], boolean][])(
+    'proposals in production: %s is flagged only when it lets agents propose there',
+    (_name, was, is, weakened, changes) => {
+      const state = remote({
+        settings: settings((s) => {
+          s.agents.proposalsInProduction = was
+        }),
+      })
+      const file = is === null ? {} : { settings: { agents: { proposalsInProduction: is } } }
+      const planned = plan(file, state)
+      expect(planned.weakened).toEqual(weakened)
+      expect(planned.settings.map((change) => change.path)).toEqual(
+        changes ? ['agents.proposalsInProduction'] : []
+      )
+    }
+  )
+
   test.each([
     ['a higher limit', 100, 2000, ['sms.dailyMessageLimit']],
     ['a lower limit', 2000, 100, []],

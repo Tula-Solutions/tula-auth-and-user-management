@@ -297,6 +297,30 @@ describe('settings controls', () => {
     expect(api.state.settings.settings.notifications.passwordChanged).toBe(false)
   })
 
+  // Whether a production environment accepts an agent's proposals (ADR 0053): asked about
+  // first, by the contract's weakening and in the screen's own sentence for it.
+  test('general settings: accepting proposals in production asks first; switching it off does not', async () => {
+    const { user, api } = start(`${PROD_PATH}/settings`)
+    const accept = await screen.findByRole('switch', { name: 'Accept proposals in production' })
+    expect(accept.getAttribute('aria-checked')).toBe('false')
+    await user.click(accept)
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    expect(dialog().textContent).toContain('This weakens security')
+    expect(dialog().textContent).toContain('may propose changes to it where it is a production')
+    expect(dialog().textContent).toContain('changes nothing until a person approves it')
+    expect(api.callsTo('PUT', '/v1/admin/settings')).toHaveLength(0)
+    await user.click(within(dialog()).getByRole('button', { name: 'Save anyway' }))
+    await screen.findByText('Settings saved')
+    expect(api.state.settings.settings.agents).toEqual({ proposalsInProduction: true })
+    // Switching it off again weakens nothing: saved without a question.
+    await user.click(screen.getByRole('switch', { name: 'Accept proposals in production' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() =>
+      expect(api.state.settings.settings.agents).toEqual({ proposalsInProduction: false })
+    )
+    expect(openDialogs()).toBe(0)
+  })
+
   // The dashboard has no editor for the wording of emails (ADR 0039), and a save replaces
   // the whole document: what the API holds must go back as it came.
   test('a save keeps the email templates the environment has, which no screen edits', async () => {

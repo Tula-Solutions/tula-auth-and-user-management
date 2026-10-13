@@ -66,7 +66,8 @@ are not built.
 `POST /v1/agent/proposals` takes `{ operation, target: { type, id } }` and nothing else, and
 answers a **proposal**: a row of `proposals` (tenant columns, row-level security) with
 
-- the **operation**, from the closed list `PROPOSAL_OPERATIONS` (`ban_user`), and the
+- the **operation**, from the closed list `PROPOSAL_OPERATIONS` (`ban_user` at first; four
+  since TULA-39, "The other reversible operations" below), and the
   **target**, a kind from the closed list the operation allows and an id;
 - a **summary**: what approving it does, in plain words. It is written by the server from a
   fixed sentence per operation and the target's id (`proposalSummary` in `@tula/contract`).
@@ -86,10 +87,11 @@ Creating one **changes nothing else**. It is recorded (`proposal.created`, actor
   a loop does not fill the list a person has to read.
 - **Ten a minute per environment** (`PROPOSALS_PER_MINUTE`), counted after the key is
   resolved; a limiter that cannot count refuses.
-- **A production environment accepts none** (`403 auth.forbidden`,
-  `params.reason: 'production_environment'`). The plan lets an environment opt in; that
-  setting is TULA-39 and is not built, so today the answer is always no. Decided before the
-  target is read.
+- **A production environment accepts none unless it opted in** (`403 auth.forbidden`,
+  `params.reason: 'production_environment'`). The opt-in is the setting
+  `agents.proposalsInProduction`, off by default ("Production environments opt in"
+  below; the first version had no setting and always said no). Decided before the target
+  is read.
 - **Only an agent proposes.** A secret key calling the route is refused by the middleware
   and again by the service. A person who wants a change makes it; if a secret key could
   propose, "who asked" in the audit log would stop meaning "an agent".
@@ -181,7 +183,8 @@ request timeout:
   refuses anything that is not an agent key) and is never built over an admin client by
   the server: with a secret key and no agent key the propose tools answer `not_configured`.
 
-One tool, `propose_ban_user` (`{ userId }`, strict). It answers the projected proposal
+One tool at first, `propose_ban_user` (`{ userId }`, strict); three more since TULA-39
+("The MCP tools" below). It answers the projected proposal
 (`id`, `operation`, `target`, `summary`, `status`, `createdAt`, `expiresAt`), `changed:
 false` and a fixed `nextStep` sentence. The tool's description and the server's
 instructions say the same thing three ways: nothing has been changed, a person approves
@@ -200,19 +203,21 @@ said on standard error.
 about with the operator's **secret key** (from the environment or `--secret-key-file`,
 never an argument), prints what approving does (the server's summary, and the user's
 address and name through `printable()`), asks, and approves **exactly what it printed**.
-Not at a terminal it needs `--yes`. The question is asked with a sentence of the CLI's own
-per operation: an operation this version does not know is not approved. An agent key is
-refused before any request.
+Not at a terminal it refuses, and it has no `--yes` (the first version had one: "An
+approval cannot be scripted", below). The question is asked with a sentence of the CLI's
+own per operation: an operation this version does not know is not approved. An agent key
+is refused before any request.
 
 ## What this does and does not prove
 
 - **It proves a credential was used that the agent's tools do not have.** It does not prove
-  a person looked. `tula approve --yes` in a script approves unread, and so does any program
-  that calls the route with a secret key.
+  a person looked. Any program that calls the route with a secret key approves unread
+  (`tula approve` itself no longer can be run by one without a terminal: "An approval
+  cannot be scripted", below).
 - **A coding assistant with a shell is not separated from the secret key by this.** Bun
   loads `.env.local` for `tula`; an assistant that can run commands in a project whose
-  `.env.local` holds the development secret key can run `tula approve --yes` itself, or
-  call the admin API directly. The MCP server not *using* the secret key does not take it
+  `.env.local` holds the development secret key can call the admin API directly, or run
+  `tula approve` under a pseudo-terminal and type the answer. The MCP server not *using* the secret key does not take it
   out of the machine. The separation holds where the agent's process and the person's
   credential are actually apart: a hosted assistant with only the MCP server and an agent
   key, or approval in the dashboard (TULA-40) behind a sign-in the assistant does not have.
@@ -252,7 +257,8 @@ refused before any request.
 
 ## Not decided here
 
-- Production: the per-environment opt-in (TULA-39).
+- ~~Production: the per-environment opt-in (TULA-39).~~ Decided: "Production environments
+  opt in" below.
 - Approval in the dashboard, a list for a person to work through, notifications (TULA-40).
 - More operations (TULA-24), and `test_signin` (TULA-41).
 - Narrower read scopes for an agent key; a key per agent identity beyond "one key is one
@@ -377,3 +383,342 @@ as its actor. Its entries (`user.banned`, `proposal.executed`, `proposal.failed`
 hold no address and no user agent: the first version copied the approver's onto them,
 which put a person's address under an agent's id and two origins under one actor. The
 approver's origin is on `proposal.approved`, the agent's own on `proposal.created`.
+
+## The other reversible operations (TULA-39)
+
+Three operations join `ban_user`, by the mechanism above and no second one: the same row,
+the same compare-and-set approval, the same two facades.
+
+| Operation | Target | What approving it runs | The administrator's own route |
+| --- | --- | --- | --- |
+| `ban_user` | `user`, by id | `Users.ban` | `POST /v1/admin/users/:id/ban` |
+| `unban_user` | `user`, by id | `Users.unban` | `POST /v1/admin/users/:id/unban` |
+| `end_session` | `session`, by id | `Sessions.revokeForProposal` | `DELETE /v1/admin/users/:id/sessions/:sessionId` |
+| `disable_oauth_provider` | `oauth_provider`, by the provider's name | `OAuth.switchOff` | `PUT /v1/admin/oauth-providers/:provider` with `enabled: false` |
+
+**What makes an operation one of these, and what keeps another out.** Each can be put back
+by an administrator with one call (unban, ban, a new sign-in, switching the provider on),
+none returns or sets a secret, and each acts on **one** thing named by one id. So there is
+no proposal that deletes a user or a provider, resets a second factor, revokes or makes a
+key, sets a password, writes a provider's credentials, switches a provider **on** (it would
+open a way in), rotates a signing secret, replaces the settings, or ends every session of a
+user. The list is `PROPOSAL_OPERATIONS` in the contract and `PROPOSABLE` in `@tula/mcp`;
+a test hands the facade each of those refused operations by name, as a line that does not
+compile and as a call that is refused (`proposing.test.ts`). A new operation is a decision
+recorded here, with its row in the table.
+
+**An operation has one kind of target, and the request schemas hold it**
+(`PROPOSAL_OPERATION_TARGETS`; a mismatch is a 422 on the proposal and on the approval). A session is ended by **its own id**: `end_session`
+with a user as its target is refused by the schema, because "the sessions of this user" is
+the bulk operation under another name. `Sessions.revokeForProposal` takes a session id and
+finds it in the environment; there is no proposal path into `revokeForUser`.
+
+**A provider is named by its name**, a member of the contract's closed `OAUTH_PROVIDERS`,
+because that is what a provider is to an operator and to the admin API (a row's id is in no
+answer). So `proposals.target_id` is text, with a check of its shape
+(`proposals_target_id_shape`: lower-case letters, digits, `_` and `-`, at most 64), and the
+contract's `isProposalTargetId` says per target type what an id is (a UUID for a user and a
+session, a provider's name for a provider). Migration `0035_proposals_target_id_text`.
+The column was a UUID; nothing that reads it compared it as one.
+
+**Switching a provider off is `enabled: false` and nothing else.** `OAuth.switchOff` reads
+the row under the environment's `sign_in_methods` lock and writes it back with the switch
+turned: nothing of the write comes from a request, so the client id, the sealed secret and
+the rest are what they were. A provider already off is left alone and nothing is recorded.
+
+**The last way to sign in is refused twice, by the function the admin route uses**
+(`OAuth.requireWayIn`):
+
+- when the proposal is made, outside the lock, as a courtesy: the same `ValidationError`
+  (422) the provider route answers, so a person is not asked to approve what cannot be
+  done;
+- when it is approved, **inside the lock `Settings.replace` and `OAuth.update` take**: that
+  is the one that decides. A proposal that was fine when it was made and is approved after
+  the other ways went is approved (the approval is written first, as always), the
+  operation is refused, and the proposal ends `failed` with the new reason
+  `last_sign_in_method`. It is spent. The provider is still on.
+
+What an administrator's own change records is what this records: `oauth_provider.updated`
+with `changed: ['enabled']`. Switching a provider off is not a weakening on the admin
+route (`oauthProviderWeakenings`) and is not one here; nothing restates the rule.
+
+**No new activity type.** The change is the entry it always was (`user.unbanned`,
+`session.revoked` with the reason `revoked_by_admin`, `oauth_provider.updated`), with the
+agent as its actor and `proposalId` and `approvedBy` in its data, together or not at all,
+as `user.banned` has them. The reason of an ended session stays `revoked_by_admin`: a
+person with an administrator's credential approved it, and a client's handling of the
+reason does not change.
+
+**`incomplete` is still a ban's.** A ban commits and then ends sessions; the other three
+operations' own write is their last step. `changeIsThere` says for each what its write
+looks like, so a failure after a write is not reported as "nothing happened".
+
+### Production environments opt in
+
+`agents.proposalsInProduction`, a boolean in the environment's settings document, **off by
+default**. A production environment is one whose own `kind` is `production` (never the
+deployment's `ENVIRONMENT`, never `NODE_ENV`); every other environment accepts proposals
+whatever the setting says.
+
+- **Refused when a proposal is made**: `403 auth.forbidden`,
+  `params.reason: 'production_environment'`, before the target is read. This is what the
+  first version always answered for production; ban included.
+- **Refused again when one is approved**: `409 resource.conflict`,
+  `params.reason: 'production_environment'`, before anything is written, so **the proposal
+  is not spent**: an operator who switches the setting back on within the ten minutes can
+  approve it. An approval is a `409` with a reason in every other case it is refused, and
+  `tula approve` reads the reason; a 403 there would say the approver's credential is the
+  problem, and it is not.
+- **Both read the settings past the cache** (`Settings.get(…, true)`). The setting is a
+  switch somebody may turn off because something looked wrong; "within 5 to 30 seconds
+  on other instances" is not good enough for that, and a proposal is rare enough that the
+  read costs nothing.
+- **No new error code.** `auth.forbidden` and `resource.conflict` exist, the reason is a
+  fixed word of the contract's lists (`PROPOSAL_CREATION_REFUSALS`,
+  `PROPOSAL_APPROVAL_REFUSALS`), and `@tula/core`'s message table and bundle budget are
+  untouched.
+
+**Switching it on is a weakening** (`settingsWeakenings`: `agents.proposalsInProduction`,
+`false` to `true`), so it is what every weakening is: the audit entry of the settings
+change names the key in `changed` and says `weakened: true`, the dashboard asks first
+(a switch under "AI agents" on the general settings screen, with a sentence of its own in
+`describeWeakening`), and `tula apply --yes` refuses the plan without `--allow-weaker`.
+Switching it off is an ordinary change. In `tula.config.ts` the key left out is `false`,
+and managed: a file that says nothing switches it off (`docs/config.md`, and a row in
+`diff.test.ts`). The default is left out of the config's fingerprint, so a file applied
+before the setting existed hashes as it did.
+
+**The setting is not something an agent can change.** An agent key reaches no `PUT`.
+`get_settings` returns it (an agent that is refused can say why), and
+`draft_settings_change` can draft it, as it can any setting the projection names: the
+draft is an edit to a file for a person to apply, it is listed under `weakened`, and
+`tula apply --yes` refuses it. Leaving it out of the draft tool would hide a setting an
+operator may ask an assistant about and protect nothing: the draft changes no server.
+
+### Limits
+
+Every proposing tool is one route, and the route is limited twice, per environment,
+failing closed (`service.unavailable` when the limiter cannot count):
+
+- `PROPOSALS_PER_MINUTE` (10), shared by every operation, as before: it is what bounds how
+  many proposals wait for a person at once.
+- `PROPOSALS_PER_OPERATION_PER_MINUTE` (5), a count **per operation**
+  (`proposal_create_operation`, keyed by the environment's id and the operation's word).
+  An agent talked into asking for one thing again and again uses up that operation's
+  minute and half of the shared one; the other operations can still be asked for.
+
+A bucket per operation alone would let four operations fill a person's list four times as
+fast; the shared count alone would let one looping tool silence the other three. The
+per-operation count is mounted after the body is validated (the operation is in the body),
+so a malformed request counts against the shared limit only.
+
+### The MCP tools
+
+`propose_unban_user` (`{ userId }`), `propose_end_session` (`{ sessionId }`) and
+`propose_disable_oauth_provider` (`{ provider }`, the contract's enum), each a
+`z.strictObject`, each answering what `propose_ban_user` answers: the projected proposal,
+`changed: false` and the fixed `nextStep`. `ProposalRequest` is now a union made from
+`PROPOSABLE`, one member per operation with that operation's target type, so a tool that
+names a session for a ban does not compile.
+
+**A propose tool refuses an answer that is not the proposal it asked for**
+(`response.invalid`): the operation and the target of the answer are compared with the
+request before anything is projected. A server (or something in front of it) that answers
+a ban with "a provider was switched off" must not have that read out as what was proposed.
+
+**The injection corpus** (`packages/mcp/src/testing/injection.ts`): instructions to
+approve, a result that says it was carried out, role markers, markdown, HTML, control
+characters, characters that draw nothing (written as `\u{…}` escapes), a key to approve
+with, and more text than a result holds. Two tests use the one list:
+
+- `@tula/mcp`'s, against a fake API that puts each string in **every field** of the
+  answer of every propose tool: the result is the allow-list projection, cleaned and
+  capped, or `response.invalid`, and every request made was a `GET` or the one `POST`
+  that asks;
+- `tula mcp`'s, against the real API in process, with each string in a user's name and a
+  session's user agent: every propose tool is called, and the users, their sessions, the
+  providers and the settings are byte for byte what they were, with nothing recorded but
+  `proposal.created`.
+
+What these show is that **the server changes nothing without an approval, whatever a
+model was told**. They do not show what a model does with such text: no model was run.
+
+### `tula approve`
+
+One sentence per operation for the question, the target shown as it is now (a user with
+their address and whether they are banned; a session with whose it is and whether it is
+still live, below; a provider as "on now", "already off" or "not configured now", read
+with the operator's key), and two new things
+said in words: `production_environment` (nothing changed, not spent) and
+`last_sign_in_method` (approved, nothing changed, the provider still on, spent).
+
+### An approval cannot be scripted
+
+Decided by the owner with TULA-39. **`tula approve` requires a terminal, and has no option
+that answers its question.**
+
+The first version asked at a terminal and took `--yes` anywhere else. That made the
+command the easiest way round the whole mechanism: an assistant that can run shell
+commands, on a machine where the operator's secret key is in the environment (Bun loads
+`.env.local` for `tula`), approved its own proposal with one non-interactive command. An
+approval is meant to be a person's act with their own credential; a flag that stands in
+for the person is the opposite of that.
+
+So:
+
+- Where standard input and standard error (the stream the question is asked on) are not
+  both a terminal, the command refuses with one fixed sentence, **before the key is
+  resolved and before any request**: not the approval, and not the read of the proposal.
+  The check is the injected `CliIo.isTTY`, with a prompt to ask through; no command reads
+  `process.stdin.isTTY`, so the tests need no terminal.
+- **`--yes` is removed from `approve`**, not kept as a flag that no longer skips anything:
+  a flag that does nothing invites a script that believes it did. `-y`, `--yes=true` and
+  any other spelling are the parser's "unknown option", refused before the command runs.
+  `--json` is output only: the question is still asked, and the proposal is then shown on
+  standard error first, because nothing is asked about a proposal that was not shown.
+  `tula apply --yes` is unchanged: it applies a file the operator wrote, with the
+  operator's key, and CI is where that belongs.
+- **A key on standard input is refused** (`--secret-key-file -`). `apply` allows it and
+  then requires `--yes`, because standard input cannot carry both the key and an answer;
+  `approve` has no `--yes`, so the same fact has the other outcome. The key comes from a
+  file or the environment, never an argument, as before.
+- The question names the operation and the target, both through `printable()`, beside the
+  consequence sentence and the API's address, and the answer is the typed word `yes`.
+
+**What it costs.** No approval from CI, a cron job, a chat bot or any other program
+through this command. A team that wants a programmatic approval calls
+`POST /v1/admin/proposals/:id/approve` with a secret key, and then owns the question of
+who looked; the command will not be the thing that hides it.
+
+**What it does not stop, said plainly.** A terminal is not a person. An agent that
+controls a pseudo-terminal on the operator's machine (`script`, `expect`, a terminal
+multiplexer, a desktop-automation tool) can start the command and type `yes`, and nothing
+here can tell. It also does nothing about the admin route, which takes the same key with
+no terminal at all. What actually separates the agent from an approval is unchanged from
+"What this does and does not prove": **the agent's key cannot approve, and the operator's
+key is not given to the agent**. This change removes the one-line, non-interactive way to
+misuse a key that was left within reach; it does not make a key within reach safe.
+
+Tests (`packages/cli/src/approve.test.ts`): not a terminal in four ways (nothing is one,
+only standard input is, a prompt without a terminal, a terminal with nothing to ask
+through) refuses with the fixed sentence and makes no request; `--yes`, `-y`,
+`--yes=true`, `--force` and `--no-input` are refused at a terminal and away from one with
+nothing asked or sent; `--json` away from a terminal is refused; seven answers that are
+not `yes` approve nothing; a typed `yes` approves once; the key on standard input is
+refused without standard input being read. None of them opens a real terminal: that the
+real process's check (`process-io.ts`) says "not a terminal" under a pipe, a redirect or
+an agent's shell tool was not run for this change.
+
+### Three things a review of this change asked about
+
+- **A target's UUID has one spelling, lower case** (`isProposalTargetId`). With the column
+  a `text` (migration 0035) the store keeps the id as the request wrote it, its check takes
+  lower case only, and PostgreSQL finds a user by a UUID in any case: an upper-case id of
+  an existing user would have been found and then refused by the insert, a 500. It is
+  refused by the request's schema instead (422), for a proposal and for an approval, and
+  the "ask again for the same target" look-up compares one spelling. That the old path was
+  a 500 on PostgreSQL is an argument from the code: the memory adapter does not show it,
+  and no PostgreSQL was run.
+- **At an approval the production check comes first**, before `mismatch` and before
+  "already decided": in a production environment whose opt-in was switched off, an
+  approval of a proposal that was already carried out, or one that names something else,
+  is answered `production_environment`. Nothing is written either way and the caller
+  holds a secret key; the order is kept because the environment not taking approvals is
+  the more useful thing to be told.
+- **A proposal for what is already so is taken, and approving it changes nothing**: a
+  provider that is already off, a user who is not banned, a session that has ended. The
+  proposal ends `executed`, and the operation's own audit entry is written only when
+  something changed. Refusing such a proposal when it is made would tell an agent no more
+  than a read does and would not hold by the time it is approved; `tula approve` shows the
+  target as it is now ("already off") for the person to see. The answer and the record
+  say it too: the next section.
+
+### Four things the second review asked for
+
+- **`tula approve` shows a session with whose it is and whether it is live.** The first
+  version printed the session's id and nothing else, while a user was shown with an
+  address and a provider with its state. An agent's account of a session ("a stale
+  session of mine") is a claim, and an id gives the person nothing to hold it against.
+  The command now reads the session and then its user, with the operator's key, and
+  prints the owner's id, address and name, the client kind, when the session was signed
+  in, and "live now" or "already ended". **The admin API had no read of one session by
+  its id** (only a user's list, which needs the user first), so one was added:
+  `GET /v1/admin/sessions/:sessionId`, behind `secretKey()`, by environment and session
+  id, another environment's id answered like an unknown one. It returns the session
+  list's shape **and two fields that shape did not have**, `userId` and `active`
+  (`AdminSessionSchema`): the list is asked for by user and filtered to live sessions, so
+  it needed neither, and a read by id has no other way to say whose the session is or
+  that it has ended. **`active` is by the stored times**, not by the session's profile
+  as configured now (`Sessions.profileOf` is not asked): live by what is stored, and a
+  profile tightened since may end such a session at its next request. `tula approve`
+  and `docs/cli.md` say so. Nothing else: no token, hash, family or thumbprint. Like every admin
+  read it is open to an agent key; `@tula/mcp` has no tool for it and its
+  `READ_OPERATIONS` is unchanged. When a read fails the question says so in fixed words
+  beside the bare id ("could not be read", "no such session now", and for the owner "the
+  user could not be read" or "no such user now") and the person decides with that in
+  front of them; the command never guesses and prints nothing of the failure. The user
+  agent and the IP address are not printed: the first is text whoever holds the session
+  chose.
+- **An operation `run` has no branch for throws** (`UnknownOperationError`), into the
+  path every unexpected failure takes: the proposal is `failed` with `error`, there is no
+  `proposal.executed` and nothing was changed. Before, `run`'s `switch` fell out of its
+  last case for a word it did not know and the proposal was recorded as carried out.
+  Three things keep such a row from existing (the request's schema, the service's own
+  list, the table's check); the default is for the day one of them is ahead of the code
+  that runs. The test hands the service an approved row whose operation is a word of no
+  list by rewriting what the store's `approve` returns: a row with such a word cannot be
+  stored through the port, and the answer's own summary (`proposalSummary`) is built from
+  the row as stored.
+- **What an approval found already so is carried to the answer and to the record**, as a
+  boolean: `changed`, optional, on the proposal the approval answers and in
+  `proposal.executed`'s data. `false` when the operation ran and wrote nothing: the user
+  was not banned, the session had ended, the provider was off. **Each operation says
+  whether it wrote, and `execute` reports that** (`run` returns it): for a session, what
+  the store's guarded update answered (`SessionStore.revoke`: `false` when it had already
+  ended, and then no entry); for a ban lifted and a provider switched off, the branch of
+  `Users.liftBan` and `OAuth.switchOff` that writes, which is the one that writes the
+  entry (the provider's under the environment's lock). **A ban does not say, and what
+  does not say is `true`**: `Users.ban` ends the user's sessions and writes `user.banned`
+  again for a user who is already banned. `changeIsThere`, the read made before the
+  operation, is kept for what it was for (telling `incomplete` from `error` after a
+  failure) and decides nothing about a run that succeeded. A field that only grows the contract: optional, absent
+  from every proposal that was not just carried out, and **not stored** (a later read of
+  the proposal does not have it; the audit entry is where it lasts). `tula approve`
+  then says "Approved and carried out; the session had already ended, so nothing
+  changed. The proposal is spent." instead of the sentence that describes the change, and
+  still exits 0: what was approved is so. The case it is for is a target that changed
+  between the showing and the approval (the user signed out while the person read).
+  **It was first inferred from that earlier read, and that was wrong**: the read saw the
+  target already so, another administrator turned it back, the operation then really
+  wrote (`user.unbanned`, `oauth_provider.updated`), and the answer and
+  `proposal.executed` still said `changed: false`. The tests make the first read answer
+  one thing and the store hold another, for each of the three. What is left, stated:
+  `changed: false` means the operation's own write did nothing, so `changed: true` and
+  the operation's entry now always go together; lifting a ban is a read and then a write
+  with no guard between them, so two liftings at once can both write (as two
+  administrators' can, with or without a proposal), and each then truthfully says `true`.
+- **The four scenarios ask for fewer proposals.** One run made nine counted requests of
+  the ten an environment takes in a minute. The step that proposed switching a provider
+  on (a 422 from the request's schema, which a route test, the contract's test and
+  `@tula/mcp`'s tests show) was taken out of scenario 111: eight, with two to spare, and
+  at most three of the five any one operation has. The limit was not raised.
+  `conformance/README.md` has the table and the rule for a step that would add one.
+
+### Not verified, and not built
+
+- No MCP client and no model was run against the three tools either
+  ([phase-2-unverified.md](../plans/phase-2-unverified.md)).
+- The store's suite gained rows for a session and a provider as a target, and the
+  migration's check is tested on PGlite. `stores.integration.ts` and
+  `races.integration.ts` were **not** run against PostgreSQL for this change.
+- The four scenarios run in process. Against a live server they were not run; together
+  they make eight counted requests of the ten an environment takes in a minute, which a
+  step added to one of them has to mind.
+- `tula approve`'s reading of a session was tested against a fake admin API and, for the
+  route, against the API in process on memory adapters. The route reads through the
+  session store's existing `findById`; it was not run against PostgreSQL for this change.
+- That a production environment refuses is shown by API tests and by `tula approve`'s
+  and `tula mcp`'s tests in process: a scenario has one environment and one kind of key,
+  and that environment is a development one.
+- Not built: a proposal that switches a provider on or changes any other setting; a
+  limit per agent key; approval in the dashboard (TULA-40).

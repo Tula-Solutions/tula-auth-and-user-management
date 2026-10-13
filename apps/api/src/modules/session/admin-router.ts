@@ -12,7 +12,9 @@ import * as Users from '~/modules/user/service'
 import * as openapi from '~/openapi'
 import {
   AccessTokenClaimsSchema,
+  AdminSessionSchema,
   RevokedSessionsSchema,
+  SessionIdParamSchema,
   SessionListSchema,
   UserIdParamSchema,
   UserSessionParamSchema,
@@ -155,6 +157,45 @@ router.get(
     // Devices, user agents and IP addresses of one user: no cache may keep the answer.
     c.header('Cache-Control', 'no-store')
     return c.json(SessionListSchema.parse({ data }))
+  }
+)
+
+router.get(
+  '/sessions/:sessionId',
+  describeRoute({
+    operationId: 'getSession',
+    tags: ['Sessions'],
+    summary: 'Read one session by its id',
+    description:
+      'One session of the environment by its own id: the user it belongs to, the client ' +
+      'kind, user agent, IP address and times, and whether it is still active (`active`: ' +
+      'not revoked and not past its stored expiry). An ended session is answered too, so ' +
+      'that whoever is asked to end a session can see whose it is and that it is still ' +
+      'there to end. Never token material. `current` is always `false`. A session that ' +
+      'does not exist or belongs to another environment answers the same 404. A read: ' +
+      'nothing is changed or recorded.',
+    security: openapi.security.admin,
+    responses: {
+      200: {
+        description: 'The session.',
+        content: { 'application/json': { schema: resolver(AdminSessionSchema) } },
+      },
+      422: openapi.responses[422],
+      429: openapi.responses[429],
+      500: openapi.responses[500],
+      503: openapi.responses[503],
+      ...openapi.adminResponses,
+    },
+  }),
+  adminRateLimit(),
+  secretKey(),
+  validator('param', SessionIdParamSchema, validationHook),
+  async (c) => {
+    const { sessionId } = c.req.valid('param')
+    const session = await Sessions.get(c.get('deps'), c.get('tenant'), sessionId)
+    // A device, a user agent and an IP address of one user: no cache may keep the answer.
+    c.header('Cache-Control', 'no-store')
+    return c.json(AdminSessionSchema.parse(session))
   }
 )
 

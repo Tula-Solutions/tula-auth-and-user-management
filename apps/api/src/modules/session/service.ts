@@ -2,6 +2,7 @@ import {
   ACCESS_TOKEN_ALGORITHM,
   ACCESS_TOKEN_VERSION,
   type AccessTokenClaims,
+  type AdminSession,
   type AuthenticationMethod,
   CUSTOM_CLAIMS_CLAIM,
   durationToMs,
@@ -10,6 +11,7 @@ import {
   MAX_ACCESS_TOKEN_TTL,
   type NamedJwtTemplate,
   type NamedSessionProfile,
+  type ProposalApprover,
   profileOfSession,
   REFRESH_TOKEN_PREFIX,
   resolveSessionProfile,
@@ -415,7 +417,8 @@ function revoked(
   scope: Scope,
   session: { id: string; userId: string },
   reason: SessionRevokeReason,
-  actor: Actor
+  actor: Actor,
+  proposal?: CarriedOutProposal
 ) {
   const target = { type: 'session', id: session.id } as const
   // Two calls, not one with a computed type: each type's `reason` is checked against its own
@@ -431,7 +434,11 @@ function revoked(
         type: 'session.revoked',
         actor,
         target,
-        data: { userId: session.userId, reason },
+        data: {
+          userId: session.userId,
+          reason,
+          ...(proposal && { proposalId: proposal.proposalId, approvedBy: proposal.approvedBy }),
+        },
       })
 }
 
@@ -1168,6 +1175,38 @@ export async function list(
   return records.map((record) => toSession(record, input.currentSessionId))
 }
 
+/**
+ * One session of an environment by its id, as an administrator reads it: whose it is, what
+ * kind of client, when it began and whether it is still active. An ended session is read
+ * too. A read: nothing is touched, extended or recorded.
+ *
+ * `active` is by the stored times alone (not ended, inside the limits written on the row),
+ * not by the session's profile as configured now: a profile tightened since may end a
+ * session answered as active at its next request.
+ *
+ * @param deps - Session store and clock.
+ * @param scope - The environment.
+ * @param sessionId - The session.
+ * @returns The session, with its user's id and whether it is active by what is stored.
+ * @throws NotFoundError when the environment has no such session (another environment's is
+ *   answered the same).
+ */
+export async function get(
+  deps: Pick<Deps, 'sessions' | 'clock'>,
+  scope: Pick<Tenant, 'environmentId'>,
+  sessionId: string
+): Promise<AdminSession> {
+  const record = await deps.sessions.findById(scope.environmentId, sessionId)
+  if (!record) {
+    throw new NotFoundError()
+  }
+  return {
+    ...toSession(record, ''),
+    userId: record.userId,
+    active: isActive(record, deps.clock.now()),
+  }
+}
+
 type RevokeDeps = Pick<Deps, 'sessions' | 'revokedSessions' | 'clock' | 'ids'>
 
 /** Which session to revoke, and for whom. */
@@ -1195,16 +1234,72 @@ export async function revoke(deps: RevokeDeps, scope: Scope, input: RevokeInput)
   if (!session || session.userId !== input.userId) {
     throw new NotFoundError()
   }
+  await end(deps, scope, session, input.reason ?? 'revoked_by_user', input.actor)
+}
+
+/**
+ * Denylist one session and end it, with its entry: the one way a single session is ended.
+ *
+ * @returns What the store's guarded update said: `true` when this call ended the session
+ *   and wrote its entry, `false` when it had already ended and nothing was written.
+ */
+async function end(
+  deps: RevokeDeps,
+  scope: Scope,
+  session: { id: string; userId: string },
+  reason: SessionRevokeReason,
+  actor: Actor,
+  proposal?: CarriedOutProposal
+): Promise<boolean> {
   const now = deps.clock.now()
-  const reason = input.reason ?? 'revoked_by_user'
   await denylist(deps, [session.id], now)
-  await deps.sessions.revoke(
+  return deps.sessions.revoke(
     scope.environmentId,
     session.id,
     reason,
     now,
-    revoked(deps, scope, session, reason, input.actor)
+    revoked(deps, scope, session, reason, actor, proposal)
   )
+}
+
+/** The human-approved proposal a change carried out, as its audit entry names it (ADR 0053). */
+export interface CarriedOutProposal {
+  proposalId: string
+  approvedBy: ProposalApprover
+}
+
+/**
+ * End one session of the environment, named by its id alone: what an approved
+ * `end_session` proposal runs (ADR 0053). Exactly one session: there is no counterpart here
+ * that takes a user and ends all of theirs.
+ *
+ * It is the ending every other path makes ({@link revoke}): the session's id is denylisted
+ * first, then the row is ended with its `session.revoked` entry (`revoked_by_admin`), which
+ * names the proposal and who approved it. A session that had already ended is left as it
+ * was.
+ *
+ * @param deps - Session store, denylist, ids and clock.
+ * @param scope - The project and environment.
+ * @param sessionId - The session.
+ * @param actor - Who ends it, for the audit log: the agent whose proposal was approved.
+ * @param proposal - The approved proposal this carries out.
+ * @returns Whether this call ended the session, as the store's guarded update said it:
+ *   `false` when it had already ended, and then no entry was written.
+ * @throws NotFoundError when the environment has no such session (another environment's is
+ *   answered the same).
+ */
+export async function revokeForProposal(
+  deps: RevokeDeps,
+  scope: Scope,
+  sessionId: string,
+  actor: Actor,
+  proposal: CarriedOutProposal
+): Promise<boolean> {
+  const session = await deps.sessions.findById(scope.environmentId, sessionId)
+  if (!session) {
+    throw new NotFoundError()
+  }
+  return end(deps, scope, session, 'revoked_by_admin', actor, proposal)
 }
 
 /**

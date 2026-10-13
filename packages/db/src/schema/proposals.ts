@@ -24,6 +24,11 @@ import { tula } from './pg-schema'
  * words from the contract's closed lists, and must never get a column an agent can write
  * prose into. `target_id` and `proposed_by` are deliberately not foreign keys: the row is a
  * record, and outlives a user who was deleted or a key that was revoked.
+ *
+ * `target_id` is text since migration 0035: a user and a session are named by their UUID, an
+ * OAuth provider by its name from the contract's closed list (`google`), which is how the
+ * admin API names one. The check `proposals_target_id_shape` holds it to what either can
+ * be (lower-case letters, digits, a hyphen, an underscore; at most 64): never a sentence.
  */
 export const proposals = tula.table(
   'proposals',
@@ -34,7 +39,8 @@ export const proposals = tula.table(
     operation: text('operation').notNull(),
     /** One of the contract's `PROPOSAL_TARGET_TYPES`. */
     targetType: text('target_type').notNull(),
-    targetId: uuid('target_id').notNull(),
+    /** A UUID, or an OAuth provider's name. See `proposals_target_id_shape`. */
+    targetId: text('target_id').notNull(),
     /** The agent key that asked. */
     proposedBy: uuid('proposed_by').notNull(),
     status: text('status', { enum: ['pending', 'approved', 'executed', 'failed'] })
@@ -57,6 +63,9 @@ export const proposals = tula.table(
     ),
     check('proposals_operation_shape', sql`${t.operation} ~ '^[a-z_]{1,64}$'`),
     check('proposals_target_type_shape', sql`${t.targetType} ~ '^[a-z_]{1,64}$'`),
+    // What an id or a provider's name is made of, and nothing a sentence needs (no space,
+    // no upper case, no punctuation but the two an id has).
+    check('proposals_target_id_shape', sql`${t.targetId} ~ '^[a-z0-9_-]{1,64}$'`),
     // Pending means nobody approved; anything else means somebody did, at a known time.
     check(
       'proposals_approval_whole',

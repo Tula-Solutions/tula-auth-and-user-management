@@ -769,8 +769,9 @@ native apps hashes as it did before they could be written (a hook's defaults cou
 written). So does one
 that defines no JWT template and whose profiles name none, and one that leaves text messages
 (`sms`), their daily limit, the texted sign-in code (`signIn.methods.smsCode`) or a texted
-code as the second step (`mfa.smsCode`) at the default, and one whose profiles leave
-`deviceBinding` at their default; the order templates and their claims are written in
+code as the second step (`mfa.smsCode`) at the default, one whose profiles leave
+`deviceBinding` at their default, and one that does not accept an agent's proposals in
+production (`agents.proposalsInProduction`); the order templates and their claims are written in
 never counts.
 
 ```ts

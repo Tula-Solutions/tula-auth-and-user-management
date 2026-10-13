@@ -905,6 +905,31 @@ describe('JWT templates', () => {
     expect(new Set([off, onNowhere, listed, on, wider]).size).toBe(5)
   })
 
+  // `agents` arrived with a default in every document: a file applied before it hashes the same.
+  test('not accepting proposals in production is not in the fingerprint, and accepting them is', async () => {
+    expect(await hash({ agents: { proposalsInProduction: false } })).toBe(await hash({}))
+    expect(await hash({ agents: {} })).toBe(await hash({}))
+    expect(await hash({ agents: { proposalsInProduction: true } })).not.toBe(await hash({}))
+  })
+
+  test('agents.proposalsInProduction is a boolean and agents has no other key, refused by its path', () => {
+    const config = (agents: unknown) =>
+      defineConfig({ environments: { dev: { settings: { agents } } } } as never)
+    expect(
+      config({ proposalsInProduction: true }).environments.dev?.settings.agents
+        .proposalsInProduction
+    ).toBe(true)
+    expect(config({}).environments.dev?.settings.agents.proposalsInProduction).toBe(false)
+    for (const agents of [{ proposalsInProduction: 'always' }, { proposalsInProduction: 1 }]) {
+      const error = refusal(() => config(agents))
+      expect(JSON.stringify(error.issues)).toContain('settings.agents.proposalsInProduction')
+      expect(JSON.stringify(error.issues)).not.toContain('always')
+    }
+    expect(JSON.stringify(refusal(() => config({ approve: true })).issues)).toContain(
+      'settings.agents'
+    )
+  })
+
   // The daily limit arrived after `sms` did: a file that was applied before it hashes the same.
   test('the default daily limit of text messages is not in the fingerprint, and another one is', async () => {
     const on = 'sha256:ae16222002d43eb0136cda78b385d1cab17cc2009383854afcac4b7a13f766d9'

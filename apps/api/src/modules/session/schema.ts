@@ -3,6 +3,7 @@ import { z } from 'zod'
 /** Session shapes are owned by the contract so every SDK agrees on them. */
 export {
   AccessTokenClaimsSchema,
+  AdminSessionSchema,
   RefreshTokenRequestSchema,
   RevokedSessionsSchema,
   SessionListSchema,
