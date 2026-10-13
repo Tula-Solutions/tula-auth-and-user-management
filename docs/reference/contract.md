@@ -2168,6 +2168,9 @@ otherwise silently reset the password policy to its default.
 - `emails.templates`: the environment's own subject and body for each kind of email, as
   plain text with `{{name}}` placeholders (`EmailTemplates`). Empty by default: every
   message is the built-in copy. See ADR 0039.
+- `agents.testSignIn`: whether an AI agent may run a sign-in test here (ADR 0058): `true`,
+  `false`, or `null` (the default) for "in a development environment yes, in a production
+  one no".
 
 ```ts
 const EnvironmentSettingsSchema
@@ -5976,6 +5979,120 @@ environment's only way in: `smsCode`. A phone number is added to an account that
 const SIGN_IN_METHODS_WITHOUT_SIGN_UP: readonly string[]
 ```
 
+### `SIGN_IN_TEST_CLEANUPS`
+
+_constant_, defined in `packages/contract/src/test-address.ts`
+
+What became of the throwaway user: `deleted`; `failed` (it exists and could not be deleted:
+the server's retention job removes it within minutes); `none` (no account was made).
+
+```ts
+const SIGN_IN_TEST_CLEANUPS: readonly ["deleted", "failed", "none"]
+```
+
+**Example**
+
+```ts
+const cleanup: SignInTestCleanup = 'deleted'
+```
+
+### `SIGN_IN_TEST_OUTCOMES`
+
+_constant_, defined in `packages/contract/src/test-address.ts`
+
+What a whole test came to: `passed` when every step did; `failed` when a step failed;
+`incomplete` when none failed and at least one was not run.
+
+```ts
+const SIGN_IN_TEST_OUTCOMES: readonly ["passed", "failed", "incomplete"]
+```
+
+**Example**
+
+```ts
+const outcome: SignInTestOutcome = 'incomplete'
+```
+
+### `SIGN_IN_TEST_REASONS`
+
+_constant_, defined in `packages/contract/src/test-address.ts`
+
+Why a step was not run, or why it failed where no error code says it.
+
+- `earlier_step`: a step it depends on did not pass.
+- `second_factor_required`: the attempt stopped at a second factor or at its enrolment; the
+  test proves no second factor and enrols none.
+- `email_cooldown`: the sign-in's only first factor the server could prove by itself is an
+  emailed code, and a second code for one address within a minute of the first (the
+  sign-up's) is refused for everyone. The test does not wait and does not go round it.
+- `no_provable_method`: the sign-in offers no first factor the server can prove by itself
+  (only a passkey, an emailed link, a texted code or a provider).
+- `no_session`: there is no session to end.
+- `timeout`: the step, or the whole test, ran out of time.
+- `cancelled`: the caller went away.
+
+```ts
+const SIGN_IN_TEST_REASONS
+```
+
+**Example**
+
+```ts
+const reason: SignInTestReason = 'second_factor_required'
+```
+
+### `SIGN_IN_TEST_REFUSALS`
+
+_constant_, defined in `packages/contract/src/test-address.ts`
+
+Why a sign-in test was refused before it began, as `params.reason` of the `auth.forbidden`
+answer says it: the environment does not allow one (`agents.testSignIn`).
+
+```ts
+const SIGN_IN_TEST_REFUSALS: readonly ["test_sign_in_disabled"]
+```
+
+**Example**
+
+```ts
+if (error.params?.reason === SIGN_IN_TEST_REFUSALS[0]) {
+  // Switch agents.testSignIn on for this environment.
+}
+```
+
+### `SIGN_IN_TEST_STEPS`
+
+_constant_, defined in `packages/contract/src/test-address.ts`
+
+The steps of a sign-in test, in the order they run and are reported.
+
+```ts
+const SIGN_IN_TEST_STEPS
+```
+
+**Example**
+
+```ts
+const step: SignInTestStep = 'verify_email'
+```
+
+### `SIGN_IN_TEST_STEP_OUTCOMES`
+
+_constant_, defined in `packages/contract/src/test-address.ts`
+
+What became of a step: it was carried out and worked, it was carried out and did not, or it
+was not carried out. A step that was not carried out is never `passed`.
+
+```ts
+const SIGN_IN_TEST_STEP_OUTCOMES: readonly ["passed", "failed", "not_run"]
+```
+
+**Example**
+
+```ts
+const outcome: SignInTestStepOutcome = 'not_run'
+```
+
 ### `SMS_COUNTRIES`
 
 _constant_, defined in `packages/contract/src/phone.ts`
@@ -6512,6 +6629,116 @@ hyphens and parentheses are ignored).
 const SignInStartRequestSchema: z.ZodObject<{ identifier: z.ZodString; }, z.core.$strip>
 ```
 
+### `SignInTestCleanup`
+
+_type_, defined in `packages/contract/src/test-address.ts`
+
+What became of a test's user.
+
+```ts
+export type SignInTestCleanup = (typeof SIGN_IN_TEST_CLEANUPS)[number]
+```
+
+### `SignInTestOutcome`
+
+_type_, defined in `packages/contract/src/test-address.ts`
+
+The outcome of a whole test.
+
+```ts
+export type SignInTestOutcome = (typeof SIGN_IN_TEST_OUTCOMES)[number]
+```
+
+### `SignInTestReason`
+
+_type_, defined in `packages/contract/src/test-address.ts`
+
+A fixed reason of a step: one of {@link SIGN_IN_TEST_REASONS}.
+
+```ts
+export type SignInTestReason = (typeof SIGN_IN_TEST_REASONS)[number]
+```
+
+### `SignInTestRefusal`
+
+_type_, defined in `packages/contract/src/test-address.ts`
+
+Why a sign-in test was refused.
+
+```ts
+export type SignInTestRefusal = (typeof SIGN_IN_TEST_REFUSALS)[number]
+```
+
+### `SignInTestReport`
+
+_type_, defined in `packages/contract/src/sign-in-test.ts`
+
+The report of a sign-in test.
+
+```ts
+export type SignInTestReport = z.infer<typeof SignInTestReportSchema>
+```
+
+### `SignInTestReportSchema`
+
+_constant_, defined in `packages/contract/src/sign-in-test.ts`
+
+The report of a sign-in test (ADR 0058): what `POST /v1/agent/sign-in-tests` answers.
+
+A throwaway user was signed up and in through the environment's real flow, by the server
+itself, and deleted. The report holds **nothing the flow handled**: no address, code,
+password, attempt secret or token. `userId` is the id the server gave the throwaway user
+(`null` when no account was made), there so that an operator can find the run's audit
+entries; the user itself is gone unless `cleanup` is `failed`.
+
+```ts
+const SignInTestReportSchema
+```
+
+### `SignInTestStep`
+
+_type_, defined in `packages/contract/src/test-address.ts`
+
+One step of a sign-in test: one of {@link SIGN_IN_TEST_STEPS}.
+
+```ts
+export type SignInTestStep = (typeof SIGN_IN_TEST_STEPS)[number]
+```
+
+### `SignInTestStepOutcome`
+
+_type_, defined in `packages/contract/src/test-address.ts`
+
+The outcome of one step.
+
+```ts
+export type SignInTestStepOutcome = (typeof SIGN_IN_TEST_STEP_OUTCOMES)[number]
+```
+
+### `SignInTestStepResult`
+
+_type_, defined in `packages/contract/src/sign-in-test.ts`
+
+One step of a sign-in test's report.
+
+```ts
+export type SignInTestStepResult = z.infer<typeof SignInTestStepResultSchema>
+```
+
+### `SignInTestStepResultSchema`
+
+_constant_, defined in `packages/contract/src/sign-in-test.ts`
+
+One step of a sign-in test's report: which step, what became of it and how long it took.
+Closed words and a number; never an address, a code, a token or any text of a message.
+
+`code` is the API's error code of a step that failed with one. `reason` is one of the
+server's fixed words: why a step was not run, or why it failed where no code says it.
+
+```ts
+const SignInTestStepResultSchema
+```
+
 ### `SignUpPasswordMode`
 
 _type_, defined in `packages/contract/src/environment-settings.ts`
@@ -7001,6 +7228,40 @@ export interface StoredSmsTemplatesRead {
   /** How many entries were under a kind this version does not know. */
   unknown: number
 }
+```
+
+### `TEST_ADDRESS_DOMAIN`
+
+_constant_, defined in `packages/contract/src/test-address.ts`
+
+The domain of every address a sign-in test makes. `.invalid` is reserved (RFC 2606, RFC
+6761): no name under it can be registered and no mail can be delivered to one, so no
+person has, or can come to have, such an address.
+
+```ts
+const TEST_ADDRESS_DOMAIN: "test.tula.invalid"
+```
+
+**Example**
+
+```ts
+`tula-test-${hex}@${TEST_ADDRESS_DOMAIN}`
+```
+
+### `TEST_ADDRESS_LOCAL_PREFIX`
+
+_constant_, defined in `packages/contract/src/test-address.ts`
+
+What the local part of a test's address starts with; 32 hexadecimal characters follow.
+
+```ts
+const TEST_ADDRESS_LOCAL_PREFIX: "tula-test-"
+```
+
+**Example**
+
+```ts
+TEST_ADDRESS_LOCAL_PREFIX // 'tula-test-'
 ```
 
 ### `THEME_TOKENS`
@@ -9054,6 +9315,36 @@ isSmsTemplateKind('sign_in') // true
 isSmsTemplateKind('constructor') // false
 ```
 
+### `isTestAddress`
+
+_function_, defined in `packages/contract/src/test-address.ts`
+
+Whether an address is one only a sign-in test may hold: any address whose domain is
+{@link TEST_ADDRESS_DOMAIN} or a name under it, whatever its local part and its case.
+
+It is deliberately wider than the addresses a test makes: the whole domain is kept away
+from people, so that no spelling of one is left for somebody to sign up with. The server
+refuses such an address wherever an address is taken for an account, and sends no mail to
+one. A receiver of `before_sign_up` can ask this of the question's `email`.
+
+```ts
+export function isTestAddress(address: string): boolean
+```
+
+**Parameters**
+
+- `address`: An email address, as typed or as stored.
+
+**Returns** `true` for an address in the reserved test domain.
+
+**Example**
+
+```ts
+isTestAddress('tula-test-0123456789abcdef0123456789abcdef@test.tula.invalid') // true
+isTestAddress('Someone@Sub.Test.Tula.Invalid') // true
+isTestAddress('maya@northline.app') // false
+```
+
 ### `isValidThemeValue`
 
 _function_, defined in `packages/contract/src/theme.ts`
@@ -10029,7 +10320,14 @@ A path is listed when:
   while one may be the second step a `required` policy asks for (listed once);
 - `urls.allowedRedirectUrls`: a custom-scheme redirect URL (`com.example.app:/oauth`) is
   listed that was not (ADR 0044). Any app on a device can claim a scheme. An `https` URL
-  added is not listed.
+  added is not listed;
+- `agents.testSignIn`: `true` is written where it was not, or `false` is taken back to
+  `null` (ADR 0058): an AI agent may then sign a throwaway user up and in, which asks the
+  environment's hooks and delivers its events. `true` switches it on in a production
+  environment, and `null` over `false` in a development one (where the default is yes).
+  Each is listed in the other kind too, where it changes nothing: the documents do not
+  say which kind of environment they are for, so the rule errs towards asking. `false`,
+  and `null` where a run was allowed outright (`true`) or by default, are never listed.
 
 One of these is enough, whatever else became stricter. Not counted: `maxLength`,
 `specialChars`, the `preset` label and `expiryDays` (forced rotation is not a strength
@@ -10272,6 +10570,64 @@ export function takesAdditionalClientIds(provider: string): boolean
 ```ts
 takesAdditionalClientIds('google') // true
 takesAdditionalClientIds('apple') // false
+```
+
+### `testAddress`
+
+_function_, defined in `packages/contract/src/test-address.ts`
+
+Build the address of a test's throwaway user.
+
+```ts
+export function testAddress(hex: string): string
+```
+
+**Parameters**
+
+- `hex`: 32 hexadecimal characters from a CSPRNG.
+
+**Returns** The address, lower case.
+
+**Throws** Error when `hex` is not 32 hexadecimal characters.
+
+**Example**
+
+```ts
+testAddress('0123456789abcdef0123456789abcdef')
+// 'tula-test-0123456789abcdef0123456789abcdef@test.tula.invalid'
+```
+
+### `testSignInAllowed`
+
+_function_, defined in `packages/contract/src/test-address.ts`
+
+Whether an environment allows a sign-in test: what its `agents.testSignIn` says, and where
+that is `null` (the default) what its kind of environment does: **yes in a development
+environment, no in a production one**. The one place the default is decided.
+
+The kind is the environment's own, as the control plane stores it; never the deployment's
+tier.
+
+```ts
+export function testSignInAllowed(
+  setting: boolean | null,
+  kind: 'development' | 'production'
+): boolean
+```
+
+**Parameters**
+
+- `setting`: `agents.testSignIn`: `true`, `false` or `null`.
+- `kind`: The environment's kind.
+
+**Returns** Whether a test may run.
+
+**Example**
+
+```ts
+testSignInAllowed(null, 'development') // true
+testSignInAllowed(null, 'production') // false
+testSignInAllowed(true, 'production') // true
 ```
 
 ### `themeToCssVariables`

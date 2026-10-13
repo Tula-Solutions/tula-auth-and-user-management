@@ -990,7 +990,8 @@ function canonical(value: unknown): unknown {
  * (`sms.templates`: no template), a texted code as the second step one (`mfa.smsCode`, off),
  * device binding one on every profile (`deviceBinding`: `none` for `web`, `optional` for
  * every other, which is what each did before), proposals from an agent in a production
- * environment one (`agents.proposalsInProduction`, off).
+ * environment one (`agents.proposalsInProduction`, off) and the sign-in test one beside it
+ * (`agents.testSignIn`: `null`, the default of the environment's kind; ADR 0058).
  *
  * The fingerprint says which version of the file is applied. A field that every document
  * gained by upgrading must not change it, or each applied environment would report a new
@@ -1043,8 +1044,16 @@ function withoutUnusedDefaults(environment: EnvironmentConfig): unknown {
       }),
       // Email templates arrived later still: written only when there is one.
       ...(Object.keys(emails.templates).length > 0 && { emails }),
-      // Proposals in a production environment are written only when they are accepted.
-      ...(agents.proposalsInProduction && { agents }),
+      // What an agent may do arrived in two steps, and `agents` is written when either says
+      // something: proposals in a production environment only when they are accepted, and
+      // whether a sign-in test may run only when the file says yes or no (`null` is "as the
+      // environment's kind has it", which is what every environment did before).
+      ...((agents.proposalsInProduction || agents.testSignIn !== null) && {
+        agents: {
+          ...(agents.proposalsInProduction && { proposalsInProduction: true }),
+          ...(agents.testSignIn !== null && { testSignIn: agents.testSignIn }),
+        },
+      }),
     },
   }
 }
@@ -1064,7 +1073,8 @@ function withoutUnusedDefaults(environment: EnvironmentConfig): unknown {
  * (`sms`), their daily limit, the texted sign-in code (`signIn.methods.smsCode`) or a texted
  * code as the second step (`mfa.smsCode`) at the default, one whose profiles leave
  * `deviceBinding` at their default, and one that does not accept an agent's proposals in
- * production (`agents.proposalsInProduction`); the order templates and their claims are written in
+ * production (`agents.proposalsInProduction`) and does not say whether a sign-in test may
+ * run (`agents.testSignIn`); the order templates and their claims are written in
  * never counts.
  *
  * @param environment - The environment's validated config.

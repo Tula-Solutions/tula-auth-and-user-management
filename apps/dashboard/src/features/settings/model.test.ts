@@ -338,6 +338,34 @@ describe('describeWeakening', () => {
     expect(describeWeakening('future.setting')).toBe('future.setting')
   })
 
+  // The sign-in test (ADR 0058): the editor has no control for it, but a document that
+  // gains `true` (pasted, or changed elsewhere and saved here) is asked about in words.
+  test.each([
+    [null, true, true],
+    [false, true, true],
+    [true, true, false],
+    [true, null, false],
+    [null, false, false],
+    [false, null, true],
+  ] as const)('the sign-in test from %p to %p: asks first is %p', (from, to, asks) => {
+    const doc = (testSignIn: boolean | null) =>
+      edited((draft) => {
+        draft.agents.testSignIn = testSignIn
+      })
+    const plan = planSave(doc(from), doc(to), null)
+    expect(plan.needsConfirmation).toBe(asks)
+    expect(plan.weakenings).toEqual(asks ? ['agents.testSignIn'] : [])
+  })
+
+  test('the sign-in test is said as what it lets happen, never as its path', () => {
+    const words = describeWeakening('agents.testSignIn')
+    expect(words).not.toBe('agents.testSignIn')
+    expect(words).toContain('a throwaway user')
+    expect(words).toContain('also if it is a production one')
+    expect(words).toContain('your hooks are asked')
+    expect(words).toContain('webhook endpoints')
+  })
+
   test.each([
     ['required', 'optional', true],
     ['optional', 'none', true],

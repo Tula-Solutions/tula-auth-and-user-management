@@ -198,8 +198,9 @@ export interface Tenant {
   apiKeyId: string
   /**
    * Set when the request was authorized by an **agent key** (ADR 0053): the caller is an AI
-   * agent, which reads and proposes and changes nothing. Only the two middlewares that accept
-   * such a key set it (`secretKey()` on a read, `agentKey()`).
+   * agent, which reads, proposes and, where the environment allows one, runs a sign-in test
+   * (ADR 0058), and changes nothing else. Only the two middlewares that accept such a key set
+   * it (`secretKey()` on a read, `agentKey()`).
    */
   agent?: true
 }

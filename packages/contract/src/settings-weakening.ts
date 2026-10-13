@@ -374,7 +374,14 @@ function redirectWeakenings(
  *   while one may be the second step a `required` policy asks for (listed once);
  * - `urls.allowedRedirectUrls`: a custom-scheme redirect URL (`com.example.app:/oauth`) is
  *   listed that was not (ADR 0044). Any app on a device can claim a scheme. An `https` URL
- *   added is not listed.
+ *   added is not listed;
+ * - `agents.testSignIn`: `true` is written where it was not, or `false` is taken back to
+ *   `null` (ADR 0058): an AI agent may then sign a throwaway user up and in, which asks the
+ *   environment's hooks and delivers its events. `true` switches it on in a production
+ *   environment, and `null` over `false` in a development one (where the default is yes).
+ *   Each is listed in the other kind too, where it changes nothing: the documents do not
+ *   say which kind of environment they are for, so the rule errs towards asking. `false`,
+ *   and `null` where a run was allowed outright (`true`) or by default, are never listed.
  *
  * One of these is enough, whatever else became stricter. Not counted: `maxLength`,
  * `specialChars`, the `preset` label and `expiryDays` (forced rotation is not a strength
@@ -426,5 +433,10 @@ export function settingsWeakenings(
     paths.push('sms.allowedCountries')
   }
   paths.push(...redirectWeakenings(before.urls, after.urls))
+  const wasAllowed = before.agents.testSignIn
+  const isAllowed = after.agents.testSignIn
+  if ((isAllowed === true && wasAllowed !== true) || (isAllowed === null && wasAllowed === false)) {
+    paths.push('agents.testSignIn')
+  }
   return paths
 }

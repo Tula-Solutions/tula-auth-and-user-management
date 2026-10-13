@@ -391,6 +391,26 @@ describe('draft_settings_change: a weakening is said with the contract’s own n
     }
   })
 
+  // The key beside it (ADR 0058) is named by the projection too, so it is drafted the same
+  // way: allowing a sign-in test by name is the contract's weakening, refusing one is not.
+  test('allowing a sign-in test is drafted as a weakening, and refusing one is not', async () => {
+    const { client, requests } = await world()
+    const on = await callTool(client, TOOL, {
+      settings: [{ path: 'agents.testSignIn', value: true }],
+    })
+    expect(on.isError).toBe(false)
+    expect(on.structured.weakened).toEqual(['agents.testSignIn'])
+    expect(on.structured.changed).toBe(false)
+    const off = await callTool(client, TOOL, {
+      settings: [{ path: 'agents.testSignIn', value: false }],
+    })
+    expect(off.isError).toBe(false)
+    expect(off.structured.weakened).toEqual([])
+    for (const request of requests) {
+      expect(request.method).toBe('GET')
+    }
+  })
+
   test('a client id Google gains is a weakening, named as `tula diff` names it; one it loses is not', async () => {
     const { client } = await world()
     const gained = await callTool(client, TOOL, {

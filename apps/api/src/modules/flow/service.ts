@@ -16,6 +16,7 @@ import {
   type IdentityLinkStart,
   type IdTokenProvider,
   IdTokenProviderSchema,
+  isTestAddress,
   maskPhoneNumber,
   OAUTH_ERROR_PARAM,
   OAUTH_TICKET_PARAM,
@@ -52,7 +53,7 @@ import {
 import { type Actor, cleanOrigin, systemActor } from '~/lib/actor'
 import { ipBucket } from '~/lib/client-ip'
 import { randomToken, sha256Hex, timingSafeEqual } from '~/lib/crypto'
-import { maskEmail, normalizeEmail, parseEmail } from '~/lib/email'
+import { maskEmail, normalizeEmail, parseEmail, type TestAddressPermit } from '~/lib/email'
 import * as logger from '~/lib/logger'
 import * as WebAuthn from '~/lib/webauthn'
 import * as Audit from '~/modules/audit/service'
@@ -336,6 +337,12 @@ export interface ClientContext {
   profile?: string
   userAgent: string | null
   ipAddress: string | null
+  /**
+   * A sign-in test's permit to use an address of the reserved test domain (ADR 0058). Only
+   * `~/modules/sign-in-test/service` can make one, and no router ever sets it: for every
+   * request such an address is not an address (`parseEmail`).
+   */
+  testAddress?: TestAddressPermit
   /**
    * The thumbprint of the device key the start's proof was accepted for (ADR 0043), when the
    * request that starts the attempt brought one. Like `client` it is read only when an attempt
@@ -1010,7 +1017,7 @@ export async function signUp(
   context: ClientContext
 ): Promise<FlowResult> {
   requireAllowedOrigin(context.client, context)
-  const parsed = parseEmail(input.email)
+  const parsed = parseEmail(input.email, context.testAddress)
   if (!parsed) {
     throw new InvalidEmailError()
   }
@@ -1425,7 +1432,7 @@ export async function prepareFirstFactor(
           client: state.client,
         })
       : undefined
-  const parsed = parseEmail(attempt.identifier)
+  const parsed = parseEmail(attempt.identifier, context.testAddress)
   if (!parsed) {
     throw new InvalidEmailError()
   }
@@ -2857,6 +2864,9 @@ export async function verifyEmail(
         emailVerified: true,
         ...(!state.passwordHash && { passwordless: true }),
         ...(clearance === 'bypassed' && { hookBypassed: true }),
+        // A sign-in test's throwaway user (ADR 0058), said where its id is first said.
+        // Decided from the address, so no path that creates one can leave it out.
+        ...(isTestAddress(attempt.identifier) && { test: true }),
       },
     })
   )

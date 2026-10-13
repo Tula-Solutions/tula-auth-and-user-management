@@ -175,6 +175,15 @@ of.
   reason of the first refusal and how many of the minute before were not written; the
   actor is the system and the request's origin is kept. Nothing of the proof, the key or
   the token is in it.
+- **A sign-in test is `sign_in_test.started` and `sign_in_test.finished`**
+  ([ADR 0058](0058-test-signin.md)), written through `users.reportSignInTest`, the second
+  store method that takes an `Activity` and changes nothing: the run's own writes (the
+  user, its sessions, its deletion) are recorded by the methods that make them. `finished`
+  carries the run's outcome, what became of the user (both closed words) and the user's
+  id. **`user.created` gains one optional boolean, `test`**, `true` for the throwaway user
+  of such a run and absent otherwise: derived from the address where the account is made,
+  never from a request. The purge of a test's leftover users
+  (`users.deleteTestUsersBefore`) records each deletion, as the `system` actor.
 - **Actors.** `admin` is a secret key (the id is the API key's, so a leaked key's actions can be
   listed); `user` is a signed-in user, or the user a refresh token or a completed flow proves;
   `system` is the server acting by itself (reuse detection, the ban check on refresh, the

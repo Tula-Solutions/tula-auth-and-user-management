@@ -99,6 +99,10 @@ export const ACTIVITY_TYPES = [
   'proposal.approved',
   'proposal.executed',
   'proposal.failed',
+  // A sign-in test (ADR 0058): the server signed a throwaway user up and in for an agent (or
+  // for a secret key) and deleted it. `finished` says what it came to and names the user.
+  'sign_in_test.started',
+  'sign_in_test.finished',
 ] as const
 
 /** A recorded action type: one of {@link ACTIVITY_TYPES}. */
@@ -181,6 +185,8 @@ export const EVENT_TARGET_TYPES = {
   'proposal.approved': 'proposal',
   'proposal.executed': 'proposal',
   'proposal.failed': 'proposal',
+  'sign_in_test.started': 'environment',
+  'sign_in_test.finished': 'environment',
 } as const satisfies Record<ActivityType, AuditTargetType>
 
 /** What an event of type `T` is about. */

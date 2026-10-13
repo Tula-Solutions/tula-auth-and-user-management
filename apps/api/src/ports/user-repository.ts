@@ -1,5 +1,5 @@
 import type { OAuthProvider, UserSort } from '@tula/contract'
-import type { Recorded } from '~/ports/activity-log'
+import type { Activity, Recorded } from '~/ports/activity-log'
 
 /** An end user of a customer's app, scoped to one environment. */
 export interface UserRecord {
@@ -599,4 +599,35 @@ export interface UserRepository {
    * @returns `false` when they do not exist.
    */
   delete(environmentId: string, userId: string, activity: Recorded): Promise<boolean>
+
+  /**
+   * Record that a sign-in test started or finished (ADR 0058), and nothing else: the entry
+   * is the whole write. It is here, beside the users, because what a test makes and removes
+   * is a user; the run's own writes are recorded by the methods that make them.
+   *
+   * @param environmentId - The environment the test runs in.
+   * @param activity - `sign_in_test.started` or `sign_in_test.finished`.
+   */
+  reportSignInTest(environmentId: string, activity: Activity): Promise<void>
+
+  /**
+   * Delete the throwaway users of sign-in tests that are older than a cutoff, for the
+   * retention job (ADR 0017, ADR 0058): what a test whose own deletion failed, or whose
+   * process ended before it, left behind.
+   *
+   * A user is one of them by its address alone (the reserved test domain, which no person's
+   * account can hold), never by a flag a request could set.
+   *
+   * @param environmentId - The environment to purge.
+   * @param before - Users created strictly before this time are deleted.
+   * @param limit - The most users to delete in this call.
+   * @param record - Makes the entry recorded with each deletion, in its transaction.
+   * @returns How many users were deleted.
+   */
+  deleteTestUsersBefore(
+    environmentId: string,
+    before: Date,
+    limit: number,
+    record: (userId: string) => Activity
+  ): Promise<number>
 }

@@ -69,7 +69,7 @@ describe('EnvironmentSettingsSchema', () => {
       signUp: { password: 'required' },
       urls: { allowedOrigins: [], allowedRedirectUrls: [] },
       audit: { retentionDays: null },
-      agents: { proposalsInProduction: false },
+      agents: { proposalsInProduction: false, testSignIn: null },
       notifications: {
         passwordChanged: true,
         newSignIn: true,
@@ -433,7 +433,7 @@ describe('EnvironmentSettingsInputSchema', () => {
       signUp: { password: 'required' },
       urls: { allowedRedirectUrls: [] },
       audit: { retentionDays: null },
-      agents: { proposalsInProduction: false },
+      agents: { proposalsInProduction: false, testSignIn: null },
       notifications: {
         passwordChanged: true,
         newSignIn: true,
@@ -893,5 +893,43 @@ describe('sms', () => {
     })
     // An older server's answer has none.
     expect(ClientConfigSchema.parse(config).phone).toBeUndefined()
+  })
+})
+
+describe('agents.testSignIn', () => {
+  test('is null by default, in the stored document and in the input', () => {
+    expect(EnvironmentSettingsSchema.parse({}).agents).toEqual({
+      proposalsInProduction: false,
+      testSignIn: null,
+    })
+    expect(EnvironmentSettingsInputSchema.parse({}).agents).toEqual({
+      proposalsInProduction: false,
+      testSignIn: null,
+    })
+    expect(parseStoredEnvironmentSettings({}).agents).toEqual({
+      proposalsInProduction: false,
+      testSignIn: null,
+    })
+  })
+
+  test.each([true, false, null])('takes %p', (value) => {
+    expect(EnvironmentSettingsSchema.parse({ agents: { testSignIn: value } }).agents).toEqual({
+      proposalsInProduction: false,
+      testSignIn: value,
+    })
+  })
+
+  test('refuses anything that is not a boolean or null, and an unknown key beside it', () => {
+    for (const agents of [{ testSignIn: 'yes' }, { testSignIn: 1 }, { testSignIn: null, x: 1 }]) {
+      expect(EnvironmentSettingsSchema.safeParse({ agents }).success).toBe(false)
+      expect(EnvironmentSettingsInputSchema.safeParse({ agents }).success).toBe(false)
+    }
+  })
+
+  test('a stored document with a key beside it reads as the default', () => {
+    expect(parseStoredEnvironmentSettings({ agents: { later: true } }).agents).toEqual({
+      proposalsInProduction: false,
+      testSignIn: null,
+    })
   })
 })

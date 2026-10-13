@@ -52,7 +52,7 @@ A change an agent has asked for and that has not happened. It happens only when 
 _Avoid_: Pending write, request, draft
 
 **Agent key**:
-An environment's API key for an AI agent's tooling. It reads what a secret key reads and makes proposals; it changes nothing and approves nothing.
+An environment's API key for an AI agent's tooling. It reads what a secret key reads, asks for changes as proposals, and runs a sign-in test where the environment allows one; it changes nothing else and approves nothing.
 _Avoid_: Read-only key, MCP token, scoped secret key
 
 **Approval**:

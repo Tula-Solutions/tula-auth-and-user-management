@@ -21,8 +21,10 @@ paths:
   `adminActor(c)`, never by hand: it is what marks a dashboard change as `instance_admin`.
 - An agent key (ADR 0053) is admitted by `secretKey()` for `GET` and `HEAD` only, the
   method judged before the key is looked up, and by `agentKey()` on `/v1/agent/*`, whose
-  one route records a proposal. Never refuse an agent inside a route or a service as the
-  only defence, and never add a route under `/v1/agent/` that changes data. A proposal is
+  two routes record a proposal and run a sign-in test (ADR 0058: the one that changes live
+  data, only where `agents.testSignIn` allows it, limited before anything is created, its
+  throwaway user deleted in a `finally`). Never refuse an agent inside a route or a service as the
+  only defence, and never add another route under `/v1/agent/` that changes data. A proposal is
   approved through `Proposals.approve` only: a compare-and-set that writes the approval
   with its audit entry before the operation runs, as a human's actor, with the body naming
   the operation and target; the operation then runs as the `agent` actor with the

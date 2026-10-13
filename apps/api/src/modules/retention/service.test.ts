@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from 'bun:test'
-import { DEFAULT_ENVIRONMENT_SETTINGS, durationToMs } from '@tula/contract'
+import { DEFAULT_ENVIRONMENT_SETTINGS, durationToMs, testAddress } from '@tula/contract'
 import type { Tenant } from '~/dependencies'
 import { ServiceException } from '~/exceptions'
 import * as logger from '~/lib/logger'
@@ -223,6 +223,7 @@ describe('purge', () => {
       passwordHistory: 0,
       proposals: 0,
       hookCallCounts: 0,
+      testUsers: 0,
     })
     expect(await deps.flowAttempts.findById(tenant.environmentId, abandoned)).toBeNull()
     expect(await deps.flowAttempts.findById(otherTenant.environmentId, other)).toBeNull()
@@ -310,6 +311,7 @@ describe('purge', () => {
       passwordHistory: 0,
       proposals: 0,
       hookCallCounts: 0,
+      testUsers: 0,
     })
     expect(await has(tenant, abandoned)).toBe(false)
     expect(await has(otherTenant, foreign)).toBe(false)
@@ -361,6 +363,7 @@ describe('purge', () => {
           passwordHistory: 0,
           proposals: 0,
           hookCallCounts: 0,
+          testUsers: 0,
         },
       ],
     ])
@@ -611,6 +614,7 @@ describe('purge', () => {
       passwordHistory: 0,
       proposals: 0,
       hookCallCounts: 0,
+      testUsers: 0,
     })
     expect(await deps.flowAttempts.findById(otherTenant.environmentId, other)).toBeNull()
     expect(await hasSession(otherTenant, stale.id)).toBe(false)
@@ -997,6 +1001,7 @@ describe('run', () => {
           passwordHistory: 0,
           proposals: 0,
           hookCallCounts: 0,
+          testUsers: 0,
         },
       ],
     ])
@@ -1032,6 +1037,7 @@ describe('run', () => {
         passwordHistory: 0,
         proposals: 0,
         hookCallCounts: 0,
+        testUsers: 0,
       },
     ])
   })
@@ -1462,5 +1468,118 @@ describe('previous passwords beyond the password history (ADR 0038)', () => {
     const logged = JSON.stringify(info.mock.calls)
     expect(logged).not.toContain('argon2')
     expect(logged).not.toContain(user)
+  })
+})
+
+describe('what a sign-in test left behind (ADR 0058)', () => {
+  async function user(scope: Tenant, email: string): Promise<string> {
+    const id = deps.ids.next()
+    await deps.users.create(
+      {
+        id,
+        projectId: scope.projectId,
+        environmentId: scope.environmentId,
+        email,
+        emailNormalized: email,
+        emailVerifiedAt: deps.clock.now(),
+        firstName: null,
+        lastName: null,
+        createdAt: deps.clock.now(),
+        identityId: deps.ids.next(),
+        credentialId: deps.ids.next(),
+        passwordHash: '$argon2id$0',
+      },
+      Audit.none('fixture')
+    )
+    return id
+  }
+  let count = 0
+  const marked = () => {
+    count += 1
+    return testAddress(count.toString(16).padStart(32, '0'))
+  }
+  const exists = async (scope: Tenant, id: string) =>
+    (await deps.users.findById(scope.environmentId, id)) !== null
+
+  test('a throwaway user is deleted once a run could no longer be using it, and never a person', async () => {
+    const left = await user(tenant, marked())
+    const person = await user(tenant, 'maya@northline.app')
+    // Younger than the period: a run may still be signing it in.
+    deps.clock.advance(durationToMs(Retention.TEST_USER_RETENTION) - 1000)
+    expect((await Retention.purge(deps)).testUsers).toBe(0)
+    expect(await exists(tenant, left)).toBe(true)
+    deps.clock.advance(2000)
+    expect(await Retention.purge(deps)).toMatchObject({ testUsers: 1, failed: 0 })
+    expect(await exists(tenant, left)).toBe(false)
+    // However old a person's account is, it is not one of them.
+    deps.clock.advance(400 * DAY)
+    expect((await Retention.purge(deps)).testUsers).toBe(0)
+    expect(await exists(tenant, person)).toBe(true)
+  })
+
+  test('the deletion is recorded as the system’s, with the user as its target', async () => {
+    const left = await user(tenant, marked())
+    deps.clock.advance(durationToMs(Retention.TEST_USER_RETENTION) + 1000)
+    await Retention.purge(deps)
+    expect(deps.activityLog.ofType('user.deleted')).toMatchObject([
+      { actor: { type: 'system' }, target: { type: 'user', id: left } },
+    ])
+  })
+
+  test('each environment is purged through the store, in bounded batches, with one cutoff', async () => {
+    const here = await user(tenant, marked())
+    const there = await user(otherTenant, marked())
+    deps.clock.advance(durationToMs(Retention.TEST_USER_RETENTION) + 1000)
+    const purge = spyOn(deps.users, 'deleteTestUsersBefore')
+    spies.push(purge)
+    expect((await Retention.purge(deps)).testUsers).toBe(2)
+    const cutoff = from(-durationToMs(Retention.TEST_USER_RETENTION))
+    expect(
+      purge.mock.calls.map(([environmentId, before, limit]) => [
+        environmentId,
+        before.getTime(),
+        limit,
+      ])
+    ).toEqual([
+      [tenant.environmentId, cutoff.getTime(), Retention.RETENTION_BATCH_SIZE],
+      [otherTenant.environmentId, cutoff.getTime(), Retention.RETENTION_BATCH_SIZE],
+    ])
+    expect(await exists(tenant, here)).toBe(false)
+    expect(await exists(otherTenant, there)).toBe(false)
+  })
+
+  test('an earlier purge that throws does not take the test users’ purge with it', async () => {
+    const left = await user(tenant, marked())
+    deps.clock.advance(durationToMs(Retention.TEST_USER_RETENTION) + 1000)
+    // Every round, for as long as that store is broken: the safety net must still work.
+    spies.push(
+      spyOn(deps.hooks, 'deleteCallCountsBefore').mockRejectedValue(new Error('counts are gone'))
+    )
+    const report = await Retention.purge(deps)
+    expect(report.testUsers).toBe(1)
+    expect(report.failed).toBeGreaterThan(0)
+    expect(await exists(tenant, left)).toBe(false)
+  })
+
+  test('a test users’ purge that throws is logged by fixed words, the environment and the error’s name', async () => {
+    await user(tenant, marked())
+    deps.clock.advance(durationToMs(Retention.TEST_USER_RETENTION) + 1000)
+    const canary = 'Canary-store-text-91f0'
+    const warned = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    spies.push(
+      warned,
+      spyOn(deps.users, 'deleteTestUsersBefore').mockRejectedValue(new RangeError(canary))
+    )
+    const report = await Retention.purge(deps)
+    expect(report).toMatchObject({ testUsers: 0 })
+    expect(report.failed).toBeGreaterThan(0)
+    const lines = warned.mock.calls.filter(
+      ([words]) => words === 'retention could not purge the test users of one environment'
+    )
+    expect(lines.map(([, fields]) => fields)).toContainEqual({
+      environmentId: tenant.environmentId,
+      error: 'RangeError',
+    })
+    expect(JSON.stringify(warned.mock.calls)).not.toContain(canary)
   })
 })

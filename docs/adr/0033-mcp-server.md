@@ -227,6 +227,13 @@ hold for the API as it will be next year, not only as it is today.
   `draft_settings_change`, answers a change to the settings as an edit to the config file.
   It uses this facade and two operations that were on its list already; it writes no file,
   and a person applies the edit with `tula apply`.
+- **Since 2026-10-12** ([ADR 0058](0058-test-signin.md)) one tool does change live data:
+  `test_signin`, through a third facade (`SignInTester` in `testing-sign-in.ts`) whose one
+  function takes nothing and starts a sign-in test the server itself runs, bounds, allows
+  or refuses and cleans up after. "No tool changes anything" above is true of every other
+  tool and is no longer said of the server as a whole. The read-only facade and the
+  proposing one are as they were, and so is every rule about what a result may hold: the
+  report is an allow-list projection of closed words, numbers and one id.
 
 ## Alternatives considered
 

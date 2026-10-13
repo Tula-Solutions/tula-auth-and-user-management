@@ -526,6 +526,11 @@ paths:
   this), resolves credentials once at start from the environment or a file, and refuses `-`
   for every key file. `@tula/mcp` is loaded there with `import()` and nowhere else in the CLI
   (`lazy-load.test.ts`): the command's metadata stays static.
+- The sign-in test in `@tula/mcp` (ADR 0058): `test_signin` gets `SignInTester`
+  (`testing-sign-in.ts`), a third facade over `TEST_OPERATIONS` (one `POST` a kind of
+  client, checked by type and at construction) whose `run` takes a signal and nothing
+  else. It is the one tool that changes live data and the only one of group `test`; the
+  other two facades gain nothing from it, and its result is the report through `project`.
 - Proposals in the SDKs (ADR 0053): a propose tool of `@tula/mcp` gets `ProposingAdmin`
   (`proposing.ts`), a facade of its own over `PROPOSE_OPERATIONS` (`createProposal`, a
   `POST` under `/v1/agent/`, checked by type and at construction); it never shares a file,

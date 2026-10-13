@@ -4,7 +4,10 @@ import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula/contract'
 import { PROVIDER_TIMEOUT_MS } from '~/adapters/oauth/id-token'
 import * as logger from '~/lib/logger'
 import { SHUTDOWN_TIMEOUT_MS } from '~/lib/shutdown'
+import * as Flows from '~/modules/flow/service'
 import * as Hooks from '~/modules/hook/service'
+import * as Notices from '~/modules/notice/service'
+import * as SignInTests from '~/modules/sign-in-test/service'
 import * as Sms from '~/modules/sms/service'
 import { closeApi } from '~/server-close'
 import { createTestDeps, TEST_ACTOR, TEST_TENANT } from '~/testing'
@@ -206,6 +209,115 @@ describe('closeApi', () => {
       await receiver.stop(true)
       warn.mockRestore()
     }
+  })
+
+  // ADR 0058. A step a sign-in test left at its time limit goes on after the run answered,
+  // and the verification of a sign-up is a write: a process that closed its pool first
+  // would run it against a pool that is gone.
+  describe('a step a sign-in test left at its time limit', () => {
+    const tenant = { ...SCOPE, apiKeyId: 'key_1' }
+    const actor = { ...TEST_ACTOR, type: 'agent' as const }
+
+    /** A run whose verification is held until `land()`, with what happened in `order`. */
+    async function runWithHeldVerification() {
+      const deps = createTestDeps()
+      deps.environments.add({
+        id: SCOPE.environmentId,
+        projectId: SCOPE.projectId,
+        kind: 'development',
+        createdAt: deps.clock.now(),
+      })
+      const order: string[] = []
+      let land: () => void = () => undefined
+      const held = new Promise<void>((resolve) => {
+        land = resolve
+      })
+      const real = Flows.verifyEmail
+      const verify = spyOn(Flows, 'verifyEmail').mockImplementation(async (...args) => {
+        await held
+        try {
+          return await real(...args)
+        } finally {
+          order.push('late step ended')
+        }
+      })
+      const quiet = (['error', 'warn', 'info'] as const).map((level) =>
+        spyOn(logger, level).mockImplementation(() => undefined)
+      )
+      const report = await SignInTests.run(deps, tenant, actor, {
+        limits: { stepMs: 300, hookMs: 0, cleanupMs: 50 },
+      })
+      const restore = async () => {
+        land()
+        await SignInTests.settled()
+        await Notices.settled()
+        for (const spy of [verify, ...quiet]) {
+          spy.mockRestore()
+        }
+      }
+      return { order, report, land: () => land(), restore }
+    }
+
+    const closing = (order: string[]) =>
+      closeApi({
+        jobs: {
+          stopTimers: () => undefined,
+          finish: async () => {
+            order.push('jobs finished')
+          },
+        },
+        server: {
+          stop: async () => {
+            order.push('server stopped')
+          },
+        },
+        container: {
+          close: async () => {
+            order.push('pool closed')
+          },
+        },
+      })
+
+    test('ends before the pool is closed', async () => {
+      const run = await runWithHeldVerification()
+      try {
+        expect(run.report).toMatchObject({ outcome: 'failed', cleanup: 'failed' })
+        const closed = closing(run.order)
+        await new Promise((resolve) => setTimeout(resolve, 20))
+        expect(run.order).toEqual(['server stopped'])
+        run.land()
+        await closed
+        expect(run.order).toEqual([
+          'server stopped',
+          'late step ended',
+          'jobs finished',
+          'pool closed',
+        ])
+      } finally {
+        await run.restore()
+      }
+    })
+
+    test('one that never ends holds a shutdown for its bound and no longer', async () => {
+      const run = await runWithHeldVerification()
+      try {
+        const began = performance.now()
+        await SignInTests.settled(60)
+        const waited = performance.now() - began
+        expect(waited).toBeGreaterThanOrEqual(50)
+        expect(waited).toBeLessThan(1_000)
+        expect(run.order).toEqual([])
+      } finally {
+        await run.restore()
+      }
+    })
+
+    test('the bound is below the shutdown timeout and no longer than a step’s limit', () => {
+      expect(SignInTests.SIGN_IN_TEST_SETTLE_MS).toBeLessThan(SHUTDOWN_TIMEOUT_MS)
+      expect(SignInTests.SIGN_IN_TEST_SETTLE_MS).toBeLessThanOrEqual(
+        SignInTests.SIGN_IN_TEST_STEP_MS
+      )
+    })
   })
 
   test('server.ts closes through closeApi and ends nothing by itself', async () => {

@@ -307,18 +307,40 @@ describe('settings controls', () => {
     await user.click(screen.getByRole('button', { name: 'Save changes' }))
     expect(dialog().textContent).toContain('This weakens security')
     expect(dialog().textContent).toContain('may propose changes to it where it is a production')
-    expect(dialog().textContent).toContain('changes nothing until a person approves it')
+    expect(dialog().textContent).toContain('makes no change until a person approves it')
     expect(api.callsTo('PUT', '/v1/admin/settings')).toHaveLength(0)
     await user.click(within(dialog()).getByRole('button', { name: 'Save anyway' }))
     await screen.findByText('Settings saved')
-    expect(api.state.settings.settings.agents).toEqual({ proposalsInProduction: true })
+    expect(api.state.settings.settings.agents).toEqual({
+      proposalsInProduction: true,
+      testSignIn: null,
+    })
     // Switching it off again weakens nothing: saved without a question.
     await user.click(screen.getByRole('switch', { name: 'Accept proposals in production' }))
     await user.click(screen.getByRole('button', { name: 'Save changes' }))
     await waitFor(() =>
-      expect(api.state.settings.settings.agents).toEqual({ proposalsInProduction: false })
+      expect(api.state.settings.settings.agents).toEqual({
+        proposalsInProduction: false,
+        testSignIn: null,
+      })
     )
     expect(openDialogs()).toBe(0)
+  })
+
+  // The section's other key has no control on this screen. A save replaces the whole
+  // document, so the switch must write its own key and keep the one beside it: a sign-in
+  // test an operator allowed by name (ADR 0058) is not taken back by this toggle.
+  test('general settings: the proposals switch keeps what agents.testSignIn says', async () => {
+    const { user, api } = start(`${PROD_PATH}/settings`)
+    api.state.settings.settings.agents = { proposalsInProduction: false, testSignIn: true }
+    await user.click(await screen.findByRole('switch', { name: 'Accept proposals in production' }))
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+    await user.click(within(dialog()).getByRole('button', { name: 'Save anyway' }))
+    await screen.findByText('Settings saved')
+    expect(api.state.settings.settings.agents).toEqual({
+      proposalsInProduction: true,
+      testSignIn: true,
+    })
   })
 
   // The dashboard has no editor for the wording of emails (ADR 0039), and a save replaces

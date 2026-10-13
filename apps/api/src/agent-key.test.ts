@@ -8,8 +8,9 @@ import { agentKey } from '~/middleware/agent-key'
 import { secretKey } from '~/middleware/secret-key'
 import { createInstanceTestDeps, seedApiKey, TEST_TENANT, type TestDeps } from '~/testing'
 
-// An agent key (ADR 0053) reads what a secret key reads and asks for proposals. This file
-// holds the other half: it opens nothing that changes anything, on any route the app has.
+// An agent key (ADR 0053) reads what a secret key reads, asks for proposals and, where the
+// environment allows it, runs a sign-in test (ADR 0058). This file holds the other half: it
+// opens nothing else that changes anything, on any route the app has.
 
 const AGENT_KEY = 'tula_ak_dev_agentkeytests0000000000000000000000000'
 const SECRET_KEY = 'tula_sk_dev_agentkeytests0000000000000000000000000'
@@ -17,6 +18,15 @@ const SOME_ID = '00000000-0000-7000-8000-00000000cafe'
 
 /** The one route an agent key opens that is not a read. It writes a proposal, and nothing else. */
 const PROPOSE = 'POST /v1/agent/proposals'
+
+/**
+ * The one route an agent key opens that changes something by itself, for a few seconds: a
+ * sign-in test's throwaway user (ADR 0058). Its own tests hold what it may do, where it is
+ * allowed and what it leaves (`modules/sign-in-test/router.test.ts`); here it is the second
+ * and last name on the list, and a third is a decision in an ADR.
+ */
+const TEST_SIGN_IN = 'POST /v1/agent/sign-in-tests'
+const AGENT_ROUTES = [PROPOSE, TEST_SIGN_IN]
 
 async function setup() {
   const deps = createInstanceTestDeps()
@@ -70,16 +80,16 @@ describe('an agent key changes nothing', () => {
     }
     expect(writes.filter((route) => route.path.startsWith('/v1/admin/')).length).toBeGreaterThan(20)
     expect(writes.map((route) => `${route.method} ${route.path}`)).toContain(PROPOSE)
-    // The agent's group holds the proposal and nothing else.
+    // The agent's group holds the proposal and the sign-in test, and nothing else.
     expect(
       routes
         .filter((route) => route.path.startsWith('/v1/agent/'))
         .map((route) => `${route.method} ${route.path}`)
-    ).toEqual([PROPOSE])
+    ).toEqual(AGENT_ROUTES)
   })
 
   for (const { method, path } of writes.filter(
-    (route) => `${route.method} ${route.path}` !== PROPOSE
+    (route) => !AGENT_ROUTES.includes(`${route.method} ${route.path}`)
   )) {
     test(`${method} ${path} refuses it`, async () => {
       const { deps, app } = await setup()

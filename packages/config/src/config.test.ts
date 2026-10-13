@@ -857,6 +857,34 @@ describe('JWT templates', () => {
     expect(await hash({ mfa: { policy: 'required' } })).not.toBe(before)
   })
 
+  // Whether a sign-in test may run arrived with ADR 0058: a file that does not say (or says
+  // `null`, the default of the environment's kind) hashes as it did before.
+  test('the sign-in test setting is in the fingerprint only when the file says yes or no', async () => {
+    const before = 'sha256:06efab455d94f577b0fd2648dfd07f2fd51743799595001ee73bc0b0bf3918ad'
+    expect(await hash({})).toBe(before)
+    expect(await hash({ agents: {} })).toBe(before)
+    expect(await hash({ agents: { testSignIn: null } })).toBe(before)
+    const on = await hash({ agents: { testSignIn: true } })
+    const off = await hash({ agents: { testSignIn: false } })
+    expect(new Set([before, on, off]).size).toBe(3)
+  })
+
+  test('the sign-in test setting is validated by the contract: a word is refused, by its path', () => {
+    const config = (value: unknown) =>
+      defineConfig({
+        environments: { dev: { settings: { agents: { testSignIn: value } } } },
+      } as never)
+    expect(config(true).environments.dev?.settings.agents.testSignIn).toBe(true)
+    expect(config(null).environments.dev?.settings.agents.testSignIn).toBeNull()
+    for (const value of ['enabled-everywhere', 1]) {
+      const error = refusal(() => config(value))
+      expect(JSON.stringify(error.issues)).toContain('agents.testSignIn')
+      // Never a value from the file.
+      expect(JSON.stringify(error.issues)).not.toContain('enabled-everywhere')
+      expect(error.message).not.toContain('enabled-everywhere')
+    }
+  })
+
   // The device-binding option arrived after profiles did (ADR 0043): a profile that leaves it
   // at what it did before hashes the same, written out or not.
   test('a profile’s device binding is in the fingerprint only when it is not the default', async () => {
@@ -910,6 +938,23 @@ describe('JWT templates', () => {
     expect(await hash({ agents: { proposalsInProduction: false } })).toBe(await hash({}))
     expect(await hash({ agents: {} })).toBe(await hash({}))
     expect(await hash({ agents: { proposalsInProduction: true } })).not.toBe(await hash({}))
+  })
+
+  // The two keys of `agents` arrived apart (ADR 0053, then ADR 0058). The section is in the
+  // fingerprint when either says something, and each key only when it does: a file that
+  // accepts proposals and says nothing of a sign-in test hashes as it did before the second
+  // key existed, and the other way round.
+  test('agents is in the fingerprint when either of its keys is not the default, each key by itself', async () => {
+    const nothing = await hash({})
+    const proposals = await hash({ agents: { proposalsInProduction: true } })
+    const test = await hash({ agents: { testSignIn: true } })
+    const both = await hash({ agents: { proposalsInProduction: true, testSignIn: true } })
+    expect(new Set([nothing, proposals, test, both]).size).toBe(4)
+    expect(await hash({ agents: { proposalsInProduction: true, testSignIn: null } })).toBe(
+      proposals
+    )
+    expect(await hash({ agents: { proposalsInProduction: false, testSignIn: true } })).toBe(test)
+    expect(await hash({ agents: { proposalsInProduction: false, testSignIn: null } })).toBe(nothing)
   })
 
   test('agents.proposalsInProduction is a boolean and agents has no other key, refused by its path', () => {

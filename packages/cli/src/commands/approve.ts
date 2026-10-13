@@ -419,7 +419,8 @@ async function run(context: CommandContext): Promise<number> {
  * `tula approve <proposal id>`: a person's answer to a change an AI agent asked for
  * ([ADR 0053](../../../../docs/adr/0053-proposals.md)).
  *
- * An agent holds an agent key, which reads and proposes and can change nothing. Its proposal
+ * An agent holds an agent key, which reads and proposes and, a sign-in test's throwaway user
+ * aside (ADR 0058), can change nothing. Its proposal
  * waits, for minutes, until a person approves it with a credential the agent never has: the
  * environment's secret key, which this command reads from where every command reads it (the
  * environment or `--secret-key-file`, never an argument). The command shows what the

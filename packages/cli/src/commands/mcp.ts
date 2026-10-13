@@ -38,7 +38,8 @@ function reason(error: unknown): string {
  * **With an agent key the secret key is not read at all** (ADR 0053): `--agent-key-file`,
  * `TULA_AGENT_KEY_<NAME>` or `TULA_AGENT_KEY`. The read tools then read with the agent key
  * and the propose tools work; the process that an AI agent talks to holds no credential
- * that can change anything or approve a proposal. A secret key that is also set is left
+ * that can approve a proposal, or change anything beyond running a sign-in test where the
+ * environment allows one (ADR 0058). A secret key that is also set is left
  * unread, and that is said on standard error. Without an agent key the propose tools answer
  * "not configured": a secret key does not propose.
  *
@@ -126,7 +127,7 @@ export async function buildMcpServer(context: CommandContext) {
   }
 
   context.output.error(
-    `tula mcp: ${TOOL_NAMES.length} tools, none changes live data. Read tools: ${
+    `tula mcp: ${TOOL_NAMES.length} tools; one changes live data while it runs (test_signin, where the environment allows it). Read tools: ${
       agent ? 'configured (agent key)' : admin ? 'configured' : 'not configured'
     }. Propose tools: ${agent ? 'configured' : 'not configured'}. Doctor: ${
       doctor ? 'configured' : 'not configured'
@@ -166,8 +167,10 @@ export async function buildMcpServer(context: CommandContext) {
  * over an environment's users, sessions, audit entries, settings and deployment checks, a
  * tool that drafts a settings change as an edit to the config file (for a person to apply
  * with `tula apply`), scaffold tools that return files for the client to write, and, with an agent key, tools
- * that propose a change for a person to approve with `tula approve`. No tool changes live
- * data and none returns a secret.
+ * that propose a change for a person to approve with `tula approve`. One tool changes live
+ * data, for the seconds it runs and only where the environment allows it: `test_signin`
+ * signs a throwaway user up and in and deletes it (ADR 0058). No other tool does, and none
+ * returns a secret.
  *
  * @example
  * ```sh
@@ -187,10 +190,16 @@ export const mcpCommand: Command = {
     'apply`; it writes no file and calls no route that writes. Scaffold tools: the provider, a protected route and a sign-in ' +
     'page, returned as files for the client to write. Propose tools (with an agent key): ask ' +
     'for a change, which a person approves with `tula approve <proposal id>` and their own ' +
-    'secret key. No tool changes live data, and no tool returns a secret.\n\n' +
+    'secret key. One test tool, test_signin: the server signs a throwaway user up and in ' +
+    'through the environment’s real flow and deletes it, and the tool reports each step. It ' +
+    'runs only where the environment’s setting agents.testSignIn allows it (on by default ' +
+    'in a development environment, off in production); while it runs the environment’s ' +
+    'hooks are asked and its events are delivered. No other tool changes live data, and no ' +
+    'tool returns a secret.\n\n' +
     'For an AI agent, give it an agent key (tula_ak_…): --agent-key-file, ' +
-    'TULA_AGENT_KEY_<NAME> or TULA_AGENT_KEY. It reads what a secret key reads and can ' +
-    'change nothing; with it the secret key is not read at all.\n\n' +
+    'TULA_AGENT_KEY_<NAME> or TULA_AGENT_KEY. It reads what a secret key reads, proposes, ' +
+    'and runs a sign-in test where the environment allows one; it changes nothing else. ' +
+    'With it the secret key is not read at all.\n\n' +
     'The API URL comes from --api-url, TULA_API_URL_<NAME> or TULA_API_URL; the secret key ' +
     'from --secret-key-file, TULA_SECRET_KEY_<NAME> or TULA_SECRET_KEY; the instance admin ' +
     'token (run_doctor only) from --admin-token-file or TULA_ADMIN_TOKEN. None is required: ' +

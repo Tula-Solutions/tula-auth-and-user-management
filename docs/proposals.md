@@ -30,7 +30,7 @@ A **production environment refuses every proposal unless it opted in**:
 | --- | --- | --- |
 | Who holds it | The assistant's MCP server | You, and your servers |
 | Reads the admin API | Yes: everything a secret key reads | Yes |
-| Changes anything | **No**: every write is `401 auth.invalid_key` | Yes |
+| Changes anything | **No**: every write of the admin API is `401 auth.invalid_key`. One exception, off in production by default: it can run a [sign-in test](mcp.md#the-sign-in-test), which makes a throwaway user and deletes it | Yes |
 | Asks for a change (`POST /v1/agent/proposals`) | Yes | No: a person makes a change, an agent asks for one |
 | Approves a proposal | **No** | Yes (and so does a dashboard session) |
 
@@ -175,7 +175,7 @@ environment accepts them whatever the setting says.
   for and nobody approved yet is not carried out. Such a proposal is **not spent**: switch
   the setting on again before it expires and it can be approved. Both checks read the
   setting as it is saved, not a cached copy.
-- An agent key cannot change the setting (it changes nothing). Through `tula mcp` an
+- An agent key cannot change the setting (no admin write takes one). Through `tula mcp` an
   assistant can read it and can draft the edit to your config file
   ([`draft_settings_change`](mcp.md)), which is flagged as a weakening and applied by you.
 

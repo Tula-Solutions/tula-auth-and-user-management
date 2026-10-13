@@ -528,6 +528,16 @@ Changes pending. Run `tula apply` to make them.
   hash, so a file written before the option existed hashes as it did. Asking less than the
   server has is `! weakens security` (above); asking more is not. A change applies to new
   sign-ins only: `apply` ends no session and binds none.
+- `agents.testSignIn` ([the sign-in test](mcp.md#the-sign-in-test)) is one value: `true`,
+  `false` or `null`. `null`, which is also what leaving `agents` out means, is the default
+  of the environment's kind (allowed in a development environment, not in a production
+  one) and is not part of the file's hash. Writing `true` where the server does not have
+  `true` is `! weakens security` (below), whatever the environment's kind: the plan does
+  not know the kind, and in production that value is what lets a run create a user there.
+  So is `null` (written, or left out) where the server has `false`: in a development
+  environment that takes a refusal back. A file that leaves it out where the server has
+  `true` takes the permission away in production and changes nothing in development,
+  which is an ordinary change.
 - [Email templates](email-templates.md) (`emails.templates`) are a set by kind, and a
   template is shown field by field: `emails.templates.<kind>.subject` and
   `emails.templates.<kind>.body` are each a line, also when a whole template is added or
@@ -588,7 +598,11 @@ Changes pending. Run `tula apply` to make them.
   messages are sent, or text messages switched on, or a first country allowed, under a
   method that was on already; and `sms.allowedCountries`: a country added while a texted
   code signs people in. A phone number is easier to take than an inbox; where no texted
-  code signs anyone in, neither key is flagged). `tula apply --yes` refuses such a plan without
+  code signs anyone in, neither key is flagged), and the sign-in test allowed by name
+  (`agents.testSignIn` written `true` where the server does not have `true`, or left
+  at the default where the server has `false`: an agent key
+  can then make and delete a throwaway user there, hooks asked and events delivered).
+  `tula apply --yes` refuses such a plan without
   `--allow-weaker`, and `diff` says so under the plan.
 - A [hook](#hooks) is flagged by the same rule the server records it by: created with or
   changed to `failureMode: 'allow'` (`hooks.<point>.failureMode`), switched off

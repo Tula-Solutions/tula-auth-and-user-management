@@ -65,6 +65,7 @@ export interface UserCreatedEventData {
   emailVerified: boolean;
   passwordless?: boolean;
   hookBypassed?: boolean;
+  test?: boolean;
 }
 
 export type UserCreatedEventTarget = {
@@ -1163,7 +1164,7 @@ export interface OAuthProviderDeletedEvent {
 export interface WebhookEndpointCreatedEventData {
   /**
      * @minimum 1
-     * @maximum 47
+     * @maximum 49
      */
   eventTypes: number;
   enabled: boolean;
@@ -1859,7 +1860,84 @@ export interface ProposalFailedEvent {
   test?: true;
 }
 
-export type TulaEvent = UserCreatedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent;
+/**
+ * A sign-in test began: the server is about to sign a throwaway user up and in through the environment’s flow, and delete it.
+ */
+export interface SignInTestStartedEventData { [key: string]: unknown }
+
+export type SignInTestStartedEventTarget = {
+  type: 'environment';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A sign-in test began: the server is about to sign a throwaway user up and in through the environment’s flow, and delete it.
+ */
+export interface SignInTestStartedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'sign_in_test.started';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: SignInTestStartedEventTarget;
+  data: SignInTestStartedEventData;
+  test?: true;
+}
+
+export type SignInTestFinishedEventDataOutcome = typeof SignInTestFinishedEventDataOutcome[keyof typeof SignInTestFinishedEventDataOutcome];
+
+
+export const SignInTestFinishedEventDataOutcome = {
+  passed: 'passed',
+  failed: 'failed',
+  incomplete: 'incomplete',
+} as const;
+
+export type SignInTestFinishedEventDataCleanup = typeof SignInTestFinishedEventDataCleanup[keyof typeof SignInTestFinishedEventDataCleanup];
+
+
+export const SignInTestFinishedEventDataCleanup = {
+  deleted: 'deleted',
+  failed: 'failed',
+  none: 'none',
+} as const;
+
+/**
+ * A sign-in test ended. `userId` is the throwaway user it made (absent when no account was made); `cleanup` says whether that user was deleted.
+ */
+export interface SignInTestFinishedEventData {
+  outcome: SignInTestFinishedEventDataOutcome;
+  cleanup: SignInTestFinishedEventDataCleanup;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  userId?: string;
+}
+
+export type SignInTestFinishedEventTarget = {
+  type: 'environment';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A sign-in test ended. `userId` is the throwaway user it made (absent when no account was made); `cleanup` says whether that user was deleted.
+ */
+export interface SignInTestFinishedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'sign_in_test.finished';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: SignInTestFinishedEventTarget;
+  data: SignInTestFinishedEventData;
+  test?: true;
+}
+
+export type TulaEvent = UserCreatedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
 
 export type HookBeforeSignUpDataMethod = typeof HookBeforeSignUpDataMethod[keyof typeof HookBeforeSignUpDataMethod];
 
@@ -3074,6 +3152,8 @@ export const ActivityType = {
   proposalapproved: 'proposal.approved',
   proposalexecuted: 'proposal.executed',
   proposalfailed: 'proposal.failed',
+  sign_in_teststarted: 'sign_in_test.started',
+  sign_in_testfinished: 'sign_in_test.finished',
 } as const;
 
 export type AuditLogQueryActorType = typeof AuditLogQueryActorType[keyof typeof AuditLogQueryActorType];
@@ -3348,6 +3428,8 @@ export type EnvironmentSettingsStateSettingsAudit = {
 
 export type EnvironmentSettingsStateSettingsAgents = {
   proposalsInProduction?: boolean;
+  /** @nullable */
+  testSignIn?: boolean | null;
 };
 
 export type EnvironmentSettingsStateSettingsNotifications = {
@@ -3478,6 +3560,8 @@ export type EnvironmentSettingsInputAudit = {
 
 export type EnvironmentSettingsInputAgents = {
   proposalsInProduction?: boolean;
+  /** @nullable */
+  testSignIn?: boolean | null;
 };
 
 export type EnvironmentSettingsInputNotifications = {
@@ -3855,6 +3939,8 @@ export const CreateWebhookEndpointRequestEventTypesItem = {
   proposalapproved: 'proposal.approved',
   proposalexecuted: 'proposal.executed',
   proposalfailed: 'proposal.failed',
+  sign_in_teststarted: 'sign_in_test.started',
+  sign_in_testfinished: 'sign_in_test.finished',
 } as const;
 
 export interface CreateWebhookEndpointRequest {
@@ -3866,7 +3952,7 @@ export interface CreateWebhookEndpointRequest {
   url: string;
   /**
      * @minItems 1
-     * @maxItems 47
+     * @maxItems 49
      */
   eventTypes: CreateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -3923,6 +4009,8 @@ export const UpdateWebhookEndpointRequestEventTypesItem = {
   proposalapproved: 'proposal.approved',
   proposalexecuted: 'proposal.executed',
   proposalfailed: 'proposal.failed',
+  sign_in_teststarted: 'sign_in_test.started',
+  sign_in_testfinished: 'sign_in_test.finished',
 } as const;
 
 export interface UpdateWebhookEndpointRequest {
@@ -3934,7 +4022,7 @@ export interface UpdateWebhookEndpointRequest {
   url?: string;
   /**
      * @minItems 1
-     * @maxItems 47
+     * @maxItems 49
      */
   eventTypes?: UpdateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -4109,6 +4197,8 @@ export const SendTestWebhookRequestEventType = {
   proposalapproved: 'proposal.approved',
   proposalexecuted: 'proposal.executed',
   proposalfailed: 'proposal.failed',
+  sign_in_teststarted: 'sign_in_test.started',
+  sign_in_testfinished: 'sign_in_test.finished',
 } as const;
 
 export interface SendTestWebhookRequest {
@@ -4625,6 +4715,82 @@ export interface ProposalList {
 export interface ApproveProposalRequest {
   operation: ProposalOperation;
   target: ProposalTarget;
+}
+
+export type SignInTestStepResultStep = typeof SignInTestStepResultStep[keyof typeof SignInTestStepResultStep];
+
+
+export const SignInTestStepResultStep = {
+  sign_up: 'sign_up',
+  verify_email: 'verify_email',
+  sign_out: 'sign_out',
+  sign_in: 'sign_in',
+  first_factor: 'first_factor',
+  revoke_session: 'revoke_session',
+  delete_user: 'delete_user',
+} as const;
+
+export type SignInTestStepResultOutcome = typeof SignInTestStepResultOutcome[keyof typeof SignInTestStepResultOutcome];
+
+
+export const SignInTestStepResultOutcome = {
+  passed: 'passed',
+  failed: 'failed',
+  not_run: 'not_run',
+} as const;
+
+export type SignInTestStepResultReason = typeof SignInTestStepResultReason[keyof typeof SignInTestStepResultReason];
+
+
+export const SignInTestStepResultReason = {
+  earlier_step: 'earlier_step',
+  second_factor_required: 'second_factor_required',
+  email_cooldown: 'email_cooldown',
+  no_provable_method: 'no_provable_method',
+  no_session: 'no_session',
+  timeout: 'timeout',
+  cancelled: 'cancelled',
+} as const;
+
+export interface SignInTestStepResult {
+  step: SignInTestStepResultStep;
+  outcome: SignInTestStepResultOutcome;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  durationMs: number;
+  code?: ErrorCode;
+  reason?: SignInTestStepResultReason;
+}
+
+export type SignInTestReportOutcome = typeof SignInTestReportOutcome[keyof typeof SignInTestReportOutcome];
+
+
+export const SignInTestReportOutcome = {
+  passed: 'passed',
+  failed: 'failed',
+  incomplete: 'incomplete',
+} as const;
+
+export type SignInTestReportCleanup = typeof SignInTestReportCleanup[keyof typeof SignInTestReportCleanup];
+
+
+export const SignInTestReportCleanup = {
+  deleted: 'deleted',
+  failed: 'failed',
+  none: 'none',
+} as const;
+
+export interface SignInTestReport {
+  outcome: SignInTestReportOutcome;
+  /**
+     * @minItems 7
+     * @maxItems 7
+     */
+  steps: SignInTestStepResult[];
+  userId: string | null;
+  cleanup: SignInTestReportCleanup;
 }
 
 export type DiagnosticStatus = typeof DiagnosticStatus[keyof typeof DiagnosticStatus];
@@ -9786,6 +9952,81 @@ export const useApproveProposal = <TError = ErrorEnvelope,
         TContext
       > => {
       return useMutation(getApproveProposalMutationOptions(options), queryClient);
+    }
+
+export const getRunSignInTestAsAdminUrl = () => {
+
+
+
+
+  return `/v1/admin/sign-in-tests`
+}
+
+/**
+ * Sign a throwaway user up and in through the environment’s real flow, delete it, and answer a report of each step. There is no body. **It changes the environment while it runs**: a user exists for a few seconds, the environment’s hooks are asked and its events are recorded and delivered to its webhook endpoints (`user.created` carries `test: true`). The user’s address is in the reserved domain `test.tula.invalid`, which no account of a person can hold; the email with its code is read inside the server and never sent. The user is deleted whatever a step did; `cleanup` says `failed`, with `userId`, where that deletion did not go through (the server removes such a user later). The answer holds no token, code, secret or address: a step has an outcome (`passed`, `failed`, `not_run`), a duration and, where it did not pass, an error code of the API or a fixed reason. A step that could not be carried out is `not_run`, never `passed`. Allowed only where the environment’s `agents.testSignIn` says so: on by default in a development environment, off in a production one (`auth.forbidden`, `params.reason`: `test_sign_in_disabled`). Limited to 4 an hour per credential, 8 an hour per environment and one a minute per environment, so that two never run at once. With a secret key or a dashboard session; an agent key runs it on `POST /v1/agent/sign-in-tests`. The run, and the deletion of its user, are recorded with the caller as the actor.
+ * @summary Run a sign-in test
+ */
+export const runSignInTestAsAdmin = async ( options?: Parameters<typeof dashboardFetch>[1]): Promise<SignInTestReport> => {
+
+  return dashboardFetch<SignInTestReport>(getRunSignInTestAsAdminUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getRunSignInTestAsAdminMutationKey = () => ['runSignInTestAsAdmin'] as const;
+
+export const getRunSignInTestAsAdminMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runSignInTestAsAdmin>>, TError,void, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof runSignInTestAsAdmin>>, TError,void, TContext> => {
+
+const mutationKey = getRunSignInTestAsAdminMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof runSignInTestAsAdmin>>, void> = () => {
+
+
+          return  runSignInTestAsAdmin(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RunSignInTestAsAdminMutationResult = NonNullable<Awaited<ReturnType<typeof runSignInTestAsAdmin>>>
+
+    export type RunSignInTestAsAdminMutationError = ErrorEnvelope
+
+
+    /**
+ * @summary Run a sign-in test
+ */
+export const useRunSignInTestAsAdmin = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runSignInTestAsAdmin>>, TError,void, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof runSignInTestAsAdmin>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getRunSignInTestAsAdminMutationOptions(options), queryClient);
     }
 
 export const getGetInstanceDiagnosticsUrl = () => {

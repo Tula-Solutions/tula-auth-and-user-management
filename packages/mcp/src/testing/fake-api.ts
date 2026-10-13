@@ -89,6 +89,27 @@ export function withCanaries(value: unknown, path = 'root'): unknown {
   return value
 }
 
+/** The id of the throwaway user in the fake API's sign-in test report. */
+export const TEST_THROWAWAY_USER_ID = '0198c1de-0000-7000-8000-0000000000e7'
+
+/** A sign-in test's report, as the real API shapes one where the password is the method. */
+export function signInTestReport(): Record<string, unknown> {
+  return {
+    outcome: 'passed',
+    steps: [
+      { step: 'sign_up', outcome: 'passed', durationMs: 212 },
+      { step: 'verify_email', outcome: 'passed', durationMs: 31 },
+      { step: 'sign_out', outcome: 'passed', durationMs: 4 },
+      { step: 'sign_in', outcome: 'passed', durationMs: 3 },
+      { step: 'first_factor', outcome: 'passed', durationMs: 198 },
+      { step: 'revoke_session', outcome: 'passed', durationMs: 5 },
+      { step: 'delete_user', outcome: 'passed', durationMs: 6 },
+    ],
+    userId: TEST_THROWAWAY_USER_ID,
+    cleanup: 'deleted',
+  }
+}
+
 /** The admin API's answers, as the real one shapes them. */
 export function defaultAnswers(): Answers {
   const user = {
@@ -109,6 +130,8 @@ export function defaultAnswers(): Answers {
       Response.json(proposalAnswer(body === undefined ? undefined : JSON.parse(body)), {
         status: 201,
       }),
+    'POST /v1/agent/sign-in-tests': signInTestReport(),
+    'POST /v1/admin/sign-in-tests': signInTestReport(),
     'GET /v1/admin/users': {
       meta: { totalCount: 1, totalPages: 1, page: 1, perPage: 20 },
       data: [user],
@@ -218,6 +241,7 @@ export function defaultAnswers(): Answers {
           },
         },
         passkeys: { rpId: null },
+        agents: { proposalsInProduction: false, testSignIn: null },
         sessions: {
           profiles: {
             web: {

@@ -4,6 +4,7 @@ import { ToolError, toolFailure } from './errors'
 import { type ProposingAdmin, proposingAdmin, proposingWithSignal } from './proposing'
 import { type ReadOnlyAdmin, readOnlyAdmin, UPSTREAM_TIMEOUT_MS, withSignal } from './read-only'
 import { bound, redactor } from './sanitize'
+import { type SignInTester, signInTester, testingWithSignal } from './testing-sign-in'
 import { TOOLS, type ToolContext } from './tools'
 
 /**
@@ -115,6 +116,20 @@ export const PROPOSE_TOOL_NAMES: readonly string[] = TOOLS.filter(
 ).map((tool) => tool.name)
 
 /**
+ * The names of the tools that run something in the environment (ADR 0058): the sign-in
+ * test, which makes a throwaway user, signs it in and deletes it. They are the only tools
+ * that change live data.
+ *
+ * @example
+ * ```ts
+ * TEST_TOOL_NAMES // ['test_signin']
+ * ```
+ */
+export const TEST_TOOL_NAMES: readonly string[] = TOOLS.filter((tool) => tool.group === 'test').map(
+  (tool) => tool.name
+)
+
+/**
  * The names of the tools that return a change as an edit to the config file (ADR 0056).
  * Each reads through the read-only facade and writes nothing, on the server or on disk.
  *
@@ -144,7 +159,7 @@ export const SCAFFOLD_TOOL_NAMES: readonly string[] = TOOLS.filter(
  *
  * @example
  * ```ts
- * TOOL_NAMES.length // 16
+ * TOOL_NAMES.length // 17
  * ```
  */
 export const TOOL_NAMES: readonly string[] = TOOLS.map((tool) => tool.name)
@@ -161,7 +176,11 @@ const INSTRUCTIONS =
   'The draft tool returns a settings change as an edit to the config file and applies ' +
   'nothing: a person reviews the file and runs `tula diff` and `tula apply`. Never say a ' +
   'drafted change was made, and tell the user what it would weaken. ' +
-  'No tool changes live data, and no tool returns a secret, a token or key material.'
+  'One tool changes live data, and only while it runs: test_signin signs a throwaway user ' +
+  'up and in through the environment’s real flow and deletes it, where the environment ' +
+  'allows that; its hooks are asked and its events delivered meanwhile. Say what it did and ' +
+  'report a step that was not run as not checked. No other tool changes live data, and no ' +
+  'tool returns a secret, a token or key material.'
 
 const NO_ADMIN =
   'No secret key is configured for this server. Set TULA_API_URL and TULA_SECRET_KEY in the ' +
@@ -173,6 +192,11 @@ const NO_AGENT =
   'TULA_AGENT_KEY (an agent key, tula_ak_…, made in the dashboard or with the admin API) in ' +
   'the environment the MCP client starts `tula mcp` with, or pass --agent-key-file. A ' +
   'secret key does not propose.'
+
+const NO_KEY =
+  'No key is configured for this server, so it cannot run a sign-in test. Set TULA_API_URL ' +
+  'and TULA_AGENT_KEY (or TULA_SECRET_KEY) in the environment the MCP client starts ' +
+  '`tula mcp` with.'
 
 const NO_DOCTOR =
   'No API URL is configured for this server. Set TULA_API_URL (and TULA_ADMIN_TOKEN for the ' +
@@ -264,15 +288,17 @@ function within<T>(work: Promise<T>, ms: number, controller: AbortController): P
 }
 
 /**
- * Build Tula's MCP server: the read tools over the admin API, the propose tools and the
- * scaffold tools. Connect it to a transport to serve it (`tula mcp` uses standard input and
+ * Build Tula's MCP server: the read tools over the admin API, the propose tools, the
+ * sign-in test and the scaffold tools. Connect it to a transport to serve it (`tula mcp` uses standard input and
  * output).
  *
  * The tools are given a read-only facade over the admin client, never the client: no code
  * path leads from a tool to an operation that changes anything. A propose tool is given a
  * second, separate facade over the agent's client, whose one function records a proposal:
  * a request that a human approves elsewhere, with a credential this server is not given
- * (ADR 0053). Every result goes through a
+ * (ADR 0053). The sign-in test is given a third, whose one function takes nothing and
+ * starts a run the server itself bounds, cleans up after and allows or refuses (ADR 0058):
+ * it is the one tool that changes live data. Every result goes through a
  * per-tool allow-list projection, is bounded, and has the server's own credentials removed
  * before it is returned, as structured content and as the same JSON in text.
  *
@@ -286,7 +312,8 @@ function within<T>(work: Promise<T>, ms: number, controller: AbortController): P
  * @param options - The admin client, the doctor, the working directory and where to log.
  * @returns The server, not yet connected.
  * @throws Error when an allow-listed read is not a `GET` in the admin client's operation
- *   table, or an allow-listed proposing operation is not a `POST` under `/v1/agent/`.
+ *   table, an allow-listed proposing operation is not a `POST` under `/v1/agent/`, or the
+ *   sign-in test's operation is not a `POST` at its route.
  *
  * @example
  * ```ts
@@ -304,6 +331,14 @@ export function createTulaMcpServer(options: TulaMcpServerOptions): McpServer {
   const proposals: ProposingAdmin | null = options.agent
     ? proposingAdmin(options.agent, undefined, timeoutMs)
     : null
+  // The agent's client where there is one (the run is then the agent's in the audit log),
+  // the admin client otherwise. A third facade with one function: nothing was added to the
+  // other two, and the read facade still holds `GET`s only.
+  const tests: SignInTester | null = options.agent
+    ? signInTester(options.agent, 'agent')
+    : options.admin
+      ? signInTester(options.admin, 'admin')
+      : null
   const redact = redactor(options.secrets ?? [])
   const log = (line: string) => options.log?.(redact(line))
   const runDoctor = options.doctor ?? null
@@ -323,6 +358,15 @@ export function createTulaMcpServer(options: TulaMcpServerOptions): McpServer {
           throw new ToolError('not_configured', options.unavailable?.agent ?? NO_AGENT)
         }
         return proposingWithSignal(proposals, controller.signal)
+      },
+      signInTests: () => {
+        if (!tests) {
+          throw new ToolError(
+            'not_configured',
+            options.unavailable?.agent ?? options.unavailable?.admin ?? NO_KEY
+          )
+        }
+        return testingWithSignal(tests, controller.signal)
       },
       doctor: () => {
         if (!runDoctor) {
@@ -351,10 +395,12 @@ export function createTulaMcpServer(options: TulaMcpServerOptions): McpServer {
           title: tool.title,
           // A propose tool records a proposal: that is a write, and the hint says so, although
           // nothing it names is changed. It destroys nothing, and asking twice for the same
-          // thing answers the same pending proposal.
-          readOnlyHint: tool.group !== 'propose',
+          // thing answers the same pending proposal. The sign-in test writes too (a user that
+          // exists for seconds), deletes only what it made, and is not idempotent: every
+          // call is another run, counted against the environment's limit.
+          readOnlyHint: tool.group !== 'propose' && tool.group !== 'test',
           destructiveHint: false,
-          idempotentHint: true,
+          idempotentHint: tool.group !== 'test',
           // The read tools reach one API the operator configured; the scaffolds reach nothing.
           openWorldHint: false,
         },

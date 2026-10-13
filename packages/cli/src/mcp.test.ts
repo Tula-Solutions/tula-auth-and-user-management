@@ -11,6 +11,7 @@ import {
   PROPOSE_TOOL_NAMES,
   READ_TOOL_NAMES,
   SCAFFOLD_TOOL_NAMES,
+  TEST_TOOL_NAMES,
   TOOL_NAMES,
 } from '@tula/mcp'
 import { createApp } from '../../../apps/api/src/index'
@@ -291,6 +292,7 @@ const args = (
   propose_unban_user: { userId },
   propose_end_session: { sessionId },
   propose_disable_oauth_provider: { provider: 'google' },
+  test_signin: {},
   draft_settings_change: {
     settings: [{ path: 'password.minLength', value: 8 }],
     providers: [{ provider: 'google', enabled: false, secretEnv: 'GOOGLE_CLIENT_SECRET' }],
@@ -412,7 +414,7 @@ describe('tula mcp against the real API', () => {
     expect(doctor.structured.apiUrl).toBe(BASE_URL)
   })
 
-  test('nothing seeded as a secret appears in any result or log line, and every request is a GET', async () => {
+  test('nothing seeded as a secret appears in any result or log line, and every request is a GET but the sign-in test’s', async () => {
     const { user, secrets } = await seed()
     const w = world({ TULA_ADMIN_TOKEN: TEST_ADMIN_TOKEN })
     const client = await connect(w)
@@ -437,7 +439,11 @@ describe('tula mcp against the real API', () => {
     expect(everything).not.toContain('Bearer ')
     expect(w.stdout()).toBe('')
     expect(w.requests.length).toBeGreaterThan(8)
-    for (const request of w.requests) {
+    // One request is not a read: the sign-in test, which a secret key runs on the admin route.
+    expect(w.requests.filter((request) => !request.startsWith('GET '))).toEqual(
+      TEST_TOOL_NAMES.map(() => 'POST /v1/admin/sign-in-tests')
+    )
+    for (const request of w.requests.filter((one) => one.startsWith('GET '))) {
       expect(request).toMatch(
         /^GET \/v1\/(admin\/(settings|users(\/[^/]+(\/(authentication|sessions))?)?|audit-logs|oauth-providers)|instance\/diagnostics|status)$/
       )
@@ -524,7 +530,12 @@ describe('tula mcp: where its credentials come from', () => {
   test('with nothing configured the read tools say so and the scaffold tools work', async () => {
     const w = world({ TULA_API_URL: undefined, TULA_SECRET_KEY: undefined })
     const client = await connect(w)
-    for (const name of [...READ_TOOL_NAMES, ...DRAFT_TOOL_NAMES, ...PROPOSE_TOOL_NAMES]) {
+    for (const name of [
+      ...READ_TOOL_NAMES,
+      ...DRAFT_TOOL_NAMES,
+      ...PROPOSE_TOOL_NAMES,
+      ...TEST_TOOL_NAMES,
+    ]) {
       const result = await call(client, name, args('x')[name])
       expect(result.isError).toBe(true)
       expect((result.structured.error as { code: string }).code).toBe('not_configured')
@@ -672,7 +683,7 @@ describe('tula mcp with an agent key', () => {
     })
   }
 
-  test('every tool answers; the requests are GETs and the POSTs that ask, one a propose tool; nothing changed', async () => {
+  test('every tool answers; the requests are GETs, the POSTs that ask, one a propose tool, and the sign-in test’s; nothing is changed and no user is left', async () => {
     const { user, secrets, sessionId } = await seed()
     const before = await stateOf([user.id])
     const w = world(agentEnv)
@@ -683,12 +694,19 @@ describe('tula mcp with an agent key', () => {
       expect(result.isError).toBe(false)
       outputs.push(result.raw)
     }
-    expect(w.requests.filter((request) => !request.startsWith('GET '))).toEqual(
+    const writes = w.requests.filter((request) => !request.startsWith('GET '))
+    expect(writes.filter((request) => request !== 'POST /v1/agent/sign-in-tests')).toEqual(
       PROPOSE_TOOL_NAMES.map(() => 'POST /v1/agent/proposals')
     )
+    expect(writes.filter((request) => request === 'POST /v1/agent/sign-in-tests')).toHaveLength(1)
     expect(PROPOSE_TOOL_NAMES).toHaveLength(4)
     expect(await banned(user.id)).toBe(false)
     expect(await stateOf([user.id])).toBe(before)
+    // The sign-in test made a user and deleted it: the environment has the one it had.
+    const users = (await (await admin('GET', '/v1/admin/users')).json()) as {
+      meta: { totalCount: number }
+    }
+    expect(users.meta.totalCount).toBe(1)
     const everything = [...outputs, w.stderr(), w.stdout()].join('\n')
     for (const secret of [...secrets, AGENT_KEY]) {
       expect(everything).not.toContain(secret)
@@ -852,6 +870,77 @@ describe('tula mcp with an agent key', () => {
       )
     }
   )
+  test('test_signin: every step reported, no user left, and the audit log names the agent', async () => {
+    const { user, secrets } = await seed()
+    const w = world(agentEnv)
+    const client = await connect(w)
+    const result = await call(client, 'test_signin')
+    expect(result.isError).toBe(false)
+    expect(result.structured.outcome).toBe('passed')
+    expect(result.structured.cleanup).toBe('deleted')
+    const steps = result.structured.steps as { step: string; outcome: string }[]
+    expect(steps.map((step) => `${step.step} ${step.outcome}`)).toEqual([
+      'sign_up passed',
+      'verify_email passed',
+      'sign_out passed',
+      'sign_in passed',
+      'first_factor passed',
+      'revoke_session passed',
+      'delete_user passed',
+    ])
+    // Nothing but closed words, numbers and the id of a user that is gone.
+    expect(Object.keys(result.structured).sort()).toEqual(['cleanup', 'outcome', 'steps', 'userId'])
+    for (const step of steps) {
+      expect(Object.keys(step).sort()).toEqual(['durationMs', 'outcome', 'step'])
+    }
+    const everything = [result.raw, w.stderr(), w.stdout()].join('\n')
+    for (const secret of [...secrets, AGENT_KEY]) {
+      expect(everything).not.toContain(secret)
+    }
+    expect(everything).not.toContain('tula.invalid')
+    expect(everything).not.toContain('tula-test-')
+    expect(everything).not.toMatch(/eyJ[A-Za-z0-9_-]{10,}\./)
+    // The environment has the user it had, and no mail left the server.
+    const users = (await (await admin('GET', '/v1/admin/users')).json()) as {
+      data: { id: string }[]
+    }
+    expect(users.data.map((one) => one.id)).toEqual([user.id])
+    expect(JSON.stringify(deps.mailer.outbox)).not.toContain('tula.invalid')
+    // The run and the deletion of its user are the agent's, in the audit log a tool reads.
+    for (const action of ['sign_in_test.started', 'sign_in_test.finished', 'user.deleted']) {
+      const audit = await call(client, 'list_audit_entries', { action })
+      const entries = audit.structured.data as { actor: { type: string } }[]
+      expect(entries).toHaveLength(1)
+      expect(entries[0]?.actor.type).toBe('agent')
+    }
+    expect(w.requests.filter((request) => !request.startsWith('GET '))).toEqual([
+      'POST /v1/agent/sign-in-tests',
+    ])
+  })
+
+  test('test_signin: a second run inside the minute is refused, and nothing is created', async () => {
+    await seed()
+    const client = await connect(world(agentEnv))
+    expect((await call(client, 'test_signin')).isError).toBe(false)
+    const again = await call(client, 'test_signin')
+    expect(again.isError).toBe(true)
+    expect(again.structured.error).toMatchObject({ code: 'rate_limited', status: 429 })
+    const started = await call(client, 'list_audit_entries', { action: 'sign_in_test.started' })
+    expect(started.structured.data).toHaveLength(1)
+  })
+
+  test('test_signin: a production environment refuses unless its setting says otherwise', async () => {
+    const productionKey = 'tula_ak_live_mcptest000000000000000000000000000'
+    await seedApiKey(deps, productionKey, { environmentId: TEST_TENANT.productionEnvironmentId })
+    const w = world({ TULA_SECRET_KEY: undefined, TULA_AGENT_KEY: productionKey })
+    const client = await connect(w)
+    const result = await call(client, 'test_signin')
+    expect(result.isError).toBe(true)
+    expect(result.structured.error).toMatchObject({ code: 'auth.forbidden', status: 403 })
+    expect(result.structured.steps).toBeUndefined()
+    const started = await call(client, 'list_audit_entries', { action: 'sign_in_test.started' })
+    expect(started.structured.data).toEqual([])
+  })
 
   test('with an agent key the secret key is not read, although it is set', async () => {
     const { user } = await seed()
@@ -866,7 +955,12 @@ describe('tula mcp with an agent key', () => {
       },
     }
     const client = await connect({ ...w, io })
-    for (const name of [...READ_TOOL_NAMES, ...DRAFT_TOOL_NAMES, ...PROPOSE_TOOL_NAMES]) {
+    for (const name of [
+      ...READ_TOOL_NAMES,
+      ...DRAFT_TOOL_NAMES,
+      ...PROPOSE_TOOL_NAMES,
+      ...TEST_TOOL_NAMES,
+    ]) {
       await call(client, name, args(user.id)[name])
     }
     expect(seen.length).toBeGreaterThan(5)
@@ -1021,7 +1115,7 @@ describe('tula mcp: the wire', () => {
     // Nothing went through the CLI's own standard output writer either.
     expect(w.stdout()).toBe('')
     expect(w.stderr()).toContain(
-      'tula mcp: 16 tools, none changes live data. Read tools: configured. Propose tools: not configured.'
+      'tula mcp: 17 tools; one changes live data while it runs (test_signin, where the environment allows it). Read tools: configured. Propose tools: not configured.'
     )
     expect(w.stderr()).toContain('tula mcp: list_users ok')
     expect(run.wire() + w.stderr()).not.toContain(SECRET_KEY)

@@ -1,4 +1,4 @@
-import type { OAuthProvider } from '@tula/contract'
+import { type OAuthProvider, TEST_ADDRESS_DOMAIN, TEST_ADDRESS_LOCAL_PREFIX } from '@tula/contract'
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import { type Activity, activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import type {
@@ -592,6 +592,36 @@ export class MemoryUserRepository implements UserRepository {
     this.#users.delete(userId)
     this.#activityLog.record(activity ? [activity] : [])
     return true
+  }
+
+  /** @inheritdoc */
+  async reportSignInTest(_environmentId: string, activity: Activity): Promise<void> {
+    this.#activityLog.record([activity])
+  }
+
+  /** @inheritdoc */
+  async deleteTestUsersBefore(
+    environmentId: string,
+    before: Date,
+    limit: number,
+    record: (userId: string) => Activity
+  ): Promise<number> {
+    const old = [...this.#users.values()]
+      .filter(
+        (user) =>
+          user.environmentId === environmentId &&
+          // The one spelling the test writes, as the Postgres adapter's pattern has it.
+          user.emailNormalized !== null &&
+          user.emailNormalized.startsWith(TEST_ADDRESS_LOCAL_PREFIX) &&
+          user.emailNormalized.endsWith(`@${TEST_ADDRESS_DOMAIN}`) &&
+          user.createdAt.getTime() < before.getTime()
+      )
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || (a.id < b.id ? -1 : 1))
+      .slice(0, Math.max(0, limit))
+    for (const user of old) {
+      await this.delete(environmentId, user.id, record(user.id))
+    }
+    return old.length
   }
 
   #byEmail(environmentId: string, emailNormalized: string): UserRecord | undefined {

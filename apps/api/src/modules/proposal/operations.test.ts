@@ -794,10 +794,10 @@ describe('a production environment', () => {
   })
 
   test('the opt-in is off by default, and switching it on is recorded as a weakening', async () => {
-    const read = await json<{ settings: { agents: { proposalsInProduction: boolean } } }>(
-      await call('GET', '/v1/admin/settings', PROD_SK)
-    )
-    expect(read.settings.agents).toEqual({ proposalsInProduction: false })
+    const read = await json<{
+      settings: { agents: { proposalsInProduction: boolean; testSignIn: boolean | null } }
+    }>(await call('GET', '/v1/admin/settings', PROD_SK))
+    expect(read.settings.agents).toEqual({ proposalsInProduction: false, testSignIn: null })
     await optIn(true)
     const entry = recorded(PRODUCTION.environmentId).at(-1)
     expect(entry).toMatchObject({
@@ -870,6 +870,7 @@ describe('a production environment', () => {
     // The other instance reads the settings into its cache, and its agent proposes.
     expect((await cached.get(PRODUCTION.environmentId))?.settings.agents).toEqual({
       proposalsInProduction: true,
+      testSignIn: null,
     })
     const asked = await viaOther('/v1/agent/proposals', PROD_AK, about)
     expect(asked.status).toBe(201)
@@ -878,6 +879,7 @@ describe('a production environment', () => {
     await optIn(false)
     expect((await cached.get(PRODUCTION.environmentId))?.settings.agents).toEqual({
       proposalsInProduction: true,
+      testSignIn: null,
     })
     const approval = await viaOther(`/v1/admin/proposals/${proposal.id}/approve`, PROD_SK, about)
     expect(approval.status).toBe(409)

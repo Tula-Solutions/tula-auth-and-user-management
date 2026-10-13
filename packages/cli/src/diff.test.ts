@@ -882,6 +882,76 @@ describe('buildPlan', () => {
     expect(result.unknown).toEqual([])
   })
 
+  describe('the sign-in test (ADR 0058)', () => {
+    type Allowed = boolean | null
+    /** A server whose `agents.testSignIn` is this. */
+    const server = (testSignIn: Allowed) =>
+      remote({
+        settings: settings((s) => {
+          s.agents.testSignIn = testSignIn
+        }),
+      })
+    /** A file that writes the setting, or (`undefined`) leaves it out. */
+    const file = (testSignIn: Allowed | undefined) => ({
+      settings: testSignIn === undefined ? {} : { agents: { testSignIn } },
+    })
+    const PATH = 'agents.testSignIn'
+
+    // Server, file, whether the plan changes the field, whether that weakens. `true` written
+    // where the server does not have `true` is flagged whatever the environment's kind: the
+    // plan does not know the kind, and in production that is the one value that lets a run
+    // create a user there. Left out of the file it is `null` (the kind's default), managed:
+    // over a server that says `false` that takes a refusal back, and is flagged too.
+    test.each<[Allowed, Allowed | undefined, boolean, boolean]>([
+      [null, true, true, true],
+      [false, true, true, true],
+      [true, true, false, false],
+      [true, false, true, false],
+      [true, null, true, false],
+      [true, undefined, true, false],
+      [null, false, true, false],
+      [false, null, true, true],
+      [false, undefined, true, true],
+      [null, null, false, false],
+      [null, undefined, false, false],
+      [false, false, false, false],
+    ])('the server has %p, the file %p: changed %p, weakens %p', (has, wants, changes, weakens) => {
+      const result = plan(file(wants), server(has))
+      expect(result.settings.map((change) => [change.path, change.kind])).toEqual(
+        changes ? [[PATH, 'changed']] : []
+      )
+      expect(result.weakened).toEqual(weakens ? [PATH] : [])
+      expect(result.unknown).toEqual([])
+    })
+
+    // `agents` has two keys (this one and ADR 0053's `proposalsInProduction`), and each is
+    // planned by itself: a file that writes one leaves the other at its default, which is
+    // managed, and a file that writes both as the server has them plans nothing.
+    test.each<[string, Record<string, unknown>, string[]]>([
+      ['both as the server has them', { proposalsInProduction: true, testSignIn: true }, []],
+      ['only the sign-in test', { testSignIn: true }, ['agents.proposalsInProduction']],
+      ['only the proposals', { proposalsInProduction: true }, [PATH]],
+      ['neither', {}, ['agents.proposalsInProduction', PATH]],
+    ])('a server with both on and a file with %s', (_name, agents, changed) => {
+      const both = remote({
+        settings: settings((s) => {
+          s.agents.proposalsInProduction = true
+          s.agents.testSignIn = true
+        }),
+      })
+      const result = plan({ settings: { agents } }, both)
+      expect(result.settings.map((change) => change.path).sort()).toEqual([...changed].sort())
+      // Taking either back to its default asks less of nobody.
+      expect(result.weakened).toEqual([])
+    })
+
+    test('the line shows the value before and after', () => {
+      expect(plan(file(true), server(null)).settings).toEqual([
+        { path: PATH, kind: 'changed', before: null, after: true },
+      ])
+    })
+  })
+
   describe('device binding (ADR 0043)', () => {
     type Binding = 'none' | 'optional' | 'required'
     /** A server whose `mobile` profile has this option. */
