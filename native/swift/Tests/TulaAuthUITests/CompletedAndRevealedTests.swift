@@ -50,6 +50,33 @@ final class CompletedAndRevealedTests: XCTestCase {
                 stage.model.code = "123456"
             },
             route: Wire.signUpVerify, finish: { await $0.submitCode() }),
+        Completion(
+            name: "a sign-in's texted code", mode: .signIn,
+            ready: { stage in
+                stage.api.on(Wire.signIns, Wire.flow("sign_in", Wire.passwordAndTextPrepared, start: true))
+                stage.model.email = Wire.number
+                await stage.model.start()
+                stage.api.on(Wire.attempt, Wire.flow("sign_in", Wire.complete))
+                stage.model.code = "123456"
+            },
+            route: Wire.attempt, finish: { await $0.submitCode() }),
+        Completion(
+            name: "a second step's authenticator code", mode: .signIn,
+            ready: { stage in
+                await stage.signIn(to: Wire.secondFactor)
+                stage.api.on(Wire.secondFactorRoute, Wire.flow("sign_in", Wire.complete))
+                stage.model.code = "123456"
+            },
+            route: Wire.secondFactorRoute, finish: { await $0.submitCode() }),
+        Completion(
+            name: "a second step's texted code", mode: .signIn,
+            ready: { stage in
+                await stage.signIn(to: Wire.textedSecondPrepared)
+                stage.api.on(Wire.secondFactorRoute, Wire.flow("sign_in", Wire.complete))
+                stage.model.useSecondWay(.textedCode)
+                stage.model.code = "123456"
+            },
+            route: Wire.secondFactorRoute, finish: { await $0.submitCode() }),
     ]
 
     func testAFlowThatCompletedIsSignedInAlsoWhenItsSessionCouldNotBeStored() async throws {

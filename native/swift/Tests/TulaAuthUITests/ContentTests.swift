@@ -33,7 +33,10 @@ final class ContentTests: XCTestCase {
         .emailCode(destination: "m***@example.com", canUsePassword: true),
         .emailVerification(destination: "m***@example.com"), .newPassword(destination: "m***@example.com"),
         .expiredPassword, .signedIn, .notSupported(status: "needs_second_factor"),
-    ]
+    ] + MoreScreens.all
+
+    /// The table's screens, for a test that asks something of every one.
+    static var everyScreen: [TulaAuthScreen] { screens }
 
     private static func expected(_ screen: TulaAuthScreen) -> TulaAuthContent {
         switch screen {
@@ -92,6 +95,8 @@ final class ContentTests: XCTestCase {
                 title: "Your password has expired", subtitle: "Choose a new password to finish signing in.",
                 fields: [chosen(.submitNewPassword)],
                 primary: Offer(primary: "Save password and sign in", .submitNewPassword))
+        case .textedSignInOffer, .textedSignIn, .secondFactor, .enrolmentStart, .totpSetup, .backupCodes:
+            return MoreScreens.expected(screen)
         case .signedIn:
             return TulaAuthContent(title: "You are signed in.")
         case .notSupported:
@@ -193,8 +198,8 @@ final class ContentTests: XCTestCase {
         XCTAssertEqual(reset.model.text(of: .newPassword), "short")
 
         let unknown = try Stage()
-        await unknown.signIn(to: Wire.secondFactor)
-        XCTAssertEqual(unknown.model.screen, .notSupported(status: "needs_second_factor"))
+        await unknown.signIn(to: Wire.tomorrow)
+        XCTAssertEqual(unknown.model.screen, .notSupported(status: "needs_a_step_of_tomorrow"))
         await unknown.model.perform(.startAgain)
         XCTAssertEqual(unknown.model.screen, .signInStart)
     }
@@ -218,13 +223,13 @@ final class ContentTests: XCTestCase {
 
         // On a step with no screen: no action of the model sends anything.
         let unknown = try Stage()
-        await unknown.signIn(to: Wire.secondFactor)
+        await unknown.signIn(to: Wire.tomorrow)
         let sent = unknown.api.routes
         for action in TulaAuthAction.allCases where action != .startAgain {
             await unknown.model.perform(action)
         }
         XCTAssertEqual(unknown.api.routes, sent)
-        XCTAssertEqual(unknown.model.screen, .notSupported(status: "needs_second_factor"))
+        XCTAssertEqual(unknown.model.screen, .notSupported(status: "needs_a_step_of_tomorrow"))
     }
 
     // MARK: What a view reads for a problem

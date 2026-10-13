@@ -6,6 +6,23 @@ import XCTest
 // The client's construction, the reading of an answer that is not a success, and the rule
 // that nothing an error or a refusal says repeats a secret.
 final class ClientTests: XCTestCase {
+    func testAClientSaysWhichSheetsItWasGivenAndNothingOfThem() throws {
+        // Three facts a screen hides a control by. Nothing is shown by asking.
+        XCTAssertEqual(try World().client.sheets, TulaSheets(passkeys: false, apple: false, browser: false))
+        let sheet = FakeSheet()
+        let apple = FakeApple()
+        let browser = FakeBrowser()
+        XCTAssertEqual(
+            try World(passkeys: sheet).client.sheets, TulaSheets(passkeys: true, apple: false, browser: false))
+        XCTAssertEqual(try World(apple: apple).client.sheets, TulaSheets(passkeys: false, apple: true, browser: false))
+        XCTAssertEqual(
+            try World(browser: browser).client.sheets, TulaSheets(passkeys: false, apple: false, browser: true))
+        let all = try World(passkeys: sheet, apple: apple, browser: browser).client.sheets
+        XCTAssertEqual(all, TulaSheets(passkeys: true, apple: true, browser: true))
+        XCTAssertEqual(sheet.asked.count + sheet.made.count + apple.nonces.count + browser.opened.count, 0)
+        XCTAssertEqual(Set([all, all, try World().client.sheets]).count, 2, "a value, compared by its three facts")
+    }
+
     // MARK: Construction
 
     func testASecretKeyAndAMalformedAddressAreRefusedInFixedWords() {

@@ -975,6 +975,99 @@ Not verified:
 | **A crash this run avoids** | With an `async` `setUp` or `tearDown` on the main-actor test class, the test runner ended in `swift_task_dealloc` (Xcode 16.4, iOS 18.5), reported as "TulaExampleUITests-Runner quit unexpectedly". The seam is synchronous for that reason. Why the runtime does that was not found; it is avoided, not understood. |
 | **What the screens leave out** | A second step, an enrolment, a passkey, a provider, a texted code and the account's own screens (TULA-60): each is the "not supported" screen here, although the client has calls for the first four. |
 
+## Step 2.14, the SwiftUI screens: the second step and the account (TULA-60, [ADR 0060](../adr/0060-swiftui-second-step-and-account.md))
+
+What TULA-60 added: the client's calls for a texted code and a phone number; screens for
+the second step, an authenticator's enrolment inside a sign-in with its backup codes, and
+a texted code; a passkey button and provider buttons on the first screen; and the account
+screen (`TulaAccountView`). The section above stays as the record of its own run; its last
+row ("What the screens leave out") is what this step built.
+
+**Everything below ran on one Mac and in one simulator. No device was used. VoiceOver was
+never turned on. No passkey sheet, no Sign in with Apple sheet, no Google sheet and no
+browser session was shown by anything: the package's tests script the four protocols, and
+the example app passes no sheet, so the simulator never drew a passkey or a provider
+button at all.** `verify` runs none of it.
+
+Run on 2026-10-13, by hand, on one Mac (arm64, macOS 26.6.2), Xcode 16.4 (build 16F6),
+Apple Swift 6.1.2, bun 1.4.2:
+
+- `swift test --package-path native/swift --enable-code-coverage`:
+  `Executed 560 tests, with 0 failures (0 unexpected) in 23.615 (23.638) seconds`, as a
+  macOS command-line test bundle (the run after the review's fixes and the rebase onto
+  `develop` at `06bfa365`, which brought four tests of ADR 0059's calls). 253 of them are the target `TulaAuthUITests` (86 before):
+  the sign-in model's second step and enrolment (`SecondStepTests`, 31), the texted code's
+  screens (`TextedCodeScreenTests`, 16), the passkey and the providers on the first screen
+  (`WaysTests`, 25), the account model (`AccountModelTests`, 43; `AccountStepUpTests`, 23),
+  what the account screen offers as data (`AccountContentTests`, 18) and the shared parts
+  and the QR code (`PartsTests`, 11). They run the real client on a transport that is a
+  table of answers, with scripted sheets (`Tests/TulaAuthUITests/Sheets.swift`). **None
+  makes a view, shows a sheet, opens a browser or asks a Keychain.**
+- The client's own new calls: 13 unit tests (`TextedCodeTests`) and 11 journey methods for
+  10 scenarios against the real API on the fixture (`TextedCodeJourneys`), the texted codes
+  read from the fixture's development inbox. No text message left the machine.
+- `bun run native/swift/fixture/coverage.ts` on that run:
+  `TulaAuth: lines 95.61%, functions 90.50% (thresholds 90.00% and 85.00%)`,
+  `TulaAuthUI: lines 98.61%, functions 98.35% (thresholds 90.00% and 85.00%)`, the second
+  over the ten files directly in `Sources/TulaAuthUI`. The thresholds are unchanged. **The
+  three files of `Sources/TulaAuthUI/Views` are still not counted**, `TulaAccountView.swift`
+  among them.
+- `bun run native/swift/fixture/journeys.ts`:
+  `the Swift journeys and conformance/client-journeys.json agree`. The `swift` column went
+  from 83 journeys, 21 not applicable and 11 not built to 93, 21 and 1 of 115 (the emailed link,
+  TULA-56).
+- `bun run native/swift/fixture/ui-tests.ts`, on the simulator **iPhone 16, iOS 18.5** (the
+  script's own pick), one test at a time:
+  `Executed 18 tests, with 0 failures (0 unexpected) in 497.905 (497.912) seconds`,
+  `** TEST SUCCEEDED **`; 13 of `AuthScreensUITests` (250 seconds) and 5 of
+  `SecondStepAndAccountUITests` (248 seconds). That is the fifth whole run, made after the
+  rebase onto `develop` at `06bfa365`; the third (497.719 seconds) and the fourth, after
+  the review's fixes (the pasteboard call and a reworded string; 510.199 seconds), had
+  passed too. Of the earlier ones: the first had
+  failures in 11 tests and the second 9 audit findings, all put right in the sources and
+  not by an exclusion (below).
+  The five new tests: a sign-in where two-step verification is required, which sets up an
+  authenticator app (the test computes the code from the setup key the screen shows), is
+  shown its backup codes, reaches the account screen, signs out and is asked for the code
+  at the next sign-in; the account screen (the sessions with "This device", the password
+  panel opened and left, the other sessions signed out, an authenticator switched on, a
+  sign-out); the account screen asking for proof ("Confirm it is you") before an
+  authenticator is set up, an hour of the fixture's clock after the sign-in, with a wrong
+  and then the right password (a step-up with an emailed code, a texted code, an
+  authenticator's code and a passkey are model tests only); a phone number added
+  with a texted code read from the fixture's inbox; and the new screens in the dark scheme.
+  Two tests of `AuthScreensUITests` changed: "not supported" and the new "no way can be
+  taken here" are reached by an environment whose only way is a passkey, in an app that
+  passes no passkey sheet.
+- The system's accessibility audit ran, keyboard put away, on: the enrolment's start, the
+  setup screen with its QR code and key, the backup codes, the second step's code, the
+  account screen (before and after changes), the password panel, "Confirm it is you", the
+  phone number's two panels; and in the dark scheme on the setup screen, the account
+  screen, the password panel and the second step. **No exclusion was added**: the one of
+  the section above is unchanged. What the first two runs found was changed in the
+  sources: a bare address in the example's header and in the profile section (now a
+  sentence, and a section's lines one accessibility element), a link drawn in a colour
+  that failed contrast in the example, and a header that clipped.
+
+Not verified:
+
+| What | How far it was taken |
+| --- | --- |
+| **A device, VoiceOver** | As in the section above: one simulator, one iOS version, one Xcode; VoiceOver never on. Labels are asserted from the accessibility tree, announcements and the asked focus on the models with a recording announcer. |
+| **A passkey button, a provider button, any sheet** | Tested on the model with scripted sheets only: that the control is offered only when the app passed the protocol and the server offers the way, that a dismissed sheet is a quiet notice and never an error, that a second sheet is `flow.busy` said quietly, that a sheet's failure is said in fixed words. **No test drew either button**: the example passes no sheet and no redirect URL, so the simulator run shows only that they are absent there. `TulaSystemSheets.swift` compiled for the simulator and none of its code ran. Sign in with Apple, a Google ID token (the app's closure) and a browser round trip were never made against a platform. |
+| **A passkey on the account screen** | Adding, renaming and removing a passkey, and a step-up with one, are model tests on a scripted sheet. The simulator's account screen has no passkey section's "add" (no sheet passed). |
+| **A texted code as a sign-in and as a second step** | The model's screens for both are tested against a table of answers, and the client's calls by the journeys against the real API. On the simulator a texted code was typed only when adding a phone number. The texted sign-in screens are drawn only where what was typed reads as a phone number (`TulaAuthModel.isPhoneNumber`), a rule of the screens' own that only the model's tests exercise. |
+| **The QR code** | Made by Core Image in memory; a test holds that an image is made and that nothing is made for an empty string. The simulator drew it and the audit passed. **No camera or authenticator app read it**: that it encodes the `otpauth` address correctly is Core Image's doing and was not checked by decoding. |
+| **"Held only while its screen is open"** | The setup key, the QR code's source and the backup codes are emptied by every change of screen or panel, by a completion and by `close()`: tests of the two models. That SwiftUI keeps no copy in a view after the panel goes is how the views are written (they hold no `@State` for them), not something a tool inspected; the simulator's memory was not looked at. |
+| **Copying** | The copy button calls a closure the app passes; tests hold that nothing is copied unasked, and that the rule the view reads is "this device only, taken back after 60 seconds" (`TulaCopyRule`). The call that writes `UIPasteboard` with `localOnly` and `expirationDate` compiled for the simulator and was not exercised there: **no run looked at a pasteboard, at Universal Clipboard or at the expiry**. |
+| **A failed sign-out** | The account model stays signed in and says so when the server could not be told: a model test on a transport that fails. Not reached on the simulator (the fixture always answers). |
+| **Sessions marked** | "This device" and "Bound to a device key" are data of `TulaAccountContent`, tested there. The simulator showed "This device" on one session; no session there was bound to a device key (the example passes no key store). |
+| **Connected provider accounts** | Not built: the account screen has no list of identities and no linking. |
+| **Dynamic Type, right to left, another language, a custom theme, the slots** | As in the section above, and now for the new screens too: default text size, English, the default theme, the default parts. The account screen at the largest text sizes was not looked at. |
+| **`-only-testing`** | Passing `-only-testing:…` after `--` to the script did not narrow a run when tried here: all 18 tests ran. `examples/swiftui/README.md` still shows that form; why it did not apply was not looked into. |
+| **The `Swift` workflow, a runner** | Unchanged: `swift.yml` has never run, and the simulator run is in no workflow. It now takes a little over eight minutes of tests after a build. |
+| **A review** | `/review-loop` was not run on this change by its author. |
+
 ## The `device_binding` check of `tula doctor` (TULA-72, [ADR 0043](../adr/0043-device-binding.md#a-deployment-that-cannot-bind-and-a-profile-that-requires-a-key-added-2026-10-12-tula-72))
 
 | Not verified | What was and was not done |

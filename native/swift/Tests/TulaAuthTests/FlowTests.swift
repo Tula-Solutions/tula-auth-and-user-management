@@ -168,8 +168,9 @@ final class FlowTests: XCTestCase {
             FlowScreen(step: try JSONDecoder().decode(FlowStep.self, from: Data(json.utf8)), kind: kind)
         }
         XCTAssertEqual(try screen(#"{"status":"needs_password"}"#), .password)
-        // A second factor: a code is a way this client has, a passkey only with a sheet, a
-        // texted code never; and a sign-up has no second factor to ask for.
+        // A second factor: a code, typed or texted, is a way this client has, a passkey only
+        // with a sheet, a method it does not know never; and a sign-up has no second factor
+        // to ask for.
         guard
             case .secondFactor = try screen(#"{"status":"needs_second_factor","options":["totp","backup_code"]}"#),
             case .secondFactor = try screen(#"{"status":"needs_second_factor","options":["backup_code"]}"#, .passwordReset)
@@ -182,8 +183,17 @@ final class FlowTests: XCTestCase {
         guard case .secondFactor = FlowScreen(step: passkeyOnly, kind: .signIn, passkeys: true) else {
             return XCTFail("a passkey is a second factor for a client with a sheet")
         }
+        guard
+            case .secondFactor = try screen(#"{"status":"needs_second_factor","options":["sms_code"]}"#),
+            case .secondFactor = try screen(#"{"status":"needs_second_factor","options":["sms_code"]}"#, .passwordReset)
+        else {
+            return XCTFail("a texted code is a second factor this client can ask for")
+        }
         XCTAssertEqual(
-            try screen(#"{"status":"needs_second_factor","options":["sms_code","hardware_key"]}"#),
+            try screen(#"{"status":"needs_second_factor","options":["hardware_key"]}"#),
+            .notSupported(status: "needs_second_factor"))
+        XCTAssertEqual(
+            try screen(#"{"status":"needs_second_factor","options":["sms_code"]}"#, .signUp),
             .notSupported(status: "needs_second_factor"))
         XCTAssertEqual(
             try screen(#"{"status":"needs_second_factor","options":["totp"]}"#, .signUp),
@@ -202,9 +212,11 @@ final class FlowTests: XCTestCase {
         XCTAssertEqual(
             try screen(#"{"status":"needs_first_factor","strategies":["passkey","oauth_google","email_link"]}"#),
             .notSupported(status: "needs_first_factor"))
-        guard case .firstFactor = try screen(#"{"status":"needs_first_factor","strategies":["passkey","email_code"]}"#)
+        guard
+            case .firstFactor = try screen(#"{"status":"needs_first_factor","strategies":["passkey","email_code"]}"#),
+            case .firstFactor = try screen(#"{"status":"needs_first_factor","strategies":["sms_code"]}"#)
         else {
-            return XCTFail("an emailed code is a way this client has")
+            return XCTFail("an emailed code and a texted code are ways this client has")
         }
         XCTAssertEqual(
             try screen(
@@ -341,12 +353,18 @@ final class FlowTests: XCTestCase {
         XCTAssertTrue(state.isSignedIn)
     }
 
-    func testAStepThatOffersOnlyATextedCodeOrALinkIsNotSupported() async throws {
-        // This version proves a password and an emailed code. It has no call for a texted
-        // code or an emailed link, so a step with nothing else is not a screen it can draw.
-        for strategies in [#"["sms_code"]"#, #"["email_link"]"#, #"["sms_code","email_link"]"#] {
+    func testAStepThatOffersOnlyALinkIsNotSupportedAndATextedCodeIsOffered() async throws {
+        // This version proves a password, an emailed code and a texted code. It has no call
+        // for an emailed link, so a step with nothing else is not a screen it can draw.
+        let (world, flow) = try await startedSignIn(#"{"status":"needs_first_factor","strategies":["email_link"]}"#)
+        XCTAssertEqual(flow.screen, .notSupported(status: "needs_first_factor"))
+        XCTAssertEqual(world.api.requests.count, 1, "only the start was sent")
+        for strategies in [#"["sms_code"]"#, #"["sms_code","email_link"]"#] {
             let (world, flow) = try await startedSignIn(#"{"status":"needs_first_factor","strategies":\#(strategies)}"#)
-            XCTAssertEqual(flow.screen, .notSupported(status: "needs_first_factor"))
+            guard case .firstFactor = flow.screen else {
+                return XCTFail("a texted code is a way this client has")
+            }
+            // Arriving at the step texts nothing: a message is asked for.
             XCTAssertEqual(world.api.requests.count, 1, "only the start was sent")
         }
     }

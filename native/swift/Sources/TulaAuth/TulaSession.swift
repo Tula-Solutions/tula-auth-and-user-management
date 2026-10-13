@@ -547,6 +547,32 @@ public actor TulaSession: TulaRedacted {
         }
     }
 
+    /// The id of the session that is signed in, once who is signed in has been settled (a
+    /// client that has not loaded yet restores its session here); `nil` when nobody is.
+    func settledSessionId() async throws -> String? {
+        _ = try await getToken()
+        if case .signedIn(let sessionId, _) = state {
+            return sessionId
+        }
+        return nil
+    }
+
+    /// Correct the state's user after a call that changed it, as `@tula/core`'s `asUser`
+    /// does: the user belongs to the session that asked, so when that session ended, or
+    /// somebody else signed in, while the request was in flight, nothing is installed.
+    ///
+    /// - Parameters:
+    ///   - asked: The session that asked (`settledSessionId()` before the call).
+    ///   - change: What the user is now, from what the state held; `nil` installs nothing.
+    func setUser(askedBy asked: String?, _ change: @Sendable (CurrentUser?) -> CurrentUser?) {
+        guard let asked, case .signedIn(let sessionId, let held) = state, sessionId == asked,
+            let user = change(held)
+        else {
+            return
+        }
+        setState(.signedIn(sessionId: sessionId, user: user))
+    }
+
     // MARK: Calls as the signed-in user
 
     /// Send an operation with the user's access token, refreshing once if the API refuses the
