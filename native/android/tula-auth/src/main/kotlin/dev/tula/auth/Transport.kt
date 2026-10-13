@@ -3,6 +3,8 @@ package dev.tula.auth
 import dev.tula.auth.generated.TulaJson
 import dev.tula.auth.generated.TulaOperation
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.DeserializationStrategy
@@ -58,6 +60,12 @@ internal class CallInput(
  *
  * It adds the publishable key and the client kind, applies the timeout, and turns every
  * failure into a [TulaError]. It never retries, follows no redirect and keeps nothing.
+ *
+ * **The timeout does not rest on the engine ending its request when it is cancelled.** The
+ * request runs in the client's own scope and the call waits for it, for the timeout at most:
+ * an engine that ignores cancellation (an app's own may) is left behind, its late answer
+ * dropped. Waited for instead, one stuck request would hold the single refresh past the
+ * server's grace window.
  */
 internal class Transport(
     private val baseUrl: String,
@@ -67,6 +75,7 @@ internal class Transport(
     private val clock: Clock,
     private val messages: () -> Messages,
     private val sessionProfile: String?,
+    private val scope: CoroutineScope,
 ) {
     /**
      * Send one operation.
@@ -99,12 +108,17 @@ internal class Transport(
             body = input.body,
             timeoutMs = limit,
         )
+        // In the client's scope, not the caller's: a caller's scope would wait for it.
+        val sending = scope.async { http.send(request) }
         val response = try {
-            withTimeout(limit) { http.send(request) }
+            withTimeout(limit) { sending.await() }
         } catch (cause: TimeoutCancellationException) {
+            sending.cancel()
             throw clientError(ClientErrorCodes.NETWORK_TIMEOUT, messages(), cause)
         } catch (cause: CancellationException) {
-            // The caller gave up: that is not a failure of the network.
+            // The caller gave up, or the client was closed: that is not a failure of the
+            // network.
+            sending.cancel()
             throw cause
         } catch (cause: SocketTimeoutException) {
             throw clientError(ClientErrorCodes.NETWORK_TIMEOUT, messages(), cause)

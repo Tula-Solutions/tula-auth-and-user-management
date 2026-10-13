@@ -105,6 +105,7 @@ class TulaClient(
             clock = clock,
             messages = { table },
             sessionProfile = sessionProfile,
+            scope = scope,
         )
         manager = SessionManager(
             transport = transport,

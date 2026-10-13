@@ -1,8 +1,11 @@
 package dev.tula.auth
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.yield
 import java.io.IOException
 import java.net.SocketTimeoutException
@@ -177,21 +180,56 @@ class TransportTest {
     fun `no answer in time is network_timeout, and the request is given up`() = runTest {
         val bench = Bench(timeoutMs = 50)
         val never = CompletableDeferred<HttpResponse>()
-        var cancelled = false
+        val cancelled = CompletableDeferred<Unit>()
         bench.engine.on("GET", CONFIG) {
             try {
                 never.await()
             } finally {
-                cancelled = true
+                cancelled.complete(Unit)
             }
         }
         val error = caught { bench.tula.config() }
         assertEquals("network.timeout", error.code)
         assertEquals(0, error.status)
-        assertTrue(cancelled)
+        // The request is cancelled, and the call did not wait to see it end.
+        cancelled.await()
 
         bench.engine.on("GET", CONFIG) { throw SocketTimeoutException("Read timed out") }
         assertEquals("network.timeout", caught { bench.tula.config() }.code)
+    }
+
+    @Test
+    fun `the deadline holds for an engine that ignores cancellation`() = runTest(limitMs = 10_000) {
+        // An app's own engine may not end its request when it is cancelled. The deadline
+        // must not wait for it: a refresh would hold the single flight past the grace window.
+        val bench = Bench(timeoutMs = 50)
+        val gate = CompletableDeferred<HttpResponse>()
+        val entered = CompletableDeferred<Unit>()
+        val gaveUp = CompletableDeferred<Unit>()
+        bench.engine.on("GET", CONFIG) {
+            withContext(NonCancellable) {
+                entered.complete(Unit)
+                // Bounded, so that a client that does wait fails this test and hangs nothing.
+                withTimeoutOrNull(5_000) { gate.await() }
+                    ?: throw IOException("gave up").also { gaveUp.complete(Unit) }
+            }
+        }
+        val error = caught { bench.tula.config() }
+        assertEquals("network.timeout", error.code)
+        // The engine is still inside its request: nothing waited for it.
+        assertTrue(entered.isCompleted)
+        assertFalse(gaveUp.isCompleted)
+
+        // A caller that gives up is not kept either.
+        val asking = async { runCatching { bench.tula.config() } }
+        while (bench.engine.requests.size < 2) {
+            yield()
+        }
+        asking.cancelAndJoin()
+        assertTrue(asking.isCancelled)
+        assertFalse(gaveUp.isCompleted)
+        // What the engine answers late is dropped, and nothing is thrown anywhere for it.
+        gate.complete(ok(CONFIG_BODY))
     }
 
     @Test
