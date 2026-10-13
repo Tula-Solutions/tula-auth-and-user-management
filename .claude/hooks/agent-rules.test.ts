@@ -35,44 +35,117 @@ describe('the standards document and the area rules', () => {
     expect(Buffer.byteLength(readFileSync(join(rules, name)))).toBeLessThanOrEqual(AREA_MAX_BYTES)
   })
 
+  /** The globs of a rules file's front matter, or none when it has no well-formed one. */
+  function pathsOf(name: string): string[] {
+    const text = readFileSync(join(rules, name), 'utf8')
+    const frontMatter = /^---\npaths:\n((?: {2}- "[^"\n]+"\n)+)---\n/.exec(text)?.[1] ?? ''
+    return [...frontMatter.matchAll(/"([^"]+)"/g)].map((match) => match[1] as string)
+  }
+
   test.each(files)(
     '%s says which paths it is for, so it is not loaded for every change',
     (name) => {
-      const text = readFileSync(join(rules, name), 'utf8')
-      const frontMatter = /^---\npaths:\n((?: {2}- "[^"\n]+"\n)+)---\n/.exec(text)?.[1]
-      expect(frontMatter).toBeDefined()
+      expect(pathsOf(name).length).toBeGreaterThan(0)
     }
   )
 
-  test('every area file is named in AGENTS.md, so an agent that loads no rules finds it', () => {
-    const named = new Set<string>()
-    for (const match of agents.matchAll(/`\.claude\/rules\/([a-z0-9-]+)\.md`/g)) {
-      named.add(`${match[1]}.md`)
-    }
-    for (const match of agents.matchAll(/`\.claude\/rules\/\{([a-z0-9,-]+)\}\.md`/g)) {
-      for (const name of (match[1] as string).split(',')) {
-        named.add(`${name}.md`)
+  // A glob that matches nothing loads its rules for nobody: `Dockerfile` did, while the one
+  // Dockerfile is `apps/api/Dockerfile`, so whoever changed the image never read its rules.
+  test('every path of every area file matches a file the repository tracks', () => {
+    const listed = Bun.spawnSync(['git', 'ls-files'], { cwd: root, timeout: 20_000 })
+    expect(listed.exitCode).toBe(0)
+    const tracked = listed.stdout.toString().split('\n').filter(Boolean)
+    expect(tracked.length).toBeGreaterThan(1000)
+    const idle: string[] = []
+    for (const name of files) {
+      for (const pattern of pathsOf(name)) {
+        const glob = new Bun.Glob(pattern)
+        if (!tracked.some((file) => glob.match(file))) {
+          idle.push(`${name}: ${pattern}`)
+        }
       }
     }
+    expect(idle).toEqual([])
+  })
+
+  /** The files the "Area rules" table of a document names: its rows' last cells, nothing else. */
+  function tabled(document: string): string[] {
+    const start = document.indexOf('\n### Area rules\n')
+    const section = document.slice(start + 1, document.indexOf('\n### ', start + 1))
+    const named: string[] = []
+    for (const row of section.split('\n').filter((line) => line.startsWith('| '))) {
+      const cell = row.split(/(?<!\\)\|/).at(-2) ?? ''
+      for (const match of cell.matchAll(/`\.claude\/rules\/([a-z0-9-]+)\.md`/g)) {
+        named.push(`${match[1]}.md`)
+      }
+      for (const match of cell.matchAll(/`\.claude\/rules\/\{([a-z0-9,-]+)\}\.md`/g)) {
+        named.push(...(match[1] as string).split(',').map((each) => `${each}.md`))
+      }
+    }
+    return named
+  }
+
+  test('every area file has a row in the table of AGENTS.md, so an agent that loads no rules finds it', () => {
+    const named = new Set(tabled(agents))
+    expect(named.size).toBeGreaterThan(30)
     expect(files.filter((name) => !named.has(name))).toEqual([])
     // And the other way round: a row for a file that is gone sends a reader nowhere.
     expect([...named].filter((name) => !files.includes(name)).sort()).toEqual([])
   })
 
+  test('a file named in prose only, outside the table, does not count as listed', () => {
+    const document = [
+      'See `.claude/rules/ghost.md`.',
+      '',
+      '### Area rules',
+      '',
+      'Also `.claude/rules/prose.md`, in a sentence.',
+      '',
+      '| Section | File |',
+      '| --- | --- |',
+      '| Webhooks | `.claude/rules/webhooks.md` |',
+      '| General | `.claude/rules/{api,sdk}.md` |',
+      '',
+      '### Next',
+      '',
+      '| Later | `.claude/rules/later.md` |',
+    ].join('\n')
+    expect(tabled(document)).toEqual(['webhooks.md', 'api.md', 'sdk.md'])
+  })
+
   test('a section lives in one place: no heading of an area file is a heading of AGENTS.md', () => {
     const own = new Set([...agents.matchAll(/^#{2,3} (.+)$/gm)].map((match) => match[1]))
+    // An area file names, by the heading it had, the section its bullets came from.
+    const shared = new Set([
+      'Publishable packages (see ADR 0020)',
+      'Security rules (non-negotiable)',
+      'Testing',
+    ])
     const twice: string[] = []
     for (const name of files) {
       for (const match of readFileSync(join(rules, name), 'utf8').matchAll(/^## (.+)$/gm)) {
-        // An area file names the section its bullets came from ("Security rules …").
-        if (
-          own.has(match[1] as string) &&
-          !/^(Security rules|Testing|Publishable packages)/.test(match[1] as string)
-        ) {
+        if (own.has(match[1] as string) && !shared.has(match[1] as string)) {
           twice.push(`${name}: ${match[1]}`)
         }
       }
     }
     expect(twice).toEqual([])
+  })
+
+  // "Webhooks" above, in a file that no longer holds a section of that name, sends a reader
+  // looking for it. A section that moved is named with where it is.
+  test('AGENTS.md names no section as above or below that it does not hold', () => {
+    const own = new Set(
+      [...agents.matchAll(/^#{2,3} (.+)$/gm)].map((match) =>
+        (match[1] as string).replace(/ \(.*$/, '')
+      )
+    )
+    const lost: string[] = []
+    for (const match of agents.matchAll(/"([^"\n]{3,60})"\s+(?:above|below)\b/g)) {
+      if (!own.has(match[1] as string)) {
+        lost.push(match[1] as string)
+      }
+    }
+    expect(lost).toEqual([])
   })
 })

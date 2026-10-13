@@ -3,7 +3,7 @@ paths:
   - "e2e/**"
   - "examples/react-vite/**"
   - "examples/nextjs-app-router/**"
-  - "Dockerfile"
+  - "apps/api/Dockerfile"
   - ".dockerignore"
 ---
 

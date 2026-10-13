@@ -127,8 +127,8 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
 The rules of one area live in a file of their own under `.claude/rules/`, loaded by Claude Code
 when a matching file is touched (`paths` in its front matter). **Any other agent, and a person,
 reads the file of the area before changing it**: those files are as binding as this one, and
-nothing in them is repeated here. A section another rule names ("Webhooks" above, "Sign-in
-tests" below) is found in this table.
+nothing in them is repeated here. Where a rule names a section as
+above or below and the file it is in has none of that name, the section is in this table.
 
 | Section | File |
 | --- | --- |
@@ -222,8 +222,8 @@ each with its own job name and lock id (`JOB_LOCK_IDS`: never renumber, only add
 the webhook worker (`Webhooks.run` in `modules/webhook`,
 [ADR 0034](docs/adr/0034-webhooks.md)) and `modules/retention`, which has no router.
 Retention runs in every API instance and never in a worker; the delivery job runs in every
-API instance, or with `WEBHOOK_WORKER=separate` only in the worker processes ("Webhooks"
-above). A new job is added to `ProcessPlan.jobs` for the role that runs it. The
+API instance, or with `WEBHOOK_WORKER=separate` only in the worker processes
+(`.claude/rules/webhooks.md`). A new job is added to `ProcessPlan.jobs` for the role that runs it. The
 retention job's deletes go through store methods that take
 an environment, a cutoff and a batch limit, never through a query of its own. That includes
 an environment's audit entries past its `audit.retentionDays`.
@@ -279,7 +279,7 @@ The API never tells a client which screen to draw; it returns the next **flow st
 `needs_new_password`, `needs_second_factor`, `needs_factor_enrolment`, `complete`). See
 [ADR 0019](docs/adr/0019-flow-engine-v2.md) and [ADR 0025](docs/adr/0025-mfa.md).
 `needs_new_password` is a reset's step and, with `reason: 'expired'`, the last step of a
-sign-in whose password is too old ("Password expiry" above).
+sign-in whose password is too old (`.claude/rules/passwords.md`, "Password expiry").
 
 - **Transitions are one pure function**, `nextStatus(kind, status, event, context)` in
   `modules/flow/transitions.ts`. Its table test enumerates every kind × step × event; a new
