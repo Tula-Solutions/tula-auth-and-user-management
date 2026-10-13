@@ -206,7 +206,80 @@ try {
 ```
 <!-- /snippet -->
 
+The Swift client ([swift.md](../swift.md)): the second step of a sign-in, a step-up for a
+call the server answered `auth.step_up_required`, and an authenticator app's setup.
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#second-step -->
+```swift
+if case .secondFactor = flow.screen {
+    try await flow.submitTotp(typed)  // the authenticator app's code
+    // or: a backup code, whose answer says how many are left
+    let spent = try await flow.submitBackupCode(typed)
+    // or: a texted code, asked for first (nothing is texted on arrival)
+    try await flow.prepareSmsSecondFactor()
+    try await flow.submitSmsCode(typed)
+    // or: a passkey, where the client was given a sheet
+    let ceremony = try await flow.submitSecondFactorWithPasskey()
+    _ = (spent.remaining, ceremony)
+}
+```
+<!-- /snippet -->
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#step-up -->
+```swift
+do {
+    try await tula.factors.disableTotp()
+} catch let error as TulaError where error.code == "auth.step_up_required" {
+    // error.stepUpMethods says how: "totp", "backup_code", "passkey", "password", "email_code"
+    try await tula.stepUp.withTotp(typed)
+}
+```
+<!-- /snippet -->
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#totp-enrol -->
+```swift
+let enrolment = try await tula.factors.startTotp()  // the setup key, shown once
+let backupCodes = try await tula.factors.confirmTotp(code: typed)  // shown once too
+```
+<!-- /snippet -->
+
+The Kotlin client ([kotlin.md](../kotlin.md)):
+
+<!-- snippet: native/android/tula-auth/src/test/kotlin/dev/tula/auth/DocsSnippets.kt#second-step -->
+```kotlin
+flow.submitTotp(code) // the authenticator app's code
+flow.submitBackupCode(code) // .remaining says how many are left
+flow.submitSecondFactorWithPasskey() // shows the passkey sheet
+flow.prepareSmsCode() // nothing is texted until this is called
+flow.submitSmsCode(code)
+```
+<!-- /snippet -->
+
+<!-- snippet: native/android/tula-auth/src/test/kotlin/dev/tula/auth/DocsSnippets.kt#step-up -->
+```kotlin
+tula.stepUp.withPassword(password)
+tula.stepUp.withTotp(code) // or withBackupCode(code)
+tula.stepUp.withPasskey()
+tula.stepUp.sendEmailCode()
+tula.stepUp.withEmailCode(code)
+```
+<!-- /snippet -->
+
+<!-- snippet: native/android/tula-auth/src/test/kotlin/dev/tula/auth/DocsSnippets.kt#totp-enrol -->
+```kotlin
+try {
+    tula.factors.startTotp() // the setup key, shown once
+    App.show(tula.factors.confirmTotp(code)) // the backup codes, shown once too
+} catch (error: TulaError) {
+    // `auth.step_up_required`: error.stepUpMethods says with what to step up first.
+    check(error.stepUpMethods.isNotEmpty())
+}
+```
+<!-- /snippet -->
+
 Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/react.md).
+
+Native: [Swift](../reference/swift.md), [Kotlin](../reference/kotlin.md).
 
 ## Troubleshooting
 

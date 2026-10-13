@@ -61,20 +61,25 @@ Two for the client, two for the screens. All of the client's logic is in `tula-a
 what the tests run; `tula-auth-android` is the thin part that touches Android, one class per
 interface. An app that draws its own screens takes the first two and nothing of Compose.
 
+To start from a project that already has the stack and an app, see [the native path of the
+quickstart](quickstart.md#the-native-path) (`create-tula --framework compose`). An emulator
+needs no account; a passkey, Sign in with Google and an app link each need a signing
+certificate, a package name and, for Google, a Google Cloud project of your own, and [one
+table](native-apps.md#what-needs-your-own-accounts) says which needs what.
+
 ## Creating the client
 
 One client for the life of the process, with the environment's **publishable** key:
 
+<!-- snippet: examples/compose/src/androidTest/kotlin/dev/tula/example/compose/DocsSnippets.kt#client -->
 ```kotlin
 val tula = TulaClient(
     publishableKey = "tula_pk_…",
     baseUrl = "https://auth.example.com",
     storage = KeystoreTokenStorage(applicationContext),
 )
-
-// Once, at start: restores the session the storage holds.
-val state = tula.load()
 ```
+<!-- /snippet -->
 
 `tula.state` is a `StateFlow<AuthState>`: `Loading` until `load()` or a sign-in has
 finished, then `SignedOut` or `SignedIn` (with the session's id and the user).
@@ -86,8 +91,9 @@ The four ways that need the system are **off unless the app passes one**: `passk
 `google`, `browser` and `deviceKeys` are `null` by default. A client without a sheet shows
 none, and a client without a key store binds no session.
 
+<!-- snippet: examples/compose/src/androidTest/kotlin/dev/tula/example/compose/DocsSnippets.kt#client-sheets -->
 ```kotlin
-val front = { currentActivity }            // your app's own way to the activity in front
+val front = currentActivity // your app's own way to the activity in front
 val browser = CustomTabsBrowserSession(front)
 val tula = TulaClient(
     publishableKey = "tula_pk_…",
@@ -99,25 +105,30 @@ val tula = TulaClient(
     deviceKeys = KeystoreDeviceKeyStore(),
 )
 ```
+<!-- /snippet -->
 
 ## A flow, step by step
 
 Every flow returns the server's next step. `flow.screen` says which screen that is.
 
+<!-- snippet: native/android/tula-auth/src/test/kotlin/dev/tula/auth/DocsSnippets.kt#sign-in -->
 ```kotlin
 val flow = tula.signIn("maya@example.com")
 when (flow.screen) {
     FlowScreen.NEEDS_PASSWORD -> flow.submitPassword(password)
     FlowScreen.NEEDS_FIRST_FACTOR -> {
-        flow.prepareFirstFactor(CodeStrategy.EMAIL_CODE)      // sends the code
+        flow.prepareFirstFactor(CodeStrategy.EMAIL_CODE) // sends the code
         flow.attemptFirstFactor(CodeStrategy.EMAIL_CODE, code)
     }
     FlowScreen.NEEDS_EMAIL_VERIFICATION -> flow.verifyEmail(code)
     FlowScreen.NEEDS_NEW_PASSWORD -> flow.submitNewPassword(newPassword)
-    FlowScreen.COMPLETE -> Unit                               // tula.state is SignedIn
-    FlowScreen.NOT_SUPPORTED -> Unit                          // say so, in words
+    FlowScreen.NEEDS_SECOND_FACTOR -> flow.submitTotp(code)
+    FlowScreen.NEEDS_FACTOR_ENROLMENT -> flow.startTotpEnrolment()
+    FlowScreen.COMPLETE -> Unit // tula.state is SignedIn
+    FlowScreen.NOT_SUPPORTED -> Unit // say so, in words
 }
 ```
+<!-- /snippet -->
 
 `tula.signUp(email, password, firstName, lastName)` and `tula.resetPassword(email)` work the
 same way (`verifyEmail`, `resendCode`, `submit(code, password)`).
@@ -149,10 +160,13 @@ platform's reason, it has it in its own `HttpEngine` or `TokenStorage`.
 
 ## The session
 
+<!-- snippet: native/android/tula-auth/src/test/kotlin/dev/tula/auth/DocsSnippets.kt#session -->
 ```kotlin
-val token = tula.session.getToken()   // refreshed first when it is about to expire
-tula.session.signOut()
+val token = tula.session.getToken() // refreshed first when it is about to expire
+App.callBackend(token)
+tula.session.signOut() // throws when the server could not be told
 ```
+<!-- /snippet -->
 
 - **Calls made at once share one refresh.**
 - **A refresh that gets no answer is repeated once**, at once. If that fails too,
@@ -170,12 +184,15 @@ tula.session.signOut()
 A sign-in of a user with two-step verification stops at `FlowScreen.NEEDS_SECOND_FACTOR`;
 `flow.step` lists what the user can prove it with.
 
+<!-- snippet: native/android/tula-auth/src/test/kotlin/dev/tula/auth/DocsSnippets.kt#second-step -->
 ```kotlin
-flow.submitTotp(code)                        // the authenticator app's code
-flow.submitBackupCode(code)                  // .remaining says how many are left
-flow.submitSecondFactorWithPasskey()         // shows the passkey sheet
-flow.prepareSmsCode(); flow.submitSmsCode(code)
+flow.submitTotp(code) // the authenticator app's code
+flow.submitBackupCode(code) // .remaining says how many are left
+flow.submitSecondFactorWithPasskey() // shows the passkey sheet
+flow.prepareSmsCode() // nothing is texted until this is called
+flow.submitSmsCode(code)
 ```
+<!-- /snippet -->
 
 Where the environment requires a second step and the user has none, the step is
 `NEEDS_FACTOR_ENROLMENT`: `flow.startTotpEnrolment()` gives the setup key and
@@ -185,12 +202,15 @@ screen; the client does not keep them.
 A change to how an account is protected needs a recent sign-in. The server says so with
 `auth.step_up_required`, and `error.stepUpMethods` lists what this user may step up with:
 
+<!-- snippet: native/android/tula-auth/src/test/kotlin/dev/tula/auth/DocsSnippets.kt#step-up -->
 ```kotlin
 tula.stepUp.withPassword(password)
-tula.stepUp.withTotp(code)                   // or withBackupCode(code)
+tula.stepUp.withTotp(code) // or withBackupCode(code)
 tula.stepUp.withPasskey()
-tula.stepUp.sendEmailCode(); tula.stepUp.withEmailCode(code)
+tula.stepUp.sendEmailCode()
+tula.stepUp.withEmailCode(code)
 ```
+<!-- /snippet -->
 
 Then repeat the call. A user who has a second factor steps up with it, never with the
 password or an emailed code alone. A wrong code is the server's error and is counted there;
@@ -220,13 +240,15 @@ and an address another account holds is answered like a free one and confirms no
 
 ## Passkeys
 
+<!-- snippet: native/android/tula-auth/src/test/kotlin/dev/tula/auth/DocsSnippets.kt#passkey -->
 ```kotlin
 when (val result = tula.signInWithPasskey()) {
-    is TulaCeremony.Finished -> result.value.screen   // a flow, usually COMPLETE
-    TulaCeremony.Dismissed -> Unit                    // the user put the sheet away
+    is TulaCeremony.Finished -> App.proceed(result.value) // a flow, usually COMPLETE
+    TulaCeremony.Dismissed -> Unit // the user put the sheet away
 }
-tula.passkeys.add(name = "Pixel")                     // signed in, after a step-up
+tula.passkeys.add(name = "Pixel") // signed in, after a step-up
 ```
+<!-- /snippet -->
 
 - **A dismissed sheet is a value**, `TulaCeremony.Dismissed`: not an error and not a
   sign-in. Nothing was sent to prove anything, and the same call works again. With
@@ -251,9 +273,11 @@ tula.passkeys.add(name = "Pixel")                     // signed in, after a step
 
 ## Sign in with Google
 
+<!-- snippet: native/android/tula-auth/src/test/kotlin/dev/tula/auth/DocsSnippets.kt#google -->
 ```kotlin
-tula.signInWithGoogle()        // TulaCeremony<SignInFlow>: starts, shows Google's sheet, exchanges
+tula.signInWithGoogle() // TulaCeremony<SignInFlow>: starts, shows Google's sheet, exchanges
 ```
+<!-- /snippet -->
 
 The server makes a nonce, Google's sheet is given it as it is, and the ID token it answers
 is exchanged once and kept nowhere. An attempt takes one token, right or wrong. To show the
@@ -267,15 +291,17 @@ Sign in with Apple and every other provider go through the browser on Android.
 
 ## A provider in the browser
 
+<!-- snippet: native/android/tula-auth/src/test/kotlin/dev/tula/auth/DocsSnippets.kt#provider -->
 ```kotlin
 when (val outcome = tula.signIn(OAuthProvider.Github, redirectUrl = "https://app.example.com/oauth")) {
     is ProviderOutcome.SignedIn -> Unit
-    is ProviderOutcome.NeedsStep -> outcome.flow          // the second step, usually
-    ProviderOutcome.Cancelled -> Unit                     // the user closed the browser
-    is ProviderOutcome.Refused -> outcome.refusal         // why nothing was exchanged
-    is ProviderOutcome.Linked -> Unit                     // only from tula.identities.link
+    is ProviderOutcome.NeedsStep -> App.proceed(outcome.flow) // the second step, usually
+    ProviderOutcome.Cancelled -> Unit // the user closed the browser
+    is ProviderOutcome.Refused -> App.explain(outcome.refusal) // why nothing was exchanged
+    is ProviderOutcome.Linked -> Unit // only from tula.identities.link
 }
 ```
+<!-- /snippet -->
 
 The redirect URL is an entry of the environment's allowed redirect URLs, matched there
 exactly: an **app link** (`https`) for any provider, or a **custom scheme** for a provider
@@ -286,10 +312,20 @@ judges the URL; the server's refusal is thrown as it is.
 With `CustomTabsBrowserSession`, the activity your manifest opens for the redirect hands
 the intent over, and the activity that asked says when it is in front again:
 
+<!-- snippet: examples/compose/src/androidTest/kotlin/dev/tula/example/compose/DocsSnippets.kt#activity -->
 ```kotlin
-override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); browser.returned(intent) }
-override fun onResume() { super.onResume(); browser.resumed() }   // closed with no redirect: cancelled
+override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    browser.returned(intent)
+}
+
+// Closed with no redirect: cancelled.
+override fun onResume() {
+    super.onResume()
+    browser.resumed()
+}
 ```
+<!-- /snippet -->
 
 `returned(intent)` answers `true` only when it took the intent: one is being waited for,
 and the intent's address starts with the redirect URL that was opened, character for
@@ -439,6 +475,7 @@ supported" screen with a way back to the start, never a blank one.
 `TulaAccount` is the signed-in user's screen: the profile, the password, a phone number,
 where they are signed in, two-step verification and passkeys.
 
+<!-- snippet: examples/compose/src/androidTest/kotlin/dev/tula/example/compose/DocsSnippets.kt#screens -->
 ```kotlin
 setContent {
     var signedIn by remember { mutableStateOf(false) }
@@ -449,6 +486,7 @@ setContent {
     }
 }
 ```
+<!-- /snippet -->
 
 `mode = TulaAuthMode.SIGN_UP` opens on the sign-up. **Where the user goes after signing in
 is your callback and nothing else**: the screens read no destination from the server, a
@@ -520,10 +558,12 @@ clipboard** (it could not tell its own clip from what the person copied since), 
 keyboard or an app with clipboard access can read it while it is there. To offer no copy,
 hand the model a `copy` that does nothing:
 
+<!-- snippet: examples/compose/src/androidTest/kotlin/dev/tula/example/compose/DocsSnippets.kt#no-copy -->
 ```kotlin
 val model = remember { TulaAccountModel(client, copy = { }) }
 TulaAccount(model = model)
 ```
+<!-- /snippet -->
 
 The QR code is drawn by the library (no dependency), dark on white whatever the theme.
 
@@ -574,12 +614,13 @@ what was typed is gone. An app that does not want that either handles the config
 change itself (`android:configChanges` on the activity, as the example does), or holds the
 model where it survives and hands it over:
 
+<!-- snippet: examples/compose/src/androidTest/kotlin/dev/tula/example/compose/DocsSnippets.kt#own-model -->
 ```kotlin
 val model = remember { TulaAuthModel(client, onSignedIn = { /* … */ }) }
 TulaAuth(model = model)
-// and, when the screens are left for good:
-model.close()
+// and, when the screens are left for good: model.close()
 ```
+<!-- /snippet -->
 
 Do not put a `TulaAuthModel` or a `TulaAccountModel`, or anything read from their `state`,
 into `rememberSaveable`, a `SavedStateHandle` or a `Bundle`.
@@ -591,15 +632,18 @@ screenshots, screen recordings and the recent-apps preview, that is one line in 
 activity that shows it, and it is your decision (it also blanks the screen for a user who
 is being helped over a screen share):
 
+<!-- snippet: examples/compose/src/androidTest/kotlin/dev/tula/example/compose/DocsSnippets.kt#flag-secure -->
 ```kotlin
 window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
 ```
+<!-- /snippet -->
 
 ### Words
 
 Every string the screens show or announce is a property of `TulaStrings`; the defaults are
 English. Name only what you change:
 
+<!-- snippet: examples/compose/src/androidTest/kotlin/dev/tula/example/compose/DocsSnippets.kt#strings -->
 ```kotlin
 TulaAuth(
     client = client,
@@ -610,6 +654,7 @@ TulaAuth(
     onSignedIn = { },
 )
 ```
+<!-- /snippet -->
 
 A failed call is said by its **code**: your sentence in `errors`, else the built-in English
 sentence for a code this version knows, else `unknownError`. Text the server wrote is never
@@ -619,6 +664,7 @@ The table is Kotlin, not `strings.xml`, because what decides the screens runs wi
 Android (that is what lets it be tested on a JVM). The cost: **nothing follows the device's
 language by itself.** A translated app builds the table from its own resources:
 
+<!-- snippet: examples/compose/src/androidTest/kotlin/dev/tula/example/compose/DocsSnippets.kt#strings-resources -->
 ```kotlin
 val strings = TulaStrings(
     signInTitle = stringResource(R.string.sign_in_title),
@@ -626,6 +672,7 @@ val strings = TulaStrings(
     // … the rest of what your app translates
 )
 ```
+<!-- /snippet -->
 
 ### Colours and sizes
 
@@ -640,6 +687,7 @@ replaced by the default's, never guessed at.
 Three parts of every screen can be replaced, each a composable lambda of `TulaAuthSlots`:
 `header` (the title and what is under it), `primaryButton` and `footer`.
 
+<!-- snippet: examples/compose/src/androidTest/kotlin/dev/tula/example/compose/DocsSnippets.kt#slots -->
 ```kotlin
 TulaAuth(
     client = client,
@@ -649,6 +697,7 @@ TulaAuth(
     onSignedIn = { },
 )
 ```
+<!-- /snippet -->
 
 A header slot is handed `titleModifier` and a button slot `modifier`: put them on the title
 and the button you draw. They are what makes the title a heading a screen reader is moved

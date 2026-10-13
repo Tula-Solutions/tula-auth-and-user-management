@@ -1,0 +1,42 @@
+// This project's Android build: the app, and the Kotlin SDK it is built on.
+//
+// The SDK is not published anywhere, so there is no coordinate to name. Its modules are part
+// of this build instead, from a checkout of the Tula repository: `tulaRepo` in
+// gradle.properties says where that is, from this directory. The versions of every plugin
+// and library are the SDK build's own catalog, read from the same checkout, so the app
+// names none.
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        google()
+        mavenCentral()
+    }
+}
+
+val tulaAndroid: File = file(providers.gradleProperty("tulaRepo").get()).resolve("native/android")
+require(tulaAndroid.resolve("gradle/libs.versions.toml").isFile) {
+    "tulaRepo in gradle.properties does not lead to a checkout of the Tula repository."
+}
+
+dependencyResolutionManagement {
+    repositoriesMode = RepositoriesMode.FAIL_ON_PROJECT_REPOS
+    repositories {
+        google()
+        mavenCentral()
+    }
+    versionCatalogs {
+        create("libs") {
+            from(files(tulaAndroid.resolve("gradle/libs.versions.toml")))
+        }
+    }
+}
+
+rootProject.name = "{{name}}"
+
+include(":app")
+// tula-auth: the client. tula-auth-ui: what is behind the screens. tula-auth-android: the
+// Keystore-backed storage. tula-auth-compose: the Compose screens.
+for (module in listOf("tula-auth", "tula-auth-ui", "tula-auth-android", "tula-auth-compose")) {
+    include(":$module")
+    project(":$module").projectDir = tulaAndroid.resolve(module)
+}

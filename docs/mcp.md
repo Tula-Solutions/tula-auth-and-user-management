@@ -332,10 +332,21 @@ rendered), or what your webhook receiver did with the events.
 | `scaffold_protected_route` | `framework` | the same |
 | `scaffold_sign_in_page` | `framework` | the same |
 
-`framework` is `nextjs` (App Router) or `react-vite`. The files are the ones the example apps
-and `create-tula` use. **The server writes nothing**: your client writes the files, after you
-agree. `detect_framework` reads one `package.json`, only inside the directory the server was
-started in, and returns nothing of it but the framework and which Tula packages it names.
+`framework` is `nextjs` (App Router), `react-vite`, `expo`, `swiftui` or `compose`. The files
+are the ones the example apps and `create-tula` use, byte for byte. **The server writes
+nothing**: your client writes the files, after you agree. `detect_framework` reads one
+`package.json`, only inside the directory the server was started in, and returns nothing of
+it but the framework and which Tula packages it names. So it answers `nextjs`, `react-vite`,
+`expo` or `unknown`, and **never `swiftui` or `compose`**: an Xcode project and a Gradle
+build have no `package.json`, and for those the framework is named to the scaffold tools
+directly.
+
+For `swiftui` and `compose` a scaffold's `dependencies` are the names of the Swift package's
+libraries and of the Kotlin modules, and its `notes` say where they come from: a checkout of
+the Tula repository, by path, because neither is published anywhere. No registry, Maven
+coordinate or package URL is named. The native files were compiled in the example apps they
+are copied from; nobody has run a project assembled from a scaffold tool's answer
+([quickstart.md](quickstart.md#the-native-path) says what was run of the same templates).
 
 ## What is and is not returned
 

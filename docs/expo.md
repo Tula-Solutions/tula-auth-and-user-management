@@ -50,6 +50,12 @@ refuses to create a client there; a web build uses [`@tula/react`](../packages/r
 `@tula/expo` works with Expo SDK 57 (`expo-secure-store` 57, React 19, React Native 0.86)
 and needs no native module beyond `expo-secure-store`, which Expo Go includes.
 
+To start from a project that already has the stack and an app, see [the native path of the
+quickstart](quickstart.md#the-native-path) (`create-tula --framework expo`). A simulator and
+an emulator need no account; a phone, a passkey, Apple's and Google's own sheets and an app
+link each need an Apple or a Google account and an identifier of your own, and [one
+table](native-apps.md#what-needs-your-own-accounts) says which needs what.
+
 ```bash
 bunx expo install expo-secure-store
 bun add @tula/expo

@@ -1,0 +1,32 @@
+{
+  "name": "tula-app",
+  "version": "0.0.0",
+  "private": true,
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start",
+    "ios": "expo start --ios",
+    "android": "expo start --android",
+    "typecheck": "tsc --noEmit",
+    "bundle": "expo export --platform ios --platform android --output-dir .bundle"
+  },
+  "dependencies": {
+    "@pagopa/io-react-native-crypto": "~1.2.5",
+    "@tula/contract": "*",
+    "@tula/core": "*",
+    "@tula/expo": "*",
+    "expo": "~57.0.27",
+    "expo-apple-authentication": "~57.0.2",
+    "expo-secure-store": "~57.0.4",
+    "expo-web-browser": "~57.0.3",
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-nitro-google-signin": "~2.3.0",
+    "react-native-nitro-modules": ">=0.36.0",
+    "react-native-passkey": "~3.6.2"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.0",
+    "typescript": "^5.9.0"
+  }
+}

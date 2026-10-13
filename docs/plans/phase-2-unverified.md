@@ -1465,3 +1465,54 @@ Not verified:
 | **Whether the device can show a sheet** | Not asked. A button is drawn where the client was given a sheet; a device with no credential provider would draw it and then say the sheet failed. No device was at hand to see what Credential Manager answers there. |
 | **An activity made again on the backup codes' screen** | Not tried. By construction the codes are lost (nothing is saved); the example handles configuration changes itself. |
 | **The CI jobs** | The same tasks as before. Their run with these changes is on the pull request. |
+
+## Step 2.18, the native quickstart and the native scaffolds (TULA-58)
+
+`create-tula` and the MCP scaffold tools gained three native templates (Expo, SwiftUI,
+Compose), [the quickstart](../quickstart.md#the-native-path) a native path, and the Swift
+and Kotlin guides samples that are compiled. What was run, on one Mac:
+
+- **A scaffolded Compose project, compiled**: `create-tula --framework compose --tula-repo
+  <this checkout>` into a scratch directory, then the checkout's Gradle wrapper on the
+  project's `android` directory, `:app:assembleDebug :app:lintDebug`: `BUILD SUCCESSFUL`.
+  Built and linted, never installed.
+- **The same again after TULA-61 changed the Compose example** (the account screen, and
+  `ExampleSheets` in the example's `debug` and `release` source sets, which the template
+  now copies beside `src/main`: without them `MainActivity` does not compile): a new
+  project scaffolded into a scratch directory (23 files), `:app:assembleDebug
+  :app:lintDebug` with the checkout's wrapper: `BUILD SUCCESSFUL`, 126 tasks. The seven
+  tasks of CI's `kotlin-android` job and `bun run native:kotlin:test` were run on the
+  merged tree too, each `BUILD SUCCESSFUL`. The scaffolded project's release sources were
+  compiled (`:app:compileReleaseKotlin`, which is what reads `src/release`: `BUILD
+  SUCCESSFUL`); a release package (`assembleRelease`) was not made. The SwiftUI
+  project was not built again: the merge changed no Swift file and no file of
+  `examples/swiftui`.
+- **A scaffolded SwiftUI project, compiled**: the same with `--framework swiftui`, then
+  `xcodebuild` on `ios/TulaExample.xcodeproj` for `generic/platform=iOS Simulator` with
+  `CODE_SIGNING_ALLOWED=NO`, on Xcode 16.4: `BUILD SUCCEEDED`. A build, with no simulator
+  started.
+- **A scaffolded Expo project, written**: its files were listed and searched for a
+  placeholder left behind. Nothing more.
+- **The samples of the guides**: the Swift ones are two files of the package's test
+  targets (`native/swift/Tests/TulaAuthTests/DocsSnippets.swift` and
+  `Tests/TulaAuthUITests/DocsSnippets.swift`; there is no target of their own), so a plain
+  `swift build` does not compile them: `swift build --build-tests` and `swift test` do.
+  What was run is `swift test --package-path native/swift` (560 tests, 0 failures), which
+  builds both test targets. The Kotlin ones by the Gradle build (the JVM ones in
+  `tula-auth`'s tests' source set, the Android and Compose ones in the Compose example's
+  `androidTest` source set). Compiled, and the code in them never run.
+
+Not verified:
+
+| What | How far it was taken |
+| --- | --- |
+| **A scaffolded native project in a simulator, on an emulator or on a phone** | Nothing. None of the three was started anywhere. The quickstart's "run it in a simulator or an emulator" and "then on a phone" are steps written for the developer, taken by nobody. |
+| **The scaffolded Expo project** | Not installed (`bun install` was never run in its `app` directory), not typechecked as a project of its own, not bundled, no development build made. The example it is a copy of has its own section above ("Step 2.13"). |
+| **The scaffolded SwiftUI project's UI tests** | The template ships the example's UI test target. It was compiled as part of nothing here: only the app's scheme was built. Its runner (`native/swift/fixture/ui-tests.ts`) is the repository's and is not in a scaffolded project. |
+| **A signed build, an archive, a release build** | Not made, for any of the three. |
+| **`tula dev --tunnel` with a native project** | Not opened. The quickstart's tunnel step repeats what [the tunnel's own section](#step-212-tula-dev---tunnel-tula-21-adr-0049) says, and what that section lists as not verified stands: no phone has reached a stack through it. |
+| **The commands of the quickstart's native path** | `bunx expo run:ios`, `open ios/TulaExample.xcodeproj` and running from Xcode, `:app:installDebug` and the `adb shell am start` line with its two extras: written from the examples' READMEs and sources, typed by nobody against a scaffolded project. |
+| **The table of what needs the developer's own accounts** | [docs/native-apps.md](../native-apps.md#what-needs-your-own-accounts) says which steps need an Apple Developer membership, a Google Cloud project, a Play Console account or a Tailscale account. It was written from the vendors' documentation as generally known and from this repository's own guides; nobody walked through a vendor's console for it, and a vendor may have changed a name or a requirement. |
+| **The MCP scaffold tools' native answers in a client** | The tools' answers are tested (the files equal the templates). No project was assembled from an answer and built, and no MCP client was connected. |
+| **`--tula-repo` on another machine** | The project names the checkout by a relative path, worked out from the two real paths. A checkout or a project moved alone afterwards breaks the project's build; that was not tried. A path with a space is refused by the scaffold, before anything is written (the Compose start command prints the path unquoted in a shell line, and nobody built a project under such a name); which characters are refused is tested on the function, and the two scratch projects sat in directories with plain names. That a path of the allowed characters is safe in every shell was not tried beyond those two. |
+| **The native reference pages** | Written by a scan of the doc comments' text, not by a compiler: a declaration the scan does not recognise is missing from the page with no error, and nobody compared the pages with the sources declaration by declaration. |

@@ -27,6 +27,27 @@ export const SCAFFOLD_SOURCES = {
     protectedRoute: ['src/protected.tsx'],
     signInPage: ['src/sign-in-page.tsx'],
   },
+  // The native examples. Their paths start with the directory the app has in a project
+  // create-tula makes (`app`, `ios`, `android/app`), beside the server's files.
+  expo: {
+    provider: ['app/src/tula.ts', 'app/src/setup.ts'],
+    protectedRoute: ['app/App.tsx'],
+    signInPage: ['app/src/screens.tsx', 'app/src/ways.tsx', 'app/src/ui.tsx'],
+  },
+  swiftui: {
+    provider: ['ios/TulaExample/TulaExampleApp.swift', 'ios/TulaExample/SetupView.swift'],
+    // One view decides between the sign-in and a signed-in user's screen, so both scaffolds
+    // are that file.
+    protectedRoute: ['ios/TulaExample/SessionView.swift'],
+    signInPage: ['ios/TulaExample/SessionView.swift'],
+  },
+  compose: {
+    // The example is one activity: where the client is made, what a signed-in user sees and
+    // where the sign-in is drawn are composables of the same file.
+    provider: ['android/app/src/main/kotlin/dev/tula/example/compose/MainActivity.kt'],
+    protectedRoute: ['android/app/src/main/kotlin/dev/tula/example/compose/MainActivity.kt'],
+    signInPage: ['android/app/src/main/kotlin/dev/tula/example/compose/MainActivity.kt'],
+  },
 } as const
 
 /**

@@ -539,6 +539,36 @@ native apps"); the API's log names the rows by id.
 So a green `tula doctor` means the server has it right, and the last step is still yours:
 the two `curl` lines above against your own domain, and the vendors' tools below.
 
+## What needs your own accounts
+
+Tula runs on your machine with nothing but Docker, and a sign-in with a password or an
+emailed code works in a simulator or an emulator with no account anywhere. Everything in
+this table is different: it is made at Apple, at Google or at a third party, under an
+account that is yours, and nothing in this repository, in a scaffolded project or in
+`tula dev` makes it for you. No identifier an example ships with is yours either
+(`com.example.tula`, `dev.tula.example.swiftui`, `dev.tula.example.compose`): change it
+before you register anything.
+
+| For | Apple | Google | What you then give Tula |
+| --- | --- | --- | --- |
+| An app in the iOS simulator or an Android emulator | Xcode, which needs an Apple ID to download; no developer account | Android Studio's SDK; no account | Nothing: the API's address and the publishable key |
+| An app on your own phone | An Apple Developer team in the target's signing settings, and a bundle ID of your own | No account: a debug build is signed with the debug keystore on your machine | Nothing more, but the phone has to reach the API: [`tula dev --tunnel`](cli.md#tula-dev---tunnel) |
+| [Passkeys](#passkeys-from-an-app) | An Apple Developer Program membership: the Associated Domains capability (`webcredentials:<your domain>`) for your bundle ID, and your team ID | Nothing at Google for the app itself: your package name and the SHA-256 fingerprint of the certificate that signs it. A phone needs a passkey provider, which on most Android phones is Google Password Manager with a Google account signed in | The app under `nativeApps` ([Register an app](#register-an-app)), `passkeys.rpId` and the allowed origin, and the two files [on your domain](#getting-the-files-onto-your-domain) |
+| [Sign in with Apple's own sheet](#signing-in-with-apple-without-a-browser) (iOS) | An Apple Developer Program membership: the Sign in with Apple capability for your bundle ID | Not offered on Android: Apple is a provider in the browser there | The Apple provider switched on, and the iOS app registered: its bundle ID is the audience |
+| [Sign in with Google's own sheet](#signing-in-with-google-without-a-browser) | Nothing at Apple | A Google Cloud project: a web OAuth client, and an iOS client for your bundle ID or an Android client for your package name and SHA-256 fingerprint | The Google provider with the web client's ID and secret, and the app's client ID under `additionalClientIds` ([providers/google.md](providers/google.md)) |
+| [A provider in the system browser](#returning-to-your-app-after-a-provider-sign-in) | For Apple as the provider: a Services ID and a key ([providers/apple.md](providers/apple.md)) | For Google as the provider: the web OAuth client | The provider's credentials, and the app's redirect URL among `urls.allowedRedirectUrls` |
+| An app link that opens the app | The Associated Domains capability (`applinks:<your domain>`) | Nothing at Google: the fingerprint again | `appLinkPaths` on the app ([Link paths](#link-paths)) |
+| An app in a store | An App Store Connect record under your Apple Developer Program membership | A Google Play Console account. With Play App Signing, Google signs what users install: register **that** certificate's fingerprint as well as your own | The store build's fingerprint among the app's `sha256CertFingerprints` |
+| The tunnel | Neither | Neither | A [Tailscale](https://tailscale.com) account of your own, signed in on your machine, with Funnel allowed for it |
+
+Each SDK's guide says where its side of a row goes: [expo.md](expo.md), [swift.md](swift.md),
+[kotlin.md](kotlin.md). **Nobody has taken any row of this table past its first line on a
+device**: no passkey sheet, no Apple or Google sheet and no system browser has been opened
+by an SDK of this repository, and no file was fetched by Apple or Android
+([below](#what-could-not-be-verified-here), and
+[what was and was not run](plans/phase-2-unverified.md)). What a vendor's console asks for
+changes; the vendor's own documentation is the authority for its column.
+
 ## What could not be verified here
 
 The files were built from the two platforms' published formats and checked against the

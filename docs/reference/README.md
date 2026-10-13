@@ -3,7 +3,8 @@
 # SDK reference
 
 One page per package, written from the JSDoc of everything its entry points export.
-To change a page, change the JSDoc and run `bun run docs:generate`; `bun run docs:check`
+To change a page, change the JSDoc (for a native SDK, the doc comment) and run
+`bun run docs:generate`; `bun run docs:check`
 (part of `bun run verify`) fails when a page no longer matches the sources.
 
 | Package | Entry points | Exports |
@@ -15,3 +16,19 @@ To change a page, change the JSDoc and run `bun run docs:generate`; `bun run doc
 | [`@tula/admin`](admin.md) | `@tula/admin` | 42 |
 | [`@tula/config`](config.md) | `@tula/config` | 35 |
 | [`@tula/contract`](contract.md) | `@tula/contract`, `@tula/contract/custom-claims`, `@tula/contract/device-binding`, `@tula/contract/error-codes`, `@tula/contract/event-types`, `@tula/contract/headers`, `@tula/contract/issuer`, `@tula/contract/password-rules`, `@tula/contract/redirect-url`, `@tula/contract/theme`, `@tula/contract/webhook-signature` | 782 |
+
+## Native SDKs
+
+One page per language, written from the doc comments of every declaration an app can name
+in the hand-written sources. These pages are a scan of the text: they show what is declared
+and how it is documented, not that it compiles (no job of `bun run verify` has a Swift or a
+Kotlin toolchain). The generated types of the client API are not listed.
+
+| Module | Language | Sources | Declarations | Without a doc comment |
+| --- | --- | --- | --- | --- |
+| [`TulaAuth`](swift.md) | Swift | `native/swift/Sources/TulaAuth` | 272 | 0 |
+| [`TulaAuthUI`](swift.md) | Swift | `native/swift/Sources/TulaAuthUI` | 696 | 0 |
+| [`tula-auth`](kotlin.md) | Kotlin | `native/android/tula-auth/src/main/kotlin` | 222 | 1 |
+| [`tula-auth-ui`](kotlin.md) | Kotlin | `native/android/tula-auth-ui/src/main/kotlin` | 242 | 0 |
+| [`tula-auth-compose`](kotlin.md) | Kotlin | `native/android/tula-auth-compose/src/main/kotlin` | 39 | 0 |
+| [`tula-auth-android`](kotlin.md) | Kotlin | `native/android/tula-auth-android/src/main/kotlin` | 12 | 0 |

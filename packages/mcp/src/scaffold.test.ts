@@ -12,10 +12,17 @@ const TOOLS = {
   scaffold_sign_in_page: 'signInPage',
 } as const
 
-/** Where each framework's example lives: the one source of every scaffolded file. */
-const EXAMPLES: Record<string, string> = {
-  nextjs: 'examples/nextjs-app-router',
-  'react-vite': 'examples/react-vite',
+/**
+ * Where each framework's example lives, the one source of every scaffolded file, and the
+ * directory its files have in a project (a native app's own directory; a web app is the
+ * project).
+ */
+const EXAMPLES: Record<string, { example: string; into: string }> = {
+  nextjs: { example: 'examples/nextjs-app-router', into: '' },
+  'react-vite': { example: 'examples/react-vite', into: '' },
+  expo: { example: 'examples/expo/app', into: 'app/' },
+  swiftui: { example: 'examples/swiftui', into: 'ios/' },
+  compose: { example: 'examples/compose', into: 'android/app/' },
 }
 
 describe('the scaffolds', () => {
@@ -30,14 +37,16 @@ describe('the scaffolds', () => {
     for (const framework of SCAFFOLD_FRAMEWORKS) {
       for (const files of Object.values(SCAFFOLD_FILES[framework])) {
         for (const file of files) {
-          const source = join(repo, EXAMPLES[framework] as string, file.path)
+          const { example, into } = EXAMPLES[framework] as { example: string; into: string }
+          expect(file.path.startsWith(into)).toBe(true)
+          const source = join(repo, example, file.path.slice(into.length))
           expect(file.contents).toBe(await Bun.file(source).text())
         }
       }
     }
   })
 
-  test('both frameworks have all three scaffolds', () => {
+  test('every framework has all three scaffolds', () => {
     expect(Object.keys(SCAFFOLD_SOURCES).sort()).toEqual([...SCAFFOLD_FRAMEWORKS].sort())
     for (const framework of SCAFFOLD_FRAMEWORKS) {
       expect(Object.keys(SCAFFOLD_FILES[framework]).sort()).toEqual(Object.values(TOOLS).sort())
@@ -82,6 +91,8 @@ describe('the scaffolds', () => {
     const vite = await callTool(client, 'scaffold_provider', { framework: 'react-vite' })
     expect(next.text).toContain('process.env.NEXT_PUBLIC_TULA_PUBLISHABLE_KEY')
     expect(vite.text).toContain('import.meta.env.VITE_TULA_PUBLISHABLE_KEY')
+    const expo = await callTool(client, 'scaffold_provider', { framework: 'expo' })
+    expect(expo.text).toContain('process.env.EXPO_PUBLIC_TULA_PUBLISHABLE_KEY')
     const everything: string[] = []
     for (const tool of Object.keys(TOOLS)) {
       for (const framework of SCAFFOLD_FRAMEWORKS) {
@@ -96,6 +107,41 @@ describe('the scaffolds', () => {
     expect(all).not.toMatch(/eyJ[A-Za-z0-9_-]{10,}\./)
     // The only mention of the secret key is the name of the variable the server reads.
     expect(all.match(/TULA_SECRET_KEY/g)?.length).toBe(1)
+  })
+
+  test('every scaffold fits a result whole: nothing is cut, capped or left out', async () => {
+    // A result is capped at 64,000 characters and a string at 512 by default; a scaffold's
+    // files are returned whole or the tool is of no use. The native examples are the
+    // largest, so every tool is asked for every framework and compared with the module.
+    const { client, close } = await connect({ cwd: import.meta.dir })
+    for (const tool of Object.keys(TOOLS)) {
+      for (const framework of SCAFFOLD_FRAMEWORKS) {
+        const answer = await callTool(client, tool, { framework })
+        expect(`${tool} ${framework}: ${answer.isError}`).toBe(`${tool} ${framework}: false`)
+        expect(answer.text.length).toBeLessThan(64_000)
+        const files = answer.structured.files as { path: string; contents: string }[]
+        const expected = SCAFFOLD_FILES[framework][TOOLS[tool as keyof typeof TOOLS]]
+        expect(files.map((file) => file.contents.length)).toEqual(
+          expected.map((file) => file.contents.length)
+        )
+      }
+    }
+    await close()
+  })
+
+  test('the native scaffolds say where the SDK comes from, and invent no registry for it', async () => {
+    const { client, close } = await connect({ cwd: import.meta.dir })
+    const swift = await callTool(client, 'scaffold_provider', { framework: 'swiftui' })
+    const compose = await callTool(client, 'scaffold_provider', { framework: 'compose' })
+    await close()
+    for (const answer of [swift, compose]) {
+      const notes = (answer.structured.notes as string[]).join('\n')
+      expect(notes).toContain('not published')
+      expect(notes).toContain('a checkout of the Tula repository')
+      expect(notes).toContain('Nobody has run them on a phone')
+      // No address of a package, no coordinate.
+      expect(JSON.stringify(answer.structured.dependencies)).not.toMatch(/[:/@]/)
+    }
   })
 
   test('a scaffold call touches neither the network nor the disk', async () => {

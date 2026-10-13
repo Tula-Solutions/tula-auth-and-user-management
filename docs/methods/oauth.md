@@ -371,8 +371,63 @@ The token is accepted for the bundle ID of an iOS app the environment has
 registered, the start answers `auth.method_disabled`. A first sign-in whose token carries
 no address is `oauth.email_missing`.
 
+The Swift client ([swift.md](../swift.md)) opens the provider's page in a browser session
+the app handed it, and reads what comes back only when it is the redirect URL that was
+asked for. A closed browser is a value, never an error:
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#provider -->
+```swift
+switch try await tula.signIn(with: .github, redirectURL: "https://app.example.com/return") {
+case .signedIn(let flow): App.proceed(flow)
+case .needsStep(let flow): App.draw(flow.screen)  // a second factor
+case .cancelled: break  // the user closed the browser
+case .refused(let why): App.explain(why)
+case .linked: break  // only from identities.link
+}
+```
+<!-- /snippet -->
+
+With Apple's own sheet, and with a Google ID token the app got from Google's SDK:
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#id-token -->
+```swift
+// Apple: the client runs the sheet.
+let result = try await tula.signInWithApple()
+
+// Google: the app gets the token from Google's SDK, the client exchanges it.
+let attempt = try await tula.startIdTokenSignIn(provider: .google)
+let idToken = try await App.askGoogle(nonce: attempt.nonce)
+let flow = try await attempt.exchange(idToken: idToken)
+```
+<!-- /snippet -->
+
+The Kotlin client ([kotlin.md](../kotlin.md)): a provider in a browser, and Google's own
+sheet.
+
+<!-- snippet: native/android/tula-auth/src/test/kotlin/dev/tula/auth/DocsSnippets.kt#provider -->
+```kotlin
+when (val outcome = tula.signIn(OAuthProvider.Github, redirectUrl = "https://app.example.com/oauth")) {
+    is ProviderOutcome.SignedIn -> Unit
+    is ProviderOutcome.NeedsStep -> App.proceed(outcome.flow) // the second step, usually
+    ProviderOutcome.Cancelled -> Unit // the user closed the browser
+    is ProviderOutcome.Refused -> App.explain(outcome.refusal) // why nothing was exchanged
+    is ProviderOutcome.Linked -> Unit // only from tula.identities.link
+}
+```
+<!-- /snippet -->
+
+<!-- snippet: native/android/tula-auth/src/test/kotlin/dev/tula/auth/DocsSnippets.kt#google -->
+```kotlin
+tula.signInWithGoogle() // TulaCeremony<SignInFlow>: starts, shows Google's sheet, exchanges
+```
+<!-- /snippet -->
+
+Neither has been run on a device: what was run is in [phase-2-unverified.md](../plans/phase-2-unverified.md). No browser session and no provider's sheet has been opened by either client.
+
 Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/react.md),
 [`@tula/nextjs`](../reference/nextjs.md), [`@tula/expo`](../reference/expo.md).
+
+Native: [Swift](../reference/swift.md), [Kotlin](../reference/kotlin.md).
 
 ## Troubleshooting
 

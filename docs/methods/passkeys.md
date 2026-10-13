@@ -224,8 +224,44 @@ export function PasskeySection() {
 ```
 <!-- /snippet -->
 
+The Swift client ([swift.md](../swift.md)), where the app handed it a passkey sheet. A
+dismissed sheet is a value, never an error:
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#passkey -->
+```swift
+switch try await tula.signInWithPasskey() {
+case .finished(let flow): App.proceed(flow)  // complete, or the step the server asks for
+case .dismissed: break  // the user closed the sheet: say nothing
+}
+```
+<!-- /snippet -->
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#passkey-add -->
+```swift
+// Signed in, after a step-up. `.dismissed` when the user closed the sheet.
+let added = try await tula.passkeys.add(name: "iPhone")
+let passkeys = try await tula.passkeys.list()
+```
+<!-- /snippet -->
+
+The Kotlin client ([kotlin.md](../kotlin.md)):
+
+<!-- snippet: native/android/tula-auth/src/test/kotlin/dev/tula/auth/DocsSnippets.kt#passkey -->
+```kotlin
+when (val result = tula.signInWithPasskey()) {
+    is TulaCeremony.Finished -> App.proceed(result.value) // a flow, usually COMPLETE
+    TulaCeremony.Dismissed -> Unit // the user put the sheet away
+}
+tula.passkeys.add(name = "Pixel") // signed in, after a step-up
+```
+<!-- /snippet -->
+
+Neither has been run on a device: what was run is in [phase-2-unverified.md](../plans/phase-2-unverified.md). No passkey sheet has been shown by either client.
+
 Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/react.md),
 [`@tula/expo`](../reference/expo.md).
+
+Native: [Swift](../reference/swift.md), [Kotlin](../reference/kotlin.md).
 
 ## Troubleshooting
 

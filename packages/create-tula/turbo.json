@@ -3,19 +3,74 @@
   "extends": ["//"],
   "tasks": {
     "transit": {
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/docker-compose.yml", "$TURBO_ROOT$/package.json"]
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/docker-compose.yml",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/examples/expo/app/**",
+        "$TURBO_ROOT$/examples/swiftui/**",
+        "$TURBO_ROOT$/examples/compose/**",
+        "$TURBO_ROOT$/native/android/build.gradle.kts",
+        "$TURBO_ROOT$/native/android/gradle.properties",
+        "$TURBO_ROOT$/native/swift/Package.swift",
+        "$TURBO_ROOT$/native/android/*/build.gradle.kts"
+      ]
     },
     "generate:check": {
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/docker-compose.yml", "$TURBO_ROOT$/package.json"]
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/docker-compose.yml",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/examples/expo/app/**",
+        "$TURBO_ROOT$/examples/swiftui/**",
+        "$TURBO_ROOT$/examples/compose/**",
+        "$TURBO_ROOT$/native/android/build.gradle.kts",
+        "$TURBO_ROOT$/native/android/gradle.properties",
+        "$TURBO_ROOT$/native/swift/Package.swift",
+        "$TURBO_ROOT$/native/android/*/build.gradle.kts"
+      ]
     },
     "typecheck": {
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/docker-compose.yml", "$TURBO_ROOT$/package.json"]
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/docker-compose.yml",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/examples/expo/app/**",
+        "$TURBO_ROOT$/examples/swiftui/**",
+        "$TURBO_ROOT$/examples/compose/**",
+        "$TURBO_ROOT$/native/android/build.gradle.kts",
+        "$TURBO_ROOT$/native/android/gradle.properties",
+        "$TURBO_ROOT$/native/swift/Package.swift",
+        "$TURBO_ROOT$/native/android/*/build.gradle.kts"
+      ]
     },
     "test": {
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/docker-compose.yml", "$TURBO_ROOT$/package.json"]
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/docker-compose.yml",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/examples/expo/app/**",
+        "$TURBO_ROOT$/examples/swiftui/**",
+        "$TURBO_ROOT$/examples/compose/**",
+        "$TURBO_ROOT$/native/android/build.gradle.kts",
+        "$TURBO_ROOT$/native/android/gradle.properties",
+        "$TURBO_ROOT$/native/swift/Package.swift",
+        "$TURBO_ROOT$/native/android/*/build.gradle.kts"
+      ]
     },
     "test:coverage": {
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/docker-compose.yml", "$TURBO_ROOT$/package.json"]
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/docker-compose.yml",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/examples/expo/app/**",
+        "$TURBO_ROOT$/examples/swiftui/**",
+        "$TURBO_ROOT$/examples/compose/**",
+        "$TURBO_ROOT$/native/android/build.gradle.kts",
+        "$TURBO_ROOT$/native/android/gradle.properties",
+        "$TURBO_ROOT$/native/swift/Package.swift",
+        "$TURBO_ROOT$/native/android/*/build.gradle.kts"
+      ]
     }
   }
 }

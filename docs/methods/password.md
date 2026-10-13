@@ -363,8 +363,64 @@ export function SignUpScreen(props: { onSignIn(): void }) {
 ```
 <!-- /snippet -->
 
+The Swift client (`TulaAuth`, [swift.md](../swift.md)) has a call for each step, and a
+flow's `screen` says which one the server asks for next:
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#password -->
+```swift
+let flow = try await tula.startSignUp(email: email, password: password)
+// The server emailed a code.
+try await flow.verifyEmail(code: typed)  // .complete: tula.session is signed in
+
+let signIn = try await tula.startSignIn(identifier: email)
+try await signIn.submitPassword(typed)
+
+let reset = try await tula.startPasswordReset(email: email)
+try await reset.submit(code: typed, password: newPassword)
+```
+<!-- /snippet -->
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#password-expired -->
+```swift
+if case .newPassword = signIn.screen {
+    // The password was right and is too old: the sign-in ends with a new one.
+    try await signIn.submitNewPassword(newPassword)
+}
+```
+<!-- /snippet -->
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#password-change -->
+```swift
+try await tula.changePassword(current: current, new: newPassword)
+```
+<!-- /snippet -->
+
+The Kotlin client (`tula-auth`, [kotlin.md](../kotlin.md)):
+
+<!-- snippet: native/android/tula-auth/src/test/kotlin/dev/tula/auth/DocsSnippets.kt#password -->
+```kotlin
+val signUp = tula.signUp(email = email, password = password)
+// The server emailed a code.
+signUp.verifyEmail(code) // COMPLETE: tula.state is SignedIn
+
+val signIn = tula.signIn(email)
+signIn.submitPassword(password)
+
+val reset = tula.resetPassword(email)
+reset.submit(code = code, password = newPassword)
+```
+<!-- /snippet -->
+
+<!-- snippet: native/android/tula-auth/src/test/kotlin/dev/tula/auth/DocsSnippets.kt#password-change -->
+```kotlin
+tula.changePassword(currentPassword = current, newPassword = newPassword)
+```
+<!-- /snippet -->
+
 Reference: [`@tula/core`](../reference/core.md), [`@tula/react`](../reference/react.md),
 [`@tula/nextjs`](../reference/nextjs.md), [`@tula/expo`](../reference/expo.md).
+
+Native: [Swift](../reference/swift.md), [Kotlin](../reference/kotlin.md).
 
 ## Troubleshooting
 
