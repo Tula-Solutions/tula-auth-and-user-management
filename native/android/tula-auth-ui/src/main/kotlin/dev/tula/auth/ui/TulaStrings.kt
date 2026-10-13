@@ -181,7 +181,21 @@ data class TulaStrings(
      * are never shown.
      */
     val unknownError: String = "Something went wrong. Try again.",
+    /** The first screen's other ways to sign in, and a texted sign-in code. */
+    val ways: TulaWayStrings = TulaWayStrings(),
+    /** The second step, and an authenticator app set up inside a sign-in. */
+    val secondStep: TulaSecondStepStrings = TulaSecondStepStrings(),
+    /** The account screen. */
+    val account: TulaAccountStrings = TulaAccountStrings(),
 ) {
+    /**
+     * The message of a code that came without an error (what a provider's page returned).
+     *
+     * @param code An error code.
+     * @return The message, by the rule of [message].
+     */
+    fun message(code: String): String = message(code, emptyMap())
+
     /**
      * The message of an error, by its code.
      *
@@ -243,6 +257,12 @@ data class TulaStrings(
                 ClientErrorCodes.RESPONSE_INVALID,
                 ClientErrorCodes.STORAGE_FAILED,
                 ClientErrorCodes.FLOW_BUSY,
+                ClientErrorCodes.PASSKEY_UNSUPPORTED,
+                ClientErrorCodes.PASSKEY_ALREADY_ON_DEVICE,
+                ClientErrorCodes.PASSKEY_FAILED,
+                ClientErrorCodes.PROVIDER_UNSUPPORTED,
+                ClientErrorCodes.PROVIDER_FAILED,
+                ClientErrorCodes.DEVICE_KEY_FAILED,
             )
         }
 

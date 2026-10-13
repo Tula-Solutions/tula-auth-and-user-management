@@ -16,7 +16,7 @@ Scope, as for TULA-49: a sign-in with a password or an emailed code, a sign-up, 
 code that proves an address, a password reset and the replacement of an expired password. A
 second step and the enrolment of an authenticator, passkeys, Google and the other providers,
 a texted code and the account's screens are not here: they are TULA-61, on calls the client
-already has (ADR 0054).
+already has (ADR 0054), and [ADR 0062](0062-compose-second-step-and-account.md) is theirs.
 
 ## Decision
 

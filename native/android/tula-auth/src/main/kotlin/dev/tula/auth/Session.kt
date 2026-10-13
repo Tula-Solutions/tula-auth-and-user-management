@@ -812,6 +812,30 @@ internal class SessionManager(
         user
     }
 
+    /**
+     * Makes an authorized call that changes the signed-in user and answers nothing, and shows
+     * the change in the state under [fetchUser]'s rule: only while the session it was asked
+     * under is still the current one, and only where the state holds a user.
+     *
+     * @param operation A client operation that answers no body.
+     * @param input Its parameters.
+     * @param change What the call did to the user.
+     */
+    suspend fun changeUser(
+        operation: TulaOperation,
+        input: CallInput = CallInput(),
+        change: (CurrentUser) -> CurrentUser,
+    ): Unit = withContext(confined) {
+        getToken() ?: throw unauthenticated()
+        val asked = (current.value as? AuthState.SignedIn)?.sessionId
+        authorized(operation, input)
+        val now = current.value
+        val user = (now as? AuthState.SignedIn)?.user
+        if (now is AuthState.SignedIn && now.sessionId == asked && user != null) {
+            setState(now.copy(user = change(user)))
+        }
+    }
+
     private fun CallInput.with(accessToken: String): CallInput =
         CallInput(params, body, accessToken, attemptSecret, timeoutMs)
 }

@@ -1284,11 +1284,7 @@
       "swift": {
         "decision": "journey"
       },
-      "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-61",
-        "reason": "adding, proving and removing the account’s phone number are calls under `/v1/client/me/phone`, behind a recent authentication. The Kotlin client has no account calls yet: they arrive with the account screen that needs them."
-      }
+      "kotlin": { "decision": "journey" }
     },
     "provider sign-in returned to a custom scheme": {
       "core": {
@@ -1603,11 +1599,7 @@
       "swift": {
         "decision": "journey"
       },
-      "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-61",
-        "reason": "the journey proves a phone number on a signed-in account (`/v1/client/me/phone`), and the Kotlin client has no account calls yet: they arrive with the account screen that needs them. A texted sign-in code, which this client does ask for, is in the journeys of signing in with one."
-      }
+      "kotlin": { "decision": "journey" }
     },
     "text messages past the daily limit": {
       "core": {
@@ -1619,11 +1611,7 @@
       "swift": {
         "decision": "journey"
       },
-      "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-61",
-        "reason": "the journey proves a phone number on a signed-in account (`/v1/client/me/phone`), and the Kotlin client has no account calls yet: they arrive with the account screen that needs them. A texted sign-in code, which this client does ask for, is in the journeys of signing in with one."
-      }
+      "kotlin": { "decision": "journey" }
     },
     "text messages to a blocked destination": {
       "core": {
@@ -1635,11 +1623,7 @@
       "swift": {
         "decision": "journey"
       },
-      "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-61",
-        "reason": "the journey proves a phone number on a signed-in account (`/v1/client/me/phone`), and the Kotlin client has no account calls yet: they arrive with the account screen that needs them. A texted sign-in code, which this client does ask for, is in the journeys of signing in with one."
-      }
+      "kotlin": { "decision": "journey" }
     },
     "the admin reset removes passkeys and says whether the user can still sign in": {
       "core": {

@@ -200,21 +200,14 @@ class ModelTest {
     @Test
     fun `a step with no screen is not supported and never blank`() = runTest {
         val steps = mapOf(
-            // The client has a call for each of these, and the screens no form yet (TULA-61):
-            // a second step by an authenticator, a backup code or a texted code, and the
-            // enrolment of an authenticator.
-            SECOND_FACTOR to "needs_second_factor",
-            """{"status":"needs_second_factor","options":["totp","backup_code","passkey"]}""" to "needs_second_factor",
-            """{"status":"needs_second_factor","options":["sms_code"]}""" to "needs_second_factor",
-            """{"status":"needs_factor_enrolment","methods":["totp"]}""" to "needs_factor_enrolment",
-            // Neither the client, as the screens ask it, nor the screens have anything for these.
+            // A passkey is the step's only way and this client was given no passkey sheet.
             """{"status":"needs_second_factor","options":["passkey"]}""" to "needs_second_factor",
+            // Ways a newer server added.
+            """{"status":"needs_second_factor","options":["retina"]}""" to "needs_second_factor",
             """{"status":"needs_factor_enrolment","methods":["retina"]}""" to "needs_factor_enrolment",
             """{"status":"needs_something_newer","with":"fields"}""" to "needs_something_newer",
             // Ways the client cannot prove.
             firstFactor("passkey", "email_link") to "needs_first_factor",
-            // A texted code has a call in the client and no screen here yet.
-            firstFactor("sms_code") to "needs_first_factor",
             // A reason for a new password this version does not know.
             """{"status":"needs_new_password","destination":"$MASKED","strategies":["email_code"],"reason":"newer"}""" to
                 "needs_new_password",
@@ -652,13 +645,26 @@ class ModelTest {
             TulaAuthScreen.ExpiredPassword to listOf(NEW_PASSWORD),
             TulaAuthScreen.SignedIn to emptyList(),
             TulaAuthScreen.NotSupported("x") to emptyList(),
+            TulaAuthScreen.TextedCodeOffer() to emptyList(),
+            TulaAuthScreen.TextedCode("***42") to listOf(CODE),
+            TulaAuthScreen.SecondFactor(TulaSecondWay.TOTP) to listOf(CODE),
+            TulaAuthScreen.SecondFactor(TulaSecondWay.PASSKEY) to emptyList(),
+            // The code field of a texted code is there only once a message was sent.
+            TulaAuthScreen.SecondFactor(TulaSecondWay.TEXTED_CODE) to emptyList(),
+            TulaAuthScreen.SecondFactor(TulaSecondWay.TEXTED_CODE, sent = "***42") to listOf(CODE),
+            TulaAuthScreen.SecondFactor(TulaSecondWay.BACKUP_CODE) to listOf(TulaAuthField.BACKUP_CODE),
+            TulaAuthScreen.EnrolmentStart to emptyList(),
+            TulaAuthScreen.TotpSetup to listOf(CODE),
+            TulaAuthScreen.BackupCodes to emptyList(),
         )
         for ((screen, expected) in fields) {
             assertEquals(expected, screen.fields, "$screen")
             // What is drawn is what the screen says it has, in that order.
             assertEquals(expected, TulaAuthContent.of(screen, TulaStrings()).fields.map { it.field }, "$screen")
         }
-        val state = TulaAuthState(TulaAuthScreen.SignInStart, email = "a", password = "b", code = "c", newPassword = "d")
-        assertEquals(listOf("a", "b", "c", "d"), TulaAuthField.entries.map(state::text))
+        val state = TulaAuthState(
+            TulaAuthScreen.SignInStart, email = "a", password = "b", code = "c", newPassword = "d", backupCode = "e",
+        )
+        assertEquals(listOf("a", "b", "c", "d", "e"), TulaAuthField.entries.map(state::text))
     }
 }

@@ -19,6 +19,7 @@ import dev.tula.auth.SignInFlow
 import dev.tula.auth.SignUpFlow
 import dev.tula.auth.TulaError
 import dev.tula.auth.caught
+import dev.tula.auth.generated.ClientConfigPhone
 import dev.tula.auth.generated.FlowKind
 import dev.tula.auth.generated.FlowStep
 import dev.tula.auth.generated.PreparedFirstFactorStrategy
@@ -898,9 +899,7 @@ class JourneysTest {
             val number = "+12025550143"
             smsSignIn(world, true)
             assertContains(world.client().tula.config().signIn.methods, "smsCode")
-            // The owner's number is given by the fixture: adding one is not this client's yet.
-            val owner = signUp(world)
-            world.givePhoneNumber(owner.email, number)
+            val owner = withNumber(world, number)
             val ownerId = owner.tula.user().id
 
             val device = world.client()
@@ -972,7 +971,7 @@ class JourneysTest {
         journey { world ->
             val number = "+12025550144"
             smsSignIn(world, true)
-            world.givePhoneNumber(signUp(world).email, number)
+            withNumber(world, number)
 
             val device = world.client()
             val tula = device.tula
@@ -1617,8 +1616,15 @@ class JourneysTest {
             .with("sms", value = j(smsOn))
     }
 
-    private suspend fun withNumber(world: World, number: String): Account =
-        signUp(world).also { world.givePhoneNumber(it.email, number) }
+    /** A user who proved a phone number with the texted code, a minute after it was texted. */
+    private suspend fun withNumber(world: World, number: String): Account {
+        val account = signUp(world)
+        account.tula.phone.request(number)
+        account.tula.phone.verify(world.textedCode(number))
+        // A number is texted at most once a minute, whoever asks.
+        world.advance(61_000)
+        return account
+    }
 
     @Test
     @Journey("a texted code as the second factor")
@@ -3346,6 +3352,171 @@ class JourneysTest {
             assertEquals(listOf("google"), world.client().tula.config().signIn.oauth)
             val refused = caught { continueWith(world, OAuthProvider.X, mapOf("subject" to snowflake())) }
             assertEquals("auth.method_disabled", refused.code)
+        }
+
+    private fun sms(world: World, sms: String) = world.settings { it.with("sms", value = j(sms)) }
+
+    private fun wrong(code: String): String = code.dropLast(1) + ((code.last().digitToInt() + 1) % 10)
+
+    @Test
+    @Journey("phone number on an account")
+    fun `a signed-in user adds a phone number with a texted code, and removes it - every refusal is a code the app can show`() =
+        journey { world ->
+            val number = "+12025550142"
+            val app = signUp(world)
+            val other = signUp(world)
+
+            // Off by default: the config says so, and asking is refused.
+            assertEquals(ClientConfigPhone(enabled = false), app.tula.config().phone)
+            assertEquals("sms.disabled", caught { app.tula.phone.request(number) }.code)
+            // On with no country allowed is still off.
+            sms(world, """{"enabled":true,"allowedCountries":[],"dailyMessageLimit":500,"templates":{}}""")
+            assertEquals("sms.disabled", caught { app.tula.phone.request(number) }.code)
+            assertEquals(emptyList(), world.texts())
+
+            sms(world, smsOn)
+            // A client made after the change reads the config as it is now, and not which countries.
+            assertEquals(ClientConfigPhone(enabled = true), world.client().tula.config().phone)
+            assertFalse(world.sent("/v1/client/config").any { it.responseBody.contains("allowedCountries") })
+
+            assertEquals("phone.invalid", caught { app.tula.phone.request("555-0142") }.code)
+            assertEquals("sms.country_not_allowed", caught { app.tula.phone.request("+4915112345678") }.code)
+            assertEquals(emptyList(), world.texts())
+
+            // The number as a person types it; the receipt holds neither the number nor the code.
+            val receipt = app.tula.phone.request("+1 (202) 555-0142")
+            assertEquals("***42", receipt.destination)
+            assertTrue(java.time.Instant.parse(receipt.expiresAt).toEpochMilli() > world.serverNow())
+            val code = world.textedCode(number)
+            assertFalse(world.sent("/v1/client/me/phone").any { it.responseBody.contains(code) })
+            assertEquals("rate_limited", caught { app.tula.phone.request(number) }.code)
+            // Pending is not the account's: nothing has changed yet.
+            assertNull(app.tula.user().phoneNumber)
+
+            // Another user's code, a wrong one, the right one, and the right one again.
+            assertEquals("verification.expired", caught { other.tula.phone.verify(code) }.code)
+            assertEquals("verification.invalid_code", caught { app.tula.phone.verify(wrong(code)) }.code)
+            val proven = app.tula.phone.verify(code)
+            assertEquals(number, proven.phoneNumber)
+            assertNotNull(proven.phoneNumberVerifiedAt)
+            // The state shows it without another request.
+            assertEquals(number, signedIn(app.device).user?.phoneNumber)
+            assertEquals("verification.expired", caught { app.tula.phone.verify(code) }.code)
+            assertNull(other.tula.user().phoneNumber)
+
+            // A code asked for before the country was removed, or text messages switched off,
+            // is not honoured after.
+            other.tula.phone.request("+12025550143")
+            val pending = world.textedCode("+12025550143")
+            sms(world, """{"enabled":true,"allowedCountries":["DE"],"dailyMessageLimit":500,"templates":{}}""")
+            assertEquals("sms.country_not_allowed", caught { other.tula.phone.verify(pending) }.code)
+            sms(world, """{"enabled":false,"allowedCountries":["DE"],"dailyMessageLimit":500,"templates":{}}""")
+            assertEquals("sms.disabled", caught { other.tula.phone.verify(pending) }.code)
+            assertNull(other.tula.user().phoneNumber)
+
+            // Removing needs no text message, so it works with text messages off, and twice.
+            app.tula.phone.remove()
+            val after = signedIn(app.device).user
+            assertNotNull(after)
+            assertNull(after.phoneNumber)
+            assertNull(after.phoneNumberVerifiedAt)
+            assertNull(app.tula.user().phoneNumber)
+            app.tula.phone.remove()
+
+            // No request of the client carried the number anywhere but the body that asked for it.
+            val carrying = world.exchanges.filter { exchange ->
+                exchange.requestBody.orEmpty().contains("5550142") || exchange.path.contains("5550142") ||
+                    exchange.headers.values.any { it.contains("5550142") }
+            }
+            assertEquals(setOf("POST /v1/client/me/phone"), carrying.map { "${it.method} ${it.path}" }.toSet())
+        }
+
+    @Test
+    @Journey("phone number on an account")
+    fun `a phone number change past the step-up window asks for a step-up, and works after it`() = journey { world ->
+        sms(world, smsOn)
+        val app = signUp(world)
+        world.advance(11 * 60_000)
+        val error = caught { app.tula.phone.request("+12025550142") }
+        assertEquals("auth.step_up_required", error.code)
+        assertContains(error.stepUpMethods, "password")
+        assertEquals(emptyList(), world.texts())
+        assertEquals("auth.step_up_required", caught { app.tula.phone.remove() }.code)
+        app.tula.stepUp.withPassword(PASSWORD)
+        assertEquals("***42", app.tula.phone.request("+12025550142").destination)
+    }
+
+    @Test
+    @Journey("text messages to a blocked destination")
+    fun `a number outside the country list is a code the app can show, however often it is asked, and costs the user nothing`() =
+        journey { world ->
+            sms(world, smsOn)
+            val app = signUp(world)
+            for (typed in listOf("+37120000042", "+37120000042", "+371 2000 0043", "+99912345678")) {
+                val error = caught { app.tula.phone.request(typed) }
+                assertEquals("sms.country_not_allowed" to 422, error.code to error.status)
+            }
+            assertEquals(emptyList(), world.texts())
+            // Nothing of the user's own allowance was spent by the refusals.
+            assertEquals("***42", app.tula.phone.request("+12025550142").destination)
+            assertEquals(1, world.texts().size)
+            assertEquals(1, world.texts("+12025550142").size)
+            assertEquals("+12025550142", app.tula.phone.verify(world.textedCode("+12025550142")).phoneNumber)
+        }
+
+    @Test
+    @Journey("text messages past the daily limit")
+    fun `past the environment's daily limit a request is rate limited, with a wait that ends with the day`() =
+        journey { world ->
+            sms(world, """{"enabled":true,"allowedCountries":["US","GB"],"dailyMessageLimit":500,"templates":{}}""")
+            val app = signUp(world)
+            val other = signUp(world)
+            app.tula.phone.request("+12025550142")
+            val code = world.textedCode("+12025550142")
+            // The day is spent from here on. An hour later the hourly limits are open again, so
+            // what refuses is the day's own count.
+            sms(world, """{"enabled":true,"allowedCountries":["US","GB"],"dailyMessageLimit":1,"templates":{}}""")
+            world.advance(61 * 60_000)
+            other.tula.stepUp.withPassword(PASSWORD)
+            val now = world.serverNow()
+            val error = caught { other.tula.phone.request("+447700900142") }
+            assertEquals("rate_limited" to 429, error.code to error.status)
+            // The wait ends with the UTC day, and the answer names no limit.
+            val day = 86_400_000L
+            assertEquals((day - now % day + 999) / 1000 * 1000, error.retryAfterMs)
+            assertEquals(setOf("retryAfter"), error.params.keys)
+            assertEquals(emptyList(), world.texts("+447700900142"))
+            assertEquals(1, world.texts().size)
+            assertNull(other.tula.user().phoneNumber)
+            // The client is told only whether a number can be added.
+            assertEquals(ClientConfigPhone(enabled = true), world.client().tula.config().phone)
+            // A code is good for ten minutes: the one from before the limit was spent an hour ago
+            // has expired, and a new one cannot be had today.
+            app.tula.stepUp.withPassword(PASSWORD)
+            assertEquals("verification.expired", caught { app.tula.phone.verify(code) }.code)
+            assertEquals("rate_limited", caught { app.tula.phone.request("+12025550142") }.code)
+            assertEquals(1, world.texts().size)
+        }
+
+    @Test
+    @Journey("text message wording")
+    fun `a phone number is proven with the code from a text in the environment's own words, and nothing of the built-in text`() =
+        journey { world ->
+            val number = "+12025550142"
+            val wording = "Welcome to {{appName}}. Use {{code}} now"
+            sms(
+                world,
+                """{"enabled":true,"allowedCountries":["US"],"dailyMessageLimit":500,""" +
+                    """"templates":{"phone_verification":{"text":"$wording"}}}""",
+            )
+            val app = signUp(world)
+            app.tula.phone.request(number)
+            // Nothing of the client reads a message: the code is the last run of six digits,
+            // whatever the environment wrote around it.
+            val code = world.textedCode(number)
+            // This environment has no origin, so there is no last line and the sentence is all.
+            assertEquals("Welcome to Tula. Use $code now", world.texts(number).last())
+            assertEquals(number, app.tula.phone.verify(code).phoneNumber)
         }
 
     private fun String.refreshToken(): String? =

@@ -98,7 +98,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `packages/mcp` | `@tula/mcp` — the Model Context Protocol server `tula mcp` serves over stdio: read-only tools over the admin API (users, sessions, audit entries, settings, providers, doctor), scaffold tools that return files, a draft tool that returns a settings change as an edit to the config file, a tool that has the server run a sign-in test and, with an agent key, propose tools that ask for a change a human approves ([docs/mcp.md](docs/mcp.md), [ADR 0033](docs/adr/0033-mcp-server.md), [ADR 0053](docs/adr/0053-proposals.md), [ADR 0056](docs/adr/0056-mcp-settings-config-diff.md), [ADR 0058](docs/adr/0058-test-signin.md)). |
 | `packages/create-tula` | `create-tula` — scaffolds a project: Compose file, `.env` with generated secrets, `tula.config.ts`, an example app ([docs/quickstart.md](docs/quickstart.md)). Its app templates are copies of `examples/*`, made by `bun run --filter create-tula templates:sync`. |
 | `packages/expo` | `@tula/expo` — the headless Expo SDK: `@tula/core`'s client with its refresh token in the device's secure store, a provider and hooks, no screen; passkeys through a passkey sheet, provider sign-in through a system browser session, Apple's and Google's own sheets and a device's key store, each an option with an adapter of its own entry point, and a config plugin (`@tula/expo/plugin`); an emailed sign-in link opened in the app ([ADR 0046](docs/adr/0046-expo-sdk.md), [ADR 0048](docs/adr/0048-expo-passkeys-and-providers.md), [ADR 0052](docs/adr/0052-expo-native-providers-and-device-keys.md), [ADR 0055](docs/adr/0055-expo-emailed-link.md), [docs/expo.md](docs/expo.md)). The repository installs neither Expo nor React Native. |
-| `native/{swift,android}` | Native SDKs (Phase 2). `native/swift` is the Swift package `TulaAuth`: the generated types ([ADR 0050](docs/adr/0050-native-type-generation.md)) and, beside them, the hand-written client with no screen (flows, the session, the refresh token in the Keychain, passkeys, providers and a device key behind protocols; [ADR 0051](docs/adr/0051-swift-client.md), [docs/swift.md](docs/swift.md)), with XCTest unit tests, journey tests against the real API and the fixture they start (`native/swift/fixture`); and a second library, `TulaAuthUI`, the SwiftUI screens of a sign-in, a sign-up and a password reset on that client ([ADR 0057](docs/adr/0057-swiftui-screens.md)), with tests of what they decide. `native/android` is the Kotlin SDK's Gradle build ([ADR 0054](docs/adr/0054-kotlin-client.md), [docs/kotlin.md](docs/kotlin.md), `native/android/README.md`): `tula-auth`, the client with no UI (flows, the session, the second step and step-up, passkeys, Google's ID token, providers and a device key behind interfaces, the storage interface) beside the generated types, plain Kotlin on the JVM; `tula-auth-android`, the Keystore-backed storage and the adapters over Credential Manager, a Custom Tab and the Keystore, built only where an Android SDK is known; and the Compose screens of a sign-in, a sign-up and a password reset ([ADR 0061](docs/adr/0061-compose-screens.md)) in two modules: `tula-auth-ui`, what they decide (plain Kotlin on the JVM, no Compose), and `tula-auth-compose`, what draws them (an Android library). `native/android/fixture/ui-tests.ts` runs the example's UI tests on an emulator, by hand. Not workspace packages. No job of `ci.yml` compiles Swift: the `Swift` workflow (`.github/workflows/swift.yml`, a macOS runner) runs `swift test`. CI's `kotlin` job tests `tula-auth` and `tula-auth-ui`, and `kotlin-android` compiles and lints `tula-auth-android`, `tula-auth-compose` and the Compose example with its UI tests; no job runs anything on a device or an emulator. |
+| `native/{swift,android}` | Native SDKs (Phase 2). `native/swift` is the Swift package `TulaAuth`: the generated types ([ADR 0050](docs/adr/0050-native-type-generation.md)) and, beside them, the hand-written client with no screen (flows, the session, the refresh token in the Keychain, passkeys, providers and a device key behind protocols; [ADR 0051](docs/adr/0051-swift-client.md), [docs/swift.md](docs/swift.md)), with XCTest unit tests, journey tests against the real API and the fixture they start (`native/swift/fixture`); and a second library, `TulaAuthUI`, the SwiftUI screens of a sign-in, a sign-up and a password reset on that client ([ADR 0057](docs/adr/0057-swiftui-screens.md)), with tests of what they decide. `native/android` is the Kotlin SDK's Gradle build ([ADR 0054](docs/adr/0054-kotlin-client.md), [docs/kotlin.md](docs/kotlin.md), `native/android/README.md`): `tula-auth`, the client with no UI (flows, the session, the second step and step-up, passkeys, Google's ID token, providers and a device key behind interfaces, the storage interface) beside the generated types, plain Kotlin on the JVM; `tula-auth-android`, the Keystore-backed storage and the adapters over Credential Manager, a Custom Tab and the Keystore, built only where an Android SDK is known; and the Compose screens of a sign-in, a sign-up, a password reset and the signed-in user's account ([ADR 0061](docs/adr/0061-compose-screens.md), [ADR 0062](docs/adr/0062-compose-second-step-and-account.md)) in two modules: `tula-auth-ui`, what they decide (plain Kotlin on the JVM, no Compose), and `tula-auth-compose`, what draws them (an Android library). `native/android/fixture/ui-tests.ts` runs the example's UI tests on an emulator, by hand. Not workspace packages. No job of `ci.yml` compiles Swift: the `Swift` workflow (`.github/workflows/swift.yml`, a macOS runner) runs `swift test`. CI's `kotlin` job tests `tula-auth` and `tula-auth-ui`, and `kotlin-android` compiles and lints `tula-auth-android`, `tula-auth-compose` and the Compose example with its UI tests; no job runs anything on a device or an emulator. |
 | `packages/conformance` | `@tula/conformance` — runs the scenarios in `conformance/` over HTTP, in process or against a live server, and holds the format and the checks of the client-journey list. |
 | `conformance/` | Language-neutral JSON scenarios every server and SDK must pass, and their JSON Schema; `client-journeys.json`, the one list of what each client's test suite does about every scenario and every named client behaviour, and its JSON Schema. |
 | `scripts/` | Release tooling: builds, packs and checks the publishable packages ([docs/releasing.md](docs/releasing.md)). `scripts/docs.ts` writes the SDK reference and fills the docs' snippet blocks (`docs:generate`, `docs:check`); it uses the compiler bundled in `ts-morph`, pinned to an exact version, because the repository's TypeScript 7 has no stable compiler API. `scripts/worker-check/` is the check CI's `self-host-worker` job runs against the packaged stack (a webhook delivered by the worker as its own service) and the receiver it delivers to; its helpers are tested in `.claude/hooks/worker-check.test.ts`. |
@@ -2673,8 +2673,8 @@ set up inside a sign-in, a passkey and the providers on the first screen, and th
 - **A step with no action is `FlowScreen.NOT_SUPPORTED`, never an exception**: an unknown
   status, and a known one that offers only what this version cannot do. A new action widens
   `flowScreen` in the same change. **The Kotlin client has a call for a texted first-factor
-  code (`CodeStrategy.SMS_CODE`) where the Swift client has none until TULA-60**, so a step
-  that offers only `sms_code` is not `NOT_SUPPORTED` here.
+  code (`CodeStrategy.SMS_CODE`)**, as the Swift client has since TULA-60, so a step that
+  offers only `sms_code` is not `NOT_SUPPORTED` here.
 - **The journeys run over HTTP against `e2e/kotlin-fixture.ts`, a world per journey, and
   fail without it**: never skip one, never an `@Ignore` or an assumption in the suite. The
   fixture needs `KOTLIN_FIXTURE=1`, listens on 127.0.0.1 and keeps its `/__test/*` routes
@@ -2682,8 +2682,9 @@ set up inside a sign-in, a passkey and the providers on the first screen, and th
   **and a world's secret key never leaves the fixture's process**: the answer that makes a
   world holds no secret key, and an admin call is relayed (`POST /__test/worlds/<id>/admin`,
   a path under `/v1/admin/` as written, never with a caller's own `Authorization`), as the
-  Swift fixture relays. `.claude/hooks/kotlin-journeys.test.ts` holds it. A fixture route that does what the client cannot yet (`phone`)
-  is named in the journey that uses it and goes when the client gains the call.
+  Swift fixture relays. `.claude/hooks/kotlin-journeys.test.ts` holds it. A fixture route that does what the client cannot yet
+  is named in the journey that uses it and goes when the client gains the call (there is
+  none today: `phone` went with `client.phone`).
 - **`JourneysTest.kt` has no block comment but documentation and no raw string that spans
   lines** (`unscannable` in the hook test: a test commented out would otherwise count as
   one that runs). Reword what it refuses, never the rule.
@@ -2778,8 +2779,7 @@ set up inside a sign-in, a passkey and the providers on the first screen, and th
   OkHttp, Google's sign-in SDK or any other library without a line in ADR 0054.
 - **Not built, and said so in the list and the docs**: an emailed link (no call asks for
   one; `not_built` under TULA-76, the native clients' emailed link), a passkey's rename
-  (`HttpURLConnection` has no `PATCH`; TULA-76 too), a phone number on the account
-  (TULA-61). **An account with no address gets one through `client.emailAddress`**
+  (`HttpURLConnection` has no `PATCH`; TULA-76 too). **An account with no address gets one through `client.emailAddress`**
   (`request`, `verify`: ADR 0059's two routes and nothing more; no call changes an
   address).
 - **Never say more of Android than was run.** What ran (a JVM; a compile and a lint of the
@@ -2794,19 +2794,22 @@ set up inside a sign-in, a passkey and the providers on the first screen, and th
   passkey, a Google or provider sign-in or the device key as working on Android, in a doc,
   a README, a KDoc or a changeset, until one has.
 
-### Compose screens (`native/android/tula-auth-ui`, `tula-auth-compose`, see ADR 0061)
+### Compose screens (`native/android/tula-auth-ui`, `tula-auth-compose`, see ADR 0061 and ADR 0062)
 
 Compose screens on the Kotlin client for a sign-in with a password or an emailed code, a
 sign-up, the emailed code that proves an address, a password reset and the replacement of
-an expired password (TULA-50). They are the SwiftUI screens' design ("SwiftUI screens"
-above) on Android: a rule of the model changed in one is changed in the other. The second
-step and the enrolment of an authenticator, passkeys, Google and the other providers, a
-texted code and the account's screens are TULA-61: the client has a call for each (ADR
-0054) and these screens draw none of them.
+an expired password (TULA-50), and for the second step, an authenticator set up inside a
+sign-in, a passkey, Google and the other providers, a texted code and the signed-in user's
+account (TULA-61, `TulaAccount`). They are the SwiftUI screens' design ("SwiftUI screens"
+above) on Android, and both libraries draw the same steps and the same account
+([ADR 0060](docs/adr/0060-swiftui-second-step-and-account.md),
+[ADR 0062](docs/adr/0062-compose-second-step-and-account.md)): **a rule of the model
+changed in one library is changed in the other in the same change**, or the ADR of the one
+that differs says why.
 
 - **Two modules, and the split is the rule.** `tula-auth-ui` (package `dev.tula.auth.ui`)
-  is plain Kotlin on the JVM: `TulaAuthModel`, `TulaAuthContent`, `TulaStrings`,
-  `TulaThemeValues.kt`. It imports no Compose and nothing of Android, and nothing of
+  is plain Kotlin on the JVM: `TulaAuthModel` and `TulaAccountModel`, `TulaAuthContent` and
+  `TulaAccountContent`, `TulaStrings`, `TulaThemeValues.kt`, `TulaQr.kt`. It imports no Compose and nothing of Android, and nothing of
   `tula-auth` is made public or changed for it. `tula-auth-compose`
   (`dev.tula.auth.compose`) is an Android library on Compose's `ui` and `foundation`,
   **with no Material** and no other library. **Never put a decision in a composable**: one
@@ -2817,18 +2820,103 @@ texted code and the account's screens are TULA-61: the client has a call for eac
   `model.content` and calls `model.perform(action)`, which does nothing for an action the
   open screen does not offer. Never a `when` over the screen in a composable, a control
   with an action of its own, or a label composed there: a new control is an offer in
-  `TulaAuthContent`, with its row in the content test.
+  `TulaAuthContent` or `TulaAccountContent`, with its row in the content test. Both screens
+  are drawn from the same parts (`TulaParts.kt`).
 - **A screen per step, and "not supported" for every other one** (`TulaAuthScreen`, from
   the client's `FlowScreen` in one function): an unknown status, a step the client has a
-  call for and these screens no form for. **`NEEDS_SECOND_FACTOR` and
-  `NEEDS_FACTOR_ENROLMENT` are `NotSupported` here, each by a branch of its own, and so is
-  a step that offers only `sms_code`, although the client's own `flow.screen` is not** (the
-  client has the calls, the screens have no form until TULA-61). The mapping has no `else`:
+  step that offers only ways this client cannot take here (no sheet for them). The second
+  step, the enrolment and a step that offers only `sms_code` have screens since TULA-61.
+  The mapping has no `else`:
   a value `FlowScreen` gains does not compile until it is decided here, with its row in the
   model's test "a step with no screen is not supported and never blank". Never blank, never
   an error, never a request on a guess.
 - **Nothing is emailed by arriving at a step that offers another way**; a code is asked for
-  at once only where an emailed code is the step's one strategy.
+  at once only where an emailed code is the step's one strategy. **Nothing is ever texted
+  by arriving**, also where a texted code is the only way: a button asks, the code field is
+  there only after a send of that screen succeeded, a first factor's words never claim a
+  message was sent, and a refusal an operator's setting causes takes the button away. The
+  field is `ContentType.SmsOtpCode` and that is all: **no SMS permission, no SMS Retriever
+  or User Consent API** (a decision in ADR 0062, with what each would need).
+- **A way to sign in is in the content only where the environment lists it and
+  `client.sheets` says the client was given what it needs** (a passkey sheet, Google's
+  sheet, a browser session with `TulaAuth`'s `redirectUrl`), and no way is drawn before the
+  configuration was read. So a control is never drawn and then taken away: never draw one
+  on a guess, and never ask a sheet during composition. Where that leaves no way, the
+  screen says so in words (`ways.noWayHere`). `client.sheets` is booleans: it never hands a
+  sheet to the screens, and it does not say the device can show one.
+- **A provider's ticket never outlives the screen that could present it again.** The
+  client keeps one for more failures than the screen offers "Try again" for
+  (`ProviderRoundTrip.RETRYABLE` against the model's `NO_ANSWER`), so the model never asks
+  its own state whether one is held: `leave()` (every close, every change of mode,
+  "Start again", a completion) and `show()` (going on from the start: a passkey that
+  signed in, a step) call `client.discardProviderSignIn()` unconditionally, and a failure
+  the screen has no button for discards at once. Never guard that call on
+  `canRetryProvider`. `WaysAndSecondStepTest` has the test of each.
+- **A sheet or a page that was closed is `notice`**: never `formError`, never `status`,
+  nobody signed in, the button works again. A sheet that failed and a passkey the server
+  refused are problems in their own words. **One ceremony at a time**: the client's
+  `flow.busy` is said as a notice (`sheetBusy`), and the model starts no second sheet and
+  queues none. Keep the tests of each (`WaysAndSecondStepTest`, `AccountTest`).
+- **A setup key, its QR code and backup codes are state only while their screen is open**:
+  emptied by the next screen, by `close()` and for an answer that arrives after the screen
+  went; the content is built from the state at each draw and never remembered; nothing of
+  them in `rememberSaveable`, a `Bundle`, a log or `toString`. **A copy is made only on a
+  press, through the model's `copy`, which `tulaSensitiveCopy` marks
+  `EXTRA_IS_SENSITIVE`; the library never clears the clipboard** (it cannot tell its own
+  clip from a later one). Never word the mark as protecting the clip: what Android does
+  with it (13 and later: hidden in the preview, cleared after a while) is Android's, was
+  not observed, and `docs/kotlin.md` says so.
+- **The QR code is `TulaQr.kt`, a port of `packages/react/src/qr`, and no dependency.** The
+  two are held together by `packages/react/src/qr/qr-cases.json`, read by `corpus.test.ts`
+  and by `QrTest`: a change to either encoder keeps both green, a new case is a row there,
+  and a matrix in it is never edited to make a side pass. Drawn dark on white whatever the
+  theme, four modules of quiet zone. Nobody scanned one: never say it was.
+- **An app leaves `TulaAuth` on `onSignedIn` and `TulaAccount` on `onSignedOut`, never on
+  `client.state` alone.** An authenticator set up inside a sign-in signs the client in
+  before the backup codes were shown, and `onSignedIn` waits for "I have saved these
+  codes"; a sign-out the server could not be told of signs the client out locally, **is
+  not a sign-out**, is said so with the sign-out offered again, and never calls
+  `onSignedOut`. The example and every sample in a KDoc or a doc follow that (an emulator
+  test failed on the first until the example did): never write a sample that swaps the
+  two on the client's state.
+- **The account screen** (`TulaAccountModel`): sections each read by their own request (one
+  that failed says so and can be read again), a form in place of the overview for a change,
+  a question before anything is removed. A session is marked "This device" and, where
+  `deviceBound`, **"Bound to a device key", in those words**: the string tables' test
+  fails for "trusted" or "verified" of a device. **A passkey cannot be renamed and the
+  screen says so** (`renameUnavailable`; TULA-76): never draw a rename that does nothing.
+  Connected provider accounts, an address for an account without one and account deletion
+  are not on it (TULA-78); each is a decision.
+- **The account is the session's it was read for, and a session that ended elsewhere is
+  told once** (ADR 0060's rule, `AccountSessionTest`). The model asks the client whose
+  session it is when the account is read, when an act is asked for and when an answer
+  arrives (`sync()`, and `current()` in place of the bare generation: never compare an
+  answer's `asked` with `generation` directly). Another session than the one drawn means
+  everything read or typed is dropped, an owed step-up included, and an answer asked as
+  the old session is nobody's. No session, and not by this screen's doing
+  (`endedElsewhere()`): the screen is emptied, no section says "could not be read", and
+  `onSignedOut` is called **once per ended session** (the latch is `signedOut`, reset when
+  a session exists again), never after the screen's own sign-out, never while that one is
+  on its way or failed. **And only for a session this screen saw** (`shownFor`, set when
+  the model first meets a signed-in client): a model on a client nobody signed in to
+  reports no sign-out, asks the server nothing and draws nothing as failed. The model has
+  no subscription to the client: it finds out at its next call, and the docs say so.
+- **"Confirm it is you" is drawn from `auth.step_up_required`'s `params.methods`** (the
+  client's `stepUpMethods`), filtered only by "this client has a form and a sheet for
+  it": the model never decides which call needs one or what an account may step up with.
+  An emailed and a texted code are asked for with a button. With no method, and for a
+  step-up call that is itself answered `auth.step_up_required`, the screen says to sign
+  out and in again and opens nothing. **Afterwards the act that was refused is carried
+  out once, without a press; a password change is not** (its passwords were emptied as
+  they were sent and are held nowhere: its form is shown again, empty). Never keep a
+  secret to repeat a call. A new account action says which it is (`Owed`'s `again`), with
+  a row in `AccountTest`. **The repeat goes through `repeat(again, proved)` and never
+  straight to `execute`**: it is made only while the generation the proof was accepted
+  under still holds (no `close()`, no cancel, no other session since) and what is drawn
+  still offers the act.
+- **Only a number or a boolean of a server's `params` fills a placeholder** (a wait, a
+  count); a masked destination from an answer's body is the one string of the server's
+  that is drawn.
 - **The screens hold no token, and nothing secret outlives its screen.** `password`, `code`
   and `newPassword` are emptied by every change of screen, by a completion and by
   `close()`; what is emptied **as it is sent** is ADR 0057's table, repeated in ADR 0061 (a
@@ -2892,7 +2980,25 @@ texted code and the account's screens are TULA-61: the client has a call for eac
 - **The UI tests are `examples/compose/src/androidTest`, run by
   `bun run native/android/fixture/ui-tests.ts`**: the example app on an emulator or a
   device against the real API on `e2e/kotlin-fixture.ts`, a world per test, the codes read
-  from the emails it sent. A new screen or state gets a test there. **The fixture is not
+  from the emails it sent, an authenticator's code computed from the setup key by the
+  server's clock (`World.totp`). A new screen or state gets a test there. **A press in
+  `AccountScreensTest` goes through `still`**: the control is brought into sight and
+  pressed only once it is whole in sight, has not moved for `STILL_MS` and the keyboard
+  is up exactly when a text field has the focus (asked of the window from API 30; given
+  up on after `KEYBOARD_MS` where no keyboard comes). The keyboard is the system's and
+  shortens the screen some time after a field took the focus: a press sent before that
+  reached nothing on a long form. Never press there with a bare `performClick()`, **never
+  raise `WAIT_MS` for a press that was lost**, and keep the failure message saying the
+  main button's words, how many characters a code field holds (never the characters) and
+  whether the button is out of sight: that is what told a lost press from a slow answer.
+  **What a test
+  cannot drive is scripted through `ExampleSheets`, a seam of the example and never of the
+  library**: one test gives the app a passkey sheet that is closed. **The seam is in the
+  example's `debug` source set** (what the UI tests run against); `src/release` has an
+  object of the same name whose four properties are `null` and have no setter. Never move
+  the settable one back to `main`, and never give the release one a setter. No UI test opens a
+  passkey sheet, Google's chooser or a browser, receives a text message or adds a phone
+  number, and no doc may say one does. **The fixture is not
   loosened for it**: it stays bound to 127.0.0.1 behind `e2e/guard.ts` and is reached from
   the device through `adb reverse`; never bind it wider, never add `10.0.2.2` to the
   runner, and a test that meets a limit moves the fixture's clock (`World.advance`), as
@@ -4244,6 +4350,10 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   the Compose screens (the module that decides and the one that draws, why the strings are
   a Kotlin table, what a rotation costs, the emulator UI tests and what they did not
   show): [ADR 0061](docs/adr/0061-compose-screens.md);
+  the Compose screens of the second step, a passkey, the providers, a texted code and the
+  account (when a way is drawn, what is kept of a setup key and backup codes, the copy, the
+  step-up form, which callback an app leaves a screen on):
+  [ADR 0062](docs/adr/0062-compose-second-step-and-account.md);
   an emailed sign-in link opened in an Expo app (the binding in memory, the one app link
   that is read, what is refused without a request, what an ended app costs):
   [ADR 0055](docs/adr/0055-expo-emailed-link.md);

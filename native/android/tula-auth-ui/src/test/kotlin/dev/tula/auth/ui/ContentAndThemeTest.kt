@@ -213,7 +213,7 @@ class ContentAndThemeTest {
         assertEquals(TulaAuthScreen.SignedIn, bench.screen)
         // A step with no form: its one offer starts again.
         val unknown = Bench()
-        unknown.onPassword(SECOND_FACTOR)
+        unknown.onPassword("""{"status":"needs_second_factor","options":["passkey"]}""")
         assertEquals(TulaAuthScreen.NotSupported("needs_second_factor"), unknown.screen)
         assertEquals(setOf(START_AGAIN), unknown.model.content.actions)
         unknown.tap(START_AGAIN)

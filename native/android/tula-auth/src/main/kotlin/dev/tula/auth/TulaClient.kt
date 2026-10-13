@@ -10,6 +10,7 @@ import dev.tula.auth.generated.OAuthProvider
 import dev.tula.auth.generated.PasskeySignInRequest
 import dev.tula.auth.generated.PasskeySignInStart
 import dev.tula.auth.generated.PasswordResetStartRequest
+import dev.tula.auth.generated.RevokedSessions
 import dev.tula.auth.generated.Session
 import dev.tula.auth.generated.SessionList
 import dev.tula.auth.generated.SignInStartRequest
@@ -181,6 +182,12 @@ class TulaClient internal constructor(
             browser = browser,
         )
     }
+
+    /**
+     * Which of the system's sheets the app gave this client: how a screen knows that a
+     * control cannot work before it draws it. Nothing of a sheet is in it.
+     */
+    val sheets: TulaSheets = TulaSheets(passkeys = passkeys != null, google = google != null, browser = browser != null)
 
     /** Who is signed in, and every change of it. Starts as [AuthState.Loading]. */
     val state: StateFlow<AuthState> get() = manager.state
@@ -406,6 +413,9 @@ class TulaClient internal constructor(
     /** An email address for a signed-in account that has none. */
     val emailAddress: TulaEmailAddress get() = TulaEmailAddress(flows)
 
+    /** The signed-in account's phone number: add, prove, remove. */
+    val phone: TulaPhone get() = TulaPhone(flows)
+
     /** The provider accounts the signed-in user signs in with. */
     val identities: TulaIdentities get() = TulaIdentities(flows)
 
@@ -434,6 +444,27 @@ class TulaClient internal constructor(
      */
     suspend fun sessions(): List<Session> =
         transport.decode(SessionList.serializer(), manager.authorized(TulaOperations.listSessions)).data
+
+    /**
+     * End one of the signed-in user's other sessions. It needs no recent authentication and
+     * no proof: ending sessions is what an owner does when something looks wrong.
+     *
+     * @param id A session's id, from [sessions].
+     * @throws TulaError `resource.not_found` for a session that is not the user's or has
+     *   ended; `response.invalid`, before any request, for an id that is not one path segment.
+     */
+    suspend fun revokeSession(id: String) {
+        manager.authorized(TulaOperations.revokeSession, CallInput(params = mapOf("sessionId" to id)))
+    }
+
+    /**
+     * End every session of the signed-in user but this one. It needs no recent authentication
+     * and no proof.
+     *
+     * @return How many sessions were ended.
+     */
+    suspend fun revokeOtherSessions(): Long =
+        transport.decode(RevokedSessions.serializer(), manager.authorized(TulaOperations.revokeOtherSessions)).revoked
 
     /**
      * Remove the device's key from the key store the client was given. A session bound to it
@@ -554,3 +585,17 @@ class TulaSession internal constructor(private val manager: SessionManager) {
      */
     suspend fun signOut(): Unit = manager.signOut()
 }
+
+/**
+ * Whether the app gave the client each of the system's sheets. A sheet that was not given
+ * cannot be shown: its call is refused `passkey.unsupported` or `provider.unsupported` before
+ * any request.
+ */
+data class TulaSheets(
+    /** A [PasskeySheet] was given: passkeys can be created and used. */
+    val passkeys: Boolean,
+    /** A [GoogleSheet] was given: Google's account chooser can be shown. */
+    val google: Boolean,
+    /** A [BrowserSession] was given: a provider's page can be opened. */
+    val browser: Boolean,
+)
