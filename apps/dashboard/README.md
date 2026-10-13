@@ -126,8 +126,12 @@ has no way to call a client route.
   read again keeps its button unavailable from the click until it closes (a state of the
   component's own, not the mutation's `isPending`, which is false again as soon as the
   request has succeeded); a refused request gives the button back. Otherwise a second
-  click in that moment sends a second `DELETE`. `src/webhooks.test.tsx` ("a confirmed
-  change is sent once") holds the list back and clicks twice.
+  click in that moment sends a second `DELETE`. `ConfirmDialog` keeps that state itself
+  (given back by its `error`), so every confirmation has it; a form in a `Modal` keeps its
+  own. The tests named "a confirmed change is sent once" hold the list back and confirm
+  twice: `src/webhooks.test.tsx`, `src/hooks.test.tsx`, `src/native-apps.test.tsx`,
+  `src/proposals.test.tsx` and, for the API keys, the user screen and the control plane's
+  dialogs, `src/sent-once.test.tsx`.
 - **Server text that names something is shown so that it can be checked.** A webhook
   endpoint's address goes through `printable()` (`src/lib/printable.ts`: every character
   nobody can see and every combining mark, by Unicode class, written out as `\u{…}`; a

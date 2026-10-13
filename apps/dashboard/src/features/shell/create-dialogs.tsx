@@ -58,17 +58,27 @@ function NameDialog({
 }: NameDialogProps) {
   const [name, setName] = useState('')
   const [problem, setProblem] = useState<string>()
+  // From the click until the dialog closes, which is after the list was read again: the
+  // request has succeeded before that, and a live button would create a second one. A
+  // refusal (`error`) gives the button back.
+  const [sent, setSent] = useState(false)
+  const running = pending || (sent && !error)
   useEffect(() => {
     if (!open) {
       setName('')
       setProblem(undefined)
+      setSent(false)
     }
   }, [open])
   function submit(event: FormEvent) {
     event.preventDefault()
+    if (running) {
+      return
+    }
     const found = nameProblem(name)
     setProblem(found)
     if (found === undefined) {
+      setSent(true)
       onSubmit(name.trim())
     }
   }
@@ -92,7 +102,7 @@ function NameDialog({
           <ActionButton variant='outline' onClick={onClose}>
             Cancel
           </ActionButton>
-          <ActionButton type='submit' pending={pending}>
+          <ActionButton type='submit' pending={running}>
             {submitLabel}
           </ActionButton>
         </div>
