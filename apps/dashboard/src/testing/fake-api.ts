@@ -8,10 +8,12 @@ import {
 } from '@tula/contract'
 import { type FakeHookState, hookRoutes } from './fake-hooks'
 import { type FakeNativeAppState, nativeAppRoutes } from './fake-native-apps'
+import { type FakeProposalState, proposalRoutes } from './fake-proposals'
 import { type FakeWebhookState, webhookRoutes } from './fake-webhooks'
 
 export { type FakeHook, fakeHook } from './fake-hooks'
 export { type FakeNativeApp, fakeAndroidApp, fakeIosApp } from './fake-native-apps'
+export { FAKE_AGENT_KEY_ID, type FakeProposal, fakeProposal } from './fake-proposals'
 
 export {
   type FakeWebhookDelivery,
@@ -210,7 +212,11 @@ function page<T>(rows: T[]) {
 }
 
 /** The fake's data, open to a test that wants to arrange or inspect it. */
-export interface FakeState extends FakeWebhookState, FakeHookState, FakeNativeAppState {
+export interface FakeState
+  extends FakeWebhookState,
+    FakeHookState,
+    FakeNativeAppState,
+    FakeProposalState {
   /** Whether `TULA_ADMIN_TOKEN` is set (the instance routes exist). */
   adminToken: boolean
   signedIn: boolean
@@ -358,6 +364,8 @@ function initialState(): FakeState {
     hooks: [],
     hookNow: NOW,
     nativeApps: [],
+    proposals: [],
+    proposalNow: NOW,
     webhookWorkerSeparate: false,
     canStillSignIn: true,
     authentication: {
@@ -678,6 +686,7 @@ export function installFakeApi() {
     ...webhookRoutes(state),
     ...hookRoutes(state),
     ...nativeAppRoutes(state),
+    ...proposalRoutes(state),
     ['GET', /^\/v1\/admin\/settings$/, () => structuredClone(state.settings)],
     [
       'PUT',

@@ -59,7 +59,8 @@ assistant you would show the dashboard to.
    session is shown with whose it is and whether it is still live: an assistant's account
    of "a stale session" is a claim, and this is what you check it against. You type `yes`, at
    a terminal: the command has no option that answers for you and refuses to run without
-   one. See [the command](cli.md#tula-approve).
+   one. See [the command](cli.md#tula-approve). Or approve in the dashboard:
+   [below](#approving-in-the-dashboard).
 3. **The server carries it out**, at once, and records it: the change's own audit entry
    (`user.banned`, `user.unbanned`, `session.revoked`, `oauth_provider.updated`) has the
    agent as its actor, the proposal's id, and you as the one who approved.
@@ -77,6 +78,37 @@ the one you were shown. The target of `end_session` is `{ "type": "session", "id
 and of `disable_oauth_provider` `{ "type": "oauth_provider", "id": "google" }` (the
 provider's name); an operation with another kind of target is a 422. `GET /v1/admin/proposals` lists an environment's proposals, newest
 first, and `GET /v1/admin/proposals/<id>` reads one.
+
+## Approving in the dashboard
+
+The dashboard's **Proposals** screen lists an environment's proposals: those waiting for
+approval first, each with the server's summary, the exact operation, the target as it is
+now (read with your dashboard session, as `tula approve` reads it with your secret key),
+the agent key that asked and the time left; below them, those that are no longer waiting,
+with how each ended.
+
+**Approve** opens a question that names the operation and the target and says what
+approving does. In a production environment you type the target's id. The request repeats
+the operation and the target the question showed. The answer is said as it is:
+
+| The screen says | It means |
+| --- | --- |
+| Approved and carried out | `executed`. |
+| Approved; nothing changed | `executed` with `changed: false`: the target was already so. |
+| Approved, and not carried out | `failed`: the target no longer exists, the change would leave no way to sign in, or the operation failed. The proposal is spent. |
+| Approved, and only partly carried out | `failed` with `incomplete`: for a ban, the user is banned and their sessions were not ended; the screen links to the user's page to end them. |
+| Not approved | The server refused: expired, already approved, the agent key revoked, not the proposal that was shown, or a production environment that does not accept proposals. Nothing was changed. |
+
+A request that got no answer, or a server error, may still have been taken: the screen
+says so and reads the list again, so look at how the proposal stands before trying once
+more.
+
+There is **no way to dismiss a proposal**, here or over HTTP. One that is not approved
+expires ten minutes after it was made; revoking the agent key ends everything that key has
+waiting, at once. The dashboard approves with its session (`approvedBy` is
+`instance_admin` with the session's id), and what that shows is what approval always
+shows: that a credential the agent's tools do not hold was used
+([below](#what-approval-does-not-protect-against)).
 
 ## The rules
 

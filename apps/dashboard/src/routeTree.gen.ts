@@ -24,6 +24,7 @@ import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdHooksRouteImport } from
 import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdMessagesRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/messages'
 import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdNativeAppsRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/native-apps'
 import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdPasswordPolicyRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/password-policy'
+import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdProposalsRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/proposals'
 import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdSessionsRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/sessions'
 import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdSettingsRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/settings'
 import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdSignInMethodsRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/sign-in-methods'
@@ -118,6 +119,12 @@ const AppWWorkspaceIdPProjectIdEEnvironmentIdPasswordPolicyRoute =
     path: '/password-policy',
     getParentRoute: () => AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRoute,
   } as any)
+const AppWWorkspaceIdPProjectIdEEnvironmentIdProposalsRoute =
+  AppWWorkspaceIdPProjectIdEEnvironmentIdProposalsRouteImport.update({
+    id: '/proposals',
+    path: '/proposals',
+    getParentRoute: () => AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRoute,
+  } as any)
 const AppWWorkspaceIdPProjectIdEEnvironmentIdSessionsRoute =
   AppWWorkspaceIdPProjectIdEEnvironmentIdSessionsRouteImport.update({
     id: '/sessions',
@@ -197,6 +204,7 @@ export interface FileRoutesByFullPath {
   '/w/$workspaceId/p/$projectId/e/$environmentId/messages': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdMessagesRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/native-apps': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdNativeAppsRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/password-policy': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdPasswordPolicyRoute
+  '/w/$workspaceId/p/$projectId/e/$environmentId/proposals': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdProposalsRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/sessions': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSessionsRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/settings': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSettingsRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/sign-in-methods': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSignInMethodsRoute
@@ -222,6 +230,7 @@ export interface FileRoutesByTo {
   '/w/$workspaceId/p/$projectId/e/$environmentId/messages': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdMessagesRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/native-apps': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdNativeAppsRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/password-policy': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdPasswordPolicyRoute
+  '/w/$workspaceId/p/$projectId/e/$environmentId/proposals': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdProposalsRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/sessions': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSessionsRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/settings': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSettingsRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/sign-in-methods': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSignInMethodsRoute
@@ -250,6 +259,7 @@ export interface FileRoutesById {
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/messages': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdMessagesRoute
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/native-apps': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdNativeAppsRoute
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/password-policy': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdPasswordPolicyRoute
+  '/_app/w/$workspaceId/p/$projectId/e/$environmentId/proposals': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdProposalsRoute
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/sessions': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSessionsRoute
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/settings': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSettingsRoute
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/sign-in-methods': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSignInMethodsRoute
@@ -278,6 +288,7 @@ export interface FileRouteTypes {
     | '/w/$workspaceId/p/$projectId/e/$environmentId/messages'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/native-apps'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/password-policy'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/proposals'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/sessions'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/settings'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/sign-in-methods'
@@ -303,6 +314,7 @@ export interface FileRouteTypes {
     | '/w/$workspaceId/p/$projectId/e/$environmentId/messages'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/native-apps'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/password-policy'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/proposals'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/sessions'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/settings'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/sign-in-methods'
@@ -330,6 +342,7 @@ export interface FileRouteTypes {
     | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/messages'
     | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/native-apps'
     | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/password-policy'
+    | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/proposals'
     | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/sessions'
     | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/settings'
     | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/sign-in-methods'
@@ -455,6 +468,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdPasswordPolicyRouteImport
       parentRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRoute
     }
+    '/_app/w/$workspaceId/p/$projectId/e/$environmentId/proposals': {
+      id: '/_app/w/$workspaceId/p/$projectId/e/$environmentId/proposals'
+      path: '/proposals'
+      fullPath: '/w/$workspaceId/p/$projectId/e/$environmentId/proposals'
+      preLoaderRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdProposalsRouteImport
+      parentRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRoute
+    }
     '/_app/w/$workspaceId/p/$projectId/e/$environmentId/sessions': {
       id: '/_app/w/$workspaceId/p/$projectId/e/$environmentId/sessions'
       path: '/sessions'
@@ -535,6 +555,7 @@ interface AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRouteChildren {
   AppWWorkspaceIdPProjectIdEEnvironmentIdMessagesRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdMessagesRoute
   AppWWorkspaceIdPProjectIdEEnvironmentIdNativeAppsRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdNativeAppsRoute
   AppWWorkspaceIdPProjectIdEEnvironmentIdPasswordPolicyRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdPasswordPolicyRoute
+  AppWWorkspaceIdPProjectIdEEnvironmentIdProposalsRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdProposalsRoute
   AppWWorkspaceIdPProjectIdEEnvironmentIdSessionsRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSessionsRoute
   AppWWorkspaceIdPProjectIdEEnvironmentIdSettingsRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSettingsRoute
   AppWWorkspaceIdPProjectIdEEnvironmentIdSignInMethodsRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSignInMethodsRoute
@@ -562,6 +583,8 @@ const AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRouteChildren: AppWWorkspaceId
       AppWWorkspaceIdPProjectIdEEnvironmentIdNativeAppsRoute,
     AppWWorkspaceIdPProjectIdEEnvironmentIdPasswordPolicyRoute:
       AppWWorkspaceIdPProjectIdEEnvironmentIdPasswordPolicyRoute,
+    AppWWorkspaceIdPProjectIdEEnvironmentIdProposalsRoute:
+      AppWWorkspaceIdPProjectIdEEnvironmentIdProposalsRoute,
     AppWWorkspaceIdPProjectIdEEnvironmentIdSessionsRoute:
       AppWWorkspaceIdPProjectIdEEnvironmentIdSessionsRoute,
     AppWWorkspaceIdPProjectIdEEnvironmentIdSettingsRoute:

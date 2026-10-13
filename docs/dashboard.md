@@ -59,6 +59,7 @@ deletes a workspace, project or environment yet.
 | A delivery | Every request the server made for it (status code, duration, time, and why one failed), and "Send again". |
 | Hooks | The three points at which the server asks your backend a question (`before_sign_up`, `before_session`, `before_token`), each with its hook or none: its address, whether it is on, its deadline, what happens when a call fails, and the last call that failed. Add a hook (its signing secret is shown once), change it, switch it off and on, remove it. |
 | Native apps | The iOS and Android apps the server names in the two files Apple and Android fetch ([native-apps.md](native-apps.md)), and the addresses of those files. Register an app (always asked about first: the files will name it), change an iOS app's team, an Android app's certificate fingerprints or either's link paths (asked about when the change adds a team, a certificate or a path; for Android the question says that a path lets the app claim every link of the domain), remove one. In a production environment the bundle ID or package name is typed to confirm. |
+| Proposals | What an AI agent asked for with an agent key and has not happened ([proposals](proposals.md)): each one waiting, with the server's description, the exact operation, what it would act on as it is now, the agent key that asked and the time left. Approve one, after a question that names the operation and the target (typed, in a production environment). What is no longer waiting is listed below with how it ended. |
 | Audit log | An environment's entries, filtered by action, actor type, actor, target and day. |
 | Settings | App name, support address, allowed origins and redirect URLs, security notices, audit retention. |
 | Instance audit log | Dashboard sign-ins, and workspaces, projects and environments being created. |
@@ -215,11 +216,43 @@ asked about for itself.
   (`U+200B`), since the text itself cannot show it.
 - **The message you were looking at is not in the address**: a reload opens the first one.
 
+### The Proposals screen
+
+A proposal is a change an agent asked for; nothing happens until it is approved
+([proposals.md](proposals.md#approving-in-the-dashboard) has the whole procedure).
+
+- **The question names what you approve.** It repeats the operation and the target, says in
+  the dashboard's own words what approving does, and shows the target as it is now (a
+  user's address and whether they are banned, whose session it is and whether it is live,
+  whether a provider is on). In a production environment you type the target's id. The
+  request sends back the operation and the target the question showed, and the server
+  refuses it if the proposal says something else.
+- **An approval is used once, and the screen says how it ended**: carried out; carried out
+  with nothing to change; approved and not carried out, with why; or only partly carried
+  out, with what is left for you to do. A proposal that expired, was already approved, or
+  whose agent key was revoked cannot be approved, and says so.
+- **The time left is counted by your browser's clock**, as a guide. Whether a proposal has
+  expired is the server's decision: the list is read again every ten seconds and when a
+  time runs out.
+- **A proposal cannot be dismissed.** It expires by itself ten minutes after it was made.
+  To end everything an agent has waiting at once, revoke its key on the **API keys**
+  screen.
+- **An operation this version of the dashboard does not know is shown and cannot be
+  approved here.**
+- **The agent's words are never shown**: a proposal holds none. The description is the
+  server's.
+
 ## Audit
 
 Everything the dashboard changes in an environment is recorded in that environment's audit
 log with the actor type `instance_admin` and the id of the dashboard session that did it.
 Filter the audit log by "Actor type: instance_admin" to see what was done from the dashboard.
+
+What an agent proposed and you approved is recorded with both: the proposal
+(`proposal.created`), the change itself and its outcome have the actor `agent` (the agent
+key's id), with "Approved by" and the proposal's id under Details; the approval
+(`proposal.approved`) has you as its actor, with "Asked for by agent". Filter by "Actor
+type: agent" to see what agents asked for.
 
 Failed sign-ins to the dashboard are in the instance audit log, at most one entry a minute
 per address; each says how many failures from that address in the minute before were not

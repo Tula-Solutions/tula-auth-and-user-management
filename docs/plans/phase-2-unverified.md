@@ -951,6 +951,25 @@ Not verified:
 | **A real Postgres server** | PGlite only. There is no `*.integration.ts` for the counts; the statement is an `INSERT … SELECT … ON CONFLICT DO UPDATE`, which is the same SQL on both. |
 | **The dashboard's committed screenshots** | Not regenerated (`bun run e2e:screenshots`): the Hooks screen in `apps/dashboard/docs` is the one from before the counts. |
 
+## Step 2.17, the dashboard's Proposals screen (TULA-40, [ADR 0053](../adr/0053-proposals.md))
+
+What was run: the dashboard's component tests in happy-dom against its fake API (the
+fake's proposal routes are held to the contract's schemas and to the service's order of
+refusals by a test of their own), and the `dashboard` Playwright project in Chromium
+against the real API in process on memory adapters, with axe in light and dark. Nothing
+else.
+
+| What | How far it was taken |
+| --- | --- |
+| **In a browser, against the real API** | One test: a user made by the example app, an agent key made as the dashboard makes one, proposals asked for over HTTP with that key. `unban_user` of a user who is not banned (carried out, nothing changed), `ban_user` (carried out, the user banned, the proposal no longer waiting), a proposal whose key was revoked (expired, no button, and the server's 409 `agent_key_revoked`), and the audit log's entries with both actors. |
+| **Only in happy-dom, against the fake** | `end_session` and `disable_oauth_provider`; every `failureReason`, `incomplete` among them; the refusals `expired`, `already_decided`, `mismatch` and `production_environment`; the typed confirmation of a production environment (the fixture's environment is a development one); an operation and a status this version does not know; the environment switch. |
+| **A real MCP client, and a model** | Not connected, as for the rest of step 2.17. No proposal a model made was shown on the screen. |
+| **Time** | That a proposal expires while the screen is open was tested with the fake's clock. Nobody waited ten minutes in a browser. |
+| **A person who approves without reading** | Not defended, and cannot be. The screen never says more than "approved". |
+| **PostgreSQL, a deployed server** | Not run against either: the screen added no route, query or store method. |
+| **The dashboard's committed screenshots** | Not regenerated (`bun run e2e:screenshots`): there is none of the Proposals screen in `apps/dashboard/docs`. |
+| **Dismissing a proposal** | Not built (ADR 0053, "Dismissing a proposal: not built"). |
+
 ## Step 2.17, a settings change as an edit to the config file (TULA-24, [ADR 0056](../adr/0056-mcp-settings-config-diff.md))
 
 What was run: `@tula/mcp`'s tests of `draft_settings_change` against a fake API, and one
