@@ -501,9 +501,7 @@
         "reason": "the Swift client has no call that asks for or proves a texted code, and none that adds a phone number to an account: a step that offers only a texted code is the screen `notSupported`. TULA-60 is the ticket that names the texted-code step for Swift; the client’s calls under it have no ticket of their own."
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
+        "decision": "journey"
       }
     },
     "a texted code is never used beside an authenticator app": {
@@ -519,9 +517,7 @@
         "reason": "the Swift client has no call that asks for or proves a texted code, and none that adds a phone number to an account: a step that offers only a texted code is the screen `notSupported`. TULA-60 is the ticket that names the texted-code step for Swift; the client’s calls under it have no ticket of their own."
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
+        "decision": "journey"
       }
     },
     "a texted sign-in code after the method is switched off": {
@@ -569,9 +565,7 @@
         "reason": "the Swift client has no call that asks for or proves a texted code, and none that adds a phone number to an account: a step that offers only a texted code is the screen `notSupported`. TULA-60 is the ticket that names the texted-code step for Swift; the client’s calls under it have no ticket of their own."
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
+        "decision": "journey"
       }
     },
     "accounts that depend on a provider are counted before it is switched off": {
@@ -615,9 +609,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
+        "decision": "journey"
       }
     },
     "admin user authentication": {
@@ -801,9 +793,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
+        "decision": "journey"
       }
     },
     "backup codes": {
@@ -817,9 +807,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
+        "decision": "journey"
       }
     },
     "claims added by a hook": {
@@ -1353,9 +1341,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
+        "decision": "journey"
       }
     },
     "passwordless sign-up": {
@@ -1449,9 +1435,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
+        "decision": "journey"
       }
     },
     "second factor lockout": {
@@ -1465,9 +1449,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
+        "decision": "journey"
       }
     },
     "session profile selection": {
@@ -1658,9 +1640,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
+        "decision": "journey"
       }
     },
     "step-up by emailed code": {
@@ -1690,9 +1670,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
+        "decision": "journey"
       }
     },
     "step-up with a passkey": {
@@ -1844,9 +1822,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
+        "decision": "journey"
       }
     },
     "verification code attempts": {

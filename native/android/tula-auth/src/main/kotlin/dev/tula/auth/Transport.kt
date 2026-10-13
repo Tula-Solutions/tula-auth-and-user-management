@@ -88,6 +88,8 @@ internal class Transport(
     private val messages: () -> Messages,
     private val sessionProfile: String?,
     private val scope: CoroutineScope,
+    /** The device key's proofs; `null` for a client with no device key, which sends none. */
+    private val proofs: DeviceProofs? = null,
 ) {
     /**
      * Send one operation.
@@ -118,19 +120,68 @@ internal class Transport(
         if (input.params.values.any { !isOnePathSegment(it) }) {
             throw invalid()
         }
-        val request = HttpRequest(
-            method = operation.method,
-            url = buildUrl(operation.path, input.params),
-            headers = headers,
-            body = input.body,
-            timeoutMs = limit,
-        )
-        // In the client's scope, not the caller's: a caller's scope would wait for it.
+        val url = buildUrl(operation.path, input.params)
+        // One deadline for the whole call: the look for the device key, the signing of each
+        // proof, the request and its one repeat after a nonce challenge. A refresh has to
+        // give up inside the server's grace window whatever a key store does.
+        val started = System.nanoTime()
+        fun left(): Long = limit - (System.nanoTime() - started) / 1_000_000
+        val proofs = proofs
+        val use = if (proofs == null) null else DeviceProofs.PROVEN[operation.id]
+        val key = if (proofs != null && use != null) proofs.key(use, left()) else null
+        suspend fun once(): HttpResponse {
+            if (proofs != null && key != null) {
+                // A new proof for every request: the server accepts one once.
+                headers[DeviceProofs.HEADER] = proofs.proof(key, operation.method, url, clock.nowMs(), left())
+            }
+            val answer = send(HttpRequest(operation.method, url, LinkedHashMap(headers), input.body, limit), left())
+            if (proofs != null) {
+                answer.headers[DeviceProofs.NONCE_HEADER]?.takeIf { it.isNotEmpty() }?.let { proofs.nonce = it }
+            }
+            return answer
+        }
+        var response = once()
+        // The server asked for its nonce (RFC 9449, section 8): the same request once more,
+        // with a new proof that carries it. Once: a second challenge is an error like another.
+        if (key != null && response.status == 400 && codeOf(response) == "device.nonce_required") {
+            response = once()
+        }
+
+        val payload: JsonElement? = if (response.status == 204) {
+            null
+        } else {
+            try {
+                TulaJson.parseToJsonElement(response.body)
+            } catch (_: SerializationException) {
+                UNREADABLE
+            }
+        }
+        if (response.status !in 200..299) {
+            throw errorFromResponse(response, payload)
+        }
+        if (payload === UNREADABLE) {
+            throw TulaError(
+                code = ClientErrorCodes.RESPONSE_INVALID,
+                message = formatMessage(ClientErrorCodes.RESPONSE_INVALID, messages()),
+                status = response.status,
+            )
+        }
+        return payload
+    }
+
+    /**
+     * One request, for [waitMs] at most. In the client's scope, not the caller's: a caller's
+     * scope would wait for an engine that ignores cancellation.
+     */
+    private suspend fun send(request: HttpRequest, waitMs: Long): HttpResponse {
+        if (waitMs <= 0) {
+            throw clientError(ClientErrorCodes.NETWORK_TIMEOUT, messages())
+        }
         val sending = scope.async { http.send(request) }
         val answered = try {
             // `null` for this call's own timeout only: a timeout the caller set around the
             // call is the caller's, and passes through as the cancellation it is.
-            withTimeoutOrNull(limit) { sending.await() }
+            withTimeoutOrNull(waitMs) { sending.await() }
         } catch (cause: CancellationException) {
             sending.cancel()
             if (!currentCoroutineContext().isActive) {
@@ -157,29 +208,16 @@ internal class Transport(
             sending.cancel()
             throw clientError(ClientErrorCodes.NETWORK_TIMEOUT, messages())
         }
-        val response: HttpResponse = answered
-
-        val payload: JsonElement? = if (response.status == 204) {
-            null
-        } else {
-            try {
-                TulaJson.parseToJsonElement(response.body)
-            } catch (_: SerializationException) {
-                UNREADABLE
-            }
-        }
-        if (response.status !in 200..299) {
-            throw errorFromResponse(response, payload)
-        }
-        if (payload === UNREADABLE) {
-            throw TulaError(
-                code = ClientErrorCodes.RESPONSE_INVALID,
-                message = formatMessage(ClientErrorCodes.RESPONSE_INVALID, messages()),
-                status = response.status,
-            )
-        }
-        return payload
+        return answered
     }
+
+    /** The error code of an answer, when it is the API's envelope. */
+    private fun codeOf(response: HttpResponse): String? =
+        try {
+            (TulaJson.parseToJsonElement(response.body) as? JsonObject)?.get("code").text()
+        } catch (_: SerializationException) {
+            null
+        }
 
     /** An error for a 2xx whose body is not what the operation answers. */
     fun invalid(): TulaError = clientError(ClientErrorCodes.RESPONSE_INVALID, messages())

@@ -32,6 +32,27 @@ object ClientErrorCodes {
     /** A flow was asked for a second action while one was still being sent. */
     const val FLOW_BUSY: String = "flow.busy"
 
+    /** The client was given no passkey sheet, or the device cannot show one. */
+    const val PASSKEY_UNSUPPORTED: String = "passkey.unsupported"
+
+    /** A passkey of this account is already on this device (a registration only). */
+    const val PASSKEY_ALREADY_ON_DEVICE: String = "passkey.already_on_device"
+
+    /** The passkey sheet failed, or answered with what is not a credential. */
+    const val PASSKEY_FAILED: String = "passkey.failed"
+
+    /** The client was given no sheet or browser for this provider, or the device has none. */
+    const val PROVIDER_UNSUPPORTED: String = "provider.unsupported"
+
+    /** A provider's sheet or the browser failed. */
+    const val PROVIDER_FAILED: String = "provider.failed"
+
+    /**
+     * The device key could not be had or could not sign. The session is kept: the same call
+     * may work a moment later (a locked device).
+     */
+    const val DEVICE_KEY_FAILED: String = "device.key_failed"
+
     internal const val FLOW_INVALID_STEP: String = "flow.invalid_step"
 
     internal val messages: Messages = mapOf(
@@ -40,6 +61,12 @@ object ClientErrorCodes {
         RESPONSE_INVALID to "The server sent a response this app could not read.",
         STORAGE_FAILED to "Your session could not be saved on this device.",
         FLOW_BUSY to "Another step of this flow is still being sent. Wait for it to finish.",
+        PASSKEY_UNSUPPORTED to "This device cannot use passkeys.",
+        PASSKEY_ALREADY_ON_DEVICE to "This device already has a passkey for this account.",
+        PASSKEY_FAILED to "The passkey could not be used. Try again, or sign in another way.",
+        PROVIDER_UNSUPPORTED to "This device cannot sign in this way.",
+        PROVIDER_FAILED to "The sign-in could not be shown. Try again, or sign in another way.",
+        DEVICE_KEY_FAILED to "This device could not sign the request with its key.",
     )
 }
 
@@ -83,6 +110,18 @@ class TulaError(
      */
     val retryAfterMs: Long? = null,
 ) : Exception(message)
+
+/**
+ * The ways the user can prove again that it is them, for an `auth.step_up_required` answer:
+ * the server's `params.methods` (`password`, `totp`, `backup_code`, `email_code`, `passkey`,
+ * `sms_code`), in its order. Empty for any other error.
+ */
+val TulaError.stepUpMethods: List<String>
+    get() = if (code == "auth.step_up_required") {
+        (params["methods"] as? String).orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }
+    } else {
+        emptyList()
+    }
 
 /** The English message of every contract code and of the client's own. */
 internal val englishMessages: Messages by lazy {

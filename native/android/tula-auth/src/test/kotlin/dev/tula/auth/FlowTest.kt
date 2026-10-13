@@ -302,15 +302,28 @@ class FlowTest {
             Triple("""{"status":"needs_new_password","destination":"m","strategies":[]}""", signIn, FlowScreen.NOT_SUPPORTED),
             Triple("""{"status":"needs_new_password","destination":"m","strategies":[],"reason":"expired"}""", FlowKind.PasswordReset, FlowScreen.NOT_SUPPORTED),
             Triple("""{"status":"needs_new_password","destination":"m","strategies":[],"reason":"expired"}""", FlowKind.SignUp, FlowScreen.NOT_SUPPORTED),
+            Triple("""{"status":"needs_second_factor","options":["totp"]}""", signIn, FlowScreen.NEEDS_SECOND_FACTOR),
+            Triple("""{"status":"needs_second_factor","options":["backup_code","retina"]}""", FlowKind.PasswordReset, FlowScreen.NEEDS_SECOND_FACTOR),
+            Triple("""{"status":"needs_second_factor","options":["sms_code"]}""", signIn, FlowScreen.NEEDS_SECOND_FACTOR),
+            // A passkey alone needs a sheet, which `flowScreen` is told of; a sign-up has no
+            // route that takes a second factor; a method nobody knows has no action.
+            Triple("""{"status":"needs_second_factor","options":["passkey"]}""", signIn, FlowScreen.NOT_SUPPORTED),
+            Triple("""{"status":"needs_second_factor","options":["totp"]}""", FlowKind.SignUp, FlowScreen.NOT_SUPPORTED),
+            Triple("""{"status":"needs_second_factor","options":["retina"]}""", signIn, FlowScreen.NOT_SUPPORTED),
+            Triple("""{"status":"needs_second_factor","options":[]}""", signIn, FlowScreen.NOT_SUPPORTED),
+            Triple("""{"status":"needs_factor_enrolment","methods":["totp"]}""", signIn, FlowScreen.NEEDS_FACTOR_ENROLMENT),
+            Triple("""{"status":"needs_factor_enrolment","methods":["totp"]}""", FlowKind.SignUp, FlowScreen.NEEDS_FACTOR_ENROLMENT),
+            Triple("""{"status":"needs_factor_enrolment","methods":["retina"]}""", signIn, FlowScreen.NOT_SUPPORTED),
             // No action of this version answers these.
-            Triple("""{"status":"needs_second_factor","options":["totp"]}""", signIn, FlowScreen.NOT_SUPPORTED),
-            Triple("""{"status":"needs_factor_enrolment","methods":["totp"]}""", signIn, FlowScreen.NOT_SUPPORTED),
             Triple("""{"status":"needs_identifier"}""", signIn, FlowScreen.NOT_SUPPORTED),
             Triple("""{"status":"needs_something_new"}""", signIn, FlowScreen.NOT_SUPPORTED),
         )
         for ((json, kind, screen) in table) {
             assertEquals(screen, flowScreen(step(json), kind), "$json in $kind")
         }
+        val passkeyOnly = step("""{"status":"needs_second_factor","options":["passkey"]}""")
+        assertEquals(FlowScreen.NEEDS_SECOND_FACTOR, flowScreen(passkeyOnly, signIn, passkeys = true))
+        assertEquals(FlowScreen.NOT_SUPPORTED, flowScreen(passkeyOnly, FlowKind.SignUp, passkeys = true))
     }
 
     @Test

@@ -1,6 +1,8 @@
 package dev.tula.auth.journeys
 
 import dev.tula.auth.AuthState
+import dev.tula.auth.stepUpMethods
+import dev.tula.auth.PasskeySheet
 import dev.tula.auth.CodeStrategy
 import dev.tula.auth.FlowScreen
 import dev.tula.auth.HttpRequest
@@ -1228,6 +1230,515 @@ class JourneysTest {
             // The application can leave the attempt, and a new one is a sign-in like any other.
             flow.discard()
             assertEquals("complete", signIn(world, email).step.status)
+        }
+
+    /** A user with an authenticator app, a time step after its code confirmed the enrolment. */
+    private class Enrolled(val device: Device, val email: String, val secret: String, val codes: List<String>) {
+        val tula get() = device.tula
+    }
+
+    private suspend fun enrolled(world: World): Enrolled {
+        val account = signUp(world)
+        val secret = account.tula.factors.startTotp().secret
+        val codes = account.tula.factors.confirmTotp(world.totp(secret))
+        // The next sign-in's code is of another time step: a code is accepted once.
+        world.advance(Totp.STEP_MS)
+        return Enrolled(account.device, account.email, secret, codes)
+    }
+
+    private fun options(step: FlowStep): List<String> =
+        assertIs<FlowStep.NeedsSecondFactor>(step).value.options.map { it.rawValue }
+
+    /** A device that proved the password and waits at the second factor. */
+    private suspend fun atSecondFactor(
+        world: World,
+        email: String,
+        password: String = PASSWORD,
+        offered: List<String> = listOf("totp", "backup_code"),
+        passkeys: PasskeySheet? = null,
+    ): Entry {
+        val device = world.client(passkeys = passkeys)
+        val flow = device.tula.signIn(email)
+        val step = flow.submitPassword(password)
+        assertEquals(offered, options(step))
+        assertFalse(device.tula.state.value is AuthState.SignedIn)
+        return Entry(device, flow, step)
+    }
+
+    private suspend fun proven(device: Device): Set<String> = amr(device.tula.session.getToken())
+
+    private fun stepUps(world: World) = world.sent("/v1/client/sessions/step-up")
+
+    @Test
+    @Journey("two-step enrolment and sign-in")
+    fun `two-step verification - enrol an authenticator, then sign in with the password and its code`() =
+        journey { world ->
+            val account = signUp(world)
+            val tula = account.tula
+            var factors = tula.factors.get()
+            assertFalse(factors.totp.enabled)
+            assertNull(factors.totp.confirmedAt)
+            assertEquals(0, factors.backupCodes.remaining)
+            assertEquals(false, factors.sms?.enabled)
+
+            val enrolment = tula.factors.startTotp()
+            val secret = enrolment.secret
+            assertTrue(Regex("^[A-Z2-7]{32}$").matches(secret))
+            assertTrue(enrolment.uri.startsWith("otpauth://totp/"))
+            assertContains(enrolment.uri, "secret=$secret")
+            assertFalse(tula.factors.get().totp.enabled)
+
+            val refused = caught { tula.factors.confirmTotp(world.wrongTotp(secret)) }
+            assertEquals("mfa.invalid_code", refused.code)
+            assertEquals(422, refused.status)
+            val before = world.refreshes().size
+            val codes = tula.factors.confirmTotp(world.totp(secret))
+            assertEquals(10, codes.size)
+            assertTrue(codes.all(::isBackupCode))
+            // The client refreshed by itself, so that its token says what was proven.
+            assertEquals(before + 1, world.refreshes().size)
+            assertContains(proven(account.device), "mfa")
+            factors = tula.factors.get()
+            assertTrue(factors.totp.enabled)
+            assertEquals(10, factors.backupCodes.remaining)
+            val visible = "$tula ${tula.state.value} ${tula.factors}"
+            for (hidden in codes + secret) {
+                assertFalse(hidden in visible)
+            }
+
+            world.advance(Totp.STEP_MS)
+            val second = atSecondFactor(world, account.email)
+            assertEquals(FlowScreen.NEEDS_SECOND_FACTOR, second.flow.screen)
+            assertEquals("complete", second.flow.submitTotp(world.totp(secret)).status)
+            assertEquals(account.email, signedIn(second.device).user?.email)
+            assertTrue(proven(second.device).containsAll(setOf("pwd", "otp", "mfa")))
+            assertEquals(10, second.tula.factors.get().backupCodes.remaining)
+        }
+
+    @Test
+    @Journey("second factor lockout")
+    fun `second factor lockout - six wrong codes, then every try is rate_limited, for the user and not the attempt`() =
+        journey { world ->
+            val user = enrolled(world)
+            val first = atSecondFactor(world, user.email)
+            val wrong = world.wrongTotp(user.secret)
+            repeat(6) {
+                val error = caught { first.flow.submitTotp(wrong) }
+                assertEquals("mfa.invalid_code", error.code)
+                assertEquals(422, error.status)
+            }
+            val locked = caught { first.flow.submitTotp(wrong) }
+            assertEquals("rate_limited", locked.code)
+            assertEquals(429, locked.status)
+            assertTrue((locked.retryAfterMs ?: 0) > 0)
+            assertEquals("rate_limited", caught { first.flow.submitBackupCode(user.codes[0]) }.code)
+            assertEquals("needs_second_factor", first.flow.step.status)
+
+            // The count is the user's: a new attempt with the right code is locked out too.
+            val again = atSecondFactor(world, user.email)
+            val still = caught { again.flow.submitTotp(world.totp(user.secret)) }
+            assertEquals("rate_limited", still.code)
+            assertEquals(429, still.status)
+            assertFalse(again.tula.state.value is AuthState.SignedIn)
+            assertFalse(first.tula.state.value is AuthState.SignedIn)
+        }
+
+    @Test
+    @Journey("authenticator code replay")
+    fun `an authenticator code is accepted once - not after it confirmed the enrolment, and not on a second sign-in`() =
+        journey { world ->
+            val account = signUp(world)
+            val secret = account.tula.factors.startTotp().secret
+            val confirming = world.totp(secret)
+            account.tula.factors.confirmTotp(confirming)
+
+            val first = atSecondFactor(world, account.email)
+            var replayed = caught { first.flow.submitTotp(confirming) }
+            assertEquals("mfa.invalid_code", replayed.code)
+            assertEquals(422, replayed.status)
+            assertFalse(first.tula.state.value is AuthState.SignedIn)
+
+            world.advance(Totp.STEP_MS)
+            val next = world.totp(secret)
+            assertEquals("complete", first.flow.submitTotp(next).status)
+            signedIn(first.device)
+
+            val second = atSecondFactor(world, account.email)
+            replayed = caught { second.flow.submitTotp(next) }
+            assertEquals("mfa.invalid_code", replayed.code)
+            assertFalse(second.tula.state.value is AuthState.SignedIn)
+        }
+
+    @Test
+    @Journey("backup codes")
+    fun `backup codes - each works once and says how many are left, and a new set replaces the old one`() =
+        journey { world ->
+            val user = enrolled(world)
+            val codes = user.codes
+
+            val first = atSecondFactor(world, user.email)
+            var refused = caught { first.flow.submitBackupCode(unknownBackupCode(codes)) }
+            assertEquals("mfa.invalid_code", refused.code)
+            assertEquals(422, refused.status)
+            var used = first.flow.submitBackupCode("  ${codes[0]}  ")
+            assertEquals("complete", used.step.status)
+            assertEquals(9, used.remaining)
+            signedIn(first.device)
+            assertEquals(9, first.tula.factors.get().backupCodes.remaining)
+            assertFalse(codes[0] in "${first.flow} $used ${first.flow.snapshot()}")
+
+            val second = atSecondFactor(world, user.email)
+            refused = caught { second.flow.submitBackupCode(codes[0]) }
+            assertEquals("mfa.invalid_code", refused.code)
+            used = second.flow.submitBackupCode(codes[1])
+            assertEquals("complete", used.step.status)
+            assertEquals(8, used.remaining)
+
+            val fresh = second.tula.factors.regenerateBackupCodes()
+            assertEquals(10, fresh.size)
+            assertTrue(fresh.none { it in codes })
+            assertEquals(10, second.tula.factors.get().backupCodes.remaining)
+
+            val third = atSecondFactor(world, user.email)
+            assertEquals("mfa.invalid_code", caught { third.flow.submitBackupCode(codes[2]) }.code)
+            used = third.flow.submitBackupCode(fresh[0])
+            assertEquals("complete", used.step.status)
+            assertEquals(9, used.remaining)
+            signedIn(third.device)
+        }
+
+    @Test
+    @Journey("password reset with a second factor")
+    fun `a password reset stops at the second factor - no session until the authenticator's code`() =
+        journey { world ->
+            val before = enrolled(world)
+            world.advance(61_000)
+            val device = world.client()
+            val flow = device.tula.resetPassword(before.email)
+            val step = flow.submit(world.code(before.email), NEW_PASSWORD)
+            assertEquals(listOf("totp", "backup_code"), options(step))
+            assertEquals(FlowScreen.NEEDS_SECOND_FACTOR, flow.screen)
+            assertFalse(device.tula.state.value is AuthState.SignedIn)
+
+            val refused = caught { flow.submitTotp(world.wrongTotp(before.secret)) }
+            assertEquals("mfa.invalid_code", refused.code)
+            assertEquals(422, refused.status)
+            assertEquals("needs_second_factor", flow.step.status)
+
+            assertEquals("complete", flow.submitTotp(world.totp(before.secret)).status)
+            assertEquals(before.email, signedIn(device).user?.email)
+
+            // The reset ended the session the password was changed under.
+            assertNull(before.tula.session.refresh())
+            assertEquals(AuthState.SignedOut, before.tula.state.value)
+            world.advance(Totp.STEP_MS)
+            atSecondFactor(world, before.email, password = NEW_PASSWORD)
+        }
+
+    @Test
+    @Journey("step-up")
+    fun `step-up - a sensitive call says what to prove, a step-up installs a fresh token for the same session, and the repeated call succeeds`() =
+        journey { world ->
+            val account = signUp(world)
+            val tula = account.tula
+            val sessionId = signedIn(account.device).sessionId
+
+            val wrongPassword = caught { tula.stepUp.withPassword("wrong-password-1") }
+            assertEquals("auth.invalid_credentials", wrongPassword.code)
+            assertEquals(401, wrongPassword.status)
+            signedIn(account.device)
+            val tokenBefore = tula.session.getToken()
+            val stored = account.device.storage.get(world.storageKey)
+            world.advance(1_000)
+            tula.stepUp.withPassword(PASSWORD)
+            assertNotEquals(tokenBefore, tula.session.getToken())
+            assertEquals(sessionId, signedIn(account.device).sessionId)
+            assertContains(proven(account.device), "pwd")
+            // A step-up answers an access token and no refresh token: what is stored stays.
+            assertEquals(200, stepUps(world).last().status)
+            assertFalse("refreshToken" in stepUps(world).last().responseBody)
+            assertEquals(stored, account.device.storage.get(world.storageKey))
+            assertEquals(0, world.refreshes().size)
+            assertTrue(account.device.states.all { it is AuthState.SignedIn })
+
+            val noFactor = caught { tula.stepUp.withTotp("123456") }
+            assertEquals("auth.step_up_required", noFactor.code)
+            assertEquals(listOf("password", "email_code"), noFactor.stepUpMethods)
+
+            val secret = tula.factors.startTotp().secret
+            val codes = tula.factors.confirmTotp(world.totp(secret))
+            assertEquals(10, tula.factors.get().backupCodes.remaining)
+
+            world.advance(11 * 60_000)
+            val refusals = listOf(
+                caught { tula.factors.regenerateBackupCodes() },
+                caught { tula.factors.disableTotp() },
+                caught { tula.changePassword(PASSWORD, NEW_PASSWORD) },
+            )
+            for (refused in refusals) {
+                assertEquals("auth.step_up_required", refused.code)
+                assertEquals(403, refused.status)
+                assertEquals(listOf("totp", "backup_code"), refused.stepUpMethods)
+            }
+            val asked = stepUps(world).size
+
+            // With a second factor the password alone steps nothing up.
+            assertEquals(listOf("totp", "backup_code"), caught { tula.stepUp.withPassword(PASSWORD) }.stepUpMethods)
+            val badCode = caught { tula.stepUp.withBackupCode(unknownBackupCode(codes)) }
+            assertEquals("mfa.invalid_code", badCode.code)
+            assertEquals(422, badCode.status)
+            assertEquals(asked + 2, stepUps(world).size)
+
+            val refreshes = world.refreshes().size
+            tula.stepUp.withBackupCode(codes[0])
+            assertEquals(refreshes, world.refreshes().size)
+            assertTrue(proven(account.device).containsAll(setOf("backup_code", "mfa")))
+            assertEquals(sessionId, signedIn(account.device).sessionId)
+
+            assertEquals(10, tula.factors.regenerateBackupCodes().size)
+            // What was proven is the session's: a refresh keeps it.
+            tula.session.refresh()
+            assertContains(proven(account.device), "mfa")
+            tula.changePassword(PASSWORD, NEW_PASSWORD)
+            signedIn(account.device)
+        }
+
+    @Test
+    @Journey("step-up window per profile")
+    fun `a sensitive call past the profile's window asks for a step-up, and works again after it`() =
+        journey { world ->
+            world.settings {
+                it.with("sessions", "profiles", "mobile", "accessTokenTtl", value = JsonPrimitive("5m"))
+                    .with("sessions", "profiles", "mobile", "stepUpAfter", value = JsonPrimitive("1m"))
+            }
+            val account = signUp(world)
+            val tula = account.tula
+            tula.factors.startTotp()
+            world.advance(61_000)
+            val error = caught { tula.factors.startTotp() }
+            assertEquals("auth.step_up_required", error.code)
+            assertContains(error.stepUpMethods, "password")
+            // Only what changes how the account is protected asks: the user is still read.
+            assertTrue(tula.user().id.isNotEmpty())
+            tula.stepUp.withPassword(PASSWORD)
+            assertTrue(tula.factors.startTotp().secret.isNotEmpty())
+        }
+
+    @Test
+    @Journey("admin second factor reset")
+    fun `an admin resets a user's second factor - their sessions end at once, and the next sign-in needs the password alone`() =
+        journey { world ->
+            val user = enrolled(world)
+            val userId = signedIn(user.device).user?.id
+            World.expect(204, world.admin("DELETE", "/v1/admin/users/$userId/factors"))
+
+            assertEquals(401, caught { user.tula.factors.get() }.status)
+            assertEquals(AuthState.SignedOut, user.tula.state.value)
+            assertEquals(1, user.device.states.count { it == AuthState.SignedOut })
+
+            val again = signIn(world, user.email)
+            assertEquals("complete", again.step.status)
+            val factors = again.tula.factors.get()
+            assertFalse(factors.totp.enabled)
+            assertEquals(0, factors.backupCodes.remaining)
+        }
+
+    @Test
+    @Journey("required second factor")
+    fun `policy required - sign-in and sign-up stop at the enrolment and complete with backup codes, and the factor cannot be turned off`() =
+        journey { world ->
+            val existing = signUp(world)
+            assertEquals("optional", existing.tula.config().mfa?.policy?.rawValue)
+            world.settings { it.with("mfa", "policy", value = JsonPrimitive("required")) }
+            assertEquals("required", existing.tula.config(force = true).mfa?.policy?.rawValue)
+
+            val entry = signIn(world, existing.email)
+            val asked = assertIs<FlowStep.NeedsFactorEnrolment>(entry.step)
+            assertEquals(listOf("totp"), asked.value.methods.map { it.rawValue })
+            assertEquals(FlowScreen.NEEDS_FACTOR_ENROLMENT, entry.flow.screen)
+            assertFalse(entry.tula.state.value is AuthState.SignedIn)
+            val enrolment = entry.flow.startTotpEnrolment()
+            val secret = enrolment.secret
+            assertEquals(32, secret.length)
+            assertTrue(enrolment.uri.startsWith("otpauth://totp/"))
+            assertEquals("needs_factor_enrolment", entry.flow.step.status)
+            val refused = caught { entry.flow.confirmTotpEnrolment(world.wrongTotp(secret)) }
+            assertEquals("mfa.invalid_code", refused.code)
+            assertEquals(422, refused.status)
+            assertFalse(entry.tula.state.value is AuthState.SignedIn)
+
+            val result = entry.flow.confirmTotpEnrolment(world.totp(secret))
+            assertEquals("complete", result.step.status)
+            assertNull(result.failure)
+            assertEquals(10, result.backupCodes.size)
+            assertTrue(result.backupCodes.all(::isBackupCode))
+            assertEquals(existing.email, signedIn(entry.device).user?.email)
+            assertContains(proven(entry.device), "mfa")
+            val visible = "${entry.flow} ${entry.flow.snapshot()} ${entry.tula} ${entry.tula.state.value} $result"
+            for (hidden in result.backupCodes + secret) {
+                assertFalse(hidden in visible)
+            }
+
+            val disable = caught { entry.tula.factors.disableTotp() }
+            assertEquals("mfa.required_by_policy", disable.code)
+            assertEquals(403, disable.status)
+            assertTrue(entry.tula.factors.get().totp.enabled)
+
+            // A sign-up stops at the same step, after its emailed code.
+            val newcomer = world.client()
+            val address = world.freshEmail()
+            val joining = newcomer.tula.signUp(email = address, password = PASSWORD)
+            val verified = joining.verifyEmail(world.code(address))
+            assertIs<FlowStep.NeedsFactorEnrolment>(verified)
+            assertEquals(FlowScreen.NEEDS_FACTOR_ENROLMENT, joining.screen)
+            assertFalse(newcomer.tula.state.value is AuthState.SignedIn)
+            val theirs = joining.startTotpEnrolment()
+            val joined = joining.confirmTotpEnrolment(world.totp(theirs.secret))
+            assertEquals("complete", joined.step.status)
+            assertEquals(10, joined.backupCodes.size)
+            assertEquals(address, signedIn(newcomer).user?.email)
+
+            world.advance(Totp.STEP_MS)
+            val later = atSecondFactor(world, address)
+            assertEquals("complete", later.flow.submitTotp(world.totp(theirs.secret)).status)
+        }
+
+    /** Switch the texted second step on or off, with text messages sent to the US. */
+    private fun smsSecondStep(world: World, enabled: Boolean, signInBySms: Boolean = false) = world.settings {
+        it.with("signIn", "methods", "smsCode", value = j("""{"enabled":$signInBySms}"""))
+            .with("mfa", "smsCode", value = j("""{"enabled":$enabled}"""))
+            .with("sms", value = j(smsOn))
+    }
+
+    private suspend fun withNumber(world: World, number: String): Account =
+        signUp(world).also { world.givePhoneNumber(it.email, number) }
+
+    @Test
+    @Journey("a texted code as the second factor")
+    fun `a user with a proven number enrols a texted code, signs in with password and code, and is not let through once the option is off`() =
+        journey { world ->
+            val number = "+12025550145"
+            smsSecondStep(world, true)
+
+            val bare = signUp(world)
+            val none = bare.tula.factors.get().sms
+            assertEquals(listOf(false, false, false), listOf(none?.enabled, none?.inUse, none?.available))
+            val needsNumber = caught { bare.tula.factors.startSms() }
+            assertEquals("mfa.phone_number_required", needsNumber.code)
+            assertEquals(409, needsNumber.status)
+
+            val owner = withNumber(world, number)
+            assertEquals(true, owner.tula.factors.get().sms?.available)
+            val before = world.texts().size
+            val receipt = owner.tula.factors.startSms()
+            assertEquals("sms_code", receipt.method)
+            assertEquals("***45", receipt.destination)
+            assertEquals(before + 1, world.texts().size)
+            val enrolCode = world.textedCode(number)
+            val wrong = enrolCode.dropLast(1) + ((enrolCode.last().digitToInt() + 1) % 10)
+            val refused = caught { owner.tula.factors.confirmSms(wrong) }
+            assertEquals("mfa.invalid_code", refused.code)
+            assertEquals(422, refused.status)
+            assertEquals(false, owner.tula.factors.get().sms?.enabled)
+            val factors = owner.tula.factors.confirmSms(enrolCode)
+            assertEquals(listOf(true, true, false), listOf(factors.sms?.enabled, factors.sms?.inUse, factors.sms?.available))
+            assertFalse(factors.totp.enabled)
+            // A texted code is never `mfa`.
+            assertEquals(setOf("email", "sms"), proven(owner.device))
+            assertEquals("mfa.already_enabled", caught { owner.tula.factors.startSms() }.code)
+
+            world.advance(61_000)
+            val sent = world.texts().size
+            val entry = atSecondFactor(world, owner.email, offered = listOf("sms_code"))
+            assertEquals(FlowScreen.NEEDS_SECOND_FACTOR, entry.flow.screen)
+            // Nothing is texted by arriving at the step, and the enrolment's code proves nothing here.
+            assertEquals(sent, world.texts().size)
+            assertEquals("mfa.invalid_code", caught { entry.flow.submitSmsCode(enrolCode) }.code)
+
+            val prepared = assertIs<FlowStep.NeedsSecondFactor>(entry.flow.prepareSmsCode())
+            assertEquals("sms_code", prepared.value.prepared?.method?.rawValue)
+            assertEquals("***45", prepared.value.prepared?.destination)
+            assertEquals(sent + 1, world.texts().size)
+            val code = world.textedCode(number)
+            assertFalse(code in prepared.toString())
+            val soon = caught { entry.flow.prepareSmsCode() }
+            assertEquals("rate_limited", soon.code)
+            assertEquals(429, soon.status)
+            assertEquals("complete", entry.flow.submitSmsCode(code).status)
+            assertEquals(setOf("pwd", "sms"), proven(entry.device))
+
+            // Off means refused, never skipped.
+            smsSecondStep(world, false)
+            val later = atSecondFactor(world, owner.email, offered = listOf("sms_code"))
+            val off = caught { later.flow.prepareSmsCode() }
+            assertEquals("auth.method_disabled", off.code)
+            assertEquals(403, off.status)
+            assertEquals("auth.method_disabled", caught { later.flow.submitSmsCode(code) }.code)
+            assertFalse(later.tula.state.value is AuthState.SignedIn)
+            assertEquals(sent + 1, world.texts().size)
+
+            entry.tula.factors.disableSms()
+            assertEquals(false, entry.tula.factors.get().sms?.enabled)
+            assertEquals(number, entry.tula.user().phoneNumber)
+            assertEquals("complete", signIn(world, owner.email).step.status)
+        }
+
+    @Test
+    @Journey("a texted code is never used beside an authenticator app")
+    fun `a user with an authenticator app cannot enrol a texted code, and their sign-in never offers one`() =
+        journey { world ->
+            val number = "+12025550146"
+            smsSecondStep(world, true)
+            val owner = withNumber(world, number)
+            val secret = owner.tula.factors.startTotp().secret
+            owner.tula.factors.confirmTotp(world.totp(secret))
+            val sent = world.texts().size
+
+            val sms = owner.tula.factors.get().sms
+            assertEquals(listOf(false, false, false), listOf(sms?.enabled, sms?.inUse, sms?.available))
+            val refused = caught { owner.tula.factors.startSms() }
+            assertEquals("mfa.sms_not_allowed", refused.code)
+            assertEquals(409, refused.status)
+            assertEquals("mfa.sms_not_allowed", caught { owner.tula.factors.confirmSms("123456") }.code)
+
+            val entry = atSecondFactor(world, owner.email)
+            val prepare = caught { entry.flow.prepareSmsCode() }
+            assertEquals("flow.invalid_step", prepare.code)
+            assertEquals(409, prepare.status)
+            assertEquals("flow.invalid_step", caught { entry.flow.submitSmsCode("123456") }.code)
+            assertFalse(entry.tula.state.value is AuthState.SignedIn)
+            assertEquals(sent, world.texts().size)
+
+            world.advance(Totp.STEP_MS)
+            assertEquals("complete", entry.flow.submitTotp(world.totp(secret)).status)
+            assertEquals(setOf("mfa", "otp", "pwd"), proven(entry.device))
+        }
+
+    @Test
+    @Journey("a texted sign-in code is not completed by a texted second step")
+    fun `a sign-in started with the phone number is refused for a user whose second step is a texted code, and with the password it asks for the code`() =
+        journey { world ->
+            val number = "+12025550147"
+            smsSecondStep(world, true, signInBySms = true)
+            val owner = withNumber(world, number)
+            owner.tula.factors.startSms()
+            owner.tula.factors.confirmSms(world.textedCode(number))
+            world.advance(61_000)
+
+            val device = world.client()
+            val flow = device.tula.signIn(number)
+            flow.prepareFirstFactor(CodeStrategy.SMS_CODE)
+            val code = world.textedCode(number)
+            val sent = world.texts().size
+            val refused = caught { flow.attemptFirstFactor(CodeStrategy.SMS_CODE, code) }
+            assertEquals("mfa.needs_other_sign_in", refused.code)
+            assertEquals(403, refused.status)
+            assertFalse(device.tula.state.value is AuthState.SignedIn)
+            assertEquals("needs_first_factor", flow.step.status)
+            assertEquals("flow.invalid_step", caught { flow.prepareSmsCode() }.code)
+            assertEquals(sent, world.texts().size)
+
+            atSecondFactor(world, owner.email, offered = listOf("sms_code"))
         }
 
     private fun String.refreshToken(): String? =
