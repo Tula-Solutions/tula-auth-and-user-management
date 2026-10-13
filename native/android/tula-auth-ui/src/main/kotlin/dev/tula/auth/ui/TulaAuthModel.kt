@@ -482,10 +482,10 @@ class TulaAuthModel(
             flow?.discard()
             flow = null
             generation += 1
-            if (s.canRetryProvider) {
-                // A ticket kept for "Try again" belongs to the screen that offered it.
-                client.discardProviderSignIn()
-            }
+            // A ticket the client kept belongs to the screen that could present it again. The
+            // client keeps one for more failures than this screen offers "Try again" for, so
+            // what it holds is never asked of the state: it is dropped whenever a screen is left.
+            client.discardProviderSignIn()
             if (owesArrival) {
                 // The backup codes' screen was left another way than by its button: the flow
                 // had completed, so the app is told all the same.
@@ -521,7 +521,10 @@ class TulaAuthModel(
         val codes = s.backupCodes.takeIf { next == TulaAuthScreen.BackupCodes }.orEmpty()
         wipe()
         clearMessages()
-        s = s.copy(screen = next, setup = setup, backupCodes = codes)
+        // Going on from the screen that could try a provider again (a passkey that signed in,
+        // a step) leaves no ticket behind either.
+        client.discardProviderSignIn()
+        s = s.copy(screen = next, setup = setup, backupCodes = codes, canRetryProvider = false)
         ask(TulaAuthFocus.Title)
         if (next == TulaAuthScreen.SignedIn) {
             flow = null
@@ -1040,8 +1043,14 @@ class TulaAuthModel(
                     sheetFailed(error, asked, words.ways.providerRefused)
                     val code = (error as? TulaError)?.code
                     if (asked == generation && code != ClientErrorCodes.FLOW_BUSY) {
-                        // The ticket is kept by the client only for an exchange that got no answer.
-                        s = s.copy(canRetryProvider = browser && code in NO_ANSWER)
+                        // "Try again" is offered for an exchange that got no answer. What the
+                        // client kept for any other failure is dropped here, so that it never
+                        // holds a ticket this screen has no button for.
+                        val again = browser && code in NO_ANSWER
+                        s = s.copy(canRetryProvider = again)
+                        if (!again) {
+                            client.discardProviderSignIn()
+                        }
                     }
                 }
             }

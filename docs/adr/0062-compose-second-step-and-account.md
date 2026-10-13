@@ -98,6 +98,18 @@ a `Bundle`, and the state and the model print as their type's name. The cost is 
 and sharper here: an activity that is made again while backup codes are shown loses them, and
 they are not shown a second time (new ones can be made from the account screen).
 
+**A confirming answer that arrives after its screen was left turns the authenticator on and
+shows no codes.** The request that confirms an enrolment cannot be taken back once it is
+sent. Where the person leaves the setup screen while it is on its way (`close()`, "Cancel",
+a move to another flow), the server takes the code all the same: the authenticator is on,
+and the backup codes its answer carried are dropped unseen, because a late answer changes
+nothing on a screen that has gone. Inside a sign-in the late answer also completed the
+sign-in, and the model shows "signed in" without codes. The person then has an authenticator
+and no backup codes they ever saw, and makes new ones from the account screen ("New
+backup codes", after confirming it is them). Showing the codes on whatever screen is open by
+then was decided against: it would draw a secret on a screen that did not ask for it. The
+model's tests of a late answer pin the drop.
+
 **The QR code is drawn by the library's own encoder** (`TulaQr.kt`), a Kotlin port of
 `packages/react/src/qr`. No dependency was added. The two are held together by one corpus,
 `packages/react/src/qr/qr-cases.json` (texts with the matrices the TypeScript encoder makes),
@@ -111,7 +123,10 @@ decoded it from the screen**; the corpus is what says the modules are right.
 
 The setup key and the backup codes each have a "Copy" control. Nothing is copied otherwise.
 The clip is made by `tulaSensitiveCopy(context)` with `ClipDescription.EXTRA_IS_SENSITIVE`
-(written by its string, so that it is set below API 33 too, where nothing reads it).
+(written by its string, so that it is set below API 33 too). **Before API 33 the mark is
+ignored**: the system reads it from Android 13 on, so on Android 9 to 12 (the library's
+`minSdk` is 28) the copy is an ordinary clip, shown wherever the system shows one and never
+cleared by it.
 
 What Android does with that, and what it does not:
 
@@ -165,7 +180,16 @@ number and its code, a question before something is removed).
 
 Not on the screen: connected provider accounts, an address for an account without one, a
 change of address and the deletion of the account. The client has calls for the first two;
-each is a screen of its own to decide.
+each is a screen of its own to decide (TULA-78).
+
+**The account is the session's it was read for.** The model has no subscription to the
+client; it asks whose session the client holds when the account is read, when an act is
+asked for and when an answer arrives. Where that is another session than the one drawn (the
+app kept the model across a sign-out and somebody else signed in), everything read or typed
+for the one before is dropped, a step-up that was owed a call with it, and an answer that was
+asked as the old session is nobody's. So an app that keeps a model across users reads it
+again (`load()`), and until it does the model still holds what it last drew: make a model
+per signed-in screen, as the example does, or call `load()` when the screen comes back.
 
 ### "Confirm it is you" is drawn from what the server answered, and then the act goes on
 
@@ -194,6 +218,14 @@ sign-out again (the client presents the token it could not revoke), and does **n
 `onSignedOut`. The client's state says signed out by then, so an app keeps `TulaAccount`
 until `onSignedOut`, as it keeps `TulaAuth` until `onSignedIn`. The example does.
 
+**A session that ended elsewhere is told once** (ADR 0060's rule). Where a read or an act
+fails and the client holds no session any more (it was revoked, its refresh was refused),
+and this screen did not end it, the screen is emptied, no section says it "could not be
+read", and `onSignedOut` is called: once for that session, however often the account is
+read afterwards, and again only for the next session to end after somebody signed in. Never
+after the screen's own sign-out, and never while that one is on its way or has failed: a
+failed sign-out stays what it is and says so.
+
 ### Words, errors and accessibility are ADR 0061's
 
 Every string is in `TulaStrings` (three nested tables were added: the ways, the second step,
@@ -218,8 +250,9 @@ least 48 dp both ways and shows its focus; a mark of a row ("This device") is te
   another one ended; an authenticator turned on from the account; a step-up by password after
   the server's clock was moved past ten minutes; a sign-out.
 - **A passkey sheet cannot be driven by a test.** One UI test gives the example a scripted
-  sheet that is closed (`ExampleSheets`, a seam in the example and not in the library) and
-  reads what the screen says. The request for the challenge is the real API's; the sheet is
+  sheet that is closed (`ExampleSheets`, a seam in the example and not in the library: an
+  object of the example's `debug` source set, which the UI tests run against; the release
+  build has one of the same name with nothing to set) and reads what the screen says. The request for the challenge is the real API's; the sheet is
   not Credential Manager's. No UI test covers Google's chooser, a provider's page, a texted
   code or a phone number: those are the model's tests.
 
@@ -253,7 +286,7 @@ modules, the example and its UI tests, and no job starts an emulator.
 
 - Renaming a passkey and an emailed link in the Kotlin client: TULA-76.
 - Connected provider accounts, an address for an account without one and account deletion
-  on the account screen.
+  on the account screen: TULA-78.
 - The SMS Retriever or User Consent API.
 - Asking the device whether it can show a passkey sheet before the button is drawn.
 - Running the UI tests in a workflow (ADR 0061).

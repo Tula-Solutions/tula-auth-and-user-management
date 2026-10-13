@@ -54,8 +54,12 @@ anything else has to be `https`.
   where an authenticator is set up inside a sign-in the client is signed in before the
   backup codes were shown. And the account screen stays after a sign-out the server could
   not be told of, which is not a sign-out: it says so and offers it again.
-- `ExampleSheets` is where the UI tests put a scripted sheet in place of the system's. An
-  app has no such thing.
+- `ExampleSheets` is where the UI tests put a scripted sheet in place of the system's. It
+  is example code only and is settable in the debug build only: the object with the four
+  settable properties is in `src/debug` (the UI tests run against the debug build), and
+  `src/release` has an object of the same name whose properties are `null` and cannot be
+  set, so a release build of the example can only show the system's sheets. An app has no
+  such thing.
 - The activity handles configuration changes itself (`android:configChanges` in the
   manifest), so a rotation keeps the open flow. Without that a rotation starts the screens
   over, on purpose: nothing typed is ever put in saved instance state.

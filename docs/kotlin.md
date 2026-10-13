@@ -465,6 +465,11 @@ token.
   `TulaAccount` then says the session may still be active on this device and offers the
   sign-out again; `onSignedOut` is called only for one the server was told of.
 
+`onSignedOut` is also called when the account screen finds that the session ended somewhere
+else (it was revoked, or its refresh was refused): once for that session, however often the
+account is read afterwards, with the screen emptied instead of every section saying it could
+not be read. It is never called for a sign-out that failed.
+
 An app that starts with a stored session reads `client.state` once, after `client.load()`,
 to choose which of the two to open on ([the example](../examples/compose/README.md) does).
 
@@ -500,10 +505,16 @@ instance state, not in a log, and gone from the model when the form is left. Bac
 are shown once; an activity that is made again while they are shown has lost them (new ones
 can be made on the account screen).
 
+**Leaving the setup while its code is being confirmed has a cost.** The request cannot be
+taken back: if its answer arrives after the screen was left, the authenticator is on and the
+backup codes that came with the answer were dropped unseen (a late answer draws nothing on a
+screen that has gone). The person makes new ones from the account screen.
+
 Each has a **Copy** control, and nothing is copied without a press. The copy is marked
 sensitive (`ClipDescription.EXTRA_IS_SENSITIVE`). What that does is Android's: from
 Android 13 the system hides the content in the clipboard preview and clears the clipboard
-by itself after a while; on older versions it does neither. **The library never clears the
+by itself after a while. **Before API 33 (Android 9 to 12) the mark is ignored**: the copy
+is an ordinary clip there. **The library never clears the
 clipboard** (it could not tell its own clip from what the person copied since), and a
 keyboard or an app with clipboard access can read it while it is there. To offer no copy,
 hand the model a `copy` that does nothing:
@@ -528,6 +539,17 @@ while the others stand.
 - **Passkeys.** Listed, added and removed. A passkey cannot be renamed in this version, and
   the screen says so. Without a passkey sheet nothing is added, and that is said too.
 - **Phone number.** Added with a texted code, and removed.
+
+**Not on the account screen** (TULA-78): connected provider accounts, giving an address to
+an account that has none, and deleting the account. The client has calls for the first two
+(`tula.identities`); the screen draws none of the three.
+
+**The account belongs to the session it was read for.** The model asks the client whose
+session it holds whenever the account is read, something is pressed or an answer arrives:
+if another user has signed in on the same client since, nothing of the user before is kept
+and an answer that was asked as them is dropped. The model is not told of a change by
+itself, so make one per signed-in screen (the example does), or call `load()` when a kept
+one is shown again.
 
 **Confirm it is you.** Where the server asks for a recent authentication
 (`auth.step_up_required`), the screen opens a form for a way the server named: the password,

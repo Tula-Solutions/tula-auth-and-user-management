@@ -1392,18 +1392,30 @@ and `client.sheets`. On 2026-10-13, on the same Mac, JDK, Android SDK, emulator 
 that section, with the sources as the commit that last changed this section has them:
 
 - **`bun run native:kotlin:test`**: `BUILD SUCCESSFUL`; `tula-auth` 223 tests, `tula-auth-ui`
-  157 tests, 0 failures, 0 skipped. Kover holds each module to 90% of lines; `tula-auth-ui`
+  166 tests, 0 failures, 0 skipped. Kover holds each module to 90% of lines; `tula-auth-ui`
   measured 97.0% (`:tula-auth-ui:koverLog`).
 - **The `kotlin` column of `conformance/client-journeys.json`**: 90 journeys, 24 not
   applicable, 1 not built (the emailed link, TULA-76), of 115 scenarios; from 86, 24 and 5.
   The four that were `not_built` under TULA-61 are journeys, and the fixture's `phone` route
   is gone.
 - **The Android build**: the seven tasks CI's `kotlin-android` job runs (unchanged: no module
-  and no task was added), `BUILD SUCCESSFUL`. No library was added to any module.
+  and no task was added), `BUILD SUCCESSFUL`, and with them
+  `:compose-example:compileReleaseKotlin`, which no CI job runs. No library was added to any
+  module.
 - **The UI tests on one emulator**: `bun run native/android/fixture/ui-tests.ts --avd
-  Pixel_10`: **16 tests, 0 failures, `BUILD SUCCESSFUL in 1m 25s`** (the eight of
-  `AuthScreensTest` and eight new ones in `AccountScreensTest`). Afterwards `adb devices`
-  listed nothing and no emulator or fixture process was left. The eight new ones: the second
+  Pixel_10`, four runs of the sixteen tests (the eight of `AuthScreensTest` and eight new
+  ones in `AccountScreensTest`) with the sources as they are now: **three with 16 tests,
+  0 failures** (`BUILD SUCCESSFUL in 1m 19s`, `1m 11s`, `1m 21s`) **and one, the first,
+  with one failure** (`BUILD FAILED in 1m 37s`). In that run
+  `anAuthenticatorIsTurnedOnFromTheAccount` waited twenty seconds for the backup codes after
+  pressing the setup's button and the screen still showed the setup, with no error, status
+  or notice said. **Why was not found**: the emulator was gone when the result was read, no
+  log of it was kept, and the next three runs passed. What can be said is narrow: nobody was
+  signed out (the title was the setup's), and no refusal was drawn. Whether the press never
+  reached the button, the request was slow on a cold fixture, or the model dropped an answer
+  is not known, and the test is to be treated as one that has failed once in four runs
+  until someone sees it fail with a log. After each run `adb devices` listed nothing and no
+  emulator or fixture process was left. The eight new ones: the second
   step refuses a wrong authenticator code at its field and takes the right one; the second
   step takes a backup code; an authenticator is set up inside a sign-in (the key and the QR
   code gone with their screen, nobody signed in until the codes were said to be saved); the
@@ -1429,6 +1441,10 @@ Not verified:
 | **The copy** | `tulaSensitiveCopy` compiles and is linted. No test pressed "Copy" on the emulator, read the clipboard back, or looked at the clipboard preview. What Android does with `EXTRA_IS_SENSITIVE` (hidden in the preview and the clipboard cleared after a while, from Android 13) is Android's documentation; none of it was observed. The flag is written by its string below API 33, where nothing reads it. |
 | **The QR code** | Held to the TypeScript encoder by a shared corpus on the JVM. The UI test sees that a node tagged as the QR code is drawn and gone afterwards; nobody scanned it with a camera, and no test decoded it from pixels. |
 | **Step-up on the emulator** | By password only, after the fixture's clock was moved. An authenticator's code, a backup code, an emailed code, a texted code, a passkey, the case of no method and a lockout are the model's tests. |
+| **What the account screen leaves out** | Connected provider accounts, an address for an account without one and account deletion are not drawn (TULA-78). The client has calls for the first two; no screen, model or test of this section touches any of the three. |
+| **A session that ended elsewhere, and a model kept across users** | The model's tests on a scripted engine (`AccountSessionTest`: `onSignedOut` once per ended session, nothing of the user before shown to the next, a late answer of the old session dropped, a repeat after a proof stopped by `close()`). No UI test revokes the emulator's session from elsewhere or signs a second user in. |
+| **An enrolment's answer that arrives after its screen was left** | The model's tests of a late answer (nothing drawn, no codes kept). That the authenticator is then on with its backup codes never shown is the stated cost (ADR 0062), not something a UI test produced. |
+| **The release build of the example** | `:compose-example:compileReleaseKotlin` compiles it with the `src/release` `ExampleSheets` (nothing settable). No release APK was installed or run; the UI tests run the debug build. |
 | **A sign-out that failed** | The model's test (a sign-out with no answer: said, offered again, `onSignedOut` not called, the retry delivered). No UI test cuts the connection during a sign-out; that the example then stays on the account screen was compiled and not seen. |
 | **Ending all other sessions, turning an authenticator off, new backup codes, a password change, removing a passkey** | The model's tests. No UI test presses them. |
 | **Whether the device can show a sheet** | Not asked. A button is drawn where the client was given a sheet; a device with no credential provider would draw it and then say the sheet failed. No device was at hand to see what Credential Manager answers there. |

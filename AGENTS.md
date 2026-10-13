@@ -2673,8 +2673,8 @@ set up inside a sign-in, a passkey and the providers on the first screen, and th
 - **A step with no action is `FlowScreen.NOT_SUPPORTED`, never an exception**: an unknown
   status, and a known one that offers only what this version cannot do. A new action widens
   `flowScreen` in the same change. **The Kotlin client has a call for a texted first-factor
-  code (`CodeStrategy.SMS_CODE`) where the Swift client has none until TULA-60**, so a step
-  that offers only `sms_code` is not `NOT_SUPPORTED` here.
+  code (`CodeStrategy.SMS_CODE`)**, as the Swift client has since TULA-60, so a step that
+  offers only `sms_code` is not `NOT_SUPPORTED` here.
 - **The journeys run over HTTP against `e2e/kotlin-fixture.ts`, a world per journey, and
   fail without it**: never skip one, never an `@Ignore` or an assumption in the suite. The
   fixture needs `KOTLIN_FIXTURE=1`, listens on 127.0.0.1 and keeps its `/__test/*` routes
@@ -2801,8 +2801,11 @@ sign-up, the emailed code that proves an address, a password reset and the repla
 an expired password (TULA-50), and for the second step, an authenticator set up inside a
 sign-in, a passkey, Google and the other providers, a texted code and the signed-in user's
 account (TULA-61, `TulaAccount`). They are the SwiftUI screens' design ("SwiftUI screens"
-above) on Android: a rule of the model changed in one is changed in the other, **and the
-Compose screens are ahead**: the SwiftUI ones draw no second step or account until TULA-60.
+above) on Android, and both libraries draw the same steps and the same account
+([ADR 0060](docs/adr/0060-swiftui-second-step-and-account.md),
+[ADR 0062](docs/adr/0062-compose-second-step-and-account.md)): **a rule of the model
+changed in one library is changed in the other in the same change**, or the ADR of the one
+that differs says why.
 
 - **Two modules, and the split is the rule.** `tula-auth-ui` (package `dev.tula.auth.ui`)
   is plain Kotlin on the JVM: `TulaAuthModel` and `TulaAccountModel`, `TulaAuthContent` and
@@ -2841,6 +2844,14 @@ Compose screens are ahead**: the SwiftUI ones draw no second step or account unt
   on a guess, and never ask a sheet during composition. Where that leaves no way, the
   screen says so in words (`ways.noWayHere`). `client.sheets` is booleans: it never hands a
   sheet to the screens, and it does not say the device can show one.
+- **A provider's ticket never outlives the screen that could present it again.** The
+  client keeps one for more failures than the screen offers "Try again" for
+  (`ProviderRoundTrip.RETRYABLE` against the model's `NO_ANSWER`), so the model never asks
+  its own state whether one is held: `leave()` (every close, every change of mode,
+  "Start again", a completion) and `show()` (going on from the start: a passkey that
+  signed in, a step) call `client.discardProviderSignIn()` unconditionally, and a failure
+  the screen has no button for discards at once. Never guard that call on
+  `canRetryProvider`. `WaysAndSecondStepTest` has the test of each.
 - **A sheet or a page that was closed is `notice`**: never `formError`, never `status`,
   nobody signed in, the button works again. A sheet that failed and a passkey the server
   refused are problems in their own words. **One ceremony at a time**: the client's
@@ -2875,7 +2886,19 @@ Compose screens are ahead**: the SwiftUI ones draw no second step or account unt
   fails for "trusted" or "verified" of a device. **A passkey cannot be renamed and the
   screen says so** (`renameUnavailable`; TULA-76): never draw a rename that does nothing.
   Connected provider accounts, an address for an account without one and account deletion
-  are not on it; each is a decision.
+  are not on it (TULA-78); each is a decision.
+- **The account is the session's it was read for, and a session that ended elsewhere is
+  told once** (ADR 0060's rule, `AccountSessionTest`). The model asks the client whose
+  session it is when the account is read, when an act is asked for and when an answer
+  arrives (`sync()`, and `current()` in place of the bare generation: never compare an
+  answer's `asked` with `generation` directly). Another session than the one drawn means
+  everything read or typed is dropped, an owed step-up included, and an answer asked as
+  the old session is nobody's. No session, and not by this screen's doing
+  (`endedElsewhere()`): the screen is emptied, no section says "could not be read", and
+  `onSignedOut` is called **once per ended session** (the latch is `signedOut`, reset when
+  a session exists again), never after the screen's own sign-out, never while that one is
+  on its way or failed. The model has no subscription to the client: it finds out at its
+  next call, and the docs say so.
 - **"Confirm it is you" is drawn from `auth.step_up_required`'s `params.methods`** (the
   client's `stepUpMethods`), filtered only by "this client has a form and a sheet for
   it": the model never decides which call needs one or what an account may step up with.
@@ -2885,7 +2908,10 @@ Compose screens are ahead**: the SwiftUI ones draw no second step or account unt
   out once, without a press; a password change is not** (its passwords were emptied as
   they were sent and are held nowhere: its form is shown again, empty). Never keep a
   secret to repeat a call. A new account action says which it is (`Owed`'s `again`), with
-  a row in `AccountTest`.
+  a row in `AccountTest`. **The repeat goes through `repeat(again, proved)` and never
+  straight to `execute`**: it is made only while the generation the proof was accepted
+  under still holds (no `close()`, no cancel, no other session since) and what is drawn
+  still offers the act.
 - **Only a number or a boolean of a server's `params` fills a placeholder** (a wait, a
   count); a masked destination from an answer's body is the one string of the server's
   that is drawn.
@@ -2955,7 +2981,10 @@ Compose screens are ahead**: the SwiftUI ones draw no second step or account unt
   from the emails it sent, an authenticator's code computed from the setup key by the
   server's clock (`World.totp`). A new screen or state gets a test there. **What a test
   cannot drive is scripted through `ExampleSheets`, a seam of the example and never of the
-  library**: one test gives the app a passkey sheet that is closed. No UI test opens a
+  library**: one test gives the app a passkey sheet that is closed. **The seam is in the
+  example's `debug` source set** (what the UI tests run against); `src/release` has an
+  object of the same name whose four properties are `null` and have no setter. Never move
+  the settable one back to `main`, and never give the release one a setter. No UI test opens a
   passkey sheet, Google's chooser or a browser, receives a text message or adds a phone
   number, and no doc may say one does. **The fixture is not
   loosened for it**: it stays bound to 127.0.0.1 behind `e2e/guard.ts` and is reached from

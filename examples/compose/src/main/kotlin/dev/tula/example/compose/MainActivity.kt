@@ -50,9 +50,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.edit
 import dev.tula.auth.AuthState
-import dev.tula.auth.BrowserSession
-import dev.tula.auth.GoogleSheet
-import dev.tula.auth.PasskeySheet
 import dev.tula.auth.TulaClient
 import dev.tula.auth.TulaError
 import dev.tula.auth.android.CredentialManagerGoogleSheet
@@ -62,38 +59,6 @@ import dev.tula.auth.compose.TulaAccount
 import dev.tula.auth.compose.TulaAuth
 import dev.tula.auth.compose.tulaSensitiveCopy
 import dev.tula.auth.ui.TulaAccountModel
-
-/**
- * What the UI tests put in place of the system's sheets: a passkey sheet, Google's account
- * chooser and a browser cannot be driven by a test, so a test scripts one here before it starts
- * the activity. Nothing else writes these, and an app has no such thing: it gives its client
- * the adapters of `tula-auth-android`.
- */
-object ExampleSheets {
-    /** A passkey sheet in place of Credential Manager's. */
-    @Volatile
-    var passkeys: PasskeySheet? = null
-
-    /** An account chooser in place of Google's. */
-    @Volatile
-    var google: GoogleSheet? = null
-
-    /** A browser session. The example wires none of its own: its manifest claims no redirect URL. */
-    @Volatile
-    var browser: BrowserSession? = null
-
-    /** Where a provider's page returns to, for a scripted browser session. */
-    @Volatile
-    var redirectUrl: String? = null
-
-    /** Back to the system's sheets. */
-    fun reset() {
-        passkeys = null
-        google = null
-        browser = null
-        redirectUrl = null
-    }
-}
 
 /**
  * Where the API is, and the environment's publishable key: all the app has to be told. With

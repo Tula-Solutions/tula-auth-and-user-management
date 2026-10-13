@@ -1,6 +1,8 @@
 package dev.tula.auth.ui
 
 import dev.tula.auth.AuthState
+import dev.tula.auth.ProviderOutcome
+import dev.tula.auth.ProviderRefusal
 import dev.tula.auth.SheetFailure
 import dev.tula.auth.TulaSheetException
 import dev.tula.auth.generated.OAuthProvider
@@ -336,6 +338,47 @@ class WaysAndSecondStepTest {
         answered.tap(CONTINUE_WITH_GITHUB)
         assertEquals(answered.model.strings.message("oauth.account_exists"), answered.state.formError)
         assertFalse(answered.state.canRetryProvider)
+    }
+
+    @Test
+    fun `a ticket the client kept for a failure the screen offers no retry for goes when the screen is closed`() = runTest {
+        // The client keeps a ticket for more codes than the screen offers "Try again" for
+        // (`storage.failed` among them): whatever it kept, a closed screen leaves none behind.
+        val bench = Bench(browser = { _, redirectUrl -> returned(redirectUrl) }, redirectUrl = REDIRECT)
+        bench.engine.post(OAUTH) { oauthStart() }
+        bench.engine.post(EXCHANGE) { refused("storage.failed", 500) }
+        bench.configure(listOf("password"), listOf("github"))
+        bench.tap(CONTINUE_WITH_GITHUB)
+        assertEquals(TulaAuthScreen.SignInStart, bench.screen)
+        assertFalse(bench.state.canRetryProvider)
+        assertEquals(1, bench.engine.sent(EXCHANGE).size)
+        bench.model.close()
+        val again = bench.client.retryProviderSignIn()
+        assertEquals(ProviderRefusal.NoAnswer, assertIs<ProviderOutcome.Refused>(again).refusal)
+        assertEquals(1, bench.engine.sent(EXCHANGE).size)
+    }
+
+    @Test
+    fun `a ticket kept for another try goes when the sign-in goes on another way`() = runTest {
+        val bench = Bench(
+            passkeys = ScriptedPasskeySheet(),
+            browser = { _, redirectUrl -> returned(redirectUrl) },
+            redirectUrl = REDIRECT,
+        )
+        bench.engine.post(OAUTH) { oauthStart() }
+        bench.engine.post(EXCHANGE) { throw java.io.IOException("the connection died") }
+        bench.engine.post(PASSKEY_START) { ok("""{"attempt":${attemptJson(firstFactor("passkey"))},"options":$PASSKEY_OPTIONS}""") }
+        bench.engine.post("$SIGN_IN/passkey") { completed() }
+        bench.configure(listOf("password", "passkey"), listOf("github"))
+        bench.tap(CONTINUE_WITH_GITHUB)
+        assertTrue(bench.state.canRetryProvider)
+        // The user signs in with a passkey instead: the screen that offered "Try again" is gone.
+        bench.tap(USE_PASSKEY)
+        assertEquals(TulaAuthScreen.SignedIn, bench.screen)
+        assertFalse(bench.state.canRetryProvider)
+        val again = bench.client.retryProviderSignIn()
+        assertEquals(ProviderRefusal.NoAnswer, assertIs<ProviderOutcome.Refused>(again).refusal)
+        assertEquals(1, bench.engine.sent(EXCHANGE).size)
     }
 
     @Test

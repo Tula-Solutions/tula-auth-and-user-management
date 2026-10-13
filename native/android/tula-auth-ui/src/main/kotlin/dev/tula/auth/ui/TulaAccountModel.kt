@@ -1,5 +1,6 @@
 package dev.tula.auth.ui
 
+import dev.tula.auth.AuthState
 import dev.tula.auth.ClientErrorCodes
 import dev.tula.auth.TulaCeremony
 import dev.tula.auth.TulaClient
@@ -312,10 +313,20 @@ data class TulaAccountState(
  * on there, and the screen says so and offers to sign out again. [onSignedOut] is called only
  * once the server was told.
  *
+ * **The account is the session's it was read for.** The model asks the client whose session it
+ * is when the account is read, when something is asked for and when an answer arrives. A
+ * session that ended elsewhere (it was revoked, its refresh was refused) empties the screen and
+ * is told to the app through [onSignedOut], once, however often the account is read afterwards.
+ * Where the client has become another session's, everything read or typed for the one before
+ * is dropped, and so is an answer that was asked as it. The model is told nothing by itself: it
+ * finds out at its next call, so an app that keeps one across a sign-out reads it again.
+ *
  * @param client The app's client.
  * @param strings The strings.
  * @param announce Says a message to a screen reader.
- * @param onSignedOut Called once for a sign-out the server was told of.
+ * @param onSignedOut Called when nobody is signed in any more: once for a sign-out of this
+ *   screen the server was told of, and once for a session the screen finds ended elsewhere.
+ *   Never for a sign-out that failed, and never while one is waiting to be tried again.
  * @param copy Puts a text on the clipboard, marked as sensitive. Called only on a press.
  * @param formatDate Writes a time of the API (ISO 8601) for a person, or `null` for a text
  *   that is no time: a line with a time that cannot be read is left out, never drawn raw.
@@ -334,8 +345,17 @@ class TulaAccountModel(
     private var s = TulaAccountState()
     private var words = strings
 
-    /** Grows when the screen is closed or the session ends: an older answer is dropped. */
+    /**
+     * Grows when the screen is closed, the session ends or the client's session is another
+     * one: an older answer is dropped.
+     */
     private var generation = 0
+
+    /** The session what is drawn was read for; `null` until one was seen, and after one ended. */
+    private var shownFor: String? = null
+
+    /** This screen's own sign-out is on its way: the session it ends did not end elsewhere. */
+    private var signingOut = false
 
     /** What to do once a step-up was proven. */
     private var owed: Owed? = null
@@ -379,6 +399,49 @@ class TulaAccountModel(
 
     private fun say(message: String) {
         effects.add { announce(message) }
+    }
+
+    /**
+     * Under the lock: bring the screen to the client's session. Where that is another one than
+     * what is drawn was read for, nothing of the one before is kept: not what was read, not
+     * what was typed, not a step-up that was owed a call.
+     */
+    private fun sync() {
+        val now = (client.state.value as? AuthState.SignedIn)?.sessionId ?: return
+        if (now == shownFor) {
+            return
+        }
+        // The first session this screen sees, with nothing drawn yet, is simply its own.
+        val untouched = shownFor == null && !s.signedOut && !s.signOutFailed
+        shownFor = now
+        if (!untouched) {
+            generation += 1
+            owed = null
+            s = TulaAccountState()
+        }
+    }
+
+    /** Under the lock: the generation, once the screen was brought to the client's session. */
+    private fun current(): Int {
+        sync()
+        return generation
+    }
+
+    /**
+     * Under the lock: whether the client holds no session and this screen did not end it. If
+     * so the account is nobody's: the screen is emptied and the app is told, once. Not while
+     * this screen's own sign-out is on its way or failed: that one is said by itself.
+     */
+    private fun endedElsewhere(): Boolean {
+        if (client.state.value !is AuthState.SignedOut || s.signedOut || s.signOutFailed || signingOut) {
+            return false
+        }
+        generation += 1
+        owed = null
+        shownFor = null
+        s = TulaAccountState(signedOut = true)
+        onSignedOut?.let { effects.add(it) }
+        return true
     }
 
     private fun ask(target: TulaAccountFocus) {
@@ -469,7 +532,11 @@ class TulaAccountModel(
      * a way to read it again, and the others are drawn.
      */
     suspend fun load() {
-        val asked = synchronized(lock) { generation }
+        val asked = locked<Int?> {
+            sync()
+            // Nobody is signed in: there is nothing to ask, and nothing to say a second time.
+            if (endedElsewhere() || s.signedOut || s.signOutFailed) null else generation
+        } ?: return
         for (section in TulaAccountSectionId.entries) {
             read(section, asked)
         }
@@ -481,7 +548,7 @@ class TulaAccountModel(
             return
         }
         locked {
-            if (asked == generation) {
+            if (asked == current()) {
                 s = s.copy(
                     mfaRequired = config.mfa?.policy?.rawValue == "required",
                     phoneEnabled = config.phone?.enabled == true,
@@ -503,21 +570,22 @@ class TulaAccountModel(
             throw cancelled
         } catch (_: Exception) {
             locked {
-                if (asked == generation && !s.signedOut && !s.signOutFailed) {
+                // A session that ended is not a section that could not be read.
+                if (!endedElsewhere() && asked == current() && !s.signedOut && !s.signOutFailed) {
                     s = s.copy(failed = s.failed + section)
                 }
             }
             return
         }
         locked {
-            if (asked == generation && !s.signedOut && !s.signOutFailed) {
+            if (asked == current() && !s.signedOut && !s.signOutFailed) {
                 s = change(s).copy(failed = s.failed - section)
             }
         }
     }
 
     private suspend fun refresh(vararg sections: TulaAccountSectionId) {
-        val asked = synchronized(lock) { generation }
+        val asked = locked { current() }
         for (section in sections) {
             read(section, asked)
         }
@@ -532,8 +600,28 @@ class TulaAccountModel(
      * @param action An action of [content].
      */
     suspend fun perform(action: TulaAccountAction) {
-        if (action in content.actions) {
+        if (locked { offered(action) }) {
             execute(action)
+        }
+    }
+
+    /** Under the lock: whether what is drawn for the client's session offers an action. */
+    private fun offered(action: TulaAccountAction): Boolean {
+        sync()
+        return action in TulaAccountContent.of(s, words, client.sheets.passkeys, formatDate).actions
+    }
+
+    /**
+     * Do again what a step-up was proven for, if it is still this screen's to do: the screen
+     * was not closed, the form not left and the session not changed since the proof was
+     * accepted, and what is drawn still offers the act.
+     *
+     * @param again The act, or `null` when what it sends has to be typed again.
+     * @param proved The generation the proof was accepted under.
+     */
+    private suspend fun repeat(again: TulaAccountAction?, proved: Int) {
+        if (again != null && locked { proved == current() && offered(again) }) {
+            execute(again)
         }
     }
 
@@ -646,7 +734,7 @@ class TulaAccountModel(
             send()
         } catch (cancelled: CancellationException) {
             locked {
-                if (asked == generation) {
+                if (asked == current()) {
                     s = s.copy(isPending = false)
                 }
             }
@@ -656,7 +744,7 @@ class TulaAccountModel(
             return false
         }
         return locked {
-            if (asked != generation) {
+            if (asked != current()) {
                 return@locked false
             }
             s = s.copy(isPending = false)
@@ -668,7 +756,7 @@ class TulaAccountModel(
     private fun here(again: TulaAccountAction?): Owed = synchronized(lock) { Owed(s.panel, again) }
 
     private fun fail(error: Exception, asked: Int, after: Owed) {
-        if (asked != generation) {
+        if (endedElsewhere() || asked != current()) {
             return
         }
         s = s.copy(isPending = false)
@@ -721,6 +809,7 @@ class TulaAccountModel(
 
     private suspend fun submitStepUp() {
         var again: TulaAccountAction? = null
+        var proved = 0
         val done = call(
             after = here(null),
             prepare = prepare@{
@@ -748,10 +837,13 @@ class TulaAccountModel(
                 }
                 proof
             },
-            then = { again = proven() },
+            then = {
+                again = proven()
+                proved = generation
+            },
         )
         if (done) {
-            again?.let { execute(it) }
+            repeat(again, proved)
         }
     }
 
@@ -782,6 +874,7 @@ class TulaAccountModel(
 
     private suspend fun stepUpWithPasskey() {
         var again: TulaAccountAction? = null
+        var proved = 0
         val done = call<TulaCeremony<Unit>>(
             after = here(null),
             prepare = prepare@{
@@ -790,7 +883,10 @@ class TulaAccountModel(
             },
             then = { outcome ->
                 when (outcome) {
-                    is TulaCeremony.Finished<*> -> again = proven()
+                    is TulaCeremony.Finished<*> -> {
+                        again = proven()
+                        proved = generation
+                    }
                     TulaCeremony.Dismissed -> {
                         s = s.copy(notice = words.account.passkeyDismissed)
                         say(words.account.passkeyDismissed)
@@ -799,7 +895,7 @@ class TulaAccountModel(
             },
         )
         if (done) {
-            again?.let { execute(it) }
+            repeat(again, proved)
         }
     }
 
@@ -875,20 +971,23 @@ class TulaAccountModel(
      * screen says so and offers it again, and the app is told only once it went through.
      */
     private suspend fun signOut() {
-        val asked = locked { begin() } ?: return
+        val asked = locked { begin()?.also { signingOut = true } } ?: return
         try {
             client.session.signOut()
         } catch (cancelled: CancellationException) {
             locked {
-                if (asked == generation) {
+                signingOut = false
+                if (asked == current()) {
                     s = s.copy(isPending = false)
                 }
             }
             throw cancelled
         } catch (_: Exception) {
             locked {
+                signingOut = false
                 generation += 1
                 owed = null
+                shownFor = null
                 // Nothing of the account is kept: the client holds no session any more.
                 s = TulaAccountState(signOutFailed = true, formError = words.account.signOutFailed)
                 ask(TulaAccountFocus.Title)
@@ -897,8 +996,10 @@ class TulaAccountModel(
             return
         }
         locked {
+            signingOut = false
             generation += 1
             owed = null
+            shownFor = null
             s = TulaAccountState(signedOut = true)
             onSignedOut?.let { effects.add(it) }
         }
