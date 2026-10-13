@@ -83,8 +83,38 @@ function pinsNothing(ecosystem: string, file: string): boolean {
     // needs an entry.
     return !/\.package\s*\(/.test(text)
   }
+  if (ecosystem === 'gradle' && /\.gradle(\.kts)?$/.test(file)) {
+    // Only a build script: a catalog and a wrapper's properties are versions and nothing else.
+    return namesNoVersion(text)
+  }
   return false
 }
+
+/**
+ * Whether a Gradle build file names every plugin and library through the version catalog or
+ * as a project of its build: no coordinate with a version, and no plugin with one.
+ *
+ * Such a file (the Compose example's, a module of the build at `/native/android` that lives
+ * under `examples/`) has nothing an update could move: its versions are the catalog's, which
+ * is watched.
+ */
+function namesNoVersion(text: string): boolean {
+  const coordinate = /["'][A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+:[^"']+["']/
+  const pluginVersion = /\bid\s*\(?\s*["'][^"']+["']\s*\)?\s*version\b/
+  return !coordinate.test(text) && !pluginVersion.test(text)
+}
+
+test('a Gradle file that names a version of its own is not one that pins nothing', () => {
+  expect(namesNoVersion('dependencies { implementation(libs.compose.ui) }')).toBe(true)
+  expect(namesNoVersion('plugins { alias(libs.plugins.kotlin.compose) }')).toBe(true)
+  expect(namesNoVersion('dependencies { implementation(project(":tula-auth")) }')).toBe(true)
+  expect(namesNoVersion('dependencies { implementation("androidx.core:core-ktx:1.17.0") }')).toBe(
+    false
+  )
+  expect(namesNoVersion("dependencies { implementation 'a.b:c:1.0' }")).toBe(false)
+  expect(namesNoVersion('plugins { id("com.android.application") version "9.4.1" }')).toBe(false)
+  expect(namesNoVersion('plugins { id "org.x" version "1" }')).toBe(false)
+})
 
 test('every build manifest the repository tracks is watched by Dependabot', () => {
   const unwatched = trackedFiles()

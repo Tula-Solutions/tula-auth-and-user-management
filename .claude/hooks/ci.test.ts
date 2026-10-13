@@ -330,4 +330,48 @@ describe('the Kotlin client: the JVM tests and the Android build are read apart'
     expect(all.filter((step) => step.with && 'cache' in step.with)).toEqual([])
     expect(all.filter((step) => step.uses?.includes('setup-gradle'))).toEqual([])
   })
+
+  // The Compose screens (ADR 0058): the library, the example app and the example's UI tests
+  // are compiled and linted where the Android SDK is. The UI tests need a device, so they are
+  // run by hand (native/android/fixture/ui-tests.ts) and never by a workflow.
+  test('the Android job compiles and lints the Compose screens, the example and its UI tests', () => {
+    const gradle = runs('kotlin-android').find((run) => run.includes('./gradlew')) ?? ''
+    for (const task of [
+      ':tula-auth-android:assembleRelease',
+      ':tula-auth-android:lintRelease',
+      ':tula-auth-compose:assembleRelease',
+      ':tula-auth-compose:lintRelease',
+      ':compose-example:assembleDebug',
+      ':compose-example:assembleDebugAndroidTest',
+      ':compose-example:lintDebug',
+    ]) {
+      expect(gradle.split(/\s+/)).toContain(task)
+    }
+  })
+
+  test('every Android module compiles against the platform and build tools the job installs', () => {
+    const pins = (file: string) => {
+      const build = readFileSync(join(workflowsDir, '..', '..', file), 'utf8')
+      return [
+        /version = release\((\d+)\)/.exec(build)?.[1],
+        /minorApiLevel = (\d+)/.exec(build)?.[1],
+        /buildToolsVersion = "([0-9.]+)"/.exec(build)?.[1],
+      ]
+    }
+    const installed = pins('native/android/tula-auth-android/build.gradle.kts')
+    expect(installed.every(Boolean)).toBe(true)
+    for (const file of [
+      'native/android/tula-auth-compose/build.gradle.kts',
+      'examples/compose/build.gradle.kts',
+    ]) {
+      expect(pins(file)).toEqual(installed)
+    }
+  })
+
+  test('no job starts an emulator or runs tests on a device', () => {
+    const everyRun = Object.keys(jobs).flatMap((name) => runs(name))
+    expect(
+      everyRun.filter((run) => /connected\w*AndroidTest|emulator|ui-tests\.ts|\bavd\b/i.test(run))
+    ).toEqual([])
+  })
 })

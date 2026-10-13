@@ -211,13 +211,20 @@ describe('where the Kotlin suite runs', () => {
     expect(steps.map((step) => step.run)).toContain('bun run native:kotlin:test')
     const scripts = (await Bun.file(join(ROOT, 'package.json')).json()).scripts
     expect(scripts['native:kotlin:test']).toBe('bun run scripts/kotlin-test.ts')
-    // By default the script runs the module's `check`: the tests and the coverage bound.
+    // By default the script runs the `check` of both JVM modules, the client and what the
+    // Compose screens decide (ADR 0058): the tests and the coverage bound of each.
     expect(await Bun.file(join(ROOT, 'scripts/kotlin-test.ts')).text()).toContain(
-      "tasks.length > 0 ? tasks : [':tula-auth:check']"
+      "tasks.length > 0 ? tasks : [':tula-auth:check', ':tula-auth-ui:check']"
     )
-    const build = await Bun.file(join(ROOT, 'native/android/tula-auth/build.gradle.kts')).text()
-    expect(build).toMatch(/tasks\.check \{\s*dependsOn\("koverVerify"\)/)
-    expect(Number(/minBound\((\d+)\)/.exec(build)?.[1])).toBeGreaterThanOrEqual(80)
+    const bounds: number[] = []
+    for (const module of ['tula-auth', 'tula-auth-ui']) {
+      const build = await Bun.file(join(ROOT, 'native/android', module, 'build.gradle.kts')).text()
+      expect(build).toMatch(/tasks\.check \{\s*dependsOn\("koverVerify"\)/)
+      bounds.push(Number(/minBound\((\d+)\)/.exec(build)?.[1]))
+    }
+    expect(bounds[0]).toBeGreaterThanOrEqual(80)
+    // The screens' model is held to the client's bound, never a lower one of its own.
+    expect(bounds[1]).toBeGreaterThanOrEqual(bounds[0] ?? Number.NaN)
     // A push does all the work itself: nothing of Gradle's is cached between runs.
     expect(steps.filter((step) => step.with && 'cache' in step.with)).toEqual([])
     expect(steps.filter((step) => step.uses?.includes('setup-gradle'))).toEqual([])
