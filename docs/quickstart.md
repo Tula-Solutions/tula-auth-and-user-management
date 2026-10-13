@@ -3,9 +3,9 @@
 You need [Bun](https://bun.sh) 1.2 or newer and Docker.
 
 > **What is on npm, and what is not.** The web packages and `create-tula` are released to npm
-> under the `alpha` dist-tag ([releasing.md](releasing.md)), so for a web app steps 2 and 3
-> can be `bunx create-tula@alpha my-app --framework react-vite`. **The Tula API image is
-> published too**, from the release after `0.1.0-alpha.1` on
+> ([releasing.md](releasing.md)), so for a web app steps 2 and 3
+> can be `bunx create-tula@latest my-app --framework react-vite`. **The Tula API image is
+> published too**, from `0.1.1` on
 > (`ghcr.io/tula-solutions/tula-api:<version>`): a project made that way names it and
 > `tula dev` pulls it, so step 1 is skipped as well and no checkout is needed. **The Expo SDK is not
 > released**: `--framework expo` is refused without `--tula-packages`, so for it steps 2 and 3
@@ -31,14 +31,14 @@ bun install
 bun run packages:check       # builds and packs every package into .release/
 ```
 
-`.release/` now holds `create-tula-0.1.0-alpha.1.tgz` and one `tula-tech-<name>-0.1.0-alpha.1.tgz` per package.
+`.release/` now holds `create-tula-0.1.1.tgz` and one `tula-tech-<name>-0.1.1.tgz` per package.
 
 ## 3. Create the project
 
 Anywhere outside the repository:
 
 ```sh
-mkdir -p /tmp/create-tula && tar -xzf <repo>/.release/create-tula-0.1.0-alpha.1.tgz -C /tmp/create-tula
+mkdir -p /tmp/create-tula && tar -xzf <repo>/.release/create-tula-0.1.1.tgz -C /tmp/create-tula
 bun /tmp/create-tula/package/dist/bin.js my-app \
   --framework react-vite \
   --tula-packages <repo>/.release \

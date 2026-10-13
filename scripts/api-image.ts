@@ -8,7 +8,7 @@ import { join } from 'node:path'
 //
 // A VERSION TAG IS WRITTEN ONCE. A push to `main` that does not change the version finds
 // its tag on the registry and builds nothing, so the image a project pulled as
-// `…:0.1.0-alpha.2` yesterday is the one it pulls tomorrow. And when the registry cannot be
+// `…:0.1.1` yesterday is the one it pulls tomorrow. And when the registry cannot be
 // asked, the plan fails: "could not tell" is never read as "not there".
 
 /** The image a release is pushed to, and the one `create-tula` names in a new project. */
@@ -24,7 +24,7 @@ const VERSION = /^\d+\.\d+\.\d+(?:-([a-z]+)\.\d+)?$/
 export interface ImagePlan {
   /** The tag that is written once and never moved. */
   version: string
-  /** The tag that follows the newest release of its kind: `alpha`, or `latest` for a stable one. */
+  /** The tag that follows the newest release of its kind: `latest`, or a pre-release's own name (`alpha`). */
   channel: string
   /** Whether to build and push: `false` when the registry already has `version`. */
   publish: boolean
@@ -34,7 +34,7 @@ export interface ImagePlan {
  * The moving tag a version is released under: its pre-release name, or `latest`.
  *
  * @param version - The API's version, from `apps/api/package.json`.
- * @returns `alpha` for `0.1.0-alpha.2`, `latest` for `1.0.0`.
+ * @returns `latest` for `0.1.1`, `alpha` for `0.2.0-alpha.1`.
  * @throws Error when the version is `0.0.0` or not a release's version: neither may become a tag.
  */
 export function imageChannel(version: string): string {

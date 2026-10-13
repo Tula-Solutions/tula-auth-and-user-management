@@ -7,11 +7,10 @@ generated from the OpenAPI contract, so it cannot drift from the API it calls. I
 `tula` CLI talks through, and what the dashboard and the MCP server will.
 
 ```sh
-bun add @tula-tech/admin@alpha       # or: npm install @tula-tech/admin@alpha
+bun add @tula-tech/admin@latest       # or: npm install @tula-tech/admin@latest
 ```
 
-> **Alpha.** Released under the `alpha` dist-tag: the API may change from one alpha to the
-> next. It calls a Tula API, which you host yourself
+> **Early release (0.x).** the API may change from one release to the next. It calls a Tula API, which you host yourself
 > ([docs/self-host.md](../../docs/self-host.md)); everything else is in the
 > [repository](https://github.com/Tula-Solutions/tula-auth-and-user-management#readme).
 

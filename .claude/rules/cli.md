@@ -170,7 +170,7 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   Compose file are the repository's own (a test holds them equal).
   **The API image a project names by default is the published one of `create-tula`'s own
   version** (`DEFAULT_API_IMAGE`: `API_IMAGE_REPOSITORY`, a colon, `VERSION`), never a
-  moving tag (`alpha`, `latest`) and never a local one: the server a project pulls is the
+  moving tag (`latest`) and never a local one: the server a project pulls is the
   one its packages were released with. `.github/workflows/image.yml` pushes it for a push
   to `main`, writes a version tag once and never replaces it (`scripts/api-image.ts`), and
   holds `packages: write` in its two pushing jobs only; `.claude/hooks/api-image.test.ts`

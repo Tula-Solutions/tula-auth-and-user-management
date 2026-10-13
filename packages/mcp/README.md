@@ -9,18 +9,18 @@ takes (under a minute) and only where the environment allows it: `test_signin` h
 throwaway user up and in and delete it. **No other tool changes live data, and no tool
 returns a secret.**
 
-> **Alpha.** Released under the `alpha` dist-tag: the tools and what they return may change
-> from one alpha to the next. Everything else is in the
+> **Early release (0.x).** the tools and what they return may change
+> from one release to the next. Everything else is in the
 > [repository](https://github.com/Tula-Solutions/tula-auth-and-user-management#readme).
 
 Most people start it through the CLI (`@tula-tech/cli`, which runs on Bun):
 
 ```sh
-bun add -d @tula-tech/cli@alpha
+bun add -d @tula-tech/cli@latest
 TULA_API_URL=https://auth.example.com TULA_SECRET_KEY=… bunx tula mcp
 ```
 
-To embed it (`bun add @tula-tech/mcp@alpha @tula-tech/admin@alpha`):
+To embed it (`bun add @tula-tech/mcp@latest @tula-tech/admin@latest`):
 
 ```ts
 import { createAdminClient } from '@tula-tech/admin'

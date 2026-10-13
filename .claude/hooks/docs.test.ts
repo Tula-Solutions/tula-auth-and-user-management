@@ -695,7 +695,7 @@ describe('commands that fetch a package by name', () => {
   // installed, and where it is not they download and run that other package, with whatever
   // is in the environment (for `tula mcp`, a secret key). So a bare sample is only ever
   // shown after the install it depends on, and a command an editor runs outside a project
-  // names the package: `bunx --package @tula-tech/cli@alpha tula …`.
+  // names the package: `bunx --package @tula-tech/cli@latest tula …`.
 
   /** History and plans: they record what was planned and run, and are not instructions. */
   const RECORDS = ['docs/adr/', 'docs/plans/', 'docs/reference/', 'docs/business-plan.md']
@@ -723,7 +723,7 @@ describe('commands that fetch a package by name', () => {
   }
 
   const BARE = /\b(?:npx|bunx|bun x)\s+(?:--bun\s+)?tula\b/
-  const INSTALLS_CLI = /\bbun add\b[^\n]*@tula-tech\/cli@alpha\b/
+  const INSTALLS_CLI = /\bbun add\b[^\n]*@tula-tech\/cli@latest\b/
   /**
    * Files about a project made by create-tula, whose `package.json` lists `@tula-tech/cli`:
    * there `bunx tula` is the project's own, once `bun install` has run.
@@ -803,14 +803,14 @@ describe('commands that fetch a package by name', () => {
     expect(at('docs/x.md', 'bun install\nbunx tula dev')).not.toBeNull()
     expect(at('docs/x.md', 'bun add -d @tula-tech/cli\nbunx tula dev')).not.toBeNull()
     expect(
-      at('docs/x.md', 'bunx tula dev\nbun add -d @tula-tech/cli@alpha\nbunx tula dev')
+      at('docs/x.md', 'bunx tula dev\nbun add -d @tula-tech/cli@latest\nbunx tula dev')
     ).toBeNull()
-    expect(at('docs/x.md', 'bun add -d @tula-tech/cli@alpha\nbunx tula dev')).toBeNull()
+    expect(at('docs/x.md', 'bun add -d @tula-tech/cli@latest\nbunx tula dev')).toBeNull()
     // An install licenses the samples of its own section, not of one far below it.
     const far = [
       '# Page',
       '## Install',
-      'bun add -d @tula-tech/cli@alpha',
+      'bun add -d @tula-tech/cli@latest',
       'bunx tula diff',
       ...Array.from({ length: 800 }, () => 'text'),
       '## In CI',
@@ -823,17 +823,17 @@ describe('commands that fetch a package by name', () => {
     )
     // A deeper heading does not start a new section, and the page's title is no section.
     expect(
-      at('docs/x.md', '## A\nbun add -d @tula-tech/cli@alpha\n### B\nbunx tula dev')
+      at('docs/x.md', '## A\nbun add -d @tula-tech/cli@latest\n### B\nbunx tula dev')
     ).toBeNull()
-    expect(at('docs/x.md', 'bun add -d @tula-tech/cli@alpha\n## A\nbunx tula dev')).not.toBeNull()
+    expect(at('docs/x.md', 'bun add -d @tula-tech/cli@latest\n## A\nbunx tula dev')).not.toBeNull()
     // A `##` inside a code fence is a comment of the sample, not a heading.
     expect(
-      at('docs/x.md', '## A\n```sh\nbun add -d @tula-tech/cli@alpha\n## then\nbunx tula dev\n```')
+      at('docs/x.md', '## A\n```sh\nbun add -d @tula-tech/cli@latest\n## then\nbunx tula dev\n```')
     ).toBeNull()
     expect(at('docs/quickstart.md', 'bun install\nbunx tula dev')).toBeNull()
     // Before the install, not after it: the line is judged by what stands above it.
     expect(bareProblem('docs/quickstart.md', ['bunx tula dev', 'bun install'], 0)).not.toBeNull()
-    expect(BARE.test('bunx --package @tula-tech/cli@alpha tula mcp')).toBe(false)
+    expect(BARE.test('bunx --package @tula-tech/cli@latest tula mcp')).toBe(false)
     expect(BARE.test('bun run tula -- mcp')).toBe(false)
     // `--no-install` runs what is installed or fails: it cannot fetch a stranger's package.
     expect(BARE.test('bunx --no-install tula apply --env prod')).toBe(false)
@@ -893,7 +893,7 @@ describe('commands that fetch a package by name', () => {
         configs += 1
         if (
           match[1] !== 'bunx' ||
-          !(match[2] ?? '').startsWith('"--package", "@tula-tech/cli@alpha", "tula", "mcp"')
+          !(match[2] ?? '').startsWith('"--package", "@tula-tech/cli@latest", "tula", "mcp"')
         ) {
           problems.push(`${file}: ${match[0].replace(/\s+/g, ' ')}`)
         }
@@ -901,7 +901,7 @@ describe('commands that fetch a package by name', () => {
       text.split('\n').forEach((line, index) => {
         if (/^\s*--\s+\S/.test(line) && /\btula\b/.test(line)) {
           configs += 1
-          if (!/--\s+bunx --package @tula-tech\/cli@alpha tula mcp\b/.test(line)) {
+          if (!/--\s+bunx --package @tula-tech\/cli@latest tula mcp\b/.test(line)) {
             problems.push(`${file}:${index + 1}: ${line.trim()}`)
           }
         }
@@ -916,14 +916,15 @@ describe('commands that fetch a package by name', () => {
     ).toContain('resolves to an unrelated package named `tula`')
   })
 
-  // Only the `alpha` dist-tag is written by a release. What an untagged install resolves to
-  // (`latest`) is not something this repository decides, so every sample names the tag.
+  // A release writes the `latest` dist-tag, and every sample names it: the `alpha` tag of the
+  // first releases still exists and is never moved again, so a sample that named it would
+  // install the first alpha for ever.
   const VERB =
     /\b(?:bun add|bun install|bun i|npm install|npm i|pnpm add|yarn add|bunx|npx|bun x|bun create|npm create|bun info|npm view)\b/
   const NAMED =
     /(@tula-tech\/[a-z][a-z-]*|\bcreate-tula\b|(?<=\bcreate )tula\b)(@[A-Za-z0-9.:/_-]+)?/g
 
-  /** The package names an install line gives without the `alpha` tag. */
+  /** The package names an install line gives without the `latest` tag. */
   function untagged(line: string): string[] {
     if (!VERB.test(line)) {
       return []
@@ -942,7 +943,7 @@ describe('commands that fetch a package by name', () => {
         if (after === '/' || tag?.startsWith('@file:')) {
           continue
         }
-        if (tag !== '@alpha') {
+        if (tag !== '@latest') {
           found.push(`${name}${tag ?? ''}`)
         }
       }
@@ -950,7 +951,7 @@ describe('commands that fetch a package by name', () => {
     return found
   }
 
-  test('every sample that installs or runs a Tula package from npm names the alpha tag', () => {
+  test('every sample that installs or runs a Tula package from npm names the latest tag', () => {
     const problems: string[] = []
     let seen = 0
     for (const file of instructionFiles()) {
@@ -971,15 +972,19 @@ describe('commands that fetch a package by name', () => {
 
   test('the tag check itself', () => {
     expect(untagged('bun add @tula-tech/core')).toEqual(['@tula-tech/core'])
-    expect(untagged('bun add @tula-tech/core@latest')).toEqual(['@tula-tech/core@latest'])
-    expect(untagged('bun add @tula-tech/core@alpha @tula-tech/react')).toEqual(['@tula-tech/react'])
-    expect(untagged('bun add -d @tula-tech/cli@alpha      # then: bunx tula <command>')).toEqual([])
+    expect(untagged('bun add @tula-tech/core@alpha')).toEqual(['@tula-tech/core@alpha'])
+    expect(untagged('bun add @tula-tech/core@latest @tula-tech/react')).toEqual([
+      '@tula-tech/react',
+    ])
+    expect(untagged('bun add -d @tula-tech/cli@latest      # then: bunx tula <command>')).toEqual(
+      []
+    )
     expect(untagged('bun create tula my-app')).toEqual(['tula'])
-    expect(untagged('bun create tula@alpha my-app')).toEqual([])
+    expect(untagged('bun create tula@latest my-app')).toEqual([])
     expect(untagged('bunx create-tula my-app --framework nextjs')).toEqual(['create-tula'])
-    expect(untagged('bunx create-tula@alpha my-app && cd my-app && bun install')).toEqual([])
+    expect(untagged('bunx create-tula@latest my-app && cd my-app && bun install')).toEqual([])
     expect(untagged('bunx --package @tula-tech/cli tula mcp')).toEqual(['@tula-tech/cli'])
-    expect(untagged('bunx --package @tula-tech/cli@alpha tula mcp')).toEqual([])
+    expect(untagged('bunx --package @tula-tech/cli@latest tula mcp')).toEqual([])
     expect(untagged('bun add @tula-tech/expo@file:../.release/tula-tech-expo-0.0.0.tgz')).toEqual(
       []
     )
