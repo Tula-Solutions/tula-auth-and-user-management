@@ -139,16 +139,19 @@ final class FlowAttemptState: @unchecked Sendable, TulaRedacted {
     /// Take the next answer of the attempt: the new step, and the session when it completed.
     @discardableResult
     func accept(_ next: FlowAttempt) async throws -> FlowStep {
-        let dropped = lock.withLock { state.discarded }
-        // Discarded while the answer was on its way: nothing is taken from it, so a late
-        // `complete` signs nobody in.
-        guard !dropped else {
-            throw TulaError.client("flow.invalid_step")
-        }
-        guard FlowAttemptState.isUsable(next) else {
-            throw TulaError.client(TulaClientErrorCode.responseInvalid)
-        }
-        lock.withLock {
+        let usable = FlowAttemptState.isUsable(next)
+        // Whether the flow was discarded is asked, and the step is taken, under one hold of
+        // the lock, as `@tula/core` does both in one turn: a `discard()` either comes first
+        // (nothing is taken from the answer, so a late `complete` signs nobody in) or finds
+        // the flow complete, which it leaves as it is. There is no moment between the two
+        // where a flow is discarded and its session is adopted all the same.
+        try lock.withLock {
+            guard !state.discarded else {
+                throw TulaError.client("flow.invalid_step")
+            }
+            guard usable else {
+                throw TulaError.client(TulaClientErrorCode.responseInvalid)
+            }
             state.current = FlowSnapshot(id: next.id, kind: next.kind, step: next.step, expiresAt: next.expiresAt)
             if next.step.status == "complete" {
                 state.secret = nil
