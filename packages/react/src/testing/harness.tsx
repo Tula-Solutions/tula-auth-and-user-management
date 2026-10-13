@@ -53,6 +53,8 @@ export const ROUTE = {
   signOut: 'POST /v1/client/sessions/sign-out',
   revokeOthers: 'POST /v1/client/sessions/revoke-others',
   changePassword: 'POST /v1/client/me/password',
+  emailAddress: 'POST /v1/client/me/email',
+  emailAddressVerify: 'POST /v1/client/me/email/verify',
   phone: 'POST /v1/client/me/phone',
   phoneVerify: 'POST /v1/client/me/phone/verify',
   phoneRemove: 'DELETE /v1/client/me/phone',
