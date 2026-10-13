@@ -175,7 +175,7 @@ jobs:
         uses: gradle/actions/wrapper-validation@v6
       - uses: oven-sh/setup-bun@v2
         with: { bun-version-file: package.json }
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with: { distribution: temurin, java-version: '25' }
       - run: bun install --frozen-lockfile
       - name: The client's tests and its coverage bound, against the real API
@@ -212,7 +212,7 @@ jobs:
       - uses: actions/checkout@v7
       - name: The Gradle wrapper's jar is one Gradle published
         uses: gradle/actions/wrapper-validation@v6
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with: { distribution: temurin, java-version: '25' }
       - name: The Android platform and build tools the module pins
         run: |
