@@ -103,6 +103,19 @@ secret, sends the secret on every call after the start (`x-tula-attempt`), runs 
 at a time (`flow.busy` for a second), and can be discarded: the secret is forgotten and the
 answer of an action still in flight signs nobody in.
 
+**Whether an answer is taken is decided in one step.** `FlowAttemptState.accept` checks
+"discarded" and records the step under one hold of the flow's lock, and stores the answer's
+session after it, as `@tula/core`'s flow checks and records in one turn before it awaits
+the session. So a `discard()` is either before the answer (the action throws
+`flow.invalid_step`, nothing is recorded, no session is stored) or after it (the flow is
+complete, and `discard()` does nothing to a completed flow): there is no flow that is
+discarded, not complete, and signed in. Before TULA-49's review the check came first and
+the recording after the session was stored, and a `discard()` between the two left exactly
+that. A test holds the storage's write open and discards inside it (`FlowTests`). What is
+not closed, and cannot be from here: a flow discarded after the server completed the
+attempt and before its answer arrived signs nobody in on this client, and the server's
+session is then one nobody holds a token of; it ends by its profile's lifetime.
+
 `FlowStep` is the generated, open union: a status this version does not know decodes and is
 kept whole. `FlowScreen` is the client's reading of it: `password`, `firstFactor`,
 `emailVerification`, `newPassword`, `secondFactor`, `factorEnrolment`, `complete`, or

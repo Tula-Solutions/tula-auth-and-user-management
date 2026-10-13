@@ -2170,6 +2170,14 @@ account's screens are TULA-60.
   and `Views/` is not counted by the coverage check for that reason. A branch that is more
   than "which part is drawn for this state" belongs in the model, with a test in
   `Tests/TulaAuthUITests`.
+- **What a screen offers is data, and one door performs it** (`TulaAuthContent.swift`):
+  the title, the fields, the main button and the links of every `TulaAuthScreen`, each
+  with its `TulaAuthAction` and its identifier, and what a field's problems and its
+  VoiceOver label read as. A view iterates `model.content` and calls `model.perform(_:)`,
+  which does nothing for an action the open screen does not offer. Never give `body` a
+  `switch` over the screen, a control an action of its own, or a composed label: a new
+  control is an offer in `TulaAuthContent`, with its row in `ContentTests` (whose table
+  has no `default`).
 - **A screen per step, and "not supported" for every other one.** `TulaAuthScreen` is made
   from the client's `FlowScreen` in one function (`screen(of:)`); a step the client has a
   call for and these screens no form for (a second factor, an enrolment) is
@@ -2182,14 +2190,31 @@ account's screens are TULA-60.
   beside a way these screens lack, it is offered and a person asks.
 - **The screens hold no token, and nothing secret outlives its screen.** The session is
   the client's. `password`, `code` and `newPassword` are emptied by every change of
-  screen, by the completion and by `close()` (the view's `onDisappear`), and a sign-in's
-  password is emptied as it is sent, right or wrong. Never keep one in another property,
+  screen, by the completion and by `close()` (the view's `onDisappear`). **What is
+  emptied as it is sent is decided per secret, and ADR 0057 has the table**: a sign-in's
+  password, and a code that travels alone, right or wrong; a password that is being
+  chosen (a sign-up's, a reset's, an expired password's replacement) is kept when the
+  server refuses it, to be put right, and a reset's code is emptied only when the refusal
+  is said at the code field. Never say "every secret is emptied after every submission",
+  and a new secret field gets its row there and its test against a refusing transport
+  (`LeftAndRefusedTests`). Never keep one in another property,
   a `@State` of a view, `@AppStorage`, `@SceneStorage`, the pasteboard or a log. The model
   is `TulaRedacted`; a new type here that holds a field's text conforms too.
 - **A flow that is left is discarded, and a late answer changes nothing.** `close()`, a
   move to another flow and "Start again" call `discard()`; every action notes the model's
   `generation` and its answer, a failure included, is dropped when that has moved. Keep
-  the three tests of an answer that arrives after the screen was left.
+  the three tests of an answer that arrives after the screen was left. **The one answer
+  that is not dropped is a completion**: a flow that had completed when it was left
+  cannot be discarded (the client is signed in), so the model shows `signedIn` and calls
+  `onSignedIn` once (`arrived()`); never drop it, a form would be drawn to a signed-in
+  user. The client makes that sound: `FlowAttemptState.accept` checks "discarded" and
+  records the step under one lock hold, before the session is stored, as `@tula/core`
+  does in one turn. Never put an `await` between the two.
+- **A closed screen is on the start of its own mode, with nothing typed, the address
+  included** (`close()`): a view that is pushed over or left for another tab keeps its
+  model, and a step with no flow would have buttons that do nothing. **No action is
+  silent**: one whose flow is gone opens the start with `strings.flowLost`, shown and
+  announced (`lost()`), and a new action that needs a flow does the same.
 - **Every string is a property of `TulaStrings`, and a server's error is its code.** No
   string literal that a person reads in `Views/` or the model. A failed call is
   `errors[code]`, else the contract's sentence for a code in `knownCodes`, else
@@ -2207,9 +2232,13 @@ account's screens are TULA-60.
   the default's, and `refused` names the token, never the value. A view never reads a
   string of `TulaTheme`. **The grammar is a hand-kept copy**: a rule changed in
   `packages/contract/src/theme.ts` is changed in `TulaThemeValues.swift` in the same
-  change, with a row in `ThemeGrammarTests`; nothing generated and no shared table holds
-  the two together, and docs say so. Keep the test that the default theme resolves with
-  nothing refused.
+  change, with a row in `ThemeGrammarTests`. Nothing generated holds the two together;
+  one fixed corpus does, as far as it goes: `packages/contract/src/theme-cases.json`
+  (ASCII values with the contract's verdicts), read by the contract's test and by the
+  Swift one. A changed rule gets a value there; never edit a verdict to make one side
+  pass. Keep the test that the default theme resolves with nothing refused, and
+  `ThemeContrastTests` (every text of the default theme at 4.5:1 on what it is drawn on,
+  from the resolved values).
 - **Four slots, and none can take a label away** (`tulaAuthHeader`, `tulaAuthFooter`,
   `tulaAuthPrimaryButtonStyle`, `tulaAuthFieldStyle`). A field style is handed the text
   field already labelled, identified and bound to the focus. The title, the messages and
@@ -2227,16 +2256,27 @@ account's screens are TULA-60.
   the tests are synchronous** (`ScreenTestCase`; async work goes through the helper that
   waits on a semaphore): an `async` `setUp` on the main-actor test class ended the runner
   in the concurrency runtime on Xcode 16.4, so never make one `async`.
-- **The audit's exclusions are two, each one kind of issue on one kind of element, with
-  its reason beside it** (`auditIssues` in `Support.swift`). Never add one to get a test
-  green without that sentence, never widen one to an element type or an audit type as a
-  whole, and never word either as showing the finding wrong: nobody showed that.
+- **A screen is audited with the keyboard away, and the audit has one exclusion**
+  (`auditIssues` in `Support.swift`): "text clipped" on the address field while it holds
+  an address, with its reason beside it. The
+  audit measures an element from the pixels at its frame, so the lines under a keyboard
+  were measured as the keyboard (`putKeyboardAway`): never audit with it up, and **never
+  leave a contrast finding out**. Never add an exclusion to get a test green without its
+  sentence, never widen one to an element type or an audit type as a whole, and never
+  word it as showing the finding wrong: nobody showed that.
   **The audit is not VoiceOver.** No test turns VoiceOver on; never say a screen was
   tested with it until someone has.
-- **Every process the runner starts has a timeout** (`ASK_TIMEOUT_MS`, `TEST_TIMEOUT_MS`),
-  the fixture is started with `TULA_NATIVE_FIXTURE=1` and nothing looser, and the
-  simulator is the script's pick or the one named: `.claude/hooks/swift-journeys.test.ts`
-  holds the pick, the arguments and both rules.
+- **Every process the runner starts has a timeout, and the fixture does not outlive the
+  run** (`ASK_TIMEOUT_MS`, `TEST_TIMEOUT_MS`, `FIXTURE_TIMEOUT_MS`): its first line is
+  read by `readyPort` (whole however the pipe cuts it, within `READY_TIMEOUT_MS`, the
+  rest read and dropped so a full pipe never stops it), and it is ended in a `finally`
+  and on `SIGINT` and `SIGTERM`. It is started with `TULA_NATIVE_FIXTURE=1` and nothing
+  looser, and the simulator is the script's pick or the one named.
+  `.claude/hooks/swift-journeys.test.ts` tests the pick, the arguments and `readyPort`,
+  and **reads the runner's source** for the rest: every `Bun.spawn(` and
+  `Bun.spawnSync(` call names a `…_TIMEOUT_MS` constant among its arguments, and the
+  `finally` and the two signals are there. It does not start the runner: never word it as
+  having seen a fixture ended.
 - **`verify` runs none of it, and no workflow runs the simulator.** `swift test` (and the
   `Swift` workflow) builds `TulaAuthUI` and runs the model's tests; the coverage check
   holds `TulaAuthUI` alone to the unchanged thresholds over the files directly in its

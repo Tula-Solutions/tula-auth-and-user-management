@@ -417,10 +417,25 @@ client's to say (`tula.session.state`), as it is without the screens.
 
 **Nothing secret outlives its screen.** The view holds no token: the session is the
 client's. A password and a code are in the fields' state only while their screen is open;
-every change of screen, the completion and the view's disappearance empty them, and a
-sign-in's password is emptied as it is sent, right or wrong. A flow that is left (the view
-goes away, another flow is opened, "Start again") is discarded, and an answer that arrives
-afterwards signs nobody in. The screens log nothing.
+every change of screen, the completion and the view's disappearance empty them. What is
+emptied as it is sent depends on what it is: a sign-in's password, and a code sent alone
+(the code that signs in, the code that proves an address), are emptied right or wrong; a
+password that is being chosen (at a sign-up, in a reset, for an expired password) stays
+when the server refuses it, so that it can be put right, and a reset's code stays with it
+unless the code is what was refused. The screens log nothing.
+
+**A view that goes away closes its attempt.** That is also what happens when another screen
+is pushed over it or another tab is chosen: the flow is discarded, every field is emptied,
+the address too, and the view is on its first screen when it is come back to. A flow that
+is left any other way (another flow is opened, "Start again") is discarded as well, and an
+answer that arrives afterwards signs nobody in. One answer is not dropped: a sign-in that
+had already completed when its screen was left has signed the client in, so `onSignedIn` is
+still called, once. No button does nothing: one whose attempt is gone opens the first
+screen and says "That attempt is no longer open. Start again." (`TulaStrings.flowLost`).
+
+An app that draws its own screens on `TulaAuthModel` reads `model.content` (the title, the
+fields, the main button and the links of the open screen, each with its `TulaAuthAction`)
+and calls `model.perform(_:)`.
 
 ### The theme
 
@@ -519,7 +534,7 @@ hold their contrast in both schemes.
 
 **What was checked and what was not.** The system's accessibility audit ran on every screen
 in a simulator, in the light scheme and, for the screens one test reaches, the dark one,
-with two findings excluded
+with the keyboard put away first and one finding excluded
 ([the list](plans/phase-2-unverified.md#step-214-the-swiftui-screens-tula-49-adr-0057)).
 Where the focus is asked to go, and what is announced, is tested on the model. **VoiceOver
 itself was never turned on**, and no device, no iPad, no right-to-left language and none of

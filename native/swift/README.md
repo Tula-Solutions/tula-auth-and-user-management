@@ -29,7 +29,7 @@ supported" screen).
 | Path | What |
 | --- | --- |
 | `Package.swift` | Two libraries, `TulaAuth` and `TulaAuthUI` (which depends on `TulaAuth` and on nothing else); iOS 16, macOS 13; no dependency (Foundation, Security, CryptoKit, AuthenticationServices and SwiftUI are the system's). |
-| `Sources/TulaAuthUI/*.swift` | What the screens decide, by hand: `TulaAuthModel` (which screen, what the fields hold, where a problem is said, the actions), `TulaStrings` (the one table of strings, and an error's message by its code), `TulaThemeValues` (the contract's theme grammar, and a value turned into a colour, points or a typeface). Counted by the coverage check. |
+| `Sources/TulaAuthUI/*.swift` | What the screens decide, by hand: `TulaAuthModel` (which screen, what the fields hold, where a problem is said, the actions), `TulaAuthContent` (what every screen offers, as data: its words, fields, main button and links, and the action each performs), `TulaStrings` (the one table of strings, and an error's message by its code), `TulaThemeValues` (the contract's theme grammar, and a value turned into a colour, points or a typeface). Counted by the coverage check. |
 | `Sources/TulaAuthUI/Views/` | The SwiftUI views and the four slots: `TulaAuthView`, `TulaAuthParts`. They draw the model and decide nothing; not counted by the coverage check (`swift test` draws no view). |
 | `Tests/TulaAuthUITests/` | The model, the strings and the theme, on the real client over a table of answers. No view is made. |
 | `fixture/ui-tests.ts` | Runs the screens in an iOS simulator: starts the fixture, picks a simulator and runs the UI tests of [`examples/swiftui`](../../examples/swiftui/README.md) with `xcodebuild test`. By hand; in no workflow. |

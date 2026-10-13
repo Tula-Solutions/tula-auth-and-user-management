@@ -40,6 +40,23 @@ split is what makes the logic testable with `swift test` on a Mac, where nothing
 and it is why the coverage threshold counts the model, the strings and the theme and not
 `Views/` (below).
 
+**What a screen holds is data, outside `Views/`** (`TulaAuthContent.swift`):
+`TulaAuthContent(screen:strings:…)` is the title, what is under it, the address a sign-in
+is for, the fields (each with its kind, label, hint and what the keyboard's "go" does), the
+main button and the links, every one of them with the `TulaAuthAction` it performs and the
+identifier it is found by. The model's `perform(_:)` is the one door every control goes
+through, and it does nothing for an action the open screen does not offer. A field's
+problems as they are drawn (`problems(of:)`), the form's (`formProblem`) and what VoiceOver
+reads for a field (`spokenLabel(of:)`) are composed there too. `ContentTests` has a row for
+every case of `TulaAuthScreen` (its `switch` has no `default`: a new case does not compile
+without one) and asserts what is offered and what each offer does.
+
+**What is left in `Views/`** is drawing: the column and its spacing, the theme's colours and
+type on each part, the default look of a field, a button and a problem, the four slots, the
+keyboard and autofill traits of each kind of field, the button that shows a password (its
+state is the field's own), the spinner while an action is out, and the two focus bindings.
+`body` iterates the content and calls `perform`; it has no `switch` over the screen.
+
 `TulaAuthScreen` is a closed list: the three forms that start a flow, the password, the
 offer of an emailed code, the code, the verification of an address, a reset's new password,
 an expired password's replacement, `signedIn`, and `notSupported(status:)`. **Every step the
@@ -56,17 +73,45 @@ nothing is emailed by arriving there; where a code is the only way it is asked f
 ### Nothing secret outlives its screen
 
 - The model holds no token. The session is the client's.
-- A password is in the model's field state only while its screen is open. It is emptied
-  after every submission, right or wrong, on every change of screen, and by `close()`.
-  A code is emptied the same way. The address is kept across screens of one visit (a
-  sign-in's address is carried to a reset) and emptied by `close()`.
-- `TulaAuthView` calls `close()` when it disappears: the flow is discarded
-  (`flow.discard()`, which forgets the attempt's secret and drops an answer in flight) and
-  the fields are emptied.
+- A password or a code is in the model's field state only while its screen is open: every
+  one is emptied on every change of screen and by `close()`. What happens to it when it is
+  sent differs by what it is, and each row has a test against a transport that refuses
+  (`LeftAndRefusedTests`):
+
+  | Field | When it is sent |
+  | --- | --- |
+  | The password of a sign-in | Emptied as it is sent, right or wrong: a password that was refused is typed again, not edited. |
+  | A code that travels alone (the code that signs in, the code that proves an address) | Emptied as it is sent, right or wrong: a refused code is read from the email again. |
+  | A password that is being chosen (a sign-up's, a reset's, an expired password's replacement) | Kept when the server refuses it, so that it can be put right against the message under it ("too short"); emptied when the screen changes. |
+  | A reset's code, sent with the new password | Emptied when the refusal is said at the code field; kept when what was refused is the password, so that the same code goes with the corrected one. |
+
+  The address is kept across screens of one visit (a sign-in's address is carried to a
+  reset) and emptied by `close()`.
+- `TulaAuthView` calls `close()` when it disappears, which is also when another screen is
+  pushed over it or another tab is chosen: the flow is discarded (`flow.discard()`, which
+  forgets the attempt's secret and drops an answer in flight), every field is emptied, the
+  address included, and **the model is back on the start screen of the mode it was made
+  for** (also from a reset reached from a sign-in). A view that comes back keeps its model,
+  and a model left on a step with no flow would draw buttons that can do nothing.
+- **No button is silent.** An action of the open screen does what it says, marks what is
+  missing, says what went wrong or, where its flow is gone, opens the start of the flow
+  with `flowLost` ("That attempt is no longer open. Start again."), shown and announced.
+  Nothing in the model leaves a step open without its flow, so the last is a defence and
+  not a path; a test reaches it by calling the internal `leave()` alone.
 - **A result belongs to the visit it was asked for.** Every action captures the model's
   generation before it awaits and drops its answer when the generation has moved (a change
-  of flow, a `close()`): a late `complete` signs nobody in on a screen that has gone, and a
-  late error is shown to nobody.
+  of flow, a `close()`): a late error is shown to nobody, and an attempt that had not
+  completed signs nobody in on a screen that has gone.
+- **A sign-in that had completed when its screen was left is said, not dropped.** The
+  client records a step and checks "discarded" in one step under one lock
+  (`FlowAttemptState.accept`, as `@tula/core`'s flow does in one turn), and stores the
+  session after it: a flow left while its session is being stored has completed, and
+  `discard()` does nothing to a completed flow. The client is signed in then, whatever the
+  screen shows, so the model shows `signedIn` and calls `onSignedIn` once, under the newer
+  generation too. Before this the check and the recording were two steps with the session's
+  storing between them, and a view closed in that window was left drawing a form to a
+  signed-in user, with the app told nothing. Tests hold the window open with a storage that
+  waits (`FlowTests`, `LeftAndRefusedTests`, `ContentTests`).
 - The model is `TulaRedacted`: `print`, `String(reflecting:)` and `dump` show its type's
   name. It logs nothing, and no error it shows holds what was typed.
 
@@ -119,11 +164,22 @@ default the contract gains that this target cannot draw fails there instead of d
 fallback silently. `ThemeGrammarTests` has the hostile table (the forbidden forms, the
 length cap, non-ASCII white space) and the conversions.
 
-**The grammar is a second copy of the contract's, in Swift, kept equal by hand.** Nothing
-generated carries the rules, and no test runs the two against one table. A rule changed in
-`theme.ts` is changed in `TulaThemeValues.swift` in the same change; that is the cost of
-the copy, and sharing one table of cases between the contract's tests and the Swift tests
-is the way to remove it (not built).
+**The grammar is a second copy of the contract's, in Swift, kept equal by hand, and held
+to one table of cases.** Nothing generated carries the rules. A rule changed in `theme.ts`
+is changed in `TulaThemeValues.swift` in the same change. `packages/contract/src/theme-cases.json`
+is a fixed corpus of values of every type with the contract's verdict for each; the
+contract's test holds `isValidThemeValue` to it and
+`testTheGrammarGivesTheContractsVerdictForEveryValueOfTheSharedCorpus` holds the Swift
+grammar to the same file. The corpus is ASCII, where the two are meant to be equal, and it
+is some seventy values: it catches a rule that moved in one copy, not every string the two
+could differ on.
+
+White space is ASCII's six characters in both: a space, a tab, a line feed, a vertical tab
+(U+000B), a form feed and a carriage return. Three of them are among the forbidden
+characters and refuse a value wherever they stand. **A vertical tab is not among them, in
+either copy**: around a value it is trimmed, as a space is (JavaScript's `trim()` takes
+it), and between the parts of a shadow it separates; inside a colour, a length or a font
+family it matches nothing and the value is refused. The corpus has a row of each.
 
 ### Slots are four, and none can take a label away
 
@@ -158,7 +214,10 @@ draws its own screens on `TulaAuthModel`, or on the client.
 - Every control is at least 44 points high, text is never truncated (it wraps), and sizes
   follow Dynamic Type.
 - The default colours are the contract's, whose tests hold their contrast (4.5:1 for text,
-  3:1 for edges and focus) in both schemes.
+  3:1 for edges and focus) in both schemes. `ThemeContrastTests` computes the same from
+  the resolved values the screens draw with, for every text on the surface it is drawn on.
+- A drag down puts the keyboard away (`scrollDismissesKeyboard(.interactively)`): a number
+  pad has no key that does, and a screen's last lines are under it.
 
 ### Tests, in three layers
 
@@ -175,21 +234,33 @@ draws its own screens on `TulaAuthModel`, or on the client.
    reaches, in the light scheme and, in one test, the dark one. This is the native UI test
    seam: TULA-60's screens add tests there.
 3. **What `verify` holds**: nothing of the screens runs there. `test:harness` tests the two
-   scripts' own logic (which simulator is picked, the `xcodebuild` arguments, that every
-   process has a timeout, what the coverage check counts).
+   scripts' own logic: which simulator is picked, the `xcodebuild` arguments, what the
+   coverage check counts, how the fixture's first line is read (`readyPort`: whole however
+   the pipe cuts it, within a deadline, the rest read and dropped), and, from the runner's
+   source, that each of its three `Bun.spawn` and `Bun.spawnSync` calls names a timeout
+   constant among its arguments and that the fixture is ended in a `finally` and on
+   `SIGINT` and `SIGTERM`. That last pair is a reading of the text, not a run: no test
+   starts the runner.
 
 The seam is synchronous on purpose. An `async` `setUp` or `tearDown` on a main-actor
 `XCTestCase` ended the test runner in `swift_task_dealloc` on Xcode 16.4, so set-up,
 tear-down and the tests are plain throwing methods, and the few calls to the client and the
 fixture are awaited through a helper that blocks the test's thread on a semaphore.
 
-**The audit has two exclusions, each for one kind of issue on one kind of element**, written
-where the audit is called with the reason: "text clipped" on a text field that holds text
-(reported for a field whose text is drawn whole), and the contrast of the last line in the
-dark scheme (reported on one screen and passed, for the same two colours, on every other;
-the colours are 7.6:1 by the WCAG formula). Every other issue of every other element fails
-the test. They are exclusions of the audit's findings, not proofs that the findings are
-wrong: `docs/plans/phase-2-unverified.md` says so.
+**A screen is audited with the keyboard away.** The audit measures an element from the
+pixels at its frame, and while the keyboard is up a screen's last lines are under it: the
+contrast "of the last line" and of "Forgot password?" on the password screen was the
+keyboard's (their frames began at 572 and 504 points with the keyboard's top at 561, and
+the line above it; no screen without a keyboard reported either). The seam drags the
+keyboard away before every audit and fails when it does not go. **No contrast finding is
+left out**, in either scheme.
+
+**The audit has one exclusion, for one element**, written where the audit is called with
+the reason: "text clipped" on the address field while it holds an address (25 characters,
+drawn whole in a field 321 points wide; seen on the reset's start and the sign-up's with
+the address carried over). Text clipped in any other field, in the address field while it
+is empty, or in a label, a button or a message fails the test. It is an exclusion of the audit's finding, not a proof
+that the finding is wrong: `docs/plans/phase-2-unverified.md` says so.
 
 **The audit is not VoiceOver.** It is what axe is to the browser tests: a set of checks on
 what the system's accessibility tree says. No test turns VoiceOver on, and where the
@@ -264,7 +335,7 @@ Departed from, each on purpose:
   supported" in these screens, although the client itself can take the first three: the
   screens are behind the client until TULA-60.
 - The simulator tests need Xcode, a simulator runtime, `bun` and an installed workspace,
-  and take about three minutes after the build. They are not in CI.
+  and take about four minutes after the build. They are not in CI.
 
 ## Not verified
 
@@ -277,5 +348,4 @@ iPad, a keyboard and Switch Control were not tried.
 ## Not decided here
 
 The screens of TULA-60. A translated table shipped with the package (there is the English
-one). A shared table of theme cases between the contract's tests and the Swift tests. The
-client-side password checklist. Publishing the package.
+one). The client-side password checklist. Publishing the package.
