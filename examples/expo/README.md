@@ -38,7 +38,7 @@ checkout. From the repository root:
 
 ```bash
 bun install
-bun run packages:check               # writes .release/tula-tech-{contract,core,expo}-0.0.0.tgz
+bun run packages:check               # writes .release/tula-tech-{contract,core,expo}-0.1.0-alpha.1.tgz
 bun install --cwd examples/expo/app  # Expo, React Native, the native modules and the three tarballs
 ```
 
@@ -195,7 +195,7 @@ To put it into the app, from `examples/expo/app`:
 
 ```bash
 cp -R ../screens/. .   # index.screens.ts, NativeApp.tsx, src/native-tula.ts
-bun add @tula-tech/expo-screens@file:../../../.release/tula-tech-expo-screens-0.0.0.tgz
+bun add @tula-tech/expo-screens@file:../../../.release/tula-tech-expo-screens-0.1.0-alpha.1.tgz
 ```
 
 (`bun run packages:check` at the repository's root packs that tarball beside the other

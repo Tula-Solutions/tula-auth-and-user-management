@@ -1,7 +1,8 @@
 # Releasing
 
-Nine packages are released to npm as alphas (dist-tag `alpha`, first version
-`0.1.0-alpha.0`); two are built and checked and **held back**. The licence is Apache-2.0 for
+Nine packages are released to npm as alphas (dist-tag `alpha`, first published version
+`0.1.0-alpha.1`: `-alpha.0` is skipped on purpose,
+[see step 1](#first-release)); two are built and checked and **held back**. The licence is Apache-2.0 for
 the whole repository ([`LICENSE`](../LICENSE)). The npm scope is decided: `@tula-tech`, the
 owner's npm organisation (`create-tula` is unscoped). The design is in
 [ADR 0020](adr/0020-packaging-and-release.md).
@@ -119,9 +120,13 @@ bunx changeset status --verbose    # what the next release would contain, and it
 - `"access": "public"`: a scoped package is published for everyone to install. Nothing runs
   `changeset publish`; the upload is `scripts/packages.ts`, which passes `--access public`
   itself.
-- The repository is in **prerelease mode** (`.changeset/pre.json`, tag `alpha`). The pending
-  changesets take every package from `0.0.0` to `0.1.0-alpha.0`; each further release gives
-  `-alpha.1`, `-alpha.2`, … Leave prerelease mode with `bunx changeset pre exit`.
+- The repository is in **prerelease mode** (`.changeset/pre.json`, tag `alpha`). The first
+  `bunx changeset version` took every package from `0.0.0` to `0.1.0-alpha.0`, which was
+  never published; one more changeset (`skip-alpha-0`) and a second run gave
+  `0.1.0-alpha.1`, the first published version ([why](#first-release), step 1). Each further
+  release gives `-alpha.2`, `-alpha.3`, … In prerelease mode an applied changeset is not
+  deleted: it is moved to `.changeset/pre/`, where it stays until `bunx changeset pre exit`
+  leaves the mode.
 - `bunx changeset version` applies the pending changesets: it rewrites the versions and writes
   each package's `CHANGELOG.md`. It is run on the release branch by whoever cuts the release
   and is committed like any other change.
@@ -285,12 +290,15 @@ For the owner, once. Everything before step 6 changes nothing on npm.
    found"}` and `…/create-tula/0.1.0-alpha.0` `404`, with no list of earlier versions
    (asking npm for the package's version history is the same 404). The Phase 2 plan's note of
    2026-10-08 says the name was "unpublished on npm" and names no version; read with its
-   sentence it means "not published", but that is a reading. So: **if you, or anyone with
-   the name, ever published and removed `create-tula@0.1.0-alpha.0`, that version is gone
-   for good, and the release must be cut as `-alpha.1`** (`bunx changeset version` again
-   on the release branch). You are the only one who can know. The script cannot see it,
-   which is why it uploads `create-tula` first: a refusal then comes before any other
-   package is out.
+   sentence it means "not published", but that is a reading. If anyone with the name ever
+   published and removed `create-tula@0.1.0-alpha.0`, that version is gone for good.
+   **The owner therefore decided that `-alpha.0` is skipped: the first published version
+   is `0.1.0-alpha.1`**, for all nine packages (they share one version). It was reached
+   with Changesets and not by hand: one changeset, `skip-alpha-0`, that says so, and a
+   second `bunx changeset version` on the release branch; each `CHANGELOG.md` therefore
+   has an `0.1.0-alpha.0` section for a version that was never on npm. The script still
+   cannot see what the unscoped name once carried, which is why it uploads `create-tula`
+   first: a refusal then comes before any other package is out.
 2. **Sign in on your machine**, with two-factor authentication switched on for the account:
 
    ```bash
@@ -300,24 +308,35 @@ For the owner, once. Everything before step 6 changes nothing on npm.
 3. **Cut the release branch** (git-flow) from `develop` and apply the changesets:
 
    ```bash
-   git switch -c release/0.1.0-alpha.0 origin/develop
+   git switch -c release/0.1.0-alpha.1 origin/develop
    bunx changeset version                 # versions → 0.1.0-alpha.0, writes each CHANGELOG.md
+   # add .changeset/skip-alpha-0.md (a patch of one package of the fixed group), then
+   bunx changeset version                 # versions → 0.1.0-alpha.1
    ```
 
-   Three constants hold the version by hand: `VERSION` in
+   The second run is this first release's only (step 1); a later release is one run.
+
+   Four places hold the version by hand. Three constants: `VERSION` in
    `packages/create-tula/src/scaffold.ts` (also the version a scaffolded project pins its
    `@tula-tech/*` packages to) and in `packages/cli/src/version.ts`, and `MCP_VERSION` in
-   `packages/mcp/src/server.ts`. Set them to the new version, then:
+   `packages/mcp/src/server.ts`. And the `version` of `apps/api/package.json`, which
+   Changesets ignores and which is what the API reports at `/v1/status`: `tula doctor`
+   compares it with the CLI's own and warns when they differ (`--strict` then exits 1), so
+   an API left at `0.0.0` would have every deployment warned about by the released CLI.
+   Set all four to the new version, then:
 
    ```bash
    bun install                            # the lockfile follows the versions
    bun run verify
    ```
 
-   `verify` fails for a constant that was missed and for a test that still names `0.0.0`.
-   This has not been done before (no version has ever been applied), so expect to fix a few
-   such places; the tarball names in `docs/quickstart.md` and the examples' READMEs carry
-   the old version too.
+   `verify` fails for any of the four that was missed, and says which:
+   `.claude/hooks/release-versions.test.ts` (part of `bun run test:harness`) holds the
+   eleven packages, the API and the three constants to one version.
+   The tarball names in `docs/quickstart.md`, `examples/expo/README.md` and
+   `examples/expo/app/package.json` carry the version too and **no check holds them**:
+   change them by hand. (`create-tula`'s copy of the Expo app needs nothing: its template
+   marks a Tula package with `*` and the scaffold pins it to `VERSION`.)
 
    Commit, open a pull request **into `main`**, and merge it when CI is green. Merging
    publishes nothing: `NPM_PUBLISH` is not set.
@@ -329,10 +348,10 @@ For the owner, once. Everything before step 6 changes nothing on npm.
    bun run release:dry-run
    ```
 
-5. **Read the report.** Nine `publish` lines at `0.1.0-alpha.0` with tag `alpha`,
+5. **Read the report.** Nine `publish` lines at `0.1.0-alpha.1` with tag `alpha`,
    `create-tula` first, the two Expo packages named as held back, and **no** line saying a
    publish would be refused. Look
-   inside a tarball if in doubt: `tar -tzf .release/tula-tech-react-0.1.0-alpha.0.tgz`.
+   inside a tarball if in doubt: `tar -tzf .release/tula-tech-react-0.1.0-alpha.1.tgz`.
 6. **Publish.** Every upload needs your second factor. Which command depends on where you
    sit.
 
@@ -343,8 +362,14 @@ For the owner, once. Everything before step 6 changes nothing on npm.
    ```
 
    `bun publish` then asks for the second factor itself. Its help gives the web flow as the
-   default (an address to approve in a browser); how it asks has not been seen, because
-   nothing has been uploaded yet.
+   default (an address to approve in a browser). In the first release (Bun 1.4.2) it printed
+   an `https://www.npmjs.com/auth/cli/…` address for a package and waited; the address can
+   be opened on any device, so this also works in a session with no terminal, without a
+   code. Three of the nine uploads asked, the others went through on an approval already
+   given. An address that is not approved within a few minutes ends the run with `404 …
+   /-/v1/done` and nothing uploaded: run it again for a new one. It also warns `bin
+   'dist/bin.js' does not exist` for the two packages with an executable; the tarballs hold
+   the file and the installed commands run.
 
    **In a session with no terminal to be asked in** (a remote session, an assistant running
    the command for you), give the code as an argument:
@@ -383,11 +408,19 @@ For the owner, once. Everything before step 6 changes nothing on npm.
    the first would then refuse (it fails closed, nothing wrong is uploaded), and the
    comparison has to be changed before the release can be finished.
 
-   **Then run the same two commands once more without the `@alpha`, and write here what
-   they did.** The release writes the `alpha` dist-tag and nothing else; whether npm also
-   points `latest` at the first version of a new package published with `--tag alpha` was
-   not verified. Until the answer is written down, every sample in the docs names the tag
-   (`.claude/hooks/docs.test.ts` holds them to it).
+   **What the first release showed (2026-10-13, `0.1.0-alpha.1`, commit `f24ed049`).** The
+   second dry run read `skip … (the same tarball)` for all nine, so `bun publish` uploads the
+   tarball it is given unchanged. `bunx create-tula@alpha my-app --framework react-vite`,
+   `bun install`, `tula --version` and the scaffold's `bun run build` worked in an empty
+   directory. **npm pointed `latest` at the first version as well as `alpha`**: a new
+   package has to have a `latest`, so the untagged install resolves to the alpha today. That
+   holds only until a second version is published with `--tag alpha` (`latest` then stays on
+   the first), so every sample in the docs keeps naming the tag
+   (`.claude/hooks/docs.test.ts` holds them to it). Each package also lists a version
+   `0.0.0-stage` ("Temporary package placeholder for staged publishing"), written by the
+   registry a minute or so before the real one appeared; the release did not upload it. A
+   package answered `404` for up to three minutes after the run reported it published, and
+   an address that was asked for in that time can stay cached as `404` longer.
 8. **Hand over to the workflow.** Three things, in this order.
 
    **The environment.** In the GitHub repository, Settings → Environments, create an

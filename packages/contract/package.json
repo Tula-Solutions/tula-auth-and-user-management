@@ -1,6 +1,6 @@
 {
   "name": "@tula-tech/contract",
-  "version": "0.0.0",
+  "version": "0.1.0-alpha.1",
   "license": "Apache-2.0",
   "type": "module",
   "description": "Tula's public, language-neutral contract: schemas, flow protocol, error codes, token claims, password policy.",

@@ -1,6 +1,6 @@
 {
   "name": "@tula-tech/example-config",
-  "version": "0.0.0",
+  "version": "0.0.1-alpha.1",
   "private": true,
   "type": "module",
   "description": "An example tula.config.ts: two environments, their settings and OAuth providers, for `tula diff` and `tula apply`.",

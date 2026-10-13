@@ -28,7 +28,9 @@ const WHERE = [
   'docs/adr/0044-app-link-and-custom-scheme-redirects.md',
   'AGENTS.md',
   '.claude/rules',
-  '.changeset/app-link-redirects.md',
+  // The whole folder: in prerelease mode `changeset version` moves an applied changeset to
+  // `.changeset/pre/`, and its text is what the changelogs were written from.
+  '.changeset',
   'conformance/README.md',
   'conformance/scenarios',
   'apps/dashboard/src/features/native-apps',

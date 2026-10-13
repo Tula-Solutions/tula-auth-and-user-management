@@ -4,7 +4,7 @@ Open-source, self-hostable authentication and user management: Clerk-level devel
 and prebuilt UI, first-class native mobile, and data you own.
 
 > **Status: an alpha.** The web SDKs and the tooling are released to npm under the `alpha`
-> dist-tag, from `0.1.0-alpha.0` ([what is released and what is held back](docs/releasing.md));
+> dist-tag, from `0.1.0-alpha.1` ([what is released and what is held back](docs/releasing.md));
 > the Expo packages, the Swift and Kotlin SDKs and the API image are not published, so the
 > server still runs from a checkout of this repository. Sign-in with Google,
 > GitHub, Apple and Microsoft has only ever been run against a built-in mock provider, and passkeys only
