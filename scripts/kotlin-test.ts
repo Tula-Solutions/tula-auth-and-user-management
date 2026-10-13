@@ -2,7 +2,7 @@ import { join } from 'node:path'
 
 // Runs the Kotlin SDK's Gradle build with the real API beside it (ADR 0054):
 //
-//   bun run native:kotlin:test                 # ./gradlew :tula-auth:check
+//   bun run native:kotlin:test                 # ./gradlew :tula-auth:check :tula-auth-ui:check
 //   bun run native:kotlin:test -- :tula-auth:test --tests '*JourneysTest*'
 //
 // It starts `e2e/kotlin-fixture.ts` on a free loopback port, hands its address to Gradle as
@@ -57,7 +57,11 @@ try {
     ),
   ])
   const gradle = Bun.spawn(
-    ['./gradlew', '--console=plain', ...(tasks.length > 0 ? tasks : [':tula-auth:check'])],
+    [
+      './gradlew',
+      '--console=plain',
+      ...(tasks.length > 0 ? tasks : [':tula-auth:check', ':tula-auth-ui:check']),
+    ],
     {
       cwd: ANDROID,
       env: { ...process.env, TULA_FIXTURE_URL: address },
