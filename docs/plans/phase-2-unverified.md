@@ -885,8 +885,9 @@ Apple Swift 6.1.2, bun 1.4.2:
   model (the real client on a transport that is a table of answers, tokens in memory) and
   18 of the strings and the theme. **None makes a view**: no SwiftUI `body` ran in them.
 - `swift test --package-path native/swift --enable-code-coverage`, then
-  `bun run native/swift/fixture/coverage.ts`: `TulaAuth` 95.42% of lines and 90.05% of
-  functions (its line figure moved between 95.42% and 95.49% from one run to the next);
+  `bun run native/swift/fixture/coverage.ts`: `TulaAuth` 95.53% of lines and 90.27% of
+  functions (its figures moved from one run to the next: lines between 95.42% and 95.53%,
+  functions between 90.05% and 90.27%);
   `TulaAuthUI` 97.38% of lines and 97.97% of functions, over the three files
   directly in `Sources/TulaAuthUI` (thresholds 90% and 85%, unchanged, each library
   alone). **The two files of `Sources/TulaAuthUI/Views` are not counted**, by decision
@@ -896,7 +897,7 @@ Apple Swift 6.1.2, bun 1.4.2:
   `examples/swiftui/TulaExample.xcodeproj`, scheme `TulaExample`, on the simulator
   **iPhone 16, iOS 18.5** (the script's own pick), one test at a time. The ten tests of
   `TulaExampleUITests/AuthScreensUITests` passed:
-  `Executed 10 tests, with 0 failures (0 unexpected) in 188.261 (188.264) seconds`,
+  `Executed 10 tests, with 0 failures (0 unexpected) in 189.063 (189.065) seconds`,
   `** TEST SUCCEEDED **`. They are: a sign-up that proves its address and signs in, then a
   sign-out; a sign-in with a password; a wrong password said at the field; a sign-in with
   an emailed code beside a password; one where the code is the only way; a password reset;
