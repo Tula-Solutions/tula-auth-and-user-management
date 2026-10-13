@@ -993,21 +993,22 @@ Run on 2026-10-13, by hand, on one Mac (arm64, macOS 26.6.2), Xcode 16.4 (build 
 Apple Swift 6.1.2, bun 1.4.2:
 
 - `swift test --package-path native/swift --enable-code-coverage`:
-  `Executed 552 tests, with 0 failures (0 unexpected) in 23.250 (23.272) seconds`, as a
-  macOS command-line test bundle. 249 of them are the target `TulaAuthUITests` (86 before):
+  `Executed 556 tests, with 0 failures (0 unexpected) in 22.137 (22.157) seconds`, as a
+  macOS command-line test bundle (the run after the review's fixes: four tests more than
+  the run before them). 253 of them are the target `TulaAuthUITests` (86 before):
   the sign-in model's second step and enrolment (`SecondStepTests`, 31), the texted code's
-  screens (`TextedCodeScreenTests`, 14), the passkey and the providers on the first screen
-  (`WaysTests`, 25), the account model (`AccountModelTests`, 42; `AccountStepUpTests`, 23),
+  screens (`TextedCodeScreenTests`, 16), the passkey and the providers on the first screen
+  (`WaysTests`, 25), the account model (`AccountModelTests`, 43; `AccountStepUpTests`, 23),
   what the account screen offers as data (`AccountContentTests`, 18) and the shared parts
-  and the QR code (`PartsTests`, 10). They run the real client on a transport that is a
+  and the QR code (`PartsTests`, 11). They run the real client on a transport that is a
   table of answers, with scripted sheets (`Tests/TulaAuthUITests/Sheets.swift`). **None
   makes a view, shows a sheet, opens a browser or asks a Keychain.**
 - The client's own new calls: 13 unit tests (`TextedCodeTests`) and 11 journey methods for
   10 scenarios against the real API on the fixture (`TextedCodeJourneys`), the texted codes
   read from the fixture's development inbox. No text message left the machine.
 - `bun run native/swift/fixture/coverage.ts` on that run:
-  `TulaAuth: lines 95.69%, functions 90.65% (thresholds 90.00% and 85.00%)`,
-  `TulaAuthUI: lines 98.64%, functions 98.34% (thresholds 90.00% and 85.00%)`, the second
+  `TulaAuth: lines 95.59%, functions 90.43% (thresholds 90.00% and 85.00%)`,
+  `TulaAuthUI: lines 98.61%, functions 98.35% (thresholds 90.00% and 85.00%)`, the second
   over the ten files directly in `Sources/TulaAuthUI`. The thresholds are unchanged. **The
   three files of `Sources/TulaAuthUI/Views` are still not counted**, `TulaAccountView.swift`
   among them.
@@ -1017,9 +1018,11 @@ Apple Swift 6.1.2, bun 1.4.2:
   TULA-56).
 - `bun run native/swift/fixture/ui-tests.ts`, on the simulator **iPhone 16, iOS 18.5** (the
   script's own pick), one test at a time:
-  `Executed 18 tests, with 0 failures (0 unexpected) in 497.719 (497.725) seconds`,
-  `** TEST SUCCEEDED **`; 13 of `AuthScreensUITests` (250 seconds) and 5 of
-  `SecondStepAndAccountUITests` (248 seconds). It was the third whole run: the first had
+  `Executed 18 tests, with 0 failures (0 unexpected) in 510.199 (510.210) seconds`,
+  `** TEST SUCCEEDED **`; 13 of `AuthScreensUITests` (258 seconds) and 5 of
+  `SecondStepAndAccountUITests` (252 seconds). That is the fourth whole run, made after the
+  review's fixes (the pasteboard call and a reworded string); the third had passed too
+  (497.719 seconds). Of the earlier ones: the first had
   failures in 11 tests and the second 9 audit findings, all put right in the sources and
   not by an exclusion (below).
   The five new tests: a sign-in where two-step verification is required, which sets up an
@@ -1055,7 +1058,7 @@ Not verified:
 | **A texted code as a sign-in and as a second step** | The model's screens for both are tested against a table of answers, and the client's calls by the journeys against the real API. On the simulator a texted code was typed only when adding a phone number. The texted sign-in screens are drawn only where what was typed reads as a phone number (`TulaAuthModel.isPhoneNumber`), a rule of the screens' own that only the model's tests exercise. |
 | **The QR code** | Made by Core Image in memory; a test holds that an image is made and that nothing is made for an empty string. The simulator drew it and the audit passed. **No camera or authenticator app read it**: that it encodes the `otpauth` address correctly is Core Image's doing and was not checked by decoding. |
 | **"Held only while its screen is open"** | The setup key, the QR code's source and the backup codes are emptied by every change of screen or panel, by a completion and by `close()`: tests of the two models. That SwiftUI keeps no copy in a view after the panel goes is how the views are written (they hold no `@State` for them), not something a tool inspected; the simulator's memory was not looked at. |
-| **Copying** | The copy button calls a closure the app passes; tests hold that nothing is copied unasked. The system pasteboard was not exercised on the simulator. |
+| **Copying** | The copy button calls a closure the app passes; tests hold that nothing is copied unasked, and that the rule the view reads is "this device only, taken back after 60 seconds" (`TulaCopyRule`). The call that writes `UIPasteboard` with `localOnly` and `expirationDate` compiled for the simulator and was not exercised there: **no run looked at a pasteboard, at Universal Clipboard or at the expiry**. |
 | **A failed sign-out** | The account model stays signed in and says so when the server could not be told: a model test on a transport that fails. Not reached on the simulator (the fixture always answers). |
 | **Sessions marked** | "This device" and "Bound to a device key" are data of `TulaAccountContent`, tested there. The simulator showed "This device" on one session; no session there was bound to a device key (the example passes no key store). |
 | **Connected provider accounts** | Not built: the account screen has no list of identities and no linking. |

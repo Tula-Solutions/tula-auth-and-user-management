@@ -426,7 +426,7 @@ user then makes new ones on the account screen).
 | `needs_email_verification` | Check your email (the code that proves the address) |
 | `needs_new_password` of a reset | Choose a new password (the code and the new password together) |
 | `needs_new_password` with `reason: expired` | Your password has expired |
-| `needs_first_factor` that offers a texted code, where a phone number was typed (`TulaAuthModel.isPhoneNumber`; an address never gets the texted control) | Check your phone: a button that asks for the code. **Nothing is texted by arriving**; the code field is drawn once a message was sent |
+| `needs_first_factor` that offers a texted code, where a phone number was typed (`TulaAuthModel.isPhoneNumber`; an address never gets the texted control) | Check your phone: a button that asks for the code. **Nothing is texted by arriving**; the code field is drawn once a code was asked for, and its words never say that a message was sent (a number that signs nobody in is answered alike and texted nothing). Where a texted code is the one way the step has for something typed and what was typed is not a number with its `+`, that is said at the first field, never as "not supported" |
 | `needs_second_factor` | Two-step verification: one way open (an authenticator app's code, a passkey, a texted code, a backup code) and the step's other ways as links. A passkey is a way only where the app gave its client a passkey sheet; a texted code is asked for by its button |
 | `needs_factor_enrolment` | Set up two-step verification: a button that asks for the setup key, then the key with its QR code and the code field, then **Save your backup codes**, shown once |
 | `complete` | You are signed in |
@@ -507,7 +507,11 @@ with the field's text: a field that comes back empty comes back hidden.
 
 **A setup key, its QR code and backup codes are held only while their screen is open.** The
 QR code is drawn in memory by the system's own generator each time it is shown, and is never
-written to a file or a cache. The pasteboard is written only when a person presses "Copy".
+written to a file or a cache. The pasteboard is written only when a person presses "Copy". What is copied is written for this device only and with an expiry of a minute
+(`UIPasteboard`'s `localOnly` and `expirationDate`), so a setup key or backup codes are not
+handed to the account's other devices by Universal Clipboard and do not stay on the
+pasteboard. The rule (`TulaCopyRule`) is tested; the call that writes the pasteboard is view
+code and no test or simulator run exercised it.
 
 ### The account screen
 

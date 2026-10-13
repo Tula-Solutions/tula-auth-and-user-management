@@ -389,10 +389,6 @@ public final class TulaAuthModel: ObservableObject, TulaRedacted {
     func leave() {
         flow?.any.discard()
         flow = nil
-        if canRetryProvider {
-            // A ticket that waited for another try is for a sign-in nobody is on any more.
-            client.discardProviderSignIn()
-        }
         generation += 1
         isPending = false
         wipe()
@@ -408,7 +404,14 @@ public final class TulaAuthModel: ObservableObject, TulaRedacted {
         setup = nil
         backupCodes = []
         textedOff = false
-        canRetryProvider = false
+        if canRetryProvider {
+            // "Try again" goes with its screen, and so does what it would have sent: a
+            // ticket that waited for another try is for a sign-in nobody is on any more,
+            // and the client must not hold what nothing drawn can use. Here and not in
+            // `leave()`, because a screen is also left by going on from it.
+            client.discardProviderSignIn()
+            canRetryProvider = false
+        }
         sessionUnsaved = false
     }
 
@@ -529,8 +532,20 @@ public final class TulaAuthModel: ObservableObject, TulaRedacted {
         let client = self.client
         switch screen {
         case .signInStart:
+            let isNumber = TulaAuthModel.isPhoneNumber(address)
             await perform {
                 let flow = try await client.startSignIn(identifier: address)
+                // A texted code is the one way this step has for something typed, and what
+                // was typed is not a number in the international form: that is said at the
+                // field, to be put right. The step itself would be "not supported", which
+                // tells a person to update an app that has nothing wrong with it.
+                if case .firstFactor(let step) = flow.screen, step.strategies.contains(.smsCode),
+                    !step.strategies.contains(.password), !step.strategies.contains(.emailCode),
+                    !isNumber
+                {
+                    flow.discard()
+                    throw NumberForm()
+                }
                 // Where an emailed code is the only way in there is nothing to choose: ask
                 // for it, so that the user goes from their address straight to the code.
                 if case .firstFactor(let step) = flow.screen, step.strategies == [.emailCode], step.prepared == nil {
@@ -809,6 +824,10 @@ public final class TulaAuthModel: ObservableObject, TulaRedacted {
         }
     }
 
+    /// What was typed where only a phone number starts a sign-in is not one. It holds
+    /// nothing of what was typed.
+    private struct NumberForm: Error {}
+
     func begin() -> Int? {
         guard !isPending else {
             return nil
@@ -832,6 +851,13 @@ public final class TulaAuthModel: ObservableObject, TulaRedacted {
             return
         }
         isPending = false
+        if error is NumberForm {
+            let words = strings.ways.numberForm
+            fieldErrors[.email] = [words]
+            ask(.field(.email))
+            announce(words)
+            return
+        }
         // Everything the client throws is a `TulaError`. Anything else is a bug somewhere,
         // and is said with the table's fallback: its own words were not written for a user.
         guard let failure = error as? TulaError else {

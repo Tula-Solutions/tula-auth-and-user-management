@@ -120,6 +120,65 @@ final class TextedCodeScreenTests: XCTestCase {
         XCTAssertEqual(stage.model.screen, .textedSignIn(destination: Wire.masked))
     }
 
+    func testNoScreenOfATextedSignInSaysThatAMessageWasSent() async throws {
+        // A number that signs nobody in is answered like one that does and is texted
+        // nothing: a sentence that says a code was texted would be false for it.
+        func words(_ stage: Stage) -> String {
+            (String(describing: stage.model.content) + "\n" + stage.shown).lowercased()
+        }
+        let offered = try await number()
+        let stage = try await texted()
+        var drawn = [words(offered), words(stage)]
+        await stage.model.perform(.resendCode)
+        drawn.append(words(stage))
+        for text in drawn {
+            for claim in ["we texted", "we sent", "was sent", "has been sent"] {
+                XCTAssertFalse(text.contains(claim), "\(claim): \(text)")
+            }
+        }
+        XCTAssertEqual(
+            stage.model.content.subtitle,
+            "If this number can sign in, a 6-digit code is on its way to +1 *** *** **42. Enter it below.")
+    }
+
+    // MARK: A number that is not in the international form
+
+    func testWhereOnlyANumberIdentifiesWhatIsNotOneIsSaidAtTheFieldAndNotAsAnAppToUpdate() async throws {
+        // A texted code beside ways that take no identifier: the step offers an address
+        // nothing, and a number typed without its plus sign is not a version problem.
+        let only = #"{"status":"needs_first_factor","strategies":["sms_code","passkey"]}"#
+        let words = "Enter a phone number with its country code, starting with +."
+        for typed in ["4155550142", "0415 555 0142", "maya@example.com"] {
+            let stage = try Stage()
+            stage.api.on(Wire.signIns, Wire.flow("sign_in", only, start: true))
+            stage.model.email = typed
+            await stage.model.start()
+            XCTAssertEqual(stage.model.screen, .signInStart, typed)
+            XCTAssertEqual(stage.model.fieldErrors, [.email: [words]], typed)
+            XCTAssertNil(stage.model.formError)
+            XCTAssertEqual(stage.model.focus, .field(.email))
+            XCTAssertEqual(stage.heard.said.last, words)
+            XCTAssertFalse(stage.model.isPending)
+            XCTAssertEqual(stage.model.email, typed, "what was typed is kept, to be put right")
+
+            // The attempt is nobody's: no action of it is sent, and a number starts anew.
+            await stage.model.sendTextedCode()
+            await stage.model.submitCode()
+            XCTAssertEqual(stage.api.routes, [Wire.signIns], typed)
+            stage.model.email = Wire.number
+            await stage.model.start()
+            XCTAssertEqual(stage.model.screen, .textedSignInOffer)
+            XCTAssertEqual(stage.model.fieldErrors, [:])
+        }
+
+        // Where an address has a way, a number without its plus sign is taken for one.
+        let both = try Stage()
+        both.api.on(Wire.signIns, Wire.flow("sign_in", Wire.passwordAndText, start: true))
+        both.model.email = "4155550142"
+        await both.model.start()
+        XCTAssertEqual(both.model.screen, .password(canEmailCode: true))
+    }
+
     // MARK: A code the server refused
 
     func testARefusedCodeIsSaidAboutTheCodeAndTheFieldIsEmptied() async throws {

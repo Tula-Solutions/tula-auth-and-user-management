@@ -798,6 +798,34 @@ final class AccountModelTests: XCTestCase {
         XCTAssertEqual(stage.heard.signedOut, 1)
         signedIn = await stage.isSignedIn
         XCTAssertFalse(signedIn)
+
+        // Read again, by the app or by "Try again": the same ended session, told once.
+        await stage.model.load()
+        await stage.model.perform(.reload)
+        XCTAssertEqual(stage.heard.signedOut, 1, "an ended session is reported once")
+
+        // Somebody signs in again and that session ends too: that is another one.
+        stage.api.on(Wire.signIns, Wire.flow("sign_in", Wire.complete, start: true))
+        _ = try await stage.client.startSignIn(identifier: "maya@example.com")
+        signedIn = await stage.isSignedIn
+        XCTAssertTrue(signedIn)
+        stage.api.on(Account.me, Reply(json: Account.user()))
+        await stage.model.load()
+        XCTAssertEqual(stage.heard.signedOut, 1)
+        stage.api.on(Account.me, Reply.error(401, "session.expired"))
+        await stage.model.load()
+        await stage.model.load()
+        XCTAssertEqual(stage.heard.signedOut, 2)
+    }
+
+    func testASignOutOfThisScreenIsNotReportedAgainByALaterRead() async throws {
+        let stage = try await AccountStage.loaded()
+        stage.api.on(Account.signOut, Account.none)
+        await stage.model.perform(.signOut)
+        XCTAssertEqual(stage.heard.signedOut, 1)
+        // A view that is still there reads once more: nobody is signed in, as was said.
+        await stage.model.load()
+        XCTAssertEqual(stage.heard.signedOut, 1)
     }
 
     // MARK: Nothing secret outlives its panel

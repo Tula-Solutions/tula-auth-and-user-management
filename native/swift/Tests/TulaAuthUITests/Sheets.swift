@@ -253,7 +253,8 @@ enum MoreScreens {
                 identity: identity, primary: Offer(primary: "Text me a code", .sendTextedCode))
         case .textedSignIn:
             return TulaAuthContent(
-                title: "Check your phone", subtitle: "Enter the 6-digit code we texted to +1 *** *** **42.",
+                title: "Check your phone",
+                subtitle: "If this number can sign in, a 6-digit code is on its way to +1 *** *** **42. Enter it below.",
                 identity: identity, fields: [code("Verification code", .submitCode)],
                 primary: Offer(primary: "Sign in", .submitCode),
                 links: [Offer("resend", "Text a new code", .resendCode)])

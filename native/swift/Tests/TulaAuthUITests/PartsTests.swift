@@ -181,6 +181,17 @@ final class PartsTests: XCTestCase {
         XCTAssertFalse(field.fields[.email]?.first?.contains("1m") == true)
     }
 
+    // MARK: What is copied
+
+    func testWhatIsCopiedStaysOnThisDeviceAndIsTakenBackAfterAMinute() {
+        // A setup key and backup codes: not for the other devices of the same account, and
+        // not for whatever reads the pasteboard an hour later.
+        XCTAssertTrue(TulaCopyRule.localOnly)
+        XCTAssertEqual(TulaCopyRule.lifetime, 60)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        XCTAssertEqual(TulaCopyRule.expiry(from: now), Date(timeIntervalSince1970: 1_800_000_060))
+    }
+
     // MARK: Words
 
     func testACodeThatCameWithoutAnErrorIsSaidByTheTableThenTheContractThenTheFallback() {

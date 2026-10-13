@@ -174,6 +174,9 @@ public final class TulaAccountModel: ObservableObject, TulaRedacted {
     /// session all the same, so the account can no longer be read: the screen says so and
     /// offers to try again.
     @Published public private(set) var signOutFailed = false
+    /// The app was told that nobody is signed in, and nobody has been since. A session
+    /// that ended is reported once however often the account is read after it.
+    private var toldSignedOut = false
 
     /// The strings the messages are taken from.
     public var strings: TulaStrings
@@ -289,9 +292,18 @@ public final class TulaAccountModel: ObservableObject, TulaRedacted {
             return
         }
         let asked = generation
-        guard await client.session.state == .signedOut, asked == generation else {
+        let state = await client.session.state
+        guard asked == generation else {
             return
         }
+        if state.isSignedIn {
+            // Somebody is signed in again: the end of this session will be one to tell.
+            toldSignedOut = false
+        }
+        guard state == .signedOut, !toldSignedOut else {
+            return
+        }
+        toldSignedOut = true
         reset()
         onSignedOut?()
     }
@@ -693,6 +705,9 @@ public final class TulaAccountModel: ObservableObject, TulaRedacted {
                 return
             }
             signOutFailed = false
+            // Told here, whatever was told before: a sign-out a person asked for. A read
+            // that finds nobody signed in afterwards has nothing new to say.
+            toldSignedOut = true
             reset()
             onSignedOut?()
         } catch {

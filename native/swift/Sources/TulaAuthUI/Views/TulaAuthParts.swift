@@ -3,6 +3,7 @@ import TulaAuth
 
 #if canImport(UIKit)
 import UIKit
+import UniformTypeIdentifiers
 #elseif canImport(AppKit)
 import AppKit
 #endif
@@ -649,13 +650,23 @@ struct PrimaryButton<Action: Hashable & Sendable>: View {
 // MARK: The pasteboard
 
 /// Puts text on the pasteboard. Called only from a button a person pressed.
+///
+/// What is copied is a setup key or backup codes, so it is written as `TulaCopyRule` says:
+/// for this device only, and with a time after which the system takes it back. No test
+/// writes a pasteboard: the rule is tested, this call is not.
 enum Pasteboard {
     @MainActor
     static func copy(_ text: String) {
         #if canImport(UIKit)
-        UIPasteboard.general.string = text
+        UIPasteboard.general.setItems(
+            [[UTType.plainText.identifier: text]],
+            options: [
+                .localOnly: TulaCopyRule.localOnly,
+                .expirationDate: TulaCopyRule.expiry(from: Date()),
+            ])
         #elseif canImport(AppKit)
-        NSPasteboard.general.clearContents()
+        // AppKit has no expiry for a pasteboard's contents: only "this Mac" is asked for.
+        NSPasteboard.general.prepareForNewContents(with: TulaCopyRule.localOnly ? .currentHostOnly : [])
         NSPasteboard.general.setString(text, forType: .string)
         #endif
     }

@@ -201,3 +201,17 @@ extension TulaStrings {
         return (precise.date(from: text) ?? ISO8601DateFormatter().date(from: text)).map(format)
     }
 }
+
+/// How text a person asked to copy is put on the pasteboard: a setup key or backup codes,
+/// which are secrets. The view that writes the pasteboard reads this and decides nothing.
+enum TulaCopyRule {
+    /// Kept on this device: not handed to the account's other devices.
+    static let localOnly = true
+    /// How long the text stays on the pasteboard, where the system can take it back.
+    static let lifetime: TimeInterval = 60
+
+    /// When text copied at `now` is taken off the pasteboard.
+    static func expiry(from now: Date) -> Date {
+        now.addingTimeInterval(lifetime)
+    }
+}

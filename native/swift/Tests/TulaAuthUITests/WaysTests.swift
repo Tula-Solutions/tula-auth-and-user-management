@@ -686,6 +686,23 @@ final class WaysTests: XCTestCase {
         let (closed, _) = try await lost()
         closed.model.close()
         XCTAssertFalse(closed.model.canRetryProvider)
+        guard case .refused = try await closed.client.retryProviderSignIn() else {
+            return XCTFail("the client still held a ticket of a screen that was closed")
+        }
+
+        // Gone on to another sign-in from the same screen, with an address: "Try again" is
+        // not drawn on the next screen, and what it would have sent is not kept either.
+        let (onward, _) = try await lost()
+        let before = onward.api.count(Wire.oauthExchange)
+        onward.api.on(Wire.signIns, Wire.flow("sign_in", Wire.both, start: true))
+        onward.model.email = "maya@example.com"
+        await onward.model.start()
+        XCTAssertEqual(onward.model.screen, .password(canEmailCode: true))
+        XCTAssertFalse(onward.model.canRetryProvider)
+        guard case .refused = try await onward.client.retryProviderSignIn() else {
+            return XCTFail("the client still held a ticket nothing on the screen could send again")
+        }
+        XCTAssertEqual(onward.api.count(Wire.oauthExchange), before, "nothing was presented")
     }
 
     func testAProvidersPageAnsweredAfterItsScreenWasLeft() async throws {

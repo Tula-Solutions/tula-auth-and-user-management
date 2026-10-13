@@ -172,7 +172,8 @@ confirmed and that the session may still be active on this device, shows nothing
 account (it can no longer be read), and offers the sign-out again, which sends the token the
 client kept for that. `onSignedOut` is called only after a sign-out the server was told of,
 and when the screen finds that the session ended elsewhere while no failed sign-out is
-pending.
+pending. A session that ended is reported once, however often the account is read
+afterwards; the next one to end, after somebody signed in again, is reported again.
 
 ### What is emptied when (extends the table of ADR 0057)
 
@@ -188,7 +189,26 @@ pending.
 | A phone number typed, a passkey's name typed | `TulaAccountModel` | When the overview is shown again; on `close()`. Kept behind a step-up: neither is a secret, and what is owed needs it. |
 
 **The pasteboard is written only when a person presses "Copy"** (the setup key, the backup
-codes), through a closure the view passes to the model. Nothing reads it.
+codes), through a closure the view passes to the model. Nothing reads it. What is copied is written for this device only and with an expiry of a minute
+(`UIPasteboard`'s `localOnly` and `expirationDate`), so a setup key or backup codes are not
+handed to the account's other devices by Universal Clipboard and do not stay on the
+pasteboard. The rule (`TulaCopyRule`) is tested; the call that writes the pasteboard is view
+code and no test or simulator run exercised it.
+
+**A texted sign-in code's screens never say that a message was sent.** A number that signs
+nobody in is answered like one that does and is texted nothing (ADR 0037), so the words
+are "if this number can sign in, a code is on its way"; a test reads every string those
+screens draw. The second step, the step-up and the account's phone number text the
+account's own proven number and say "we texted".
+
+**"Try again" of a provider sign-in and the ticket it would send go together**: the model
+drops the client's held ticket (`discardProviderSignIn()`) wherever it takes the link away,
+a screen left by going on to another sign-in included.
+
+**Where a texted code is the step's one way for something typed, what is not a number in
+the international form is said at the first field** ("Enter a phone number with its
+country code, starting with +."), the attempt discarded, and never drawn as "not
+supported": nothing is wrong with the app.
 
 `TulaAuthSetup`, `TulaAuthSituation`, `TulaAuthContent`, `TulaAccountFacts`,
 `TulaAccountContent`, `TulaSetupContent`, `TulaCodesContent` and both models are

@@ -232,9 +232,8 @@ final class ModelTests: XCTestCase {
             (#"{"status":"needs_second_factor","options":["passkey"]}"#, "needs_second_factor"),
             (Wire.tomorrow, "needs_a_step_of_tomorrow"),
             (#"{"status":"needs_first_factor","strategies":["passkey","oauth_google"]}"#, "needs_first_factor"),
-            // A texted code is for a number: an address is never shown it, so a step that
-            // offers an address nothing else is not one to draw. (A number: TextedCodeScreenTests.)
-            (#"{"status":"needs_first_factor","strategies":["sms_code"]}"#, "needs_first_factor"),
+            // (A step whose one way for something typed is a texted code is no longer here:
+            // what is not a number is said at the first field. TextedCodeScreenTests.)
             (#"{"status":"needs_new_password","destination":"m***@example.com","strategies":[],"reason":"compromised"}"#, "needs_new_password"),
         ]
         for (step, status) in steps {

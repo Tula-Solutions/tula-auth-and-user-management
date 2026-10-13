@@ -49,8 +49,13 @@ public struct TulaSignInWayStrings: Hashable, Sendable {
     public var smsPrompt = "We will text a 6-digit code to this number, if you can sign in with it."
     /// The title of the texted code's screens.
     public var smsTitle = "Check your phone"
-    /// `{destination}` is the masked number.
-    public var smsSubtitle = "Enter the 6-digit code we texted to {destination}."
+    /// `{destination}` is the masked number. Never a claim that a message was sent: a
+    /// number that signs nobody in is answered like one that does, and is texted nothing.
+    public var smsSubtitle =
+        "If this number can sign in, a 6-digit code is on its way to {destination}. Enter it below."
+    /// Under the first field, where only a phone number starts a sign-in with something
+    /// typed and what was typed is not one in the international form.
+    public var numberForm = "Enter a phone number with its country code, starting with +."
     /// The link that asks for another text message.
     public var smsResend = "Text a new code"
     /// Said once another message was asked for.
