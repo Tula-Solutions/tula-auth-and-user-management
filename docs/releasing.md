@@ -362,8 +362,14 @@ For the owner, once. Everything before step 6 changes nothing on npm.
    ```
 
    `bun publish` then asks for the second factor itself. Its help gives the web flow as the
-   default (an address to approve in a browser); how it asks has not been seen, because
-   nothing has been uploaded yet.
+   default (an address to approve in a browser). In the first release (Bun 1.4.2) it printed
+   an `https://www.npmjs.com/auth/cli/…` address for a package and waited; the address can
+   be opened on any device, so this also works in a session with no terminal, without a
+   code. Three of the nine uploads asked, the others went through on an approval already
+   given. An address that is not approved within a few minutes ends the run with `404 …
+   /-/v1/done` and nothing uploaded: run it again for a new one. It also warns `bin
+   'dist/bin.js' does not exist` for the two packages with an executable; the tarballs hold
+   the file and the installed commands run.
 
    **In a session with no terminal to be asked in** (a remote session, an assistant running
    the command for you), give the code as an argument:
@@ -402,11 +408,19 @@ For the owner, once. Everything before step 6 changes nothing on npm.
    the first would then refuse (it fails closed, nothing wrong is uploaded), and the
    comparison has to be changed before the release can be finished.
 
-   **Then run the same two commands once more without the `@alpha`, and write here what
-   they did.** The release writes the `alpha` dist-tag and nothing else; whether npm also
-   points `latest` at the first version of a new package published with `--tag alpha` was
-   not verified. Until the answer is written down, every sample in the docs names the tag
-   (`.claude/hooks/docs.test.ts` holds them to it).
+   **What the first release showed (2026-10-13, `0.1.0-alpha.1`, commit `f24ed049`).** The
+   second dry run read `skip … (the same tarball)` for all nine, so `bun publish` uploads the
+   tarball it is given unchanged. `bunx create-tula@alpha my-app --framework react-vite`,
+   `bun install`, `tula --version` and the scaffold's `bun run build` worked in an empty
+   directory. **npm pointed `latest` at the first version as well as `alpha`**: a new
+   package has to have a `latest`, so the untagged install resolves to the alpha today. That
+   holds only until a second version is published with `--tag alpha` (`latest` then stays on
+   the first), so every sample in the docs keeps naming the tag
+   (`.claude/hooks/docs.test.ts` holds them to it). Each package also lists a version
+   `0.0.0-stage` ("Temporary package placeholder for staged publishing"), written by the
+   registry a minute or so before the real one appeared; the release did not upload it. A
+   package answered `404` for up to three minutes after the run reported it published, and
+   an address that was asked for in that time can stay cached as `404` longer.
 8. **Hand over to the workflow.** Three things, in this order.
 
    **The environment.** In the GitHub repository, Settings → Environments, create an
