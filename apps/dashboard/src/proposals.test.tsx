@@ -45,7 +45,7 @@ const ENVIRONMENT = 'x-tula-environment'
 const APPROVE = /^\/v1\/admin\/proposals\/[^/]+\/approve$/
 const SPENT = 'The proposal is spent: it cannot be approved again.'
 const MAYBE =
-  'If the request reached the server the proposal may have been approved all the same: the list was read again, check how it stands before trying once more.'
+  'If the request reached the server the proposal may have been approved all the same: the list is being read again, check how it stands before trying once more.'
 
 /** A time by this browser's clock, for a countdown that is still running. */
 function inMinutes(minutes: number): string {
@@ -421,19 +421,24 @@ describe('approving', () => {
     await current.user.type(field, '{Enter}')
     expect(approvals(current.api)).toHaveLength(1)
 
-    // The approval has succeeded; the list is being read again and the dialog is still open.
+    // The approval has succeeded and the list is being read again, for as long as it takes:
+    // the answer is on the screen, the question is closed, and the card that still reads
+    // `pending` cannot be asked about a second time.
     const reading = holdAnswers(
       (path, _headers, method) => method === 'GET' && path === '/v1/admin/proposals'
     )
     await act(() => approval.release())
-    await waitFor(() => expect(reading.held()).toBeGreaterThan(0))
-    expect(openDialogs()).toBe(1)
-    expect(confirm.getAttribute('aria-disabled')).toBe('true')
-    await current.user.click(confirm)
-    await current.user.type(field, '{Enter}')
-    await act(() => reading.release())
     await result()
     await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(reading.held()).toBeGreaterThan(0)
+    const again = within(await onlyCard()).getByRole('button', { name: /^Approve / })
+    expect(again.getAttribute('aria-disabled')).toBe('true')
+    expect(again.getAttribute('aria-busy')).toBeNull()
+    expect((await onlyCard()).textContent).toContain(
+      'This screen has an answer about this proposal (above). The list is being read again.'
+    )
+    await current.user.click(again)
+    expect(openDialogs()).toBe(0)
     expect(approvals(current.api)).toHaveLength(1)
   })
 
@@ -454,8 +459,15 @@ describe('approving', () => {
     await current.user.click(within(dialog()).getByRole('button', { name: 'Cancel' }))
     await waitFor(() => expect(openDialogs()).toBe(0))
 
+    const mine = within(all[1] as HTMLElement).getByRole('button', { name: /^Approve / })
+    expect(mine.getAttribute('aria-busy')).toBe('true')
     const other = within(all[0] as HTMLElement).getByRole('button', { name: /^Approve / })
+    // Unavailable, in words, and not said to be busy: nothing of this card is on its way.
     expect(other.getAttribute('aria-disabled')).toBe('true')
+    expect(other.getAttribute('aria-busy')).toBeNull()
+    expect(
+      document.getElementById(other.getAttribute('aria-describedby') ?? 'none')?.textContent
+    ).toBe('Another approval is on its way: this one can be asked about once it is answered.')
     await current.user.click(other)
     expect(openDialogs()).toBe(0)
     await act(() => approval.release())
@@ -711,7 +723,140 @@ describe('the time left', () => {
   })
 })
 
+describe('the answer does not wait for the list', () => {
+  const LIST = (path: string, _headers: Headers, method: string) =>
+    method === 'GET' && path === '/v1/admin/proposals'
+
+  test('a ban whose sessions were not ended is said at once, while the list never comes back', async () => {
+    const current = withProposals([{}])
+    current.api.override('POST', APPROVE, (call) => {
+      const proposal = current.api.state.proposals.find((entry) => call.path.includes(entry.id))
+      const { environmentId: _e, keyRevoked: _k, ...rest } = proposal as FakeProposal
+      return {
+        ...rest,
+        summary: 'A summary.',
+        expiryReason: null,
+        status: 'failed',
+        failureReason: 'incomplete',
+        approvedBy: { type: 'instance_admin', id: 'dash-session' },
+        approvedAt: current.api.state.proposalNow,
+      }
+    })
+    await onlyCard()
+    const reading = holdAnswers(LIST)
+    await approveTheOne(current)
+    const panel = await result()
+    expect(reading.held()).toBeGreaterThan(0)
+    expect(panel.getAttribute('data-outcome')).toBe('problem')
+    expect(within(panel).getByTestId('approval-result-text').textContent).toContain(
+      'The user is banned, and ending their sessions failed'
+    )
+    expect(
+      within(panel).getByRole('link', { name: 'Open the user’s page to end their sessions' })
+    ).toBeDefined()
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    await expectFocus(panel)
+    // Never released: the answer did not need it.
+  })
+
+  test('a refusal is said at once, while the list never comes back', async () => {
+    const current = withProposals([{}])
+    current.api.override('POST', APPROVE, () =>
+      failure(409, 'resource.conflict', 'No.', undefined, { reason: 'agent_key_revoked' })
+    )
+    await onlyCard()
+    const reading = holdAnswers(LIST)
+    await approveTheOne(current)
+    const panel = await result()
+    expect(reading.held()).toBeGreaterThan(0)
+    expect(panel.getAttribute('data-outcome')).toBe('refused')
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(approvals(current.api)).toHaveLength(1)
+  })
+})
+
+describe('the question is about what the card showed', () => {
+  test('what the question says the proposal is about does not change after it was opened', async () => {
+    const current = withProposals([{}])
+    const card = await onlyCard()
+    await waitFor(() =>
+      expect(within(card).getByTestId('proposal-target').textContent).toContain('not banned now')
+    )
+    const shown = within(card).getByTestId('proposal-target').textContent as string
+    await current.user.click(within(card).getByRole('button', { name: /^Approve / }))
+    const about = within(dialog()).getByTestId('proposal-target')
+    expect(about.textContent).toBe(shown)
+    expect(dialog().textContent).toContain('as its card said when this question was opened.')
+    expect(dialog().textContent).not.toContain('It had not been read then')
+
+    // The user changes behind the open question, and the card reads it again.
+    const user = current.api.state.users[0] as { email: string; bannedAt: string | null }
+    user.email = 'someone-else@example.com'
+    user.bannedAt = '2026-10-04T11:00:00.000Z'
+    await act(() => current.queryClient.invalidateQueries())
+    await waitFor(() =>
+      expect(within(card).getByTestId('proposal-target').textContent).toContain(
+        'someone-else@example.com'
+      )
+    )
+    expect(within(dialog()).getByTestId('proposal-target').textContent).toBe(shown)
+    expect(dialog().textContent).not.toContain('someone-else@example.com')
+  })
+
+  test('a question opened before the target was read says so, and does not fill in later', async () => {
+    const current = withProposals([{}])
+    const reading = holdAnswers(
+      (path, _headers, method) => method === 'GET' && path === `/v1/admin/users/${IDS.user}`
+    )
+    const card = await onlyCard()
+    await current.user.click(within(card).getByRole('button', { name: /^Approve / }))
+    const about = within(dialog()).getByTestId('proposal-target')
+    expect(about.textContent).toBe(`user ${IDS.user} (reading the user…)`)
+    expect(dialog().textContent).toContain(
+      'It had not been read then: this question does not say how it is now. Cancel and look at the card to see.'
+    )
+    await act(() => reading.release())
+    await waitFor(() =>
+      expect(within(card).getByTestId('proposal-target').textContent).toContain('not banned now')
+    )
+    expect(within(dialog()).getByTestId('proposal-target').textContent).toBe(
+      `user ${IDS.user} (reading the user…)`
+    )
+  })
+})
+
 describe('the audit log', () => {
+  test('an approver and an agent whose type or id holds what cannot be seen are written out', async () => {
+    const api = installFakeApi()
+    api.state.audit = [
+      {
+        id: 'b1',
+        action: 'user.banned',
+        actor: { type: 'agent', id: FAKE_AGENT_KEY_ID },
+        target: { type: 'user', id: IDS.user },
+        ipAddress: null,
+        userAgent: null,
+        metadata: {
+          approvedBy: { type: 'instance\u{200B}_admin', id: 'dash\u{202E}session' },
+          proposedBy: 'agent\u{202E}key',
+          proposalId: 'p\u{200B}1',
+        },
+        occurredAt: '2026-10-04T12:00:00.000Z',
+      },
+    ] as never
+    start(`${DEV_PATH}/audit-log`, { api })
+    await screen.findByRole('heading', { level: 1, name: 'Audit log' })
+    const parties = await screen.findAllByTestId('audit-party')
+    expect(parties.map((line) => line.textContent)).toEqual([
+      'Approved by instance\\u{200B}_admin dash\\u{202E}session',
+      'Asked for by agent agent\\u{202E}key',
+      'Carried out proposal p\\u{200B}1',
+    ])
+    for (const line of parties) {
+      expect(line.querySelector('bdi[dir="ltr"]')).not.toBeNull()
+    }
+  })
+
   test('a proposal, its approval, the change and the outcome are listed with the agent and the approver', async () => {
     const api = installFakeApi()
     const proposalId = '00000000-0000-7000-8000-00000000aaaa'

@@ -92,7 +92,7 @@ export function refusalText(error: unknown): string | null {
  * answer, or an answer that was an error, may still have been taken by the server.
  */
 export const MAY_HAVE_BEEN_TAKEN =
-  'If the request reached the server the proposal may have been approved all the same: the list was read again, check how it stands before trying once more.'
+  'If the request reached the server the proposal may have been approved all the same: the list is being read again, check how it stands before trying once more.'
 
 /** How a proposal stands, for a badge and a sentence. */
 export interface ProposalState {

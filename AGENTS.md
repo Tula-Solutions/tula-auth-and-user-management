@@ -2482,7 +2482,12 @@ SwiftUI screens are TULA-49 and TULA-60; a texted code is TULA-60.
 - **The proposals screen** (`features/proposals`, [ADR 0053](docs/adr/0053-proposals.md),
   "The dashboard's Proposals screen") lists what an agent asked for and approves with the
   dashboard's session. **It approves what it showed**: the request's operation and target
-  are the snapshot the dialog was opened with, never the list read again. The question is
+  are the snapshot the dialog was opened with, never the list read again, and the
+  question's "About …" line is the card's line as text from that moment, never a live
+  read. **The answer is shown before the list is read again** (the refresh is started and
+  not awaited, as for a secret dialog); a proposal the screen has an answer about, and
+  every card while an approval is on its way, cannot be asked about (only the card being
+  approved is `aria-busy`). The question is
   the dashboard's own sentence (`consequenceOf` in `words.ts`); **an operation with no
   sentence has no Approve button**, and a new operation gets a row there in the change
   that adds it (`words.test.ts` runs the contract's lists: every operation, status, expiry

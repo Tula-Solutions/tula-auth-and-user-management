@@ -1,4 +1,4 @@
-import { type ReactNode, useId } from 'react'
+import { type ReactNode, useId, useRef } from 'react'
 import type { Proposal } from '~/api/generated/api.gen'
 import { ActionButton } from '~/components/action-button'
 import { formatDateTime } from '~/lib/format'
@@ -13,10 +13,23 @@ export interface ProposalCardProps {
   proposal: Proposal
   /** This browser's time in milliseconds, for the time left; the screen's one clock. */
   now: number
-  /** True while an approval of this screen is on its way: no second one is started. */
-  busy: boolean
+  /** True while the approval of **this** proposal is on its way. */
+  approving: boolean
+  /**
+   * Why this proposal cannot be asked about just now, in words: another approval is on its
+   * way, or this one was answered and the list has not been read again. `null`: it can.
+   */
+  unavailable: string | null
   /** Ask about approving this proposal, as it is shown here. */
-  onApprove: (proposal: Proposal) => void
+  onApprove: (proposal: Proposal, about: TargetSnapshot) => void
+}
+
+/** What a card said its target was, at one moment: the text, and whether it had been read. */
+export interface TargetSnapshot {
+  /** The line as it was drawn, as text. */
+  text: string
+  /** False when the target had not been read (still loading, or the read failed). */
+  read: boolean
 }
 
 function Entry({
@@ -47,8 +60,29 @@ function Entry({
  * @param props - See {@link ProposalCardProps}.
  * @returns The card.
  */
-export function ProposalCard({ proposal, now, busy, onApprove }: ProposalCardProps) {
+export function ProposalCard({
+  proposal,
+  now,
+  approving,
+  unavailable,
+  onApprove,
+}: ProposalCardProps) {
   const titleId = useId()
+  const reasonId = useId()
+  const about = useRef<HTMLSpanElement>(null)
+
+  function approve() {
+    if (approving || unavailable !== null) {
+      return
+    }
+    // What the question says the proposal is about is what this card says now, kept as
+    // text: the question must not change under the person reading it.
+    const line = about.current?.querySelector('[data-testid="proposal-target"]')
+    onApprove(proposal, {
+      text: line?.textContent ?? '',
+      read: line?.getAttribute('data-read') === 'true',
+    })
+  }
   const state = proposalState(proposal)
   const named = naming(proposal)
   const consequence = consequenceOf(proposal.operation)
@@ -101,7 +135,9 @@ export function ProposalCard({ proposal, now, busy, onApprove }: ProposalCardPro
           )
         </Entry>
         <Entry label='About, as it is now' wide>
-          <TargetDescription target={proposal.target} />
+          <span ref={about}>
+            <TargetDescription target={proposal.target} />
+          </span>
         </Entry>
         <Entry label='Asked for'>{formatDateTime(proposal.createdAt)}</Entry>
         {left ? (
@@ -137,14 +173,29 @@ export function ProposalCard({ proposal, now, busy, onApprove }: ProposalCardPro
               {UNKNOWN_OPERATION}
             </p>
           ) : (
-            <ActionButton
-              size='sm'
-              pending={busy}
-              aria-label={`Approve ${named.operation} for ${named.what} ${named.id}`}
-              onClick={() => onApprove(proposal)}
-            >
-              Approve
-            </ActionButton>
+            <>
+              {/* Busy is said of the one approval that is on its way. Any other card is
+                  unavailable, and says why: focusable, never `disabled`. */}
+              <ActionButton
+                size='sm'
+                pending={approving}
+                aria-disabled={approving || unavailable !== null || undefined}
+                aria-describedby={unavailable !== null ? reasonId : undefined}
+                aria-label={`Approve ${named.operation} for ${named.what} ${named.id}`}
+                onClick={approve}
+              >
+                Approve
+              </ActionButton>
+              {unavailable !== null ? (
+                <p
+                  id={reasonId}
+                  data-testid='proposal-unavailable'
+                  className='text-sm text-muted-foreground'
+                >
+                  {unavailable}
+                </p>
+              ) : null}
+            </>
           )}
         </div>
       ) : null}

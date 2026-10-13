@@ -57,9 +57,14 @@ function UserWords({
   )
 }
 
-function Line({ children }: { children: ReactNode }) {
+/**
+ * The line. `read` says whether the target itself has been read (`data-read`): the question
+ * before an approval keeps the line as it was when it was opened, and says when that was
+ * before anything was known.
+ */
+function Line({ read, children }: { read: boolean; children: ReactNode }) {
   return (
-    <span data-testid='proposal-target' className='break-words'>
+    <span data-testid='proposal-target' data-read={read} className='break-words'>
       {children}
     </span>
   )
@@ -79,7 +84,7 @@ function UserTarget({ id }: { id: string }) {
     state = isMissing(user.error) ? 'no such user now' : 'the user could not be read'
   }
   return (
-    <Line>
+    <Line read={user.data !== undefined}>
       user <Id id={id} /> ({state})
     </Line>
   )
@@ -113,7 +118,7 @@ function SessionTarget({ id }: { id: string }) {
     state = isMissing(session.error) ? 'no such session now' : 'could not be read'
   }
   return (
-    <Line>
+    <Line read={session.data !== undefined}>
       session <Id id={id} /> ({state})
     </Line>
   )
@@ -133,7 +138,7 @@ function ProviderTarget({ id }: { id: string }) {
     state = 'could not be read'
   }
   return (
-    <Line>
+    <Line read={providers.data !== undefined}>
       provider <Id id={id} /> ({state})
     </Line>
   )
@@ -159,7 +164,7 @@ export function TargetDescription({ target }: { target: ProposalTarget }) {
     return <ProviderTarget id={target.id} />
   }
   return (
-    <Line>
+    <Line read>
       {targetWord(type)} <Id id={target.id} />
     </Line>
   )

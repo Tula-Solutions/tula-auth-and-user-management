@@ -10,9 +10,8 @@ import { EmptyState, QueryState } from '~/components/states'
 import { useEnvironment, useEnvironmentRequest } from '~/features/shell/environment-context'
 import { EnvironmentLink } from '~/features/shell/environment-link'
 import { cn } from '~/lib/utils'
-import { ProposalCard } from './proposal-card'
+import { ProposalCard, type TargetSnapshot } from './proposal-card'
 import { refreshProposals } from './queries'
-import { TargetDescription } from './target'
 import {
   type ApprovalOutcome,
   approvalOutcome,
@@ -153,16 +152,18 @@ export function ProposalsScreen() {
     query: { refetchInterval: PROPOSALS_REFRESH_MS },
   })
   const approve = useApproveProposal({ request })
-  // The proposal the question is about, as it was shown when the question was opened: what
-  // is sent is this, never something read again behind the dialog.
-  const [asking, setAsking] = useState<Proposal | null>(null)
+  // The proposal the question is about, and what its card said it was about, as they were
+  // shown when the question was opened: what is asked and sent is this, never something
+  // read again behind the dialog.
+  const [asking, setAsking] = useState<{ proposal: Proposal; about: TargetSnapshot } | null>(null)
   const [result, setResult] = useState<Result | null>(null)
-  // From the click until the answer was shown, which is after the list was read again: the
-  // request has succeeded well before that, and a button that came back to life in between
-  // would send it a second time. A ref beside the state, for what has to know at once and
-  // after the question was closed (`cancel`, a second `send`).
-  const [running, setRunning] = useState(false)
-  const sending = useRef(false)
+  // The proposal whose approval is on its way, from the click until its answer: no other is
+  // asked about or sent meanwhile, also after the question was closed.
+  const [running, setRunning] = useState<string | null>(null)
+  // Proposals this screen got an answer about. The list is read again without the answer
+  // waiting for it, so a card can still read `pending` for a moment: it is not asked about
+  // again on that.
+  const [answered, setAnswered] = useState<ReadonlySet<string>>(() => new Set())
   const panel = useRef<HTMLDivElement>(null)
   // Proposals whose time ran out by this browser's clock and that were asked about again.
   const lapsed = useRef(new Set<string>())
@@ -197,19 +198,18 @@ export function ProposalsScreen() {
   }, [result, asking])
 
   function finish(next: Result) {
-    sending.current = false
-    setRunning(false)
+    setRunning(null)
+    setAnswered((before) => new Set(before).add(next.shown.id))
     approve.reset()
     setAsking(null)
     setResult(next)
   }
 
   function send(shown: Proposal) {
-    if (sending.current) {
+    if (running !== null) {
       return
     }
-    sending.current = true
-    setRunning(true)
+    setRunning(shown.id)
     approve.mutate(
       // The approval names what was shown: the server refuses it (`mismatch`) for a
       // proposal that is anything else.
@@ -221,8 +221,10 @@ export function ProposalsScreen() {
         },
       },
       {
-        onSuccess: async (decided) => {
-          await refreshProposals(queryClient)
+        onSuccess: (decided) => {
+          // The answer is shown at once. The list is read again and not waited for: a slow
+          // read must not keep "the user is banned, end their sessions" off the screen.
+          void refreshProposals(queryClient)
           const incompleteBan =
             decided.status === 'failed' &&
             decided.failureReason === 'incomplete' &&
@@ -235,40 +237,51 @@ export function ProposalsScreen() {
             userId: incompleteBan ? decided.target.id : null,
           })
         },
-        onError: async (error) => {
-          // Whatever was refused, the list may no longer be what is on screen.
-          await refreshProposals(queryClient)
+        onError: (error) => {
+          // Whatever was refused, the list may no longer be what is on screen: read again,
+          // not waited for.
+          void refreshProposals(queryClient)
           const refusal = refusalText(error)
           if (refusal !== null) {
             finish({ shown, outcome: null, refusal, userId: null })
             return
           }
           // Not a refusal of the proposal: the question stays and can be tried again.
-          sending.current = false
-          setRunning(false)
+          setRunning(null)
         },
       }
     )
   }
 
-  function ask(proposal: Proposal) {
-    // A failure of an earlier question is not this one's.
-    if (!sending.current) {
-      approve.reset()
+  function ask(proposal: Proposal, about: TargetSnapshot) {
+    if (running !== null) {
+      return
     }
-    setAsking(proposal)
+    // A failure of an earlier question is not this one's.
+    approve.reset()
+    setAsking({ proposal, about })
   }
 
   function cancel() {
     // An approval on its way is not taken back by closing the question: its answer is
-    // still shown, and no other is started meanwhile (`sending` stays).
-    if (!sending.current) {
+    // still shown, and no other is started meanwhile (`running` stays).
+    if (running === null) {
       approve.reset()
     }
     setAsking(null)
   }
 
-  const named = asking ? naming(asking) : null
+  function unavailable(proposal: Proposal): string | null {
+    if (running !== null && running !== proposal.id) {
+      return 'Another approval is on its way: this one can be asked about once it is answered.'
+    }
+    if (answered.has(proposal.id)) {
+      return 'This screen has an answer about this proposal (above). The list is being read again.'
+    }
+    return null
+  }
+
+  const named = asking ? naming(asking.proposal) : null
   return (
     <>
       <PageHeader
@@ -304,7 +317,13 @@ export function ProposalsScreen() {
                 <ul className='grid gap-4'>
                   {waiting.map((proposal) => (
                     <li key={`${environment.id}:${proposal.id}`}>
-                      <ProposalCard proposal={proposal} now={now} busy={running} onApprove={ask} />
+                      <ProposalCard
+                        proposal={proposal}
+                        now={now}
+                        approving={running === proposal.id}
+                        unavailable={unavailable(proposal)}
+                        onApprove={ask}
+                      />
                     </li>
                   ))}
                 </ul>
@@ -340,7 +359,13 @@ export function ProposalsScreen() {
                 <ul className='grid gap-4'>
                   {others.map((proposal) => (
                     <li key={`${environment.id}:${proposal.id}`}>
-                      <ProposalCard proposal={proposal} now={now} busy={running} onApprove={ask} />
+                      <ProposalCard
+                        proposal={proposal}
+                        now={now}
+                        approving={running === proposal.id}
+                        unavailable={unavailable(proposal)}
+                        onApprove={ask}
+                      />
                     </li>
                   ))}
                 </ul>
@@ -367,21 +392,32 @@ export function ProposalsScreen() {
         confirmLabel='Approve'
         // In production what is acted on is typed: the target's id, as it is shown.
         requireText={environment.kind === 'production' ? named?.id : undefined}
-        pending={running}
+        pending={running !== null}
         error={approve.error}
         errorText={approvalErrorText}
         onConfirm={() => {
           if (asking) {
-            send(asking)
+            send(asking.proposal)
           }
         }}
         onCancel={cancel}
       >
         {asking ? (
           <span className='flex flex-col gap-2'>
-            <span data-testid='approve-consequence'>{consequenceOf(asking.operation)}</span>
+            <span data-testid='approve-consequence'>
+              {consequenceOf(asking.proposal.operation)}
+            </span>
+            {/* The card's line as it was when this question was opened, kept as text: it is
+                not read again here, so what is asked does not change while it is read. */}
             <span>
-              About <TargetDescription target={asking.target} />.
+              About{' '}
+              <bdi data-testid='proposal-target' data-read={asking.about.read}>
+                {asking.about.text}
+              </bdi>
+              , as its card said when this question was opened.
+              {asking.about.read
+                ? null
+                : ' It had not been read then: this question does not say how it is now. Cancel and look at the card to see.'}
             </span>
             <span>
               It is carried out at once and cannot be approved twice. It is recorded with the agent

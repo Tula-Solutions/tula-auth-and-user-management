@@ -15,6 +15,7 @@ import { EmptyState, QueryState } from '~/components/states'
 import { NativeSelectOption } from '~/components/ui/native-select'
 import { useEnvironmentRequest } from '~/features/shell/environment-context'
 import { formatDateTime } from '~/lib/format'
+import { printable } from '~/lib/printable'
 import { pageSearch } from '~/lib/search'
 
 /** How many entries one page of the log holds. */
@@ -91,23 +92,31 @@ export function auditQuery(filters: AuditFilters) {
  * carried out. Read from the entry's metadata by the contract's field names; anything of
  * another shape is left to the raw line below.
  *
+ * What came from the server is made printable: a type and an id are shown so that they can
+ * be checked by eye, whatever they hold.
+ *
  * @param metadata - The entry's metadata, as the server sent it.
- * @returns One sentence per party found, in a fixed order.
+ * @returns One line per party found, in a fixed order: the words, and the id drawn apart.
  */
-export function otherParties(metadata: Record<string, unknown>): string[] {
-  const lines: string[] = []
+export function otherParties(
+  metadata: Record<string, unknown>
+): { words: string; id: string | null }[] {
+  const lines: { words: string; id: string | null }[] = []
   const approver = metadata.approvedBy
   if (typeof approver === 'object' && approver !== null && !Array.isArray(approver)) {
     const { type, id } = approver as { type?: unknown; id?: unknown }
     if (typeof type === 'string') {
-      lines.push(`Approved by ${type}${typeof id === 'string' ? ` ${id}` : ''}`)
+      lines.push({
+        words: `Approved by ${printable(type)}`,
+        id: typeof id === 'string' ? printable(id) : null,
+      })
     }
   }
   if (typeof metadata.proposedBy === 'string') {
-    lines.push(`Asked for by agent ${metadata.proposedBy}`)
+    lines.push({ words: 'Asked for by agent', id: printable(metadata.proposedBy) })
   }
   if (typeof metadata.proposalId === 'string') {
-    lines.push(`Carried out proposal ${metadata.proposalId}`)
+    lines.push({ words: 'Carried out proposal', id: printable(metadata.proposalId) })
   }
   return lines
 }
@@ -119,8 +128,14 @@ function Details({ entry }: { entry: AuditLog }) {
       {entry.ipAddress ? <span>IP {entry.ipAddress}</span> : null}
       {/* Server text, rendered as text: React escapes it, and nothing here is ever HTML. */}
       {otherParties(entry.metadata).map((line) => (
-        <span key={line} data-testid='audit-party' className='break-all'>
-          {line}
+        <span key={line.words} data-testid='audit-party' className='break-all'>
+          {line.words}
+          {line.id !== null ? (
+            <>
+              {' '}
+              <bdi dir='ltr'>{line.id}</bdi>
+            </>
+          ) : null}
         </span>
       ))}
       {metadata ? <code className='break-all'>{metadata}</code> : null}

@@ -178,7 +178,7 @@ describe('what an approval came to', () => {
     expect(
       approvalErrorText(new ApiError({ status: 500, code: 'internal', detail: 'Failed.' }))
     ).toBe(
-      'Failed. If the request reached the server the proposal may have been approved all the same: the list was read again, check how it stands before trying once more.'
+      'Failed. If the request reached the server the proposal may have been approved all the same: the list is being read again, check how it stands before trying once more.'
     )
     expect(
       approvalErrorText(new ApiError({ status: 422, code: 'validation.failed', detail: 'Bad.' }))

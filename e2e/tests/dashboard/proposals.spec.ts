@@ -90,8 +90,12 @@ test('a proposal is listed with what it does, approved by name, carried out once
   // Asked to lift a ban that is not there: carried out, and said to change nothing.
   await propose(page, key, 'unban_user', userId)
   await page.getByRole('button', { name: 'Read the list again' }).click()
+  // The question keeps what its card said when it was opened: wait for the card to have read.
+  await expect(page.getByTestId('proposal-target')).toContainText('not banned now')
   await page.getByRole('button', { name: `Approve unban_user for user ${userId}` }).click()
-  await expect(dialog(page).getByTestId('proposal-target')).toContainText('not banned now')
+  await expect(dialog(page).getByTestId('proposal-target')).toHaveText(
+    `user ${userId} (${email}; not banned now)`
+  )
   await dialog(page).getByRole('button', { name: 'Approve' }).click()
   const result = page.getByTestId('approval-result')
   await expect(result).toHaveAttribute('data-outcome', 'nothing')

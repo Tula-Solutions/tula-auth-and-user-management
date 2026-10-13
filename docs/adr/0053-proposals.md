@@ -734,6 +734,10 @@ proposal is about, and approves with `POST /v1/admin/proposals/:id/approve`.
 - **The approval sends what was shown.** The question is asked from a snapshot of the
   proposal taken when the dialog opened; the request's operation and target are that
   snapshot's, never read from the list again. The server's `mismatch` is the check.
+  **What the question says the proposal is about is a snapshot too**: the card's line as
+  it was drawn when the dialog opened, kept as text and not read again, so the question
+  does not change under the person reading it. A question opened before the target was
+  read says that it had not been.
 - **The question is the dashboard's own words** (`consequenceOf`, the sentences `tula
   approve` uses), beside the server's `summary`. An operation with no such sentence has no
   Approve button, as `tula approve` refuses one with no `CONSEQUENCES` row.
@@ -751,8 +755,15 @@ proposal is about, and approves with `POST /v1/admin/proposals/:id/approve`.
   that is not a refusal of the proposal (no answer, a 5xx) is said to have possibly been
   taken. A test holds that every member of each list has words.
 - **Sent once.** The dialog's button is unavailable from the click until the dialog
-  closes. A dialog closed while its request is in flight does not cancel the request, and
-  the answer is still shown.
+  closes, which is when the answer arrives. A dialog closed while its request is in flight
+  does not cancel the request, and the answer is still shown. While one approval is on its
+  way no other card can be asked about (unavailable, with the reason in words; only the
+  card being approved is `aria-busy`).
+- **The answer does not wait for the list.** The list is read again after every answer,
+  started and not awaited: a slow read must not keep "the user is banned, end their
+  sessions" or a refusal off the screen. Until that read lands a card may still say
+  `pending`; a proposal this screen has an answer about cannot be asked about again
+  meanwhile.
 - **Text from the server is text.** Ids go through `printable()`; nothing is drawn as
   markup. A proposal holds no words of the agent's, and the screen adds no place for any.
 - **The words say "approved", never more.** What an approval shows is unchanged by the
@@ -761,7 +772,7 @@ proposal is about, and approves with `POST /v1/admin/proposals/:id/approve`.
   against. A test scans the screen's sources for "human verified" and its like.
 - **The audit log names both actors**: under Details, an entry with `approvedBy`,
   `proposedBy` or `proposalId` says "Approved by …", "Asked for by agent …" and "Carried
-  out proposal …".
+  out proposal …", the type and the id through `printable()`.
 
 ### Dismissing a proposal: not built
 
