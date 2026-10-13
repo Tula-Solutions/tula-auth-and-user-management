@@ -648,7 +648,10 @@ an agent's shell tool was not run for this change.
   list's shape **and two fields that shape did not have**, `userId` and `active`
   (`AdminSessionSchema`): the list is asked for by user and filtered to live sessions, so
   it needed neither, and a read by id has no other way to say whose the session is or
-  that it has ended. Nothing else: no token, hash, family or thumbprint. Like every admin
+  that it has ended. **`active` is by the stored times**, not by the session's profile
+  as configured now (`Sessions.profileOf` is not asked): live by what is stored, and a
+  profile tightened since may end such a session at its next request. `tula approve`
+  and `docs/cli.md` say so. Nothing else: no token, hash, family or thumbprint. Like every admin
   read it is open to an agent key; `@tula/mcp` has no tool for it and its
   `READ_OPERATIONS` is unchanged. When a read fails the question says so in fixed words
   beside the bare id ("could not be read", "no such session now", and for the owner "the
@@ -669,20 +672,31 @@ an agent's shell tool was not run for this change.
 - **What an approval found already so is carried to the answer and to the record**, as a
   boolean: `changed`, optional, on the proposal the approval answers and in
   `proposal.executed`'s data. `false` when the operation ran and wrote nothing: the user
-  was not banned, the session had ended, the provider was off. It is decided from the
-  read `execute` already made before the operation (`changeIsThere`), for the three
-  operations that write nothing in that case (`NOTHING_WHEN_ALREADY_SO`); **a ban of a
-  user who is already banned says `true`**, because `Users.ban` ends their sessions and
-  writes `user.banned` again. A field that only grows the contract: optional, absent
+  was not banned, the session had ended, the provider was off. **Each operation says
+  whether it wrote, and `execute` reports that** (`run` returns it): for a session, what
+  the store's guarded update answered (`SessionStore.revoke`: `false` when it had already
+  ended, and then no entry); for a ban lifted and a provider switched off, the branch of
+  `Users.liftBan` and `OAuth.switchOff` that writes, which is the one that writes the
+  entry (the provider's under the environment's lock). **A ban does not say, and what
+  does not say is `true`**: `Users.ban` ends the user's sessions and writes `user.banned`
+  again for a user who is already banned. `changeIsThere`, the read made before the
+  operation, is kept for what it was for (telling `incomplete` from `error` after a
+  failure) and decides nothing about a run that succeeded. A field that only grows the contract: optional, absent
   from every proposal that was not just carried out, and **not stored** (a later read of
   the proposal does not have it; the audit entry is where it lasts). `tula approve`
   then says "Approved and carried out; the session had already ended, so nothing
   changed. The proposal is spent." instead of the sentence that describes the change, and
   still exits 0: what was approved is so. The case it is for is a target that changed
   between the showing and the approval (the user signed out while the person read).
-  One limit, stated: the read and the operation are two steps, so a target that became so
-  between them is reported `changed: true` with no entry of the operation's own; the
-  window is one request's work, and the audit log shows which it was.
+  **It was first inferred from that earlier read, and that was wrong**: the read saw the
+  target already so, another administrator turned it back, the operation then really
+  wrote (`user.unbanned`, `oauth_provider.updated`), and the answer and
+  `proposal.executed` still said `changed: false`. The tests make the first read answer
+  one thing and the store hold another, for each of the three. What is left, stated:
+  `changed: false` means the operation's own write did nothing, so `changed: true` and
+  the operation's entry now always go together; lifting a ban is a read and then a write
+  with no guard between them, so two liftings at once can both write (as two
+  administrators' can, with or without a proposal), and each then truthfully says `true`.
 - **The four scenarios ask for fewer proposals.** One run made nine counted requests of
   the ten an environment takes in a minute. The step that proposed switching a provider
   on (a 422 from the request's schema, which a route test, the contract's test and

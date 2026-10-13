@@ -1180,6 +1180,10 @@ export async function list(
  * kind of client, when it began and whether it is still active. An ended session is read
  * too. A read: nothing is touched, extended or recorded.
  *
+ * `active` is by the stored times alone (not ended, inside the limits written on the row),
+ * not by the session's profile as configured now: a profile tightened since may end a
+ * session answered as active at its next request.
+ *
  * @param deps - Session store and clock.
  * @param scope - The environment.
  * @param sessionId - The session.
@@ -1233,7 +1237,12 @@ export async function revoke(deps: RevokeDeps, scope: Scope, input: RevokeInput)
   await end(deps, scope, session, input.reason ?? 'revoked_by_user', input.actor)
 }
 
-/** Denylist one session and end it, with its entry: the one way a single session is ended. */
+/**
+ * Denylist one session and end it, with its entry: the one way a single session is ended.
+ *
+ * @returns What the store's guarded update said: `true` when this call ended the session
+ *   and wrote its entry, `false` when it had already ended and nothing was written.
+ */
 async function end(
   deps: RevokeDeps,
   scope: Scope,
@@ -1241,10 +1250,10 @@ async function end(
   reason: SessionRevokeReason,
   actor: Actor,
   proposal?: CarriedOutProposal
-): Promise<void> {
+): Promise<boolean> {
   const now = deps.clock.now()
   await denylist(deps, [session.id], now)
-  await deps.sessions.revoke(
+  return deps.sessions.revoke(
     scope.environmentId,
     session.id,
     reason,
@@ -1274,6 +1283,8 @@ export interface CarriedOutProposal {
  * @param sessionId - The session.
  * @param actor - Who ends it, for the audit log: the agent whose proposal was approved.
  * @param proposal - The approved proposal this carries out.
+ * @returns Whether this call ended the session, as the store's guarded update said it:
+ *   `false` when it had already ended, and then no entry was written.
  * @throws NotFoundError when the environment has no such session (another environment's is
  *   answered the same).
  */
@@ -1283,12 +1294,12 @@ export async function revokeForProposal(
   sessionId: string,
   actor: Actor,
   proposal: CarriedOutProposal
-): Promise<void> {
+): Promise<boolean> {
   const session = await deps.sessions.findById(scope.environmentId, sessionId)
   if (!session) {
     throw new NotFoundError()
   }
-  await end(deps, scope, session, 'revoked_by_admin', actor, proposal)
+  return end(deps, scope, session, 'revoked_by_admin', actor, proposal)
 }
 
 /**

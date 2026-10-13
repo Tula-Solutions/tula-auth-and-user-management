@@ -550,6 +550,8 @@ export interface CarriedOutProposal {
  * @param provider - The provider.
  * @param actor - Who switches it off, for the audit log.
  * @param proposal - The approved proposal this carries out, named in the entry.
+ * @returns Whether this call switched it off: `false` when it was already off under the
+ *   lock, and then nothing was written or recorded.
  * @throws NotFoundError when the provider is not configured.
  * @throws ValidationError (422) when no way to sign in would remain.
  */
@@ -562,14 +564,14 @@ export async function switchOff(
   provider: OAuthProvider,
   actor: Actor,
   proposal?: CarriedOutProposal
-): Promise<void> {
-  await deps.environmentLock.runExclusive(tenant.environmentId, 'sign_in_methods', async () => {
+): Promise<boolean> {
+  return deps.environmentLock.runExclusive(tenant.environmentId, 'sign_in_methods', async () => {
     const existing = await deps.oauthProviders.find(tenant.environmentId, provider)
     if (!existing) {
       throw new NotFoundError()
     }
     if (!existing.enabled) {
-      return
+      return false
     }
     await requireWayIn(deps, tenant, provider)
     await deps.oauthProviders.upsert(
@@ -587,6 +589,7 @@ export async function switchOff(
         },
       })
     )
+    return true
   })
 }
 

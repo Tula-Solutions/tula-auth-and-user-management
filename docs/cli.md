@@ -306,7 +306,8 @@ A person's answer to a change an assistant proposed through `tula mcp`
 ([proposals.md](proposals.md), [ADR 0053](adr/0053-proposals.md)). It reads the proposal,
 and what it is about, with **your secret key**: a user with their address and whether they
 are banned, a session with whose it is (the user's id, address and name), the kind of
-client, when it was signed in and whether it is live now or has already ended, a provider
+client, when it was signed in and whether it is live now or has already ended (live by
+what is stored; a profile tightened since may end it at its next request), a provider
 as it is now ("on now", "already off", "not configured now"). What could not be read is
 said in those words beside the id ("could not be read", "no such session now") and never
 guessed: you decide with that in front of you. It prints who asked, what approving does, to what and when the proposal

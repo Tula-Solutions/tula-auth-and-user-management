@@ -564,6 +564,68 @@ describe('a target that changed while the proposal waited', () => {
     })
   })
 
+  // What is said comes from the operation's own write, never from the look made before it:
+  // another administrator can turn the target back between the two.
+  test('a ban put back between the look and the operation: lifted, and said as changed', async () => {
+    const one = await CASES.unban_user()
+    const proposal = await propose('unban_user', one.target)
+    const real = deps.users.findById.bind(deps.users)
+    let looks = 0
+    const find = spyOn(deps.users, 'findById').mockImplementation(async (...args) => {
+      const found = await real(...args)
+      looks += 1
+      // The first look sees a user nobody has banned; the operation then finds the ban.
+      return looks === 1 && found ? { ...found, bannedAt: null } : found
+    })
+    const answer = await json<Proposal>(await approve(proposal))
+    find.mockRestore()
+    expect(answer).toMatchObject({ status: 'executed', changed: true })
+    expect(types().filter((type) => type === 'user.unbanned')).toHaveLength(1)
+    expect(recorded().at(-1)).toMatchObject({ type: 'proposal.executed', data: { changed: true } })
+    expect(await one.state()).toBe('not banned')
+  })
+
+  test('a provider switched back on between the look and the operation: switched off, and said as changed', async () => {
+    const one = await CASES.disable_oauth_provider()
+    const proposal = await propose('disable_oauth_provider', one.target)
+    const real = deps.oauthProviders.find.bind(deps.oauthProviders)
+    let looks = 0
+    const find = spyOn(deps.oauthProviders, 'find').mockImplementation(async (...args) => {
+      const found = await real(...args)
+      looks += 1
+      return looks === 1 && found ? { ...found, enabled: false } : found
+    })
+    const before = types()
+    const answer = await json<Proposal>(await approve(proposal))
+    find.mockRestore()
+    expect(answer).toMatchObject({ status: 'executed', changed: true })
+    expect(types().slice(before.length)).toEqual([
+      'proposal.approved',
+      'oauth_provider.updated',
+      'proposal.executed',
+    ])
+    expect(recorded().at(-1)).toMatchObject({ type: 'proposal.executed', data: { changed: true } })
+  })
+
+  test('an ended session every look shows as live: the store writes nothing, and that is what is said', async () => {
+    const one = await CASES.end_session()
+    const proposal = await propose('end_session', one.target)
+    const owner = (await deps.sessions.findById(DEVELOPMENT.environmentId, one.target.id))?.userId
+    expect((await call('DELETE', `/v1/admin/users/${owner}/sessions`, SK)).status).toBeLessThan(300)
+    const real = deps.sessions.findById.bind(deps.sessions)
+    // No read can say the session has ended: only the store's guarded update knows.
+    const find = spyOn(deps.sessions, 'findById').mockImplementation(async (...args) => {
+      const found = await real(...args)
+      return found ? { ...found, revokedAt: null, revokeReason: null } : found
+    })
+    const before = types().filter((type) => type === 'session.revoked').length
+    const answer = await json<Proposal>(await approve(proposal))
+    find.mockRestore()
+    expect(answer).toMatchObject({ status: 'executed', changed: false })
+    expect(types().filter((type) => type === 'session.revoked')).toHaveLength(before)
+    expect(recorded().at(-1)).toMatchObject({ type: 'proposal.executed', data: { changed: false } })
+  })
+
   test('a failed proposal says nothing about a change', async () => {
     const one = await CASES.disable_oauth_provider()
     const proposal = await propose('disable_oauth_provider', one.target)

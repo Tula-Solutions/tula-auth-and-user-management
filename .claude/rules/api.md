@@ -35,7 +35,8 @@ paths:
   through `documentAgentReads`. `run` has a default that throws (an operation with no
   branch is `failed` with `error`, never `executed`), and an approval that found its
   target already so answers `changed: false`, also on `proposal.executed`: a boolean, not
-  stored, decided from the read made before the operation.
+  stored, and what the operation said of its own write (`run` returns it; an operation
+  that does not say is `true`), never the read made before the operation.
 - `GET /v1/admin/sessions/:sessionId` (`Sessions.get`) reads one session of the
   environment in scope by its id and answers `AdminSessionSchema` (the list's shape with
   `userId` and `active`): no token, hash, family or thumbprint, and the same 404 for an

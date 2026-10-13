@@ -153,6 +153,10 @@ function userLabel(user: {
  * A session as the environment has it now, read with the operator's own key: whose it is,
  * what kind of client, when it began and whether it is still live.
  *
+ * "Live" is the server's `active`: live by what is stored (not ended, inside the stored
+ * limits). The session's profile as configured now is not asked, so a profile tightened
+ * since may end a session shown as live at its next request.
+ *
  * An agent's account of a session ("my stale session") is a claim; the id alone gives a
  * person nothing to check it against. Two reads and nothing else: neither touches the
  * proposal or the session. What could not be read is said in fixed words beside the bare
@@ -219,9 +223,11 @@ async function describeTarget(admin: AdminClient, proposal: Proposal): Promise<s
 /**
  * What a target already was when an approved operation found nothing to change
  * (`changed: false` in the approval's answer): the words after "carried out".
+ *
+ * No row for `ban_user`: the server never answers `changed: false` for a ban, which always
+ * writes its entry and ends the sessions made since.
  */
 const ALREADY_SO: Record<string, string> = {
-  ban_user: 'the user was already banned',
   unban_user: 'the user was not banned',
   end_session: 'the session had already ended',
   disable_oauth_provider: 'the provider was already off',
@@ -386,8 +392,9 @@ async function run(context: CommandContext): Promise<number> {
   }
   if (decided.status === 'executed') {
     if (decided.changed === false) {
-      // The target was already so when the operation ran (it changed after it was shown,
-      // or was shown so): the consequence sentence would describe a change nobody made.
+      // The operation's own write did nothing: the target was already so when it got there
+      // (it changed after it was shown, or was shown so). The consequence sentence would
+      // describe a change nobody made.
       const already = Object.hasOwn(ALREADY_SO, decided.operation)
         ? ALREADY_SO[decided.operation]
         : 'it was already so'

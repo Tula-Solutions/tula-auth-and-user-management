@@ -567,9 +567,13 @@ operations"); TULA-24, 40 and 41 extend it.
 - **What an approval found already so is said, with a boolean and nothing else**:
   `changed: false` in the approval's answer and on `proposal.executed`, when the
   operation ran and wrote nothing (a user who was not banned, a session that had ended, a
-  provider that was off; `NOTHING_WHEN_ALREADY_SO`, decided from the read `execute` makes
-  before the operation). A ban of a banned user is not on that list: `Users.ban` ends
-  sessions and writes its entry again. `changed` is in the answer of the approval that
+  provider that was off). **It is what the operation says of its own write, never the
+  read `execute` makes before it** (`run` returns it: the session store's guarded update,
+  the writing branch of `Users.liftBan` and of `OAuth.switchOff`): a target turned back
+  between the read and the operation is really written to. An operation that does not
+  say is `true`, and a ban is one: `Users.ban` ends sessions and writes its entry again.
+  `changeIsThere` is for `incomplete` and nothing else. A new operation returns whether
+  it wrote, from its write. `changed` is in the answer of the approval that
   carried the proposal out and nowhere else (not stored, absent from a later read): never
   add a column for it, and never a word, a reason or a "what it was" beside it.
 - **`GET /v1/admin/sessions/:sessionId` reads one session by its id** (`Sessions.get`,

@@ -12,7 +12,6 @@ import {
   type ProposalCreationRefusal,
   type ProposalExpiryReason,
   type ProposalFailureReason,
-  type ProposalOperation,
   type ProposalTargetType,
   proposalSummary,
 } from '@tula/contract'
@@ -362,6 +361,13 @@ type ExecutionDeps = Pick<
  * list, each calling a service function an administrator's route calls too (or, for a
  * provider, the function that holds the same rule under the same lock): never a string
  * taken from the row and looked up, never a stored request replayed.
+ *
+ * @returns Whether the operation wrote, as the operation itself says it: from the store's
+ *   guarded update for a session, from the branch that writes (the one that also writes
+ *   the entry) for a ban lifted and a provider switched off. Never from a look made before
+ *   the call: somebody else can turn the target back in between. A ban does not say, and
+ *   an operation that does not say is `true`: it always writes its entry and ends the
+ *   sessions made since.
  */
 async function run(
   deps: ExecutionDeps,
@@ -369,21 +375,18 @@ async function run(
   record: ProposalRecord,
   agent: Actor,
   approvedBy: ProposalApprover
-): Promise<void> {
+): Promise<boolean> {
   const proposal = { proposalId: record.id, approvedBy }
   switch (record.operation) {
     case 'ban_user':
       await Users.ban(deps, scope, record.targetId, agent, proposal)
-      return
+      return true
     case 'unban_user':
-      await Users.unban(deps, scope, record.targetId, agent, proposal)
-      return
+      return (await Users.liftBan(deps, scope, record.targetId, agent, proposal)).lifted
     case 'end_session':
-      await Sessions.revokeForProposal(deps, scope, record.targetId, agent, proposal)
-      return
+      return Sessions.revokeForProposal(deps, scope, record.targetId, agent, proposal)
     case 'disable_oauth_provider':
-      await OAuth.switchOff(deps, scope, record.targetId as OAuthProvider, agent, proposal)
-      return
+      return OAuth.switchOff(deps, scope, record.targetId as OAuthProvider, agent, proposal)
     default:
       // The column is text and the type a cast: a word this version has no branch for (a
       // row a later version wrote) must never fall out of the switch as "carried out".
@@ -403,23 +406,12 @@ type Outcome =
   | {
       reason: null
       /**
-       * Whether the operation changed its target: `false` when the target already showed
-       * the operation's change before it ran, for an operation that then does nothing.
+       * Whether the operation wrote: `false` only when the operation's own write did
+       * nothing (the target was already so when it got there) and recorded nothing.
        */
       changed: boolean
     }
   | { reason: ProposalFailureReason }
-
-/**
- * The operations that do nothing, and record nothing, on a target that is already so:
- * lifting a ban nobody has, ending an ended session, switching off a provider that is off.
- * A ban is not one: banning again ends the sessions made since and writes its entry.
- */
-const NOTHING_WHEN_ALREADY_SO: ReadonlySet<ProposalOperation> = new Set([
-  'unban_user',
-  'end_session',
-  'disable_oauth_provider',
-])
 
 /**
  * Carry out an approved proposal's operation, as the agent that asked, with the approving
@@ -430,12 +422,11 @@ const NOTHING_WHEN_ALREADY_SO: ReadonlySet<ProposalOperation> = new Set([
  * after. A user somebody had already banned, whose ban this run failed to write, was not
  * changed by it (`error`).
  *
- * The same read says whether a run that succeeded changed anything: a target that already
- * showed the change, for an operation that does nothing then ({@link NOTHING_WHEN_ALREADY_SO}),
- * was carried out with `changed: false`. A target that could not be read claims a change:
- * "nothing changed" is said only when it was seen.
+ * That read decides nothing about a run that succeeded. Whether such a run changed anything
+ * is what the operation says of its own write ({@link run}): the read and the operation are
+ * two steps, and a target somebody turned back between them is really written to.
  *
- * @returns Carried out (`reason: null`, with whether it changed the target), otherwise why
+ * @returns Carried out (`reason: null`, with whether the operation wrote), otherwise why
  *   it did not end so, in a fixed word: `incomplete` when the operation's own change was
  *   made and a later step failed.
  */
@@ -450,9 +441,7 @@ async function execute(
   // left. The approval is written by now; the operation runs all the same.
   const changedBefore = await changeIsThere(deps, scope, record)
   try {
-    await run(deps, scope, record, agent, approvedBy)
-    const alreadySo = changedBefore === true && NOTHING_WHEN_ALREADY_SO.has(record.operation)
-    return { reason: null, changed: !alreadySo }
+    return { reason: null, changed: await run(deps, scope, record, agent, approvedBy) }
   } catch (error) {
     if (error instanceof NotFoundError) {
       return { reason: 'target_not_found' }
