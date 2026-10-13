@@ -14,6 +14,22 @@ public enum TulaClientErrorCode {
     public static let storageFailed = "storage.failed"
     /// A flow was asked for a second action while one was still being sent.
     public static let flowBusy = "flow.busy"
+    /// The device key could not be had or could not sign. Nothing was sent, and the session
+    /// is kept: the same call may work a moment later.
+    public static let deviceKeyFailed = "device.key_failed"
+    /// This device, or this version of the system, has no passkeys; or the client was given
+    /// no passkey sheet.
+    public static let passkeyUnsupported = "passkey.unsupported"
+    /// A passkey for this account is already on this device.
+    public static let passkeyAlreadyOnDevice = "passkey.already_on_device"
+    /// The system's sheet failed, or returned something that is not a credential.
+    public static let passkeyFailed = "passkey.failed"
+    /// The client was not given what the provider sign-in needs (a browser session, the
+    /// Apple sheet), or this device cannot show it.
+    public static let providerUnsupported = "provider.unsupported"
+    /// The system's browser session or the Sign in with Apple sheet failed. Nothing of what
+    /// it said is kept.
+    public static let providerFailed = "provider.failed"
 
     /// The default (English) message of a client code; `nil` for a code that is not one.
     static func message(_ code: String) -> String? {
@@ -23,6 +39,12 @@ public enum TulaClientErrorCode {
         case responseInvalid: return "The server sent a response this app could not read."
         case storageFailed: return "Your session could not be saved on this device."
         case flowBusy: return "Another step of this flow is still being sent. Wait for it to finish."
+        case deviceKeyFailed: return "This device could not sign the request with its key."
+        case passkeyUnsupported: return "Passkeys are not available on this device."
+        case passkeyAlreadyOnDevice: return "A passkey for this account is already on this device."
+        case passkeyFailed: return "The passkey could not be used. Try again."
+        case providerUnsupported: return "This way of signing in is not available in this app."
+        case providerFailed: return "The sign-in could not be shown. Try again."
         default: return nil
         }
     }
@@ -99,4 +121,26 @@ public struct TulaError: Error, Hashable, Sendable, CustomStringConvertible {
         TulaErrorDefinitions.all.map { ($0.code.rawValue, $0) },
         uniquingKeysWith: { first, _ in first }
     )
+}
+
+/// A value that holds a secret, or leads to one, and therefore prints as its type's name.
+///
+/// `print`, string interpolation, `String(reflecting:)` and `dump` all show the name and
+/// nothing the value holds: an app logs what it has at hand, and a token, a code, an
+/// attempt's secret or a key must not be in that line. The generated types are the
+/// exception (ADR 0050): a `SessionTokens` or a `TotpEnrolment` prints what it holds, and is
+/// never to be logged.
+public protocol TulaRedacted: CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {}
+
+extension TulaRedacted {
+    /// The type's name, and nothing of what it holds.
+    public var description: String { String(describing: Self.self) }
+    /// The type's name, and nothing of what it holds.
+    public var debugDescription: String { description }
+    /// A mirror with no children: `dump` shows the type's name and nothing else.
+    public var customMirror: Mirror {
+        // `.suppressed`: the default reflects a superclass by itself, and `dump` of a subclass
+        // would print what the redacted class it inherits from holds.
+        Mirror(self, children: EmptyCollection<Mirror.Child>(), ancestorRepresentation: .suppressed)
+    }
 }

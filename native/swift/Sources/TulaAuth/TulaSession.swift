@@ -34,9 +34,14 @@ public enum AuthState: Hashable, Sendable {
 ///   the same single flight. It is the only request the client repeats by itself, and it is
 ///   safe because the server answers a token re-presented inside its grace window with the
 ///   same next token. An HTTP answer of any status is never repeated.
+/// - **A `device.*` answer never ends the session** (ADR 0043), with one exception: a
+///   refresh refused for its proof (`device.proof_invalid`) when the device key store says,
+///   without failing, that there is no key. That session can never be refreshed again, so it
+///   is ended here and the server is told. A store that failed, and a key that is there and
+///   was refused, keep the session.
 /// - Whatever finishes after a sign-out or a new sign-in is discarded: every change of
 ///   session bumps a generation, and a result of an older one is never installed.
-public actor TulaSession {
+public actor TulaSession: TulaRedacted {
     /// How long before an access token expires the client stops handing it out and refreshes
     /// (capped at half the token's lifetime).
     public static let accessTokenExpirySkew: TimeInterval = 10
@@ -56,14 +61,14 @@ public actor TulaSession {
     /// The longest a `Retry-After` on a failed refresh makes `getToken()` fail fast.
     public static let maxRefreshBackoff: TimeInterval = 300
 
-    private struct Tokens {
+    private struct Tokens: TulaRedacted {
         let accessToken: String
         let sessionId: String
         let expiresAt: Date
         var refreshAt: Date
     }
 
-    private struct Exchange {
+    private struct Exchange: TulaRedacted {
         var token: String?
         var installed: Int?
         var failure: TulaError?
@@ -74,6 +79,8 @@ public actor TulaSession {
     private let clock: any TulaClock
     private let storageKey: String
     private let refreshTimeout: TimeInterval
+    /// What the client keeps of a provider round trip: forgotten when the session ends.
+    private let roundTrip: ProviderRoundTrip?
 
     /// The current state.
     public private(set) var state: AuthState = .loading
@@ -101,8 +108,10 @@ public actor TulaSession {
         transport: ApiTransport,
         storage: any TulaTokenStorage,
         clock: any TulaClock,
-        scope: String
+        scope: String,
+        roundTrip: ProviderRoundTrip? = nil
     ) {
+        self.roundTrip = roundTrip
         self.transport = transport
         self.storage = storage
         self.clock = clock
@@ -266,6 +275,23 @@ public actor TulaSession {
                 return Exchange(token: tokens?.accessToken)
             }
             if let refusal = error as? TulaError {
+                if refusal.code == "device.proof_invalid", let proofs = transport.proofs {
+                    // The one `device.*` answer that can end a session, and only when the key
+                    // store said twice that the key is gone.
+                    let verdict = await proofs.verdict(within: refreshTimeout)
+                    if generation != started {
+                        return Exchange(token: tokens?.accessToken)
+                    }
+                    switch verdict {
+                    case .gone:
+                        await endForLostKey(presented)
+                        return Exchange(token: nil)
+                    case .contradicted:
+                        throw TulaError.client(TulaClientErrorCode.deviceKeyFailed)
+                    case .there, .unsure:
+                        break
+                    }
+                }
                 if TulaSession.sessionIsGone(refusal) {
                     endLocal()
                     try? await storage.remove(storageKey)
@@ -376,7 +402,29 @@ public actor TulaSession {
         refreshToken = nil
         storageRead = true
         backoff = nil
+        roundTrip?.forget()
         setState(.signedOut)
+    }
+
+    /// The session was bound to a device key that is gone: it is over. Forget it here, then
+    /// tell the server, which asks no proof for a sign-out. When the server could not be
+    /// told the token is kept, in memory, for the next `signOut()`.
+    private func endForLostKey(_ presented: String) async {
+        endLocal()
+        let mine = generation
+        try? await storage.remove(storageKey)
+        do {
+            // Inside the shared refresh, which every caller of `getToken()` is waiting on: the
+            // server is given the refresh's own deadline to answer and no longer.
+            _ = try await transport.call(
+                TulaOperations.signOut, body: RefreshTokenRequest(refreshToken: presented),
+                options: CallOptions(timeout: refreshTimeout), as: NoAnswer.self)
+        } catch {
+            let code = (error as? TulaError)?.code ?? ""
+            if generation == mine, !code.hasPrefix("session.") {
+                undelivered = presented
+            }
+        }
     }
 
     // MARK: Signing in and out
@@ -410,6 +458,13 @@ public actor TulaSession {
     /// removed without the server being told, because the client never held it (that
     /// session lives on at the server until it ends by itself or is revoked from another
     /// session).
+    ///
+    /// A key store that says its key will never be had again
+    /// (`TulaDeviceKeyStoreError.unusable`) is asked to remove it, best effort: a removal
+    /// that fails is not this call's failure. **A sign-out whose task is cancelled while
+    /// the store is being asked removes nothing**, also when the store then says "never
+    /// again": the call stops waiting for the store, and nobody is left to act on its
+    /// answer. The next sign-out asks again.
     ///
     /// - Throws: `TulaError`: what the request failed with, or `storage.failed` when the
     ///   stored token could not be removed.
@@ -462,6 +517,11 @@ public actor TulaSession {
                 }
             }
         }
+        // A device key that cannot be had would fail the next sign-in too: with nobody
+        // signed in here, what the store keeps of it is removed.
+        if generation == mine, let proofs = transport.proofs {
+            await proofs.dropUnusableKey(within: refreshTimeout)
+        }
         if let failure {
             throw failure
         }
@@ -497,14 +557,26 @@ public actor TulaSession {
         body: Body? = Optional<NoBody>.none,
         as type: Answer.Type = NoAnswer.self
     ) async throws -> Answer {
+        try await sent(operation, params: params, body: body, as: type).answer
+    }
+
+    /// As `authorized`, with the session's generation when the request that was answered left.
+    private func sent<Body: Encodable & Sendable, Answer: Decodable & Sendable>(
+        _ operation: TulaOperation,
+        params: [String: String] = [:],
+        body: Body? = Optional<NoBody>.none,
+        as type: Answer.Type = NoAnswer.self
+    ) async throws -> (answer: Answer, generation: Int) {
         guard let accessToken = try await getToken() else {
             throw TulaError(code: "auth.unauthenticated", status: 401)
         }
         do {
-            return try await transport.call(
+            let left = generation
+            let answer = try await transport.call(
                 operation, params: params, body: body,
                 options: CallOptions(accessToken: accessToken), as: type
             )
+            return (answer, left)
         } catch let error as TulaError where TulaSession.tokenWasRefused(error) {
             // Signed out while the call was in flight: the refusal is simply true.
             if state == .signedOut {
@@ -519,10 +591,45 @@ public actor TulaSession {
             guard let next else {
                 throw error
             }
-            return try await transport.call(
+            let left = generation
+            let answer = try await transport.call(
                 operation, params: params, body: body,
                 options: CallOptions(accessToken: next), as: type
             )
+            return (answer, left)
+        }
+    }
+
+    /// Prove again that it is the user (`POST /v1/client/sessions/step-up`), and take the
+    /// access token that says so.
+    ///
+    /// Only the access token of the answer is installed: a step-up does not rotate the
+    /// refresh token. When the session's token was replaced while the proof was on its way,
+    /// neither token is trusted and one refresh, started after the proof was accepted, is
+    /// what carries it.
+    func stepUp(_ proof: StepUpRequest) async throws {
+        // A refresh already in flight would otherwise hand the proof a token about to be replaced.
+        await idle()
+        let (answer, left) = try await sent(TulaOperations.stepUpSession, body: proof, as: SessionTokens.self)
+        guard lifetime(of: answer) != nil else {
+            throw TulaError.client(TulaClientErrorCode.responseInvalid)
+        }
+        // Signed out, or signed in as someone else, while the proof was in flight: the answer
+        // is about a session this client no longer has.
+        guard state != .signedOut, tokens?.sessionId == answer.sessionId else {
+            throw TulaError(code: "auth.unauthenticated", status: 401)
+        }
+        if generation == left, refreshing == nil {
+            let installed = commit(
+                SessionTokens(
+                    sessionId: answer.sessionId, accessToken: answer.accessToken,
+                    accessTokenExpiresAt: answer.accessTokenExpiresAt))
+            await settle(installed)
+            return
+        }
+        await idle()
+        guard tokens?.sessionId == answer.sessionId, try await sharedRefresh(explicit: true) != nil else {
+            throw TulaError(code: "auth.unauthenticated", status: 401)
         }
     }
 

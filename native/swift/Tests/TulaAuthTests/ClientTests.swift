@@ -204,6 +204,9 @@ final class ClientTests: XCTestCase {
         let codes = [
             TulaClientErrorCode.networkFailed, TulaClientErrorCode.networkTimeout,
             TulaClientErrorCode.responseInvalid, TulaClientErrorCode.storageFailed, TulaClientErrorCode.flowBusy,
+            TulaClientErrorCode.deviceKeyFailed, TulaClientErrorCode.passkeyUnsupported,
+            TulaClientErrorCode.passkeyAlreadyOnDevice, TulaClientErrorCode.passkeyFailed,
+            TulaClientErrorCode.providerUnsupported, TulaClientErrorCode.providerFailed,
         ]
         let messages = Set(codes.compactMap(TulaClientErrorCode.message))
         XCTAssertEqual(messages.count, codes.count)

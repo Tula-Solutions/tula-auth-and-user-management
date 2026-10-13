@@ -98,7 +98,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `packages/mcp` | `@tula/mcp` — the Model Context Protocol server `tula mcp` serves over stdio: read-only tools over the admin API (users, sessions, audit entries, settings, providers, doctor), scaffold tools that return files and, with an agent key, propose tools that ask for a change a human approves ([docs/mcp.md](docs/mcp.md), [ADR 0033](docs/adr/0033-mcp-server.md), [ADR 0053](docs/adr/0053-proposals.md)). |
 | `packages/create-tula` | `create-tula` — scaffolds a project: Compose file, `.env` with generated secrets, `tula.config.ts`, an example app ([docs/quickstart.md](docs/quickstart.md)). Its app templates are copies of `examples/*`, made by `bun run --filter create-tula templates:sync`. |
 | `packages/expo` | `@tula/expo` — the headless Expo SDK: `@tula/core`'s client with its refresh token in the device's secure store, a provider and hooks, no screen; passkeys through a passkey sheet, provider sign-in through a system browser session, Apple's and Google's own sheets and a device's key store, each an option with an adapter of its own entry point, and a config plugin (`@tula/expo/plugin`); an emailed sign-in link opened in the app ([ADR 0046](docs/adr/0046-expo-sdk.md), [ADR 0048](docs/adr/0048-expo-passkeys-and-providers.md), [ADR 0052](docs/adr/0052-expo-native-providers-and-device-keys.md), [ADR 0055](docs/adr/0055-expo-emailed-link.md), [docs/expo.md](docs/expo.md)). The repository installs neither Expo nor React Native. |
-| `native/{swift,android}` | Native SDKs (Phase 2). `native/swift` is the Swift package `TulaAuth`: the generated types ([ADR 0050](docs/adr/0050-native-type-generation.md)) and, beside them, the hand-written client with no screen (flows, the session, the refresh token in the Keychain; [ADR 0051](docs/adr/0051-swift-client.md), [docs/swift.md](docs/swift.md)), with XCTest unit tests, journey tests against the real API and the fixture they start (`native/swift/fixture`). `native/android` is the generated Kotlin sources of a module `tula-auth` that has no Gradle build yet. Not workspace packages. No job of `ci.yml` compiles either; the `Swift` workflow (`.github/workflows/swift.yml`, a macOS runner) runs `swift test`. |
+| `native/{swift,android}` | Native SDKs (Phase 2). `native/swift` is the Swift package `TulaAuth`: the generated types ([ADR 0050](docs/adr/0050-native-type-generation.md)) and, beside them, the hand-written client with no screen (flows, the session, the refresh token in the Keychain, passkeys, providers and a device key behind protocols; [ADR 0051](docs/adr/0051-swift-client.md), [docs/swift.md](docs/swift.md)), with XCTest unit tests, journey tests against the real API and the fixture they start (`native/swift/fixture`). `native/android` is the generated Kotlin sources of a module `tula-auth` that has no Gradle build yet. Not workspace packages. No job of `ci.yml` compiles either; the `Swift` workflow (`.github/workflows/swift.yml`, a macOS runner) runs `swift test`. |
 | `packages/conformance` | `@tula/conformance` — runs the scenarios in `conformance/` over HTTP, in process or against a live server, and holds the format and the checks of the client-journey list. |
 | `conformance/` | Language-neutral JSON scenarios every server and SDK must pass, and their JSON Schema; `client-journeys.json`, the one list of what each client's test suite does about every scenario and every named client behaviour, and its JSON Schema. |
 | `scripts/` | Release tooling: builds, packs and checks the publishable packages ([docs/releasing.md](docs/releasing.md)). `scripts/docs.ts` writes the SDK reference and fills the docs' snippet blocks (`docs:generate`, `docs:check`); it uses the compiler bundled in `ts-morph`, pinned to an exact version, because the repository's TypeScript 7 has no stable compiler API. `scripts/worker-check/` is the check CI's `self-host-worker` job runs against the packaged stack (a webhook delivered by the worker as its own service) and the receiver it delivers to; its helpers are tested in `.claude/hooks/worker-check.test.ts`. |
@@ -1932,9 +1932,9 @@ themselves (TULA-37, TULA-38) are written by hand, beside the generated director
 
 ### Swift SDK (`native/swift`, see ADR 0051)
 
-The hand-written client beside the generated types: flows and the session, no screen.
-Passkeys, providers, device binding, the second step and step-up are TULA-56; the SwiftUI
-screens are TULA-49 and TULA-60.
+The hand-written client beside the generated types: flows, the session, passkeys,
+providers, a device key, the second step and step-up (TULA-37, TULA-56), no screen. The
+SwiftUI screens are TULA-49 and TULA-60; a texted code is TULA-60.
 
 - **It behaves as `@tula/core` does, and a rule changed in one is changed in the other.**
   One refresh at a time; a refresh the server refuses for the session (`session.*`,
@@ -1966,11 +1966,12 @@ screens are TULA-49 and TULA-60.
   `signOut()` and for nothing else.
 - **A step this version has no call for is `FlowScreen.notSupported`**: an unknown status,
   a known one with no action here, an unknown `reason`, a step that offers only ways the
-  client cannot take. Never an error, never a request on a guess. A new action widens
+  client cannot take (a texted code alone; a passkey alone on a client with no sheet). Never an error, never a request on a guess. A new action widens
   `FlowScreen` in the same change, with a row in `FlowTests`.
 - **A first factor is a call of its own, not a strategy parameter** (`prepareEmailCode`,
   `attemptEmailCode`): nothing can be asked for that this version cannot prove. There is no
-  call that asks for an emailed link.
+  call that asks for an emailed link (its binding would have to outlive the app: ADR 0051,
+  "Not built") and none for a texted code.
 - **Every flow call after the start sends the attempt's secret**, one action runs at a
   time (`flow.busy`), and `discard()` forgets the secret and drops the answer of an action
   in flight.
@@ -1982,7 +1983,100 @@ screens are TULA-49 and TULA-60.
   publishable key or the client is not made. No redirect is followed, the `URLSession`
   keeps no cookie, cache or credential, and a path parameter that is not one segment is
   refused before any request.
-- **No third-party dependency**: Foundation and the Security framework.
+- **No third-party dependency**: Foundation, Security, CryptoKit and AuthenticationServices,
+  which are the system's. Google's ID token comes from the app; never add Google's SDK or
+  any other package.
+- **The system is behind four protocols, and all four are `nil` unless the app passes
+  one** (`TulaPasskeySheet`, `TulaAppleSheet`, `TulaBrowserSession`,
+  `TulaDeviceKeyStore`). Never give one a default that touches the system: a test that
+  forgot an argument would show a sheet, and every session of an app that never asked
+  would be bound. `TulaSystemSheets.swift` is the one file that imports
+  AuthenticationServices. **No test shows a sheet, opens a browser or asks a real
+  Keychain or Secure Enclave**: the adapters' tests build the framework's requests and
+  read them, and stand in for the one step that shows something (`Perform`, `SheetRun`,
+  `Launch`). Those seams are internal; never make one public.
+- **A dismissed sheet and a closed browser are values, never an error and never a
+  sign-in**: `TulaCeremony.dismissed`, `ProviderOutcome.cancelled`. A sheet's failure is
+  one of the four words of `TulaSheetError`, read from the framework's error by domain
+  and code: **a framework's own error text is never kept**, in an error, a log or state.
+  Nothing of a ceremony (options, a credential, an ID token, a ticket's binding) outlives
+  its call, except a provider's binding and a ticket whose exchange got no answer, in
+  memory, for at most a minute.
+- **One sheet at a time for a whole client** (`CeremonyGate`): a second is `flow.busy`
+  before any request, never joined and never queued; the place is given back when the
+  sheet answered or after `sheetCeiling` (300 s, a challenge's lifetime), and a later
+  answer is dropped.
+- **What the browser returns is read only when it is the redirect URL that was asked for,
+  character for character, followed by `#`.** Never normalise either side, never judge the
+  redirect URL in the client (the server's `request.redirect_not_allowed` is thrown as it
+  is), and an error code in the returned address is passed on only when the contract
+  defines it. A new refused form gets a row in `ProviderTests`. **A held ticket is
+  forgotten only on an answer about it** (and after a minute, at a sign-out, by a new
+  round trip): a client error raised before it was presented keeps it
+  (`ProviderRoundTrip.retryable`). `SystemBrowserSession` refuses an `https` redirect URL
+  the system could never return to (a port, user information, a query, a fragment, a host
+  ending in a full stop) before anything is opened.
+- **For Apple the Swift client takes the hash of the nonce** (`appleNonce`, the lowercase
+  hexadecimal SHA-256), because it is what calls the sheet; `@tula/core` and `@tula/expo`
+  do not hash. Never send Apple's sheet the raw nonce, and never hash for Google.
+- **Proofs are made in the transport, for the six starts and the refresh** (`proven` in
+  `TulaHTTP.swift`), the nonce is kept in memory, and a request is repeated once after
+  `device.nonce_required`, inside the same call and deadline. **A `device.*` answer never
+  ends the session, with one exception**: a refresh refused `device.proof_invalid` while
+  the key store says the key is gone (`existing()` answered `nil`) ends it locally and
+  tells the server. A store that throws is `device.key_failed` and keeps the session:
+  `TulaDeviceKeyStore.existing()` answers `nil` only when it knows, and throws when it
+  cannot tell. Keep the tests of all four outcomes (`DeviceKeyTests`, the device
+  journeys). Sign-out sends no proof. **The store is asked twice before a session is
+  ended** (`DeviceProofs.verdict`): only two looks that both say "no key" are `gone`; a
+  second look that finds the key or throws keeps the session (`device.key_failed`). Never
+  end a session on one look, and never word the two looks as closing the case: they
+  narrow it.
+- **Everything a call waits for outside the client is inside its deadline**
+  (`ApiTransport.within`): the request, the look for the device key, the signing of each
+  proof, the looks after a refused proof. A key store that never answers is
+  `network.timeout` (as in `@tula/core`), nothing sent, the session kept. **The store is
+  asked one thing at a time** (`DeviceProofs.existing` and `create`, each a single
+  flight): a caller that finds a look or a making out joins it under its own deadline and
+  starts no second one, so a store that never answers is asked once. Never call the store
+  from `DeviceProofs` another way. **A caller that gives up leaves no task waiting, and
+  never cancels the shared call** (`Shared`: a waiter is a continuation its own task's
+  cancellation resumes); never await a flight as a `Task`'s value again. **A removal that
+  succeeded drops the flights** (`DeviceProofs.remove`, the one way the client removes a
+  key: the sign-out's and `TulaClient.removeDeviceKey()`): who had joined gets
+  `device.key_failed` at once, who asks afterwards looks again, and a late answer of the
+  dropped look is used by nobody, also while a newer look is out (`Shared.finish` asks the
+  generation: keep that guard and the test that fails without it). **A removal whose
+  outcome is not known (no answer in time, the caller cancelled) drops them too; one the
+  store refused drops nothing.** A cancelled removal is `device.key_failed`: the client
+  has no code for a cancelled call and throws no `CancellationError`. A dropped call is not
+  stopped, so two calls of a store can run at once: `TulaDeviceKeyStore.create` says a
+  store must tolerate it. Keep the test of each (`HardeningTests`). The sign-out of
+  a lost key runs inside the shared refresh and has `refreshTimeout`, never the client's
+  timeout. A new await on a store, a sheet's result excepted (the gate's ceiling), goes
+  through `within`, with the test that it ends (`HardeningTests`).
+- **A key that cannot be had is never read as gone, also when it will never be had
+  again** (a blob the enclave no longer opens): every refresh is `device.key_failed` and
+  the docs say that it may not pass. **The client removes a key by itself only at a
+  sign-out, and only for `TulaDeviceKeyStoreError.unusable`**, the store's own word for
+  "never again"; a removal that fails is not the sign-out's failure, and a sign-out
+  cancelled while the store is being asked removes nothing. Every other failure
+  (a locked device, a cancellation, a deadline, an unknown error) leaves the store alone:
+  it may pass, and a store can be shared with a client whose session is bound to the key.
+  **`KeychainDeviceKeyStore` throws that word for nothing**, because no Keychain status
+  and no CryptoKit error is documented to mean it; the way out there is the app's
+  (`signOut()`, then `TulaClient.removeDeviceKey()`, never the store's own `remove()` in
+  a doc: the client is not told of that one). Making the adapter throw it for a status is
+  a decision in ADR 0051, with Apple's sentence that justifies it.
+- **What holds a secret is `TulaRedacted`** and prints as its type's name with `print`,
+  `String(reflecting:)` and `dump`: a new type of the package that holds a token, a code,
+  a secret, a key or a ticket, or the client or session that lead to one, conforms and
+  gets a row in the table of `HardeningTests` (a private type conforms and has no row:
+  the test cannot name it). Its mirror suppresses the superclass too, so a subclass of a
+  redacted class prints nothing of either. The generated types are ADR 0050's exception,
+  and `FlowSnapshot`, which holds a generated step, prints as they do.
+- **The Secure Enclave key is never exported, and a simulator's software key is said to be
+  one** wherever `KeychainDeviceKeyStore` is documented.
 - **`native/swift/fixture/server.ts` is a test fixture and is guarded like
   `e2e/server.ts`**: it refuses to start without `TULA_NATIVE_FIXTURE=1`, listens on
   127.0.0.1, puts its `/__test/*` routes behind `e2e/guard.ts`, keeps the run's secret key
@@ -2002,11 +2096,15 @@ screens are TULA-49 and TULA-60.
 - **`verify` proves the list and the declared journeys agree, not that a Swift test
   passes.** A change under `native/swift/Sources` or `Tests` is run by hand (`swift test
   --package-path native/swift`, then the coverage check) and
-  `docs/plans/phase-2-unverified.md`, "Step 2.14, the Swift client", says what was run.
+  `docs/plans/phase-2-unverified.md`, the two sections of "Step 2.14, the Swift client",
+  say what was run.
   The coverage thresholds are `SWIFT_COVERAGE_THRESHOLD`, over the hand-written sources
   only: never count `Generated/`.
 - **Never say it runs on iOS, on a device or in a simulator until it has**, in a doc, a
-  README, a changeset or a doc comment.
+  README, a changeset or a doc comment. **No passkey sheet, no Sign in with Apple sheet
+  and no browser session has been shown by this package, and no key was made in a Secure
+  Enclave**: never word a passkey, a provider sign-in or the device key as working on iOS
+  until one has.
 
 ### React SDK (see ADR 0022)
 

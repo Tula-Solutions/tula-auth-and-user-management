@@ -168,11 +168,32 @@ final class FlowTests: XCTestCase {
             FlowScreen(step: try JSONDecoder().decode(FlowStep.self, from: Data(json.utf8)), kind: kind)
         }
         XCTAssertEqual(try screen(#"{"status":"needs_password"}"#), .password)
+        // A second factor: a code is a way this client has, a passkey only with a sheet, a
+        // texted code never; and a sign-up has no second factor to ask for.
+        guard
+            case .secondFactor = try screen(#"{"status":"needs_second_factor","options":["totp","backup_code"]}"#),
+            case .secondFactor = try screen(#"{"status":"needs_second_factor","options":["backup_code"]}"#, .passwordReset)
+        else {
+            return XCTFail("a code is a second factor this client can take")
+        }
+        let passkeyOnly = try JSONDecoder().decode(
+            FlowStep.self, from: Data(#"{"status":"needs_second_factor","options":["passkey"]}"#.utf8))
+        XCTAssertEqual(FlowScreen(step: passkeyOnly, kind: .signIn), .notSupported(status: "needs_second_factor"))
+        guard case .secondFactor = FlowScreen(step: passkeyOnly, kind: .signIn, passkeys: true) else {
+            return XCTFail("a passkey is a second factor for a client with a sheet")
+        }
         XCTAssertEqual(
-            try screen(#"{"status":"needs_second_factor","options":["totp","backup_code"]}"#),
+            try screen(#"{"status":"needs_second_factor","options":["sms_code","hardware_key"]}"#),
             .notSupported(status: "needs_second_factor"))
         XCTAssertEqual(
-            try screen(#"{"status":"needs_factor_enrolment","methods":["totp"]}"#),
+            try screen(#"{"status":"needs_second_factor","options":["totp"]}"#, .signUp),
+            .notSupported(status: "needs_second_factor"))
+        guard case .factorEnrolment = try screen(#"{"status":"needs_factor_enrolment","methods":["totp"]}"#, .signUp)
+        else {
+            return XCTFail("an authenticator app can be enrolled inside an attempt")
+        }
+        XCTAssertEqual(
+            try screen(#"{"status":"needs_factor_enrolment","methods":["hardware_key"]}"#),
             .notSupported(status: "needs_factor_enrolment"))
         XCTAssertEqual(
             try screen(#"{"status":"needs_identifier","strategies":["passkey"]}"#),

@@ -10,7 +10,7 @@
       "suite": "exists"
     },
     "swift": {
-      "description": "The Swift SDK (native/swift), an ios client with no screen: sign-up, sign-in with the password or an emailed code, a password reset and the session, with its refresh token behind a storage protocol. Its suite is native/swift/Tests/TulaAuthJourneyTests: XCTest methods that drive the client against the real API, which native/swift/fixture/server.ts serves in memory on a loopback port, on a macOS host and not on a device or in a simulator. native/swift/fixture/journeys.ts reads the journeys those tests declare and holds them to this list.",
+      "description": "The Swift SDK (native/swift), an ios client with no screen: sign-up, sign-in with the password, an emailed code, a passkey, a provider’s ID token or a provider round trip through a browser session, the second step, step-up, a password reset and the session, optionally bound to a device key, with its refresh token behind a storage protocol. Its suite is native/swift/Tests/TulaAuthJourneyTests: XCTest methods that drive the client against the real API, which native/swift/fixture/server.ts serves in memory on a loopback port, on a macOS host and not on a device or in a simulator, with a software authenticator behind the passkey sheet, a software device key and the journey itself as the browser and as Apple’s sheet. native/swift/fixture/journeys.ts reads the journeys those tests declare and holds them to this list.",
       "suite": "exists"
     },
     "kotlin": {
@@ -85,9 +85,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "a provider sign-in in an app is a round trip through a system browser session that returns to an app link or a custom scheme, with the binding kept by the client. The Swift client has no call that starts one or takes the ticket an app received."
+        "decision": "journey"
       }
     },
     "Discord sign-up and sign-in": {
@@ -98,9 +96,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "a provider sign-in in an app is a round trip through a system browser session that returns to an app link or a custom scheme, with the binding kept by the client. The Swift client has no call that starts one or takes the ticket an app received."
+        "decision": "journey"
       }
     },
     "Facebook never links by address": {
@@ -111,9 +107,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "a provider sign-in in an app is a round trip through a system browser session that returns to an app link or a custom scheme, with the binding kept by the client. The Swift client has no call that starts one or takes the ticket an app received."
+        "decision": "journey"
       }
     },
     "Facebook sign-up and sign-in": {
@@ -124,9 +118,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "a provider sign-in in an app is a round trip through a system browser session that returns to an app link or a custom scheme, with the binding kept by the client. The Swift client has no call that starts one or takes the ticket an app received."
+        "decision": "journey"
       }
     },
     "LinkedIn account linking": {
@@ -137,9 +129,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "a provider sign-in in an app is a round trip through a system browser session that returns to an app link or a custom scheme, with the binding kept by the client. The Swift client has no call that starts one or takes the ticket an app received."
+        "decision": "journey"
       }
     },
     "LinkedIn sign-up and sign-in": {
@@ -150,9 +140,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "a provider sign-in in an app is a round trip through a system browser session that returns to an app link or a custom scheme, with the binding kept by the client. The Swift client has no call that starts one or takes the ticket an app received."
+        "decision": "journey"
       }
     },
     "Microsoft account linking": {
@@ -163,9 +151,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "a provider sign-in in an app is a round trip through a system browser session that returns to an app link or a custom scheme, with the binding kept by the client. The Swift client has no call that starts one or takes the ticket an app received."
+        "decision": "journey"
       }
     },
     "Microsoft sign-up and sign-in": {
@@ -176,9 +162,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "a provider sign-in in an app is a round trip through a system browser session that returns to an app link or a custom scheme, with the binding kept by the client. The Swift client has no call that starts one or takes the ticket an app received."
+        "decision": "journey"
       }
     },
     "OAuth account linking": {
@@ -189,9 +173,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "a provider sign-in in an app is a round trip through a system browser session that returns to an app link or a custom scheme, with the binding kept by the client. The Swift client has no call that starts one or takes the ticket an app received."
+        "decision": "journey"
       }
     },
     "OAuth sign-up and sign-in": {
@@ -202,9 +184,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "a provider sign-in in an app is a round trip through a system browser session that returns to an app link or a custom scheme, with the binding kept by the client. The Swift client has no call that starts one or takes the ticket an app received."
+        "decision": "journey"
       }
     },
     "OAuth with a second factor": {
@@ -215,9 +195,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "a provider sign-in in an app is a round trip through a system browser session that returns to an app link or a custom scheme, with the binding kept by the client. The Swift client has no call that starts one or takes the ticket an app received."
+        "decision": "journey"
       }
     },
     "X never links by address": {
@@ -228,9 +206,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "a provider sign-in in an app is a round trip through a system browser session that returns to an app link or a custom scheme, with the binding kept by the client. The Swift client has no call that starts one or takes the ticket an app received."
+        "decision": "journey"
       }
     },
     "X sign-up and sign-in": {
@@ -241,9 +217,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "a provider sign-in in an app is a round trip through a system browser session that returns to an app link or a custom scheme, with the binding kept by the client. The Swift client has no call that starts one or takes the ticket an app received."
+        "decision": "journey"
       }
     },
     "a bound session's refresh with a proof of another key is refused": {
@@ -254,9 +228,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client makes no device key and sends no DPoP proof: a key worth binding a session to is made in the Secure Enclave, and nothing of that is built. What the client does without a key is \"a session that is not bound behaves as before\"."
+        "decision": "journey"
       }
     },
     "a bound session's refresh without a proof is refused and changes nothing": {
@@ -267,9 +239,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client makes no device key and sends no DPoP proof: a key worth binding a session to is made in the Secure Enclave, and nothing of that is built. What the client does without a key is \"a session that is not bound behaves as before\"."
+        "decision": "journey"
       }
     },
     "a passkey satisfies two-step verification": {
@@ -280,9 +250,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client has no passkey call: nothing asks the platform’s passkey API for a registration or an assertion, and nothing lists or removes a user’s passkeys."
+        "decision": "journey"
       }
     },
     "a profile that requires a device key leaves a browser alone": {
@@ -306,9 +274,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client makes no device key and sends no DPoP proof: a key worth binding a session to is made in the Secure Enclave, and nothing of that is built. What the client does without a key is \"a session that is not bound behaves as before\"."
+        "decision": "journey"
       }
     },
     "a profile that requires a device key refuses a native sign-in without one": {
@@ -330,9 +296,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client makes no device key and sends no DPoP proof: a key worth binding a session to is made in the Secure Enclave, and nothing of that is built. What the client does without a key is \"a session that is not bound behaves as before\"."
+        "decision": "journey"
       }
     },
     "a proof is accepted once": {
@@ -343,9 +307,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client makes no device key and sends no DPoP proof: a key worth binding a session to is made in the Secure Enclave, and nothing of that is built. What the client does without a key is \"a session that is not bound behaves as before\"."
+        "decision": "journey"
       }
     },
     "a proof with a stale nonce is asked for a fresh one": {
@@ -356,9 +318,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client makes no device key and sends no DPoP proof: a key worth binding a session to is made in the Secure Enclave, and nothing of that is built. What the client does without a key is \"a session that is not bound behaves as before\"."
+        "decision": "journey"
       }
     },
     "a session bound to a device key is refreshed with a proof": {
@@ -369,9 +329,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client makes no device key and sends no DPoP proof: a key worth binding a session to is made in the Secure Enclave, and nothing of that is built. What the client does without a key is \"a session that is not bound behaves as before\"."
+        "decision": "journey"
       }
     },
     "a session that is not bound behaves as before": {
@@ -469,9 +427,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client has no call for a second factor, an enrolment inside a sign-in or a step-up, and none that manages a user’s factors: a sign-in that reaches one of those steps is the screen `notSupported`, which the client’s unit tests hold."
+        "decision": "journey"
       }
     },
     "admin user authentication": {
@@ -524,9 +480,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "a provider sign-in in an app is a round trip through a system browser session that returns to an app link or a custom scheme, with the binding kept by the client. The Swift client has no call that starts one or takes the ticket an app received."
+        "decision": "journey"
       }
     },
     "attempt binding": {
@@ -548,9 +502,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client has no call for a second factor, an enrolment inside a sign-in or a step-up, and none that manages a user’s factors: a sign-in that reaches one of those steps is the screen `notSupported`, which the client’s unit tests hold."
+        "decision": "journey"
       }
     },
     "backup codes": {
@@ -561,9 +513,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client has no call for a second factor, an enrolment inside a sign-in or a step-up, and none that manages a user’s factors: a sign-in that reaches one of those steps is the screen `notSupported`, which the client’s unit tests hold."
+        "decision": "journey"
       }
     },
     "claims added by a hook": {
@@ -597,9 +547,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "a provider sign-in in an app is a round trip through a system browser session that returns to an app link or a custom scheme, with the binding kept by the client. The Swift client has no call that starts one or takes the ticket an app received."
+        "decision": "journey"
       }
     },
     "dashboard credential rules": {
@@ -637,7 +585,7 @@
       "swift": {
         "decision": "not_built",
         "ticket": "TULA-56",
-        "reason": "the server honours an emailed link only in the client that asked for it, with a binding that client keeps, and a link in an email opens a browser unless it is an app link. The Swift client has no call that asks for a link: a step that offers only one is the screen `notSupported`, and the code in the same email is the path (\"email code sign-in\"). Handling a link that opens the app belongs with the app-link returns of TULA-56; no ticket names it by itself."
+        "reason": "the server honours an emailed link only in the client that asked for it, with a binding that client keeps, and a link in an email opens a browser unless it is an app link. The Swift client has no call that asks for a link: a step that offers only one is the screen `notSupported`, and the code in the same email is the path (\"email code sign-in\"). TULA-56 built the app-link return of a provider sign-in, whose binding lives in memory for one round trip; an emailed link needs a binding that outlives the app and a link the app judges, and neither is decided (the Expo SDK refuses it for the same reason, TULA-48). No ticket names it by itself."
       }
     },
     "email wording": {
@@ -692,9 +640,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client has no call that asks for an ID-token attempt or exchanges the token the system’s Sign in with Apple sheet or Google’s SDK hands an app."
+        "decision": "journey"
       }
     },
     "native Apple ID token used once": {
@@ -705,9 +651,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client has no call that asks for an ID-token attempt or exchanges the token the system’s Sign in with Apple sheet or Google’s SDK hands an app."
+        "decision": "journey"
       }
     },
     "native Apple sign-in and existing accounts": {
@@ -718,9 +662,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client has no call that asks for an ID-token attempt or exchanges the token the system’s Sign in with Apple sheet or Google’s SDK hands an app."
+        "decision": "journey"
       }
     },
     "native Apple sign-up and sign-in": {
@@ -731,9 +673,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client has no call that asks for an ID-token attempt or exchanges the token the system’s Sign in with Apple sheet or Google’s SDK hands an app."
+        "decision": "journey"
       }
     },
     "native Google ID token refused": {
@@ -744,9 +684,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client has no call that asks for an ID-token attempt or exchanges the token the system’s Sign in with Apple sheet or Google’s SDK hands an app."
+        "decision": "journey"
       }
     },
     "native Google ID token used once": {
@@ -757,9 +695,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client has no call that asks for an ID-token attempt or exchanges the token the system’s Sign in with Apple sheet or Google’s SDK hands an app."
+        "decision": "journey"
       }
     },
     "native Google sign-in and existing accounts": {
@@ -770,9 +706,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client has no call that asks for an ID-token attempt or exchanges the token the system’s Sign in with Apple sheet or Google’s SDK hands an app."
+        "decision": "journey"
       }
     },
     "native Google sign-up and sign-in": {
@@ -783,9 +717,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client has no call that asks for an ID-token attempt or exchanges the token the system’s Sign in with Apple sheet or Google’s SDK hands an app."
+        "decision": "journey"
       }
     },
     "native app identity": {
@@ -812,9 +744,7 @@
         "reason": "the package asks the passkey sheet for a fresh assertion on every call and never holds one to present twice (nothing of a ceremony is kept); replaying a response, or presenting one for another attempt’s challenge, takes a client that sends hand-made requests."
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client has no passkey call: nothing asks the platform’s passkey API for a registration or an assertion, and nothing lists or removes a user’s passkeys. Whether this scenario can be reached at all through the call TULA-56 builds (one that starts and submits in one step leaves nothing to place between the two, and holds no assertion to present twice) is decided with it."
+        "decision": "journey"
       }
     },
     "passkey origin and relying party": {
@@ -839,9 +769,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client has no passkey call: nothing asks the platform’s passkey API for a registration or an assertion, and nothing lists or removes a user’s passkeys."
+        "decision": "journey"
       }
     },
     "passkey registration from a native app": {
@@ -853,9 +781,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client has no passkey call: nothing asks the platform’s passkey API for a registration or an assertion, and nothing lists or removes a user’s passkeys."
+        "decision": "journey"
       }
     },
     "passkey sign-in from a native app": {
@@ -867,9 +793,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client has no passkey call: nothing asks the platform’s passkey API for a registration or an assertion, and nothing lists or removes a user’s passkeys."
+        "decision": "journey"
       }
     },
     "passkey sign-in from an unregistered app": {
@@ -881,9 +805,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client has no passkey call: nothing asks the platform’s passkey API for a registration or an assertion, and nothing lists or removes a user’s passkeys."
+        "decision": "journey"
       }
     },
     "passkey sign-in with a fingerprint that is not the registered one": {
@@ -923,9 +845,7 @@
         "reason": "`useSignIn().withPasskey()` is `@tula/core`’s `signIn.withPasskey()`, which starts and submits in one call, so no settings change can be placed between the two through the package; the method being off at the start is part of the journey of \"passkey registration and sign-in\"."
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client has no passkey call: nothing asks the platform’s passkey API for a registration or an assertion, and nothing lists or removes a user’s passkeys. Whether this scenario can be reached at all through the call TULA-56 builds (one that starts and submits in one step leaves nothing to place between the two, and holds no assertion to present twice) is decided with it."
+        "decision": "journey"
       }
     },
     "password expiry": {
@@ -991,9 +911,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client has no call for a second factor, an enrolment inside a sign-in or a step-up, and none that manages a user’s factors: a sign-in that reaches one of those steps is the screen `notSupported`, which the client’s unit tests hold."
+        "decision": "journey"
       }
     },
     "passwordless sign-up": {
@@ -1029,9 +947,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "a provider sign-in in an app is a round trip through a system browser session that returns to an app link or a custom scheme, with the binding kept by the client. The Swift client has no call that starts one or takes the ticket an app received."
+        "decision": "journey"
       }
     },
     "provider sign-in returned to an app link": {
@@ -1043,9 +959,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "a provider sign-in in an app is a round trip through a system browser session that returns to an app link or a custom scheme, with the binding kept by the client. The Swift client has no call that starts one or takes the ticket an app received."
+        "decision": "journey"
       }
     },
     "refresh rotation and reuse detection": {
@@ -1067,9 +981,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client has no call for a second factor, an enrolment inside a sign-in or a step-up, and none that manages a user’s factors: a sign-in that reaches one of those steps is the screen `notSupported`, which the client’s unit tests hold."
+        "decision": "journey"
       }
     },
     "second factor lockout": {
@@ -1080,9 +992,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client has no call for a second factor, an enrolment inside a sign-in or a step-up, and none that manages a user’s factors: a sign-in that reaches one of those steps is the screen `notSupported`, which the client’s unit tests hold."
+        "decision": "journey"
       }
     },
     "session profile selection": {
@@ -1232,9 +1142,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client has no call for a second factor, an enrolment inside a sign-in or a step-up, and none that manages a user’s factors: a sign-in that reaches one of those steps is the screen `notSupported`, which the client’s unit tests hold."
+        "decision": "journey"
       }
     },
     "step-up by emailed code": {
@@ -1245,9 +1153,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client has no call for a second factor, an enrolment inside a sign-in or a step-up, and none that manages a user’s factors: a sign-in that reaches one of those steps is the screen `notSupported`, which the client’s unit tests hold."
+        "decision": "journey"
       }
     },
     "step-up window per profile": {
@@ -1258,9 +1164,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client has no call for a second factor, an enrolment inside a sign-in or a step-up, and none that manages a user’s factors: a sign-in that reaches one of those steps is the screen `notSupported`, which the client’s unit tests hold."
+        "decision": "journey"
       }
     },
     "step-up with a passkey": {
@@ -1271,9 +1175,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client has no passkey call: nothing asks the platform’s passkey API for a registration or an assertion, and nothing lists or removes a user’s passkeys."
+        "decision": "journey"
       }
     },
     "text message wording": {
@@ -1337,9 +1239,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client has no passkey call: nothing asks the platform’s passkey API for a registration or an assertion, and nothing lists or removes a user’s passkeys."
+        "decision": "journey"
       }
     },
     "the reuse grace window still requires a proof": {
@@ -1350,9 +1250,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client makes no device key and sends no DPoP proof: a key worth binding a session to is made in the Secure Enclave, and nothing of that is built. What the client does without a key is \"a session that is not bound behaves as before\"."
+        "decision": "journey"
       }
     },
     "two instances": {
@@ -1377,9 +1275,7 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-56",
-        "reason": "the Swift client has no call for a second factor, an enrolment inside a sign-in or a step-up, and none that manages a user’s factors: a sign-in that reaches one of those steps is the screen `notSupported`, which the client’s unit tests hold."
+        "decision": "journey"
       }
     },
     "verification code attempts": {

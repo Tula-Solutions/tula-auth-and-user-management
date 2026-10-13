@@ -216,7 +216,11 @@ struct World {
     let clock = FakeClock()
     let client: TulaClient
 
-    init(timeout: TimeInterval = 5, sessionProfile: String? = nil) throws {
+    init(
+        timeout: TimeInterval = 5, sessionProfile: String? = nil,
+        deviceKeys: (any TulaDeviceKeyStore)? = nil, passkeys: (any TulaPasskeySheet)? = nil,
+        apple: (any TulaAppleSheet)? = nil, browser: (any TulaBrowserSession)? = nil
+    ) throws {
         client = try TulaClient(
             publishableKey: Fixture.key,
             baseURL: Fixture.base,
@@ -224,7 +228,11 @@ struct World {
             transport: api,
             sessionProfile: sessionProfile,
             timeout: timeout,
-            clock: clock
+            clock: clock,
+            deviceKeys: deviceKeys,
+            passkeys: passkeys,
+            apple: apple,
+            browser: browser
         )
         api.always(Fixture.me) { _ in Reply(json: Fixture.user) }
     }
@@ -233,8 +241,12 @@ struct World {
 
     /// A client that is signed in: a stored token, refreshed once. The storage then holds
     /// `refresh-first` and the API has seen one refresh.
-    static func signedIn(timeout: TimeInterval = 5) async throws -> World {
-        let world = try World(timeout: timeout)
+    static func signedIn(
+        timeout: TimeInterval = 5,
+        deviceKeys: (any TulaDeviceKeyStore)? = nil, passkeys: (any TulaPasskeySheet)? = nil,
+        browser: (any TulaBrowserSession)? = nil
+    ) async throws -> World {
+        let world = try World(timeout: timeout, deviceKeys: deviceKeys, passkeys: passkeys, browser: browser)
         await world.storage.put(Fixture.storageKey, "refresh-stored")
         world.api.on(Fixture.refresh, Reply(json: Fixture.tokens("first")))
         let state = try await world.session.load()
