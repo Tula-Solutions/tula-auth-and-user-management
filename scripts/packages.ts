@@ -1,6 +1,11 @@
 import { cp, mkdir, rm, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { type Manifest, PUBLISHABLE_PACKAGES, publishManifest } from './publish-manifest'
+import {
+  type Manifest,
+  missingPackedFiles,
+  PUBLISHABLE_PACKAGES,
+  publishManifest,
+} from './publish-manifest'
 
 // Builds, packs and checks the packages that will be published to npm, exactly as they would
 // be published. Two modes:
@@ -85,6 +90,10 @@ async function stageAndPack(dir: string, versions: ReadonlyMap<string, string>):
     throw new Error(`expected ${tarball} after packing ${manifest.name}`)
   }
   const listing = await run(['tar', '-tzf', tarball], root)
+  const missing = missingPackedFiles(manifest.name, listing)
+  if (missing.length > 0) {
+    throw new Error(`${manifest.name}: the tarball does not hold ${missing.join(', ')}`)
+  }
   return {
     name: manifest.name,
     version: manifest.version,

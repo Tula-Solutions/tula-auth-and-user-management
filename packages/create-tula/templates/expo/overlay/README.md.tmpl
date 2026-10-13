@@ -46,6 +46,15 @@ bunx expo run:android    # needs Android Studio's SDK and an emulator
 bun run start            # afterwards
 ```
 
+## Tula's own screens
+
+This app draws its screens itself, on `@tula/expo`'s headless client. Tula's native screens
+(SwiftUI on iOS, Compose on Android) are a separate package, `@tula/expo-screens`, with a
+native module of its own: nothing here installs it, so your build compiles none of it. It is
+a separate install and an app uses it instead of the headless client, never beside it. Its
+iOS module has not been compiled, and no screen has been drawn through it anywhere: read
+`docs/expo.md` in the Tula repository before you add it.
+
 ## On a phone
 
 A phone cannot reach `localhost`, and a passkey, an app link and a provider's own sheet need

@@ -7,6 +7,7 @@ paths:
   - "packages/nextjs/**"
   - "examples/nextjs-app-router/**"
   - "packages/expo/**"
+  - "packages/expo-screens/**"
   - "packages/admin/**"
   - "packages/config/**"
   - "packages/cli/**"
@@ -327,8 +328,47 @@ paths:
   "what is not built" test holds.
 - The example (`examples/expo/app`) is not a workspace package. Nothing here was run on a
   phone; no passkey sheet, system browser or provider's sheet was ever opened, no
-  hardware key made, and the plugin never run by Expo:
-  `docs/plans/phase-2-unverified.md`, the three sections of "Step 2.13".
+  hardware key made, and the plugin not run by Expo as it is now (an earlier form of it
+  once, in a scratch prebuild: "Step 2.16"):
+  `docs/plans/phase-2-unverified.md`, the sections of "Step 2.13".
+
+
+## Expo native screens (`packages/expo-screens`, ADR 0063)
+
+- A package of its own, `@tula/expo-screens`, never an entry point of `@tula/expo`: Expo
+  links a package's native module into every app that installs the package, so the
+  module (`expo-module.config.json`, `ios/`, `android/`) is where only an app that wants
+  the screens installs it. The two packages do not depend on each other; `@tula/expo`
+  stays headless and gains no `expo-module.config.json`, `ios/`, `android/` or `expo`
+  peer (`.claude/hooks/release.test.ts`).
+- `src/index.ts` is the one file that imports `expo` and `react-native`
+  (`package.test.ts`); `native-screens-core.ts` takes the native module and the two views
+  as arguments (tests pass fakes). Dependencies: `@tula/core` and the Zod-free
+  `@tula/contract/theme`. Peers: `expo`, `react`, `react-native`, required when published,
+  never installed here (`src/native-modules.d.ts` declares what is read).
+- The SwiftUI and Compose screens in two views, on a native client that owns the session.
+  The refresh token never crosses to JavaScript; an access token only as `getToken()`'s
+  answer; an event holds the state (a status, two ids) or nothing; a failure crosses as a
+  code of a closed set (`crossing` on each native side: the module's, the native
+  client's and the generated `ErrorCode`'s; anything else is `internal`) under one fixed
+  sentence, and the sentence shown is looked up in JavaScript. On Android every
+  `configure` replaces the activity provider first (`Latest.kt`); the module's libraries
+  are older than the SDK's catalog and `.claude/hooks/expo-native-libraries.test.ts`
+  holds every difference to a reason. Options are strings and booleans. A theme goes
+  through `checkTheme` (the contract's `isValidThemeValue`, refusals named by token) and
+  is checked again natively. No destination prop, no `strings` prop, no rule of a flow.
+- `native-screens-sources.test.ts` reads the Swift and Kotlin sources and holds the
+  exchanged names equal: a new function, prop, option or code changes all three sides.
+  `ios/vendor` and `android/vendor` are copies made by `scripts/vendor-native.ts` (the
+  `prebuild` script), never edited or committed.
+- The module declares `minSdkVersion 28` itself. `@tula/expo-screens/plugin`
+  (`withTulaScreens`) is a pure function that imports nothing and takes no options: it
+  raises `android.minSdkVersion` to 28, never lowers, adds nothing twice, and refuses
+  options in one fixed sentence. `@tula/expo/plugin` has no `nativeScreens` option.
+- An app uses these screens or the headless client, not both.
+- Written and partly compiled, never run, and nothing native was compiled after the move
+  into this package: `docs/plans/phase-2-unverified.md`, "Step 2.16". Never word a
+  screen, the module or the plugin as working on iOS or Android.
 
 ## Next.js SDK (`packages/nextjs`, ADR 0029)
 

@@ -262,6 +262,33 @@
         "react-native-passkey",
       ],
     },
+    "packages/expo-screens": {
+      "name": "@tula/expo-screens",
+      "version": "0.0.0",
+      "dependencies": {
+        "@tula/contract": "workspace:*",
+        "@tula/core": "workspace:*",
+      },
+      "devDependencies": {
+        "@happy-dom/global-registrator": "^20.14.5",
+        "@testing-library/dom": "^10.4.2",
+        "@testing-library/react": "^16.3.3",
+        "@tula/tsconfig": "workspace:*",
+        "@types/react": "^19.3.0",
+        "@types/react-dom": "^19.3.0",
+        "happy-dom": "^20.14.5",
+        "react-dom": "^19.3.0",
+      },
+      "peerDependencies": {
+        "expo": ">=57.0.0",
+        "react": "^19.0.0",
+        "react-native": "*",
+      },
+      "optionalPeers": [
+        "expo",
+        "react-native",
+      ],
+    },
     "packages/mcp": {
       "name": "@tula/mcp",
       "version": "0.0.0",
@@ -1178,6 +1205,8 @@
     "@tula/example-react-vite": ["@tula/example-react-vite@workspace:examples/react-vite"],
 
     "@tula/expo": ["@tula/expo@workspace:packages/expo"],
+
+    "@tula/expo-screens": ["@tula/expo-screens@workspace:packages/expo-screens"],
 
     "@tula/mcp": ["@tula/mcp@workspace:packages/mcp"],
 

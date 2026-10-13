@@ -56,7 +56,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | The `tokens:start` … `tokens:end` block of `packages/react/src/styles.css` | Generated from `@tula/contract/theme` by `bun run --filter @tula/react generate`. Change a token in the contract, then regenerate. |
 | `apps/dashboard/src/api/generated/api.gen.ts`, `apps/dashboard/src/routeTree.gen.ts`, `apps/dashboard/src/styles/tokens.gen.css` | Orval's hooks, TanStack Router's route tree and the theme tokens: `bun run dashboard:generate` (after `contract:generate`, after adding a route file, after changing a theme token). |
 | `apps/dashboard/src/components/ui/**` | shadcn primitives, written by its CLI (`bunx shadcn@latest add <name>` in `apps/dashboard`) — wrap or extend, don't modify. They import `cn` from the bare specifier `cn`, as the registry ships them; `tsconfig.json` and `vite.config.ts` map it to `src/lib/utils.ts`. |
-| `docs/reference/**` | The SDK reference, written from the JSDoc of the public entry points of `@tula/{core,react,nextjs,expo,admin,config,contract}` by `bun run docs:generate` (`scripts/docs.ts`), and, for the two native SDKs (`swift.md`, `kotlin.md`), from the doc comments of every declaration an app can name in their hand-written sources (`scripts/native-reference.ts`: a scan of the text, which needs no Swift or Kotlin toolchain, shows nothing compiles, counts a declaration with no doc comment and stops for a file whose braces it cannot follow). Change the JSDoc or the doc comment, then regenerate; `bun run docs:check` (part of `verify`) fails on drift. Biome already ignores `docs/`. |
+| `docs/reference/**` | The SDK reference, written from the JSDoc of the public entry points of `@tula/{core,react,nextjs,expo,expo-screens,admin,config,contract}` by `bun run docs:generate` (`scripts/docs.ts`), and, for the two native SDKs (`swift.md`, `kotlin.md`), from the doc comments of every declaration an app can name in their hand-written sources (`scripts/native-reference.ts`: a scan of the text, which needs no Swift or Kotlin toolchain, shows nothing compiles, counts a declaration with no doc comment and stops for a file whose braces it cannot follow). Change the JSDoc or the doc comment, then regenerate; `bun run docs:check` (part of `verify`) fails on drift. Biome already ignores `docs/`. |
 | A block between `<!-- snippet: path#region -->` and `<!-- /snippet -->` in `docs/**` and the READMEs | Copied from that file (or its `// #region name` … `// #endregion` lines) by `bun run docs:generate`. Change the source file, then regenerate. Every sample in `docs/methods/` that is not a shell line must be such a block, and every Swift, Kotlin and TypeScript sample of `docs/swift.md`, `docs/kotlin.md` and `docs/expo.md` a region of a source a build compiles (`.claude/hooks/docs.test.ts`): the `DocsSnippets` files of the Swift package's test targets, of `tula-auth`'s test sources and of the Compose example's `androidTest` sources, and the Expo example's own sources. A `DocsSnippets` file is compiled and never run: it holds no test. |
 | `bun.lock` | Manage via `bun add` / `bun remove`. |
 | `.env*` (except `.env.example`) | Local secrets; never read, print or commit them. |
@@ -98,6 +98,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `packages/mcp` | `@tula/mcp` — the Model Context Protocol server `tula mcp` serves over stdio: read-only tools over the admin API (users, sessions, audit entries, settings, providers, doctor), scaffold tools that return files, a draft tool that returns a settings change as an edit to the config file, a tool that has the server run a sign-in test and, with an agent key, propose tools that ask for a change a human approves ([docs/mcp.md](docs/mcp.md), [ADR 0033](docs/adr/0033-mcp-server.md), [ADR 0053](docs/adr/0053-proposals.md), [ADR 0056](docs/adr/0056-mcp-settings-config-diff.md), [ADR 0058](docs/adr/0058-test-signin.md)). |
 | `packages/create-tula` | `create-tula` — scaffolds a project: Compose file, `.env` with generated secrets, `tula.config.ts`, an example app ([docs/quickstart.md](docs/quickstart.md)). Its app templates, two web and three native (Expo, SwiftUI, Compose), are copies of `examples/*`, made by `bun run --filter create-tula templates:sync`. |
 | `packages/expo` | `@tula/expo` — the headless Expo SDK: `@tula/core`'s client with its refresh token in the device's secure store, a provider and hooks, no screen; passkeys through a passkey sheet, provider sign-in through a system browser session, Apple's and Google's own sheets and a device's key store, each an option with an adapter of its own entry point, and a config plugin (`@tula/expo/plugin`); an emailed sign-in link opened in the app ([ADR 0046](docs/adr/0046-expo-sdk.md), [ADR 0048](docs/adr/0048-expo-passkeys-and-providers.md), [ADR 0052](docs/adr/0052-expo-native-providers-and-device-keys.md), [ADR 0055](docs/adr/0055-expo-emailed-link.md), [docs/expo.md](docs/expo.md)). The repository installs neither Expo nor React Native. |
+| `packages/expo-screens` | `@tula/expo-screens` — Tula's native screens (the SwiftUI and Compose screens of the native SDKs) as two Expo components, on a native client that owns the session: an Expo native module of its own (`expo-module.config.json`, `ios/`, `android/`, with copies of the native SDKs' sources made when it is built) and a config plugin (`@tula/expo-screens/plugin`). Apart from `@tula/expo` and not built on it, so that only an app that installs it compiles the module ([ADR 0063](docs/adr/0063-expo-native-screens.md), [docs/expo.md](docs/expo.md)). Written and partly compiled, never run. The repository installs neither Expo nor React Native. |
 | `native/{swift,android}` | Native SDKs (Phase 2). `native/swift` is the Swift package `TulaAuth`: the generated types ([ADR 0050](docs/adr/0050-native-type-generation.md)) and, beside them, the hand-written client with no screen (flows, the session, the refresh token in the Keychain, passkeys, providers and a device key behind protocols; [ADR 0051](docs/adr/0051-swift-client.md), [docs/swift.md](docs/swift.md)), with XCTest unit tests, journey tests against the real API and the fixture they start (`native/swift/fixture`); and a second library, `TulaAuthUI`, the SwiftUI screens of a sign-in, a sign-up and a password reset on that client ([ADR 0057](docs/adr/0057-swiftui-screens.md)), with tests of what they decide. `native/android` is the Kotlin SDK's Gradle build ([ADR 0054](docs/adr/0054-kotlin-client.md), [docs/kotlin.md](docs/kotlin.md), `native/android/README.md`): `tula-auth`, the client with no UI (flows, the session, the second step and step-up, passkeys, Google's ID token, providers and a device key behind interfaces, the storage interface) beside the generated types, plain Kotlin on the JVM; `tula-auth-android`, the Keystore-backed storage and the adapters over Credential Manager, a Custom Tab and the Keystore, built only where an Android SDK is known; and the Compose screens of a sign-in, a sign-up, a password reset and the signed-in user's account ([ADR 0061](docs/adr/0061-compose-screens.md), [ADR 0062](docs/adr/0062-compose-second-step-and-account.md)) in two modules: `tula-auth-ui`, what they decide (plain Kotlin on the JVM, no Compose), and `tula-auth-compose`, what draws them (an Android library). `native/android/fixture/ui-tests.ts` runs the example's UI tests on an emulator, by hand. Not workspace packages. No job of `ci.yml` compiles Swift: the `Swift` workflow (`.github/workflows/swift.yml`, a macOS runner) runs `swift test`. CI's `kotlin` job tests `tula-auth` and `tula-auth-ui`, and `kotlin-android` compiles and lints `tula-auth-android`, `tula-auth-compose` and the Compose example with its UI tests; no job runs anything on a device or an emulator. |
 | `packages/conformance` | `@tula/conformance` — runs the scenarios in `conformance/` over HTTP, in process or against a live server, and holds the format and the checks of the client-journey list. |
 | `conformance/` | Language-neutral JSON scenarios every server and SDK must pass, and their JSON Schema; `client-journeys.json`, the one list of what each client's test suite does about every scenario and every named client behaviour, and its JSON Schema. |
@@ -115,7 +116,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 
 ### Publishable packages (see ADR 0020)
 
-`@tula/contract`, `@tula/core`, `@tula/react`, `@tula/nextjs`, `@tula/expo`, `@tula/admin`, `@tula/config`, `@tula/mcp`, `@tula/cli` and `create-tula` are built for npm; **nothing is published yet** and every
+`@tula/contract`, `@tula/core`, `@tula/react`, `@tula/nextjs`, `@tula/expo`, `@tula/expo-screens`, `@tula/admin`, `@tula/config`, `@tula/mcp`, `@tula/cli` and `create-tula` are built for npm; **nothing is published yet** and every
 package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
 
 - `exports` point at `./src/*.ts`, so the workspace resolves packages from source with no build
@@ -3561,10 +3562,160 @@ that differs says why.
   `docs/plans/phase-2-unverified.md`, the three sections of "Step 2.13"; an item is struck
   out there, with what was run, when someone runs it. **No passkey sheet, no system
   browser and no provider's sheet has been opened by this package, no key was made in a
-  phone's secure hardware, and Expo never ran the plugin**: never word a passkey, a
+  phone's secure hardware, and Expo never ran the plugin as it is now** (an earlier form
+  of it, with an option for the native screens that has since moved to
+  `@tula/expo-screens/plugin`, was run once by `expo prebuild` in a scratch app, without
+  the `google` option, and no app was built from what it wrote: "Step 2.16"): never word a passkey, a
   provider sign-in, Apple's or Google's sheet, a hardware key or the plugin as working on
   iOS or Android, in a doc, a README, a changeset or a JSDoc, until one has. A key is
   "a key the device keeps" or "non-exportable by the module's source", never "verified".
+
+### Expo native screens (`packages/expo-screens`, see ADR 0063)
+
+`@tula/expo-screens` (`createTulaScreens`, `<TulaAuthView>`, `<TulaAccountView>`,
+`checkTheme`) shows the SwiftUI and Compose screens of the native SDKs in an Expo app,
+hosted in two views of the package's own Expo module (`ios/`, `android/`,
+`expo-module.config.json`), on a native client that owns the session.
+
+- **It is a package of its own, never an entry point of `@tula/expo`, and the two do not
+  depend on each other.** Expo links a package's native module into every app that
+  installs the package, whatever the app imports: inside `@tula/expo` the module (Compose,
+  Credential Manager, three pods, and a Swift file nobody has compiled) would be compiled
+  by every headless app. **`@tula/expo` holds no `expo-module.config.json`, no `ios/`, no
+  `android/`, no vendoring and no `expo` peer, and gains none** (`release.test.ts` holds
+  it); what the screens need goes here. ADR 0063 has the rejected alternative.
+- **Never a screen written in React Native, and never a rule of a flow in this bridge.**
+  What decides is the native SDKs' models.
+- **`src/index.ts` is the one file that imports `expo` (its module API) and
+  `react-native` (`Platform`)**; what it does is in `src/native-screens-core.ts`, which
+  takes the native module and its views as arguments, so the tests pass fakes
+  (`package.test.ts`). The sources import nothing but React, `@tula/core`, the Zod-free
+  `@tula/contract/theme`, those two and each other. `expo`, `react` and `react-native`
+  are peers, all required when packed and the two native ones optional in the workspace:
+  never add `expo`, `expo-*`, `react-native` or `react-native-*` to the `dependencies` or
+  `devDependencies` of a manifest of the workspace. `src/native-modules.d.ts` declares
+  what is read. Importing the package in a build without its native module (Expo Go
+  among them) throws: say so wherever it is documented.
+- **The native `TulaClient` owns the session, and JavaScript holds no second copy.** The
+  refresh token is in the native client's storage (the Keychain; `KeystoreTokenStorage`)
+  and **never crosses**: no function returns it, no event or prop holds it, and it is
+  never put in the secure store, AsyncStorage or JavaScript state. What JavaScript keeps
+  is the last state it was told (a status, the session's id, the user's id). An access
+  token crosses only as the answer of `getToken()`, on request, and is not kept. **An
+  event carries the state's body or nothing** (`onSessionChange`; `onSignedIn` and
+  `onSignedOut` are empty): never a token, a code, an address or a name.
+  `native-screens-sources.test.ts` holds what is sent.
+- **A failure crosses as a code of a closed set, and as nothing else.** A `TulaError`'s
+  code is whatever string the server sent, so each native side passes it through one
+  function (`crossing`, in `TulaScreensHost` of both platforms): the module's own codes,
+  the native client's own, and the codes of the generated `ErrorCode` cross as they
+  are; **every other string is `internal`** (a code a newer server gained included,
+  until the package is generated again: said in the docs). The exception is one type
+  with one fixed sentence that does not hold the code; JavaScript finds the sentence
+  (`SCREENS_MESSAGES`, then `@tula/core`'s table), with no `cause`. Every function of
+  the module, `configure` included, runs inside the guard that lets only that exception
+  leave. Never pass a server's `detail`, a framework's error text or an exception's
+  message over the bridge, in an error, an event or a prop, never write a code into the
+  sentence, and the module logs nothing. Its own codes are `screens.*`, client codes of
+  this package: never added to the contract. **What holds this is the sources'
+  text** (the mutation rows of `native-screens-sources.test.ts`): no error has crossed
+  a real bridge, so never word it as seen.
+- **The Android client outlives the React Native context that made it, so nothing of a
+  context is captured when it is made.** The sheets and the browser are handed
+  `Latest.read` (`Latest.kt`: plain Kotlin, a `@Volatile` holder), and **every**
+  `configure` replaces the activity provider first, before any check and before the
+  same-options return: after a JavaScript reload the provider of the context that is
+  gone must not be asked. Never hand a sheet a provider directly, and never move the
+  replacement below a return. Nothing in `verify` or CI runs Kotlin for this module:
+  the sources test pins the wiring (with the row that moves the line below the return),
+  and `Latest.kt` was run once by hand with `kotlinc`.
+- **On iOS the module ends its watching task in `OnDestroy`**, as the Android module
+  does; a new task the module starts is ended there too.
+- **The options are strings and booleans** (`SCREENS_OPTION_TYPES`), and an option that
+  would hand over a storage, a key store or `fetch` is refused by name
+  (`DECIDED_NATIVELY`). `configure` makes one native client for the process: the same
+  options again are a no-op, other options are `screens.already_configured`. Never make
+  a second native client over the same stored token.
+- **An app is on the native screens or on the headless client, never both, and nothing
+  stops it** (two clients, two stored tokens, two sessions: each signs in by itself,
+  neither is told of the other's sign-in or sign-out). The docs say so in those plain
+  words, and that the Android token file is in backups unless the app excludes it
+  (`docs/expo.md`, held to `DEFAULT_PREFERENCES_NAME` by
+  `.claude/hooks/kotlin-journeys.test.ts`; the plugin sets no backup rule: undecided in
+  ADR 0063). The
+  example runs the headless root, and its other root (`examples/expo/screens`)
+  is files an app does not hold until they are copied in; a guard is a decision in ADR
+  0063. Never have one package depend on the other, and never copy a session between
+  them.
+- **The destination after a sign-in is `onSignedIn` and nothing else.** Neither view
+  takes a destination; nothing reads a URL, an intent or a deep link. `redirectUrl` is
+  where a provider's page returns to, passed on as written and judged by the server.
+  There is no `strings` prop: text from a JavaScript bundle drawn by a native screen is
+  a decision in ADR 0063.
+- **A theme value is checked twice.** `checkTheme` keeps a value only when the
+  contract's `isValidThemeValue` accepts it for its token (`THEME_TOKENS`; never a
+  second grammar, never a key that is no token) and names what it left out by token,
+  `(unknown)` for a key that is none, never by value; the native side treats what it
+  gets as untrusted again and hands it to the SDK's own resolver. Never pass a theme
+  to a native view by another path.
+- **The native SDKs' sources are copied in when the package is built**
+  (`scripts/vendor-native.ts`, the `prebuild` script: `ios/vendor`, `android/vendor`,
+  ignored by git, only `.swift` and `.kt` files, a symbolic link stops it). Never edit
+  or commit a copy, and never change or make public anything of `TulaAuth`,
+  `TulaAuthUI`, `tula-auth`, `tula-auth-ui`, `tula-auth-android` or `tula-auth-compose`
+  for the bridge: it is an app on their public API. `packages/expo-screens/turbo.json` names
+  the native directories as inputs. **A source root, and every directory above it up
+  to the repository's root, is a real directory or nothing is removed or copied**
+  (`directoryProblem` in `scripts/vendor.ts`, `lstat` on each part and the real path
+  compared, as `packages/core/scripts/native/tree.ts` does; `vendor.test.ts` runs it on
+  a tree of its own). **A packed `@tula/expo-screens` holds a known source of each of the six
+  copied directories or packing fails** (`REQUIRED_PACKED_FILES`, `missingPackedFiles`
+  in `scripts/publish-manifest.ts`; `release.test.ts` holds the list to `VENDORED`).
+- **The Android module compiles the vendored Kotlin SDK against older libraries than
+  the SDK is tested on, every one of them, and says so.** They are the SDK's own
+  libraries and no other, but `android/build.gradle` names versions of its own, because
+  an Expo SDK 57 app's Kotlin (2.1) cannot read what the catalog's set is published
+  with. Never word them as "kept in step" with
+  `native/android/gradle/libs.versions.toml`: none of the SDK's tests ran against this
+  set. `.claude/hooks/expo-native-libraries.test.ts` reads both files and fails for a
+  shared library whose version differs without an entry that names both versions and a
+  written reason, for an entry that no longer matches either file, and for a library
+  the catalog does not have; Dependabot watches the file from `/packages/expo-screens/android`
+  (its own group: an update there is not a routine bump, the list changes with it and
+  the pair is tried in an Expo app). A reason says what was tried, never more: six of
+  the eight were tried only together. **The module's build file declares
+  `minSdkVersion 28`** (only an app that installed this package links it): an app with
+  a lower minimum fails its manifest merge unless the plugin raised the project
+  (documented behaviour of the manifest merger, not tried), and `configure` still
+  refuses below API 28.
+- **The two sides are held to each other from their text**: the module's name, its two
+  views, functions, events, props, option names, codes and theme tokens
+  (`native-screens-sources.test.ts`). A new function, prop, option or code is added on
+  both platforms and in the JavaScript in one change. `verify` compiles neither half.
+- **The config plugin is the package's own, `@tula/expo-screens/plugin`
+  (`src/plugin.ts`: `withTulaScreens`, `withRaisedMinSdk`), under the rules of
+  `@tula/expo/plugin`**: a function over the configuration that imports nothing, built
+  as CommonJS and as a module (`package.test.ts` requires the built `plugin.cjs` and
+  holds that it imports nothing). It takes no options: anything handed to it as options
+  is refused in one fixed sentence that repeats nothing it was given. **It raises
+  `android.minSdkVersion` to 28 and never lowers it** (through the one mod it sets,
+  `mods.android.gradleProperties`, chained once however often the plugin is applied): a
+  lower value the project had is overwritten, the one value already there that it
+  changes; a value of 28 or more is the same line handed back (a test holds both); the
+  object it was given is not changed. Its order against `expo-build-properties` was not
+  shown: never word the plugin as winning or yielding there. **`@tula/expo/plugin` has
+  no `nativeScreens` option and gets none**: an app on the headless client lists that
+  plugin and never this one.
+- **Never say more than was compiled** (`docs/plans/phase-2-unverified.md`, "Step
+  2.16"): the Android module compiled once in a scratch Expo app **while it was still
+  inside `@tula/expo`, as it was before the review's changes**; on iOS the two libraries
+  compiled as pods, `TulaScreensHost.swift` was type-checked and
+  **`TulaScreensModule.swift` was never compiled**. **Nothing native was compiled after
+  the move into this package** (the module's own `minSdkVersion 28` among it), Expo's
+  autolinking was not tried on it, and `@tula/expo-screens/plugin` was not run by Expo.
+  **No screen was drawn through this package**, in a simulator, an emulator, on a phone
+  or in Expo Go, no app was built and no JavaScript of it was bundled by Metro: never
+  word the native screens as working, shown or tested in an Expo app until one has.
 
 ### Next.js SDK (see ADR 0029)
 
@@ -4376,6 +4527,10 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   an emailed sign-in link opened in an Expo app (the binding in memory, the one app link
   that is read, what is refused without a request, what an ended app costs):
   [ADR 0055](docs/adr/0055-expo-emailed-link.md);
+  Tula's native screens in an Expo app (the native client as the one owner of the
+  session, what crosses to JavaScript and what never does, the sources copied in at build
+  time, what was compiled and what was not):
+  [ADR 0063](docs/adr/0063-expo-native-screens.md);
   webhooks (endpoints, the signing secret, the
   signature, the delivery worker and what is kept of a receiver's answer):
   [ADR 0034](docs/adr/0034-webhooks.md).

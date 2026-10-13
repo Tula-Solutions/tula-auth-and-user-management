@@ -9,6 +9,7 @@
       "@tula/react",
       "@tula/nextjs",
       "@tula/expo",
+      "@tula/expo-screens",
       "@tula/admin",
       "@tula/config",
       "@tula/mcp",
