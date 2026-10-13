@@ -32,7 +32,9 @@ and prebuilt UI, first-class native mobile, and data you own.
 - **Native app identity**: an environment's iOS and Android apps, and the
   `apple-app-site-association` and `assetlinks.json` files built from them
   ([docs/native-apps.md](docs/native-apps.md)). Of the native SDKs, the Swift client with no
-  screen is built and has not been run on a device ([docs/swift.md](docs/swift.md)).
+  screen is built and has not been run on a device ([docs/swift.md](docs/swift.md)), and
+  the Kotlin client with no UI is built and has not been run on Android
+  ([docs/kotlin.md](docs/kotlin.md)).
 - **Self-hosting**: one image, PostgreSQL, and Redis for more than one instance
   ([docs/self-host.md](docs/self-host.md)).
 - **A conformance suite** that the server passes in process, as two packaged instances, behind
@@ -179,7 +181,8 @@ codes and more providers; Phase 3 organizations, roles, invitations and importer
 - [x] App-link and custom-scheme redirects for native apps ([ADR 0044](docs/adr/0044-app-link-and-custom-scheme-redirects.md), [docs/native-apps.md](docs/native-apps.md))
 - [x] Native Google sign-in: an app's ID token exchanged for a session ([ADR 0045](docs/adr/0045-native-id-token-exchange.md), [docs/native-apps.md](docs/native-apps.md#signing-in-with-google-without-a-browser))
 - [x] Native Sign in with Apple: an iOS app's identity token exchanged for a session ([ADR 0047](docs/adr/0047-native-apple-sign-in.md), [docs/native-apps.md](docs/native-apps.md#signing-in-with-apple-without-a-browser))
-- [x] Generated Swift and Kotlin types, error codes and theme constants for the native SDKs, which are not written yet ([ADR 0050](docs/adr/0050-native-type-generation.md))
+- [x] Generated Swift and Kotlin types, error codes and theme constants for the native SDKs ([ADR 0050](docs/adr/0050-native-type-generation.md))
+- [x] The Kotlin client with no UI: flows, the session and Keystore-backed storage, tested on the JVM against the real API and not yet run on Android ([docs/kotlin.md](docs/kotlin.md), [ADR 0054](docs/adr/0054-kotlin-client.md))
 - [ ] Hooks before a session and before a token, hooks in `tula.config.ts` and the dashboard
 - [ ] Webhook retries, the delivery log, secret rotation, endpoints in `tula.config.ts`, the
       dashboard screen

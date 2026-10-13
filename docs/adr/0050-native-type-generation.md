@@ -86,9 +86,12 @@ place every reader passes. `.claude/hooks/protect-files.sh` refuses an edit unde
 directory.
 
 The Swift package (`native/swift/Package.swift`, tools version 5.9, one library product
-`TulaAuth`) and its test target are written by hand. There is no Gradle build yet: the
-Kotlin files are sources at the path a module `tula-auth` will have, and the build that
-compiles them arrives with TULA-38.
+`TulaAuth`) and its test target are written by hand. When this was decided there was no
+Gradle build: the Kotlin files were sources at the path a module `tula-auth` would have.
+The build that compiles them arrived with TULA-38
+([ADR 0054](0054-kotlin-client.md): `native/android`, the module `tula-auth`, and CI's
+`kotlin` job, which compiles the generated files with the hand-written client on every
+run).
 
 The names follow the plan and the business plan (`TulaAuth` for the Swift product). The
 Kotlin package is `dev.tula.auth.generated` and the module directory `tula-auth`; the Maven

@@ -265,3 +265,69 @@ describe('the decision', () => {
     expect(decide('pull_request', 'refs/heads/main', 'true').output).toBe(`${TREE}skip=true\n`)
   })
 })
+
+// The Kotlin client has two modules and two jobs (ADR 0054). The JVM tests are what shows
+// the client works; the Android module is only compiled and linted. In one job a problem
+// with the runner's Android SDK failed both, and a red job said nothing about the tests.
+describe('the Kotlin client: the JVM tests and the Android build are read apart', () => {
+  const runs = (name: string) => job(name).steps.map((step) => step.run ?? '')
+  const androidBuild = /tula-auth-android|assemble|lint/
+
+  test('they are two jobs', () => {
+    expect(Object.keys(jobs)).toContain('kotlin')
+    expect(Object.keys(jobs)).toContain('kotlin-android')
+    expect(runs('kotlin').filter((run) => run.includes('native:kotlin:test')).length).toBe(1)
+    expect(runs('kotlin').filter((run) => androidBuild.test(run))).toEqual([])
+    expect(runs('kotlin-android').filter((run) => run.includes('native:kotlin:test'))).toEqual([])
+    expect(runs('kotlin-android').filter((run) => androidBuild.test(run)).length).toBe(1)
+    // Neither waits for the other, and the pass is recorded only after both.
+    expect(needs('kotlin')).toEqual(['duplicate'])
+    expect(needs('kotlin-android')).toEqual(['duplicate'])
+    expect(needs('passed')).toContain('kotlin')
+    expect(needs('passed')).toContain('kotlin-android')
+  })
+
+  test('the JVM tests run with no Android SDK named, so the build has the JVM module alone', () => {
+    const tests = job('kotlin').steps.find((step) => step.run === 'bun run native:kotlin:test') as
+      | (Step & { env?: Record<string, string> })
+      | undefined
+    expect(tests?.env).toEqual({ ANDROID_HOME: '', ANDROID_SDK_ROOT: '' })
+    const settings = readFileSync(
+      join(workflowsDir, '..', '..', 'native/android/settings.gradle.kts'),
+      'utf8'
+    )
+    // An empty variable names no SDK: without this the module would still be included.
+    for (const name of ['ANDROID_HOME', 'ANDROID_SDK_ROOT']) {
+      expect(settings).toContain(
+        `providers.environmentVariable("${name}").orNull?.takeIf { it.isNotBlank() }`
+      )
+    }
+  })
+
+  test('the Android job installs, by name, the platform and build tools the module pins, before it builds', () => {
+    const build = readFileSync(
+      join(workflowsDir, '..', '..', 'native/android/tula-auth-android/build.gradle.kts'),
+      'utf8'
+    )
+    const major = /version = release\((\d+)\)/.exec(build)?.[1]
+    const minor = /minorApiLevel = (\d+)/.exec(build)?.[1]
+    const tools = /buildToolsVersion = "([0-9.]+)"/.exec(build)?.[1]
+    expect([major, minor, tools].every(Boolean)).toBe(true)
+    const steps = runs('kotlin-android')
+    const install = steps.findIndex((run) => run.includes('sdkmanager" --install'))
+    const gradle = steps.findIndex((run) => run.includes('./gradlew'))
+    expect(install).toBeGreaterThanOrEqual(0)
+    expect(gradle).toBeGreaterThan(install)
+    const script = steps[install] ?? ''
+    expect(script).toContain(
+      `--install "platforms;android-${major}.${minor}" "build-tools;${tools}"`
+    )
+    // Installed is looked at, not assumed from the tool's exit.
+    expect(script).toContain(`test -d "$ANDROID_HOME/platforms/android-${major}.${minor}"`)
+    expect(script).toContain(`test -d "$ANDROID_HOME/build-tools/${tools}"`)
+    // Nothing of Gradle's is cached here either.
+    const all = job('kotlin-android').steps
+    expect(all.filter((step) => step.with && 'cache' in step.with)).toEqual([])
+    expect(all.filter((step) => step.uses?.includes('setup-gradle'))).toEqual([])
+  })
+})

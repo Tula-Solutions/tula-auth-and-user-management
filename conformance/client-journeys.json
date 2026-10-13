@@ -14,8 +14,8 @@
       "suite": "exists"
     },
     "kotlin": {
-      "description": "The Kotlin SDK (native/android). No suite yet.",
-      "suite": "planned"
+      "description": "The Kotlin client (native/android/tula-auth), a library with no UI: sign-up, sign-in with a password, an emailed code or a texted code, password reset, and the session. Its suite is native/android/tula-auth/src/test/kotlin/dev/tula/auth/journeys/JourneysTest.kt, which drives the client as an android client over HTTP against the real API that e2e/kotlin-fixture.ts serves on this machine (`bun run native:kotlin:test`): on the JVM and not on a device or an emulator.",
+      "suite": "exists"
     }
   },
   "behaviours": {
@@ -29,6 +29,9 @@
           "decision": "journey"
         },
         "swift": {
+          "decision": "journey"
+        },
+        "kotlin": {
           "decision": "journey"
         }
       }
@@ -44,6 +47,9 @@
         },
         "swift": {
           "decision": "journey"
+        },
+        "kotlin": {
+          "decision": "journey"
         }
       }
     },
@@ -57,6 +63,9 @@
           "decision": "journey"
         },
         "swift": {
+          "decision": "journey"
+        },
+        "kotlin": {
           "decision": "journey"
         }
       }
@@ -72,6 +81,9 @@
         },
         "swift": {
           "decision": "journey"
+        },
+        "kotlin": {
+          "decision": "journey"
         }
       }
     }
@@ -86,6 +98,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
       }
     },
     "Discord sign-up and sign-in": {
@@ -97,6 +114,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
       }
     },
     "Facebook never links by address": {
@@ -108,6 +130,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
       }
     },
     "Facebook sign-up and sign-in": {
@@ -119,6 +146,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
       }
     },
     "LinkedIn account linking": {
@@ -130,6 +162,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
       }
     },
     "LinkedIn sign-up and sign-in": {
@@ -141,6 +178,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
       }
     },
     "Microsoft account linking": {
@@ -152,6 +194,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
       }
     },
     "Microsoft sign-up and sign-in": {
@@ -163,6 +210,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
       }
     },
     "OAuth account linking": {
@@ -174,6 +226,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
       }
     },
     "OAuth sign-up and sign-in": {
@@ -185,6 +242,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
       }
     },
     "OAuth with a second factor": {
@@ -196,6 +258,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
       }
     },
     "X never links by address": {
@@ -207,6 +274,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
       }
     },
     "X sign-up and sign-in": {
@@ -218,6 +290,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
       }
     },
     "a bound session's refresh with a proof of another key is refused": {
@@ -229,6 +306,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client makes no device key and no DPoP proof yet: a session bound to a non-exportable Keystore key, and the proof every refresh of it carries, are that ticket’s. Until then the client binds nothing, and its sessions are the unbound kind."
       }
     },
     "a bound session's refresh without a proof is refused and changes nothing": {
@@ -240,6 +322,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client makes no device key and no DPoP proof yet: a session bound to a non-exportable Keystore key, and the proof every refresh of it carries, are that ticket’s. Until then the client binds nothing, and its sessions are the unbound kind."
       }
     },
     "a passkey satisfies two-step verification": {
@@ -251,6 +338,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
       }
     },
     "a profile that requires a device key leaves a browser alone": {
@@ -264,6 +356,10 @@
       "swift": {
         "decision": "not_applicable",
         "reason": "the scenario is a `web` client’s sign-up under a profile that binds native sessions. The Swift client is never a `web` client: its kind is fixed to `ios` and is not an option. What a native client without a key meets under such a profile is \"a profile that requires a device key refuses a native sign-in without one\"."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the scenario is a `web` client’s sign-up under a profile that binds native sessions. The Kotlin client is never a `web` client: its client kind is the constant `android` and not an option. What a native client without a key meets under such a profile is \"a profile that requires a device key refuses a native sign-in without one\"."
       }
     },
     "a profile that requires a device key lets a bound native sign-in through": {
@@ -275,6 +371,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client makes no device key and no DPoP proof yet: a session bound to a non-exportable Keystore key, and the proof every refresh of it carries, are that ticket’s. Until then the client binds nothing, and its sessions are the unbound kind."
       }
     },
     "a profile that requires a device key refuses a native sign-in without one": {
@@ -285,6 +386,9 @@
         "decision": "journey"
       },
       "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
         "decision": "journey"
       }
     },
@@ -297,6 +401,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client makes no device key and no DPoP proof yet: a session bound to a non-exportable Keystore key, and the proof every refresh of it carries, are that ticket’s. Until then the client binds nothing, and its sessions are the unbound kind."
       }
     },
     "a proof is accepted once": {
@@ -308,6 +417,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client makes no device key and no DPoP proof yet: a session bound to a non-exportable Keystore key, and the proof every refresh of it carries, are that ticket’s. Until then the client binds nothing, and its sessions are the unbound kind."
       }
     },
     "a proof with a stale nonce is asked for a fresh one": {
@@ -319,6 +433,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client makes no device key and no DPoP proof yet: a session bound to a non-exportable Keystore key, and the proof every refresh of it carries, are that ticket’s. Until then the client binds nothing, and its sessions are the unbound kind."
       }
     },
     "a session bound to a device key is refreshed with a proof": {
@@ -330,6 +449,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client makes no device key and no DPoP proof yet: a session bound to a non-exportable Keystore key, and the proof every refresh of it carries, are that ticket’s. Until then the client binds nothing, and its sessions are the unbound kind."
       }
     },
     "a session that is not bound behaves as before": {
@@ -340,6 +464,9 @@
         "decision": "journey"
       },
       "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
         "decision": "journey"
       }
     },
@@ -354,6 +481,11 @@
         "decision": "not_built",
         "ticket": "TULA-60",
         "reason": "the Swift client has no call that asks for or proves a texted code, and none that adds a phone number to an account: a step that offers only a texted code is the screen `notSupported`. TULA-60 is the ticket that names the texted-code step for Swift; the client’s calls under it have no ticket of their own."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
       }
     },
     "a texted code is never used beside an authenticator app": {
@@ -367,6 +499,11 @@
         "decision": "not_built",
         "ticket": "TULA-60",
         "reason": "the Swift client has no call that asks for or proves a texted code, and none that adds a phone number to an account: a step that offers only a texted code is the screen `notSupported`. TULA-60 is the ticket that names the texted-code step for Swift; the client’s calls under it have no ticket of their own."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
       }
     },
     "a texted sign-in code after the method is switched off": {
@@ -380,6 +517,9 @@
         "decision": "not_built",
         "ticket": "TULA-60",
         "reason": "the Swift client has no call that asks for or proves a texted code, and none that adds a phone number to an account: a step that offers only a texted code is the screen `notSupported`. TULA-60 is the ticket that names the texted-code step for Swift; the client’s calls under it have no ticket of their own."
+      },
+      "kotlin": {
+        "decision": "journey"
       }
     },
     "a texted sign-in code for an unknown number": {
@@ -393,6 +533,9 @@
         "decision": "not_built",
         "ticket": "TULA-60",
         "reason": "the Swift client has no call that asks for or proves a texted code, and none that adds a phone number to an account: a step that offers only a texted code is the screen `notSupported`. TULA-60 is the ticket that names the texted-code step for Swift; the client’s calls under it have no ticket of their own."
+      },
+      "kotlin": {
+        "decision": "journey"
       }
     },
     "a texted sign-in code is not completed by a texted second step": {
@@ -406,6 +549,11 @@
         "decision": "not_built",
         "ticket": "TULA-60",
         "reason": "the Swift client has no call that asks for or proves a texted code, and none that adds a phone number to an account: a step that offers only a texted code is the screen `notSupported`. TULA-60 is the ticket that names the texted-code step for Swift; the client’s calls under it have no ticket of their own."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
       }
     },
     "admin ban and audit log": {
@@ -416,6 +564,9 @@
         "decision": "journey"
       },
       "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
         "decision": "journey"
       }
     },
@@ -428,6 +579,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
       }
     },
     "admin user authentication": {
@@ -442,6 +598,10 @@
       "swift": {
         "decision": "not_applicable",
         "reason": "how a user signs in is read on the admin API with a secret key or a dashboard session, neither of which a client SDK holds: the Swift client talks to `/v1/client/*` only."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "how a user signs in is read on the admin API with a secret key or a dashboard session, neither of which a client SDK holds. The Kotlin client talks to `/v1/client/*` only."
       }
     },
     "admin user sessions": {
@@ -456,6 +616,10 @@
       "swift": {
         "decision": "not_applicable",
         "reason": "listing and ending a user’s sessions is done on the admin API with a secret key or a dashboard session, neither of which a client SDK holds; what the client observes when an admin acts on its user (signed out at its next refresh) is the journey of \"admin ban and audit log\"."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "listing and ending a user’s sessions is done on the admin API with a secret key or a dashboard session, neither of which a client SDK holds; what the client observes when an administrator ends its session (signed out at its next refresh) is part of \"admin ban and audit log\"."
       }
     },
     "an agent proposes a ban and a person approves it": {
@@ -470,6 +634,10 @@
       "swift": {
         "decision": "not_applicable",
         "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Swift client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. What an app observes of the ban that follows is the \"admin ban and audit log\" journey."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Kotlin client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. What an app observes of the ban that follows is the \"admin ban and audit log\" journey."
       }
     },
     "an agent proposes ending a session and a person approves it": {
@@ -484,6 +652,10 @@
       "swift": {
         "decision": "not_applicable",
         "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Swift client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. What an app observes of the session that is ended (its refresh refused, the client signed out) is what it observes of any session an administrator ends."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Kotlin client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. What an app observes of the session that is ended (its refresh refused, the client signed out) is what it observes of any session an administrator ends."
       }
     },
     "an agent proposes lifting a ban and a person approves it": {
@@ -498,6 +670,10 @@
       "swift": {
         "decision": "not_applicable",
         "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Swift client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. Lifting a ban signs nobody in and ends nothing: there is nothing for an app to observe but that a later sign-in works, which is the \"admin ban and audit log\" journey."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Kotlin client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. Lifting a ban signs nobody in and ends nothing: there is nothing for an app to observe but that a later sign-in works, which is the \"admin ban and audit log\" journey."
       }
     },
     "an agent proposes switching a provider off and a person approves it": {
@@ -512,6 +688,10 @@
       "swift": {
         "decision": "not_applicable",
         "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Swift client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. What an app observes of a provider that is off (it is no longer in the client configuration, and a sign-in with it is `auth.method_disabled`) is the provider sign-in journeys’."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Kotlin client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. What an app observes of a provider that is off is that it is no longer in the client configuration; a sign-in with a provider is not built in this client yet (TULA-57), and is that journey’s when it is."
       }
     },
     "app link or custom scheme that is not listed": {
@@ -523,6 +703,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
       }
     },
     "attempt binding": {
@@ -533,6 +718,9 @@
         "decision": "journey"
       },
       "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
         "decision": "journey"
       }
     },
@@ -545,6 +733,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
       }
     },
     "backup codes": {
@@ -556,6 +749,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
       }
     },
     "claims added by a hook": {
@@ -567,6 +765,9 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
       }
     },
     "concurrent session limit": {
@@ -577,6 +778,9 @@
         "decision": "journey"
       },
       "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
         "decision": "journey"
       }
     },
@@ -590,6 +794,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
       }
     },
     "dashboard credential rules": {
@@ -604,6 +813,10 @@
       "swift": {
         "decision": "not_applicable",
         "reason": "the rules of the dashboard’s cookie on the admin API (`x-tula-dashboard`, the environment header, the origin checks) concern the operator’s browser and a server’s secret key; the Swift client talks to `/v1/client/*` only and sends neither header."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the rules of the dashboard’s cookie on the admin API (`x-tula-dashboard`, the environment header, the origin checks) concern the operator’s browser and a server’s secret key; the Kotlin client talks to `/v1/client/*` only and sends neither header."
       }
     },
     "email code sign-in": {
@@ -614,6 +827,9 @@
         "decision": "journey"
       },
       "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
         "decision": "journey"
       }
     },
@@ -628,6 +844,11 @@
         "decision": "not_built",
         "ticket": "TULA-56",
         "reason": "the server honours an emailed link only in the client that asked for it, with a binding that client keeps, and a link in an email opens a browser unless it is an app link. The Swift client has no call that asks for a link: a step that offers only one is the screen `notSupported`, and the code in the same email is the path (\"email code sign-in\"). TULA-56 built the app-link return of a provider sign-in, whose binding lives in memory for one round trip; an emailed link needs a binding that outlives the app and a link the app judges, and neither is decided (the Expo SDK refuses it for the same reason, TULA-48). No ticket names it by itself."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client asks for an emailed code and never for a link (`CodeStrategy` has no link). A link opens the mail app’s browser, not the app; what an Android app does with one arrives with the app links of that ticket, or is decided there not to. The code in the same email is the way meanwhile, in the journey of signing in with one."
       }
     },
     "email wording": {
@@ -638,6 +859,9 @@
         "decision": "journey"
       },
       "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
         "decision": "journey"
       }
     },
@@ -650,6 +874,9 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
       }
     },
     "hook that times out": {
@@ -660,6 +887,9 @@
         "decision": "journey"
       },
       "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
         "decision": "journey"
       }
     },
@@ -672,6 +902,9 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
       }
     },
     "native Apple ID token refused": {
@@ -683,6 +916,10 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the server takes an Apple ID token from an `ios` client only (`ID_TOKEN_CLIENT_KINDS`), and the Kotlin client always says it is an `android` client: Sign in with Apple reaches an Android app through the browser flow, never as an ID token."
       }
     },
     "native Apple ID token used once": {
@@ -694,6 +931,10 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the server takes an Apple ID token from an `ios` client only (`ID_TOKEN_CLIENT_KINDS`), and the Kotlin client always says it is an `android` client: Sign in with Apple reaches an Android app through the browser flow, never as an ID token."
       }
     },
     "native Apple sign-in and existing accounts": {
@@ -705,6 +946,10 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the server takes an Apple ID token from an `ios` client only (`ID_TOKEN_CLIENT_KINDS`), and the Kotlin client always says it is an `android` client: Sign in with Apple reaches an Android app through the browser flow, never as an ID token."
       }
     },
     "native Apple sign-up and sign-in": {
@@ -716,6 +961,10 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the server takes an Apple ID token from an `ios` client only (`ID_TOKEN_CLIENT_KINDS`), and the Kotlin client always says it is an `android` client: Sign in with Apple reaches an Android app through the browser flow, never as an ID token."
       }
     },
     "native Google ID token refused": {
@@ -727,6 +976,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the exchange of a Google ID token from Credential Manager (`/v1/client/sign-ins/id-token`) is not a call of the Kotlin client yet."
       }
     },
     "native Google ID token used once": {
@@ -738,6 +992,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the exchange of a Google ID token from Credential Manager (`/v1/client/sign-ins/id-token`) is not a call of the Kotlin client yet."
       }
     },
     "native Google sign-in and existing accounts": {
@@ -749,6 +1008,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the exchange of a Google ID token from Credential Manager (`/v1/client/sign-ins/id-token`) is not a call of the Kotlin client yet."
       }
     },
     "native Google sign-up and sign-in": {
@@ -760,6 +1024,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the exchange of a Google ID token from Credential Manager (`/v1/client/sign-ins/id-token`) is not a call of the Kotlin client yet."
       }
     },
     "native app identity": {
@@ -772,6 +1041,10 @@
         "reason": "an environment’s native apps are registered on the admin API with a secret key or a dashboard session, and the two association files are fetched by Apple and Android from the app’s own domain, not by an SDK: no client SDK calls either. What a native client does with a registered identity (a passkey, an app link) arrives with those features."
       },
       "swift": {
+        "decision": "not_applicable",
+        "reason": "an environment’s native apps are registered on the admin API with a secret key or a dashboard session, and the two association files are fetched by Apple and Android from the app’s own domain, not by an SDK: no client SDK calls either."
+      },
+      "kotlin": {
         "decision": "not_applicable",
         "reason": "an environment’s native apps are registered on the admin API with a secret key or a dashboard session, and the two association files are fetched by Apple and Android from the app’s own domain, not by an SDK: no client SDK calls either."
       }
@@ -787,6 +1060,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client has no passkey call yet. Whether a response can be presented twice, or for another attempt’s challenge, through this client is decided with that call: the Swift client’s journey does it with a scripted passkey sheet; where the Kotlin call holds nothing a caller could present again, as the TypeScript client’s does, this becomes not applicable."
       }
     },
     "passkey origin and relying party": {
@@ -801,6 +1079,10 @@
       "swift": {
         "decision": "not_applicable",
         "reason": "the scenario is about a response made on another site’s page, sent with a browser’s `Origin` header. In an app the origin inside a response is written by the platform’s passkey API from the app’s own identity and a request carries no `Origin` header: no native SDK can set either."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the scenario is about a response made on another site’s page. In an app the origin inside a response is written by Credential Manager from the app’s signing certificate, and an app’s requests carry no `Origin` header: an SDK can set neither."
       }
     },
     "passkey registration and sign-in": {
@@ -812,6 +1094,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client has no passkey call yet: registration and sign-in through Credential Manager are that ticket’s, and with them what the server accepts and refuses of a native app’s response."
       }
     },
     "passkey registration from a native app": {
@@ -824,6 +1111,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client has no passkey call yet: registration and sign-in through Credential Manager are that ticket’s, and with them what the server accepts and refuses of a native app’s response."
       }
     },
     "passkey sign-in from a native app": {
@@ -836,6 +1128,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client has no passkey call yet: registration and sign-in through Credential Manager are that ticket’s, and with them what the server accepts and refuses of a native app’s response."
       }
     },
     "passkey sign-in from an unregistered app": {
@@ -848,6 +1145,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client has no passkey call yet: registration and sign-in through Credential Manager are that ticket’s, and with them what the server accepts and refuses of a native app’s response."
       }
     },
     "passkey sign-in with a fingerprint that is not the registered one": {
@@ -861,6 +1163,11 @@
       "swift": {
         "decision": "not_applicable",
         "reason": "the scenario is an Android app’s: its origin is the app’s signing certificate (`android:apk-key-hash:`), compared with the registered fingerprints. The Swift client is an `ios` client, whose apps are registered with a team and a bundle ID and have no fingerprint."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client has no passkey call yet: registration and sign-in through Credential Manager are that ticket’s, and with them what the server accepts and refuses of a native app’s response."
       }
     },
     "passkey signature counter": {
@@ -875,6 +1182,10 @@
       "swift": {
         "decision": "not_applicable",
         "reason": "the signature counter is the authenticator’s: an SDK hands the platform’s response on untouched and has no way to make one report a lower counter, whatever passkey call it has."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the signature counter is the authenticator’s; an SDK hands the platform’s response on untouched and has no way to make one report a lower counter."
       }
     },
     "passkeys switched off mid-attempt": {
@@ -888,6 +1199,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client has no passkey call yet. Whether anything can be placed between the start of a passkey sign-in and its answer through this client is decided with that call: where it starts and submits in one call, as the TypeScript client’s does, this becomes not applicable."
       }
     },
     "password expiry": {
@@ -898,6 +1214,9 @@
         "decision": "journey"
       },
       "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
         "decision": "journey"
       }
     },
@@ -910,6 +1229,9 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
       }
     },
     "password lockout": {
@@ -920,6 +1242,9 @@
         "decision": "journey"
       },
       "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
         "decision": "journey"
       }
     },
@@ -932,6 +1257,9 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
       }
     },
     "password reset": {
@@ -942,6 +1270,9 @@
         "decision": "journey"
       },
       "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
         "decision": "journey"
       }
     },
@@ -954,6 +1285,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
       }
     },
     "passwordless sign-up": {
@@ -964,6 +1300,9 @@
         "decision": "journey"
       },
       "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
         "decision": "journey"
       }
     },
@@ -978,6 +1317,11 @@
         "decision": "not_built",
         "ticket": "TULA-60",
         "reason": "the Swift client has no call that asks for or proves a texted code, and none that adds a phone number to an account: a step that offers only a texted code is the screen `notSupported`. TULA-60 is the ticket that names the texted-code step for Swift; the client’s calls under it have no ticket of their own."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-61",
+        "reason": "adding, proving and removing the account’s phone number are calls under `/v1/client/me/phone`, behind a recent authentication. The Kotlin client has no account calls yet: they arrive with the account screen that needs them."
       }
     },
     "provider sign-in returned to a custom scheme": {
@@ -990,6 +1334,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
       }
     },
     "provider sign-in returned to an app link": {
@@ -1002,6 +1351,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client starts no provider sign-in yet: opening the provider in a browser, returning by an app link or a custom scheme, and exchanging the ticket with its binding are that ticket’s."
       }
     },
     "refresh rotation and reuse detection": {
@@ -1012,6 +1366,9 @@
         "decision": "journey"
       },
       "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
         "decision": "journey"
       }
     },
@@ -1024,6 +1381,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
       }
     },
     "second factor lockout": {
@@ -1035,6 +1397,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
       }
     },
     "session profile selection": {
@@ -1046,6 +1413,9 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
       }
     },
     "session profile timeouts": {
@@ -1056,6 +1426,9 @@
         "decision": "journey"
       },
       "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
         "decision": "journey"
       }
     },
@@ -1071,6 +1444,10 @@
       "swift": {
         "decision": "not_applicable",
         "reason": "the marker is set and read on the admin API with a secret key, which a client SDK never holds; `@tula/admin` and the `tula` CLI are driven against it in their packages’ `real-api.test.ts`."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the marker is set and read on the admin API with a secret key, which a client SDK never holds; `@tula/admin` and the `tula` CLI are driven against it in their packages’ `real-api.test.ts`."
       }
     },
     "sign in with a texted code": {
@@ -1084,6 +1461,9 @@
         "decision": "not_built",
         "ticket": "TULA-60",
         "reason": "the Swift client has no call that asks for or proves a texted code, and none that adds a phone number to an account: a step that offers only a texted code is the screen `notSupported`. TULA-60 is the ticket that names the texted-code step for Swift; the client’s calls under it have no ticket of their own."
+      },
+      "kotlin": {
+        "decision": "journey"
       }
     },
     "sign-in": {
@@ -1094,6 +1474,9 @@
         "decision": "journey"
       },
       "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
         "decision": "journey"
       }
     },
@@ -1106,6 +1489,9 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
       }
     },
     "sign-in hook that times out": {
@@ -1116,6 +1502,9 @@
         "decision": "journey"
       },
       "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
         "decision": "journey"
       }
     },
@@ -1128,6 +1517,9 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
       }
     },
     "sign-up": {
@@ -1138,6 +1530,9 @@
         "decision": "journey"
       },
       "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
         "decision": "journey"
       }
     },
@@ -1150,6 +1545,9 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
       }
     },
     "sign-up for an existing address": {
@@ -1160,6 +1558,9 @@
         "decision": "journey"
       },
       "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
         "decision": "journey"
       }
     },
@@ -1174,6 +1575,10 @@
       "swift": {
         "decision": "not_applicable",
         "reason": "a stateful session is a cookie the server checks on every request, and it is for `web` clients only: the Swift client’s kind is fixed to `ios`, which is never given one. Its sessions are the refreshed kind, in every other journey."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a stateful session is a cookie the server checks on every request, and it is for `web` clients only: the Kotlin client always says it is an `android` client and is never given one. Its sessions are the refreshed kind, in every other journey."
       }
     },
     "step-up": {
@@ -1185,6 +1590,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
       }
     },
     "step-up by emailed code": {
@@ -1196,6 +1606,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
       }
     },
     "step-up window per profile": {
@@ -1207,6 +1622,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
       }
     },
     "step-up with a passkey": {
@@ -1218,6 +1638,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
       }
     },
     "text message wording": {
@@ -1231,6 +1656,11 @@
         "decision": "not_built",
         "ticket": "TULA-60",
         "reason": "the Swift client has no call that asks for or proves a texted code, and none that adds a phone number to an account: a step that offers only a texted code is the screen `notSupported`. TULA-60 is the ticket that names the texted-code step for Swift; the client’s calls under it have no ticket of their own."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-61",
+        "reason": "the journey proves a phone number on a signed-in account (`/v1/client/me/phone`), and the Kotlin client has no account calls yet: they arrive with the account screen that needs them. A texted sign-in code, which this client does ask for, is in the journeys of signing in with one."
       }
     },
     "text messages past the daily limit": {
@@ -1244,6 +1674,11 @@
         "decision": "not_built",
         "ticket": "TULA-60",
         "reason": "the Swift client has no call that asks for or proves a texted code, and none that adds a phone number to an account: a step that offers only a texted code is the screen `notSupported`. TULA-60 is the ticket that names the texted-code step for Swift; the client’s calls under it have no ticket of their own."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-61",
+        "reason": "the journey proves a phone number on a signed-in account (`/v1/client/me/phone`), and the Kotlin client has no account calls yet: they arrive with the account screen that needs them. A texted sign-in code, which this client does ask for, is in the journeys of signing in with one."
       }
     },
     "text messages to a blocked destination": {
@@ -1257,6 +1692,11 @@
         "decision": "not_built",
         "ticket": "TULA-60",
         "reason": "the Swift client has no call that asks for or proves a texted code, and none that adds a phone number to an account: a step that offers only a texted code is the screen `notSupported`. TULA-60 is the ticket that names the texted-code step for Swift; the client’s calls under it have no ticket of their own."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-61",
+        "reason": "the journey proves a phone number on a signed-in account (`/v1/client/me/phone`), and the Kotlin client has no account calls yet: they arrive with the account screen that needs them. A texted sign-in code, which this client does ask for, is in the journeys of signing in with one."
       }
     },
     "the admin reset removes passkeys and says whether the user can still sign in": {
@@ -1271,6 +1711,10 @@
       "swift": {
         "decision": "not_applicable",
         "reason": "the outcome is a response header of an admin route, read with the secret key by a server or the dashboard; a client SDK never calls it."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the outcome is a response header of an admin route, read with the secret key by a server or the dashboard; a client SDK never calls it."
       }
     },
     "the last way to sign in cannot be removed": {
@@ -1282,6 +1726,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the journey removes a passkey and a provider identity from a signed-in account, and the Kotlin client has neither a passkey call nor an identity call yet."
       }
     },
     "the reuse grace window still requires a proof": {
@@ -1293,6 +1742,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client makes no device key and no DPoP proof yet: a session bound to a non-exportable Keystore key, and the proof every refresh of it carries, are that ticket’s. Until then the client binds nothing, and its sessions are the unbound kind."
       }
     },
     "two instances": {
@@ -1307,6 +1761,10 @@
       "swift": {
         "decision": "not_applicable",
         "reason": "a property of the deployment (two API processes sharing Postgres and Redis). A client talks to one base URL and cannot tell instances apart; `multi-instance.test.ts` and the self-host CI job cover it."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a property of the deployment (two API processes sharing Postgres and Redis). A client talks to one base URL and cannot tell instances apart; `multi-instance.test.ts` and the self-host CI job cover it."
       }
     },
     "two-step enrolment and sign-in": {
@@ -1318,6 +1776,11 @@
       },
       "swift": {
         "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-57",
+        "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
       }
     },
     "verification code attempts": {
@@ -1328,6 +1791,9 @@
         "decision": "journey"
       },
       "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
         "decision": "journey"
       }
     },
@@ -1343,6 +1809,10 @@
       "swift": {
         "decision": "not_applicable",
         "reason": "webhook endpoints and their signing secrets are managed on the admin API with a secret key, and a delivery goes from the server to an operator’s backend: a client SDK is on neither side of it and holds neither the key nor a signing secret. The receiving side is `@tula/admin`’s `verifyWebhook`, tested in `packages/admin/src/webhook-real-api.test.ts`."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "webhook endpoints are registered on the admin API with a secret key, and a delivery goes from the server to an operator’s backend: a client SDK is on neither side of it."
       }
     },
     "webhook endpoint on a refused address": {
@@ -1357,6 +1827,10 @@
       "swift": {
         "decision": "not_applicable",
         "reason": "webhook endpoints and their signing secrets are managed on the admin API with a secret key, and a delivery goes from the server to an operator’s backend: a client SDK is on neither side of it and holds neither the key nor a signing secret. The receiving side is `@tula/admin`’s `verifyWebhook`, tested in `packages/admin/src/webhook-real-api.test.ts`."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the outbound guard judges an address an operator registers with a secret key, which a client SDK never holds."
       }
     },
     "webhook retried after a 500": {
@@ -1371,6 +1845,10 @@
       "swift": {
         "decision": "not_applicable",
         "reason": "webhook endpoints and their signing secrets are managed on the admin API with a secret key, and a delivery goes from the server to an operator’s backend: a client SDK is on neither side of it and holds neither the key nor a signing secret. The receiving side is `@tula/admin`’s `verifyWebhook`, tested in `packages/admin/src/webhook-real-api.test.ts`."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "retries, the delivery log, test events and sending a delivery again all happen between the server, an operator’s backend and the admin API with a secret key: a client SDK is on no side of them."
       }
     },
     "webhook secret rotated with an overlap": {
@@ -1385,6 +1863,10 @@
       "swift": {
         "decision": "not_applicable",
         "reason": "webhook endpoints and their signing secrets are managed on the admin API with a secret key, and a delivery goes from the server to an operator’s backend: a client SDK is on neither side of it and holds neither the key nor a signing secret. The receiving side is `@tula/admin`’s `verifyWebhook`, tested in `packages/admin/src/webhook-real-api.test.ts`."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a signing secret is rotated on the admin API with a secret key, and the two signatures of the overlap travel from the server to an operator’s backend: a client SDK holds neither the key nor a signing secret, and must never."
       }
     }
   }

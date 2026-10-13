@@ -98,7 +98,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `packages/mcp` | `@tula/mcp` — the Model Context Protocol server `tula mcp` serves over stdio: read-only tools over the admin API (users, sessions, audit entries, settings, providers, doctor), scaffold tools that return files, a draft tool that returns a settings change as an edit to the config file and, with an agent key, propose tools that ask for a change a human approves ([docs/mcp.md](docs/mcp.md), [ADR 0033](docs/adr/0033-mcp-server.md), [ADR 0053](docs/adr/0053-proposals.md), [ADR 0056](docs/adr/0056-mcp-settings-config-diff.md)). |
 | `packages/create-tula` | `create-tula` — scaffolds a project: Compose file, `.env` with generated secrets, `tula.config.ts`, an example app ([docs/quickstart.md](docs/quickstart.md)). Its app templates are copies of `examples/*`, made by `bun run --filter create-tula templates:sync`. |
 | `packages/expo` | `@tula/expo` — the headless Expo SDK: `@tula/core`'s client with its refresh token in the device's secure store, a provider and hooks, no screen; passkeys through a passkey sheet, provider sign-in through a system browser session, Apple's and Google's own sheets and a device's key store, each an option with an adapter of its own entry point, and a config plugin (`@tula/expo/plugin`); an emailed sign-in link opened in the app ([ADR 0046](docs/adr/0046-expo-sdk.md), [ADR 0048](docs/adr/0048-expo-passkeys-and-providers.md), [ADR 0052](docs/adr/0052-expo-native-providers-and-device-keys.md), [ADR 0055](docs/adr/0055-expo-emailed-link.md), [docs/expo.md](docs/expo.md)). The repository installs neither Expo nor React Native. |
-| `native/{swift,android}` | Native SDKs (Phase 2). `native/swift` is the Swift package `TulaAuth`: the generated types ([ADR 0050](docs/adr/0050-native-type-generation.md)) and, beside them, the hand-written client with no screen (flows, the session, the refresh token in the Keychain, passkeys, providers and a device key behind protocols; [ADR 0051](docs/adr/0051-swift-client.md), [docs/swift.md](docs/swift.md)), with XCTest unit tests, journey tests against the real API and the fixture they start (`native/swift/fixture`); and a second library, `TulaAuthUI`, the SwiftUI screens of a sign-in, a sign-up and a password reset on that client ([ADR 0057](docs/adr/0057-swiftui-screens.md)), with tests of what they decide. `native/android` is the generated Kotlin sources of a module `tula-auth` that has no Gradle build yet. Not workspace packages. No job of `ci.yml` compiles either; the `Swift` workflow (`.github/workflows/swift.yml`, a macOS runner) runs `swift test`. |
+| `native/{swift,android}` | Native SDKs (Phase 2). `native/swift` is the Swift package `TulaAuth`: the generated types ([ADR 0050](docs/adr/0050-native-type-generation.md)) and, beside them, the hand-written client with no screen (flows, the session, the refresh token in the Keychain, passkeys, providers and a device key behind protocols; [ADR 0051](docs/adr/0051-swift-client.md), [docs/swift.md](docs/swift.md)), with XCTest unit tests, journey tests against the real API and the fixture they start (`native/swift/fixture`); and a second library, `TulaAuthUI`, the SwiftUI screens of a sign-in, a sign-up and a password reset on that client ([ADR 0057](docs/adr/0057-swiftui-screens.md)), with tests of what they decide. `native/android` is the Kotlin SDK's Gradle build ([ADR 0054](docs/adr/0054-kotlin-client.md), [docs/kotlin.md](docs/kotlin.md), `native/android/README.md`): `tula-auth`, the client with no UI (flows, session, the storage interface) beside the generated types, plain Kotlin on the JVM; and `tula-auth-android`, the Keystore-backed storage, built only where an Android SDK is known. Not workspace packages. No job of `ci.yml` compiles Swift: the `Swift` workflow (`.github/workflows/swift.yml`, a macOS runner) runs `swift test`. CI's `kotlin` job tests `tula-auth` and `kotlin-android` compiles and lints `tula-auth-android`. |
 | `packages/conformance` | `@tula/conformance` — runs the scenarios in `conformance/` over HTTP, in process or against a live server, and holds the format and the checks of the client-journey list. |
 | `conformance/` | Language-neutral JSON scenarios every server and SDK must pass, and their JSON Schema; `client-journeys.json`, the one list of what each client's test suite does about every scenario and every named client behaviour, and its JSON Schema. |
 | `scripts/` | Release tooling: builds, packs and checks the publishable packages ([docs/releasing.md](docs/releasing.md)). `scripts/docs.ts` writes the SDK reference and fills the docs' snippet blocks (`docs:generate`, `docs:check`); it uses the compiler bundled in `ts-morph`, pinned to an exact version, because the repository's TypeScript 7 has no stable compiler API. `scripts/worker-check/` is the check CI's `self-host-worker` job runs against the packaged stack (a webhook delivered by the worker as its own service) and the receiver it delivers to; its helpers are tested in `.claude/hooks/worker-check.test.ts`. |
@@ -110,7 +110,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `examples/nextjs-app-router` | `@tula/example-nextjs` — a Next.js 16 App Router app on `@tula/nextjs`: protected routes, a server-rendered dashboard, a route handler and a server action. A workspace package, driven by the `nextjs` Playwright project. Configured by environment variables only. |
 | `examples/expo` | An Expo app on `@tula/expo` (sign-up, password and emailed-code sign-in, an emailed link, a passkey, a provider, Apple's and Google's own sheets, a kept session bound to a device key, the config plugin in `app.config.ts`), in `examples/expo/app`. **Not a workspace package** and never installed by the repository; its sources are compiled against `@tula/expo`'s sources and a shim (`typecheck:scripts`). `examples/expo/README.md` says what was run against real Expo. |
 | `examples/swiftui` | An iOS app (an Xcode project, `TulaExample.xcodeproj`) whose sign-in, sign-up and reset are `TulaAuthUI`'s `TulaAuthView`, and the UI tests that run those screens in an iOS simulator against the real API (`bun run native/swift/fixture/ui-tests.ts`, by hand). **Not a workspace package**, excluded from the Docker build context, and it holds no key: the API's address and a publishable key are the developer's to give. `examples/swiftui/README.md` says what was run. |
-| `e2e/` | Playwright browser tests and their fixture, `e2e/server.ts`: the real API in process on memory adapters, plus the built example app. Not a workspace package and never in the API image. |
+| `e2e/` | Playwright browser tests and their fixture, `e2e/server.ts`: the real API in process on memory adapters, plus the built example app. Also `e2e/kotlin-fixture.ts`, the same API served over HTTP for the Kotlin client's journeys, an environment ("world") per journey. Not a workspace package and never in the API image. |
 
 ### Publishable packages (see ADR 0020)
 
@@ -2065,9 +2065,10 @@ themselves (TULA-37, TULA-38) are written by hand, beside the generated director
   eagerly it can be read while a member object is still being made, and holds `null`).
 - **`verify` proves the committed files are the generator's output, not that they
   compile**: no job of `verify` has a Swift or a Kotlin toolchain (the `Swift` workflow
-  compiles the Swift files when it runs `swift test`; nothing compiles Kotlin). A change to `swift.ts` or
-  `kotlin.ts` is compiled by hand (`swiftc -typecheck`, `swift test --package-path
-  native/swift`, a Kotlin compiler with the serialization plugin) and
+  compiles the Swift files when it runs `swift test`, and CI's `kotlin` job the Kotlin files
+  when it runs `bun run native:kotlin:test`). A change to `swift.ts` is compiled by hand
+  (`swiftc -typecheck`, `swift test --package-path native/swift`), one to `kotlin.ts` with
+  `bun run native:kotlin:test`, and
   `docs/plans/phase-2-unverified.md`, "Steps 2.14 and 2.15", says what was run. Never
   write that the generated code compiles for a language, a compiler version or a change
   nobody compiled.
@@ -2435,6 +2436,111 @@ account's screens are TULA-60.
   scheme's environment variables or the app's setup screen; never commit either in a
   scheme, a plist or a source, and keep App Transport Security as shipped but for
   `NSAllowsLocalNetworking`.
+
+### Kotlin client (`native/android`, see ADR 0054)
+
+- **It behaves as `@tula/core` does, rule for rule**: one refresh at a time, given up after
+  `REFRESH_TIMEOUT_MS` (held equal to `@tula/core`'s by `.claude/hooks/kotlin-journeys.test.ts`),
+  one repeat of a refresh that got no answer, a session ended only by the server's
+  `session.*`, `auth.unauthenticated` or `auth.user_banned`, a sign-out that throws when the
+  server could not be told, a discarded flow whose late answer signs nobody in. A change to
+  one of those rules in `@tula/core` is made in `Session.kt` or `Flows.kt` in the same
+  change; only the one constant is held by a test.
+- **`tula-auth` is plain Kotlin on the JVM and imports nothing of Android**; what needs a
+  device (`KeystoreTokenStorage`) is in `tula-auth-android` and nothing else goes there.
+  **No tool checks that `tula-auth` uses only Java APIs Android has at API 28**: look up the
+  API level of one you add, and never use `java.net.http`.
+- **A deadline never rests on the engine honouring cancellation** (`Transport.call`: the
+  request runs in the client's scope and the call waits for it, for the timeout at most).
+  Never put `http.send` back inside the `withTimeout`: a suspended call that ignores
+  cancellation is waited for there. Keep the test with an engine that ignores it.
+- **Every call of the storage is inside a deadline too, and that one does not rest on
+  cancellation either** (`stored` in `Session.kt`, the refresh's timeout): a storage call
+  that never returns (a blocked Keystore call does not end when cancelled) is
+  `storage.failed` with the session kept, and `load()` stays `Loading`, exactly as for one
+  that throws. Never await `storage.get`, `set` or `remove` in the session another way.
+  **A sign-out waits for a refresh in flight for the refresh's timeout at most**, then goes
+  on with the newest token it has. A call left behind is not stopped and may still land;
+  never word the deadline as ending it. Keep the three tests on `StallingStorage`.
+- **`TulaError` keeps nothing of what the platform threw**: no `cause`, no suppressed
+  exception, none of its text; `clientError` takes a code and no exception. This differs
+  from `@tula/core` and `@tula/expo`, whose errors keep a `cause`, on purpose: Android writes
+  an exception to the log with its whole chain, and an engine's exception names the address
+  it was asked for, which holds an attempt's id. It is the Swift client's rule. Never give
+  the type a cause back; keep the canary test in `TransportTest`.
+- **A path parameter is one path segment or no request is made**: empty, `.`, `..`, a
+  slash or a control character is `response.invalid` before anything is sent
+  (`isOnePathSegment`, the rule of `@tula/admin` and the Swift client).
+- **The client's state is touched on one confined dispatcher** (`limitedParallelism(1)`).
+  Never add a lock held across a suspension or a second place that starts a refresh.
+- **Nothing is logged and nothing prints a secret**: the module has no logger; `HttpRequest`,
+  `HttpResponse`, a flow and `TulaError` print no header, body, token or attempt secret; an
+  `IllegalArgumentException` of the constructor never repeats a value it was given.
+- **`TulaClient` has no default storage.** `KeystoreTokenStorage` seals with a Keystore key
+  that asks for no user authentication (a refresh runs in the background). **A value is "no
+  token", and removed, in two cases only: the key does not exist, or the bytes are not the
+  storage's writing.** Every other failure is thrown and is `storage.failed` with the
+  session kept and nothing deleted, **a failed tag while the key exists among them**: never
+  catch `AEADBadTagException` into "no token" again (a key store that answers wrongly once
+  would sign the user out). That decision is `AesGcmSealer`'s, in the JVM module, so that
+  it is tested; the Android module supplies the key and nothing else (`AndroidKeystoreKeys`).
+  A sign-out removes the entry whatever the read said, and a sign-in writes over it:
+  `remove` and `set` never open what is stored, and the three run one at a time (a read
+  that removes is two steps; a token written between them must not go with the entry).
+  Keep the tests of each in `StorageTest`.
+  **A sealing key that cannot be had is replaced where a value is sealed, and nowhere
+  else** (`AesGcmSealer.seal` → `SealingKeys.replace`: delete the alias, generate): what is
+  being written is the only value under the key, and without that a device whose key no
+  longer loads could never keep a session again. `open` and `existing()` never replace and
+  never delete. The cost is said in the docs: a write that fails after a replacement
+  leaves an entry whose tag fails until the next write or a sign-out. The Android half
+  (`AndroidKeystoreKeys.replace`) has never run.
+- **The sealed tokens' preferences file is in Android's backups unless the app excludes
+  it**, and only the app can. `docs/kotlin.md` gives the two rule files;
+  `.claude/hooks/kotlin-journeys.test.ts` holds the name in them to
+  `DEFAULT_PREFERENCES_NAME`. Change the constant and the docs together.
+- **The default HTTP engine never streams a request body** (the JDK then drops the body of
+  a 401, which holds the code), follows no redirect and caps an answer. Keep its 401 test,
+  and never word it as covering Android: it runs the JDK's `HttpURLConnection`, Android's
+  is another implementation, and the API's 401 has no `WWW-Authenticate`. Docs name the
+  case to try on a device and an `HttpEngine` over OkHttp as the app's way out.
+- **A step with no action is `FlowScreen.NOT_SUPPORTED`, never an exception**: an unknown
+  status, and a known one that offers only what this version cannot do. A new action widens
+  `flowScreen` in the same change. **The Kotlin client has a call for a texted first-factor
+  code (`CodeStrategy.SMS_CODE`) where the Swift client has none until TULA-60**, so a step
+  that offers only `sms_code` is not `NOT_SUPPORTED` here.
+- **The journeys run over HTTP against `e2e/kotlin-fixture.ts`, a world per journey, and
+  fail without it**: never skip one, never an `@Ignore` or an assumption in the suite. The
+  fixture needs `KOTLIN_FIXTURE=1`, listens on 127.0.0.1 and keeps its `/__test/*` routes
+  behind `e2e/guard.ts`. A journey sets things up as an operator would (the admin API),
+  **and a world's secret key never leaves the fixture's process**: the answer that makes a
+  world holds no secret key, and an admin call is relayed (`POST /__test/worlds/<id>/admin`,
+  a path under `/v1/admin/` as written, never with a caller's own `Authorization`), as the
+  Swift fixture relays. `.claude/hooks/kotlin-journeys.test.ts` holds it. A fixture route that does what the client cannot yet (`phone`)
+  is named in the journey that uses it and goes when the client gains the call.
+- **`JourneysTest.kt` has no block comment but documentation and no raw string that spans
+  lines** (`unscannable` in the hook test: a test commented out would otherwise count as
+  one that runs). Reword what it refuses, never the rule.
+- **A journey is a `@Test` of `JourneysTest` with `@Journey("…")` or `@Behaviour("…")` on a
+  line of its own directly above the function**: `.claude/hooks/kotlin-journeys.test.ts`
+  reads the file's text and runs the real list checks in `verify`; `GuardTest` does the same
+  by reflection in the suite. Both hold the `not_built` count per ticket. **`verify` shows
+  the declarations and the list agree; only CI's `kotlin` job shows the journeys pass**, so
+  run `bun run native:kotlin:test` before saying a change to the client works.
+- **Every version is exact and in `gradle/libs.versions.toml`**; the wrapper pins its
+  distribution with a SHA-256. Dependabot watches the build from `/native/android`
+  (`.claude/hooks/dependabot.test.ts` fails for a build manifest of any ecosystem that no
+  entry of `.github/dependabot.yml` covers). **Nothing verifies what Gradle downloads**:
+  there is no `gradle/verification-metadata.xml`, and no doc may say the dependencies are
+  checksum-verified until there is. **The JVM tests and the Android build are two jobs**
+  (`kotlin`, with the Android SDK variables emptied so the build has the JVM module alone;
+  `kotlin-android`, which installs the pinned platform and build tools with `sdkmanager`
+  before it builds): never merge them, and change the names it installs with the module's
+  `compileSdk` and `buildToolsVersion` (`ci.test.ts` holds both). Neither job caches anything (`ci.test.ts`'s rule that a
+  push does all the work). The coverage bound is Kover's, on the hand-written sources.
+- **Never say it runs on Android until it has.** What ran (a JVM, a compile and a lint of
+  the Android module) and what did not is `docs/plans/phase-2-unverified.md`, "Step 2.15,
+  the Kotlin client".
 
 ### React SDK (see ADR 0022)
 
@@ -4035,7 +4141,11 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   methods (`native/swift/Tests/TulaAuthJourneyTests`) against the real API served by
   `native/swift/fixture/server.ts`, read from their sources and held to the list by
   `native/swift/fixture/journeys.ts` with the same two checks ("Swift SDK" above). A
-  scenario's journey for `swift` is written there, in Swift. A journey that needs what a target lacks (`browser`,
+  scenario's journey for `swift` is written there, in Swift. **Nor is `kotlin`'s**: it is
+  JUnit tests (`JourneysTest.kt`) over HTTP against the real API served by
+  `e2e/kotlin-fixture.ts`, held to the list by `.claude/hooks/kotlin-journeys.test.ts` (from
+  the file's text, in `verify`) and by `GuardTest` (by reflection, in the suite), with the
+  same two checks ("Kotlin client" above). A journey that needs what a target lacks (`browser`,
   `oauth`, `passkeys`, `deviceKey`) is behind a plain `if` on that capability, never a
   `skip`: it is then not declared, and the list must say `not_built` (or, where the kind of
   client can never do it, `not_applicable`) for that client or the guard fails. The guard fails for a scenario with no
@@ -4067,7 +4177,8 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   is handed on unchanged, with no error and no request made on a guess; the screen is
   `@tula/react`'s and is tested there. `@tula/expo`'s is that `flowScreen` answers
   `not_supported`, and the Swift client's that `FlowScreen` is `notSupported` with the step
-  kept as it was sent.
+  kept as it was sent; the Kotlin client's that `flow.screen` is `FlowScreen.NOT_SUPPORTED`,
+  the step kept as `FlowStep.Unknown`.
 - **Behaviour a client can observe belongs in a conformance scenario.** `conformance/scenarios/*.json`
   run in process as part of `bun test` (`apps/api/src/conformance.test.ts`) and against a live
   server with `bun run conformance`. When a route's request, response or error code changes, the
@@ -4277,6 +4388,7 @@ bun run native/swift/fixture/journeys.ts
 bun run native/swift/fixture/ui-tests.ts
                             # the SwiftUI screens in an iOS simulator, against the real API it starts (needs Xcode
                             # with a simulator runtime; by hand: not part of verify or of any workflow)
+bun run native:kotlin:test  # the Kotlin client's tests and coverage bound against the real API (needs a JDK; not part of verify)
 bun run tula -- diff --config examples/tula-config/tula.config.ts --env dev
 bunx tula dev --tunnel      # in a scaffolded project: its stack under this machine's Tailscale
                             # Funnel address (the Tailscale client, signed in, is the

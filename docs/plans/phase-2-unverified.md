@@ -663,7 +663,9 @@ passkey sheet" and "opens an authentication session in the system browser" are t
 The generator is unit-tested in TypeScript on fixtures and on the real `openapi.json`, with
 assertions on the text it emits, and `bun run native:check` (part of `verify`) holds the
 committed Swift and Kotlin files to its output. **Nothing in `verify` or in CI compiles
-Swift or Kotlin.** On 2026-10-12, by hand, on one Mac (arm64, macOS 26.6), the generated
+Swift or Kotlin.** (So it was when this section was written. Since TULA-38 the `kotlin` CI
+job compiles the generated Kotlin with the client:
+[below](#step-215-the-kotlin-client-tula-38-adr-0054).) On 2026-10-12, by hand, on one Mac (arm64, macOS 26.6), the generated
 files **as commit `c35a0fb` has them** were put through the two compilers that were
 already on the machine. No later commit of this change touches a generated file
 (`bun run native:generate` on each wrote nothing); a commit that does change one is not
@@ -682,8 +684,9 @@ covered by what follows until someone compiles again:
   `kotlinx-serialization-json-jvm` 1.9.0, and again against 1.6.3 (the four jars were
   fetched from Maven Central into a scratch directory outside the repository; nothing was
   added to it). A scratch program of 24 checks (the same ground as the Swift tests) passed
-  on both versions. That program is **not in the repository**: there is no Gradle build to
-  run it.
+  on both versions. That program is **not in the repository**: there was no Gradle build to
+  run it then (one arrived with TULA-38, "Step 2.15, the Kotlin client" below; the program
+  was not added to it).
 - The output of the generator for the unit tests' sample document (a keyword as a property,
   an object with no property, an enum member named `unknown`, one that starts with a
   digit, a closed union) was also type-checked by Swift 6.1.2 (Swift 6 mode, warnings as
@@ -697,7 +700,7 @@ Not verified:
 | **Any other Swift compiler** | Only 6.1.2. `Package.swift` says tools version 5.9; no 5.9, 5.10 or 6.0 compiler was run, and none on Linux. |
 | **iOS, a simulator, a device, Xcode's build of the package** | Nothing. The tests ran as a macOS command-line test bundle (`arm64e-apple-macos14.0`). The types use Foundation's `JSONDecoder` only, which is the same API on iOS; that is reasoning, not a run. |
 | **Any other Kotlin compiler, and K1** | Only 2.3.10 (K2). Kotlin 1.9 and 2.0 to 2.2 were not run; the stated minimum of the serialization library (1.6.3) was compiled by a much newer compiler than its own, never by a contemporary one. |
-| **A Gradle build, the Android Gradle Plugin, R8** | None exists. Whether the serializers survive minification without keep rules (the library ships its own rules for `@Serializable` classes; the hand-shaped `KSerializer` objects are referenced from annotations) was not looked at. |
+| **A Gradle build, the Android Gradle Plugin, R8** | None existed for this hand run; TULA-38 added the Gradle build ([below](#step-215-the-kotlin-client-tula-38-adr-0054)). R8 is still untried: whether the serializers survive minification without keep rules (the library ships its own rules for `@Serializable` classes; the hand-shaped `KSerializer` objects are referenced from annotations) was not looked at. |
 | **Android, ART, an emulator or a device** | Nothing. The checks ran on a desktop JVM (Java 25). API 28's runtime was not involved. |
 | **`kotlinx.serialization` between 1.6.3 and 1.9.0, and after** | Two versions. `@EncodeDefault` is experimental in both; a later release that changes it changes the generated files' opt-in. |
 | **Every generated type decoding a real answer** | The Swift and Kotlin checks decode hand-written JSON for a flow attempt, a step of several statuses, an error envelope and two request bodies: a handful of the 111 generated declarations, and never a recorded answer of the API. That each generated type decodes what the server really sends is a job for the SDKs' conformance suites (the client-journey list), which do not exist. |
@@ -1068,3 +1071,53 @@ providers are the same before and after). Nothing else.
 | **The edit, applied** | No drafted edit was written into a config file and run through `tula diff` or `tula apply`. That the entries load is tested; that a plan made from them is the change that was asked for is not. |
 | **A settings document from another version** | `settings.unreadable` is tested with one made-up value on a fake API. No older or newer API was asked. |
 | **Postgres, a deployed server** | Not run against either: the tool makes two `GET`s that the read tools already make. |
+
+## Step 2.15, the Kotlin client (TULA-38, [ADR 0054](../adr/0054-kotlin-client.md))
+
+The client (`native/android/tula-auth`) is plain Kotlin and its tests run on a JVM. The
+`kotlin` job of `.github/workflows/ci.yml` runs them on Linux (Temurin 25) on every pull
+request and push, and `kotlin-android` compiles and lints the Android module; **nothing was
+ever run on a device or an emulator.** On 2026-10-12, on one Mac (arm64, macOS 26.6), with
+the sources as the commit that last changed this section has them:
+
+- **Toolchain**: the Gradle wrapper's Gradle 9.8.1, run by Temurin 25.0.4; the Kotlin
+  Gradle plugin and its serialization plugin 2.4.21; `kotlinx-serialization-json` 1.11.0,
+  `kotlinx-coroutines-core` 1.11.0, Kover 0.9.11, JUnit 4 through `kotlin-test-junit`. All
+  downloaded by Gradle from the Gradle plugin portal, Maven Central and Google's Maven.
+- **`bun run native:kotlin:test`** (`./gradlew :tula-auth:check` beside
+  `e2e/kotlin-fixture.ts`): the hand-written sources and the generated ones compiled
+  together (`jvmTarget` 11, `allWarningsAsErrors`); 135 tests, 0 failures, 0 skipped (91
+  unit tests on a scripted engine, 38 journeys over HTTP against the real API on memory
+  adapters, 6 guard tests); Kover's line coverage of the hand-written sources 98.1%, above
+  the bound of 90%.
+- **The Android module** (`tula-auth-android`, `KeystoreTokenStorage`): `assembleRelease`
+  and `lintRelease` succeeded with the Android Gradle Plugin 9.4.1 against an Android SDK
+  that was already on the machine (platform `android-36.1`, build tools 36.1.0). That is a
+  compile and a lint. **The class has never run.**
+
+This also changes three rows of the section above: there is now a Gradle build and a CI
+job that compiles the generated Kotlin on every run (with Kotlin 2.4.21 and serialization
+1.11.0, neither of which that section's hand run used), and the journeys decode real
+answers of the API into the generated types they touch.
+
+Not verified:
+
+| What | How far it was taken |
+| --- | --- |
+| **The `kotlin` and `kotlin-android` CI jobs themselves** | Written and not yet run when this was committed: their first run is on the pull request. The same Gradle tasks ran on a Mac with Temurin 25, and the build was seen to have the JVM module alone with `ANDROID_HOME` and `ANDROID_SDK_ROOT` empty. Not run: Linux; the two actions' tags (`actions/setup-java@v5`, `gradle/actions/wrapper-validation@v4`); and the whole `sdkmanager` step of `kotlin-android` (that the runner has `$ANDROID_HOME/cmdline-tools/latest`, that its `sdkmanager` runs on Java 25, that the package is named `platforms;android-36.1`, as the directory on the Mac is, and that the licences are accepted as written). A wrong guess there fails that step, visibly, and not the JVM tests. |
+| **Android, ART, an emulator or a device** | Nothing. Every test ran on a desktop JVM. |
+| **That `tula-auth` uses only Java APIs Android has at API 28** | By reading, while writing (`java.net.http` avoided, `InputStream.readNBytes(int)` replaced by a loop). The module is compiled against the JDK's class library and no tool checks it against Android's; Android lint ran over `tula-auth-android` only. A missing API would be a `NoSuchMethodError` on a phone. |
+| **`KeystoreTokenStorage` on a device** | Never run. Not verified: that the `AndroidKeyStore` generates and keeps the AES-256-GCM key as asked; that a restore onto another device leaves the preferences without the key and is read as "no token"; which exception a deleted or invalidated key raises on each Android version (a missing key and bytes not of its own format are "no token"; everything else, a failed tag while the key exists included, is thrown and is `storage.failed` with nothing deleted: a version that reports a lost key some other way than "no key under the alias" would say `storage.failed` at every start until the user signs in or out, instead of signing out); that the Keystore raises `AEADBadTagException`, or any exception at all, for a failed tag; behaviour under direct boot, a work profile, or after the lock screen is removed. Its logic (the format, the associated data, the outcomes) is `AesGcmSealer`, in the JVM module, and is tested there with a key in memory; the Android class that supplies the Keystore's key was compiled and linted only. **A sealing key that no longer loads**: the rule (replaced where a value is sealed, never where one is read) is `AesGcmSealer`'s and is tested on a JVM with a fake key store whose key will not load. Not verified, none of it having run on a device: that a key the `AndroidKeyStore` cannot load makes `getKey` throw (rather than answer `null`, which the code already reads as "no key" and makes one); that `deleteEntry` removes such an alias; that the key generated after it seals; on any Android version. |
+| **A storage call that never returns** | The deadline (`stored` in `Session.kt`) is tested on a JVM with a fake storage that ignores cancellation. Not tried: a Keystore or a `SharedPreferences` call that really blocks on a device, and what a call left behind does there when it lands late. |
+| **What Gradle downloads** | Every version is exact and the wrapper's distribution has a pinned SHA-256. **No plugin or library is checked against a checksum or a signature**: there is no `gradle/verification-metadata.xml`. Stated as a gap in ADR 0054, "What this is not"; Dependabot's `gradle` entry was written and has not opened a pull request yet. |
+| **Backups and device transfer** | The two rule files in `docs/kotlin.md` were written from Android's documentation of Auto Backup and were put in no app. Not verified: that they keep `dev.tula.auth.tokens.xml` out of a cloud backup and a device-to-device transfer on any Android version; what a restore without them leaves (the document says: the entry without its key, read as no token); and a restore onto a device that already has a key under the alias, which the client would report as `storage.failed` until a sign-in or a sign-out. A test holds the file name in the document to `DEFAULT_PREFERENCES_NAME`, and nothing more. |
+| **`HttpURLConnection` on Android** | The default engine was tested against a JDK's implementation, on a JDK's HTTP server, **its handling of a 401 included**. Android's is a different implementation (OkHttp inside the platform). The one behaviour found to matter on a JDK (a streamed request body loses the body of a 401) was fixed for the JDK's. **The case to try on a device, on API 28 and on a current version**: a wrong password and a refresh of an ended session, both of which the API answers `401` with a JSON body and **no `WWW-Authenticate` header**. The client must get the status and the body (`auth.invalid_credentials`, a `session.*` code); if Android's connection throws for such an answer instead, the first reads as `network.failed` and the second never ends the session. An app's way out until then, and after, is an `HttpEngine` of its own over OkHttp (`TulaClient(…, http = …)`); none is shipped and none was written or run. Cleartext `http://` to a development server needs the app's network security configuration to allow it: not tried. |
+| **TLS** | No test makes an `https` request: the fixture is plain `http` on loopback. Certificate checking is the platform's default and was not exercised. |
+| **R8 and minification** | No consumer rules are shipped and no minified build was made. Whether the generated serializers and the client survive R8 in an app was not looked at. |
+| **The rebase onto `develop` (`46d13ba`)** | After it, on the same Mac and toolchain: `bun run native:kotlin:test` (the result above, against the API as `develop` has it, 108 scenarios in the list), `assembleRelease` and `lintRelease` of the Android module, and `TURBO_FORCE=true bun run verify`. The two CI jobs still have not run. |
+| **The second rebase onto `develop` (`55e32edc`, TULA-39)** | It brought three scenarios (an agent's proposals to lift a ban, end a session and switch a provider off), decided `not_applicable` for `kotlin` as for every client (111 scenarios: 31 journeys, 23 not applicable, 57 not built), and no change to the generated Kotlin types of the client API. After it, on the same Mac and toolchain: `bun run native:kotlin:test`, `assembleRelease` and `lintRelease` of the Android module, and `TURBO_FORCE=true bun run verify`. |
+| **A real app's lifecycle** | No app uses the client. Process death between a refresh's answer and the storage write, two processes of one app over one preferences file, and a client created per `Activity` (the documentation says one per process) were not tried. |
+| **Other Kotlin, coroutine and serialization versions; other JDKs** | One set of versions, on Temurin 25. An app on an older Kotlin or an older `kotlinx` library was not tried, and no JDK 17 or 21 ran the build (the wrapper's Gradle needs 17 or later). |
+| **Texted codes** | The journeys read them from the development inbox. No text message was sent, and the SMS autofill of a code on Android is not this ticket's. |
+| **The API 28 floor** | Android's passkey guide, read on 2026-10-12, gives Android 9 (API level 28) for Credential Manager's passkeys. Android's Keystore guide, read the same day, gives the same level for devices that can include StrongBox; the reference page of `setIsStrongBoxBacked` was not read. Nothing was built at or run on API 28: `minSdk` is a number in a build file. |
+| **The names** | `dev.tula:tula-auth`, `dev.tula.auth` and `dev.tula.auth.android` are placeholders until decision D2. Nothing is published and there is no publishing configuration. |
