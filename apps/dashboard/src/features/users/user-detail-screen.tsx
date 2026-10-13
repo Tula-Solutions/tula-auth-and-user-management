@@ -70,6 +70,9 @@ function SetPasswordDialog({
   const [password, setPasswordValue] = useState('')
   const [typed, setTyped] = useState('')
   const [problem, setProblem] = useState<string>()
+  // From the click until the dialog closes, which is after the lists were read again: the
+  // request has succeeded before that, and a live button would send it a second time.
+  const [saving, setSaving] = useState(false)
   const production = environment.kind === 'production'
 
   useEffect(() => {
@@ -78,6 +81,7 @@ function SetPasswordDialog({
       setPasswordValue('')
       setTyped('')
       setProblem(undefined)
+      setSaving(false)
     }
   }, [open])
 
@@ -88,6 +92,9 @@ function SetPasswordDialog({
 
   function submit(event: FormEvent) {
     event.preventDefault()
+    if (saving) {
+      return
+    }
     if (password === '') {
       setProblem('Enter the new password.')
       return
@@ -96,9 +103,11 @@ function SetPasswordDialog({
       return
     }
     setProblem(undefined)
+    setSaving(true)
     setPassword.mutate(
       { userId: user.id, data: { password } },
       {
+        onError: () => setSaving(false),
         onSuccess: async () => {
           await Promise.all([
             queryClient.invalidateQueries({ queryKey: [`/v1/admin/users/${user.id}/sessions`] }),
@@ -164,8 +173,8 @@ function SetPasswordDialog({
           <ActionButton
             type='submit'
             variant='destructive'
-            pending={setPassword.isPending}
-            aria-disabled={(production && typed !== email) || setPassword.isPending || undefined}
+            pending={saving}
+            aria-disabled={(production && typed !== email) || saving || undefined}
           >
             Set password
           </ActionButton>
