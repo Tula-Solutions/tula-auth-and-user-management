@@ -336,9 +336,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
+        "decision": "journey"
       }
     },
     "a profile that requires a device key leaves a browser alone": {
@@ -1102,9 +1100,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client has no passkey call yet. Whether a response can be presented twice, or for another attempt’s challenge, through this client is decided with that call: the Swift client’s journey does it with a scripted passkey sheet; where the Kotlin call holds nothing a caller could present again, as the TypeScript client’s does, this becomes not applicable."
+        "decision": "journey"
       }
     },
     "passkey origin and relying party": {
@@ -1136,9 +1132,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client has no passkey call yet: registration and sign-in through Credential Manager are that ticket’s, and with them what the server accepts and refuses of a native app’s response."
+        "decision": "journey"
       }
     },
     "passkey registration from a native app": {
@@ -1153,9 +1147,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client has no passkey call yet: registration and sign-in through Credential Manager are that ticket’s, and with them what the server accepts and refuses of a native app’s response."
+        "decision": "journey"
       }
     },
     "passkey sign-in from a native app": {
@@ -1170,9 +1162,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client has no passkey call yet: registration and sign-in through Credential Manager are that ticket’s, and with them what the server accepts and refuses of a native app’s response."
+        "decision": "journey"
       }
     },
     "passkey sign-in from an unregistered app": {
@@ -1187,9 +1177,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client has no passkey call yet: registration and sign-in through Credential Manager are that ticket’s, and with them what the server accepts and refuses of a native app’s response."
+        "decision": "journey"
       }
     },
     "passkey sign-in with a fingerprint that is not the registered one": {
@@ -1205,9 +1193,7 @@
         "reason": "the scenario is an Android app’s: its origin is the app’s signing certificate (`android:apk-key-hash:`), compared with the registered fingerprints. The Swift client is an `ios` client, whose apps are registered with a team and a bundle ID and have no fingerprint."
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client has no passkey call yet: registration and sign-in through Credential Manager are that ticket’s, and with them what the server accepts and refuses of a native app’s response."
+        "decision": "journey"
       }
     },
     "passkey signature counter": {
@@ -1241,9 +1227,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client has no passkey call yet. Whether anything can be placed between the start of a passkey sign-in and its answer through this client is decided with that call: where it starts and submits in one call, as the TypeScript client’s does, this becomes not applicable."
+        "decision": "journey"
       }
     },
     "password expiry": {
@@ -1670,9 +1654,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the Kotlin client stops at `needs_second_factor` and `needs_factor_enrolment` with the step shown and no call to answer it: the second-factor and step-up calls (authenticator code, backup code, passkey, emailed code) are that ticket’s."
+        "decision": "journey"
       }
     },
     "text message wording": {
@@ -1758,9 +1740,7 @@
         "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-57",
-        "reason": "the journey removes a passkey and a provider identity from a signed-in account, and the Kotlin client has neither a passkey call nor an identity call yet."
+        "decision": "journey"
       }
     },
     "the reuse grace window still requires a proof": {

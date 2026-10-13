@@ -1,6 +1,7 @@
 package dev.tula.auth.journeys
 
 import dev.tula.auth.AuthState
+import dev.tula.auth.TulaCeremony
 import java.util.concurrent.atomic.AtomicBoolean
 import dev.tula.auth.DeviceKeyStore
 import dev.tula.auth.stepUpMethods
@@ -1973,6 +1974,363 @@ class JourneysTest {
             assertNull(jkt(plain.tula.session.getToken()))
             assertEquals(listOf(false), plain.tula.sessions().map { it.deviceBound })
             assertNull(signUps(world).last().proof)
+        }
+
+    /** Passkeys on, for the journeys' relying party. */
+    private fun passkeysOn(world: World, change: (JsonObject) -> JsonObject = { it }) = world.settings {
+        change(
+            it.with("signIn", "methods", "passkey", value = j("""{"enabled":true}"""))
+                .with("passkeys", "rpId", value = JsonPrimitive(RELYING_PARTY))
+                .with("urls", "allowedOrigins", value = j("""["http://localhost:5173"]""")),
+        )
+    }
+
+    private fun passkeysOff(world: World) =
+        passkeysOn(world) { it.with("signIn", "methods", "passkey", value = j("""{"enabled":false}""")) }
+
+    /** A signed-up device whose passkey sheet is a software authenticator. */
+    private class Keyed(val device: Device, val sheet: SoftwareSheet, val email: String) {
+        val tula get() = device.tula
+    }
+
+    private suspend fun keyedSignUp(world: World, authenticator: Authenticator, origin: String = androidOrigin()): Keyed {
+        val sheet = SoftwareSheet(authenticator, origin)
+        val device = world.client(passkeys = sheet)
+        val email = world.freshEmail()
+        device.tula.signUp(email = email, password = PASSWORD).verifyEmail(world.code(email))
+        return Keyed(device, sheet, email)
+    }
+
+    /** Another install of the app, holding the same authenticator (a synced passkey). */
+    private fun visitor(world: World, authenticator: Authenticator, origin: String = androidOrigin()): Device =
+        world.client(passkeys = SoftwareSheet(authenticator, origin))
+
+    private fun passkeyCalls(world: World, from: Int = 0) = world.exchanges.drop(from).filter { "passkey" in it.path }
+
+    @Test
+    @Journey("passkey registration and sign-in")
+    fun `a signed-in user adds a passkey, and another install signs in with it and nothing else - a dismissed sheet is neither an error nor a sign-in`() =
+        journey { world ->
+            passkeysOn(world)
+            world.registerApp()
+
+            // A client with no sheet has no passkey call that sends anything.
+            val bare = signUp(world)
+            assertEquals("passkey.unsupported", caught { bare.tula.passkeys.add() }.code)
+            assertEquals("passkey.unsupported", caught { bare.tula.signInWithPasskey() }.code)
+            assertEquals(0, passkeyCalls(world).size)
+
+            val authenticator = Authenticator()
+            val owner = keyedSignUp(world, authenticator)
+            val passkey = assertNotNull(owner.tula.passkeys.add(name = "Pixel").valueOrNull)
+            assertEquals("Pixel", passkey.name)
+            assertFalse(passkey.synced)
+            assertNull(passkey.lastUsedAt)
+            assertEquals(listOf(passkey), owner.tula.passkeys.list())
+            assertContains(owner.tula.config(force = true).signIn.methods, "passkey")
+            // The same authenticator again: the sheet says the passkey is already there.
+            assertEquals("passkey.already_on_device", caught { owner.tula.passkeys.add() }.code)
+
+            val other = visitor(world, authenticator)
+            val flow = assertNotNull(other.tula.signInWithPasskey().valueOrNull)
+            assertEquals("complete", flow.step.status)
+            assertEquals(owner.email, signedIn(other).user?.email)
+            assertEquals(setOf("hwk", "user", "mfa"), proven(other))
+            assertNotNull(other.tula.passkeys.list().first().lastUsedAt)
+            // Nothing of the ceremony is kept where it could be printed.
+            val start = world.sent("/v1/client/sign-ins/passkey").last()
+            val challenge = j(start.responseBody).jsonObject.getValue("options").jsonObject.text("challenge")
+            assertFalse(challenge in "$flow ${flow.snapshot()} ${other.tula} ${other.tula.state.value}")
+
+            // The user closes the sheet: a value, nobody signed in, and the same call works again.
+            val sheet = SoftwareSheet(authenticator).also { it.dismisses = true }
+            val dismissing = world.client(passkeys = sheet)
+            val before = world.exchanges.size
+            val outcome = dismissing.tula.signInWithPasskey()
+            assertSame(TulaCeremony.Dismissed, outcome)
+            assertNull(outcome.valueOrNull)
+            assertFalse(dismissing.tula.state.value is AuthState.SignedIn)
+            assertEquals(emptyList(), dismissing.states)
+            // The options were asked for and nothing was sent to be judged.
+            assertEquals(1, passkeyCalls(world, before).size)
+            assertEquals(1, sheet.shown.get())
+            sheet.dismisses = false
+            assertEquals("complete", dismissing.tula.signInWithPasskey().valueOrNull?.step?.status)
+
+            // A passkey nobody registered is the one generic refusal.
+            val stranger = visitor(world, Authenticator().also { it.holdStray(RELYING_PARTY) })
+            val refused = caught { stranger.tula.signInWithPasskey() }
+            assertEquals("auth.invalid_credentials", refused.code)
+            assertEquals(401, refused.status)
+
+            passkeysOff(world)
+            assertEquals("auth.method_disabled", caught { visitor(world, authenticator).tula.signInWithPasskey() }.code)
+        }
+
+    @Test
+    @Journey("passkeys switched off mid-attempt")
+    fun `passkeys are switched off while the sheet is up - the attempt cannot finish with one, nobody is signed in, and nothing can be started or registered until they are on again`() =
+        journey { world ->
+            passkeysOn(world)
+            world.registerApp()
+            val authenticator = Authenticator()
+            val owner = keyedSignUp(world, authenticator)
+            val passkey = assertNotNull(owner.tula.passkeys.add().valueOrNull)
+
+            val sheet = SoftwareSheet(authenticator)
+            sheet.whileUp = { passkeysOff(world) }
+            val device = world.client(passkeys = sheet)
+            val before = world.exchanges.size
+            val refused = caught { device.tula.signInWithPasskey() }
+            assertEquals("auth.method_disabled", refused.code)
+            assertEquals(403, refused.status)
+            assertFalse(device.tula.state.value is AuthState.SignedIn)
+            assertEquals(listOf(200, 403), passkeyCalls(world, before).filter { it.path.endsWith("/passkey") }.map { it.status })
+
+            sheet.whileUp = null
+            assertEquals("auth.method_disabled", caught { device.tula.signInWithPasskey() }.code)
+            assertEquals("auth.method_disabled", caught { owner.tula.passkeys.add() }.code)
+            assertFalse("passkey" in device.tula.config(force = true).signIn.methods)
+            assertEquals(listOf(passkey.id), owner.tula.passkeys.list().map { it.id })
+
+            passkeysOn(world)
+            assertEquals("complete", device.tula.signInWithPasskey().valueOrNull?.step?.status)
+            assertEquals(owner.email, signedIn(device).user?.email)
+
+            // A passkey can be removed while they are off: taking a way in away needs no ceremony.
+            passkeysOff(world)
+            owner.tula.passkeys.remove(passkey.id)
+            assertEquals(0, owner.tula.passkeys.list().size)
+        }
+
+    @Test
+    @Journey("passkey assertion replay")
+    fun `a sheet that answers a new attempt with an assertion made for an earlier one gets the one generic refusal and signs nobody in, and the passkey works again afterwards`() =
+        journey { world ->
+            passkeysOn(world)
+            world.registerApp()
+            val authenticator = Authenticator()
+            val owner = keyedSignUp(world, authenticator)
+            owner.tula.passkeys.add()
+
+            val sheet = SoftwareSheet(authenticator)
+            val first = world.client(passkeys = sheet)
+            assertEquals("complete", first.tula.signInWithPasskey().valueOrNull?.step?.status)
+            val stale = assertNotNull(sheet.last)
+
+            // The client holds nothing to present twice; a sheet that does is refused by the server.
+            sheet.stale = stale
+            val replayer = world.client(passkeys = sheet)
+            val before = world.exchanges.size
+            repeat(2) {
+                val refused = caught { replayer.tula.signInWithPasskey() }
+                assertEquals("auth.invalid_credentials", refused.code)
+                assertEquals(401, refused.status)
+            }
+            assertFalse(replayer.tula.state.value is AuthState.SignedIn)
+            assertEquals(emptyList(), replayer.states)
+            val sent = passkeyCalls(world, before).filter { it.path.endsWith("/passkey") }
+            assertEquals(listOf(200, 401, 200, 401), sent.map { it.status })
+            assertContains(sent[1].requestBody.orEmpty(), stale.response.signature)
+
+            sheet.stale = null
+            assertEquals("complete", replayer.tula.signInWithPasskey().valueOrNull?.step?.status)
+            assertEquals(owner.email, signedIn(replayer).user?.email)
+        }
+
+    @Test
+    @Journey("a passkey satisfies two-step verification")
+    fun `with an authenticator app enrolled, the passkey signs in on its own and also serves as the second factor`() =
+        journey { world ->
+            passkeysOn(world)
+            world.registerApp()
+            val authenticator = Authenticator()
+            val owner = keyedSignUp(world, authenticator)
+            owner.tula.passkeys.add()
+            val secret = owner.tula.factors.startTotp().secret
+            owner.tula.factors.confirmTotp(world.totp(secret))
+
+            assertEquals("complete", visitor(world, authenticator).tula.signInWithPasskey().valueOrNull?.step?.status)
+
+            val sheet = SoftwareSheet(authenticator)
+            val all = listOf("totp", "backup_code", "passkey")
+            val second = atSecondFactor(world, owner.email, offered = all, passkeys = sheet)
+            assertEquals(FlowScreen.NEEDS_SECOND_FACTOR, second.flow.screen)
+            sheet.dismisses = true
+            assertSame(TulaCeremony.Dismissed, second.flow.submitSecondFactorWithPasskey())
+            assertEquals("needs_second_factor", second.flow.step.status)
+            assertFalse(second.tula.state.value is AuthState.SignedIn)
+            sheet.dismisses = false
+            assertEquals("complete", second.flow.submitSecondFactorWithPasskey().valueOrNull?.status)
+            signedIn(second.device)
+            assertEquals(setOf("pwd", "hwk", "user", "mfa"), proven(second.device))
+
+            // A client with no sheet is offered the same step and cannot take that way.
+            val bare = atSecondFactor(world, owner.email, offered = all)
+            assertEquals("passkey.unsupported", caught { bare.flow.submitSecondFactorWithPasskey() }.code)
+
+            world.settings { it.with("mfa", "policy", value = JsonPrimitive("required")) }
+            assertEquals("complete", visitor(world, authenticator).tula.signInWithPasskey().valueOrNull?.step?.status)
+        }
+
+    @Test
+    @Journey("step-up with a passkey", "the last way to sign in cannot be removed")
+    fun `a stale session steps up with its passkey, and the last way in cannot be removed`() =
+        journey { world ->
+            passkeysOn(world)
+            world.registerApp()
+            val authenticator = Authenticator()
+            val owner = keyedSignUp(world, authenticator)
+            val first = assertNotNull(owner.tula.passkeys.add(name = "First").valueOrNull)
+            val tablet = Authenticator()
+            owner.sheet.authenticator = tablet
+            val second = assertNotNull(owner.tula.passkeys.add(name = "Second").valueOrNull)
+
+            world.advance(11 * 60_000)
+            val stale = caught { owner.tula.factors.startTotp() }
+            assertEquals("auth.step_up_required", stale.code)
+            assertEquals(listOf("passkey", "password", "email_code"), stale.stepUpMethods)
+            owner.sheet.dismisses = true
+            assertSame(TulaCeremony.Dismissed, owner.tula.stepUp.withPasskey())
+            assertEquals("auth.step_up_required", caught { owner.tula.factors.startTotp() }.code)
+            owner.sheet.dismisses = false
+            assertIs<TulaCeremony.Finished<Unit>>(owner.tula.stepUp.withPasskey())
+            assertTrue(proven(owner.device).containsAll(setOf("hwk", "user", "mfa")))
+
+            passkeysOn(world) {
+                it.with(
+                    "signIn",
+                    "methods",
+                    value = j(
+                        """{"password":{"enabled":false},"emailCode":{"enabled":false},"emailLink":{"enabled":false},""" +
+                            """"passkey":{"enabled":true},"smsCode":{"enabled":false}}""",
+                    ),
+                )
+            }
+            owner.tula.passkeys.remove(first.id)
+            val last = caught { owner.tula.passkeys.remove(second.id) }
+            assertEquals("passkey.last_sign_in_method", last.code)
+            assertEquals(409, last.status)
+            assertEquals(1, owner.tula.passkeys.list().size)
+            assertEquals("auth.invalid_credentials", caught { visitor(world, authenticator).tula.signInWithPasskey() }.code)
+            assertEquals("complete", visitor(world, tablet).tula.signInWithPasskey().valueOrNull?.step?.status)
+        }
+
+    @Test
+    @Journey("passkey registration from a native app", "passkey sign-in from a native app")
+    fun `an Android app adds a passkey and signs in with it once the operator has registered it - before that there is no ceremony`() =
+        journey { world ->
+            passkeysOn(world)
+            val authenticator = Authenticator()
+            val owner = keyedSignUp(world, authenticator)
+
+            var refused = caught { owner.tula.passkeys.add() }
+            assertEquals("request.origin_not_allowed", refused.code)
+            assertEquals(403, refused.status)
+            refused = caught { visitor(world, authenticator).tula.signInWithPasskey() }
+            assertEquals("request.origin_not_allowed", refused.code)
+            assertEquals(0, owner.sheet.shown.get())
+
+            world.registerApp()
+            val added = assertNotNull(owner.tula.passkeys.add(name = "Pixel").valueOrNull)
+            assertEquals("Pixel", added.name)
+            assertNull(added.lastUsedAt)
+            // What the client sends says what it is, and never an origin of its own.
+            for (sent in passkeyCalls(world)) {
+                assertEquals("android", sent.headers["x-tula-client"])
+                assertFalse(sent.headers.keys.any { it.equals("origin", true) })
+            }
+
+            val again = visitor(world, authenticator)
+            assertEquals("complete", again.tula.signInWithPasskey().valueOrNull?.step?.status)
+            assertEquals(owner.email, signedIn(again).user?.email)
+            assertEquals(setOf("hwk", "user", "mfa"), proven(again))
+
+            // The origin an iOS app's response carries is not an Android app's.
+            val ios = caught { visitor(world, authenticator, origin = "https://$RELYING_PARTY").tula.signInWithPasskey() }
+            assertEquals("auth.invalid_credentials", ios.code)
+            assertEquals(401, ios.status)
+        }
+
+    @Test
+    @Journey("passkey sign-in from an unregistered app")
+    fun `a response with an origin the environment's apps do not have gets the one generic answer and cannot add a passkey - with the app removed there is no ceremony, and the passkey stays`() =
+        journey { world ->
+            passkeysOn(world)
+            val appId = world.registerApp()
+            val authenticator = Authenticator()
+            val owner = keyedSignUp(world, authenticator)
+            owner.tula.passkeys.add()
+
+            // Another app: signed with a certificate nobody registered.
+            val stranger = visitor(world, authenticator, origin = androidOrigin(OTHER_FINGERPRINT))
+            var refused = caught { stranger.tula.signInWithPasskey() }
+            assertEquals("auth.invalid_credentials", refused.code)
+            assertEquals(401, refused.status)
+            assertFalse(stranger.tula.state.value is AuthState.SignedIn)
+            assertEquals(emptyList(), stranger.states)
+            owner.sheet.authenticator = Authenticator()
+            owner.sheet.origin = androidOrigin(OTHER_FINGERPRINT)
+            refused = caught { owner.tula.passkeys.add() }
+            assertEquals("passkey.registration_failed", refused.code)
+            assertEquals(422, refused.status)
+
+            World.expect(204, world.admin("DELETE", "/v1/admin/native-apps/$appId"))
+            assertEquals("request.origin_not_allowed", caught { visitor(world, authenticator).tula.signInWithPasskey() }.code)
+            assertEquals(1, owner.tula.passkeys.list().size)
+        }
+
+    @Test
+    @Journey("passkey sign-in with a fingerprint that is not the registered one")
+    fun `an Android build whose certificate the operator takes away is refused from then on, in every spelling of an origin, and the registered build goes on`() =
+        journey { world ->
+            passkeysOn(world)
+            val appId = world.registerApp(more = "")
+            World.expect(
+                200,
+                world.admin(
+                    "PATCH",
+                    "/v1/admin/native-apps/$appId",
+                    """{"sha256CertFingerprints":["$FINGERPRINT","$OTHER_FINGERPRINT"]}""",
+                ),
+            )
+            val authenticator = Authenticator()
+            val owner = keyedSignUp(world, authenticator)
+            owner.tula.passkeys.add()
+            val otherBuild = androidOrigin(OTHER_FINGERPRINT)
+            assertEquals("complete", visitor(world, authenticator, otherBuild).tula.signInWithPasskey().valueOrNull?.step?.status)
+
+            World.expect(
+                200,
+                world.admin("PATCH", "/v1/admin/native-apps/$appId", """{"sha256CertFingerprints":["$FINGERPRINT"]}"""),
+            )
+            var refused = caught { visitor(world, authenticator, otherBuild).tula.signInWithPasskey() }
+            assertEquals("auth.invalid_credentials", refused.code)
+            assertEquals(401, refused.status)
+            owner.sheet.authenticator = Authenticator()
+            owner.sheet.origin = otherBuild
+            refused = caught { owner.tula.passkeys.add() }
+            assertEquals("passkey.registration_failed", refused.code)
+            assertEquals(422, refused.status)
+            assertEquals(1, owner.tula.passkeys.list().size)
+
+            // The registered certificate in any other spelling, and no other kind of origin.
+            val bytes = FINGERPRINT.split(':').map { it.toInt(16).toByte() }.toByteArray()
+            val spellings = listOf(
+                "android:apk-key-hash:" + java.util.Base64.getEncoder().encodeToString(bytes),
+                "android:apk-key-hash:" + java.util.Base64.getUrlEncoder().encodeToString(bytes),
+                "android:apk-key-hash:$FINGERPRINT",
+                androidOrigin() + "/",
+                "https://$RELYING_PARTY",
+                "http://localhost:5173",
+            )
+            for (origin in spellings) {
+                val error = caught { visitor(world, authenticator, origin).tula.signInWithPasskey() }
+                assertEquals("auth.invalid_credentials", error.code, origin)
+                assertEquals(401, error.status)
+            }
+            // No refusal locked anything.
+            assertEquals("complete", visitor(world, authenticator).tula.signInWithPasskey().valueOrNull?.step?.status)
         }
 
     private fun String.refreshToken(): String? =

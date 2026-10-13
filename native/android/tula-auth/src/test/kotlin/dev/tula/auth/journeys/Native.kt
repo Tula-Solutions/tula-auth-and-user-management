@@ -137,6 +137,11 @@ class Authenticator {
 
     private fun bytes(count: Int) = ByteArray(count).also { random.nextBytes(it) }
 
+    /** Hold a passkey no server knows: what an authenticator from elsewhere presents. */
+    fun holdStray(rpId: String) {
+        keys.add(Held(base64Url(bytes(32)), rpId, "c3RyYW5nZXI", pair()))
+    }
+
     private fun clientData(type: String, challenge: String, origin: String): ByteArray = buildJsonObject {
         put("type", type)
         put("challenge", challenge)
