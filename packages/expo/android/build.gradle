@@ -6,8 +6,19 @@
 // `tula-auth-compose`, made when the npm package is built (`scripts/vendor-native.ts`) and
 // never edited. They are compiled here with the app's own Kotlin and Android Gradle plugin
 // (the versions Expo and React Native pin), not with the SDK's own build
-// (`native/android`), so the library versions below are this module's and are chosen for
-// the app's toolchain. docs/expo.md says what was compiled with which.
+// (`native/android`).
+//
+// THE LIBRARIES BELOW ARE OLDER THAN THE ONES THE SDK IS TESTED ON, every one of them, on
+// purpose. The SDK's catalog (`native/android/gradle/libs.versions.toml`) is for Kotlin 2.4;
+// an Expo SDK 57 app compiles with Kotlin 2.1, which reads Kotlin metadata up to 2.2. With
+// every library at the catalog's version the build brings a Kotlin 2.3 standard library and
+// fails; kotlinx.serialization 1.11.0 (metadata 2.3) and googleid 1.2.1 (2.4) are past that
+// by themselves. The other six were tried only together with those, never one alone, so
+// for them "cannot" is not shown: they are kept at the versions that were compiled. So the
+// vendored SDK is compiled here against libraries its own tests never ran on, and none of the
+// SDK's tests runs against this build. `.claude/hooks/expo-native-libraries.test.ts` holds
+// every difference to a list with its reason, and Dependabot watches this file
+// (`.github/dependabot.yml`). docs/expo.md and ADR 0063 say what was compiled with which.
 buildscript {
   repositories {
     mavenCentral()
@@ -36,6 +47,12 @@ android {
   defaultConfig {
     versionCode 1
     versionName '0.0.0'
+    // No `minSdkVersion` of its own, on purpose. `tula-auth-android` is written for
+    // Android 9 (API 28) and later (ADR 0054), but Expo links this module into every app
+    // that installs `@tula/expo`, also one that only uses the headless client: with 28
+    // declared here such an app, at Expo's default of 24, fails its manifest merge. So
+    // the config plugin raises the project's value where the app asks for the screens
+    // (`nativeScreens`), and `configure` refuses on an older device.
   }
   buildFeatures {
     compose true

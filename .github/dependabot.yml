@@ -56,3 +56,21 @@ updates:
       interval: weekly
     commit-message:
       prefix: build
+
+  # The Android half of `@tula/expo/native-screens` (`packages/expo/android`, ADR 0063): a
+  # build file with library versions of its own, older than the Kotlin client's catalog on
+  # purpose (an Expo app's Kotlin cannot read the newer ones). An update here is not a
+  # routine bump: `.claude/hooks/expo-native-libraries.test.ts` lists every difference from
+  # the catalog with its reason and fails until the list is changed too, and what an Expo
+  # app compiles with has to be tried by hand (docs/plans/phase-2-unverified.md, Step 2.16).
+  - package-ecosystem: gradle
+    directory: /packages/expo/android
+    groups:
+      expo-native-screens-build:
+        patterns:
+          - '*'
+    target-branch: develop
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: build

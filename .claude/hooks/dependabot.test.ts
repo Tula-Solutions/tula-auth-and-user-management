@@ -141,15 +141,22 @@ test('every build manifest the repository tracks is watched by Dependabot', () =
   expect(unwatched).toEqual([])
 })
 
-test('the Gradle build of the Kotlin client is watched from its root, like the other entries', () => {
+// Two Gradle builds name versions of their own: the Kotlin SDK's (a catalog) and the Android
+// half of @tula/expo's native screens, whose libraries are older on purpose and are held to
+// the catalog, difference by difference, by expo-native-libraries.test.ts.
+test('the two Gradle builds are watched from their roots, like the other entries', () => {
   const gradle = updates.filter((entry) => entry['package-ecosystem'] === 'gradle')
-  expect(gradle).toHaveLength(1)
-  expect(gradle[0]).toMatchObject({
-    directory: '/native/android',
-    'target-branch': 'develop',
-    schedule: { interval: 'weekly' },
-    'commit-message': { prefix: 'build' },
-  })
+  expect(gradle.map((entry) => entry.directory)).toEqual([
+    '/native/android',
+    '/packages/expo/android',
+  ])
+  for (const entry of gradle) {
+    expect(entry).toMatchObject({
+      'target-branch': 'develop',
+      schedule: { interval: 'weekly' },
+      'commit-message': { prefix: 'build' },
+    })
+  }
 })
 
 test('the scan knows a manifest when it sees one', () => {
