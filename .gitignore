@@ -39,3 +39,10 @@ next-env.d.ts
 # (packages/expo-screens/scripts/vendor-native.ts), never edited, never committed.
 packages/expo-screens/ios/vendor/
 packages/expo-screens/android/vendor/
+
+# Gradle and the IDEs that build with it (native/android, examples/compose, a scaffolded
+# Compose project). A build started from a module's own directory leaves a `.gradle/`
+# there, and an editor's Java support compiles into `bin/` beside each module's sources.
+.gradle/
+.kotlin/
+native/android/*/bin/
