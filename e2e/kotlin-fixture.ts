@@ -4,7 +4,6 @@ import {
   mockOAuthProviders,
 } from '../apps/api/src/adapters/oauth/mock'
 import { createApp } from '../apps/api/src/index'
-import * as Audit from '../apps/api/src/modules/audit/service'
 import * as Sms from '../apps/api/src/modules/sms/service'
 import {
   createTestDeps,
@@ -237,24 +236,6 @@ async function worldRoute(world: World, route: string, request: Request): Promis
     }
     deps.clock.advance(ms)
     return json({ ok: true })
-  }
-  if (route === 'phone') {
-    // Give an account a proven phone number, as confirming a texted code does. The Kotlin
-    // client has no call for that yet, and a sign-in with a texted code needs such an account.
-    const email = String(body.email ?? '').toLowerCase()
-    const user = await deps.users.findByEmail(TEST_TENANT.environmentId, email)
-    if (!user) {
-      return json({ error: 'no such user' }, 404)
-    }
-    const updated = await deps.users.setPhoneNumber(
-      TEST_TENANT.environmentId,
-      user.id,
-      String(body.phoneNumber ?? ''),
-      deps.clock.now(),
-      Audit.none('fixture'),
-      Audit.none('fixture')
-    )
-    return json({ ok: updated !== null }, updated ? 200 : 404)
   }
   return json({ error: 'no such test route' }, 404)
 }
