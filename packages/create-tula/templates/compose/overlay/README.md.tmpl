@@ -75,9 +75,14 @@ the phone connected) and give it the address as the API's. Close the tunnel with
 | A provider in a browser tab | The provider's own OAuth client, and the app's redirect URL among the environment's allowed redirect URLs | `tula.config.ts` |
 | The tunnel | A Tailscale account | `tailscale up` on this machine |
 
-None of these is made for you, and no identifier here is yours. The screens of this app
-draw a sign-in with a password or an emailed code, a sign-up and a password reset; a sign-in
-that needs anything else ends on their "not supported" screen.
+None of these is made for you, and no identifier here is yours. A password, an emailed
+code, a texted code, the second step and an authenticator set up inside a sign-in need
+nothing of the app. A passkey button is drawn where the environment has passkeys on;
+whether the sheet then works needs the registration in the table. Google's button is drawn
+only when the app is also told the provider's client id (`-e tula_google_client_id …`).
+No provider that needs a browser is offered: the manifest claims no redirect URL and the
+activity wires no browser session. A step these screens have no form for ends on their
+"not supported" screen.
 
 ## What is here
 
@@ -86,7 +91,8 @@ that needs anything else ends on their "not supported" screen.
 | `android/settings.gradle.kts` | The build: this app, and the Kotlin SDK's modules from the checkout. |
 | `android/gradle.properties` | The SDK build's own properties, and `tulaRepo`. |
 | `android/build.gradle.kts` | The plugins, at the versions the SDK's catalog pins. |
-| `android/app/` | The app: one activity, a setup screen, `TulaAuth(client, …)` for the sign-in and a screen for a signed-in user. |
+| `android/app/` | The app: one activity, a setup screen, `TulaAuth(client, …)` for the sign-in and `TulaAccount` for a signed-in user. |
+| `android/app/src/debug`, `src/release` | `ExampleSheets`, as the example has it: in the debug build a place the example's own UI tests (which are not in this project) put a scripted sheet, in the release build four properties that are always `null`. Your app needs neither: give the client the adapters and delete both. |
 | `compose.yaml` | The local stack (Docker Compose, not Jetpack Compose): Postgres, Redis, Mailpit, the migrations and the Tula API. |
 | `.env` | The stack's secrets, generated for this project: the master key, the instance admin token, the database passwords. Ignored by git. **Back up `TULA_MASTER_KEY`**: without it the stored signing keys and provider credentials cannot be opened. |
 | `.env.local` | Written by `tula dev`: the API URL and the development keys. Ignored by git. |

@@ -171,8 +171,9 @@ export const TEMPLATE_SOURCES: Readonly<Record<string, TemplateSource>> = {
     example: 'examples/compose',
     // `src/androidTest` drives the app against the repository's own fixture
     // (native/android/fixture): it is not something a project can run, and Gradle needs no
-    // file to name it, so it is left out.
-    include: ['.gitignore', 'build.gradle.kts', 'src/main'],
+    // file to name it, so it is left out. `src/debug` and `src/release` are not: each holds
+    // the `ExampleSheets` its build variant compiles `MainActivity` against.
+    include: ['.gitignore', 'build.gradle.kts', 'src/debug', 'src/main', 'src/release'],
     into: 'android/app',
     // The plugins of the Kotlin SDK's build, at the versions its catalog pins.
     copies: { 'android/build.gradle.kts': 'native/android/build.gradle.kts' },

@@ -14,6 +14,7 @@ import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ActivityScenario
@@ -108,7 +109,8 @@ class AuthScreensTest {
         waitFor("example.signedIn")
         rule.onNodeWithTag("example.user").assertTextEquals(email)
         // Signing out is back on the sign-in, with nothing of the sign-up left in it.
-        tap("example.signOut")
+        rule.onNodeWithTag("tula.account.signOut").performScrollTo().performClick()
+        waitFor("tula.screen")
         waitForTitle("Sign in")
         check(typed("tula.field.email").isNullOrEmpty()) { "the address of the flow that ended is still drawn" }
     }

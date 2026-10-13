@@ -28,7 +28,7 @@ Kotlin toolchain). The generated types of the client API are not listed.
 | --- | --- | --- | --- | --- |
 | [`TulaAuth`](swift.md) | Swift | `native/swift/Sources/TulaAuth` | 272 | 0 |
 | [`TulaAuthUI`](swift.md) | Swift | `native/swift/Sources/TulaAuthUI` | 696 | 0 |
-| [`tula-auth`](kotlin.md) | Kotlin | `native/android/tula-auth/src/main/kotlin` | 213 | 1 |
-| [`tula-auth-ui`](kotlin.md) | Kotlin | `native/android/tula-auth-ui/src/main/kotlin` | 95 | 0 |
-| [`tula-auth-compose`](kotlin.md) | Kotlin | `native/android/tula-auth-compose/src/main/kotlin` | 36 | 0 |
+| [`tula-auth`](kotlin.md) | Kotlin | `native/android/tula-auth/src/main/kotlin` | 222 | 1 |
+| [`tula-auth-ui`](kotlin.md) | Kotlin | `native/android/tula-auth-ui/src/main/kotlin` | 242 | 0 |
+| [`tula-auth-compose`](kotlin.md) | Kotlin | `native/android/tula-auth-compose/src/main/kotlin` | 39 | 0 |
 | [`tula-auth-android`](kotlin.md) | Kotlin | `native/android/tula-auth-android/src/main/kotlin` | 12 | 0 |

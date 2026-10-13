@@ -5,9 +5,10 @@ UI**: it signs a user up and in (with a password, a code, a passkey, Google's ID
 provider's page in the browser), asks for the second step, resets a password, and keeps and
 refreshes the session, bound to a key the device keeps where the app passes a key store, and
 it tells your screens which one the server is asking for. Beside it are **Compose screens**
-for a sign-in, a sign-up and a password reset, for an app that does not want to draw its own
-([Screens](#screens), below); they draw less than the client can do. The reasoning is in
-[ADR 0054](adr/0054-kotlin-client.md) and [ADR 0061](adr/0061-compose-screens.md).
+for a sign-in, a sign-up, a password reset and the signed-in user's account, for an app that
+does not want to draw its own ([Screens](#screens), below). The reasoning is in
+[ADR 0054](adr/0054-kotlin-client.md), [ADR 0061](adr/0061-compose-screens.md) and
+[ADR 0062](adr/0062-compose-second-step-and-account.md).
 
 > **The screens ran on one emulator; nothing ran on a device.** The client is plain Kotlin
 > and is tested on a JVM, against the real API, in CI, with a software authenticator, a
@@ -23,7 +24,8 @@ for a sign-in, a sign-up and a password reset, for an app that does not want to 
 > What was not verified:
 > [the client](plans/phase-2-unverified.md#step-215-the-kotlin-client-tula-38-adr-0054),
 > [passkeys, providers and the device key](plans/phase-2-unverified.md#step-215-the-kotlin-client-passkeys-providers-and-a-device-key-tula-57-adr-0054),
-> [the screens](plans/phase-2-unverified.md#step-215-the-compose-screens-tula-50-adr-0061).
+> [the screens](plans/phase-2-unverified.md#step-215-the-compose-screens-tula-50-adr-0061),
+> [the second step, the other ways and the account](plans/phase-2-unverified.md#step-215-the-compose-screens-the-second-step-the-other-ways-and-the-account-tula-61-adr-0062).
 
 ## What this version does
 
@@ -35,19 +37,16 @@ for a sign-in, a sign-up and a password reset, for an app that does not want to 
 | Password reset | The emailed code and the new password together. |
 | An expired password | The new password, as the last step of the sign-in. |
 | Session | Kept in the Android Keystore's care, refreshed when needed, ended by sign-out; bound to a device key where the app passes a key store. |
-| The signed-in user | Step-up, the authenticator app and backup codes, a texted code as the second step, passkeys (list, add, remove), connected provider accounts, a password change, the session list. |
+| The signed-in user | Step-up, the authenticator app and backup codes, a texted code as the second step, passkeys (list, add, remove), a phone number (add, prove, remove), connected provider accounts, a password change, the session list, ending one session or all the others. |
 
 Not yet: an emailed link (the code in the same email is the way) and renaming a passkey
-(both TULA-76: the rename is a `PATCH`, which the default HTTP engine cannot send), and a
-phone number on the account (TULA-61). A step that offers only a way this
-version cannot do is reported as "not supported" (below), never as an error.
+(both TULA-76: the rename is a `PATCH`, which the default HTTP engine cannot send). A step
+that offers only a way this version cannot do is reported as "not supported" (below), never
+as an error.
 
-**The Compose screens draw less than the client can do.** They have a form for a password,
-an emailed code, a sign-up, a reset and the replacement of an expired password. The second
-step and the enrolment of an authenticator, a passkey, Google and the other providers, a
-texted code and the account's screens are not drawn yet (TULA-61): a step that needs one
-of them opens the screens' "not supported", and an app that offers them draws its own
-screen on the client.
+**The Compose screens** ([Screens](#screens)) draw every step above and an account screen.
+What the account screen leaves out: connected provider accounts, an address for an account
+that has none, and renaming a passkey (which the client cannot do either).
 
 ## Two modules
 
@@ -219,7 +218,18 @@ the session stays.
 
 `tula.factors` (the authenticator app, backup codes, a texted code as the second step),
 `tula.passkeys`, `tula.identities`, `tula.changePassword(…)` and `tula.sessions()` are the
-signed-in user's own calls.
+signed-in user's own calls. `tula.revokeSession(id)` ends one other session and
+`tula.revokeOtherSessions()` all of them (it answers how many); neither needs a recent
+sign-in.
+
+A phone number is added with `tula.phone.request(number)`, which texts a code and answers
+where it went (masked), and `tula.phone.verify(code)`, which answers the user with the number
+on it; `tula.phone.remove()` takes it away. All three need a recent sign-in. An account has
+no unproven number: nothing is stored until the code was taken.
+
+`tula.sheets` says which of the system's sheets the client was given (a passkey sheet,
+Google's, a browser session), as three booleans. It is what a screen reads to decide whether
+a button can be drawn; it does not say the device can show the sheet.
 
 An account made by a provider that gives no address (X, Facebook) has no email address.
 Its user gives it one with `tula.emailAddress.request(address)`, which emails a code and
@@ -455,18 +465,25 @@ every status with its body, a `401` included.
 ## Screens
 
 `TulaAuth` is one composable that draws whichever screen the server asks for: the sign-in
-(a password or an emailed code), the sign-up, the emailed code that proves an address, the
-password reset and the replacement of an expired password. A step it has no form for (a
-second factor, a passkey, a provider, a texted code, a step this version does not know) is
-a "not supported" screen with a way back to the start, never a blank one.
+(a password, an emailed code, a texted code, a passkey, Google, a provider's page), the
+sign-up, the emailed code that proves an address, the second step (an authenticator's code,
+a backup code, a texted code, a passkey), an authenticator set up inside a sign-in, the
+password reset and the replacement of an expired password. A step it has no form for (one
+this version does not know, or one that offers only ways this client cannot take) is a "not
+supported" screen with a way back to the start, never a blank one.
+
+`TulaAccount` is the signed-in user's screen: the profile, the password, a phone number,
+where they are signed in, two-step verification and passkeys.
 
 <!-- snippet: examples/compose/src/androidTest/kotlin/dev/tula/example/compose/DocsSnippets.kt#screens -->
 ```kotlin
 setContent {
-    TulaAuth(
-        client = client,
-        onSignedIn = { /* show your app */ },
-    )
+    var signedIn by remember { mutableStateOf(false) }
+    if (signedIn) {
+        TulaAccount(client = client, onSignedOut = { signedIn = false })
+    } else {
+        TulaAuth(client = client, onSignedIn = { signedIn = true })
+    }
 }
 ```
 <!-- /snippet -->
@@ -475,6 +492,114 @@ setContent {
 is your callback and nothing else**: the screens read no destination from the server, a
 link or an intent. The session is the client's (`client.session`); the screens hold no
 token.
+
+**Leave each screen on its callback, not on `client.state`.** Two cases are lost otherwise:
+
+- Where an authenticator app is set up inside a sign-in, the client is signed in as soon as
+  the code was taken, and the backup codes are still to be shown, once. `onSignedIn` is
+  called when the person said they saved them. An app that swaps `TulaAuth` out the moment
+  the client is signed in never shows them.
+- A sign-out the server could not be told of signs the client out locally all the same.
+  `TulaAccount` then says the session may still be active on this device and offers the
+  sign-out again; `onSignedOut` is called only for one the server was told of.
+
+`onSignedOut` is also called when the account screen finds that the session ended somewhere
+else (it was revoked, or its refresh was refused): once for that session, however often the
+account is read afterwards, with the screen emptied instead of every section saying it could
+not be read. It is never called for a sign-out that failed, and never by an account screen
+that was shown while nobody was signed in: there was no session to end.
+
+An app that starts with a stored session reads `client.state` once, after `client.load()`,
+to choose which of the two to open on ([the example](../examples/compose/README.md) does).
+
+### Passkeys, Google and providers on the screens
+
+A way to sign in is drawn only where the environment has it on **and the client was given
+what it needs**: `passkeys` for a passkey, `google` for Google's account chooser, `browser`
+together with `TulaAuth(redirectUrl = …)` for a provider's page. Both are known before the
+first frame, so a button is never drawn and then taken away. A way the client cannot take
+is not drawn at all, and where that leaves no way to sign in the screen says so in words.
+
+What that does not know is whether the device can show the sheet. A client given
+`CredentialManagerPasskeySheet` on a device with no credential provider draws the button,
+and the sheet's failure is then said on the screen.
+
+A sheet or a page that was closed is said as a quiet notice, not as an error: nothing was
+changed and the button works again. One sheet is out at a time; a press while another is
+still open is said as a notice too.
+
+### A texted code
+
+Nothing is texted by opening a screen: a message costs money, so the screen asks with a
+button, and the code field is drawn once a message was asked for. The field is marked as a
+one-time code from a text message (`ContentType.SmsOtpCode`), so a keyboard or an autofill
+service that saw the message arrive may offer the code. **The library asks for no SMS
+permission and does not read messages** (it uses neither the SMS Retriever nor the User
+Consent API).
+
+### The setup key, the QR code and backup codes
+
+They are on the screen only while their form is open and are held nowhere else: not in saved
+instance state, not in a log, and gone from the model when the form is left. Backup codes
+are shown once; an activity that is made again while they are shown has lost them (new ones
+can be made on the account screen).
+
+**Leaving the setup while its code is being confirmed has a cost.** The request cannot be
+taken back: if its answer arrives after the screen was left, the authenticator is on and the
+backup codes that came with the answer were dropped unseen (a late answer draws nothing on a
+screen that has gone). The person makes new ones from the account screen.
+
+Each has a **Copy** control, and nothing is copied without a press. The copy is marked
+sensitive (`ClipDescription.EXTRA_IS_SENSITIVE`). What that does is Android's: from
+Android 13 the system hides the content in the clipboard preview and clears the clipboard
+by itself after a while. **Before API 33 (Android 9 to 12) the mark is ignored**: the copy
+is an ordinary clip there. **The library never clears the
+clipboard** (it could not tell its own clip from what the person copied since), and a
+keyboard or an app with clipboard access can read it while it is there. To offer no copy,
+hand the model a `copy` that does nothing:
+
+<!-- snippet: examples/compose/src/androidTest/kotlin/dev/tula/example/compose/DocsSnippets.kt#no-copy -->
+```kotlin
+val model = remember { TulaAccountModel(client, copy = { }) }
+TulaAccount(model = model)
+```
+<!-- /snippet -->
+
+The QR code is drawn by the library (no dependency), dark on white whatever the theme.
+
+### The account screen
+
+Each section is read by its own request: one that failed says so and can be read again
+while the others stand.
+
+- **Where you're signed in.** The session of this client is marked "This device". A session
+  bound to a device key is marked "Bound to a device key": that a key signed, and nothing
+  about whose hands a device is in. One other session, or all others, can be signed out.
+- **Two-step verification.** An authenticator app turned on and off, new backup codes, and
+  a texted code as the second step where the server offers it.
+- **Passkeys.** Listed, added and removed. A passkey cannot be renamed in this version, and
+  the screen says so. Without a passkey sheet nothing is added, and that is said too.
+- **Phone number.** Added with a texted code, and removed.
+
+**Not on the account screen** (TULA-78): connected provider accounts, giving an address to
+an account that has none, and deleting the account. The client has calls for the first two
+(`tula.identities`); the screen draws none of the three.
+
+**The account belongs to the session it was read for.** The model asks the client whose
+session it holds whenever the account is read, something is pressed or an answer arrives:
+if another user has signed in on the same client since, nothing of the user before is kept
+and an answer that was asked as them is dropped. The model is not told of a change by
+itself, so make one per signed-in screen (the example does), or call `load()` when a kept
+one is shown again.
+
+**Confirm it is you.** Where the server asks for a recent authentication
+(`auth.step_up_required`), the screen opens a form for a way the server named: the password,
+an authenticator's code, a backup code, an emailed or a texted code, a passkey. Which ways
+those are is the server's answer; an account with a second factor is never offered the
+password alone. Afterwards what was asked for is carried out without being pressed again; a
+password change is the exception (its passwords were emptied as they were sent, so its form
+is shown again, empty). Where the server
+names no way this client can take, the screen says to sign out and sign in again.
 
 ### What is kept, and what a rotation costs
 
@@ -497,8 +622,8 @@ TulaAuth(model = model)
 ```
 <!-- /snippet -->
 
-Do not put a `TulaAuthModel`, or anything read from its `state`, into `rememberSaveable`, a
-`SavedStateHandle` or a `Bundle`.
+Do not put a `TulaAuthModel` or a `TulaAccountModel`, or anything read from their `state`,
+into `rememberSaveable`, a `SavedStateHandle` or a `Bundle`.
 
 ### Screenshots
 
@@ -593,8 +718,8 @@ with TalkBack switched on.**
 
 ### The example and its UI tests
 
-[`examples/compose`](../examples/compose/README.md) is an app whose sign-in is `TulaAuth`.
-Its UI tests run the screens on an emulator or a device against the real API on your
+[`examples/compose`](../examples/compose/README.md) is an app whose sign-in is `TulaAuth`
+and whose signed-in screen is `TulaAccount`. Its UI tests run the screens on an emulator or a device against the real API on your
 machine:
 
 ```bash
@@ -605,6 +730,10 @@ The script refuses a device that is not an emulator unless it is given `--allow-
 `adb reverse` puts the API's port on the device's own loopback address, where every app
 installed on a phone can reach it. They are run by hand: no workflow starts an emulator. CI compiles and lints the screens,
 the example and the tests.
+
+What the UI tests cover of these screens, and what they do not (no passkey sheet, Google
+chooser or browser was opened; no text message was received; TalkBack was never on), is in
+[what was not verified](plans/phase-2-unverified.md#step-215-the-compose-screens-the-second-step-the-other-ways-and-the-account-tula-61-adr-0062).
 
 ## Running its tests
 

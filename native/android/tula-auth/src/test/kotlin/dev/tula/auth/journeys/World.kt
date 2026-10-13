@@ -266,11 +266,6 @@ class World private constructor(
     fun userExists(email: String): Boolean =
         test("GET", "users" + query("email", email)).json.jsonObject["exists"]?.jsonPrimitive?.content == "true"
 
-    /** Give an account a proven phone number, as confirming a texted code does. */
-    fun givePhoneNumber(email: String, number: String) {
-        expect(200, test("POST", "phone", """{"email":"$email","phoneNumber":"$number"}"""))
-    }
-
     /**
      * Call the admin API as an operator's backend does. The world's secret key stays in the
      * fixture's process: the call is relayed, and this test never holds the key.

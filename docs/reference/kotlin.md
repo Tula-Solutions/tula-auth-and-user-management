@@ -333,6 +333,68 @@ client's state shows the user with it.
 suspend fun verify(code: String): CurrentUser
 ```
 
+### `TulaPhone`
+
+_class_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Account.kt`
+
+The signed-in account's phone number (ADR 0037): one optional number, proven with a texted
+code. It is contact data, and a way to sign in or a second step only where the
+environment switched those on.
+
+All three calls need a recent authentication (`auth.step_up_required`).
+
+```kotlin
+class TulaPhone internal constructor(private val context: FlowContext)
+```
+
+#### `TulaPhone.request`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Account.kt`
+
+Text a code to a number to add to the account. Nothing is stored on the account until
+[verify]: the number waits on the code.
+
+@param phoneNumber The number with its country code, such as `+14155550142`. Spaces and
+  punctuation a person types are the server's to take out.
+@return The masked number and when the code stops working. Never the code.
+@throws TulaError `phone.invalid` for what is not a phone number, `sms.disabled` where
+  the environment sends no text messages, `sms.country_not_allowed`, `sms.unavailable`,
+  `rate_limited`, `auth.step_up_required`.
+
+```kotlin
+suspend fun request(phoneNumber: String): PhoneCodeSent
+```
+
+#### `TulaPhone.verify`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Account.kt`
+
+Confirm the number [request] asked for with the texted code. The account then has it,
+proven, and the client's state shows the user with it.
+
+@param code The texted code, as the user typed it.
+@return The user after the change.
+@throws TulaError `verification.invalid_code`, `verification.expired`, `sms.disabled`,
+  `sms.country_not_allowed`, `rate_limited`, `auth.step_up_required`.
+
+```kotlin
+suspend fun verify(code: String): CurrentUser
+```
+
+#### `TulaPhone.remove`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Account.kt`
+
+Remove the account's phone number. It needs no text message, so it works where text
+messages are off, and for an account that has no number. A texted second step that
+rested on the number goes with it. The client's state shows the user without it.
+
+@throws TulaError `auth.step_up_required`.
+
+```kotlin
+suspend fun remove()
+```
+
 ### `TulaIdentities`
 
 _class_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Account.kt`
@@ -2484,6 +2546,17 @@ constructor(
 )
 ```
 
+#### `TulaClient.sheets`
+
+_val_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/TulaClient.kt`
+
+Which of the system's sheets the app gave this client: how a screen knows that a
+control cannot work before it draws it. Nothing of a sheet is in it.
+
+```kotlin
+val sheets: TulaSheets
+```
+
 #### `TulaClient.state`
 
 _val_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/TulaClient.kt`
@@ -2711,6 +2784,16 @@ An email address for a signed-in account that has none.
 val emailAddress: TulaEmailAddress get()
 ```
 
+#### `TulaClient.phone`
+
+_val_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/TulaClient.kt`
+
+The signed-in account's phone number: add, prove, remove.
+
+```kotlin
+val phone: TulaPhone get()
+```
+
 #### `TulaClient.identities`
 
 _val_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/TulaClient.kt`
@@ -2744,6 +2827,34 @@ key says `deviceBound`; nothing of a key is in the answer.
 
 ```kotlin
 suspend fun sessions(): List<Session>
+```
+
+#### `TulaClient.revokeSession`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/TulaClient.kt`
+
+End one of the signed-in user's other sessions. It needs no recent authentication and
+no proof: ending sessions is what an owner does when something looks wrong.
+
+@param id A session's id, from [sessions].
+@throws TulaError `resource.not_found` for a session that is not the user's or has
+  ended; `response.invalid`, before any request, for an id that is not one path segment.
+
+```kotlin
+suspend fun revokeSession(id: String)
+```
+
+#### `TulaClient.revokeOtherSessions`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/TulaClient.kt`
+
+End every session of the signed-in user but this one. It needs no recent authentication
+and no proof.
+
+@return How many sessions were ended.
+
+```kotlin
+suspend fun revokeOtherSessions(): Long
 ```
 
 #### `TulaClient.removeDeviceKey`
@@ -2862,9 +2973,1083 @@ only after a call that returned.
 suspend fun signOut(): Unit
 ```
 
+### `TulaSheets`
+
+_class_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/TulaClient.kt`
+
+Whether the app gave the client each of the system's sheets. A sheet that was not given
+cannot be shown: its call is refused `passkey.unsupported` or `provider.unsupported` before
+any request.
+
+```kotlin
+data class TulaSheets(
+    /** A [PasskeySheet] was given: passkeys can be created and used. */
+    val passkeys: Boolean,
+    /** A [GoogleSheet] was given: Google's account chooser can be shown. */
+    val google: Boolean,
+    /** A [BrowserSession] was given: a provider's page can be opened. */
+    val browser: Boolean,
+)
+```
+
 ## `tula-auth-ui`
 
 `import dev.tula.auth.ui.*`, from `native/android/tula-auth-ui/src/main/kotlin`.
+
+### `TulaAccountOffer`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountContent.kt`
+
+A button or a link of the account screen.
+
+```kotlin
+data class TulaAccountOffer(
+    /** The test tag. */
+    val identifier: String,
+    /** What is drawn. */
+    val title: String,
+    /** What a press asks for. */
+    val action: TulaAccountAction,
+    /** What a screen reader says where the title alone would not tell two buttons apart. */
+    val label: String? = null,
+    /** Whether a press removes or turns something off. Said by the title; never by colour alone. */
+    val destructive: Boolean = false,
+)
+```
+
+### `TulaAccountFieldContent`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountContent.kt`
+
+A field of an account form.
+
+```kotlin
+data class TulaAccountFieldContent(
+    /** Which field. */
+    val field: TulaAccountField,
+    /** How it is typed into. */
+    val kind: TulaAuthFieldKind,
+    /** The label above it, and its name for a screen reader. */
+    val label: String,
+    /** The hint under it. */
+    val hint: String?,
+    /** What the keyboard's "done" asks for. */
+    val submit: TulaAccountAction,
+)
+```
+
+#### `TulaAccountFieldContent.identifier`
+
+_val_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountContent.kt`
+
+The test tag.
+
+```kotlin
+val identifier: String get() = "tula.account.field.${this.field.name.lowercase()}"
+```
+
+### `TulaAccountRow`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountContent.kt`
+
+One thing of a list: a session, a passkey.
+
+```kotlin
+data class TulaAccountRow(
+    /** The test tag. */
+    val identifier: String,
+    /** What it is called. */
+    val title: String,
+    /** What is known of it, a line each. */
+    val details: List<String>,
+    /** What it is marked as, in words: "This device", "Bound to a device key". */
+    val marks: List<String>,
+    /** What can be done with it. */
+    val offer: TulaAccountOffer?,
+)
+```
+
+### `TulaAccountSection`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountContent.kt`
+
+A part of the overview.
+
+```kotlin
+data class TulaAccountSection(
+    /** The test tag. */
+    val identifier: String,
+    /** Its heading. */
+    val title: String,
+    /** What it says, a line each. */
+    val lines: List<String> = emptyList(),
+    /** Its list. */
+    val rows: List<TulaAccountRow> = emptyList(),
+    /** What it offers. */
+    val offers: List<TulaAccountOffer> = emptyList(),
+    /** Whether it has not been read yet. */
+    val loading: Boolean = false,
+)
+```
+
+### `TulaAccountContent`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountContent.kt`
+
+Everything the account screen draws at one moment: the overview's sections, or one form.
+
+**It can hold a setup key and backup codes** while their form is open: it prints as its
+type's name.
+
+```kotlin
+class TulaAccountContent internal constructor(
+    /** The title of what is drawn. It takes the focus on a change of panel. */
+    val title: String,
+    /** A sentence under the title. */
+    val subtitle: String? = null,
+    /** The fields of the open form. */
+    val fields: List<TulaAccountFieldContent> = emptyList(),
+    /** The main button of the open form. */
+    val primary: TulaAccountOffer? = null,
+    /** The links under the form. */
+    val links: List<TulaAccountOffer> = emptyList(),
+    /** The overview's sections. Empty while a form is open. */
+    val sections: List<TulaAccountSection> = emptyList(),
+    /** An authenticator's QR code and setup key. */
+    val setup: TulaAuthSetupContent? = null,
+    /** Backup codes. */
+    val codes: TulaAuthCodesContent? = null,
+    /** The button that copies the setup key, or the backup codes: only ever on a press. */
+    val copy: TulaAccountOffer? = null,
+)
+```
+
+#### `TulaAccountContent.actions`
+
+_val_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountContent.kt`
+
+Everything that can be asked for now.
+
+```kotlin
+val actions: Set<TulaAccountAction>
+```
+
+#### `TulaAccountContent.defaultDate`
+
+_fun_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountContent.kt`
+
+Write a time of the API for a person, in the device's zone and locale.
+
+@param iso A time as the API writes it (ISO 8601).
+@return The time in words, or `null` for a text that is no time.
+
+```kotlin
+fun defaultDate(iso: String): String?
+```
+
+#### `TulaAccountContent.of`
+
+_fun_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountContent.kt`
+
+What is drawn for a state.
+
+@param state The model's state.
+@param strings The strings.
+@param passkeySheet Whether the client was given a passkey sheet.
+@param formatDate Writes a time for a person, or `null`.
+@return The content.
+
+```kotlin
+fun of(
+    state: TulaAccountState,
+    strings: TulaStrings,
+    passkeySheet: Boolean,
+    formatDate: (String) -> String?,
+): TulaAccountContent
+```
+
+### `TulaAccountField`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+A field of the account's forms.
+
+```kotlin
+enum class TulaAccountField
+```
+
+#### `TulaAccountField.CURRENT_PASSWORD`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+The current password, of a password change.
+
+```kotlin
+CURRENT_PASSWORD
+```
+
+#### `TulaAccountField.NEW_PASSWORD`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+The new password, of a password change.
+
+```kotlin
+NEW_PASSWORD
+```
+
+#### `TulaAccountField.CODE`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+A 6-digit code: an authenticator's, an emailed or a texted one.
+
+```kotlin
+CODE
+```
+
+#### `TulaAccountField.BACKUP_CODE`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+A backup code, of a step-up.
+
+```kotlin
+BACKUP_CODE
+```
+
+#### `TulaAccountField.PHONE`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+A phone number.
+
+```kotlin
+PHONE
+```
+
+#### `TulaAccountField.STEP_UP_PASSWORD`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+The password of a step-up.
+
+```kotlin
+STEP_UP_PASSWORD
+```
+
+### `TulaStepUpMethod`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+A way to confirm it is you, as `auth.step_up_required` names it.
+
+```kotlin
+enum class TulaStepUpMethod(
+    /** The method's name in the API. */
+    val rawValue: String,
+)
+```
+
+#### `TulaStepUpMethod.PASSWORD`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+The password.
+
+```kotlin
+PASSWORD
+```
+
+#### `TulaStepUpMethod.TOTP`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+A code from an authenticator app.
+
+```kotlin
+TOTP
+```
+
+#### `TulaStepUpMethod.BACKUP_CODE`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+A backup code.
+
+```kotlin
+BACKUP_CODE
+```
+
+#### `TulaStepUpMethod.EMAIL_CODE`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+An emailed code: asked for with a button.
+
+```kotlin
+EMAIL_CODE
+```
+
+#### `TulaStepUpMethod.SMS_CODE`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+A texted code: asked for with a button.
+
+```kotlin
+SMS_CODE
+```
+
+#### `TulaStepUpMethod.PASSKEY`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+A passkey, through the client's passkey sheet.
+
+```kotlin
+PASSKEY
+```
+
+### `TulaAccountSectionId`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+A part of the overview that is read by itself and can fail by itself.
+
+```kotlin
+enum class TulaAccountSectionId
+```
+
+#### `TulaAccountSectionId.PROFILE`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+The profile, the password and the phone number: the user.
+
+```kotlin
+PROFILE
+```
+
+#### `TulaAccountSectionId.SESSIONS`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Where the user is signed in.
+
+```kotlin
+SESSIONS
+```
+
+#### `TulaAccountSectionId.FACTORS`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Two-step verification.
+
+```kotlin
+FACTORS
+```
+
+#### `TulaAccountSectionId.PASSKEYS`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+The passkeys.
+
+```kotlin
+PASSKEYS
+```
+
+### `TulaAccountConfirm`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Something that is asked about before it is done.
+
+```kotlin
+sealed class TulaAccountConfirm
+```
+
+#### `TulaAccountConfirm.TurnOffTotp`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Turn the authenticator app off.
+
+```kotlin
+data object TurnOffTotp : TulaAccountConfirm()
+```
+
+#### `TulaAccountConfirm.TurnOffSms`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Stop using a texted code as the second step.
+
+```kotlin
+data object TurnOffSms : TulaAccountConfirm()
+```
+
+#### `TulaAccountConfirm.RemovePhone`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Remove the phone number.
+
+```kotlin
+data object RemovePhone : TulaAccountConfirm()
+```
+
+#### `TulaAccountConfirm.RemovePasskey`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Remove a passkey. [name] is the passkey's own name, for the question.
+
+```kotlin
+data class RemovePasskey(val id: String, val name: String) : TulaAccountConfirm()
+```
+
+### `TulaAccountPanel`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+What is drawn: the overview, or one form over it.
+
+```kotlin
+sealed class TulaAccountPanel
+```
+
+#### `TulaAccountPanel.Overview`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+The sections.
+
+```kotlin
+data object Overview : TulaAccountPanel()
+```
+
+#### `TulaAccountPanel.ChangePassword`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+The current and the new password.
+
+```kotlin
+data object ChangePassword : TulaAccountPanel()
+```
+
+#### `TulaAccountPanel.TotpSetup`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+An authenticator's setup key and QR code, and the field for its first code.
+
+```kotlin
+data object TotpSetup : TulaAccountPanel()
+```
+
+#### `TulaAccountPanel.BackupCodes`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Backup codes, shown once.
+
+```kotlin
+data object BackupCodes : TulaAccountPanel()
+```
+
+#### `TulaAccountPanel.TextedFactorCode`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+The texted code that turns a texted second step on.
+
+```kotlin
+data class TextedFactorCode(val destination: String) : TulaAccountPanel()
+```
+
+#### `TulaAccountPanel.PhoneNumber`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+The phone number to add.
+
+```kotlin
+data object PhoneNumber : TulaAccountPanel()
+```
+
+#### `TulaAccountPanel.PhoneCode`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+The texted code that proves the number.
+
+```kotlin
+data class PhoneCode(val destination: String) : TulaAccountPanel()
+```
+
+#### `TulaAccountPanel.Confirm`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+A question before something is removed or turned off.
+
+```kotlin
+data class Confirm(val what: TulaAccountConfirm) : TulaAccountPanel()
+```
+
+#### `TulaAccountPanel.StepUp`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+"Confirm it is you". [method] is the open way, [others] the ways the server also named
+that this client can take, in the server's order, [sent] where an emailed or texted code
+went (its code field is drawn only then).
+
+```kotlin
+data class StepUp(
+    val method: TulaStepUpMethod,
+    val others: List<TulaStepUpMethod> = emptyList(),
+    val sent: String? = null,
+) : TulaAccountPanel()
+```
+
+#### `TulaAccountPanel.fields`
+
+_val_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+The fields the panel has, in the order they are drawn.
+
+```kotlin
+val fields: List<TulaAccountField>
+```
+
+### `TulaAccountAction`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Something a person can ask the account screen to do.
+
+```kotlin
+sealed class TulaAccountAction
+```
+
+#### `TulaAccountAction.Reload`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Read a section again after it could not be read.
+
+```kotlin
+data class Reload(val section: TulaAccountSectionId) : TulaAccountAction()
+```
+
+#### `TulaAccountAction.OpenChangePassword`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Open the password form.
+
+```kotlin
+data object OpenChangePassword : TulaAccountAction()
+```
+
+#### `TulaAccountAction.SubmitPassword`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Send the password form.
+
+```kotlin
+data object SubmitPassword : TulaAccountAction()
+```
+
+#### `TulaAccountAction.RevokeSession`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Sign one other session out.
+
+```kotlin
+data class RevokeSession(val id: String) : TulaAccountAction()
+```
+
+#### `TulaAccountAction.RevokeOthers`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Sign every other session out.
+
+```kotlin
+data object RevokeOthers : TulaAccountAction()
+```
+
+#### `TulaAccountAction.SignOut`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Sign this device out.
+
+```kotlin
+data object SignOut : TulaAccountAction()
+```
+
+#### `TulaAccountAction.TurnOnTotp`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Start setting up an authenticator app.
+
+```kotlin
+data object TurnOnTotp : TulaAccountAction()
+```
+
+#### `TulaAccountAction.ConfirmTotp`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Confirm the authenticator app with its first code.
+
+```kotlin
+data object ConfirmTotp : TulaAccountAction()
+```
+
+#### `TulaAccountAction.CopySetupKey`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Copy the setup key, on a press.
+
+```kotlin
+data object CopySetupKey : TulaAccountAction()
+```
+
+#### `TulaAccountAction.CopyCodes`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Copy the backup codes, on a press.
+
+```kotlin
+data object CopyCodes : TulaAccountAction()
+```
+
+#### `TulaAccountAction.SavedCodes`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Leave the backup codes: they are not shown again.
+
+```kotlin
+data object SavedCodes : TulaAccountAction()
+```
+
+#### `TulaAccountAction.RegenerateCodes`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Make new backup codes; the earlier ones stop working.
+
+```kotlin
+data object RegenerateCodes : TulaAccountAction()
+```
+
+#### `TulaAccountAction.TurnOnSms`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Ask for the texted code that turns a texted second step on.
+
+```kotlin
+data object TurnOnSms : TulaAccountAction()
+```
+
+#### `TulaAccountAction.ConfirmSms`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Send that code.
+
+```kotlin
+data object ConfirmSms : TulaAccountAction()
+```
+
+#### `TulaAccountAction.Ask`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Ask before something is removed or turned off.
+
+```kotlin
+data class Ask(val what: TulaAccountConfirm) : TulaAccountAction()
+```
+
+#### `TulaAccountAction.Confirmed`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Do what the question was about.
+
+```kotlin
+data object Confirmed : TulaAccountAction()
+```
+
+#### `TulaAccountAction.Cancel`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Leave the open form. Nothing is changed.
+
+```kotlin
+data object Cancel : TulaAccountAction()
+```
+
+#### `TulaAccountAction.AddPasskey`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Add a passkey, through the client's passkey sheet.
+
+```kotlin
+data object AddPasskey : TulaAccountAction()
+```
+
+#### `TulaAccountAction.OpenPhone`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Open the phone number form.
+
+```kotlin
+data object OpenPhone : TulaAccountAction()
+```
+
+#### `TulaAccountAction.SendPhoneCode`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Ask for the code that proves the typed number.
+
+```kotlin
+data object SendPhoneCode : TulaAccountAction()
+```
+
+#### `TulaAccountAction.VerifyPhone`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Send that code.
+
+```kotlin
+data object VerifyPhone : TulaAccountAction()
+```
+
+#### `TulaAccountAction.SubmitStepUp`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Send what the step-up form holds.
+
+```kotlin
+data object SubmitStepUp : TulaAccountAction()
+```
+
+#### `TulaAccountAction.SendStepUpCode`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Ask for the emailed or texted code of a step-up.
+
+```kotlin
+data object SendStepUpCode : TulaAccountAction()
+```
+
+#### `TulaAccountAction.StepUpWithPasskey`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Confirm it is you with a passkey.
+
+```kotlin
+data object StepUpWithPasskey : TulaAccountAction()
+```
+
+#### `TulaAccountAction.UseStepUpMethod`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Confirm it is you another way the server named.
+
+```kotlin
+data class UseStepUpMethod(val method: TulaStepUpMethod) : TulaAccountAction()
+```
+
+### `TulaAccountFocus`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Where the focus is asked to go on the account screen.
+
+```kotlin
+sealed class TulaAccountFocus
+```
+
+#### `TulaAccountFocus.Title`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+The title of what is drawn: after a change of panel.
+
+```kotlin
+data object Title : TulaAccountFocus()
+```
+
+#### `TulaAccountFocus.Field`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+A field: after a failure that is about it.
+
+```kotlin
+data class Field(val field: TulaAccountField) : TulaAccountFocus()
+```
+
+### `TulaAccountState`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Everything the account screen draws from, at one moment.
+
+**It can hold a password, a code, a setup key and backup codes** while their form is open,
+and the user's address and number: it prints as its type's name. Never log one, never put
+one in a `Bundle`, a `SavedStateHandle` or `rememberSaveable`.
+
+```kotlin
+data class TulaAccountState(
+    /** What is drawn. */
+    val panel: TulaAccountPanel = TulaAccountPanel.Overview,
+    /** The user, once read. */
+    val user: CurrentUser? = null,
+    /** The sessions, once read. */
+    val sessions: List<Session>? = null,
+    /** The second step, once read. */
+    val factors: Factors? = null,
+    /** The passkeys, once read. */
+    val passkeys: List<Passkey>? = null,
+    /** The sections that could not be read. */
+    val failed: Set<TulaAccountSectionId> = emptySet(),
+    /** Whether the environment requires a second step (it then cannot be turned off). */
+    val mfaRequired: Boolean = false,
+    /** Whether a phone number can be added. */
+    val phoneEnabled: Boolean = false,
+    /** Whether passkeys are on. `true` until the configuration says otherwise. */
+    val passkeysOn: Boolean = true,
+    /** What the fields hold. A secret is emptied as it is sent and when its form is left. */
+    val text: Map<TulaAccountField, String> = emptyMap(),
+    /** The password fields whose text is drawn in the clear. */
+    val revealed: Set<TulaAccountField> = emptySet(),
+    /** Whether a call is on its way. A second one is not started meanwhile. */
+    val isPending: Boolean = false,
+    /** What went wrong that is not about one field. */
+    val formError: String? = null,
+    /** What is wrong with each field. */
+    val fieldErrors: Map<TulaAccountField, List<String>> = emptyMap(),
+    /** Something that went right, in words. */
+    val status: String? = null,
+    /** Something that is neither: a sheet that was closed, a form that was left. */
+    val notice: String? = null,
+    /** Where the focus was last asked to go. */
+    val focus: TulaAccountFocus = TulaAccountFocus.Title,
+    /** Counts the requests to move the focus. */
+    val focusRequests: Int = 0,
+    /** An authenticator's setup key, only while its form is open. */
+    val setup: TulaAuthSetup? = null,
+    /** Backup codes, only while their form is open. */
+    val backupCodes: List<String> = emptyList(),
+    /** The server was told and the session is over: nothing of the account is drawn. */
+    val signedOut: Boolean = false,
+    /**
+     * A sign-out the server could not be told of: the session may still be active there.
+     * Nothing of the account is drawn, and signing out is offered again.
+     */
+    val signOutFailed: Boolean = false,
+)
+```
+
+### `TulaAccountModel`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+What is behind the account screen. A composable draws [content] and calls [perform]; it
+decides nothing. No Compose and no Android: all of it is tested on the JVM.
+
+**It holds no token.** What a form holds is emptied when the form is left and by [close];
+a setup key and backup codes are held only while their form is open.
+
+**A call the server wants a recent authentication for** (`auth.step_up_required`) opens the
+step-up panel with the ways the server named that this client can take; once one is proven
+the call is made again, or, where what was typed has been emptied, its form is shown again
+with words. With no way this client can take, that is said and nothing is asked.
+
+**A failed sign-out is not a sign-out**: the server could not be told, the session may live
+on there, and the screen says so and offers to sign out again. [onSignedOut] is called only
+once the server was told.
+
+**The account is the session's it was read for.** The model asks the client whose session it
+is when the account is read, when something is asked for and when an answer arrives. A
+session that ended elsewhere (it was revoked, its refresh was refused) empties the screen and
+is told to the app through [onSignedOut], once, however often the account is read afterwards.
+Where the client has become another session's, everything read or typed for the one before
+is dropped, and so is an answer that was asked as it. The model is told nothing by itself: it
+finds out at its next call, so an app that keeps one across a sign-out reads it again.
+
+@param client The app's client.
+@param strings The strings.
+@param announce Says a message to a screen reader.
+@param onSignedOut Called when nobody is signed in any more: once for a sign-out of this
+  screen the server was told of, and once for a session the screen finds ended elsewhere.
+  Never for a sign-out that failed, and never while one is waiting to be tried again.
+@param copy Puts a text on the clipboard, marked as sensitive. Called only on a press.
+@param formatDate Writes a time of the API (ISO 8601) for a person, or `null` for a text
+  that is no time: a line with a time that cannot be read is left out, never drawn raw.
+
+```kotlin
+class TulaAccountModel(
+    private val client: TulaClient,
+    strings: TulaStrings = TulaStrings(),
+    private val announce: (String) -> Unit = {},
+    private val onSignedOut: (() -> Unit)? = null,
+    private val copy: (String) -> Unit = {},
+    private val formatDate: (String) -> String? = TulaAccountContent::defaultDate,
+)
+```
+
+#### `TulaAccountModel.state`
+
+_val_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+What the screen draws, and every change of it.
+
+```kotlin
+val state: StateFlow<TulaAccountState>
+```
+
+#### `TulaAccountModel.strings`
+
+_var_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+The strings the messages are taken from.
+
+```kotlin
+var strings: TulaStrings
+```
+
+#### `TulaAccountModel.content`
+
+_val_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+What is drawn now.
+
+```kotlin
+val content: TulaAccountContent
+```
+
+#### `TulaAccountModel.close`
+
+_fun_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+The screen is closing: forget what every form held and go back to the overview. An
+answer still on its way changes nothing. Nobody is signed out by it.
+
+```kotlin
+fun close(): Unit
+```
+
+#### `TulaAccountModel.setText`
+
+_fun_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Take what was typed into a field. A code field keeps the digits of a code.
+
+@param field A field of the open panel.
+@param typed What it holds now.
+
+```kotlin
+fun setText(field: TulaAccountField, typed: String): Unit
+```
+
+#### `TulaAccountModel.toggleReveal`
+
+_fun_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+"Show password" and "hide password" for a password field of the open panel.
+
+@param field A password field.
+
+```kotlin
+fun toggleReveal(field: TulaAccountField): Unit
+```
+
+#### `TulaAccountModel.problems`
+
+_fun_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+What is wrong with a field, each worded as a problem ("Error: …").
+
+@param field A field.
+@return Its problems, in words.
+
+```kotlin
+fun problems(field: TulaAccountField): List<String>
+```
+
+#### `TulaAccountModel.formProblem`
+
+_val_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+What went wrong that is not about one field, worded as a problem.
+
+```kotlin
+val formProblem: String?
+```
+
+#### `TulaAccountModel.load`
+
+_fun_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Read the account: the user, the sessions, the second step, the passkeys and what the
+environment allows. Each is read by itself: one that fails is said in its section, with
+a way to read it again, and the others are drawn.
+
+```kotlin
+suspend fun load()
+```
+
+#### `TulaAccountModel.perform`
+
+_fun_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+Do what a button or a link of what is drawn asks. An action that is not offered now does
+nothing: it cannot be asked for.
+
+@param action An action of [content].
+
+```kotlin
+suspend fun perform(action: TulaAccountAction)
+```
+
+#### `TulaAccountModel.PHONE_MAX`
+
+_val_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAccountModel.kt`
+
+The most a phone number field keeps.
+
+```kotlin
+const val PHONE_MAX: Int = 32
+```
 
 ### `TulaAuthAction`
 
@@ -2987,6 +4172,262 @@ Leave what is open for the start of the same kind of flow.
 START_AGAIN
 ```
 
+#### `TulaAuthAction.USE_PASSKEY`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+Sign in with a passkey, through the client's passkey sheet.
+
+```kotlin
+USE_PASSKEY
+```
+
+#### `TulaAuthAction.RETRY_PROVIDER`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+Present again the ticket of a provider sign-in whose exchange got no answer.
+
+```kotlin
+RETRY_PROVIDER
+```
+
+#### `TulaAuthAction.CONTINUE_WITH_GOOGLE`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+Sign in with Google: the system's account chooser where the client has it, else the browser.
+
+```kotlin
+CONTINUE_WITH_GOOGLE
+```
+
+#### `TulaAuthAction.CONTINUE_WITH_GITHUB`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+Sign in with GitHub, through the browser.
+
+```kotlin
+CONTINUE_WITH_GITHUB
+```
+
+#### `TulaAuthAction.CONTINUE_WITH_APPLE`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+Sign in with Apple, through the browser.
+
+```kotlin
+CONTINUE_WITH_APPLE
+```
+
+#### `TulaAuthAction.CONTINUE_WITH_MICROSOFT`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+Sign in with Microsoft, through the browser.
+
+```kotlin
+CONTINUE_WITH_MICROSOFT
+```
+
+#### `TulaAuthAction.CONTINUE_WITH_DISCORD`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+Sign in with Discord, through the browser.
+
+```kotlin
+CONTINUE_WITH_DISCORD
+```
+
+#### `TulaAuthAction.CONTINUE_WITH_LINKEDIN`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+Sign in with LinkedIn, through the browser.
+
+```kotlin
+CONTINUE_WITH_LINKEDIN
+```
+
+#### `TulaAuthAction.CONTINUE_WITH_X`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+Sign in with X, through the browser.
+
+```kotlin
+CONTINUE_WITH_X
+```
+
+#### `TulaAuthAction.CONTINUE_WITH_FACEBOOK`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+Sign in with Facebook, through the browser.
+
+```kotlin
+CONTINUE_WITH_FACEBOOK
+```
+
+#### `TulaAuthAction.SEND_TEXTED_CODE`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+Ask for a texted code: a phone number's first factor, or the second step.
+
+```kotlin
+SEND_TEXTED_CODE
+```
+
+#### `TulaAuthAction.SUBMIT_BACKUP_CODE`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+Send a backup code as the second step.
+
+```kotlin
+SUBMIT_BACKUP_CODE
+```
+
+#### `TulaAuthAction.USE_SECOND_PASSKEY`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+Take the second step with a passkey, through the client's passkey sheet.
+
+```kotlin
+USE_SECOND_PASSKEY
+```
+
+#### `TulaAuthAction.USE_WAY_TOTP`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+Take the second step with an authenticator app's code instead.
+
+```kotlin
+USE_WAY_TOTP
+```
+
+#### `TulaAuthAction.USE_WAY_PASSKEY`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+Take the second step with a passkey instead.
+
+```kotlin
+USE_WAY_PASSKEY
+```
+
+#### `TulaAuthAction.USE_WAY_TEXTED_CODE`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+Take the second step with a texted code instead.
+
+```kotlin
+USE_WAY_TEXTED_CODE
+```
+
+#### `TulaAuthAction.USE_WAY_BACKUP_CODE`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+Take the second step with a backup code instead.
+
+```kotlin
+USE_WAY_BACKUP_CODE
+```
+
+#### `TulaAuthAction.START_ENROLMENT`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+Start setting up an authenticator app inside the sign-in.
+
+```kotlin
+START_ENROLMENT
+```
+
+#### `TulaAuthAction.CONFIRM_ENROLMENT`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+Confirm the authenticator app with its first code.
+
+```kotlin
+CONFIRM_ENROLMENT
+```
+
+#### `TulaAuthAction.COPY_SETUP_KEY`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+Copy the setup key, on a press.
+
+```kotlin
+COPY_SETUP_KEY
+```
+
+#### `TulaAuthAction.COPY_BACKUP_CODES`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+Copy the backup codes, on a press.
+
+```kotlin
+COPY_BACKUP_CODES
+```
+
+#### `TulaAuthAction.SAVED_BACKUP_CODES`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+Leave the backup codes: they are not shown again.
+
+```kotlin
+SAVED_BACKUP_CODES
+```
+
+#### `TulaAuthAction.provider`
+
+_val_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+The provider a "Continue with …" action is for, or `null` for every other action.
+
+```kotlin
+val provider: OAuthProvider?
+```
+
+#### `TulaAuthAction.of`
+
+_fun_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+The "Continue with …" action of a provider.
+
+@param provider A provider.
+@return Its action, or `null` for a provider this version has no button for.
+
+```kotlin
+fun of(provider: OAuthProvider): TulaAuthAction?
+```
+
+#### `TulaAuthAction.of`
+
+_fun_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+The action that takes the second step another way.
+
+@param way A way.
+@return The action that opens it.
+
+```kotlin
+fun of(way: TulaSecondWay): TulaAuthAction
+```
+
 ### `TulaAuthFieldKind`
 
 _class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
@@ -3035,6 +4476,46 @@ A 6-digit code.
 
 ```kotlin
 CODE
+```
+
+#### `TulaAuthFieldKind.IDENTIFIER`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+An email address or a phone number: where a texted sign-in code is on.
+
+```kotlin
+IDENTIFIER
+```
+
+#### `TulaAuthFieldKind.SMS_CODE`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+A texted 6-digit code: the system may offer the one that just arrived.
+
+```kotlin
+SMS_CODE
+```
+
+#### `TulaAuthFieldKind.BACKUP_CODE`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+A backup code: letters and digits, typed as text.
+
+```kotlin
+BACKUP_CODE
+```
+
+#### `TulaAuthFieldKind.PHONE`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+A phone number.
+
+```kotlin
+PHONE
 ```
 
 ### `TulaAuthFieldContent`
@@ -3087,6 +4568,68 @@ data class TulaAuthOffer(
 )
 ```
 
+### `TulaAuthSetupContent`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+An authenticator's setup key and what its QR code is drawn from, with the words around them.
+
+```kotlin
+class TulaAuthSetupContent internal constructor(
+    /** What to do with the code and the key. */
+    val instruction: String,
+    /** What the QR code is called for a screen reader. */
+    val qrLabel: String,
+    /** The `otpauth://` address the QR code encodes. It holds the key: never logged, never saved. */
+    val uri: String,
+    /** The label of the setup key. */
+    val keyLabel: String,
+    /** The setup key. */
+    val key: String,
+    /** The hint under the key. */
+    val keyHint: String,
+)
+```
+
+### `TulaAuthCodesContent`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+Backup codes, shown once, with the words around them.
+
+```kotlin
+class TulaAuthCodesContent internal constructor(
+    /** What the list is called. */
+    val label: String,
+    /** The codes. */
+    val codes: List<String>,
+)
+```
+
+### `TulaAuthSituation`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
+
+What the model knows beyond the screen and the strings: which ways the start offers, and
+what a setup screen and a codes screen show.
+
+```kotlin
+data class TulaAuthSituation(
+    /** The ways to sign in without typing first, known to work here. */
+    val ways: List<TulaAuthWay> = emptyList(),
+    /** Whether the environment has a way to sign in that starts from what is typed. */
+    val canIdentify: Boolean = true,
+    /** Whether a phone number can be typed where the address is. */
+    val phoneSignIn: Boolean = false,
+    /** Whether a provider sign-in can be tried again. */
+    val canRetryProvider: Boolean = false,
+    /** The setup key of the setup screen. */
+    val setup: TulaAuthSetup? = null,
+    /** The codes of the codes' screen. */
+    val backupCodes: List<String> = emptyList(),
+)
+```
+
 ### `TulaAuthContent`
 
 _class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthContent.kt`
@@ -3108,6 +4651,18 @@ data class TulaAuthContent(
     val primary: TulaAuthOffer? = null,
     /** The links under it. */
     val links: List<TulaAuthOffer> = emptyList(),
+    /** A sentence between the subtitle and the form, when the screen has one. */
+    val note: String? = null,
+    /** The word between the form and [ways] ("or"), when both are drawn. */
+    val divider: String? = null,
+    /** The other ways to sign in: a passkey, the providers. Buttons, drawn under the form. */
+    val ways: List<TulaAuthOffer> = emptyList(),
+    /** An authenticator's setup key and QR code, on the setup screen. */
+    val setup: TulaAuthSetupContent? = null,
+    /** The backup codes, on their screen. */
+    val codes: TulaAuthCodesContent? = null,
+    /** The button that copies the setup key, or the backup codes: only ever on a press. */
+    val copy: TulaAuthOffer? = null,
 )
 ```
 
@@ -3132,6 +4687,8 @@ What a screen holds.
 @param appName The environment's app name, when it is known.
 @param passwordOptional Whether a sign-up may leave the password out.
 @param email The address typed for the sign-in.
+@param situation What the model knows beyond that: the ways the start offers, a
+  setup key, backup codes.
 @return The screen's words, fields, button and links.
 
 ```kotlin
@@ -3141,6 +4698,7 @@ fun of(
     appName: String? = null,
     passwordOptional: Boolean = false,
     email: String = "",
+    situation: TulaAuthSituation = TulaAuthSituation(),
 ): TulaAuthContent
 ```
 
@@ -3222,6 +4780,115 @@ The new password of a reset or of an expired password.
 
 ```kotlin
 NEW_PASSWORD
+```
+
+#### `TulaAuthField.BACKUP_CODE`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthModel.kt`
+
+A backup code of the second step. Emptied as it is sent.
+
+```kotlin
+BACKUP_CODE
+```
+
+### `TulaSecondWay`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthModel.kt`
+
+A way to take the second step. The order is the order they are offered in.
+
+```kotlin
+enum class TulaSecondWay(
+    /** The method's name in the API. */
+    val rawValue: String,
+)
+```
+
+#### `TulaSecondWay.TOTP`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthModel.kt`
+
+A code from an authenticator app.
+
+```kotlin
+TOTP
+```
+
+#### `TulaSecondWay.PASSKEY`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthModel.kt`
+
+A passkey, through the client's passkey sheet.
+
+```kotlin
+PASSKEY
+```
+
+#### `TulaSecondWay.TEXTED_CODE`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthModel.kt`
+
+A texted code: asked for with a button, never by arriving.
+
+```kotlin
+TEXTED_CODE
+```
+
+#### `TulaSecondWay.BACKUP_CODE`
+
+_entry_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthModel.kt`
+
+A backup code.
+
+```kotlin
+BACKUP_CODE
+```
+
+### `TulaAuthWay`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthModel.kt`
+
+A way to sign in that needs no address typed first, as the start of a sign-in offers it.
+
+```kotlin
+sealed class TulaAuthWay
+```
+
+#### `TulaAuthWay.Passkey`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthModel.kt`
+
+A passkey, through the client's passkey sheet.
+
+```kotlin
+data object Passkey : TulaAuthWay()
+```
+
+#### `TulaAuthWay.Provider`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthModel.kt`
+
+A provider: through its own sheet where the client has one, else through the browser.
+
+```kotlin
+data class Provider(val provider: OAuthProvider) : TulaAuthWay()
+```
+
+### `TulaAuthSetup`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthModel.kt`
+
+An authenticator's setup key and the address a QR code is drawn from. Held only while the
+setup screen is open; it prints as its type's name.
+
+```kotlin
+class TulaAuthSetup internal constructor(
+    /** The setup key, for typing into an authenticator app. */
+    val key: String,
+    /** The `otpauth://` address a QR code encodes. It holds the key. */
+    val uri: String,
+)
 ```
 
 ### `TulaAuthScreen`
@@ -3327,6 +4994,76 @@ A sign-in whose password has expired: ask for a new one.
 data object ExpiredPassword : TulaAuthScreen()
 ```
 
+#### `TulaAuthScreen.TextedCodeOffer`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthModel.kt`
+
+A phone number was typed and the step offers a texted code: offer to text it. Nothing is
+texted by arriving here. [unavailable]: the server said texted codes are off, so the
+button is gone and the sentence stays.
+
+```kotlin
+data class TextedCodeOffer(val unavailable: Boolean = false) : TulaAuthScreen()
+```
+
+#### `TulaAuthScreen.TextedCode`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthModel.kt`
+
+Ask for the texted code that signs in. [destination] is the masked number.
+
+```kotlin
+data class TextedCode(val destination: String) : TulaAuthScreen()
+```
+
+#### `TulaAuthScreen.SecondFactor`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthModel.kt`
+
+The second step. [way] is the one that is open, [others] the ones the step also offers
+and this client can take, [sent] the masked number a texted code went to (the code field
+of a texted code is drawn only then), [unavailable] that the server said texted codes are
+off.
+
+```kotlin
+data class SecondFactor(
+    val way: TulaSecondWay,
+    val others: List<TulaSecondWay> = emptyList(),
+    val sent: String? = null,
+    val unavailable: Boolean = false,
+) : TulaAuthScreen()
+```
+
+#### `TulaAuthScreen.EnrolmentStart`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthModel.kt`
+
+The environment requires a second step and the account has none: offer to set one up.
+
+```kotlin
+data object EnrolmentStart : TulaAuthScreen()
+```
+
+#### `TulaAuthScreen.TotpSetup`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthModel.kt`
+
+The setup key and its QR code, and the field for the first code.
+
+```kotlin
+data object TotpSetup : TulaAuthScreen()
+```
+
+#### `TulaAuthScreen.BackupCodes`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthModel.kt`
+
+The backup codes of an enrolment, shown once.
+
+```kotlin
+data object BackupCodes : TulaAuthScreen()
+```
+
 #### `TulaAuthScreen.SignedIn`
 
 _object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthModel.kt`
@@ -3428,6 +5165,29 @@ data class TulaAuthState(
     val passwordOptional: Boolean = false,
     /** The secret fields whose text is drawn in the clear ("show password"). */
     val revealed: Set<TulaAuthField> = emptySet(),
+    /** The backup code field. Emptied as it is sent and when its screen is left. */
+    val backupCode: String = "",
+    /**
+     * Something that is neither a problem nor a success, in words: a sheet that was closed, a
+     * sheet that is still open. Drawn quietly, never as an error.
+     */
+    val notice: String? = null,
+    /**
+     * The ways to sign in without typing an address first. Empty until
+     * [TulaAuthModel.loadConfig] has read which are on, so that none is drawn and then taken
+     * away: only a way this client can take on this device is listed.
+     */
+    val ways: List<TulaAuthWay> = emptyList(),
+    /** Whether the environment has a way to sign in that starts from what is typed. */
+    val canIdentify: Boolean = true,
+    /** Whether a phone number can be typed where the address is (a texted sign-in code is on). */
+    val phoneSignIn: Boolean = false,
+    /** An authenticator's setup key, only while the setup screen is open. */
+    val setup: TulaAuthSetup? = null,
+    /** The backup codes of an enrolment, only while their screen is open. */
+    val backupCodes: List<String> = emptyList(),
+    /** Whether a provider sign-in whose exchange got no answer can be tried again. */
+    val canRetryProvider: Boolean = false,
 )
 ```
 
@@ -3478,6 +5238,11 @@ call made the change.
 @param onSignedIn Called once for each flow that completed, when the client is signed in:
   also when the flow's screen was left or closed meanwhile (so it can be called after
   [close]), and also when the session could not be stored.
+@param redirectUrl The app's redirect URL for a provider sign-in through the browser: one of
+  the environment's allowed redirect URLs that opens this app. Without it a provider is
+  offered only where the client has that provider's own sheet.
+@param copy Puts a text on the clipboard, marked as sensitive. Called only when a person
+  presses "Copy": the model never copies by itself. The screens pass the platform's.
 
 ```kotlin
 class TulaAuthModel(
@@ -3486,6 +5251,8 @@ class TulaAuthModel(
     strings: TulaStrings = TulaStrings(),
     private val announce: (String) -> Unit = {},
     private val onSignedIn: (() -> Unit)? = null,
+    private val redirectUrl: String? = null,
+    private val copy: (String) -> Unit = {},
 )
 ```
 
@@ -3638,6 +5405,30 @@ An action the open screen does not offer does nothing: it cannot be asked for.
 suspend fun perform(action: TulaAuthAction)
 ```
 
+#### `TulaAuthModel.useWay`
+
+_fun_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthModel.kt`
+
+Take the second step another way the step offers. What was typed for the way that is
+left is emptied.
+
+@param way One of the open screen's other ways.
+
+```kotlin
+fun useWay(way: TulaSecondWay): Unit
+```
+
+#### `TulaAuthModel.savedBackupCodes`
+
+_fun_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthModel.kt`
+
+"I have saved these codes": forget them and go on. Where the enrolment completed the
+sign-in, this is when the app is told.
+
+```kotlin
+fun savedBackupCodes(): Unit
+```
+
 #### `TulaAuthModel.problems`
 
 _fun_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthModel.kt`
@@ -3688,6 +5479,30 @@ How many digits an emailed code has.
 const val CODE_LENGTH: Int = 6
 ```
 
+#### `TulaAuthModel.BACKUP_CODE_MAX`
+
+_val_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthModel.kt`
+
+The most a backup code field keeps: a code is ten characters and a hyphen.
+
+```kotlin
+const val BACKUP_CODE_MAX: Int = 32
+```
+
+#### `TulaAuthModel.isPhoneNumber`
+
+_fun_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthModel.kt`
+
+Whether what was typed is a phone number: a plus sign, then 8 to 15 digits that do not
+start with 0, with spaces, brackets and hyphens allowed between them.
+
+@param typed What the first field holds.
+@return Whether it is taken for a number, and so shown a texted code.
+
+```kotlin
+fun isPhoneNumber(typed: String): Boolean
+```
+
 #### `TulaAuthModel.digits`
 
 _fun_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaAuthModel.kt`
@@ -3699,6 +5514,70 @@ Keep what a code field holds to the digits of a code.
 
 ```kotlin
 fun digits(typed: String): String
+```
+
+### `TulaQrMatrix`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaQr.kt`
+
+A QR symbol: [size] modules a side, dark or light. It prints as its type's name, because
+what it encodes may be a secret.
+
+```kotlin
+class TulaQrMatrix internal constructor(
+    /** How many modules a side has: 21 for version 1, 177 for version 40. */
+    val size: Int,
+    private val dark: BooleanArray,
+)
+```
+
+#### `TulaQrMatrix.isDark`
+
+_fun_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaQr.kt`
+
+Whether a module is dark.
+
+@param x The column, from 0 at the left.
+@param y The row, from 0 at the top.
+@return `true` for a dark module; `false` for a light one and for one outside the symbol.
+
+```kotlin
+fun isDark(x: Int, y: Int): Boolean
+```
+
+### `TulaQr`
+
+_object_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaQr.kt`
+
+The encoder.
+
+```kotlin
+object TulaQr
+```
+
+#### `TulaQr.MAX_BYTES`
+
+_val_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaQr.kt`
+
+The most bytes of UTF-8 a symbol holds (version 40, level M).
+
+```kotlin
+const val MAX_BYTES: Int = 2331
+```
+
+#### `TulaQr.encode`
+
+_fun_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaQr.kt`
+
+Encode a text.
+
+@param text What a scanner should read: counted in bytes of UTF-8.
+@return The symbol, in the smallest version that holds the text.
+@throws IllegalArgumentException for a text of more than [MAX_BYTES] bytes. The message
+  never repeats the text.
+
+```kotlin
+fun encode(text: String): TulaQrMatrix
 ```
 
 ### `TulaStrings`
@@ -3880,7 +5759,26 @@ data class TulaStrings(
      * are never shown.
      */
     val unknownError: String = "Something went wrong. Try again.",
+    /** The first screen's other ways to sign in, and a texted sign-in code. */
+    val ways: TulaWayStrings = TulaWayStrings(),
+    /** The second step, and an authenticator app set up inside a sign-in. */
+    val secondStep: TulaSecondStepStrings = TulaSecondStepStrings(),
+    /** The account screen. */
+    val account: TulaAccountStrings = TulaAccountStrings(),
 )
+```
+
+#### `TulaStrings.message`
+
+_fun_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaStrings.kt`
+
+The message of a code that came without an error (what a provider's page returned).
+
+@param code An error code.
+@return The message, by the rule of [message].
+
+```kotlin
+fun message(code: String): String
 ```
 
 #### `TulaStrings.message`
@@ -3939,6 +5837,398 @@ shown as it is. A placeholder with no value is left as written.
 
 ```kotlin
 fun format(template: String, values: Map<String, String>): String
+```
+
+### `TulaWayStrings`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaStringsMore.kt`
+
+The first screen's other ways to sign in (a passkey, a provider, a texted code).
+
+**A texted sign-in code's screens never say that a message was sent**: a number that signs
+nobody in is answered like one that does and is texted nothing (ADR 0037), so the words are
+"if this number can sign in".
+
+```kotlin
+data class TulaWayStrings(
+    /** The first field's label where a phone number signs in too. */
+    val identifierLabel: String = "Email address or phone number",
+    /** Under that field. */
+    val identifierHint: String = "For a phone number, include the country code, for example +1 415 555 0142.",
+    /** Between the form and the buttons under it. */
+    val divider: String = "or",
+    /** The passkey button. */
+    val passkey: String = "Sign in with a passkey",
+    /** A provider's button. `{provider}` is the provider's name from [providers]. */
+    val continueWith: String = "Continue with {provider}",
+    /** The providers' names by their word in the API. One without a name here is not drawn. */
+    val providers: Map<String, String> = mapOf(
+        "google" to "Google", "github" to "GitHub", "apple" to "Apple", "microsoft" to "Microsoft",
+        "discord" to "Discord", "linkedin" to "LinkedIn", "x" to "X", "facebook" to "Facebook",
+    ),
+    /** A passkey sheet that was closed: a notice, never an error. */
+    val passkeyDismissed: String = "The passkey request was cancelled. Nothing was changed; you can try again.",
+    /** A passkey the server did not take. */
+    val passkeyRefused: String = "That passkey did not sign you in. Try again, or sign in another way.",
+    /** A provider's sheet or page that was closed: a notice, never an error. */
+    val providerCancelled: String = "Sign-in was cancelled. Nothing was changed; you can try again.",
+    /** A provider sign-in the server did not take. */
+    val providerRefused: String = "We could not sign you in. Nothing was changed; start again.",
+    /** A sheet that could not be shown. */
+    val providerFailed: String = "The sign-in could not be shown. Try again.",
+    /** Sends the last step of a provider sign-in again, without another trip to the provider. */
+    val providerRetry: String = "Try again",
+    /** Another sheet of the app is still out (`flow.busy`): a notice. */
+    val sheetBusy: String = "Another sign-in window is still open. Finish or close it first.",
+    /** The first screen where no way to sign in is one this app can take here. */
+    val noWayHere: String =
+        "The ways to sign in here are ones this version of the app cannot use on this device. Update the app.",
+    /** The button that asks for a texted sign-in code. */
+    val smsCode: String = "Text me a code",
+    /** Under the title, before the code was asked for. */
+    val smsPrompt: String = "We will text a 6-digit code to this number, if you can sign in with it.",
+    /** The title of the texted sign-in code's screens. */
+    val smsTitle: String = "Check your phone",
+    /** `{destination}` is the masked number. Never "we sent". */
+    val smsSubtitle: String = "If this number can sign in, a 6-digit code is on its way to {destination}. Enter it below.",
+    /** At the first field: what was typed is no number in the international form. */
+    val numberForm: String = "Enter a phone number with its country code, starting with +.",
+    /** The link that asks for another texted sign-in code. */
+    val smsResend: String = "Text a new code",
+    /** Said once another was asked for. Never "sent". */
+    val smsResent: String = "If you can sign in with this number, a new code is on its way.",
+    /** A texted sign-in code the server did not take, at the code field. */
+    val smsCodeWrong: String = "That code did not sign you in. Check it, ask for a new one, or sign in another way.",
+)
+```
+
+### `TulaSecondStepStrings`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaStringsMore.kt`
+
+The second step of a sign-in, and an authenticator app set up inside one.
+
+```kotlin
+data class TulaSecondStepStrings(
+    /** The title of the second step. */
+    val title: String = "Two-step verification",
+    /** Under it, for an authenticator's code. */
+    val totpSubtitle: String = "Enter the 6-digit code from your authenticator app.",
+    /** The label of an authenticator's code field. */
+    val totpLabel: String = "Authentication code",
+    /** A wrong code, at its field. */
+    val codeWrong: String = "That code is incorrect.",
+    /** The link to the backup code. */
+    val useBackupCode: String = "Use a backup code",
+    /** The link to the authenticator's code. */
+    val useAuthenticator: String = "Use your authenticator app",
+    /** Under the title, for a backup code. */
+    val backupSubtitle: String = "Enter one of your backup codes. Each code works once.",
+    /** The label of the backup code's field. */
+    val backupLabel: String = "Backup code",
+    /** Under that field. */
+    val backupHint: String = "10 characters, for example abcde-fghjk",
+    /** Under that field when it is empty. */
+    val backupRequired: String = "Enter a backup code.",
+    /** Under the title, where a passkey is the open way: also where it is the only one. */
+    val passkeySubtitle: String = "Use your passkey to finish signing in.",
+    /** The button that shows the passkey sheet. */
+    val usePasskey: String = "Use your passkey",
+    /** The link to the passkey. */
+    val usePasskeyInstead: String = "Use your passkey instead",
+    /** Under the title, before a texted code was asked for. */
+    val smsSubtitle: String = "We will text a 6-digit code to the phone number on your account.",
+    /** The button that asks for it. */
+    val smsSend: String = "Text me a code",
+    /** The link to the texted code. */
+    val smsInstead: String = "Get a code by text message",
+    /** `{destination}` is the masked number of the account. */
+    val smsSent: String = "Enter the 6-digit code we texted to {destination}.",
+    /** The link that asks for another. */
+    val smsResend: String = "Text a new code",
+    /** Said once another was asked for. */
+    val smsResent: String = "A new code is on its way.",
+    /** The button that sends a second step's code. */
+    val submit: String = "Verify",
+    /** The title of the enrolment's screens. */
+    val enrolTitle: String = "Set up two-step verification",
+    /** Under it, before the setup key was asked for. */
+    val enrolRequired: String =
+        "This app requires two-step verification. Set up an authenticator app to finish signing in.",
+    /** The button that asks for the setup key. */
+    val enrolStart: String = "Set up authenticator app",
+    /** Above the QR code. */
+    val scanInstruction: String =
+        "Scan this QR code with your authenticator app, or enter the setup key by hand. " +
+            "Then enter the 6-digit code the app shows.",
+    /** What the QR code is read as. */
+    val qrLabel: String = "QR code for your authenticator app. If you cannot scan it, use the setup key.",
+    /** The label of the setup key. */
+    val secretLabel: String = "Setup key",
+    /** Under the setup key. */
+    val secretHint: String = "Keep this key private. It is shown only now.",
+    /** Copies the setup key. */
+    val copyKey: String = "Copy setup key",
+    /** The button that confirms the enrolment. */
+    val confirmSubmit: String = "Turn on",
+    /** The title of the backup codes' screen. */
+    val backupCodesTitle: String = "Save your backup codes",
+    /** Under it. */
+    val backupCodesIntro: String =
+        "Each code signs you in once if you cannot use your authenticator app. " +
+            "Keep them somewhere safe: they will not be shown again.",
+    /** What the list of codes is read as. */
+    val backupCodesList: String = "Backup codes",
+    /** Copies the backup codes. */
+    val copy: String = "Copy",
+    /** Said once something was copied. */
+    val copied: String = "Copied.",
+    /** The button that leaves the backup codes' screen. */
+    val saved: String = "I have saved these codes",
+)
+```
+
+### `TulaAccountStrings`
+
+_class_, defined in `native/android/tula-auth-ui/src/main/kotlin/dev/tula/auth/ui/TulaStringsMore.kt`
+
+The account screen.
+
+```kotlin
+data class TulaAccountStrings(
+    /** The screen's title. */
+    val title: String = "Account",
+    /** In a section whose read failed. */
+    val sectionFailed: String = "This could not be loaded.",
+    /** Reads it again. */
+    val reload: String = "Try again",
+    /** Leaves a form. */
+    val cancel: String = "Cancel",
+    /** Said when a form or a step-up was left. */
+    val nothingChanged: String = "Nothing was changed.",
+    /** The profile section's title. */
+    val profileTitle: String = "Profile",
+    /** Beside a proven address. */
+    val emailVerified: String = "Verified",
+    /** Beside an address that was not proven. */
+    val emailUnverified: String = "Not verified",
+    /** An account with no address. */
+    val noEmail: String = "No email address.",
+    /** The password section's title. */
+    val passwordTitle: String = "Password",
+    /** An account with no password. `{forgotPassword}` is the sign-in screen's link. */
+    val passwordNotSet: String =
+        "This account has no password: you sign in another way. To add one, sign out and choose " +
+            "“{forgotPassword}” on the sign-in screen. We will email you a code to set it.",
+    /** The label of the current password's field. */
+    val currentPasswordLabel: String = "Current password",
+    /** A wrong current password, at its field. */
+    val currentPasswordWrong: String = "That is not your current password.",
+    /** The button that opens, and that sends, the password change. */
+    val changePassword: String = "Update password",
+    /** Said once it was changed. */
+    val passwordChanged: String = "Your password was changed. Your other devices were signed out.",
+    /** The sessions section's title. */
+    val sessionsTitle: String = "Where you’re signed in",
+    /** Marks the session this app holds. */
+    val thisDevice: String = "This device",
+    /** Marks a session bound to a device key. Never more than that of a device (ADR 0043). */
+    val deviceBound: String = "Bound to a device key",
+    /** `{date}` is when the session was signed in. */
+    val signedInOn: String = "Signed in {date}",
+    /** `{date}` is when it was last used. */
+    val lastActive: String = "Last active {date}",
+    /** A `web` session. */
+    val clientWeb: String = "Web browser",
+    /** An `ios` session. */
+    val clientIos: String = "iPhone or iPad app",
+    /** An `android` session. */
+    val clientAndroid: String = "Android app",
+    /** A `server` session. */
+    val clientServer: String = "Server",
+    /** A session of a kind this version does not know. */
+    val unknownDevice: String = "Unknown device",
+    /** The button beside another session. */
+    val signOutDevice: String = "Sign out",
+    /** What that button is read as. `{device}` is the session's kind. */
+    val signOutDeviceLabel: String = "Sign out {device}",
+    /** Said once one was ended. */
+    val deviceSignedOut: String = "That device was signed out.",
+    /** Ends every other session. */
+    val signOutOthers: String = "Sign out of all other devices",
+    /** `{count}` is how many were ended. */
+    val othersSignedOut: String = "Signed out of {count} other devices.",
+    /** Exactly one was ended. */
+    val othersSignedOutOne: String = "Signed out of 1 other device.",
+    /** The button that signs this app out. */
+    val signOut: String = "Sign out",
+    /** A sign-out the server could not be told of: it is not a sign-out. */
+    val signOutFailed: String =
+        "We could not confirm the sign-out, so you may still be signed in on this device. Try again.",
+    /** The second step's section title. */
+    val mfaTitle: String = "Two-step verification",
+    /** No authenticator app. */
+    val mfaOff: String = "Off. Add a code from an authenticator app as a second step when you sign in.",
+    /** `{date}` is when the authenticator was confirmed. */
+    val mfaOn: String = "On since {date}.",
+    /** `{count}` backup codes are left. */
+    val codesRemaining: String = "{count} backup codes left.",
+    /** Exactly one is left. */
+    val codesRemainingOne: String = "1 backup code left.",
+    /** Starts the authenticator's setup. */
+    val turnOn: String = "Turn on",
+    /** Asks before it is turned off. */
+    val turnOff: String = "Turn off",
+    /** The question. */
+    val turnOffConfirm: String = "Turn off two-step verification? Your backup codes will stop working.",
+    /** Said once it is on. */
+    val turnedOn: String = "Two-step verification is on.",
+    /** Said once it is off. */
+    val turnedOff: String = "Two-step verification is off.",
+    /** Makes new backup codes. */
+    val regenerate: String = "New backup codes",
+    /** Above the new codes. */
+    val regenerated: String = "Your earlier backup codes no longer work.",
+    /** Where the environment requires a second step. */
+    val requiredByApp: String = "This app requires two-step verification, so it cannot be turned off.",
+    /** Where a texted code may be the second step. */
+    val smsOffer: String = "You can also get a code by text message as your second step.",
+    /** Starts it. */
+    val smsTurnOn: String = "Use text messages",
+    /** `{date}` is when it was switched on. */
+    val smsOn: String = "A code by text message is your second step since {date}.",
+    /** A texted code that is dormant beside a stronger factor. */
+    val smsNotInUse: String =
+        "It is not asked for while you have an authenticator app or a passkey. If you remove that, " +
+            "the code by text message is your second step again.",
+    /** Beside a texted code that is in use. */
+    val smsWeaker: String = "An authenticator app is safer than a text message. You can add one here.",
+    /** Asks before it is switched off. */
+    val smsTurnOff: String = "Stop using text messages",
+    /** The question. */
+    val smsTurnOffConfirm: String = "Stop using text messages as your second step?",
+    /** Said once it is on. */
+    val smsTurnedOn: String = "A code by text message is now your second step.",
+    /** Said once it is off. */
+    val smsTurnedOff: String = "Text messages are no longer your second step.",
+    /** `{destination}` is the masked number of the account. */
+    val smsFactorSent: String = "Enter the 6-digit code we texted to {destination}.",
+    /** The phone section's title. */
+    val phoneTitle: String = "Phone number",
+    /** An account with no number. */
+    val phoneNone: String = "No phone number.",
+    /** Beside the account's number. */
+    val phoneVerified: String = "Verified",
+    /** Opens the form for a number. */
+    val phoneAdd: String = "Add a phone number",
+    /** Opens it where the account has one. */
+    val phoneChange: String = "Change phone number",
+    /** Asks before the number is removed. */
+    val phoneRemove: String = "Remove phone number",
+    /** The question. */
+    val phoneRemoveConfirm: String = "Remove your phone number from this account?",
+    /** The label of the number's field. */
+    val phoneNumberLabel: String = "Phone number",
+    /** Under that field. */
+    val phoneNumberHint: String = "Include the country code, for example +1 415 555 0142.",
+    /** The button that texts the code. */
+    val phoneSend: String = "Send code",
+    /** `{destination}` is the masked number. */
+    val phoneCodeSent: String = "Enter the 6-digit code we texted to {destination}.",
+    /** Back to the number's form. */
+    val phoneDifferent: String = "Use a different number",
+    /** Said once the number is the account's. */
+    val phoneAdded: String = "Your phone number was added.",
+    /** Said once it is gone. */
+    val phoneRemoved: String = "Your phone number was removed.",
+    /** Where this environment sends no text messages. */
+    val phoneUnavailable: String = "Phone numbers cannot be added here.",
+    /** The passkeys section's title. */
+    val passkeysTitle: String = "Passkeys",
+    /** Under it. */
+    val passkeysIntro: String =
+        "A passkey signs you in with your fingerprint, face or screen lock instead of a password.",
+    /** No passkey. */
+    val passkeysEmpty: String = "You have no passkeys yet.",
+    /** Shows the sheet that creates one. */
+    val passkeyAdd: String = "Add a passkey",
+    /** Said once one was added. */
+    val passkeyAdded: String = "Your passkey was added.",
+    /** Before a passkey that takes the second step over from a texted code. */
+    val replacesTextedCode: String =
+        "Once you add a passkey, it replaces the code by text message as your second step. A passkey has " +
+            "no backup codes: if you lose it, only an administrator of this app can let you back in.",
+    /** While the factors are being read. */
+    val addChecking: String = "Checking your second step before a passkey can be added…",
+    /** The factors could not be read. */
+    val addUnchecked: String = "Your second step could not be checked, so a passkey cannot be added right now.",
+    /** The app gave the client no passkey sheet. */
+    val addUnsupported: String = "This app cannot create passkeys here. You can still remove the ones you have.",
+    /** A passkey cannot be renamed in this version (the client has no call for it). */
+    val renameUnavailable: String = "Passkeys cannot be renamed in this version of the app.",
+    /** A passkey sheet that was closed: a notice. */
+    val passkeyDismissed: String = "The passkey request was cancelled. Nothing was changed; you can try again.",
+    /** Another sheet of the app is still out: a notice. */
+    val sheetBusy: String = "Another window of this app is still open. Finish or close it first.",
+    /** A passkey the password manager keeps on several devices. */
+    val passkeySynced: String = "Synced across your devices",
+    /** A passkey of one device. */
+    val passkeySingleDevice: String = "On one device only",
+    /** `{date}` is when it was added. */
+    val passkeyCreated: String = "Added {date}",
+    /** `{date}` is when it was last used. */
+    val passkeyLastUsed: String = "Last used {date}",
+    /** It was never used. */
+    val passkeyNeverUsed: String = "Not used yet",
+    /** The button beside a passkey. */
+    val remove: String = "Remove",
+    /** What that button is read as. `{name}` is the passkey's name. */
+    val removeLabel: String = "Remove {name}",
+    /** The question. `{name}` is the passkey's name. */
+    val removeConfirm: String = "Remove “{name}”? You will no longer be able to sign in with it.",
+    /** The button that removes it. */
+    val removeConfirmButton: String = "Remove passkey",
+    /** Said once it is gone. */
+    val passkeyRemoved: String = "The passkey was removed.",
+    /** The step-up's title. */
+    val stepUpTitle: String = "Confirm it is you",
+    /** Under it, for the password. */
+    val stepUpPassword: String = "Enter your password to continue.",
+    /** A wrong password, at its field. */
+    val passwordWrong: String = "That password is incorrect.",
+    /** For an authenticator's code. */
+    val stepUpTotp: String = "Enter the 6-digit code from your authenticator app to continue.",
+    /** For a backup code. */
+    val stepUpBackup: String = "Enter one of your backup codes to continue. Each code works once.",
+    /** Before an emailed code was asked for. */
+    val stepUpEmailPrompt: String = "To continue, we will email you a 6-digit code.",
+    /** Asks for it. */
+    val stepUpEmailSend: String = "Email me a code",
+    /** `{destination}` is the masked address. */
+    val stepUpEmailSent: String = "Enter the 6-digit code we sent to {destination}.",
+    /** Before a texted code was asked for. */
+    val stepUpSmsPrompt: String = "To continue, we will text a 6-digit code to the phone number on your account.",
+    /** Asks for it. */
+    val stepUpSmsSend: String = "Text me a code",
+    /** `{destination}` is the masked number. */
+    val stepUpSmsSent: String = "Enter the 6-digit code we texted to {destination}.",
+    /** For a passkey. */
+    val stepUpPasskey: String = "Use your passkey to continue.",
+    /** A passkey the server did not take. */
+    val stepUpPasskeyRefused: String = "That passkey was not accepted. Try again, or confirm it is you another way.",
+    /** The button that sends the proof. */
+    val stepUpSubmit: String = "Continue",
+    /** The link to the password. */
+    val passwordInstead: String = "Use your password instead",
+    /** The link to an emailed code. */
+    val emailInstead: String = "Email me a code instead",
+    /** The link to a texted code. */
+    val smsInstead: String = "Text me a code instead",
+    /** No way this app can take: the way out. */
+    val stepUpNoMethod: String = "For your security, sign out and sign in again to continue.",
+    /** After a step-up whose form lost what was typed. */
+    val stepUpDone: String = "Confirmed. Enter it again to continue.",
+)
 ```
 
 ### `TulaThemeValueType`
@@ -4272,17 +6562,95 @@ fun of(theme: TulaTheme): TulaResolvedTheme
 
 `import dev.tula.auth.compose.*`, from `native/android/tula-auth-compose/src/main/kotlin`.
 
+### `TulaAccount`
+
+_fun_, defined in `native/android/tula-auth-compose/src/main/kotlin/dev/tula/auth/compose/TulaAccount.kt`
+
+The signed-in user's account: the profile, the password, the phone number, where they are
+signed in, two-step verification and passkeys, with the forms that change them and
+"Confirm it is you" where the server asks for a recent authentication.
+
+```kotlin
+TulaAccount(client, onSignedOut = { /* show the sign-in screens */ })
+```
+
+The composable makes its own [TulaAccountModel] and keeps it with plain `remember`: nothing
+typed, no setup key and no backup code is put in `rememberSaveable`, a `SavedStateHandle` or
+a `Bundle`, and **when it leaves the composition every form is emptied**. A setup key, its QR
+code and backup codes are there only while their form is open, and are copied only on a
+press, marked as sensitive ([tulaSensitiveCopy]).
+
+**A sign-out the server could not be told of is not a sign-out**: the screen says the session
+may still be active and offers to sign out again, and [onSignedOut] is not called. The
+client is signed out locally by then, so an app that swaps this screen for its sign-in screen
+on the client's state alone would hide that: keep this screen until [onSignedOut].
+
+A passkey is added and used through the client's passkey sheet; where the client was given
+none, that is said in words and no button is drawn. A passkey cannot be renamed here: the
+client has no call for it, and the screen says so.
+
+@param client The app's client, signed in.
+@param modifier The modifier of the whole screen.
+@param strings Every string the screen shows.
+@param theme The theme. A value that is refused is replaced by the default's.
+@param slots The parts of a screen the app draws itself.
+@param onSignedOut Called once, on the main thread, for a sign-out the server was told of.
+
+```kotlin
+@Composable
+fun TulaAccount(
+    client: TulaClient,
+    modifier: Modifier = Modifier,
+    strings: TulaStrings = TulaStrings(),
+    theme: TulaTheme = TulaThemeDefaults.theme,
+    slots: TulaAuthSlots = TulaAuthSlots(),
+    onSignedOut: (() -> Unit)? = null,
+)
+```
+
+### `TulaAccount`
+
+_fun_, defined in `native/android/tula-auth-compose/src/main/kotlin/dev/tula/auth/compose/TulaAccount.kt`
+
+The same screen over a model the app keeps (in a `ViewModel` without a `SavedStateHandle`).
+**The owner closes the model** ([TulaAccountModel.close]) when the screen is left for good.
+
+@param model The model. Its `onSignedOut` is called on the thread the model finished on, and
+  its `copy` is the app's to give ([tulaSensitiveCopy]).
+@param modifier The modifier of the whole screen.
+@param theme The theme.
+@param slots The parts of a screen the app draws itself.
+
+```kotlin
+@Composable
+fun TulaAccount(
+    model: TulaAccountModel,
+    modifier: Modifier = Modifier,
+    theme: TulaTheme = TulaThemeDefaults.theme,
+    slots: TulaAuthSlots = TulaAuthSlots(),
+)
+```
+
 ### `TulaAuth`
 
 _fun_, defined in `native/android/tula-auth-compose/src/main/kotlin/dev/tula/auth/compose/TulaAuth.kt`
 
-Sign-in, sign-up, email verification and password reset: one screen per step the server
-answers, drawn from the app's client.
+Sign-in, sign-up, email verification, the second step, the enrolment of an authenticator
+inside a sign-in and password reset: one screen per step the server answers, drawn from the
+app's client. A passkey, Google's account chooser and a provider's page are offered where the
+environment has them on **and the client was given the sheet for them**
+([dev.tula.auth.TulaClient.sheets]): a way this client cannot take is never drawn.
 
 ```kotlin
-val state by client.state.collectAsState()
-if (state is AuthState.SignedIn) Home() else TulaAuth(client, onSignedIn = { /* navigate */ })
+var signingIn by remember { mutableStateOf(true) }
+if (signingIn) TulaAuth(client, onSignedIn = { signingIn = false }) else Home()
 ```
+
+**Keep the screens until [onSignedIn], not until the client says it is signed in.** Where an
+authenticator app is set up inside a sign-in, the client is signed in as soon as the code was
+taken, and the backup codes are still to be shown, once: an app that swaps this composable
+for its own screens on `client.state` alone takes it away before they were, and they are not
+shown again. [onSignedIn] is called when the person said they saved them.
 
 The composable makes its own [TulaAuthModel] and keeps it with plain `remember`: nothing that
 is typed is put in `rememberSaveable`, a `SavedStateHandle` or a `Bundle`. **When it leaves
@@ -4303,6 +6671,8 @@ set on its activity; the screens do not set it.
 @param theme The theme: the generated defaults with what the app, or a tenant, changed. A
   value that is refused is replaced by the default's and never drawn.
 @param slots The parts of a screen the app draws itself.
+@param redirectUrl Where a provider's page returns to: a redirect URL the environment lists
+  and the app's manifest claims. Without one no provider that needs a browser is offered.
 @param onSignedIn Called once for each flow that completed, on the main thread: also when
   the session could not be stored, and also after the screen has left the composition if the
   flow had already completed by then.
@@ -4316,6 +6686,7 @@ fun TulaAuth(
     strings: TulaStrings = TulaStrings(),
     theme: TulaTheme = TulaThemeDefaults.theme,
     slots: TulaAuthSlots = TulaAuthSlots(),
+    redirectUrl: String? = null,
     onSignedIn: (() -> Unit)? = null,
 )
 ```
@@ -4770,6 +7141,26 @@ The typeface of codes.
 
 ```kotlin
 val fontFamilyMono: FontFamily
+```
+
+### `tulaSensitiveCopy`
+
+_fun_, defined in `native/android/tula-auth-compose/src/main/kotlin/dev/tula/auth/compose/TulaParts.kt`
+
+What puts a setup key or backup codes on the clipboard for the screens: as text marked
+sensitive, so that Android 13 and later do not show it in the clipboard's preview.
+
+It is called only when a person presses "Copy". **Android gives an app no way to make a clip
+expire or to take it back**: what was copied stays until something else is copied (some
+versions clear a clip by themselves after a time), and before Android 13 the mark is not read.
+The screens say "Copied." and nothing more.
+
+@param context A context.
+@return The function a [dev.tula.auth.ui.TulaAuthModel] or a
+  [dev.tula.auth.ui.TulaAccountModel] the app keeps is given as `copy`.
+
+```kotlin
+fun tulaSensitiveCopy(context: Context): (String) -> Unit
 ```
 
 ## `tula-auth-android`

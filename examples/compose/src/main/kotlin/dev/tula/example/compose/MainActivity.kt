@@ -1,5 +1,6 @@
 package dev.tula.example.compose
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
@@ -24,11 +25,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,12 +52,20 @@ import androidx.core.content.edit
 import dev.tula.auth.AuthState
 import dev.tula.auth.TulaClient
 import dev.tula.auth.TulaError
+import dev.tula.auth.android.CredentialManagerGoogleSheet
+import dev.tula.auth.android.CredentialManagerPasskeySheet
 import dev.tula.auth.android.KeystoreTokenStorage
+import dev.tula.auth.compose.TulaAccount
 import dev.tula.auth.compose.TulaAuth
-import kotlinx.coroutines.launch
+import dev.tula.auth.compose.tulaSensitiveCopy
+import dev.tula.auth.ui.TulaAccountModel
 
-/** Where the API is, and the environment's publishable key: all the app has to be told. */
-data class ExampleConfiguration(val apiUrl: String, val publishableKey: String) {
+/**
+ * Where the API is, and the environment's publishable key: all the app has to be told. With
+ * the Google OAuth client id of the environment's provider, Google's account chooser is
+ * offered too.
+ */
+data class ExampleConfiguration(val apiUrl: String, val publishableKey: String, val googleClientId: String? = null) {
     /** Reads and keeps the configuration. Neither value is a secret; neither is in the repository. */
     companion object {
         /** The intent extra that names the API's address (`adb shell am start -e tula_api_url …`). */
@@ -64,6 +73,9 @@ data class ExampleConfiguration(val apiUrl: String, val publishableKey: String) 
 
         /** The intent extra that holds the publishable key. */
         const val EXTRA_PUBLISHABLE_KEY = "tula_publishable_key"
+
+        /** The intent extra that holds the Google OAuth client id (not a secret), for the account chooser. */
+        const val EXTRA_GOOGLE_CLIENT_ID = "tula_google_client_id"
 
         private const val PREFERENCES = "tula-example"
 
@@ -78,7 +90,8 @@ data class ExampleConfiguration(val apiUrl: String, val publishableKey: String) 
             if (!debuggable) return null
             val url = intent.getStringExtra(EXTRA_API_URL).orEmpty()
             val key = intent.getStringExtra(EXTRA_PUBLISHABLE_KEY).orEmpty()
-            return if (url.isEmpty() || key.isEmpty()) null else ExampleConfiguration(url, key)
+            val google = intent.getStringExtra(EXTRA_GOOGLE_CLIENT_ID)?.takeIf { it.isNotEmpty() }
+            return if (url.isEmpty() || key.isEmpty()) null else ExampleConfiguration(url, key, google)
         }
 
         /** What was typed on the setup screen on an earlier run. */
@@ -129,7 +142,14 @@ fun ExampleApp(told: ExampleConfiguration?) {
         val client = remember(current) {
             current?.let {
                 try {
-                    TulaClient(it.publishableKey, it.apiUrl, KeystoreTokenStorage(context))
+                    // The sheets are asked for the activity at each use, so that none is held.
+                    val activity = { context as? Activity }
+                    TulaClient(
+                        it.publishableKey, it.apiUrl, KeystoreTokenStorage(context),
+                        passkeys = ExampleSheets.passkeys ?: CredentialManagerPasskeySheet(activity),
+                        google = ExampleSheets.google ?: it.googleClientId?.let { id -> CredentialManagerGoogleSheet(id, activity) },
+                        browser = ExampleSheets.browser,
+                    )
                 } catch (error: IllegalArgumentException) {
                     refusal = error.message
                     null
@@ -152,12 +172,19 @@ fun ExampleApp(told: ExampleConfiguration?) {
     }
 }
 
-/** `TulaAuth` while nobody is signed in; who is, and "Sign out", once somebody is. */
+/** `TulaAuth` while nobody is signed in; who is, and `TulaAccount`, once somebody is. */
 @Composable
 private fun SessionScreen(client: TulaClient, forget: () -> Unit) {
     val state by client.state.collectAsState()
-    val scope = rememberCoroutineScope()
     var problem by remember { mutableStateOf<String?>(null) }
+    // A sign-out the server could not be told of signs the client out locally all the same.
+    // The account screen says so and offers it again, so it stays until that went through.
+    var signOutFailed by remember { mutableStateOf(false) }
+    // The sign-in screens stay until they say the sign-in is done (`onSignedIn`). The client is
+    // signed in a moment earlier than that where an authenticator was set up inside the sign-in:
+    // its backup codes are still to be shown, once, and an app that left for its own screens on
+    // the client's state alone would never show them.
+    var signingIn by remember { mutableStateOf(false) }
     LaunchedEffect(client) {
         try {
             client.load()
@@ -166,37 +193,47 @@ private fun SessionScreen(client: TulaClient, forget: () -> Unit) {
             problem = error.message
         }
     }
-    when (val now = state) {
-        AuthState.Loading -> Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    val now = state
+    when {
+        now is AuthState.Loading -> Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             BasicText("Loading…", Modifier.testTag("example.loading"), style = BODY)
             problem?.let { BasicText(it, Modifier.semantics { liveRegion = LiveRegionMode.Polite }, style = BODY) }
             ExampleButton("Use another API", "example.forget", forget)
         }
-        is AuthState.SignedIn -> Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            BasicText(
-                "Signed in",
-                Modifier.testTag("example.signedIn").semantics { heading() },
-                style = BODY.copy(fontSize = 24.sp, fontWeight = FontWeight.SemiBold),
-            )
-            // An account may have no email address (a first sign-in with X or Facebook).
-            BasicText(now.user?.email ?: "An account with no email address", Modifier.testTag("example.user"), style = BODY)
-            problem?.let { BasicText(it, Modifier.semantics { liveRegion = LiveRegionMode.Polite }, style = BODY) }
-            ExampleButton("Sign out", "example.signOut") {
-                scope.launch {
-                    problem = try {
-                        client.session.signOut()
-                        null
-                    } catch (error: TulaError) {
-                        // A failed sign-out is not a sign-out: the session may still be live.
-                        "The server could not be told. This device is signed out; try again to end the session. (${error.code})"
-                    }
+        (now is AuthState.SignedIn && !signingIn) || signOutFailed -> Column(Modifier.fillMaxSize()) {
+            if (now is AuthState.SignedIn) {
+                Column(Modifier.padding(start = 24.dp, top = 24.dp, end = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    BasicText(
+                        "Signed in",
+                        Modifier.testTag("example.signedIn").semantics { heading() },
+                        style = BODY.copy(fontSize = 24.sp, fontWeight = FontWeight.SemiBold),
+                    )
+                    // An account may have no email address (a first sign-in with X or Facebook).
+                    BasicText(now.user?.email ?: "An account with no email address", Modifier.testTag("example.user"), style = BODY)
                 }
             }
+            AccountScreen(client, Modifier.weight(1f)) { signOutFailed = it }
         }
-        // Where the app goes afterwards is this callback and nothing else. The example needs
-        // none: the client's state changes, and the branch above is drawn.
-        is AuthState.SignedOut -> TulaAuth(client, onSignedIn = {})
+        // Where the app goes afterwards is this callback and nothing else.
+        else -> {
+            SideEffect { signingIn = true }
+            TulaAuth(client, redirectUrl = ExampleSheets.redirectUrl, onSignedIn = { signingIn = false })
+        }
     }
+}
+
+/**
+ * The account screen over a model the example keeps, so that it can tell a sign-out that failed
+ * from one that went through.
+ */
+@Composable
+private fun AccountScreen(client: TulaClient, modifier: Modifier, failed: (Boolean) -> Unit) {
+    val context = LocalContext.current
+    val model = remember(client) { TulaAccountModel(client, copy = tulaSensitiveCopy(context)) }
+    DisposableEffect(model) { onDispose { model.close() } }
+    val account by model.state.collectAsState()
+    LaunchedEffect(account.signOutFailed) { failed(account.signOutFailed) }
+    TulaAccount(model, modifier)
 }
 
 /** Asks where the API is, when the app was not told. */

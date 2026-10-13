@@ -14,6 +14,9 @@ import dev.tula.auth.generated.PasskeyCreationOptions
 import dev.tula.auth.generated.PasskeyList
 import dev.tula.auth.generated.PasskeyRegisterRequest
 import dev.tula.auth.generated.PasskeyRequestOptions
+import dev.tula.auth.generated.PhoneCodeSent
+import dev.tula.auth.generated.PhoneNumberRequest
+import dev.tula.auth.generated.PhoneNumberVerifyRequest
 import dev.tula.auth.generated.SmsFactorCode
 import dev.tula.auth.generated.SmsFactorConfirmRequest
 import dev.tula.auth.generated.StepUpEmailCode
@@ -358,6 +361,69 @@ class TulaEmailAddress internal constructor(private val context: FlowContext) {
     )
 
     override fun toString(): String = "TulaEmailAddress"
+}
+
+/**
+ * The signed-in account's phone number (ADR 0037): one optional number, proven with a texted
+ * code. It is contact data, and a way to sign in or a second step only where the
+ * environment switched those on.
+ *
+ * All three calls need a recent authentication (`auth.step_up_required`).
+ */
+class TulaPhone internal constructor(private val context: FlowContext) {
+    /**
+     * Text a code to a number to add to the account. Nothing is stored on the account until
+     * [verify]: the number waits on the code.
+     *
+     * @param phoneNumber The number with its country code, such as `+14155550142`. Spaces and
+     *   punctuation a person types are the server's to take out.
+     * @return The masked number and when the code stops working. Never the code.
+     * @throws TulaError `phone.invalid` for what is not a phone number, `sms.disabled` where
+     *   the environment sends no text messages, `sms.country_not_allowed`, `sms.unavailable`,
+     *   `rate_limited`, `auth.step_up_required`.
+     */
+    suspend fun request(phoneNumber: String): PhoneCodeSent {
+        val sent = context.transport.decode(
+            PhoneCodeSent.serializer(),
+            context.session.authorized(
+                TulaOperations.requestPhoneCode,
+                CallInput(body = encode(PhoneNumberRequest.serializer(), PhoneNumberRequest(phoneNumber))),
+            ),
+        )
+        if (sent.destination.isEmpty() || sent.expiresAt.isEmpty()) {
+            throw context.transport.invalid()
+        }
+        return sent
+    }
+
+    /**
+     * Confirm the number [request] asked for with the texted code. The account then has it,
+     * proven, and the client's state shows the user with it.
+     *
+     * @param code The texted code, as the user typed it.
+     * @return The user after the change.
+     * @throws TulaError `verification.invalid_code`, `verification.expired`, `sms.disabled`,
+     *   `sms.country_not_allowed`, `rate_limited`, `auth.step_up_required`.
+     */
+    suspend fun verify(code: String): CurrentUser = context.session.userFrom(
+        TulaOperations.verifyPhoneNumber,
+        CallInput(body = encode(PhoneNumberVerifyRequest.serializer(), PhoneNumberVerifyRequest(code))),
+    )
+
+    /**
+     * Remove the account's phone number. It needs no text message, so it works where text
+     * messages are off, and for an account that has no number. A texted second step that
+     * rested on the number goes with it. The client's state shows the user without it.
+     *
+     * @throws TulaError `auth.step_up_required`.
+     */
+    suspend fun remove() {
+        context.session.changeUser(TulaOperations.removePhoneNumber) {
+            it.copy(phoneNumber = null, phoneNumberVerifiedAt = null)
+        }
+    }
+
+    override fun toString(): String = "TulaPhone"
 }
 
 /** The provider accounts the signed-in user signs in with (ADR 0026). */

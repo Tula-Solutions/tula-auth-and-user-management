@@ -3,11 +3,13 @@
 The Kotlin SDK. Today: a client with no UI (flows, a session, the second step, passkeys,
 Google and the other providers, a device key), its Android adapters (the Keystore-backed
 token storage, Credential Manager's sheets, a Custom Tab and a Keystore device key), and
-Compose screens for a sign-in, a sign-up and a password reset (they draw no second step,
-passkey, provider, texted code or account screen yet: TULA-61). How to use it is in
+Compose screens for every step of a sign-in, a sign-up and a password reset (the second
+step, a passkey, Google and the other providers and a texted code among them) and for the
+signed-in user's account. How to use it is in
 [docs/kotlin.md](../../docs/kotlin.md); why it is built this way is
 [ADR 0054](../../docs/adr/0054-kotlin-client.md) and, for the screens,
-[ADR 0061](../../docs/adr/0061-compose-screens.md).
+[ADR 0061](../../docs/adr/0061-compose-screens.md) and
+[ADR 0062](../../docs/adr/0062-compose-second-step-and-account.md).
 
 **The screens ran on one emulator; nothing ran on a device, and nothing is published.** The
 tests of the client and of what the screens decide run on a JVM; the Android modules are
@@ -16,7 +18,8 @@ emulator by the example's UI tests, by hand. The other adapters have never run: 
 sheet, no Google sheet and no browser has been opened by this SDK. What was not verified:
 [the client](../../docs/plans/phase-2-unverified.md#step-215-the-kotlin-client-tula-38-adr-0054),
 [passkeys, providers and the device key](../../docs/plans/phase-2-unverified.md#step-215-the-kotlin-client-passkeys-providers-and-a-device-key-tula-57-adr-0054),
-[the screens](../../docs/plans/phase-2-unverified.md#step-215-the-compose-screens-tula-50-adr-0061).
+[the screens](../../docs/plans/phase-2-unverified.md#step-215-the-compose-screens-tula-50-adr-0061),
+[the second step, the other ways and the account](../../docs/plans/phase-2-unverified.md#step-215-the-compose-screens-the-second-step-the-other-ways-and-the-account-tula-61-adr-0062).
 
 ## Layout
 
@@ -27,8 +30,8 @@ sheet, no Google sheet and no browser has been opened by this SDK. What was not 
 | `tula-auth/src/test/kotlin/dev/tula/auth/` | Unit tests, on a scripted HTTP engine and a fake clock. |
 | `tula-auth/src/test/kotlin/dev/tula/auth/journeys/` | The journeys: the client against the real API, and the guard that holds them to `conformance/client-journeys.json`. |
 | `tula-auth-android/` | `KeystoreTokenStorage`, `CredentialManagerPasskeySheet`, `CredentialManagerGoogleSheet`, `CustomTabsBrowserSession`, `KeystoreDeviceKeyStore`: one thin class per interface of the client. Part of the build only where an Android SDK is known (`ANDROID_HOME`, `ANDROID_SDK_ROOT`, or `sdk.dir` in `local.properties`). |
-| `tula-auth-ui/` | What the screens decide, with no Compose and nothing of Android: `TulaAuthModel` (which screen, what the fields hold, where a problem is said), `TulaAuthContent` (what every screen offers, as data), `TulaStrings` (the one table of strings), `TulaThemeValues` (the contract's theme grammar and the conversion). Built and tested everywhere, like `tula-auth`. |
-| `tula-auth-compose/` | What draws them: `TulaAuth`, the slots, `TulaComposeTheme`. An Android library on Compose's `ui` and `foundation`; part of the build only where an Android SDK is known. It decides nothing. |
+| `tula-auth-ui/` | What the screens decide, with no Compose and nothing of Android: `TulaAuthModel` and `TulaAccountModel` (which screen or form, what the fields hold, where a problem is said), `TulaAuthContent` and `TulaAccountContent` (what every screen offers, as data), `TulaStrings` (the one table of strings), `TulaThemeValues` (the contract's theme grammar and the conversion), `TulaQr` (the QR code of an authenticator's setup, held to `packages/react/src/qr` by a shared corpus). Built and tested everywhere, like `tula-auth`. |
+| `tula-auth-compose/` | What draws them: `TulaAuth`, `TulaAccount`, the slots, `TulaComposeTheme`, `tulaSensitiveCopy`. An Android library on Compose's `ui` and `foundation`; part of the build only where an Android SDK is known. It decides nothing. |
 | `../../examples/compose/` | The example app (`:compose-example`) and its UI tests: a module of this build that lives under `examples/`. See its [README](../../examples/compose/README.md). |
 | `fixture/ui-tests.ts` | Runs those UI tests on an emulator or a device: starts the API, forwards its port with `adb reverse`, runs Gradle, ends what it started. By hand; in no workflow. |
 | `gradle/libs.versions.toml` | Every version the build uses, pinned exactly. |

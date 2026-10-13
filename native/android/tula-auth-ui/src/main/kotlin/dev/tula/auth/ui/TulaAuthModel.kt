@@ -6,12 +6,16 @@ import dev.tula.auth.CodeStrategy
 import dev.tula.auth.Flow
 import dev.tula.auth.FlowScreen
 import dev.tula.auth.PasswordResetFlow
+import dev.tula.auth.ProviderOutcome
+import dev.tula.auth.ProviderRefusal
 import dev.tula.auth.SignInFlow
 import dev.tula.auth.SignUpFlow
+import dev.tula.auth.TulaCeremony
 import dev.tula.auth.TulaClient
 import dev.tula.auth.TulaError
 import dev.tula.auth.flowScreen
 import dev.tula.auth.generated.FlowStep
+import dev.tula.auth.generated.OAuthProvider
 import dev.tula.auth.generated.SignUpPasswordMode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -40,6 +44,50 @@ enum class TulaAuthField {
 
     /** The new password of a reset or of an expired password. */
     NEW_PASSWORD,
+
+    /** A backup code of the second step. Emptied as it is sent. */
+    BACKUP_CODE,
+}
+
+/** A way to take the second step. The order is the order they are offered in. */
+enum class TulaSecondWay(
+    /** The method's name in the API. */
+    val rawValue: String,
+) {
+    /** A code from an authenticator app. */
+    TOTP("totp"),
+
+    /** A passkey, through the client's passkey sheet. */
+    PASSKEY("passkey"),
+
+    /** A texted code: asked for with a button, never by arriving. */
+    TEXTED_CODE("sms_code"),
+
+    /** A backup code. */
+    BACKUP_CODE("backup_code"),
+}
+
+/** A way to sign in that needs no address typed first, as the start of a sign-in offers it. */
+sealed class TulaAuthWay {
+    /** A passkey, through the client's passkey sheet. */
+    data object Passkey : TulaAuthWay()
+
+    /** A provider: through its own sheet where the client has one, else through the browser. */
+    data class Provider(val provider: OAuthProvider) : TulaAuthWay()
+}
+
+/**
+ * An authenticator's setup key and the address a QR code is drawn from. Held only while the
+ * setup screen is open; it prints as its type's name.
+ */
+class TulaAuthSetup internal constructor(
+    /** The setup key, for typing into an authenticator app. */
+    val key: String,
+    /** The `otpauth://` address a QR code encodes. It holds the key. */
+    val uri: String,
+) {
+    /** The type's name: the key is never printed. */
+    override fun toString(): String = "TulaAuthSetup"
 }
 
 /**
@@ -80,6 +128,38 @@ sealed class TulaAuthScreen {
     /** A sign-in whose password has expired: ask for a new one. */
     data object ExpiredPassword : TulaAuthScreen()
 
+    /**
+     * A phone number was typed and the step offers a texted code: offer to text it. Nothing is
+     * texted by arriving here. [unavailable]: the server said texted codes are off, so the
+     * button is gone and the sentence stays.
+     */
+    data class TextedCodeOffer(val unavailable: Boolean = false) : TulaAuthScreen()
+
+    /** Ask for the texted code that signs in. [destination] is the masked number. */
+    data class TextedCode(val destination: String) : TulaAuthScreen()
+
+    /**
+     * The second step. [way] is the one that is open, [others] the ones the step also offers
+     * and this client can take, [sent] the masked number a texted code went to (the code field
+     * of a texted code is drawn only then), [unavailable] that the server said texted codes are
+     * off.
+     */
+    data class SecondFactor(
+        val way: TulaSecondWay,
+        val others: List<TulaSecondWay> = emptyList(),
+        val sent: String? = null,
+        val unavailable: Boolean = false,
+    ) : TulaAuthScreen()
+
+    /** The environment requires a second step and the account has none: offer to set one up. */
+    data object EnrolmentStart : TulaAuthScreen()
+
+    /** The setup key and its QR code, and the field for the first code. */
+    data object TotpSetup : TulaAuthScreen()
+
+    /** The backup codes of an enrolment, shown once. */
+    data object BackupCodes : TulaAuthScreen()
+
     /** The flow is over and the client is signed in. */
     data object SignedIn : TulaAuthScreen()
 
@@ -98,7 +178,14 @@ sealed class TulaAuthScreen {
             is EmailCode, is EmailVerification -> listOf(TulaAuthField.CODE)
             is NewPassword -> listOf(TulaAuthField.CODE, TulaAuthField.NEW_PASSWORD)
             ExpiredPassword -> listOf(TulaAuthField.NEW_PASSWORD)
-            EmailCodeOffer, SignedIn, is NotSupported -> emptyList()
+            is TextedCode, TotpSetup -> listOf(TulaAuthField.CODE)
+            is SecondFactor -> when (way) {
+                TulaSecondWay.TOTP -> listOf(TulaAuthField.CODE)
+                TulaSecondWay.TEXTED_CODE -> if (sent == null) emptyList() else listOf(TulaAuthField.CODE)
+                TulaSecondWay.BACKUP_CODE -> listOf(TulaAuthField.BACKUP_CODE)
+                TulaSecondWay.PASSKEY -> emptyList()
+            }
+            EmailCodeOffer, is TextedCodeOffer, EnrolmentStart, BackupCodes, SignedIn, is NotSupported -> emptyList()
         }
 }
 
@@ -147,6 +234,29 @@ data class TulaAuthState(
     val passwordOptional: Boolean = false,
     /** The secret fields whose text is drawn in the clear ("show password"). */
     val revealed: Set<TulaAuthField> = emptySet(),
+    /** The backup code field. Emptied as it is sent and when its screen is left. */
+    val backupCode: String = "",
+    /**
+     * Something that is neither a problem nor a success, in words: a sheet that was closed, a
+     * sheet that is still open. Drawn quietly, never as an error.
+     */
+    val notice: String? = null,
+    /**
+     * The ways to sign in without typing an address first. Empty until
+     * [TulaAuthModel.loadConfig] has read which are on, so that none is drawn and then taken
+     * away: only a way this client can take on this device is listed.
+     */
+    val ways: List<TulaAuthWay> = emptyList(),
+    /** Whether the environment has a way to sign in that starts from what is typed. */
+    val canIdentify: Boolean = true,
+    /** Whether a phone number can be typed where the address is (a texted sign-in code is on). */
+    val phoneSignIn: Boolean = false,
+    /** An authenticator's setup key, only while the setup screen is open. */
+    val setup: TulaAuthSetup? = null,
+    /** The backup codes of an enrolment, only while their screen is open. */
+    val backupCodes: List<String> = emptyList(),
+    /** Whether a provider sign-in whose exchange got no answer can be tried again. */
+    val canRetryProvider: Boolean = false,
 ) {
     /** The type's name: what the fields hold is never printed. */
     override fun toString(): String = "TulaAuthState"
@@ -162,6 +272,7 @@ data class TulaAuthState(
         TulaAuthField.PASSWORD -> password
         TulaAuthField.CODE -> code
         TulaAuthField.NEW_PASSWORD -> newPassword
+        TulaAuthField.BACKUP_CODE -> backupCode
     }
 }
 
@@ -196,6 +307,11 @@ data class TulaAuthState(
  * @param onSignedIn Called once for each flow that completed, when the client is signed in:
  *   also when the flow's screen was left or closed meanwhile (so it can be called after
  *   [close]), and also when the session could not be stored.
+ * @param redirectUrl The app's redirect URL for a provider sign-in through the browser: one of
+ *   the environment's allowed redirect URLs that opens this app. Without it a provider is
+ *   offered only where the client has that provider's own sheet.
+ * @param copy Puts a text on the clipboard, marked as sensitive. Called only when a person
+ *   presses "Copy": the model never copies by itself. The screens pass the platform's.
  */
 class TulaAuthModel(
     private val client: TulaClient,
@@ -203,6 +319,8 @@ class TulaAuthModel(
     strings: TulaStrings = TulaStrings(),
     private val announce: (String) -> Unit = {},
     private val onSignedIn: (() -> Unit)? = null,
+    private val redirectUrl: String? = null,
+    private val copy: (String) -> Unit = {},
 ) {
     private val lock = Any()
 
@@ -220,6 +338,15 @@ class TulaAuthModel(
 
     /** Grows whenever a flow is left: an answer asked for under an older number is dropped. */
     private var generation = 0
+
+    /**
+     * The backup codes are on the screen of a flow that completed: the app is told it is signed
+     * in when that screen is left, by "I have saved these codes" or by closing.
+     */
+    private var owesArrival = false
+
+    /** The session of the flow whose backup codes are shown could not be stored. */
+    private var unsaved = false
 
     /** What is to be said or told once the lock is let go. */
     private val effects = ArrayList<() -> Unit>()
@@ -260,8 +387,10 @@ class TulaAuthModel(
         return result
     }
 
-    private fun contentNow(): TulaAuthContent =
-        TulaAuthContent.of(s.screen, words, s.appName, s.passwordOptional, s.email)
+    private fun contentNow(): TulaAuthContent = TulaAuthContent.of(
+        s.screen, words, s.appName, s.passwordOptional, s.email,
+        TulaAuthSituation(s.ways, s.canIdentify, s.phoneSignIn, s.canRetryProvider, s.setup, s.backupCodes),
+    )
 
     private fun say(message: String) {
         effects.add { announce(message) }
@@ -334,6 +463,7 @@ class TulaAuthModel(
             TulaAuthField.PASSWORD -> s.copy(password = typed)
             TulaAuthField.CODE -> s.copy(code = digits(typed))
             TulaAuthField.NEW_PASSWORD -> s.copy(newPassword = typed)
+            TulaAuthField.BACKUP_CODE -> s.copy(backupCode = typed.take(BACKUP_CODE_MAX))
         }
     }
 
@@ -352,7 +482,18 @@ class TulaAuthModel(
             flow?.discard()
             flow = null
             generation += 1
-            s = s.copy(isPending = false)
+            // A ticket the client kept belongs to the screen that could present it again. The
+            // client keeps one for more failures than this screen offers "Try again" for, so
+            // what it holds is never asked of the state: it is dropped whenever a screen is left.
+            client.discardProviderSignIn()
+            if (owesArrival) {
+                // The backup codes' screen was left another way than by its button: the flow
+                // had completed, so the app is told all the same.
+                owesArrival = false
+                unsaved = false
+                onSignedIn?.let { effects.add(it) }
+            }
+            s = s.copy(isPending = false, canRetryProvider = false)
             wipe()
             clearMessages()
             published.value = s
@@ -360,20 +501,30 @@ class TulaAuthModel(
     }
 
     private fun wipe() {
-        s = s.copy(password = "", code = "", newPassword = "", revealed = emptySet())
+        s = s.copy(
+            password = "", code = "", newPassword = "", backupCode = "", revealed = emptySet(),
+            setup = null, backupCodes = emptyList(),
+        )
     }
 
     private fun clearMessages() {
-        s = s.copy(formError = null, fieldErrors = emptyMap(), status = null)
+        s = s.copy(formError = null, fieldErrors = emptyMap(), status = null, notice = null)
     }
 
     private fun show(next: TulaAuthScreen) {
         if (next == s.screen) {
             return
         }
+        // The setup key goes from "set up" to its own screen, and the codes arrive with theirs:
+        // what a screen is opened with is put back after everything else was emptied.
+        val setup = s.setup.takeIf { next == TulaAuthScreen.TotpSetup }
+        val codes = s.backupCodes.takeIf { next == TulaAuthScreen.BackupCodes }.orEmpty()
         wipe()
         clearMessages()
-        s = s.copy(screen = next)
+        // Going on from the screen that could try a provider again (a passkey that signed in,
+        // a step) leaves no ticket behind either.
+        client.discardProviderSignIn()
+        s = s.copy(screen = next, setup = setup, backupCodes = codes, canRetryProvider = false)
         ask(TulaAuthFocus.Title)
         if (next == TulaAuthScreen.SignedIn) {
             flow = null
@@ -438,10 +589,29 @@ class TulaAuthModel(
         } catch (_: Exception) {
             return
         }
+        val methods = config.signIn.methods
+        val sheets = client.sheets
+        val ways = ArrayList<TulaAuthWay>()
+        // A way is listed only when this client can take it on this device, and only now that
+        // the environment said it is on: never drawn on a guess and taken away.
+        if ("passkey" in methods && sheets.passkeys) {
+            ways.add(TulaAuthWay.Passkey)
+        }
         locked {
+            for (name in config.signIn.oauth.orEmpty()) {
+                val provider = OAuthProvider.entries.firstOrNull { it.rawValue == name } ?: continue
+                val own = provider == OAuthProvider.Google && sheets.google
+                val reachable = own || (sheets.browser && redirectUrl != null)
+                if (reachable && name in words.ways.providers && TulaAuthAction.of(provider) != null) {
+                    ways.add(TulaAuthWay.Provider(provider))
+                }
+            }
             s = s.copy(
                 appName = config.app.name.ifEmpty { null },
                 passwordOptional = config.signUp?.password?.rawValue == SignUpPasswordMode.Optional.rawValue,
+                ways = ways,
+                canIdentify = methods.any { it in TYPED_METHODS },
+                phoneSignIn = "smsCode" in methods,
             )
         }
     }
@@ -471,6 +641,25 @@ class TulaAuthModel(
             TulaAuthAction.SHOW_SIGN_UP -> showSignUp()
             TulaAuthAction.SHOW_RESET -> showReset()
             TulaAuthAction.START_AGAIN -> startAgain()
+            TulaAuthAction.USE_PASSKEY -> usePasskey()
+            TulaAuthAction.RETRY_PROVIDER -> provider(null)
+            TulaAuthAction.CONTINUE_WITH_GOOGLE, TulaAuthAction.CONTINUE_WITH_GITHUB,
+            TulaAuthAction.CONTINUE_WITH_APPLE, TulaAuthAction.CONTINUE_WITH_MICROSOFT,
+            TulaAuthAction.CONTINUE_WITH_DISCORD, TulaAuthAction.CONTINUE_WITH_LINKEDIN,
+            TulaAuthAction.CONTINUE_WITH_X, TulaAuthAction.CONTINUE_WITH_FACEBOOK,
+            -> provider(action.provider)
+            TulaAuthAction.SEND_TEXTED_CODE -> sendTextedCode()
+            TulaAuthAction.SUBMIT_BACKUP_CODE -> submitBackupCode()
+            TulaAuthAction.USE_SECOND_PASSKEY -> useSecondPasskey()
+            TulaAuthAction.USE_WAY_TOTP -> useWay(TulaSecondWay.TOTP)
+            TulaAuthAction.USE_WAY_PASSKEY -> useWay(TulaSecondWay.PASSKEY)
+            TulaAuthAction.USE_WAY_TEXTED_CODE -> useWay(TulaSecondWay.TEXTED_CODE)
+            TulaAuthAction.USE_WAY_BACKUP_CODE -> useWay(TulaSecondWay.BACKUP_CODE)
+            TulaAuthAction.START_ENROLMENT -> startEnrolment()
+            TulaAuthAction.CONFIRM_ENROLMENT -> confirmEnrolment()
+            TulaAuthAction.COPY_SETUP_KEY -> copySecret(setupKey = true)
+            TulaAuthAction.COPY_BACKUP_CODES -> copySecret(setupKey = false)
+            TulaAuthAction.SAVED_BACKUP_CODES -> savedBackupCodes()
         }
     }
 
@@ -506,12 +695,28 @@ class TulaAuthModel(
         } catch (cancelled: CancellationException) {
             locked { stopped(plan.asked) }
             throw cancelled
+        } catch (_: NotANumber) {
+            // The environment signs this in by a texted code alone, and what was typed is no
+            // phone number: said at the field, with the attempt gone.
+            locked {
+                if (plan.asked == generation) {
+                    s = s.copy(isPending = false, fieldErrors = mapOf(TulaAuthField.EMAIL to listOf(words.ways.numberForm)))
+                    ask(TulaAuthFocus.Field(TulaAuthField.EMAIL))
+                    say(words.ways.numberForm)
+                }
+            }
+            return
         } catch (error: Exception) {
             locked { if (completedBy(error)) arrived(saved = false) else fail(error, plan.asked) }
             return
         }
+        adopt(started, plan.asked)
+    }
+
+    /** Take a flow something started: show its step, or, where the screen was left, end it. */
+    private fun adopt(started: Flow, asked: Int) {
         locked {
-            if (plan.asked != generation) {
+            if (asked != generation) {
                 // Left while the start was on its way: the attempt is nobody's. A start that
                 // completed at once cannot be discarded: somebody is signed in.
                 if (screenOf(started) == TulaAuthScreen.SignedIn) arrived() else started.discard()
@@ -528,6 +733,13 @@ class TulaAuthModel(
         // Where an emailed code is the only way in there is nothing to choose: ask for it, so
         // that the user goes from their address straight to the code.
         val step = started.step
+        if (step is FlowStep.NeedsFirstFactor) {
+            val typed = step.value.strategies.map { it.rawValue }.filter { it in TYPED_STRATEGIES }
+            if (typed == listOf(SMS_CODE) && !isPhoneNumber(address)) {
+                started.discard()
+                throw NotANumber()
+            }
+        }
         if (step is FlowStep.NeedsFirstFactor && step.value.prepared == null &&
             step.value.strategies.map { it.rawValue } == listOf(EMAIL_CODE)
         ) {
@@ -602,9 +814,17 @@ class TulaAuthModel(
                     ({ open.attemptFirstFactor(CodeStrategy.EMAIL_CODE, typed) })
                 screen is TulaAuthScreen.EmailVerification && open is SignInFlow -> ({ open.verifyEmail(typed) })
                 screen is TulaAuthScreen.EmailVerification && open is SignUpFlow -> ({ open.verifyEmail(typed) })
+                screen is TulaAuthScreen.TextedCode && open is SignInFlow ->
+                    ({ open.attemptFirstFactor(CodeStrategy.SMS_CODE, typed) })
+                screen is TulaAuthScreen.SecondFactor && screen.way == TulaSecondWay.TOTP && open != null ->
+                    ({ open.submitTotp(typed) })
+                screen is TulaAuthScreen.SecondFactor && screen.way == TulaSecondWay.TEXTED_CODE &&
+                    screen.sent != null && open != null -> ({ open.submitSmsCode(typed) })
                 else -> null
             }
-            if (screen !is TulaAuthScreen.EmailCode && screen !is TulaAuthScreen.EmailVerification) {
+            if (TulaAuthField.CODE !in screen.fields || screen is TulaAuthScreen.NewPassword ||
+                screen == TulaAuthScreen.TotpSetup
+            ) {
                 return@locked null
             }
             if (action == null || open == null) {
@@ -643,6 +863,17 @@ class TulaAuthModel(
                         is PasswordResetFlow -> ({ open.resendCode() })
                         else -> null
                     }
+                }
+                is TulaAuthScreen.TextedCode -> (open as? SignInFlow)?.let { signIn ->
+                    done = words.ways.smsResent
+                    ({ signIn.prepareFirstFactor(CodeStrategy.SMS_CODE) })
+                }
+                is TulaAuthScreen.SecondFactor -> {
+                    if (screen.way != TulaSecondWay.TEXTED_CODE || screen.sent == null) {
+                        return@locked null
+                    }
+                    done = words.secondStep.smsResent
+                    open?.let { second -> ({ second.prepareSmsCode() }) }
                 }
                 else -> return@locked null
             }
@@ -704,6 +935,364 @@ class TulaAuthModel(
         send(plan.what.first, plan.asked, action = plan.what.second)
     }
 
+    // A sheet: a passkey, a provider
+
+    /** A start that found the identifier is no phone number where only a texted code signs in. */
+    private class NotANumber : Exception()
+
+    /**
+     * A call that shows a sheet threw. A sheet that is still open is said quietly; what the
+     * server refused is said in the screen's own words; anything else is a failure like any other.
+     */
+    private fun sheetFailed(error: Exception, asked: Int, refused: String) {
+        if (asked != generation) {
+            return
+        }
+        val code = (error as? TulaError)?.code
+        when (code) {
+            ClientErrorCodes.FLOW_BUSY -> {
+                s = s.copy(isPending = false, notice = words.ways.sheetBusy)
+                say(words.ways.sheetBusy)
+            }
+            INVALID_CREDENTIALS -> {
+                s = s.copy(isPending = false, formError = refused)
+                say(refused)
+            }
+            ClientErrorCodes.PROVIDER_FAILED -> {
+                s = s.copy(isPending = false, formError = words.ways.providerFailed)
+                say(words.ways.providerFailed)
+            }
+            else -> fail(error, asked)
+        }
+    }
+
+    /** The user closed a sheet: said quietly. Nothing was sent, nobody is signed in. */
+    private fun dismissed(asked: Int, message: String) {
+        if (asked != generation) {
+            return
+        }
+        s = s.copy(isPending = false, notice = message)
+        say(message)
+    }
+
+    /** "Sign in with a passkey": the sheet, then the flow it signed in. */
+    internal suspend fun usePasskey() {
+        val asked = locked<Int?> {
+            if (s.screen != TulaAuthScreen.SignInStart || TulaAuthWay.Passkey !in s.ways) null else begin()
+        } ?: return
+        val outcome = try {
+            client.signInWithPasskey()
+        } catch (cancelled: CancellationException) {
+            locked { stopped(asked) }
+            throw cancelled
+        } catch (error: Exception) {
+            locked {
+                if (completedBy(error)) arrived(saved = false) else sheetFailed(error, asked, words.ways.passkeyRefused)
+            }
+            return
+        }
+        when (outcome) {
+            is TulaCeremony.Finished -> adopt(outcome.value, asked)
+            TulaCeremony.Dismissed -> locked { dismissed(asked, words.ways.passkeyDismissed) }
+        }
+    }
+
+    /**
+     * "Continue with …", and "Try again" for a provider whose exchange got no answer.
+     *
+     * @param which The provider, or `null` to present again the ticket the client kept.
+     */
+    internal suspend fun provider(which: OAuthProvider?) {
+        val plan = locked<Sending<Pair<suspend () -> ProviderOutcome, Boolean>>?> {
+            if (s.screen != TulaAuthScreen.SignInStart) {
+                return@locked null
+            }
+            val call: Pair<suspend () -> ProviderOutcome, Boolean> = when {
+                which == null ->
+                    if (s.canRetryProvider) (suspend { client.retryProviderSignIn() }) to true else return@locked null
+                TulaAuthWay.Provider(which) !in s.ways -> return@locked null
+                // Google's own sheet where the client was given one: the system's account
+                // chooser, and no browser.
+                which == OAuthProvider.Google && client.sheets.google -> (
+                    suspend {
+                        when (val done = client.signInWithGoogle()) {
+                            is TulaCeremony.Finished -> ProviderOutcome.NeedsStep(done.value)
+                            TulaCeremony.Dismissed -> ProviderOutcome.Cancelled
+                        }
+                    }
+                    ) to false
+                else -> {
+                    val url = redirectUrl ?: return@locked null
+                    (suspend { client.signIn(which, url) }) to true
+                }
+            }
+            begin()?.let { Sending(it, call) }
+        } ?: return
+        val (call, browser) = plan.what
+        val asked = plan.asked
+        val outcome = try {
+            call()
+        } catch (cancelled: CancellationException) {
+            locked { stopped(asked) }
+            throw cancelled
+        } catch (error: Exception) {
+            locked {
+                if (completedBy(error)) {
+                    arrived(saved = false)
+                } else {
+                    sheetFailed(error, asked, words.ways.providerRefused)
+                    val code = (error as? TulaError)?.code
+                    if (asked == generation && code != ClientErrorCodes.FLOW_BUSY) {
+                        // "Try again" is offered for an exchange that got no answer. What the
+                        // client kept for any other failure is dropped here, so that it never
+                        // holds a ticket this screen has no button for.
+                        val again = browser && code in NO_ANSWER
+                        s = s.copy(canRetryProvider = again)
+                        if (!again) {
+                            client.discardProviderSignIn()
+                        }
+                    }
+                }
+            }
+            return
+        }
+        when (outcome) {
+            is ProviderOutcome.SignedIn -> adopt(outcome.flow, asked)
+            is ProviderOutcome.NeedsStep -> adopt(outcome.flow, asked)
+            ProviderOutcome.Cancelled -> locked {
+                dismissed(asked, words.ways.providerCancelled)
+                if (asked == generation) {
+                    s = s.copy(canRetryProvider = false)
+                }
+            }
+            is ProviderOutcome.Refused, is ProviderOutcome.Linked -> locked {
+                if (asked == generation) {
+                    val code = ((outcome as? ProviderOutcome.Refused)?.refusal as? ProviderRefusal.Failed)?.code
+                    val known = code != null && (code in words.errors || code in TulaStrings.KNOWN_CODES)
+                    val message = if (code != null && known) words.message(code) else words.ways.providerRefused
+                    s = s.copy(isPending = false, formError = message, canRetryProvider = false)
+                    say(message)
+                }
+            }
+        }
+    }
+
+    // A texted code, the second step, an authenticator set up inside a sign-in
+
+    /** "Text me a code": the first factor of a phone number, or the second step. Never sent by arriving. */
+    internal suspend fun sendTextedCode() {
+        val plan = locked<Sending<Pair<Flow, suspend () -> FlowStep>>?> {
+            if (s.isPending) {
+                return@locked null
+            }
+            val screen = s.screen
+            val open = flow
+            val action: (suspend () -> FlowStep)? = when {
+                screen is TulaAuthScreen.TextedCodeOffer && !screen.unavailable ->
+                    (open as? SignInFlow)?.let { signIn -> ({ signIn.prepareFirstFactor(CodeStrategy.SMS_CODE) }) }
+                screen is TulaAuthScreen.SecondFactor && screen.way == TulaSecondWay.TEXTED_CODE &&
+                    screen.sent == null && !screen.unavailable -> open?.let { second -> ({ second.prepareSmsCode() }) }
+                else -> return@locked null
+            }
+            if (action == null || open == null) {
+                lost()
+                return@locked null
+            }
+            begin()?.let { Sending(it, open to action) }
+        } ?: return
+        send(plan.what.first, plan.asked, action = plan.what.second)
+    }
+
+    /** The main button of the backup code's form. The field is emptied as the code is sent. */
+    internal suspend fun submitBackupCode() {
+        val plan = locked<Sending<Pair<Flow, String>>?> {
+            val screen = s.screen as? TulaAuthScreen.SecondFactor
+            if (screen?.way != TulaSecondWay.BACKUP_CODE || s.isPending) {
+                return@locked null
+            }
+            val open = flow
+            if (open == null) {
+                lost()
+                return@locked null
+            }
+            val typed = s.backupCode.trim()
+            val missing = if (typed.isEmpty()) listOf(TulaAuthField.BACKUP_CODE) else emptyList()
+            if (!require(missing, words.secondStep.backupRequired)) {
+                return@locked null
+            }
+            s = s.copy(backupCode = "")
+            begin()?.let { Sending(it, open to typed) }
+        } ?: return
+        val (open, typed) = plan.what
+        send(open, plan.asked) { open.submitBackupCode(typed).step }
+    }
+
+    /** "Use your passkey" of the second step: the sheet, then the step the flow is on. */
+    internal suspend fun useSecondPasskey() {
+        val plan = locked<Sending<Flow>?> {
+            val screen = s.screen as? TulaAuthScreen.SecondFactor
+            if (screen?.way != TulaSecondWay.PASSKEY || s.isPending) {
+                return@locked null
+            }
+            val open = flow
+            if (open == null) {
+                lost()
+                return@locked null
+            }
+            begin()?.let { Sending(it, open) }
+        } ?: return
+        val open = plan.what
+        val asked = plan.asked
+        val outcome = try {
+            open.submitSecondFactorWithPasskey()
+        } catch (cancelled: CancellationException) {
+            locked { if (screenOf(open) == TulaAuthScreen.SignedIn) arrived() else stopped(asked) }
+            throw cancelled
+        } catch (error: Exception) {
+            locked {
+                if (screenOf(open) == TulaAuthScreen.SignedIn) {
+                    arrived(saved = false)
+                } else {
+                    sheetFailed(error, asked, words.ways.passkeyRefused)
+                }
+            }
+            return
+        }
+        locked {
+            when (outcome) {
+                is TulaCeremony.Finished -> settle(open, asked)
+                TulaCeremony.Dismissed -> dismissed(asked, words.ways.passkeyDismissed)
+            }
+        }
+    }
+
+    /**
+     * Take the second step another way the step offers. What was typed for the way that is
+     * left is emptied.
+     *
+     * @param way One of the open screen's other ways.
+     */
+    fun useWay(way: TulaSecondWay): Unit = locked {
+        val screen = s.screen as? TulaAuthScreen.SecondFactor ?: return@locked
+        if (way in screen.others && !s.isPending) {
+            val all = TulaSecondWay.entries.filter { it == screen.way || it in screen.others }
+            show(screen.copy(way = way, others = all - way))
+        }
+    }
+
+    /** "Set up authenticator app": ask for the setup key and show it. */
+    internal suspend fun startEnrolment() {
+        val plan = locked<Sending<Flow>?> {
+            if (s.screen != TulaAuthScreen.EnrolmentStart || s.isPending) {
+                return@locked null
+            }
+            val open = flow
+            if (open == null) {
+                lost()
+                return@locked null
+            }
+            begin()?.let { Sending(it, open) }
+        } ?: return
+        val enrolment = try {
+            plan.what.startTotpEnrolment()
+        } catch (cancelled: CancellationException) {
+            locked { stopped(plan.asked) }
+            throw cancelled
+        } catch (error: Exception) {
+            locked { fail(error, plan.asked) }
+            return
+        }
+        locked {
+            // Left meanwhile: the key is dropped with the answer.
+            if (plan.asked == generation) {
+                s = s.copy(isPending = false, setup = TulaAuthSetup(enrolment.secret, enrolment.uri))
+                show(TulaAuthScreen.TotpSetup)
+            }
+        }
+    }
+
+    /**
+     * "Turn on": confirm the authenticator with its first code. The backup codes are shown
+     * before anybody is told the sign-in is over: the server shows them once.
+     */
+    internal suspend fun confirmEnrolment() {
+        val plan = locked<Sending<Pair<Flow, String>>?> {
+            if (s.screen != TulaAuthScreen.TotpSetup || s.isPending) {
+                return@locked null
+            }
+            val open = flow
+            if (open == null) {
+                lost()
+                return@locked null
+            }
+            val typed = s.code
+            val missing = if (typed.length == CODE_LENGTH) emptyList() else listOf(TulaAuthField.CODE)
+            if (!require(missing, words.codeIncomplete)) {
+                return@locked null
+            }
+            s = s.copy(code = "")
+            begin()?.let { Sending(it, open to typed) }
+        } ?: return
+        val (open, typed) = plan.what
+        val asked = plan.asked
+        val result = try {
+            open.confirmTotpEnrolment(typed)
+        } catch (cancelled: CancellationException) {
+            locked { if (screenOf(open) == TulaAuthScreen.SignedIn) arrived() else stopped(asked) }
+            throw cancelled
+        } catch (error: Exception) {
+            locked { if (screenOf(open) == TulaAuthScreen.SignedIn) arrived(saved = false) else fail(error, asked) }
+            return
+        }
+        locked {
+            val complete = result.step is FlowStep.Complete
+            if (asked != generation) {
+                // Left while the answer was on its way: the codes go with the screen that would
+                // have shown them, and a flow that completed is still said.
+                if (complete) {
+                    arrived(saved = result.failure == null)
+                }
+                return@locked
+            }
+            s = s.copy(isPending = false, backupCodes = result.backupCodes)
+            show(TulaAuthScreen.BackupCodes)
+            owesArrival = complete
+            unsaved = result.failure != null
+        }
+    }
+
+    /**
+     * "I have saved these codes": forget them and go on. Where the enrolment completed the
+     * sign-in, this is when the app is told.
+     */
+    fun savedBackupCodes(): Unit = locked {
+        if (s.screen != TulaAuthScreen.BackupCodes) {
+            return@locked
+        }
+        val open = flow
+        val owed = owesArrival
+        val saved = !unsaved
+        owesArrival = false
+        unsaved = false
+        when {
+            owed -> arrived(saved)
+            open == null -> lost()
+            else -> show(screenOf(open))
+        }
+    }
+
+    /** "Copy": hand the setup key, or the backup codes, to the app's clipboard. Only ever on a press. */
+    private fun copySecret(setupKey: Boolean): Unit = locked {
+        val text = if (setupKey) {
+            s.setup?.key?.takeIf { s.screen == TulaAuthScreen.TotpSetup }
+        } else {
+            s.backupCodes.takeIf { s.screen == TulaAuthScreen.BackupCodes && it.isNotEmpty() }?.joinToString("\n")
+        } ?: return@locked
+        effects.add { copy(text) }
+        s = s.copy(status = words.secondStep.copied)
+        say(words.secondStep.copied)
+    }
+
     // Running an action
 
     /**
@@ -756,7 +1345,12 @@ class TulaAuthModel(
             locked { if (screenOf(open) == TulaAuthScreen.SignedIn) arrived(saved = false) else fail(error, asked) }
             return
         }
-        locked {
+        locked { settle(open, asked, done) }
+    }
+
+    /** An action of the open flow was answered: show the step the flow is on now. */
+    private fun settle(open: Flow, asked: Int, done: String? = null) {
+        run {
             val next = screenOf(open)
             if (asked != generation) {
                 // Left while the answer was on its way. The flow was discarded then, and a
@@ -767,7 +1361,7 @@ class TulaAuthModel(
                 if (next == TulaAuthScreen.SignedIn) {
                     arrived()
                 }
-                return@locked
+                return
             }
             s = s.copy(isPending = false)
             if (next == s.screen) {
@@ -796,6 +1390,16 @@ class TulaAuthModel(
         if (TulaAuthField.CODE in s.fieldErrors) {
             s = s.copy(code = "")
         }
+        if (error.code in SWITCHED_OFF) {
+            // A texted code an operator's setting refuses: the button could only be refused
+            // again, so it goes and the sentence stays.
+            s = when (val screen = s.screen) {
+                is TulaAuthScreen.TextedCodeOffer -> s.copy(screen = screen.copy(unavailable = true))
+                is TulaAuthScreen.SecondFactor ->
+                    if (screen.way == TulaSecondWay.TEXTED_CODE) s.copy(screen = screen.copy(unavailable = true)) else s
+                else -> s
+            }
+        }
     }
 
     // Where a problem is shown
@@ -804,10 +1408,11 @@ class TulaAuthModel(
     private fun target(code: String, named: String?): TulaAuthField? {
         val fields = s.screen.fields
         val secret = if (TulaAuthField.NEW_PASSWORD in fields) TulaAuthField.NEW_PASSWORD else TulaAuthField.PASSWORD
+        val typedCode = if (TulaAuthField.BACKUP_CODE in fields) TulaAuthField.BACKUP_CODE else TulaAuthField.CODE
         val byName = when (named) {
             "email", "identifier" -> TulaAuthField.EMAIL
             "password", "newPassword" -> secret
-            "code" -> TulaAuthField.CODE
+            "code" -> typedCode
             else -> null
         }
         val found = byName ?: if (code == INVALID_CREDENTIALS) {
@@ -817,7 +1422,7 @@ class TulaAuthModel(
             when (code.substringBefore('.')) {
                 "email" -> TulaAuthField.EMAIL
                 "password" -> secret
-                "verification" -> TulaAuthField.CODE
+                "verification", "mfa" -> typedCode
                 else -> null
             }
         }
@@ -839,7 +1444,10 @@ class TulaAuthModel(
         }
         if (error.errors.isEmpty()) {
             val field = target(error.code, null)
-            if (field != null) add(field, words.message(error)) else above = words.message(error)
+            // A code that was refused is said in the screen's own words: the server's sentence
+            // for the same answer is about an email address and a password.
+            val wrong = if (error.code == INVALID_CREDENTIALS || error.code == MFA_INVALID_CODE) wrongCode() else null
+            if (field != null) add(field, wrong ?: words.message(error)) else above = words.message(error)
         }
         val wait = error.retryAfterMs
         if (wait != null && wait > 0 && above != null) {
@@ -851,6 +1459,13 @@ class TulaAuthModel(
             ask(TulaAuthFocus.Field(first))
         }
         say(above ?: first?.let { fields[it]?.firstOrNull() } ?: words.unknownError)
+    }
+
+    /** What a refused code is called on the open screen, where the screen asks for one. */
+    private fun wrongCode(): String? = when (s.screen) {
+        is TulaAuthScreen.TextedCode -> words.ways.smsCodeWrong
+        is TulaAuthScreen.SecondFactor, TulaAuthScreen.TotpSetup -> words.secondStep.codeWrong
+        else -> null
     }
 
     // What is drawn of a problem
@@ -898,7 +1513,7 @@ class TulaAuthModel(
     private fun screenOf(open: Flow): TulaAuthScreen {
         val snapshot = open.snapshot()
         val step = snapshot.step
-        return when (flowScreen(step, snapshot.kind)) {
+        return when (flowScreen(step, snapshot.kind, passkeys = client.sheets.passkeys)) {
             FlowScreen.NEEDS_PASSWORD -> TulaAuthScreen.Password(canEmailCode = false)
             FlowScreen.NEEDS_FIRST_FACTOR -> firstFactor(step)
             FlowScreen.NEEDS_EMAIL_VERIFICATION ->
@@ -907,26 +1522,48 @@ class TulaAuthModel(
                 if (it.value.reason == null) TulaAuthScreen.NewPassword(it.value.destination) else TulaAuthScreen.ExpiredPassword
             }
             FlowScreen.COMPLETE -> TulaAuthScreen.SignedIn
-            // The client has calls for the second step and for the enrolment of an
-            // authenticator, and these screens have no form for either yet (TULA-61): each is
-            // named here, so that a step the client gains a call for never falls through to a
-            // form or to nothing.
-            FlowScreen.NEEDS_SECOND_FACTOR -> null
-            FlowScreen.NEEDS_FACTOR_ENROLMENT -> null
+            FlowScreen.NEEDS_SECOND_FACTOR -> secondFactor(step)
+            // The setup screen and the codes' screen are steps of the enrolment the model
+            // moves between by itself: the server's step stays the same meanwhile.
+            FlowScreen.NEEDS_FACTOR_ENROLMENT ->
+                if (s.screen == TulaAuthScreen.TotpSetup) TulaAuthScreen.TotpSetup else TulaAuthScreen.EnrolmentStart
             FlowScreen.NOT_SUPPORTED -> null
         } ?: TulaAuthScreen.NotSupported(step.status)
     }
 
     /**
-     * The screen of a first factor. A texted code has a call in the client and no screen here
-     * yet: a step that offers it beside a password or an emailed code is drawn without it, and
-     * one that offers nothing else is "not supported".
+     * The second step: the ways the step offers that this client can take, in the order of
+     * [TulaSecondWay]. The way that is open stays open while the step still offers it.
+     */
+    private fun secondFactor(step: FlowStep): TulaAuthScreen? {
+        val value = (step as? FlowStep.NeedsSecondFactor)?.value ?: return null
+        val offered = value.options.map { it.rawValue }
+        val ways = TulaSecondWay.entries.filter {
+            it.rawValue in offered && (it != TulaSecondWay.PASSKEY || client.sheets.passkeys)
+        }
+        val open = s.screen as? TulaAuthScreen.SecondFactor
+        val way = open?.way?.takeIf { it in ways } ?: ways.firstOrNull() ?: return null
+        val sent = value.prepared?.takeIf { it.method.rawValue == SMS_CODE }?.destination
+        return TulaAuthScreen.SecondFactor(way, ways - way, sent, unavailable = open?.unavailable == true)
+    }
+
+    /**
+     * The screen of a first factor. A texted code is for a phone number and for nothing else:
+     * a number is shown the texted code alone (a password for a number signs nobody in), an
+     * address is never shown it.
      */
     private fun firstFactor(step: FlowStep): TulaAuthScreen? {
         val value = (step as? FlowStep.NeedsFirstFactor)?.value ?: return null
         val offered = value.strategies.map { it.rawValue }
         val password = PASSWORD in offered
         val prepared = value.prepared
+        if (SMS_CODE in offered && isPhoneNumber(s.email)) {
+            return if (prepared != null && prepared.strategy.rawValue == SMS_CODE) {
+                TulaAuthScreen.TextedCode(prepared.destination)
+            } else {
+                TulaAuthScreen.TextedCodeOffer((s.screen as? TulaAuthScreen.TextedCodeOffer)?.unavailable == true)
+            }
+        }
         return when {
             prepared != null && prepared.strategy.rawValue == EMAIL_CODE ->
                 TulaAuthScreen.EmailCode(prepared.destination, canUsePassword = password)
@@ -941,9 +1578,39 @@ class TulaAuthModel(
         /** How many digits an emailed code has. */
         const val CODE_LENGTH: Int = 6
 
+        /** The most a backup code field keeps: a code is ten characters and a hyphen. */
+        const val BACKUP_CODE_MAX: Int = 32
+
         private const val EMAIL_CODE = "email_code"
+        private const val SMS_CODE = "sms_code"
         private const val PASSWORD = "password"
         private const val INVALID_CREDENTIALS = "auth.invalid_credentials"
+        private const val MFA_INVALID_CODE = "mfa.invalid_code"
+
+        /** The first factors that start from what is typed. */
+        private val TYPED_STRATEGIES = setOf(PASSWORD, EMAIL_CODE, SMS_CODE)
+
+        /** The sign-in methods of the client configuration that start from what is typed. */
+        private val TYPED_METHODS = setOf("password", "emailCode", "smsCode")
+
+        /** The refusals of a texted code an operator's setting causes: asking again cannot help. */
+        private val SWITCHED_OFF = setOf("auth.method_disabled", "sms.disabled", "sms.country_not_allowed")
+
+        /** The failures of a provider's exchange after which the same ticket can be presented again. */
+        private val NO_ANSWER = setOf(ClientErrorCodes.NETWORK_FAILED, ClientErrorCodes.NETWORK_TIMEOUT, "rate_limited")
+
+        /**
+         * Whether what was typed is a phone number: a plus sign, then 8 to 15 digits that do not
+         * start with 0, with spaces, brackets and hyphens allowed between them.
+         *
+         * @param typed What the first field holds.
+         * @return Whether it is taken for a number, and so shown a texted code.
+         */
+        fun isPhoneNumber(typed: String): Boolean {
+            val bare = typed.trim().filterNot { it == ' ' || it == '(' || it == ')' || it == '-' }
+            val digits = bare.removePrefix("+")
+            return bare.startsWith("+") && digits.length in 8..15 && digits.all { it in '0'..'9' } && digits[0] != '0'
+        }
 
         /**
          * Keep what a code field holds to the digits of a code.

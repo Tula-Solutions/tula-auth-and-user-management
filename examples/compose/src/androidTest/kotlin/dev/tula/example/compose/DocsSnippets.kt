@@ -9,7 +9,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import dev.tula.auth.TulaClient
 import dev.tula.auth.android.CredentialManagerGoogleSheet
@@ -17,8 +20,10 @@ import dev.tula.auth.android.CredentialManagerPasskeySheet
 import dev.tula.auth.android.CustomTabsBrowserSession
 import dev.tula.auth.android.KeystoreDeviceKeyStore
 import dev.tula.auth.android.KeystoreTokenStorage
+import dev.tula.auth.compose.TulaAccount
 import dev.tula.auth.compose.TulaAuth
 import dev.tula.auth.compose.TulaAuthSlots
+import dev.tula.auth.ui.TulaAccountModel
 import dev.tula.auth.ui.TulaAuthModel
 import dev.tula.auth.ui.TulaStrings
 import dev.tula.example.compose.test.R
@@ -70,6 +75,14 @@ internal object DocsSnippets {
         // and, when the screens are left for good: model.close()
         // #endregion
         return model
+    }
+
+    @Composable
+    fun NoCopy(client: TulaClient) {
+        // #region no-copy
+        val model = remember { TulaAccountModel(client, copy = { }) }
+        TulaAccount(model = model)
+        // #endregion
     }
 
     fun secure(activity: Activity) {
@@ -136,10 +149,12 @@ class SignInActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // #region screens
         setContent {
-            TulaAuth(
-                client = client,
-                onSignedIn = { /* show your app */ },
-            )
+            var signedIn by remember { mutableStateOf(false) }
+            if (signedIn) {
+                TulaAccount(client = client, onSignedOut = { signedIn = false })
+            } else {
+                TulaAuth(client = client, onSignedIn = { signedIn = true })
+            }
         }
         // #endregion
     }

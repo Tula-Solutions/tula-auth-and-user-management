@@ -4,7 +4,18 @@ import dev.tula.auth.Clock
 import dev.tula.auth.HttpEngine
 import dev.tula.auth.HttpRequest
 import dev.tula.auth.HttpResponse
+import dev.tula.auth.BrowserSession
+import dev.tula.auth.GoogleSheet
 import dev.tula.auth.MemoryTokenStorage
+import dev.tula.auth.PasskeySheet
+import dev.tula.auth.SheetFailure
+import dev.tula.auth.TulaSheetException
+import dev.tula.auth.generated.PasskeyAssertionCredential
+import dev.tula.auth.generated.PasskeyAssertionCredentialResponse
+import dev.tula.auth.generated.PasskeyCreationOptions
+import dev.tula.auth.generated.PasskeyRegistrationCredential
+import dev.tula.auth.generated.PasskeyRegistrationCredentialResponse
+import dev.tula.auth.generated.PasskeyRequestOptions
 import dev.tula.auth.TokenStorage
 import dev.tula.auth.TulaClient
 import kotlinx.coroutines.CompletableDeferred
@@ -49,13 +60,64 @@ fun firstFactor(vararg strategies: String, prepared: Boolean = false): String {
     return """{"status":"needs_first_factor","strategies":[$list]$sent}"""
 }
 
-fun configJson(name: String = "Tula", password: String = "required"): String =
-    """{"app":{"name":"$name","supportEmail":null},"signIn":{"methods":["password"],"oauth":[]},""" +
+fun configJson(
+    name: String = "Tula",
+    password: String = "required",
+    methods: List<String> = listOf("password"),
+    oauth: List<String> = emptyList(),
+    policy: String = "optional",
+    phone: Boolean = false,
+): String =
+    """{"app":{"name":"$name","supportEmail":null},"signIn":{"methods":[${methods.joinToString(",") { "\"$it\"" }}],""" +
+        """"oauth":[${oauth.joinToString(",") { "\"$it\"" }}]},""" +
         """"signUp":{"password":"$password"},"password":{"preset":"recommended","minLength":10,""" +
         """"maxLength":128,"requireLowercase":false,"requireUppercase":false,"requireNumber":false,""" +
         """"requireSpecial":false,"minCharacterClasses":0,"specialChars":"!","disallowUserInfo":true,""" +
         """"disallowCommon":true,"breachCheck":"block","maxRepeatedChars":null,"blockSequences":false,""" +
-        """"history":0,"expiryDays":null},"mfa":{"policy":"optional","smsCode":false},"phone":{"enabled":false}}"""
+        """"history":0,"expiryDays":null},"mfa":{"policy":"$policy","smsCode":false},"phone":{"enabled":$phone}}"""
+
+/** The options of a passkey request as the API writes them. */
+const val PASSKEY_OPTIONS = """{"challenge":"Y2hhbGxlbmdl","timeout":300000,"rpId":"example.test","userVerification":"required"}"""
+
+const val PASSKEY_START = "$SIGN_INS/passkey"
+
+/** A passkey sheet a test scripts: it answers, is closed by the user, fails, or waits at a gate. */
+class ScriptedPasskeySheet : PasskeySheet {
+    val asked = AtomicInteger()
+
+    /** What the next request does. `null`: the user closes the sheet. */
+    @Volatile
+    var failure: SheetFailure? = null
+
+    @Volatile
+    var gate: Gate? = null
+
+    private suspend fun shown() {
+        asked.incrementAndGet()
+        gate?.pass()
+        failure?.let { throw TulaSheetException(it) }
+    }
+
+    override suspend fun create(options: PasskeyCreationOptions): PasskeyRegistrationCredential {
+        shown()
+        return PasskeyRegistrationCredential(
+            id = "Y3JlZA",
+            rawId = "Y3JlZA",
+            response = PasskeyRegistrationCredentialResponse(clientDataJSON = "Y2xpZW50", attestationObject = "YXR0ZXN0"),
+        )
+    }
+
+    override suspend fun get(options: PasskeyRequestOptions): PasskeyAssertionCredential {
+        shown()
+        return PasskeyAssertionCredential(
+            id = "Y3JlZA",
+            rawId = "Y3JlZA",
+            response = PasskeyAssertionCredentialResponse(
+                clientDataJSON = "Y2xpZW50", authenticatorData = "YXV0aA", signature = "c2ln",
+            ),
+        )
+    }
+}
 
 /** Fail a test rather than hang the build when something never returns. */
 fun runTest(limitMs: Long = 30_000, block: suspend CoroutineScope.() -> Unit) {
@@ -168,6 +230,10 @@ class Bench(
     mode: TulaAuthMode = TulaAuthMode.SIGN_IN,
     val storage: TokenStorage = MemoryTokenStorage(),
     strings: TulaStrings = TulaStrings(),
+    passkeys: PasskeySheet? = null,
+    google: GoogleSheet? = null,
+    browser: BrowserSession? = null,
+    redirectUrl: String? = null,
 ) {
     val engine = ScriptedEngine()
     val client = TulaClient(
@@ -176,7 +242,13 @@ class Bench(
         storage = storage,
         http = engine,
         clock = Clock { ISSUED_AT * 1000 },
+        passkeys = passkeys,
+        google = google,
+        browser = browser,
     )
+
+    /** Everything that was put on the clipboard, oldest first. */
+    val copied = CopyOnWriteArrayList<String>()
 
     /** Everything that was announced, oldest first. */
     val said = CopyOnWriteArrayList<String>()
@@ -184,7 +256,13 @@ class Bench(
     /** How many times the app was told somebody is signed in. */
     val signedIn = AtomicInteger()
 
-    val model = TulaAuthModel(client, mode, strings, announce = { said.add(it) }, onSignedIn = { signedIn.incrementAndGet() })
+    val model = TulaAuthModel(
+        client, mode, strings,
+        announce = { said.add(it) },
+        onSignedIn = { signedIn.incrementAndGet() },
+        redirectUrl = redirectUrl,
+        copy = { copied.add(it) },
+    )
 
     val state: TulaAuthState get() = model.state.value
     val screen: TulaAuthScreen get() = state.screen
@@ -211,8 +289,131 @@ class Bench(
         begin()
     }
 
+    /** Read a configuration with these sign-in methods and providers. */
+    suspend fun configure(methods: List<String> = listOf("password"), oauth: List<String> = emptyList()) {
+        engine.on("GET", CONFIG) { ok(configJson(methods = methods, oauth = oauth)) }
+        model.loadConfig()
+    }
+
     /** What every drawn or announced word is looked for in. */
     fun everythingSaid(): String = listOfNotNull(
-        state.formError, state.status, model.formProblem,
+        state.formError, state.status, state.notice, model.formProblem,
     ).plus(state.fieldErrors.values.flatten()).plus(said).joinToString("\n")
+}
+
+const val ME = "/v1/client/me"
+const val SESSIONS = "/v1/client/sessions"
+const val FACTORS = "$ME/factors"
+const val PASSKEYS = "$ME/passkeys"
+const val STEP_UP = "$SESSIONS/step-up"
+const val SIGN_OUT = "$SESSIONS/sign-out"
+
+/** The signed-in user as the API writes them. */
+fun userJson(password: Boolean = true, phone: String? = null, email: String? = ADDRESS): String {
+    val address = if (email == null) "null" else "\"$email\""
+    val number = if (phone == null) "" else ""","phoneNumber":"$phone","phoneNumberVerifiedAt":"2026-02-02T00:00:00.000Z""""
+    return """{"id":"user-1","email":$address,"emailVerifiedAt":${if (email == null) "null" else "\"2026-01-01T00:00:00.000Z\""},""" +
+        """"firstName":"Maya","lastName":null,"bannedAt":null,"lastSignInAt":null,""" +
+        """"createdAt":"2026-01-01T00:00:00.000Z","hasPassword":$password$number}"""
+}
+
+/** A session as the API writes it. */
+fun sessionJson(id: String, client: String = "android", current: Boolean = false, bound: Boolean = false): String =
+    """{"id":"$id","client":"$client","userAgent":"canary-user-agent","ipAddress":"203.0.113.9",""" +
+        """"createdAt":"2026-01-01T00:00:00.000Z","lastActiveAt":"2026-01-02T00:00:00.000Z",""" +
+        """"expiresAt":"2026-02-01T00:00:00.000Z","current":$current,"deviceBound":$bound}"""
+
+/** The second step as the API writes it. `sms`: `null` for a server that says nothing of it. */
+fun factorsJson(totp: Boolean = false, remaining: Int = 0, sms: String? = null): String =
+    """{"totp":{"enabled":$totp,"confirmedAt":${if (totp) "\"2026-01-03T00:00:00.000Z\"" else "null"}},""" +
+        """"backupCodes":{"remaining":$remaining}${if (sms == null) "" else ""","sms":$sms"""}}"""
+
+fun smsJson(enabled: Boolean, inUse: Boolean = enabled, available: Boolean = true): String =
+    """{"enabled":$enabled,"enabledAt":${if (enabled) "\"2026-01-04T00:00:00.000Z\"" else "null"},"inUse":$inUse,"available":$available}"""
+
+fun passkeyJson(id: String = "pk-1", name: String = "Pixel", synced: Boolean = true, used: Boolean = false): String =
+    """{"id":"$id","name":"$name","synced":$synced,"createdAt":"2026-01-05T00:00:00.000Z",""" +
+        """"lastUsedAt":${if (used) "\"2026-01-06T00:00:00.000Z\"" else "null"}}"""
+
+const val CREATION_OPTIONS = """{"rp":{"id":"example.test","name":"Tula"},"user":{"id":"dXNlcg","name":"maya","displayName":"Maya"},""" +
+    """"challenge":"Y2hhbGxlbmdl","pubKeyCredParams":[{"type":"public-key","alg":-7}],"timeout":300000,"excludeCredentials":[],""" +
+    """"authenticatorSelection":{"residentKey":"required","requireResidentKey":true,"userVerification":"required"},"attestation":"none"}"""
+
+/** `auth.step_up_required`, naming these methods. */
+fun stepUpRequired(vararg methods: String): HttpResponse =
+    refused("auth.step_up_required", 403, ""","params":{"methods":"${methods.joinToString(",")}"}""")
+
+val NO_CONTENT = HttpResponse(204, emptyMap(), "")
+
+/** The account model over a signed-in client and a scripted engine. */
+class AccountBench(passkeys: PasskeySheet? = null, strings: TulaStrings = TulaStrings()) {
+    val engine = ScriptedEngine()
+    val client = TulaClient(
+        publishableKey = TEST_KEY,
+        baseUrl = TEST_BASE,
+        storage = MemoryTokenStorage(),
+        http = engine,
+        clock = Clock { ISSUED_AT * 1000 },
+        passkeys = passkeys,
+    )
+    val copied = CopyOnWriteArrayList<String>()
+    val said = CopyOnWriteArrayList<String>()
+    val signedOut = AtomicInteger()
+
+    fun another(): TulaAccountModel = TulaAccountModel(client, formatDate = { it.take(10) })
+
+    val model = TulaAccountModel(
+        client, strings,
+        announce = { said.add(it) },
+        onSignedOut = { signedOut.incrementAndGet() },
+        copy = { copied.add(it) },
+        formatDate = { if (it.startsWith("20")) it.take(10) else null },
+    )
+
+    val state: TulaAccountState get() = model.state.value
+    val panel: TulaAccountPanel get() = state.panel
+    val content: TulaAccountContent get() = model.content
+
+    /** Sign the client in and script an account with nothing special about it. */
+    suspend fun signIn() {
+        engine.post(SIGN_INS) { ok(attemptJson(NEEDS_PASSWORD)) }
+        engine.post("$SIGN_IN/password") { completed() }
+        engine.on("GET", ME) { ok(userJson()) }
+        engine.on("GET", SESSIONS) { ok("""{"data":[${sessionJson("s-2", "web")},${sessionJson("session-1", current = true, bound = true)}]}""") }
+        engine.on("GET", FACTORS) { ok(factorsJson()) }
+        engine.on("GET", PASSKEYS) { ok("""{"passkeys":[]}""") }
+        engine.on("GET", CONFIG) { ok(configJson(methods = listOf("password", "passkey"), phone = true)) }
+        engine.post("$SESSIONS/refresh") { ok(tokensJson("refreshed")) }
+        client.signIn(ADDRESS).submitPassword("a-password-nobody-uses")
+    }
+
+    /** A signed-in client whose account was read. */
+    suspend fun loaded(prepare: AccountBench.() -> Unit = {}): AccountBench {
+        signIn()
+        prepare()
+        model.load()
+        return this
+    }
+
+    fun type(field: TulaAccountField, text: String) = model.setText(field, text)
+
+    suspend fun tap(action: TulaAccountAction) = model.perform(action)
+
+    /** The lines of a section. */
+    fun lines(identifier: String): List<String> = content.sections.single { it.identifier == identifier }.lines
+
+    fun section(identifier: String): TulaAccountSection = content.sections.single { it.identifier == identifier }
+
+    /** How many requests were sent to a path with a method. */
+    fun count(method: String, path: String): Int = engine.requests.count { it.method == method && it.url == TEST_BASE + path }
+
+    /** What every drawn or announced word is looked for in. */
+    fun everythingSaid(): String {
+        val c = content
+        return (
+            listOfNotNull(state.formError, state.status, state.notice, model.formProblem, c.title, c.subtitle) +
+                state.fieldErrors.values.flatten() + said +
+                c.sections.flatMap { section -> section.lines + section.rows.flatMap { listOf(it.title) + it.details + it.marks } }
+            ).joinToString("\n")
+    }
 }
