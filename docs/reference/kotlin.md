@@ -4282,6 +4282,30 @@ answers, drawn from the app's client.
 ```kotlin
 val state by client.state.collectAsState()
 if (state is AuthState.SignedIn) Home() else TulaAuth(client, onSignedIn = { /* navigate */ })
+```
+
+The composable makes its own [TulaAuthModel] and keeps it with plain `remember`: nothing that
+is typed is put in `rememberSaveable`, a `SavedStateHandle` or a `Bundle`. **When it leaves
+the composition the open flow is discarded and every field is emptied**, so an activity that
+is recreated (a rotation the manifest does not handle) starts the screen again. An app that
+wants an attempt to live through that hoists the model with [TulaAuth]'s other form.
+
+Where the app goes after a sign-in is [onSignedIn] and nothing else: the screens read no
+address from an intent or from the server.
+
+`FLAG_SECURE` (no screenshot, nothing in the recents list) is a window's, and so the app's to
+set on its activity; the screens do not set it.
+
+@param client The app's client.
+@param modifier The modifier of the whole screen.
+@param mode The flow to open on.
+@param strings Every string the screens show.
+@param theme The theme: the generated defaults with what the app, or a tenant, changed. A
+  value that is refused is replaced by the default's and never drawn.
+@param slots The parts of a screen the app draws itself.
+@param onSignedIn Called once for each flow that completed, on the main thread: also when
+  the session could not be stored, and also after the screen has left the composition if the
+  flow had already completed by then.
 
 ```kotlin
 @Composable

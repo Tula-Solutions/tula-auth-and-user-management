@@ -1399,8 +1399,12 @@ and Kotlin guides samples that are compiled. What was run, on one Mac:
   started.
 - **A scaffolded Expo project, written**: its files were listed and searched for a
   placeholder left behind. Nothing more.
-- **The samples of the guides**: the Swift ones are compiled by `swift build` (the
-  `DocsSnippets` target), the Kotlin ones by the Gradle build (the JVM ones in
+- **The samples of the guides**: the Swift ones are two files of the package's test
+  targets (`native/swift/Tests/TulaAuthTests/DocsSnippets.swift` and
+  `Tests/TulaAuthUITests/DocsSnippets.swift`; there is no target of their own), so a plain
+  `swift build` does not compile them: `swift build --build-tests` and `swift test` do.
+  What was run is `swift test --package-path native/swift` (560 tests, 0 failures), which
+  builds both test targets. The Kotlin ones by the Gradle build (the JVM ones in
   `tula-auth`'s tests' source set, the Android and Compose ones in the Compose example's
   `androidTest` source set). Compiled, and the code in them never run.
 
@@ -1416,5 +1420,5 @@ Not verified:
 | **The commands of the quickstart's native path** | `bunx expo run:ios`, `open ios/TulaExample.xcodeproj` and running from Xcode, `:app:installDebug` and the `adb shell am start` line with its two extras: written from the examples' READMEs and sources, typed by nobody against a scaffolded project. |
 | **The table of what needs the developer's own accounts** | [docs/native-apps.md](../native-apps.md#what-needs-your-own-accounts) says which steps need an Apple Developer membership, a Google Cloud project, a Play Console account or a Tailscale account. It was written from the vendors' documentation as generally known and from this repository's own guides; nobody walked through a vendor's console for it, and a vendor may have changed a name or a requirement. |
 | **The MCP scaffold tools' native answers in a client** | The tools' answers are tested (the files equal the templates). No project was assembled from an answer and built, and no MCP client was connected. |
-| **`--tula-repo` on another machine** | The project names the checkout by a relative path, worked out from the two real paths. A checkout or a project moved alone afterwards breaks the project's build; that was not tried. A path with a space is accepted by the scaffold and was built by nobody (which characters are refused is tested on the function); the two scratch projects sat in directories with plain names. |
+| **`--tula-repo` on another machine** | The project names the checkout by a relative path, worked out from the two real paths. A checkout or a project moved alone afterwards breaks the project's build; that was not tried. A path with a space is refused by the scaffold, before anything is written (the Compose start command prints the path unquoted in a shell line, and nobody built a project under such a name); which characters are refused is tested on the function, and the two scratch projects sat in directories with plain names. That a path of the allowed characters is safe in every shell was not tried beyond those two. |
 | **The native reference pages** | Written by a scan of the doc comments' text, not by a compiler: a declaration the scan does not recognise is missing from the page with no error, and nobody compared the pages with the sources declaration by declaration. |

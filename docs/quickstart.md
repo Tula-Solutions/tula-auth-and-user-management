@@ -162,6 +162,12 @@ one is built with the checkout's Gradle wrapper. Keep the checkout where it is, 
 the path the project's `README.md` points at. The option is refused for the other
 frameworks.
 
+`--tula-repo` must be a checkout you trust: building the project runs its build scripts.
+Gradle runs the checkout's settings, its modules' build files and its wrapper, and Xcode
+evaluates its `Package.swift`, on your machine. The path from the project to it holds
+letters, digits, dots, dashes and underscores only: a directory with a space in its name is
+refused before anything is written.
+
 ### Start the stack
 
 ```sh

@@ -388,8 +388,14 @@ async function tulaSpecs(tulaPackages: string | undefined, cwd: string) {
   return { specs, local: true }
 }
 
-/** A path that can be written into an Xcode project and a Gradle properties file as it is. */
-const PLAIN_PATH = /^[A-Za-z0-9._/ -]+$/
+/**
+ * A path that can be written into an Xcode project and a Gradle properties file as it is, and
+ * pasted into a shell line: the Compose project's start command prints it unquoted.
+ *
+ * No space: both files would take one, the pasted command would split at it, and nobody built
+ * a project whose checkout sits under such a name.
+ */
+const PLAIN_PATH = /^[A-Za-z0-9._/-]+$/
 
 /**
  * Where the checkout is, from the project and from the two directories that name it. The
@@ -430,7 +436,7 @@ async function checkoutPaths(
   }
   if (!Object.values(paths).every((path) => PLAIN_PATH.test(path))) {
     throw new ScaffoldError(
-      'The path from the project to --tula-repo has a character that cannot be written into an Xcode project or a Gradle file as it is. Use directories named with letters, digits, dots, dashes, underscores and spaces.'
+      'The path from the project to --tula-repo has a character that cannot be written into an Xcode project, a Gradle file or a command line as it is. Use directories named with letters, digits, dots, dashes and underscores: no space.'
     )
   }
   return paths

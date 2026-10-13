@@ -376,6 +376,50 @@ function namesOf(stack: Container[]): string[] {
   return stack.map((container) => container.name).filter((name) => name !== 'Companion')
 }
 
+/**
+ * A doc comment as the page takes it, refused when it would break the page.
+ *
+ * The text reaches the page as Markdown. A code fence it opens and does not close would take
+ * the declaration's own code block, and every declaration after it, into itself.
+ *
+ * @param lines - The comment's lines, without their markers.
+ * @param name - The declaration the comment is of, for the error.
+ * @param path - The file's path, for the error.
+ * @returns The comment as one text.
+ * @throws Error naming the file and the declaration, and never the comment's text, when the
+ *   comment has an odd number of fence lines.
+ */
+function documentationOf(lines: string[], name: string, path: string): string {
+  const fences = lines.filter((line) => /^\s*(?:```|~~~)/.test(line)).length
+  if (fences % 2 !== 0) {
+    throw new Error(
+      `docs: the doc comment of ${name} in ${path} has a code fence that is not closed`
+    )
+  }
+  return lines.join('\n').trim()
+}
+
+/**
+ * How much deeper in block comments a line of comment text ends than it began.
+ *
+ * @param source - A line that holds comment text only.
+ * @returns The `/*` it opens less the `*` + `/` it closes, read left to right.
+ */
+function commentDepthChange(source: string): number {
+  let change = 0
+  for (let at = 0; at < source.length - 1; at += 1) {
+    const pair = source.slice(at, at + 2)
+    if (pair === '/*') {
+      change += 1
+      at += 1
+    } else if (pair === '*/') {
+      change -= 1
+      at += 1
+    }
+  }
+  return change
+}
+
 const KOTLIN_ENTRY = /^([A-Z][A-Z0-9_]*)\s*(?:\(.*\))?\s*[,;]?$/
 
 /**
@@ -385,7 +429,8 @@ const KOTLIN_ENTRY = /^([A-Z][A-Z0-9_]*)\s*(?:\(.*\))?\s*[,;]?$/
  * @param language - Which language it is in.
  * @param path - The file's path, for the error.
  * @returns Every declaration an app can name, with its doc comment.
- * @throws Error when the braces of the file do not close: the scan lost its place.
+ * @throws Error when the braces of the file do not close (the scan lost its place), or when
+ *   a doc comment opens a code fence it does not close.
  */
 export function nativeDeclarations(
   text: string,
@@ -400,6 +445,7 @@ export function nativeDeclarations(
   let documentation: string[] = []
   let annotations: string[] = []
   let inBlock: 'doc' | 'plain' | undefined
+  let blockDepth = 0
   let pending: { line: number; column: number; container: Omit<Container, 'depth'> } | undefined
   let skipUntil = -1
 
@@ -410,13 +456,17 @@ export function nativeDeclarations(
 
     if (text === '') {
       if (inBlock) {
+        // Block comments nest, in Swift and in Kotlin alike (`codeOnly` reads them so): a
+        // `/* … */` in a sample inside a doc comment does not end the comment.
+        blockDepth += commentDepthChange(source)
+        const ends = blockDepth <= 0
         if (inBlock === 'doc') {
-          const body = source.replace(/\*\/\s*$/, '').replace(/^\*+ ?/, '')
-          if (!source.startsWith('*/')) {
+          const body = (ends ? source.replace(/\*\/\s*$/, '') : source).replace(/^\*+ ?/, '')
+          if (!(ends && source.startsWith('*/'))) {
             documentation.push(body)
           }
         }
-        if (source.includes('*/')) {
+        if (ends) {
           inBlock = undefined
         }
       } else if (source.startsWith('///')) {
@@ -432,9 +482,11 @@ export function nativeDeclarations(
             documentation.push(first)
           }
           inBlock = 'doc'
+          blockDepth = commentDepthChange(source)
         }
       } else if (source.startsWith('/*')) {
-        inBlock = source.includes('*/') ? undefined : 'plain'
+        blockDepth = commentDepthChange(source)
+        inBlock = blockDepth <= 0 ? undefined : 'plain'
       } else if (source === '') {
         documentation = []
         annotations = []
@@ -483,7 +535,7 @@ export function nativeDeclarations(
                 ...annotations.filter((entry) => !entry.startsWith('@Suppress')),
                 tidy(signature.code),
               ].join('\n'),
-              documentation: documentation.join('\n').trim(),
+              documentation: documentationOf(documentation, qualified, path),
             })
           }
           if (signature.body && TYPE_KINDS.has(matched.kind)) {
@@ -507,12 +559,13 @@ export function nativeDeclarations(
         } else if (language === 'kotlin' && top?.entries) {
           const entry = text.match(KOTLIN_ENTRY)
           if (entry) {
+            const qualified = [...namesOf(stack), entry[1] as string].join('.')
             found.push({
-              name: [...namesOf(stack), entry[1] as string].join('.'),
+              name: qualified,
               kind: 'entry',
               nesting: stack.length,
               code: entry[1] as string,
-              documentation: documentation.join('\n').trim(),
+              documentation: documentationOf(documentation, qualified, path),
             })
           }
         }

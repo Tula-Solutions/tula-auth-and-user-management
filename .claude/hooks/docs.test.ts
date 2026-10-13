@@ -548,6 +548,62 @@ describe('the native reference', () => {
     expect(() => names('public struct A {\n', 'swift')).toThrow(/lost the place in Sample/)
     expect(() => names('class A {\n}\n}\n', 'kotlin')).toThrow(/lost the place in Sample/)
   })
+
+  // Block comments nest in both languages, and a sample in a doc comment may hold one:
+  // read as the comment's end, it cut the page off inside the sample's code fence.
+  test('a block comment inside a doc comment does not end it', () => {
+    const fence = '`'.repeat(3)
+    for (const language of ['swift', 'kotlin'] as const) {
+      const declaration = language === 'swift' ? 'public func signIn() {}' : 'fun signIn() {}'
+      const text = [
+        '/**',
+        ' * Signs in.',
+        ` * ${fence}`,
+        ' * call(onDone = { /* navigate */ })',
+        ` * ${fence}`,
+        ' * After the sample. /* one */ /* two */',
+        ' */',
+        declaration,
+        '',
+      ].join('\n')
+      const [found] = nativeDeclarations(text, language, 'Sample')
+      expect(found?.name).toBe('signIn')
+      expect(found?.documentation).toBe(
+        [
+          'Signs in.',
+          fence,
+          'call(onDone = { /* navigate */ })',
+          fence,
+          'After the sample. /* one */ /* two */',
+        ].join('\n')
+      )
+    }
+  })
+
+  // A doc comment reaches the page as Markdown: a fence it opens and never closes would
+  // swallow the declaration's own code block and everything after it.
+  test('a doc comment with a code fence it does not close stops the generation, by file and declaration and never by its text', () => {
+    const fence = '`'.repeat(3)
+    const swift = `/// Signs in.\n/// ${fence}swift\n/// canary-text()\npublic func signIn() {}\n`
+    const kotlin = `/**\n * Signs in.\n * ${fence}\n * canary-text()\n */\nfun signIn() {}\n`
+    for (const [text, language] of [
+      [swift, 'swift'],
+      [kotlin, 'kotlin'],
+    ] as const) {
+      let message = ''
+      try {
+        names(text, language)
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error)
+      }
+      expect(message).toMatch(/code fence that is not closed/)
+      expect(message).toContain('Sample')
+      expect(message).toContain('signIn')
+      expect(message).not.toContain('canary-text')
+    }
+    const closed = `/// Signs in.\n/// ${fence}swift\n/// call()\n/// ${fence}\npublic func signIn() {}\n`
+    expect(names(closed, 'swift')).toEqual(['signIn'])
+  })
 })
 
 describe('the native guides', () => {
@@ -602,5 +658,25 @@ describe('the native guides', () => {
       })
     }
     expect(problems).toEqual([])
+  })
+})
+
+describe('--tula-repo is a checkout whose build scripts run', () => {
+  // Gradle runs the checkout's settings, modules and wrapper, and Xcode evaluates its
+  // `Package.swift`, on the developer's machine. Every place that tells someone to pass the
+  // option says so, in the same words.
+  const SENTENCE =
+    '`--tula-repo` must be a checkout you trust: building the project runs its build scripts.'
+  const PLACES = [
+    'docs/quickstart.md',
+    'docs/cli.md',
+    'packages/create-tula/README.md',
+    'packages/create-tula/templates/swiftui/overlay/README.md.tmpl',
+    'packages/create-tula/templates/compose/overlay/README.md.tmpl',
+  ]
+
+  test.each(PLACES)('%s says so', (place) => {
+    const text = readFileSync(join(root, place), 'utf8').replace(/\s+/g, ' ')
+    expect(text.includes(SENTENCE)).toBe(true)
   })
 })

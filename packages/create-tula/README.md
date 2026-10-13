@@ -12,7 +12,7 @@ cd my-app && bun install && bunx tula dev && bun run dev
 | Option | What |
 | --- | --- |
 | `--framework react-vite \| nextjs \| expo \| swiftui \| compose` | The example app the project starts from: two web ones, three native ones. Asked for on a terminal. |
-| `--tula-repo <dir>` | A checkout of the Tula repository. Required for `swiftui` and `compose`, refused for the others. |
+| `--tula-repo <dir>` | A checkout of the Tula repository. Required for `swiftui` and `compose`, refused for the others. `--tula-repo` must be a checkout you trust: building the project runs its build scripts. |
 | `--api-image <ref>` | The Tula API image written to `.env` (`TULA_API_IMAGE`). Default `tula-api:local`. |
 | `--api-port`, `--mailpit-port` | The host ports of the API (3003) and Mailpit's inbox (8025). |
 | `--tula-packages <dir>` | Install every `@tula/*` package from tarballs in this directory. |
@@ -34,7 +34,8 @@ A native app is a directory of its own beside the stack's files: `app` (Expo), `
 Xcode project) or `android` (a Gradle build). The Swift package and the Kotlin libraries are
 published nowhere, and create-tula names no registry that does not exist: a SwiftUI or a
 Compose project names its SDK by a path into the checkout `--tula-repo` gives, and the
-Compose one is built with the checkout's Gradle wrapper. A native project holds no key.
+Compose one is built with the checkout's Gradle wrapper. The path to it holds letters,
+digits, dots, dashes and underscores only (no space). A native project holds no key.
 **Nobody has run a scaffolded native project in a simulator, on an emulator or on a phone**:
 the SwiftUI and the Compose one were compiled, the Expo one was not installed
 ([docs/quickstart.md](../../docs/quickstart.md#the-native-path),

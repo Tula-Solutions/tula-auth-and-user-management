@@ -400,18 +400,41 @@ describe('--tula-repo', () => {
     }
   )
 
-  test('a space is fine: both files take it', async () => {
+  // The Compose project's start command and its README print the path in a shell line,
+  // unquoted, and nobody built a project whose checkout sits under a name with a space.
+  test('a checkout in a directory with a space is refused, the value not repeated, and nothing is written', async () => {
     await mkdir(join(dir, 'my checkout/native/swift'), { recursive: true })
+    await mkdir(join(dir, 'my checkout/native/android'), { recursive: true })
     await writeFile(join(dir, 'my checkout/native/swift/Package.swift'), '')
+    await writeFile(join(dir, 'my checkout/native/android/settings.gradle.kts'), '')
+    for (const framework of ['swiftui', 'compose'] as const) {
+      const refused = scaffold({ cwd: dir, name: 'shop', framework, tulaRepo: 'my checkout' })
+      await expect(refused).rejects.toThrow(ScaffoldError)
+      await expect(refused).rejects.toThrow(/has a character that cannot be written/)
+      const message = await refused.then(
+        () => '',
+        (error: unknown) => (error instanceof Error ? error.message : '')
+      )
+      expect(message).not.toContain('my checkout')
+      expect(message).not.toContain('spaces')
+    }
+    expect(await readdir(dir)).toEqual(['my checkout'])
+  })
+
+  test('a space above the project is no part of the path, which climbs with `..`', async () => {
+    const cwd = join(dir, 'my work')
+    await mkdir(cwd)
+    await mkdir(join(dir, 'checkout/native/swift'), { recursive: true })
+    await writeFile(join(dir, 'checkout/native/swift/Package.swift'), '')
     const { directory } = await scaffold({
-      cwd: dir,
+      cwd,
       name: 'shop',
       framework: 'swiftui',
-      tulaRepo: 'my checkout',
+      tulaRepo: '../checkout',
     })
     expect(
       await readFile(join(directory, 'ios/TulaExample.xcodeproj/project.pbxproj'), 'utf8')
-    ).toContain('relativePath = "../../my checkout/native/swift";')
+    ).toContain('relativePath = "../../../checkout/native/swift";')
   })
 })
 

@@ -13,6 +13,10 @@ line; a teammate needs a checkout at the same relative place. The build has no G
 wrapper of its own either: run the checkout's, as below. Gradle writes the SDK modules'
 build output into the checkout (`native/android/*/build`, which its `.gitignore` covers).
 
+`--tula-repo` must be a checkout you trust: building the project runs its build scripts.
+Gradle runs the checkout's settings, its modules' build files and its wrapper on your
+machine.
+
 **Nobody has run this app from a project made this way.** The example it is copied from was
 run on one emulator; nothing was run on a phone. The Tula repository's
 `examples/compose/README.md` says what was run.

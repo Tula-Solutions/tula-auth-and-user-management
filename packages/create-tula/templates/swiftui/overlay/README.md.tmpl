@@ -11,6 +11,10 @@ Xcode (the project's Package Dependencies) or in `ios/TulaExample.xcodeproj/proj
 (`relativePath`, and the two comments that repeat it). A teammate needs a checkout at the
 same relative place.
 
+`--tula-repo` must be a checkout you trust: building the project runs its build scripts.
+Xcode evaluates the checkout's `Package.swift` on your machine when it resolves the
+package.
+
 **Nobody has run this project.** The example it is copied from was run in one iOS
 simulator; nothing was run on a device, and no passkey sheet, Sign in with Apple sheet or
 browser session has been shown by the Swift package. The Tula repository's

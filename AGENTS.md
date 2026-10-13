@@ -302,7 +302,12 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   nowhere, so a `swiftui` or a `compose` project names its SDK by a relative path into a
   checkout** (`--tula-repo`, required for those two and refused for the others;
   `checkoutPaths`: real paths, the checkout proven by a file it must hold, a path with a
-  character an Xcode project or a Gradle file cannot take as it is refused). Never write a
+  character an Xcode project, a Gradle file or a pasted command line cannot take as it is
+  refused, **a space among them**: the Compose start command prints the path unquoted).
+  **Building such a project runs the checkout's build scripts** (its Gradle settings,
+  modules and wrapper; Xcode evaluates its `Package.swift`), so every place that documents
+  the option says, in these words, "`--tula-repo` must be a checkout you trust: building
+  the project runs its build scripts." (`.claude/hooks/docs.test.ts` holds the five). Never write a
   Maven coordinate, a Swift package URL or a registry there until one exists; the Compose
   template ships no Gradle wrapper and is built with the checkout's. `@tula/mcp`'s
   `detect_framework` never answers `swiftui` or `compose` (it reads one `package.json`).
