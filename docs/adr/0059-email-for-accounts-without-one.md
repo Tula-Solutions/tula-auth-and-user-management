@@ -168,7 +168,8 @@ is treated as every other weakening is.
   ([ADR 0053](0053-proposals.md)), does the same in the same place: counted under the
   lock, the same rule, the same three fields beside `proposalId` and `approvedBy`. A
   count that cannot be taken throws before anything is written, and the proposal ends
-  `failed`. `tula approve` reads the count for a provider that is on and says it in its
+  `failed` with `error`: the approval is spent (it is written first, as always), the
+  provider is still on, and the agent has to ask again. `tula approve` reads the count for a provider that is on and says it in its
   question: the number ("at least" past the scan limit), "no account was found", or fixed
   words for a count that could not be read and for a server that has none. It never
   stops the question and never fails the run: the person at the terminal is the check.
@@ -195,7 +196,10 @@ from on to off carries one more fixed entry in `notes` (no name, no number), bec
 the person who applies the draft sees the number.
 
 **A count `tula` could not read is not a count of none.** Only a server from before the
-route (it answers 404 or 405) leaves a plan unjudged. A request that was refused, limited
+route leaves a plan unjudged, and it is known by the API's own answer for a route it does
+not have: a 404 in the contract's envelope with `resource.not_found`. A 404 or a 405 of
+any other kind (a proxy's page, an access wall, no body, another code) is a count that
+was not read. A request that was refused, limited
 or failed, one that got no answer and an answer that is no count put the provider's path
 in the plan's `weakened` (the contract's own case of a floor: none found, not every
 account looked at), so `tula apply --yes` needs `--allow-weaker` and `tula diff` says, in

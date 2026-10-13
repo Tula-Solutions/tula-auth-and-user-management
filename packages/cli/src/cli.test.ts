@@ -1105,10 +1105,6 @@ describe('a provider that accounts can only sign in with (ADR 0059)', () => {
       () =>
         Response.json({ status: 404, code: 'resource.not_found', detail: 'x' }, { status: 404 }),
     ],
-    [
-      'a server that does not take the method',
-      () => Response.json({ status: 405, code: 'internal', detail: 'x' }, { status: 405 }),
-    ],
   ] as [string, () => Response][])(
     '%s: the accounts are said to be uncounted, never none, and the plan is not judged',
     async (_name, answer) => {
@@ -1146,6 +1142,20 @@ describe('a provider that accounts can only sign in with (ADR 0059)', () => {
     ['a server that limits (429)', failed(429, 'rate_limited')],
     ['a key that is refused (401)', failed(401, 'auth.invalid_key')],
     ['a server error (500)', failed(500, 'internal')],
+    // A 404 or a 405 that is not the API's own answer for an unknown route is something in
+    // front of it speaking (a proxy, an access wall): it says nothing about the server.
+    [
+      'a 404 that is an HTML page',
+      () =>
+        new Response(`<html><body>${CANARY}</body></html>`, {
+          status: 404,
+          headers: { 'content-type': 'text/html' },
+        }),
+    ],
+    ['a 404 with no body', () => new Response(null, { status: 404 })],
+    ['a 404 with another code', failed(404, 'auth.forbidden')],
+    ['a 405 in the envelope', failed(405, 'resource.not_found')],
+    ['a 405 with another code', failed(405, 'internal')],
     [
       'no answer',
       () => {

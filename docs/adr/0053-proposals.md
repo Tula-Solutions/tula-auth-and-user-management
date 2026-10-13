@@ -456,7 +456,8 @@ function: `OAuth.switchOff` counts those accounts again inside the lock and the 
 says `weakened: true` with `dependentAccounts` (and `dependentAccountsIncomplete` past the
 scan limit). Nothing restates the rule. It is not refused for them, as the route's change
 is not; a count that cannot be taken ends the proposal `failed` with `error`, the provider
-still on. `tula approve` reads the count with the operator's key before it asks and says
+still on. The approval is spent, as for every failed operation: the agent has to ask
+again. `tula approve` reads the count with the operator's key before it asks and says
 it in the question (fixed words when it could not be read, or when the server has no
 count): that number is what the person saw, the entry's is the write's own.
 

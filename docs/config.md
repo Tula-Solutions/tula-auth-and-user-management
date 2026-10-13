@@ -626,7 +626,10 @@ Changes pending. Run `tula apply` to make them.
   same plan would leave them): no password, no verified address with the emailed code on,
   no other enabled provider, no passkey. The server looks at no more than 1,000 of the
   provider's accounts; with more than that the number is a floor, printed as `at least N
-  accounts` (`at least 1 account`), and the plan is flagged also when it found none among those it looked at.
+  accounts` (`at least 1 account`). When it found none among those it looked at the plan
+  is flagged all the same and says so with no number: `none of the accounts the server
+  read can sign in only with x, and it did not read them all: the rest were not looked
+  at, so how many there are is not known`.
   With no such account nothing is flagged and nothing is printed. An account with no email
   address (one made through X or Facebook, which give none) has no recovery of its own:
   it cannot sign in until the provider is back or it is given an address. The server does
@@ -635,15 +638,18 @@ Changes pending. Run `tula apply` to make them.
   **A count that is not known is said, never printed as no accounts, and is one of two
   things.**
 
-  - **A server from before the count has none to give** (it answers 404, or 405, to the
-    request). Only then is the plan not judged: the run goes on, nothing is flagged for
+  - **A server from before the count has none to give**: it answers the request with the
+    API's own 404 for a route it does not have (the JSON error envelope with the code
+    `resource.not_found`). Only then is the plan not judged: the run goes on, nothing is flagged for
     that provider, `apply --yes` needs no flag for it, and the plan says `! the accounts
     that can sign in only with x could not be counted (this server has no count): if
     there are any they are locked out while it is off, and this plan was not judged for
     them`.
   - **A count the server has and `tula` could not read flags the plan**: a request that
-    was refused (401, 403), limited (429), failed (any 5xx) or got no answer, and an
-    answer that is not a count. The provider's path is in `weakened`
+    was refused (401, 403), limited (429), failed (any 5xx) or got no answer, an
+    answer that is not a count, and **a 404 or a 405 that is not the API's own** (a
+    proxy's or an access wall's page, no body, another code: something in front of the
+    API answered, which says nothing about the server). The provider's path is in `weakened`
     (`providers.<provider>.enabled`, or `providers.<provider>` for a removal), so
     `apply --yes` refuses the plan without `--allow-weaker` before any write, and the
     plan says `! the accounts that can sign in only with x could not be counted (the

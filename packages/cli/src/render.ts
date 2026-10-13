@@ -453,7 +453,14 @@ function dependentAccountLines(plan: Pick<Plan, 'providers'>): string[] {
     if (accounts === 0 && !more) {
       return []
     }
-    // A scan that stopped early found a floor, also when it found none among what it read.
+    if (accounts === 0) {
+      // A scan that stopped early and found none: a floor of nothing is no number, and
+      // nobody found is nobody said to be locked out. The plan is flagged all the same.
+      return [
+        `none of the accounts the server read can sign in only with ${change.provider}, and it did not read them all: the rest were not looked at, so how many there are is not known`,
+      ]
+    }
+    // A scan that stopped early found a floor.
     const count = `${more ? 'at least ' : ''}${accounts}`
     const one = accounts === 1 && !more
     return [

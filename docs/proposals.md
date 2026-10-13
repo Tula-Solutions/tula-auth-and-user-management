@@ -116,7 +116,10 @@ shows: that a credential the agent's tools do not hold was used
   (`reason: "expired"`). The assistant can ask again.
 - **A proposal is approved once** (`reason: "already_decided"`), also when what it asked
   for could not be carried out (the user was deleted meanwhile: the proposal is `failed`,
-  and spent).
+  and spent). The same holds for switching a provider off when the server cannot count
+  the accounts that can sign in only with it: it does not switch the provider off on a
+  guess, the proposal is `failed` (`error`) with the provider still on, the approval is
+  spent, and the assistant has to ask again.
 - **An approval that found nothing left to change says so.** A proposal for what is
   already so is taken, and approving it is `executed`: the session had ended, the user was
   not banned, the provider was already off. The answer to that approval then carries

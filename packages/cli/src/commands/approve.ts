@@ -164,7 +164,8 @@ const NOT_COUNTED = {
  *
  * A count that was not had is never zero and never a number: fixed words say that it was
  * not counted and what follows if there are such accounts. A scan that stopped early found
- * a floor, also when it found none among what it read.
+ * a floor ("at least"); one that found none among what it read is said as that, with no
+ * number and nobody locked out.
  */
 function dependentsWords(known: KnownDependents): string {
   if (known === null || known === DEPENDENTS_UNREAD) {
@@ -177,6 +178,10 @@ function dependentsWords(known: KnownDependents): string {
   const when = 'Counted just now; the server counts again when it switches the provider off.'
   if (accounts === 0 && !more) {
     return `No account was found that can sign in only with this provider. ${when}`
+  }
+  if (accounts === 0) {
+    // A floor of nothing is no number, and nobody found is nobody said to be locked out.
+    return `No account that can sign in only with this provider was found among the accounts the server read, and it did not read them all: the rest were not looked at, so how many there are is not known. ${when}`
   }
   const one = accounts === 1 && !more
   const count = `${more ? 'At least ' : ''}${accounts} ${accounts === 1 ? 'account' : 'accounts'}`

@@ -3669,8 +3669,11 @@ identity routes) and in the flow service (`startOAuth`, `oauthCallback`, `exchan
   reads the count and asks first, `tula diff` prints it and `tula apply --yes` refuses
   without `--allow-weaker`. Turning it into a refusal is the owner's decision; the count
   is already taken in the write's lock for it. **A count `tula` could not read is never a
-  count of none and never "not judged"**: only a server from before the route (404, 405)
-  leaves a plan unjudged (`null`); a refusal, a limit, a failure, no answer and an answer
+  count of none and never "not judged"**: only a server from before the route
+  leaves a plan unjudged (`null`), and it is known by the API's own answer for an unknown
+  route and nothing else (`isUnknownRoute`: a 404 in the contract's envelope with
+  `resource.not_found`; never by the status alone, a proxy's or an access wall's 404 or
+  405 is `'unread'`); a refusal, a limit, a failure, no answer and an answer
   that is no count are `'unread'` (`readDependents`), handed to the contract's rule as a
   floor of none (`{ accounts: 0, more: true }`: no rule of the CLI's own), so the path is
   in `plan.weakened` and `apply --yes` needs `--allow-weaker`; the diff says it in fixed

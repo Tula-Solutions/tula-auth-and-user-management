@@ -617,7 +617,7 @@ describe('a provider that accounts depend on (ADR 0059)', () => {
       true,
       { x: { accounts: 0, more: true } },
       ['providers.x.enabled'],
-      'at least 0 accounts can sign in only with x: they are locked out while it is off',
+      'none of the accounts the server read can sign in only with x, and it did not read them all: the rest were not looked at, so how many there are is not known',
     ],
     [
       'switched off, the scan’s limit found and more not looked at',
@@ -696,6 +696,8 @@ describe('a provider that accounts depend on (ADR 0059)', () => {
     expect(result.providers.find((change) => change.provider === 'x')?.weakened).toEqual(weakened)
     const lines = planWarnings(result).filter((warning) => warning.includes('sign in only with'))
     expect(lines).toEqual(line === null ? [] : [line])
+    // A floor of none is no number: nobody was found, and nobody is said to be locked out.
+    expect(planWarnings(result).join('\n')).not.toMatch(/at least 0/i)
     // A count that was not read is never said as a number.
     if (dependents.x === null || dependents.x === 'unread') {
       expect(planWarnings(result).join('\n')).not.toMatch(/\d+ accounts?/)

@@ -113,20 +113,30 @@ export async function readRemote(
 }
 
 /**
- * The answers of a server from before the count: no such route, or no such method on it.
- * Nothing else is "this server has no count": a refusal, a limit, a failure and no answer
- * at all are a count that exists and was not read.
+ * Whether a refused count is the answer of a server from before the count: the API's own
+ * answer for a route it does not have, which is a 404 in the contract's error envelope
+ * with the code `resource.not_found` (`notFound` in the API's handlers; it never answers
+ * 405).
+ *
+ * Nothing else is "this server has no count". A 404 or a 405 with another code, with a
+ * page or with no body is something in front of the API speaking (a proxy, an access
+ * wall), and says nothing about the server: like a refusal, a limit, a failure and no
+ * answer at all it is a count that exists and was not read. The admin client gives an
+ * answer that is not the envelope the code `response.invalid`, so the code alone tells.
  */
-const NO_SUCH_ROUTE: ReadonlySet<number> = new Set([404, 405])
+function isUnknownRoute(error: { status: number; code: string }): boolean {
+  return error.status === 404 && error.code === 'resource.not_found'
+}
 
 /**
  * Ask the server how many accounts depend on each of some providers: the ones a run would
  * switch off or remove, and no other (ADR 0059).
  *
  * A count that cannot be had is never zero and never the run's failure, and it is one of
- * two things. A server from before the route (it answers 404 or 405) has no count to give:
- * `null`, and the plan judges nothing for that provider. Anything else (a refusal, a limit,
- * a server's failure, no answer, an answer of another shape) is a count that exists and was
+ * two things. A server from before the route (it answers its own 404 for an unknown route,
+ * {@link isUnknownRoute}) has no count to give: `null`, and the plan judges nothing for
+ * that provider. Anything else (a refusal, a limit, a server's failure, no answer, an
+ * answer of another shape, a 404 or 405 that is not the API's own) is a count that exists and was
  * not read: `'unread'`, and the plan is flagged, so that `tula apply --yes` is not let
  * through by a request that failed. Nothing of the failure is kept.
  *
@@ -148,7 +158,7 @@ export async function readDependents(
       if (!isTulaAdminError(error)) {
         throw error
       }
-      dependents[provider] = NO_SUCH_ROUTE.has(error.status) ? null : DEPENDENTS_UNREAD
+      dependents[provider] = isUnknownRoute(error) ? null : DEPENDENTS_UNREAD
     }
   }
   return dependents
