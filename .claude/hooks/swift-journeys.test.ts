@@ -1,10 +1,15 @@
 import { describe, expect, test } from 'bun:test'
-import { SWIFT_COVERAGE_THRESHOLD, swiftCoverage } from '../../native/swift/fixture/coverage'
+import {
+  SWIFT_COVERAGE_THRESHOLD,
+  SWIFT_COVERED_MODULES,
+  swiftCoverage,
+} from '../../native/swift/fixture/coverage'
 import {
   SWIFT_NOT_BUILT,
   scanSwiftJourneys,
   swiftJourneyProblems,
 } from '../../native/swift/fixture/journeys'
+import { pickSimulator, xcodebuildArguments } from '../../native/swift/fixture/ui-tests'
 import { loadClientJourneys, notBuilt } from '../../packages/conformance/src/client-journeys'
 
 // The Swift client's journey tests are XCTest methods, which no CI job of `verify` can run (it
@@ -176,5 +181,103 @@ describe('the coverage of the Swift client module', () => {
 
   test('the thresholds are the ones the docs state', () => {
     expect(SWIFT_COVERAGE_THRESHOLD).toEqual({ lines: 0.9, functions: 0.85 })
+  })
+
+  test('the screens’ module is held alone, and its views are left out like the generated types', () => {
+    const report = {
+      data: [
+        {
+          files: [
+            entry('/r/native/swift/Sources/TulaAuth/TulaSession.swift', [1000, 1000], [100, 100]),
+            entry('/r/native/swift/Sources/TulaAuthUI/TulaAuthModel.swift', [100, 80], [10, 9]),
+            entry('/r/native/swift/Sources/TulaAuthUI/TulaStrings.swift', [100, 100], [10, 10]),
+            entry('/r/native/swift/Sources/TulaAuthUI/Views/TulaAuthView.swift', [900, 0], [90, 0]),
+            entry('/r/native/swift/Tests/TulaAuthUITests/Support.swift', [500, 500], [50, 50]),
+          ],
+        },
+      ],
+    }
+    const screens = swiftCoverage(report, 'TulaAuthUI')
+    // A fully covered client does not lift the screens' share, and a view counts for neither.
+    expect(screens.lines).toBe(0.9)
+    expect(screens.functions).toBe(0.95)
+    expect(screens.files.map((file) => file.name)).toEqual([
+      'TulaAuthModel.swift',
+      'TulaStrings.swift',
+    ])
+    expect(swiftCoverage(report).files.map((file) => file.name)).toEqual(['TulaSession.swift'])
+    expect(SWIFT_COVERED_MODULES).toEqual(['TulaAuth', 'TulaAuthUI'])
+  })
+
+  test('a report with only views of the screens’ module is refused, not passed', () => {
+    const report = {
+      data: [
+        {
+          files: [
+            entry('/r/native/swift/Sources/TulaAuth/TulaSession.swift', [10, 10], [1, 1]),
+            entry('/r/native/swift/Sources/TulaAuthUI/Views/TulaAuthView.swift', [10, 10], [1, 1]),
+          ],
+        },
+      ],
+    }
+    expect(() => swiftCoverage(report, 'TulaAuthUI')).toThrow('Sources/TulaAuthUI')
+  })
+})
+
+describe('the run of the SwiftUI screens’ UI tests', () => {
+  const list = {
+    devices: {
+      'com.apple.CoreSimulator.SimRuntime.iOS-18-5': [
+        { udid: 'B', name: 'iPhone 16 Pro', isAvailable: true },
+        { udid: 'A', name: 'iPhone 16' },
+        { udid: 'P', name: 'iPad Air', isAvailable: true },
+      ],
+      'com.apple.CoreSimulator.SimRuntime.iOS-18-10': [
+        { udid: 'GONE', name: 'iPhone 15', isAvailable: false },
+      ],
+      'com.apple.CoreSimulator.SimRuntime.iOS-17-9': [{ udid: 'OLD', name: 'iPhone 15' }],
+      'com.apple.CoreSimulator.SimRuntime.watchOS-11-0': [{ udid: 'W', name: 'iPhone Watch' }],
+    },
+  }
+
+  test('picks an available iPhone of the newest iOS runtime that has one, the first by name', () => {
+    expect(pickSimulator(list)).toEqual({ udid: 'A', name: 'iPhone 16', version: '18.5' })
+  })
+
+  test('orders runtime versions by number, not by text', () => {
+    const picked = pickSimulator({
+      devices: {
+        'com.apple.CoreSimulator.SimRuntime.iOS-18-9': [{ udid: 'NINE', name: 'iPhone 16' }],
+        'com.apple.CoreSimulator.SimRuntime.iOS-18-10': [{ udid: 'TEN', name: 'iPhone 16' }],
+      },
+    })
+    expect(picked?.udid).toBe('TEN')
+  })
+
+  test('answers nothing where the machine has no iPhone simulator', () => {
+    expect(pickSimulator({})).toBeNull()
+    expect(
+      pickSimulator({ devices: { 'com.apple.CoreSimulator.SimRuntime.tvOS-18-0': [] } })
+    ).toBeNull()
+  })
+
+  test('runs one test at a time on the simulator it was given, and passes the rest on', () => {
+    const args = xcodebuildArguments('UDID-1', '/tmp/derived', ['-only-testing:T/C/testX'])
+    expect(args.slice(0, 2)).toEqual(['xcodebuild', 'test'])
+    expect(args[args.indexOf('-destination') + 1]).toBe('platform=iOS Simulator,id=UDID-1')
+    expect(args[args.indexOf('-derivedDataPath') + 1]).toBe('/tmp/derived')
+    expect(args[args.indexOf('-parallel-testing-enabled') + 1]).toBe('NO')
+    expect(args.at(-1)).toBe('-only-testing:T/C/testX')
+  })
+
+  test('every process the run starts has a timeout, and the fixture keeps its guard', async () => {
+    const source = await Bun.file(
+      new URL('../../native/swift/fixture/ui-tests.ts', import.meta.url)
+    ).text()
+    expect(source.match(/Bun\.spawnSync\(/g)?.length).toBe(
+      source.match(/timeout: ASK_TIMEOUT_MS/g)?.length
+    )
+    expect(source).toContain('timeout: TEST_TIMEOUT_MS')
+    expect(source).toContain("TULA_NATIVE_FIXTURE: '1'")
   })
 })

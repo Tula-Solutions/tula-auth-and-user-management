@@ -22,6 +22,9 @@ e2e
 # The native SDKs, and the fixture the Swift journey tests run against (native/swift/fixture):
 # the same kind of server as e2e's, and no image needs anything under native/.
 native
+# The SwiftUI example and its UI tests (an Xcode project; its tests drive that fixture): no
+# image builds or serves it.
+examples/swiftui
 packages/conformance/src
 **/*.test.ts
 **/*.suite.ts
