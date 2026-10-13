@@ -107,7 +107,7 @@ export const READ_TOOL_NAMES: readonly string[] = TOOLS.filter((tool) => tool.gr
  *
  * @example
  * ```ts
- * PROPOSE_TOOL_NAMES // ['propose_ban_user']
+ * PROPOSE_TOOL_NAMES // ['propose_ban_user', 'propose_unban_user', 'propose_end_session', …]
  * ```
  */
 export const PROPOSE_TOOL_NAMES: readonly string[] = TOOLS.filter(
@@ -144,7 +144,7 @@ export const SCAFFOLD_TOOL_NAMES: readonly string[] = TOOLS.filter(
  *
  * @example
  * ```ts
- * TOOL_NAMES.length // 13
+ * TOOL_NAMES.length // 16
  * ```
  */
 export const TOOL_NAMES: readonly string[] = TOOLS.map((tool) => tool.name)

@@ -17,6 +17,25 @@ const PROPOSAL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
  */
 const CONSEQUENCES: Readonly<Record<string, string>> = {
   ban_user: 'The user is banned at once: every session of theirs ends and they cannot sign in.',
+  unban_user:
+    'The user’s ban is lifted at once: they can sign in again. Sessions that were ended stay ended.',
+  end_session:
+    'That one session is ended at once: whoever holds it is signed out and has to sign in again.',
+  disable_oauth_provider:
+    'Sign-in with that provider is switched off at once: nobody signs in or signs up with it until it is switched on again. Its credentials are kept.',
+}
+
+/** What each kind of target is called, in this CLI's own words. */
+const TARGET_WORDS: Readonly<Record<string, string>> = {
+  user: 'user',
+  session: 'session',
+  oauth_provider: 'provider',
+}
+
+/** What a target of a proposal is called here; a kind this version does not know, as sent. */
+function targetWord(proposal: Proposal): string {
+  const type = String(proposal.target.type)
+  return Object.hasOwn(TARGET_WORDS, type) ? (TARGET_WORDS[type] as string) : printable(type, 40)
 }
 
 /** Why an approval was refused, by the server's fixed word. */
@@ -28,6 +47,8 @@ const REFUSALS: Readonly<Record<string, string>> = {
     'The proposal is not the one that was shown: its operation or its target differs. Nothing was changed.',
   agent_key_revoked:
     'The agent key that asked for this was revoked: what a revoked key asked for is never carried out. Nothing was changed.',
+  production_environment:
+    'This is a production environment, and its settings do not (or no longer) accept proposals from an agent (agents.proposalsInProduction). Nothing was changed, and the proposal is not spent: it can still be approved before it expires if the setting is switched on.',
 }
 
 /** Why a proposal is expired, by the server's fixed word. */
@@ -54,12 +75,19 @@ function failureWords(proposal: Proposal): string {
   if (reason === 'incomplete') {
     return `Approved, and only partly carried out: the change was made and a later step failed. Check the target. ${spent}`
   }
+  const what = targetWord(proposal)
   if (reason === 'target_not_found') {
-    return `Approved, but nothing was changed: the user no longer exists. ${spent}`
+    return `Approved, but nothing was changed: the ${what} no longer exists. ${spent}`
+  }
+  if (reason === 'last_sign_in_method') {
+    return (
+      'Approved, but nothing was changed: switching this provider off would leave the environment ' +
+      `with no way to sign in, which the server refuses for an administrator too. The provider is still on. ${spent}`
+    )
   }
   return (
     `Approved, but the operation failed on the server (${reason === '' ? 'unknown' : printable(reason, 40)}). ` +
-    `Read the user to see where they stand, and have the agent ask again if the change is still wanted. ${spent}`
+    `Check the ${what} as it is now, and have the agent ask again if the change is still wanted. ${spent}`
   )
 }
 
@@ -97,11 +125,30 @@ function timeLeft(expiresAt: string, now: Date): string {
   return seconds >= 60 ? `in about ${Math.round(seconds / 60)} min` : `in ${seconds} s`
 }
 
-/** Who the proposal is about, read with the operator's own key, for the eye only. */
+/**
+ * A provider as the environment has it now, read with the operator's own key. The name is
+ * the proposal's, made printable; what is said of it is this CLI's words for two booleans.
+ */
+async function describeProvider(admin: AdminClient, id: string): Promise<string> {
+  const { data } = await admin.call('listOAuthProviders', {})
+  const found = data.data.find((one) => one.provider === id)
+  const name = printable(id, 64)
+  if (!found?.configured) {
+    return `provider ${name} (not configured now)`
+  }
+  return `provider ${name} (${found.enabled ? 'on now' : 'already off'})`
+}
+
+/** Who or what the proposal is about, read with the operator's own key, for the eye only. */
 async function describeTarget(admin: AdminClient, proposal: Proposal): Promise<string> {
   const id = printable(proposal.target.id, 64)
+  if (proposal.target.type === 'oauth_provider') {
+    return describeProvider(admin, proposal.target.id)
+  }
   if (proposal.target.type !== 'user') {
-    return `${printable(proposal.target.type, 40)} ${id}`
+    // A session is named by its id: the admin API reads a session under its user, and a
+    // proposal names the session alone.
+    return `${targetWord(proposal)} ${id}`
   }
   try {
     const { data } = await admin.call('getUser', { params: { userId: proposal.target.id } })
@@ -262,7 +309,7 @@ async function run(context: CommandContext): Promise<number> {
   if (decided.status !== 'failed') {
     // `approved`: the server could not record how the operation ended.
     output.error(
-      `${output.errorStyle.red('error:')} Approved, and the server could not record how the operation ended. Read the user to see where they stand. The proposal is spent: it cannot be approved again.`
+      `${output.errorStyle.red('error:')} Approved, and the server could not record how the operation ended. Check the ${targetWord(decided)} as it is now. The proposal is spent: it cannot be approved again.`
     )
     return EXIT.error
   }
@@ -300,7 +347,10 @@ export const approveCommand: Command = {
     '--secret-key-file, TULA_SECRET_KEY_<NAME> or TULA_SECRET_KEY, never the command line. An ' +
     'agent key cannot approve. Keep the secret key out of the environment the agent runs in.\n\n' +
     'Exit codes: 0 approved and carried out, 1 anything else (declined, expired, already ' +
-    'approved, not carried out, an error).',
+    'approved, not carried out, an error).\n\n' +
+    'What an agent can propose: banning a user, lifting a ban, ending one session, switching ' +
+    'one OAuth provider off. A production environment accepts proposals only where its ' +
+    'settings say so (agents.proposalsInProduction, off by default).',
   maxPositionals: 1,
   options: {
     env: {

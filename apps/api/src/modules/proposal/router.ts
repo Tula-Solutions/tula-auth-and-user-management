@@ -42,6 +42,28 @@ const createRateLimit = rateLimit({
   key: byEnvironment,
 })
 
+/**
+ * How many proposals of **one operation** an environment's agents may ask for in a minute:
+ * a count per operation, beside the one all operations share ({@link createRateLimit}).
+ * Mounted after the body is validated, because the operation is in the body: the key holds
+ * the environment's id and a word of the contract's closed list, nothing of the target.
+ * Refuses when the limiter cannot count. A request the shared limit refused is not counted
+ * here, and one this limit refuses has been counted there: the shared count is of everything
+ * an environment's agents asked.
+ */
+const operationRateLimit = rateLimit({
+  name: 'proposal_create_operation',
+  limit: Proposals.PROPOSALS_PER_OPERATION_PER_MINUTE,
+  window: '1m',
+  key: (c) => {
+    const environment = byEnvironment(c)
+    const { operation } = (
+      c.req as unknown as { valid(target: 'json'): { operation: string } }
+    ).valid('json')
+    return environment === null ? null : `${environment}:${operation}`
+  },
+})
+
 const whatAProposalIs =
   'A proposal is a change an AI agent has asked for and that has **not happened**. It names ' +
   'one operation from a closed list and one target by id, holds no text anyone wrote, can be ' +
@@ -59,9 +81,15 @@ router.post(
       'to approve the proposal with a secret key or in the dashboard ' +
       '(`POST /v1/admin/proposals/{id}/approve`), which an agent key cannot do. Asking again ' +
       'for the same operation on the same target while the first proposal still waits ' +
-      'answers that proposal. A production environment accepts none (`auth.forbidden`, ' +
-      '`params.reason`: `production_environment`). ' +
-      `Limited to ${Proposals.PROPOSALS_PER_MINUTE} a minute per environment.`,
+      'answers that proposal. The operations are `ban_user` and `unban_user` (a user, by ' +
+      'id), `end_session` (one session, by id) and `disable_oauth_provider` (one provider, ' +
+      'by its name: `enabled: false` and nothing else). A production environment accepts ' +
+      'none unless its settings say so (`agents.proposalsInProduction`, off by default): ' +
+      '`auth.forbidden`, `params.reason`: `production_environment`. Switching a provider ' +
+      'off is refused (422, as the provider route refuses it) when it would leave the ' +
+      'environment with no way to sign in, and judged again when the proposal is approved. ' +
+      `Limited to ${Proposals.PROPOSALS_PER_MINUTE} a minute per environment, and to ` +
+      `${Proposals.PROPOSALS_PER_OPERATION_PER_MINUTE} a minute for each operation.`,
     security: openapi.security.agent,
     responses: {
       201: { description: 'The proposal, waiting for a human.', content: json(ProposalSchema) },
@@ -78,6 +106,7 @@ router.post(
   agentKey(),
   createRateLimit,
   validator('json', CreateProposalRequestSchema, validationHook),
+  operationRateLimit,
   async (c) => {
     const proposal = await Proposals.create(
       c.get('deps'),
@@ -152,10 +181,13 @@ router.post(
       'human’s. The body names the operation and the target the human was shown; what is ' +
       'carried out is what the proposal holds, and only when the two are the same. ' +
       'Refused with `resource.conflict` and a fixed `params.reason`: `mismatch` (the body ' +
-      'names something else), `already_decided` (a proposal is approved at most once) or ' +
-      '`expired`. Nothing is changed by a refused approval. The answer is the proposal ' +
+      'names something else), `already_decided` (a proposal is approved at most once), ' +
+      '`expired`, `agent_key_revoked` or `production_environment` (a production ' +
+      'environment whose settings do not, or no longer, accept proposals). Nothing is ' +
+      'changed by a refused approval. The answer is the proposal ' +
       'afterwards: `executed`, or `failed` with `failureReason` when the operation could ' +
-      'not be carried out (the proposal is spent either way). The operation is recorded ' +
+      'not be carried out (the proposal is spent either way; `last_sign_in_method` when ' +
+      'switching a provider off would have left no way to sign in). The operation is recorded ' +
       'with the agent as its actor and the approver beside it; the approval itself with ' +
       'the approver as its actor.',
     security: openapi.security.admin,

@@ -361,6 +361,36 @@ describe('draft_settings_change: a weakening is said with the contract’s own n
     expect(stronger.structured.weakens).toBe(false)
   })
 
+  // The opt-in that lets agents propose in a production environment (ADR 0053) can be
+  // drafted like any setting the projection names, and is never drafted quietly: it is the
+  // contract's weakening, a person applies it, and `tula apply --yes` refuses it without
+  // `--allow-weaker`.
+  test('letting agents propose in production is drafted as a weakening, and switching it off is not', async () => {
+    const { client, requests } = await world()
+    const on = await callTool(client, TOOL, {
+      settings: [{ path: 'agents.proposalsInProduction', value: true }],
+    })
+    expect(on.isError).toBe(false)
+    expect(on.structured.settings).toEqual([
+      { path: 'agents.proposalsInProduction', from: false, to: true, changes: true },
+    ])
+    expect(on.structured.weakened).toEqual(['agents.proposalsInProduction'])
+    expect(on.structured.weakens).toBe(true)
+    expect(on.structured.changed).toBe(false)
+    const off = await callTool(client, TOOL, {
+      settings: [{ path: 'agents.proposalsInProduction', value: false }],
+    })
+    expect(off.structured.weakened).toEqual([])
+    // Not a boolean: refused by the contract's own schema.
+    const text = await callTool(client, TOOL, {
+      settings: [{ path: 'agents.proposalsInProduction', value: 'yes' }],
+    })
+    expect(text.isError).toBe(true)
+    for (const request of requests) {
+      expect(request.method).toBe('GET')
+    }
+  })
+
   test('a client id Google gains is a weakening, named as `tula diff` names it; one it loses is not', async () => {
     const { client } = await world()
     const gained = await callTool(client, TOOL, {

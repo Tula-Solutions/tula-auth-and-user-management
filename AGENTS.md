@@ -310,8 +310,9 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
   (`packages/mcp/src/proposing.ts`, [ADR 0053](docs/adr/0053-proposals.md)), over
   `PROPOSE_OPERATIONS`: one operation id, `createProposal`, checked by type, on every call
   and, when the facade is made, to be a `POST` under `/v1/agent/`. It builds the body
-  itself from `{ operation, targetId }` (the target's type comes from `PROPOSABLE`, held by
-  type to the API's enumeration) and forwards an `AbortSignal` and nothing else. **The two
+  itself, field by field, from a `ProposalRequest` (a union made from `PROPOSABLE`, one
+  member per operation with that operation's own kind of target, held by type to the
+  API's enumeration) and forwards an `AbortSignal` and nothing else. **The two
   facades never merge**: `read-only.ts` imports nothing of `proposing.ts` (which takes one
   constant, the timeout, from it), `ReadOnlyAdmin` gains no method,
   and an operation that changes data directly is never added to `PROPOSE_OPERATIONS`
@@ -408,7 +409,9 @@ package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
 An **agent key** (`tula_ak_<env>_…`) is an environment's key for an AI agent's tooling. A
 **proposal** is a change an agent asked for that has not happened; an **approval** is a
 human's answer to one ([GLOSSARY.md](GLOSSARY.md)). TULA-23 built the mechanism and one
-operation, `ban_user`; TULA-24, 39, 40 and 41 extend it.
+operation, `ban_user`; TULA-39 added `unban_user`, `end_session` and
+`disable_oauth_provider` and the production opt-in (ADR 0053, "The other reversible
+operations"); TULA-24, 40 and 41 extend it.
 
 - **An agent key reads and proposes, and that is decided in the middleware, never in a
   route.** `secretKey()` accepts one for `GET` and `HEAD` only, and judges the method
@@ -436,6 +439,51 @@ operation, `ban_user`; TULA-24, 39, 40 and 41 extend it.
   version that does not know an operation refuses to approve it), and its line in
   `docs/proposals.md`. Only what can be undone by an existing admin route is proposable
   until TULA-41 decides otherwise.
+- **The operations are four, and what keeps another out is three rules**: an
+  administrator can put it back with one call, it returns and sets no secret, and it acts
+  on **one** thing named by one id. So never a proposal that deletes, resets a factor,
+  revokes or makes a key, sets a password, writes a provider's credentials, switches a
+  provider **on**, changes a setting, or acts in bulk. `@tula/mcp`'s `proposing.test.ts`
+  hands the facade each of those by name, as a line that must not compile and as a call
+  that is refused: a new operation is a row of ADR 0053's table first, and that test is
+  never loosened to fit one.
+- **An operation has one kind of target, and a session is ended by its own id**
+  (`PROPOSAL_OPERATION_TARGETS`; the request schemas refuse a mismatch with a 422, on the
+  proposal and on the approval). `end_session` with a user as its target is "every session
+  of this user" under another name: never accept it, and never give `execute` a path into
+  `Sessions.revokeForUser`. A provider is named by its name (`isProposalTargetId`; the
+  table's `proposals_target_id_shape`), never by a row's id.
+- **Switching a provider off is `OAuth.switchOff` and nothing else**: the row as it was
+  read under the `sign_in_methods` lock, written back with `enabled: false`. Nothing of
+  that write comes from a request; never let a proposal carry a client id, a secret or
+  `enabled: true`. **The last way to sign in is judged twice by `OAuth.requireWayIn`, the
+  function the provider route uses**: at the proposal, outside the lock, as a courtesy
+  (the route's own 422), and at the approval inside the lock, which is what decides
+  (`failed`, `last_sign_in_method`, the provider still on, the proposal spent). Never
+  state that rule a second time, and never drop the one inside the lock because the
+  first passed minutes ago. What is recorded is what the route records
+  (`oauth_provider.updated`, `changed: ['enabled']`, no weakening).
+- **A production environment accepts proposals only where `agents.proposalsInProduction`
+  is on, and that is asked twice, past the settings cache** (`requireAccepted`,
+  `Settings.get(…, true)`): when a proposal is made (`auth.forbidden`) and when one is
+  approved (`resource.conflict`), both with `params.reason: 'production_environment'`,
+  for every operation, a ban included. "Production" is the environment's own `kind`,
+  never `ENVIRONMENT` and never `NODE_ENV`. The approval's refusal comes before anything
+  is written, so the proposal is **not spent**: never move it after the compare-and-set.
+  Switching the setting on is a weakening (`settingsWeakenings`), shared by the audit
+  entry, the dashboard's question and `tula apply --yes`; left out of `tula.config.ts`
+  it is `false` and managed, and the default is out of the config's fingerprint. An agent
+  key cannot change it; `get_settings` returns it and `draft_settings_change` drafts it
+  as a weakening, on purpose (ADR 0053 has the argument).
+- **Creations are counted twice per environment, and both fail closed**:
+  `PROPOSALS_PER_MINUTE` shared by every operation (what waits for a person at once) and
+  `PROPOSALS_PER_OPERATION_PER_MINUTE` for each operation (one looping tool does not
+  silence the others), the second mounted after the validator because the operation is in
+  the body; its key holds the environment's id and the operation's word and nothing of
+  the target. A new operation gets its count by being in the list: never a tool, an
+  operation or a path that reaches `Proposals.create` past either. The four proposal
+  scenarios ask for nine proposals, against a live server inside one minute: a step that
+  asks for another has to fit the ten.
 - **Approval is a human's credential and only that** (`PROPOSAL_APPROVER_TYPES`: `admin`,
   a secret key, and `instance_admin`, a dashboard session). The approve route is a `POST`
   under `/v1/admin/`, which the middleware already refuses to an agent key, and
@@ -478,7 +526,7 @@ operation, `ban_user`; TULA-24, 39, 40 and 41 extend it.
   names in an `UPDATE`, and an unqualified `environment_id` there compared the key's
   column with itself (the store suite's "names another environment's agent key" row).
   What was approved before a revocation stays approved; a revocation undoes nothing.
-- **`failed` has three words, and `incomplete` is a claim about the target**
+- **`failed` has four words, and `incomplete` is a claim about the target**
   (`PROPOSAL_FAILURE_REASONS`). The service reads the target before the operation and
   again after a failure that is not `target_not_found` (`changeIsThere`): the operation's
   own write was not there and now is (`bannedAt` set) means `incomplete`; anything else,
@@ -497,17 +545,17 @@ operation, `ban_user`; TULA-24, 39, 40 and 41 extend it.
   `proposal.approved` (the human, with `proposedBy`), then the operation's own entry
   (`user.banned`, actor `agent`, with `proposalId` and `approvedBy`) and
   `proposal.executed` or `proposal.failed` (agent, with `approvedBy`). `Users.ban` takes
-  the proposal as its last argument for that; an operation that becomes proposable gains
+  the proposal as its last argument for that, and so do `Users.unban`,
+  `Sessions.revokeForProposal` (`session.revoked`, reason `revoked_by_admin`) and
+  `OAuth.switchOff` (`oauth_provider.updated`); an operation that becomes proposable gains
   the same two optional fields in its event's schema, **with the refinement that they are
-  there together or not at all** (`banIsWhole`), and nothing else. `approvedBy` is a
+  there together or not at all** (`carriedOut` in the contract's `events.ts`), and nothing
+  else: never a new activity type for a change an administrator's route already records. `approvedBy` is a
   type from the closed list and an id the server made. **The entries the agent is the
   actor of after an approval carry no IP address and no user agent**: the approving
   request's origin is the human's and is on `proposal.approved` alone (a test pins it).
 - **Asking again is the same proposal** (`findPending`: same agent key, operation and
-  target, still pending), creations are counted per environment (`PROPOSALS_PER_MINUTE`,
-  refused when the limiter cannot count), and **a production environment accepts none**
-  (`auth.forbidden`, `params.reason: 'production_environment'`: TULA-39 is the opt-in;
-  never infer it from a setting that exists today).
+  target, still pending): no second row and no second entry.
 - **No new error code.** The refusals are `auth.invalid_key`, `auth.forbidden`,
   `resource.not_found`, `resource.conflict` and `rate_limited` with fixed `params.reason`
   words from the contract: `@tula/core`'s message table holds every contract code and its
@@ -517,6 +565,22 @@ operation, `ban_user`; TULA-24, 39, 40 and 41 extend it.
   `printable()`, refuses an agent key before any request, refuses an operation it has no
   `CONSEQUENCES` row for, and sends the operation and target it showed. Without a terminal
   and without `--yes` it changes nothing; exit 0 only when the operation was carried out.
+  A provider is shown as it is now, in the CLI's own words for two booleans ("on now",
+  "already off", "not configured now"); `production_environment` is said as "nothing
+  changed, not spent" and `last_sign_in_method` as "approved, nothing changed, the
+  provider still on, spent", both with exit 1.
+- **The injection corpus is one list** (`packages/mcp/src/testing/injection.ts`: its
+  invisible characters written as `\u{…}` escapes), used by `@tula/mcp`'s tests (every
+  string in every field every propose tool's answer has: the result is the projection,
+  cleaned and capped, or `response.invalid`) and by `tula mcp`'s against the real API
+  (every string in a user's name and a session's user agent: the users, sessions,
+  providers and settings byte for byte unchanged, nothing recorded but
+  `proposal.created`). A new propose tool is run by both because both iterate
+  `PROPOSE_TOOL_NAMES`; a new kind of hostile text is a row of the list. **A propose tool
+  refuses an answer that is not the proposal it asked for** (`ask` in `tools.ts`:
+  `response.invalid`); never project a proposal without that comparison. What these tests
+  show is that the server changes nothing without an approval; never word them as showing
+  what a model does.
 - **What approval proves is that a credential the agent's tools do not hold was used, not
   that a person looked.** An assistant with a shell on a machine whose `.env.local` holds
   the secret key can run `tula approve --yes`. ADR 0053, `docs/proposals.md` and

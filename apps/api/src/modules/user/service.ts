@@ -317,6 +317,8 @@ export async function ban(
  * @param scope - The project and environment.
  * @param userId - The user.
  * @param actor - Who is lifting the ban, for the audit log.
+ * @param proposal - The approved proposal this carries out (ADR 0053), named in the entry;
+ *   left out for an administrator's own change.
  * @returns The user.
  * @throws NotFoundError when they do not exist in this environment.
  */
@@ -324,7 +326,8 @@ export async function unban(
   deps: RevocationDeps,
   scope: Scope,
   userId: string,
-  actor: Actor
+  actor: Actor,
+  proposal?: { proposalId: string; approvedBy: ProposalApprover }
 ): Promise<User> {
   const current = await requireUser(deps, scope, userId)
   if (current.bannedAt === null) {
@@ -337,7 +340,12 @@ export async function unban(
     userId,
     null,
     deps.clock.now(),
-    Audit.entry(deps, scope, { type: 'user.unbanned', actor, target: { type: 'user', id: userId } })
+    Audit.entry(deps, scope, {
+      type: 'user.unbanned',
+      actor,
+      target: { type: 'user', id: userId },
+      data: proposal ? { proposalId: proposal.proposalId, approvedBy: proposal.approvedBy } : {},
+    })
   )
   if (!user) {
     throw new NotFoundError()

@@ -270,7 +270,8 @@ Serves Tula's [Model Context Protocol](https://modelcontextprotocol.io) server o
 input and output, for an MCP client to start as a child process. It has read tools (users,
 sessions, audit entries, settings, OAuth providers, the doctor's checks), scaffold tools
 (the provider, a protected route, a sign-in page) and, with an agent key, propose tools
-(ask for a user to be banned). **No tool changes live data and none returns a secret**: a
+(ask for a user to be banned or a ban lifted, one session ended, one provider switched
+off). **No tool changes live data and none returns a secret**: a
 proposal does nothing until a person approves it with [`tula approve`](#tula-approve). The
 tools, the client configuration and exactly what is returned are in [docs/mcp.md](mcp.md).
 
@@ -303,8 +304,10 @@ tula approve 0199c2f4-7a10-7c3e-9b1a-5d2e8f4a6c01
 
 A person's answer to a change an assistant proposed through `tula mcp`
 ([proposals.md](proposals.md), [ADR 0053](adr/0053-proposals.md)). It reads the proposal,
-and the user it is about, with **your secret key**; prints who asked, what approving does,
-to whom and when the proposal expires; asks; and approves exactly what it printed. The
+and what it is about, with **your secret key**: a user with their address and whether they
+are banned, a session by its id, a provider as it is now ("on now", "already off", "not
+configured now"). It prints who asked, what approving does, to what and when the proposal
+expires; asks; and approves exactly what it printed. The
 change is carried out at once and recorded with the agent as its actor and your key as the
 one that approved.
 
@@ -329,6 +332,14 @@ one that approved.
   that their sessions may still be live, and how to end them
   (`DELETE /v1/admin/users/<id>/sessions`, or the dashboard). It never reports this as
   carried out, and nothing is tried again.
+- **A provider that is the last way to sign in is not switched off.** The server judges
+  that when the proposal is approved; `tula approve` then prints that it was approved,
+  that nothing was changed, that the provider is still on and that the proposal is spent,
+  and exits 1.
+- **A production environment that does not accept proposals approves none**
+  (`agents.proposalsInProduction`, off by default): said as that, nothing changed, and
+  the proposal is not spent, so it can still be approved before it expires if the setting
+  is switched on.
 - A proposal whose operation this version of `tula` does not know is not approved: update
   `tula`.
 - Text from the server (the summary, the user's address and name) is printed with what a
@@ -341,8 +352,8 @@ one that approved.
   [what approval does not protect against](proposals.md#what-approval-does-not-protect-against).
 
 Exit codes: 0 approved and carried out; 1 anything else (declined, expired, the agent key
-revoked, already approved, approved but not carried out or only half carried out, an
-error).
+revoked, already approved, refused for a production environment, approved but not carried
+out or only half carried out, an error).
 
 ## `tula diff` and `tula apply`
 

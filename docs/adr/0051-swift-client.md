@@ -392,7 +392,7 @@ agree with the other two).
 
 ### The `swift` column
 
-The suite `exists`. Of the 108 scenarios, after TULA-56: 80 are journeys, 17 are
+The suite `exists`. Of the 111 scenarios, after TULA-56 and TULA-39: 80 are journeys, 20 are
 `not_applicable` (the admin API, the deployment, a browser, an Android app's certificate),
 1 is `not_built` under TULA-56 and 10 under TULA-60; the four behaviours are journeys.
 `SWIFT_NOT_BUILT` holds the two counts. (Before TULA-56: 28 journeys, 17 not applicable,

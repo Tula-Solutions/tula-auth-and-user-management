@@ -33,6 +33,18 @@ paths:
   whose later step failed is `failed` with `incomplete` (the target is read before and after), never
   `executed` and never retried. `agentKey` reaches an admin read's `security` only
   through `documentAgentReads`.
+- A proposal's operation (ADR 0053, "The other reversible operations") is one of the
+  contract's four, each with its own kind of target (a session by its own id, never by its
+  user; a provider by its name), and runs one function an administrator's route also
+  reaches: `Users.ban`, `Users.unban`, `Sessions.revokeForProposal`, `OAuth.switchOff`
+  (`enabled: false` on the row as read under the `sign_in_methods` lock, after
+  `OAuth.requireWayIn`; the same function is asked at the proposal as a courtesy). Never
+  a branch that deletes, sets or returns a secret, switches something on or acts on more
+  than one target. A production environment (its own `kind`) is asked for
+  `agents.proposalsInProduction` past the settings cache at the proposal
+  (`auth.forbidden`) and at the approval (`resource.conflict`, before the compare-and-set:
+  not spent). The create route is limited per environment and again per operation, the
+  second after the validator; both refuse when the limiter cannot count.
 - `/v1/instance/*` routes use `instanceAdmin()` (the admin token or a dashboard session),
   `instanceActor(c)`, and record their writes through `deps.controlPlane` with an
   `InstanceActivity` in the same transaction.

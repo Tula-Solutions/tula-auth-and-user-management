@@ -14,4 +14,4 @@ To change a page, change the JSDoc and run `bun run docs:generate`; `bun run doc
 | [`@tula/expo`](expo.md) | `@tula/expo`, `@tula/expo/passkeys`, `@tula/expo/browser`, `@tula/expo/apple`, `@tula/expo/google`, `@tula/expo/device-key`, `@tula/expo/plugin` | 85 |
 | [`@tula/admin`](admin.md) | `@tula/admin` | 42 |
 | [`@tula/config`](config.md) | `@tula/config` | 35 |
-| [`@tula/contract`](contract.md) | `@tula/contract`, `@tula/contract/custom-claims`, `@tula/contract/device-binding`, `@tula/contract/error-codes`, `@tula/contract/event-types`, `@tula/contract/headers`, `@tula/contract/issuer`, `@tula/contract/password-rules`, `@tula/contract/redirect-url`, `@tula/contract/theme`, `@tula/contract/webhook-signature` | 747 |
+| [`@tula/contract`](contract.md) | `@tula/contract`, `@tula/contract/custom-claims`, `@tula/contract/device-binding`, `@tula/contract/error-codes`, `@tula/contract/event-types`, `@tula/contract/headers`, `@tula/contract/issuer`, `@tula/contract/password-rules`, `@tula/contract/redirect-url`, `@tula/contract/theme`, `@tula/contract/webhook-signature` | 748 |

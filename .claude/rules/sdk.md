@@ -538,6 +538,18 @@ paths:
   printed. It says a proposal whose agent key was revoked as that, and a ban whose
   sessions could not be ended (`failureReason: 'incomplete'`) as "banned, sessions not
   ended, end them", with exit 1: never as carried out, and never as nothing done.
+  `ProposalRequest` is a union made from `PROPOSABLE` (four operations, each with its own
+  kind of target); the test that hands the facade an irreversible operation, one that sets
+  or returns a secret and a bulk one, as lines that must not compile and calls that are
+  refused, is never loosened for a new tool. A propose tool goes through `ask`
+  (`tools.ts`), which refuses an answer that is not the proposal asked for
+  (`response.invalid`), and is run by both injection tests because they iterate
+  `PROPOSE_TOOL_NAMES` over `testing/injection.ts` (invisible characters as `\u{…}`
+  escapes). `tula approve` has a `CONSEQUENCES` sentence per operation, shows a provider
+  as "on now", "already off" or "not configured now", and says
+  `production_environment` (not spent) and `last_sign_in_method` (spent, the provider
+  still on) in words, exit 1. `@tula/config` leaves `agents.proposalsInProduction: false`
+  out of the fingerprint; in the file, left out is `false` and managed.
 - **Device binding in `@tula/core`** (ADR 0043): `createTulaClient({ deviceKey })`, never
   for a `web` client (a `TypeError` at construction). Proofs are made in `transport.ts`
   for the operations of `PROVEN` (the six starts and `refreshSession`) and nothing else,

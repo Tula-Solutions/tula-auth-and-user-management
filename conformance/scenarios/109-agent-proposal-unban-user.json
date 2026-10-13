@@ -1,0 +1,302 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "an agent proposes lifting a ban and a person approves it",
+  "description": "An agent key cannot lift a ban: it asks for it as a proposal, and the user stays banned. An approval that names another operation for the same user is refused and spends nothing. The secret key approves what was proposed, the ban is lifted, and the audit log names the agent as the one who lifted it, with the proposal and the approving key beside it. A production environment refuses every proposal unless its settings accept them (`agents.proposalsInProduction`), when one is made and when one is approved: API tests show that, because this scenario runs against a development environment. The four proposal scenarios together ask for nine proposals, of the ten an environment takes in a minute: against a live server they run one after another, so a step that asks for one more counts against that. Each run leaves one revoked agent key behind.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    }
+  },
+  "steps": [
+    {
+      "name": "an administrator creates a user",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users",
+        "auth": "secret",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "bannedAt": null
+        }
+      },
+      "capture": {
+        "userId": "id"
+      }
+    },
+    {
+      "name": "and bans them",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users/{{userId}}/ban",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "bannedAt": "$any"
+        }
+      }
+    },
+    {
+      "name": "and an agent key, shown once",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/api-keys",
+        "auth": "secret",
+        "body": {
+          "kind": "agent",
+          "name": "conformance agent"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "kind": "agent",
+          "key": {
+            "$matches": "^tula_ak_"
+          }
+        }
+      },
+      "capture": {
+        "agentKeyId": "id",
+        "agentKey": "key"
+      }
+    },
+    {
+      "name": "the agent key cannot lift the ban itself",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users/{{userId}}/unban",
+        "auth": "none",
+        "accessToken": "{{agentKey}}"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "auth.invalid_key"
+        }
+      }
+    },
+    {
+      "name": "it asks for it: a pending proposal that says what it would do",
+      "request": {
+        "method": "POST",
+        "path": "/v1/agent/proposals",
+        "auth": "none",
+        "accessToken": "{{agentKey}}",
+        "body": {
+          "operation": "unban_user",
+          "target": {
+            "type": "user",
+            "id": "{{userId}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "operation": "unban_user",
+          "target": {
+            "type": "user",
+            "id": "{{userId}}"
+          },
+          "summary": {
+            "$matches": "^Lift the ban on the user "
+          },
+          "status": "pending",
+          "proposedBy": {
+            "type": "agent",
+            "id": "{{agentKeyId}}"
+          },
+          "expiresAt": "$any",
+          "approvedBy": null,
+          "approvedAt": null,
+          "failureReason": null
+        }
+      },
+      "capture": {
+        "proposalId": "id"
+      }
+    },
+    {
+      "name": "the user is still banned",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users/{{userId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "bannedAt": "$any"
+        }
+      }
+    },
+    {
+      "name": "an approval that names another operation is refused, and spends nothing",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/proposals/{{proposalId}}/approve",
+        "auth": "secret",
+        "body": {
+          "operation": "ban_user",
+          "target": {
+            "type": "user",
+            "id": "{{userId}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "resource.conflict",
+          "params": {
+            "reason": "mismatch"
+          }
+        }
+      }
+    },
+    {
+      "name": "the secret key approves exactly what was proposed, and it is carried out",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/proposals/{{proposalId}}/approve",
+        "auth": "secret",
+        "body": {
+          "operation": "unban_user",
+          "target": {
+            "type": "user",
+            "id": "{{userId}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{proposalId}}",
+          "status": "executed",
+          "approvedBy": {
+            "type": "admin",
+            "id": "$any"
+          },
+          "approvedAt": "$any",
+          "failureReason": null
+        }
+      },
+      "capture": {
+        "approverId": "approvedBy.id"
+      }
+    },
+    {
+      "name": "the ban is lifted",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users/{{userId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "bannedAt": null
+        }
+      }
+    },
+    {
+      "name": "a proposal is approved once",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/proposals/{{proposalId}}/approve",
+        "auth": "secret",
+        "body": {
+          "operation": "unban_user",
+          "target": {
+            "type": "user",
+            "id": "{{userId}}"
+          }
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "resource.conflict",
+          "params": {
+            "reason": "already_decided"
+          }
+        }
+      }
+    },
+    {
+      "name": "the lifting is recorded as the agent's, with its proposal and who approved it",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?action=user.unbanned&targetId={{userId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1
+          },
+          "data": [
+            {
+              "action": "user.unbanned",
+              "actor": {
+                "type": "agent",
+                "id": "{{agentKeyId}}"
+              },
+              "target": {
+                "type": "user",
+                "id": "{{userId}}"
+              },
+              "metadata": {
+                "proposalId": "{{proposalId}}",
+                "approvedBy": {
+                  "type": "admin",
+                  "id": "{{approverId}}"
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "revoke the agent key",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/api-keys/{{agentKeyId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "delete the user",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/users/{{userId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    }
+  ]
+}

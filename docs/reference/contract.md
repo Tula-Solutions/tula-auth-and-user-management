@@ -903,7 +903,8 @@ export type CreateProposalRequest = z.infer<typeof CreateProposalRequestSchema>
 _constant_, defined in `packages/contract/src/proposal.ts`
 
 Body of `POST /v1/agent/proposals`: the operation and its one target, and nothing else.
-Strict: a proposal has no free text, no reason and no second target.
+Strict: a proposal has no free text, no reason and no second target. The target is of
+the operation's own kind ({@link PROPOSAL_OPERATION_TARGETS}).
 
 ```ts
 const CreateProposalRequestSchema
@@ -2124,6 +2125,8 @@ otherwise silently reset the password policy to its default.
 - `urls`: browser origins allowed by CORS, and URLs flows may redirect to.
 - `audit.retentionDays`: how many days audit entries are kept before the server deletes
   them for good; `null` (the default) keeps them for ever.
+- `agents.proposalsInProduction`: whether a production environment accepts proposals from
+  an AI agent (`false` by default; ADR 0053). Switching it on is a weakening.
 - `notifications`: which security notices are emailed to an account's owner
   (`passwordChanged`, `newSignIn`, `mfaChanged`, `identityChanged`). All are on unless switched off.
 - `mfa.policy`: whether two-step verification is `off`, `optional` (the default) or
@@ -4816,10 +4819,13 @@ Why an approval is refused with `resource.conflict`, as `params.reason` says it:
 - `already_decided`: it was approved before (a proposal is single use);
 - `mismatch`: the approval names another operation or target than the proposal holds;
 - `agent_key_revoked`: the agent key that asked has been revoked (or is gone). What a
-  revoked key asked for is never carried out, however recently it asked.
+  revoked key asked for is never carried out, however recently it asked;
+- `production_environment`: the environment is a production one and does not accept
+  agents' proposals now (`agents.proposalsInProduction` is off: it was never on, or was
+  switched off after the proposal was made). The proposal is not spent by this refusal.
 
 ```ts
-const PROPOSAL_APPROVAL_REFUSALS: readonly ["expired", "already_decided", "mismatch", "agent_key_revoked"]
+const PROPOSAL_APPROVAL_REFUSALS: readonly ["expired", "already_decided", "mismatch", "agent_key_revoked", "production_environment"]
 ```
 
 **Example**
@@ -4853,7 +4859,8 @@ _constant_, defined in `packages/contract/src/proposal.ts`
 
 Why asking for a proposal is refused with `auth.forbidden`, as `params.reason` says it:
 
-- `production_environment`: a production environment accepts no proposal from an agent.
+- `production_environment`: a production environment accepts no proposal from an agent
+  unless its settings say so (`agents.proposalsInProduction`, off by default).
 
 ```ts
 const PROPOSAL_CREATION_REFUSALS: readonly ["production_environment"]
@@ -4902,10 +4909,13 @@ fixed words:
   still be live until they are ended (the admin route that ends a user's sessions, or
   the dashboard). Never read this as "nothing happened";
 - `error`: anything else. The target was read again afterwards and the change was not
-  there; the server's log has the failure.
+  there; the server's log has the failure;
+- `last_sign_in_method`: for `disable_oauth_provider`: when the approval came, switching
+  the provider off would have left the environment with no way to sign in, so it was
+  refused, by the rule an administrator's own change is held to. Nothing was changed.
 
 ```ts
-const PROPOSAL_FAILURE_REASONS: readonly ["target_not_found", "error", "incomplete"]
+const PROPOSAL_FAILURE_REASONS: readonly ["target_not_found", "error", "incomplete", "last_sign_in_method"]
 ```
 
 **Example**
@@ -4919,12 +4929,21 @@ const reason: ProposalFailureReason = 'target_not_found'
 _constant_, defined in `packages/contract/src/proposal.ts`
 
 What an agent may propose: a closed list of **reversible** operations. An operation is here
-because a human can undo it (a ban is lifted). Never on the list: anything that cannot be
-undone (deleting a user, resetting a user's factors, rotating keys), anything that returns
-or sets a secret, replacing settings, and anything that acts on more than one target.
+because a human can undo it:
+
+- `ban_user`: the ban is lifted;
+- `unban_user`: the user is banned again;
+- `end_session`: one session, by its id; its user signs in again;
+- `disable_oauth_provider`: one provider is switched off (`enabled: false` and nothing
+  else: its credentials stay, nothing is removed); an administrator switches it on again.
+
+Never on the list: anything that cannot be undone (deleting a user, resetting a user's
+factors, rotating keys, removing a provider's credentials), anything that returns or sets
+a secret, switching a provider **on**, replacing settings, and anything that acts on more
+than one target (ending every session of a user is such a thing).
 
 ```ts
-const PROPOSAL_OPERATIONS: readonly ["ban_user"]
+const PROPOSAL_OPERATIONS: readonly ["ban_user", "unban_user", "end_session", "disable_oauth_provider"]
 ```
 
 **Example**
@@ -4984,7 +5003,7 @@ _constant_, defined in `packages/contract/src/proposal.ts`
 What a proposal can be about.
 
 ```ts
-const PROPOSAL_TARGET_TYPES: readonly ["user"]
+const PROPOSAL_TARGET_TYPES: readonly ["user", "session", "oauth_provider"]
 ```
 
 **Example**
@@ -5693,10 +5712,11 @@ export type ProposalTarget = z.infer<typeof ProposalTargetSchema>
 _constant_, defined in `packages/contract/src/proposal.ts`
 
 What a proposal would change: the kind of thing and its id. The id is the server's own
-(a UUID), never a name or an address.
+(a UUID) for a user and a session, and for an OAuth provider its name from the closed
+list (`google`): never a name or an address anyone wrote.
 
 ```ts
-const ProposalTargetSchema: z.ZodObject<{ type: z.ZodEnum<{}>; id: z.ZodUUID; }, z.core.$strict>
+const ProposalTargetSchema: z.ZodObject<{ type: z.ZodEnum<{}>; id: z.ZodUnion<[z.ZodUUID, z.ZodEnum<{}>]>; }, z.core.$strict>
 ```
 
 ### `ProposalTargetType`
@@ -8857,6 +8877,36 @@ isPhoneNumberAllowed('+4915112345678', ['DE', 'AT']) // true
 isPhoneNumberAllowed('+4915112345678', []) // false
 ```
 
+### `isProposalTargetId`
+
+_function_, defined in `packages/contract/src/proposal.ts`
+
+Whether `id` is how a target of that kind is named: a user and a session by the server's
+own id (a UUID), an OAuth provider by its name from the closed list `OAUTH_PROVIDERS`
+(`google`), which is how the admin API names one everywhere. Never anything a person
+typed.
+
+```ts
+export function isProposalTargetId(
+  type: (typeof PROPOSAL_TARGET_TYPES)[number],
+  id: string
+): boolean
+```
+
+**Parameters**
+
+- `type`: The kind of target.
+- `id`: The candidate id.
+
+**Returns** Whether a proposal may name that target so.
+
+**Example**
+
+```ts
+isProposalTargetId('oauth_provider', 'google') // true
+isProposalTargetId('user', 'google') // false
+```
+
 ### `isRedirectUrl`
 
 _function_, defined in `packages/contract/src/redirect-url.ts`
@@ -9571,8 +9621,9 @@ profileOfSession(settings.sessions, { profile: 'deleted-one', client: 'web' }).n
 _function_, defined in `packages/contract/src/proposal.ts`
 
 What approving a proposal does, in plain words: the server's fixed sentence for the
-operation, with the target's id in it. The id must be a UUID; anything else is not
-written into the sentence.
+operation, with the target's id in it. The id must be how a target of that kind is named
+({@link isProposalTargetId}: a UUID, or a provider's name from the closed list) and the
+target of the operation's own kind; anything else is not written into the sentence.
 
 ```ts
 export function proposalSummary(operation: ProposalOperation, target: ProposalTarget): string
@@ -9585,7 +9636,7 @@ export function proposalSummary(operation: ProposalOperation, target: ProposalTa
 
 **Returns** The sentence.
 
-**Throws** TypeError when the target's id is not a UUID.
+**Throws** TypeError when the target is not of the operation's kind or is not named by its id.
 
 **Example**
 
@@ -9920,6 +9971,10 @@ A path is listed when:
 - `audit.retentionDays`: a period is set where there was none, or is made shorter. The
   server then deletes the audit entries older than it, for good: the record of what
   happened gets shorter. A longer period, or none where there was one, is not listed;
+- `agents.proposalsInProduction`: switched on (ADR 0053). A production environment then
+  accepts changes an AI agent asks for, each still waiting for a person's approval. It is
+  listed whatever kind the environment is (this function sees the document alone), and
+  switching it off never is;
 - `notifications.*`: a security notice that was on is switched off (the owner would no
   longer be told);
 - `mfa.policy`: the policy moves towards `off` (`required` → `optional` → `off`);

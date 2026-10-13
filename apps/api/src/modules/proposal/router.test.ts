@@ -243,11 +243,25 @@ describe('proposing', () => {
     for (let i = 0; i <= Proposals.PROPOSALS_PER_MINUTE; i++) {
       users.push(await createUser(`user${i}@northline.app`))
     }
+    // Two operations, so that neither reaches its own count
+    // (`PROPOSALS_PER_OPERATION_PER_MINUTE`) before the environment reaches the one all
+    // operations share.
+    expect(Proposals.PROPOSALS_PER_OPERATION_PER_MINUTE * 2).toBeGreaterThanOrEqual(
+      Proposals.PROPOSALS_PER_MINUTE
+    )
     for (let i = 0; i < Proposals.PROPOSALS_PER_MINUTE; i++) {
-      await propose((users[i] as User).id, i % 2 === 0 ? AK : SECOND_AK)
+      const res = await call('POST', '/v1/agent/proposals', i % 2 === 0 ? AK : SECOND_AK, {
+        operation: i < Proposals.PROPOSALS_PER_MINUTE / 2 ? 'ban_user' : 'unban_user',
+        target: { type: 'user', id: (users[i] as User).id },
+      })
+      expect(res.status).toBe(201)
     }
     const last = users[Proposals.PROPOSALS_PER_MINUTE] as User
-    const refused = await call('POST', '/v1/agent/proposals', AK, banOf(last.id))
+    // A third operation, of which none was asked: it is the shared count that refuses.
+    const refused = await call('POST', '/v1/agent/proposals', AK, {
+      operation: 'end_session',
+      target: { type: 'session', id: UNKNOWN },
+    })
     expect(refused.status).toBe(429)
     // Another environment has its own allowance.
     const elsewhere = await createUser('maya@northline.app', OTHER_SK)

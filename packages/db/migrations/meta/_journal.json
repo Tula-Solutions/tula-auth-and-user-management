@@ -246,6 +246,13 @@
       "when": 1791850507742,
       "tag": "0034_hook_call_counts",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1791856146299,
+      "tag": "0035_proposals_target_id_text",
+      "breakpoints": true
     }
   ]
 }

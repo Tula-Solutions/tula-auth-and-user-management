@@ -908,7 +908,30 @@ process, and the conformance scenario in process. Nothing else.
    screen; and whether the model says it *asked for* a ban or that it *banned* the user.
 6. In another terminal, with the secret key: `bun run tula -- approve <proposal id>`, and read what
    it prints. Then `claude mcp remove tula-dev` and revoke the agent key.
-| **Production** | Refused, by a test. The opt-in is TULA-39 and does not exist. |
+| **Production** | Refused, by a test. The opt-in is TULA-39: the next section. |
+
+## Step 2.17, the other reversible proposals and the production opt-in (TULA-39, [ADR 0053](../adr/0053-proposals.md))
+
+Lifting a ban, ending one session, switching one provider off, and
+`agents.proposalsInProduction`. What was run: the unit and route tests of the API on memory
+adapters; the proposal store's suite on the memory adapter and on PGlite, with the new
+check of a target's shape; `@tula/mcp`'s tests against a fake API, with the injection
+corpus in every field of every propose tool's answer; through `@tula/cli`, the four propose
+tools and `tula approve` against the real API in process, with the corpus in a user's name
+and a session's user agent; the four proposal scenarios in process and under the event
+canary; the dashboard's component test of the new switch in happy-dom. Nothing else.
+
+| What | How far it was taken |
+| --- | --- |
+| **A real MCP client, and a model** | **Neither was run against the three new tools**, as neither was against the first (the section above). How a client lists four propose tools, whether it asks before each, and what a model says after one answers, are not known. |
+| **Injection** | The corpus shows two things about the **server and the MCP server**: a result is the allow-list projection (cleaned, capped, or `response.invalid`), and nothing is written without an approval whatever text was planted. It shows nothing about a model. A model that read such text may well *propose* what it was told to; every proposal it makes is one more thing in front of the person who approves, and the limits (ten a minute, five of one operation) bound how many, not whether. |
+| **A person who approves a provider being switched off without reading** | Not defended, as for a ban. What the server adds is that it never removes the last way to sign in; it does not stop the second-to-last going, and the users who signed in only with that provider cannot until it is on again. |
+| **The opt-in in a production deployment** | Shown by API tests, `tula approve`'s and `tula mcp`'s tests in process, with an environment whose `kind` is `production` on memory adapters. No proposal was made or approved against a deployed production environment, and no scenario covers it (a scenario has one environment, a development one). |
+| **The opt-in switched off on another instance** | Both checks read the settings past the cache, and a test holds that with a second in-process instance over a caching store. Two real API instances were not run. |
+| **Postgres** | **PGlite only for this change.** Migration `0035_proposals_target_id_text` (the column from `uuid` to `text`, the check `proposals_target_id_shape`) was applied on PGlite, where the check's refusals and the store's suite pass. `stores.integration.ts` and `races.integration.ts` were **not** run against a PostgreSQL server (they need the repository's `.env`, which the run that built this did not read), and the migration was not applied to a database that already held proposals: the cast `uuid` to `text` keeps every value, and that is reasoning, not a run. |
+| **A deployed server, two instances** | The three new scenarios were not run with `bun run conformance` against a live server. Against one, the four proposal scenarios run one after another and ask for nine proposals, of the ten an environment takes in a minute: that they fit was counted, not run. |
+| **The dashboard** | The switch ("AI agents" on the general settings screen) and its question are a component test in happy-dom. It was not opened in a browser, the `dashboard` Playwright project was not run, and the committed screenshots were not regenerated. |
+| **The last way to sign in, under load** | The approval judges it inside the environment's `sign_in_methods` lock; a test shows the lock is taken and that a settings change made while a proposal waited decides the outcome. Two approvals racing a settings change on a real PostgreSQL were not run. |
 
 ## Recent outcomes of a hook (TULA-67)
 

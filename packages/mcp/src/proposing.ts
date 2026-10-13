@@ -31,15 +31,8 @@ export type ProposeOperationId = (typeof PROPOSE_OPERATIONS)[number]
 /** Where every operation of the facade lives: the route group that takes an agent key. */
 const AGENT_PATH_PREFIX = '/v1/agent/'
 
-/**
- * What a tool may ask for: the operation and the one thing it acts on.
- *
- * @example
- * ```ts
- * const request: ProposalRequest = { operation: 'ban_user', target: { type: 'user', id: userId } }
- * ```
- */
-export type ProposalRequest = AdminOperations['createProposal']['body']
+/** The body the API takes a proposal as: what {@link PROPOSABLE} is held to. */
+type ProposalBody = AdminOperations['createProposal']['body']
 
 /**
  * The operations a tool may propose, each with the kind of thing it acts on. Closed: a new
@@ -47,16 +40,46 @@ export type ProposalRequest = AdminOperations['createProposal']['body']
  * `@tula/contract`), which is what decides. The type holds the keys to the API's own
  * enumeration: one missing, or one the API does not have, does not compile.
  *
+ * Every one of them can be undone by an administrator, acts on **one** thing, and neither
+ * returns nor sets a secret: a user is banned or their ban lifted, one session is ended,
+ * one provider is switched off (never on, never removed, never given a credential).
+ * Nothing that deletes, nothing that acts on a list, and nothing that could hand out or
+ * replace a key, a password or a provider's secret is ever an entry (ADR 0053).
+ *
  * @example
  * ```ts
  * PROPOSABLE.ban_user // 'user'
+ * PROPOSABLE.disable_oauth_provider // 'oauth_provider'
  * ```
  */
-export const PROPOSABLE = { ban_user: 'user' } as const satisfies Readonly<
-  Record<ProposalRequest['operation'], ProposalRequest['target']['type']>
->
+export const PROPOSABLE = {
+  ban_user: 'user',
+  unban_user: 'user',
+  end_session: 'session',
+  disable_oauth_provider: 'oauth_provider',
+} as const satisfies Readonly<Record<ProposalBody['operation'], ProposalBody['target']['type']>>
 
-/** One path segment made of what an id is made of: nothing else is put in a body. */
+/**
+ * What a tool may ask for: one operation of {@link PROPOSABLE} and the one thing it acts
+ * on, **of that operation's own kind**. A ban names a user and never a session; a session
+ * is ended by its own id and never by its user; a target is one id, never a list.
+ *
+ * @example
+ * ```ts
+ * const request: ProposalRequest = { operation: 'ban_user', target: { type: 'user', id: userId } }
+ * ```
+ */
+export type ProposalRequest = {
+  [Operation in keyof typeof PROPOSABLE]: {
+    operation: Operation
+    target: { type: (typeof PROPOSABLE)[Operation]; id: string }
+  }
+}[keyof typeof PROPOSABLE]
+
+/**
+ * What a target is named by: an id, or a provider's name. One run of what those are made
+ * of and nothing else is put in a body; the server decides whether it names anything.
+ */
 const TARGET_ID = /^[A-Za-z0-9_-]{1,64}$/
 
 /**

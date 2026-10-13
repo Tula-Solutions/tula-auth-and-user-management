@@ -1,6 +1,8 @@
 import {
   type ApproveProposalRequest,
   type CreateProposalRequest,
+  isProposalTargetId,
+  type OAuthProvider,
   PROPOSAL_APPROVER_TYPES,
   PROPOSAL_OPERATION_TARGETS,
   type Proposal,
@@ -10,13 +12,23 @@ import {
   type ProposalCreationRefusal,
   type ProposalExpiryReason,
   type ProposalFailureReason,
+  type ProposalTargetType,
   proposalSummary,
 } from '@tula/contract'
 import type { Deps, Tenant } from '~/dependencies'
-import { AuthError, ConflictError, ForbiddenError, NotFoundError } from '~/exceptions'
+import {
+  AuthError,
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+} from '~/exceptions'
 import type { Actor } from '~/lib/actor'
 import * as logger from '~/lib/logger'
 import * as Audit from '~/modules/audit/service'
+import * as OAuth from '~/modules/oauth/service'
+import * as Sessions from '~/modules/session/service'
+import * as Settings from '~/modules/settings/service'
 import * as Users from '~/modules/user/service'
 import type { ProposalRecord } from '~/ports/proposal-store'
 
@@ -37,6 +49,16 @@ export const PROPOSAL_TTL_MS = 10 * 60_000
  * matters, or wear an approver down, without limit.
  */
 export const PROPOSALS_PER_MINUTE = 10
+
+/**
+ * Proposals of **one operation** an environment's agents may ask for in a minute. Each
+ * operation has a count of its own beside the one all of them share
+ * ({@link PROPOSALS_PER_MINUTE}): an agent that was talked into asking for one thing again
+ * and again uses up that operation's minute and half of the shared one, and the other
+ * operations can still be asked for. The shared count stays, because what it protects (how
+ * many proposals wait for a human at once) is shared.
+ */
+export const PROPOSALS_PER_OPERATION_PER_MINUTE = 5
 
 /** The most proposals the list answers: the newest. */
 export const PROPOSAL_LIST_LIMIT = 100
@@ -101,6 +123,62 @@ function refuseApproval(reason: ProposalApprovalRefusal, message: string): never
   throw new ConflictError({ message, params: { reason } })
 }
 
+/**
+ * Refuse unless the environment accepts agents' proposals now: every environment that is not
+ * a production one does, and a production one only while its settings say so
+ * (`agents.proposalsInProduction`, off by default).
+ *
+ * "Production" is the environment's own kind, as the control plane stores it and the
+ * dashboard shows it: never `ENVIRONMENT` or `NODE_ENV`, which describe the deployment.
+ *
+ * The setting is read **past the cache**, when a proposal is asked for and again when it is
+ * approved: an opt-in that was switched off stops what is waiting on this instance and on
+ * every other at once, not within the cache's seconds. (A request that passed this line and
+ * writes its approval a moment after the setting changed is still an approval: the two are
+ * not one transaction, and the entries say the order.)
+ *
+ * @param refuse - What says no, in the caller's own code and word.
+ * @throws NotFoundError when the environment is gone.
+ */
+async function requireAccepted(
+  deps: Pick<Deps, 'environments' | 'environmentSettings' | 'config'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  refuse: () => never
+): Promise<void> {
+  const environment = await deps.environments.findById(tenant.environmentId)
+  if (!environment) {
+    throw new NotFoundError()
+  }
+  if (environment.kind !== 'production') {
+    return
+  }
+  const { settings } = await Settings.get(deps, tenant, true)
+  if (!settings.agents.proposalsInProduction) {
+    refuse()
+  }
+}
+
+type TargetDeps = Pick<Deps, 'users' | 'sessions' | 'oauthProviders'>
+
+/**
+ * Whether what a proposal names exists in this environment, read through the store of its
+ * kind. One branch per target type of the contract's closed list.
+ */
+async function targetExists(
+  deps: TargetDeps,
+  environmentId: string,
+  target: { type: ProposalTargetType; id: string }
+): Promise<boolean> {
+  switch (target.type) {
+    case 'user':
+      return (await deps.users.findById(environmentId, target.id)) !== null
+    case 'session':
+      return (await deps.sessions.findById(environmentId, target.id)) !== null
+    case 'oauth_provider':
+      return (await deps.oauthProviders.find(environmentId, target.id as OAuthProvider)) !== null
+  }
+}
+
 /** What a revoked key asked for is never carried out, however recently it asked. */
 function refuseRevoked(): never {
   refuseApproval(
@@ -155,10 +233,15 @@ export async function get(
  * answers that proposal: an agent that repeats itself does not put a second question in front
  * of a human. (Two requests at the very same instant can still make two; each is single use.)
  *
- * A production environment accepts no proposal. Whether one may is a setting an operator
- * chooses, which does not exist yet; until it does the answer is no.
+ * A production environment accepts no proposal unless its operator switched that on
+ * (`agents.proposalsInProduction`, off by default): decided before the target is read.
  *
- * @param deps - Stores, ids and clock.
+ * Switching a provider off is judged here as a courtesy and again, with authority, when the
+ * approval carries it out: a proposal that would leave the environment with no way to sign
+ * in is refused with the error the admin route answers, so that a person is not asked to
+ * approve what would be refused anyway.
+ *
+ * @param deps - Stores, settings, ids and clock.
  * @param tenant - The resolved tenant.
  * @param input - The operation and its target: ids and closed words, no text.
  * @param actor - Who asks. Must be an agent.
@@ -166,9 +249,15 @@ export async function get(
  * @throws AuthError `auth.invalid_key` when the actor is not an agent.
  * @throws ForbiddenError with `params.reason` (`production_environment`).
  * @throws NotFoundError when the target does not exist in this environment.
+ * @throws ValidationError (422) for a provider whose switching off would leave the
+ *   environment with no way to sign in.
  */
 export async function create(
-  deps: Pick<Deps, 'proposals' | 'environments' | 'users' | 'ids' | 'clock'>,
+  deps: Pick<
+    Deps,
+    'proposals' | 'environments' | 'environmentSettings' | 'config' | 'ids' | 'clock'
+  > &
+    TargetDeps,
   tenant: Scope,
   input: CreateProposalRequest,
   actor: Actor
@@ -178,33 +267,40 @@ export async function create(
   if (actor.type !== 'agent' || !actor.id) {
     throw new AuthError('auth.invalid_key')
   }
-  // The contract's schema lists one target type per operation today; a second one must not
-  // reach an operation that is not about it.
-  if (PROPOSAL_OPERATION_TARGETS[input.operation] !== input.target.type) {
+  // An operation acts on one kind of thing, named the way that kind is named. The request's
+  // schema holds the second half; both are asked here for every other caller.
+  if (
+    PROPOSAL_OPERATION_TARGETS[input.operation] !== input.target.type ||
+    !isProposalTargetId(input.target.type, input.target.id)
+  ) {
     throw new NotFoundError()
   }
-  const environment = await deps.environments.findById(tenant.environmentId)
-  if (!environment) {
-    throw new NotFoundError()
-  }
-  if (environment.kind === 'production') {
+  await requireAccepted(deps, tenant, () =>
     refuseCreation(
       'production_environment',
-      'A production environment does not accept proposals from an agent.'
+      'This production environment does not accept proposals from an agent.'
     )
-  }
-  // The agent can read the user anyway (an agent key reads what a secret key reads), so
-  // saying that there is none tells it nothing new, and keeps a proposal about nobody from
+  )
+  // The agent can read the target anyway (an agent key reads what a secret key reads), so
+  // saying that there is none tells it nothing new, and keeps a proposal about nothing from
   // being put in front of a human.
-  const user = await deps.users.findById(tenant.environmentId, input.target.id)
-  if (!user) {
+  if (!(await targetExists(deps, tenant.environmentId, input.target))) {
     throw new NotFoundError()
+  }
+  if (input.operation === 'disable_oauth_provider') {
+    const provider = input.target.id as OAuthProvider
+    const existing = await deps.oauthProviders.find(tenant.environmentId, provider)
+    // A courtesy, outside the lock: the approval asks again inside it, and that is what
+    // decides. The error is the admin route's own.
+    if (existing?.enabled) {
+      await OAuth.requireWayIn(deps, tenant, provider)
+    }
   }
   const now = deps.clock.now()
   const like = {
     operation: input.operation,
     targetType: input.target.type,
-    targetId: user.id,
+    targetId: input.target.id,
     proposedBy: actor.id,
   }
   const waiting = await deps.proposals.findPending(tenant.environmentId, like, now)
@@ -246,7 +342,49 @@ function approverOf(actor: Actor): ProposalApprover {
   return { type: actor.type as ProposalApproverType, id: actor.id }
 }
 
-type ExecutionDeps = Pick<Deps, 'users' | 'sessions' | 'revokedSessions' | 'clock' | 'ids'>
+type ExecutionDeps = Pick<
+  Deps,
+  | 'users'
+  | 'sessions'
+  | 'revokedSessions'
+  | 'oauthProviders'
+  | 'environmentSettings'
+  | 'environmentLock'
+  | 'config'
+  | 'clock'
+  | 'ids'
+>
+
+/**
+ * Run the one function an operation is, as the agent that asked, with the proposal and its
+ * approver for the change's own entry. One branch per operation of the contract's closed
+ * list, each calling a service function an administrator's route calls too (or, for a
+ * provider, the function that holds the same rule under the same lock): never a string
+ * taken from the row and looked up, never a stored request replayed.
+ */
+async function run(
+  deps: ExecutionDeps,
+  scope: Scope,
+  record: ProposalRecord,
+  agent: Actor,
+  approvedBy: ProposalApprover
+): Promise<void> {
+  const proposal = { proposalId: record.id, approvedBy }
+  switch (record.operation) {
+    case 'ban_user':
+      await Users.ban(deps, scope, record.targetId, agent, proposal)
+      return
+    case 'unban_user':
+      await Users.unban(deps, scope, record.targetId, agent, proposal)
+      return
+    case 'end_session':
+      await Sessions.revokeForProposal(deps, scope, record.targetId, agent, proposal)
+      return
+    case 'disable_oauth_provider':
+      await OAuth.switchOff(deps, scope, record.targetId as OAuthProvider, agent, proposal)
+      return
+  }
+}
 
 /**
  * Carry out an approved proposal's operation, as the agent that asked, with the approving
@@ -271,13 +409,17 @@ async function execute(
   // left. The approval is written by now; the operation runs all the same.
   const changedBefore = await changeIsThere(deps, scope, record)
   try {
-    // One operation today. A second one is a branch here and an entry in the contract's
-    // list, never a string taken from the row and looked up.
-    await Users.ban(deps, scope, record.targetId, agent, { proposalId: record.id, approvedBy })
+    await run(deps, scope, record, agent, approvedBy)
     return null
   } catch (error) {
     if (error instanceof NotFoundError) {
       return 'target_not_found'
+    }
+    // The one refusal an operation has of its own: `OAuth.switchOff` throws nothing else of
+    // this kind. Judged under the environment's lock, at this moment: what the proposal's
+    // creation saw minutes ago decided nothing.
+    if (record.operation === 'disable_oauth_provider' && error instanceof ValidationError) {
+      return 'last_sign_in_method'
     }
     // Fixed words and ids: the failure's own text can quote what it failed on.
     logger.error('an approved proposal could not be carried out', {
@@ -301,6 +443,12 @@ async function execute(
  * "not carried out": a ban that was not there before and is there after is said as
  * `incomplete`. A read that fails claims nothing (`error`); nothing is retried.
  *
+ * The other operations' own write is their last step (a ban is lifted after the sessions
+ * are ended once more; a session is ended after its id is denylisted; a provider is one
+ * row's update), so for them `incomplete` would take a failure after the write committed.
+ * Each still says here what its write looks like, so that such a failure is not reported
+ * as "nothing happened".
+ *
  * @returns `true` when the target shows the operation's write, `false` when it does not
  *   (a target that is gone included), `null` when it could not be read.
  */
@@ -310,8 +458,25 @@ async function changeIsThere(
   record: ProposalRecord
 ): Promise<boolean | null> {
   try {
-    const user = await deps.users.findById(scope.environmentId, record.targetId)
-    return user?.bannedAt != null
+    switch (record.operation) {
+      case 'ban_user':
+        return (await deps.users.findById(scope.environmentId, record.targetId))?.bannedAt != null
+      case 'unban_user': {
+        const user = await deps.users.findById(scope.environmentId, record.targetId)
+        return user !== null && user.bannedAt === null
+      }
+      case 'end_session': {
+        const session = await deps.sessions.findById(scope.environmentId, record.targetId)
+        return session?.revokedAt != null
+      }
+      case 'disable_oauth_provider': {
+        const provider = await deps.oauthProviders.find(
+          scope.environmentId,
+          record.targetId as OAuthProvider
+        )
+        return provider !== null && !provider.enabled
+      }
+    }
   } catch (error) {
     logger.error('the target of an approved proposal could not be read', {
       environmentId: scope.environmentId,
@@ -334,6 +499,10 @@ async function changeIsThere(
  * what the **proposal** holds, and only when the body names the same: an approval is of what
  * was read, never of an id alone.
  *
+ * A production environment that does not accept proposals (it never did, or its operator
+ * switched that off after this one was made) approves none: refused before anything is
+ * written, and the proposal is not spent.
+ *
  * The operation runs as the agent that asked (its entries, `user.banned` among them, carry
  * the `agent` actor) with the approving human in their `data`; the approval itself is the
  * human's entry. An operation that fails leaves the proposal `failed` and spent: it is never
@@ -348,11 +517,11 @@ async function changeIsThere(
  * @returns The proposal as it is afterwards (`executed`, `failed`, or `approved`).
  * @throws AuthError `auth.invalid_key` when the actor is not a human's credential.
  * @throws NotFoundError when the environment has no such proposal.
- * @throws ConflictError with `params.reason`: `mismatch`, `agent_key_revoked`,
- *   `already_decided` or `expired`.
+ * @throws ConflictError with `params.reason`: `production_environment`, `mismatch`,
+ *   `agent_key_revoked`, `already_decided` or `expired`.
  */
 export async function approve(
-  deps: Pick<Deps, 'proposals'> & ExecutionDeps,
+  deps: Pick<Deps, 'proposals' | 'environments'> & ExecutionDeps,
   tenant: Scope,
   id: string,
   shown: ApproveProposalRequest,
@@ -363,6 +532,14 @@ export async function approve(
   if (!found) {
     throw new NotFoundError()
   }
+  // Asked again here, past the settings cache: an environment that stopped accepting
+  // proposals after this one was made carries none out.
+  await requireAccepted(deps, tenant, () =>
+    refuseApproval(
+      'production_environment',
+      'This production environment does not accept proposals from an agent. Nothing was changed.'
+    )
+  )
   if (
     shown.operation !== found.operation ||
     shown.target.type !== found.targetType ||

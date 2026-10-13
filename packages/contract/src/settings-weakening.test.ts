@@ -76,6 +76,13 @@ describe('settingsWeakenings', () => {
       ['password.history'],
     ],
     [
+      'agents’ proposals accepted in production',
+      (s) => {
+        s.agents.proposalsInProduction = true
+      },
+      ['agents.proposalsInProduction'],
+    ],
+    [
       'a notice switched off',
       (s) => {
         s.notifications.newSignIn = false
@@ -163,6 +170,14 @@ describe('settingsWeakenings', () => {
       expect(settingsWeakenings(base, changed(patch))).toEqual([])
     }
   )
+
+  test('agents’ proposals in production: switching them off, and leaving them on, is not one', () => {
+    const on = changed((s) => {
+      s.agents.proposalsInProduction = true
+    })
+    expect(settingsWeakenings(on, structuredClone(base))).toEqual([])
+    expect(settingsWeakenings(on, structuredClone(on))).toEqual([])
+  })
 
   test.each([
     ['a period where there was none', null, 365, true],

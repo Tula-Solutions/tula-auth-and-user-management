@@ -397,8 +397,17 @@
       },
       "UserUnbannedEventData": {
         "type": "object",
-        "properties": {},
-        "description": "A user’s ban was lifted."
+        "properties": {
+          "proposalId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "approvedBy": {
+            "$ref": "#/components/schemas/ProposalApprover"
+          }
+        },
+        "description": "A user’s ban was lifted. With `proposalId` and `approvedBy` (both or neither) when that carried out an agent’s proposal a human approved."
       },
       "UserUnbannedEvent": {
         "type": "object",
@@ -459,7 +468,7 @@
           "target",
           "data"
         ],
-        "description": "A user’s ban was lifted."
+        "description": "A user’s ban was lifted. With `proposalId` and `approvedBy` (both or neither) when that carried out an agent’s proposal a human approved."
       },
       "UserDeletedEventData": {
         "type": "object",
@@ -1772,13 +1781,21 @@
               "mfa_changed",
               "session_limit"
             ]
+          },
+          "proposalId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "approvedBy": {
+            "$ref": "#/components/schemas/ProposalApprover"
           }
         },
         "required": [
           "userId",
           "reason"
         ],
-        "description": "A session was ended before it expired."
+        "description": "A session was ended before it expired. With `proposalId` and `approvedBy` (both or neither) when ending it carried out an agent’s proposal a human approved."
       },
       "SessionRevokedEvent": {
         "type": "object",
@@ -1839,7 +1856,7 @@
           "target",
           "data"
         ],
-        "description": "A session was ended before it expired."
+        "description": "A session was ended before it expired. With `proposalId` and `approvedBy` (both or neither) when ending it carried out an agent’s proposal a human approved."
       },
       "SessionReuseDetectedEventData": {
         "type": "object",
@@ -2468,13 +2485,21 @@
           },
           "weakened": {
             "type": "boolean"
+          },
+          "proposalId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "approvedBy": {
+            "$ref": "#/components/schemas/ProposalApprover"
           }
         },
         "required": [
           "provider",
           "changed"
         ],
-        "description": "An OAuth provider’s credentials were set or changed."
+        "description": "An OAuth provider’s credentials were set or changed, or it was switched on or off. With `proposalId` and `approvedBy` (both or neither) when switching it off carried out an agent’s proposal a human approved."
       },
       "OAuthProviderUpdatedEvent": {
         "type": "object",
@@ -2535,7 +2560,7 @@
           "target",
           "data"
         ],
-        "description": "An OAuth provider’s credentials were set or changed."
+        "description": "An OAuth provider’s credentials were set or changed, or it was switched on or off. With `proposalId` and `approvedBy` (both or neither) when switching it off carried out an agent’s proposal a human approved."
       },
       "OAuthProviderDeletedEventData": {
         "type": "object",
@@ -3605,19 +3630,31 @@
           "operation": {
             "type": "string",
             "enum": [
-              "ban_user"
+              "ban_user",
+              "unban_user",
+              "end_session",
+              "disable_oauth_provider"
             ]
           },
           "targetType": {
             "type": "string",
             "enum": [
-              "user"
+              "user",
+              "session",
+              "oauth_provider"
             ]
           },
           "targetId": {
-            "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "$ref": "#/components/schemas/OAuthProvider"
+              }
+            ]
           }
         },
         "required": [
@@ -3694,19 +3731,31 @@
           "operation": {
             "type": "string",
             "enum": [
-              "ban_user"
+              "ban_user",
+              "unban_user",
+              "end_session",
+              "disable_oauth_provider"
             ]
           },
           "targetType": {
             "type": "string",
             "enum": [
-              "user"
+              "user",
+              "session",
+              "oauth_provider"
             ]
           },
           "targetId": {
-            "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "$ref": "#/components/schemas/OAuthProvider"
+              }
+            ]
           },
           "proposedBy": {
             "type": "string",
@@ -3789,19 +3838,31 @@
           "operation": {
             "type": "string",
             "enum": [
-              "ban_user"
+              "ban_user",
+              "unban_user",
+              "end_session",
+              "disable_oauth_provider"
             ]
           },
           "targetType": {
             "type": "string",
             "enum": [
-              "user"
+              "user",
+              "session",
+              "oauth_provider"
             ]
           },
           "targetId": {
-            "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "$ref": "#/components/schemas/OAuthProvider"
+              }
+            ]
           },
           "approvedBy": {
             "$ref": "#/components/schemas/ProposalApprover"
@@ -3882,19 +3943,31 @@
           "operation": {
             "type": "string",
             "enum": [
-              "ban_user"
+              "ban_user",
+              "unban_user",
+              "end_session",
+              "disable_oauth_provider"
             ]
           },
           "targetType": {
             "type": "string",
             "enum": [
-              "user"
+              "user",
+              "session",
+              "oauth_provider"
             ]
           },
           "targetId": {
-            "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "$ref": "#/components/schemas/OAuthProvider"
+              }
+            ]
           },
           "approvedBy": {
             "$ref": "#/components/schemas/ProposalApprover"
@@ -3904,7 +3977,8 @@
             "enum": [
               "target_not_found",
               "error",
-              "incomplete"
+              "incomplete",
+              "last_sign_in_method"
             ]
           }
         },
@@ -7725,6 +7799,17 @@
                 },
                 "additionalProperties": false
               },
+              "agents": {
+                "default": {},
+                "type": "object",
+                "properties": {
+                  "proposalsInProduction": {
+                    "default": false,
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              },
               "notifications": {
                 "default": {},
                 "type": "object",
@@ -8003,6 +8088,17 @@
                     "type": "null"
                   }
                 ]
+              }
+            },
+            "additionalProperties": false
+          },
+          "agents": {
+            "default": {},
+            "type": "object",
+            "properties": {
+              "proposalsInProduction": {
+                "default": false,
+                "type": "boolean"
               }
             },
             "additionalProperties": false
@@ -10418,7 +10514,10 @@
       "ProposalOperation": {
         "type": "string",
         "enum": [
-          "ban_user"
+          "ban_user",
+          "unban_user",
+          "end_session",
+          "disable_oauth_provider"
         ]
       },
       "ProposalTarget": {
@@ -10427,13 +10526,32 @@
           "type": {
             "type": "string",
             "enum": [
-              "user"
+              "user",
+              "session",
+              "oauth_provider"
             ]
           },
           "id": {
-            "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "google",
+                  "github",
+                  "apple",
+                  "microsoft",
+                  "discord",
+                  "linkedin",
+                  "x",
+                  "facebook"
+                ]
+              }
+            ]
           }
         },
         "required": [
@@ -10529,7 +10647,8 @@
                 "enum": [
                   "target_not_found",
                   "error",
-                  "incomplete"
+                  "incomplete",
+                  "last_sign_in_method"
                 ]
               },
               {
@@ -26471,7 +26590,7 @@
           "Proposals"
         ],
         "summary": "Propose a change",
-        "description": "A proposal is a change an AI agent has asked for and that has **not happened**. It names one operation from a closed list and one target by id, holds no text anyone wrote, can be approved for 10 minutes and at most once. This is the one thing an agent key can ask for, and it changes nothing: a human has to approve the proposal with a secret key or in the dashboard (`POST /v1/admin/proposals/{id}/approve`), which an agent key cannot do. Asking again for the same operation on the same target while the first proposal still waits answers that proposal. A production environment accepts none (`auth.forbidden`, `params.reason`: `production_environment`). Limited to 10 a minute per environment.",
+        "description": "A proposal is a change an AI agent has asked for and that has **not happened**. It names one operation from a closed list and one target by id, holds no text anyone wrote, can be approved for 10 minutes and at most once. This is the one thing an agent key can ask for, and it changes nothing: a human has to approve the proposal with a secret key or in the dashboard (`POST /v1/admin/proposals/{id}/approve`), which an agent key cannot do. Asking again for the same operation on the same target while the first proposal still waits answers that proposal. The operations are `ban_user` and `unban_user` (a user, by id), `end_session` (one session, by id) and `disable_oauth_provider` (one provider, by its name: `enabled: false` and nothing else). A production environment accepts none unless its settings say so (`agents.proposalsInProduction`, off by default): `auth.forbidden`, `params.reason`: `production_environment`. Switching a provider off is refused (422, as the provider route refuses it) when it would leave the environment with no way to sign in, and judged again when the proposal is approved. Limited to 10 a minute per environment, and to 5 a minute for each operation.",
         "security": [
           {
             "agentKey": []
@@ -26826,7 +26945,7 @@
           "Proposals"
         ],
         "summary": "Approve a proposal",
-        "description": "Approve a proposal and carry out its operation, now. It takes a secret key or a dashboard session, **never an agent key** (`auth.invalid_key`): the approval is a human’s. The body names the operation and the target the human was shown; what is carried out is what the proposal holds, and only when the two are the same. Refused with `resource.conflict` and a fixed `params.reason`: `mismatch` (the body names something else), `already_decided` (a proposal is approved at most once) or `expired`. Nothing is changed by a refused approval. The answer is the proposal afterwards: `executed`, or `failed` with `failureReason` when the operation could not be carried out (the proposal is spent either way). The operation is recorded with the agent as its actor and the approver beside it; the approval itself with the approver as its actor.",
+        "description": "Approve a proposal and carry out its operation, now. It takes a secret key or a dashboard session, **never an agent key** (`auth.invalid_key`): the approval is a human’s. The body names the operation and the target the human was shown; what is carried out is what the proposal holds, and only when the two are the same. Refused with `resource.conflict` and a fixed `params.reason`: `mismatch` (the body names something else), `already_decided` (a proposal is approved at most once), `expired`, `agent_key_revoked` or `production_environment` (a production environment whose settings do not, or no longer, accept proposals). Nothing is changed by a refused approval. The answer is the proposal afterwards: `executed`, or `failed` with `failureReason` when the operation could not be carried out (the proposal is spent either way; `last_sign_in_method` when switching a provider off would have left no way to sign in). The operation is recorded with the agent as its actor and the approver beside it; the approval itself with the approver as its actor.",
         "security": [
           {
             "secretKey": []

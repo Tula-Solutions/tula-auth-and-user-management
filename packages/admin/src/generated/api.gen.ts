@@ -284,6 +284,9 @@ export interface Schemas {
     audit?: {
       retentionDays?: number | null
     }
+    agents?: {
+      proposalsInProduction?: boolean
+    }
     notifications?: {
       passwordChanged?: boolean
       newSignIn?: boolean
@@ -345,6 +348,9 @@ export interface Schemas {
       }
       audit?: {
         retentionDays?: number | null
+      }
+      agents?: {
+        proposalsInProduction?: boolean
       }
       notifications?: {
         passwordChanged?: boolean
@@ -737,6 +743,8 @@ export interface Schemas {
     created?: boolean
     additionalClientIdCount?: number
     weakened?: boolean
+    proposalId?: string
+    approvedBy?: Schemas['ProposalApprover']
   }
   PaginationMeta: {
     totalCount: number
@@ -794,7 +802,7 @@ export interface Schemas {
     expiresAt: string
     approvedBy: Schemas['ProposalApprover'] | null
     approvedAt: string | null
-    failureReason: 'target_not_found' | 'error' | 'incomplete' | null
+    failureReason: 'target_not_found' | 'error' | 'incomplete' | 'last_sign_in_method' | null
     expiryReason: 'time' | 'agent_key_revoked' | null
   }
   ProposalApprovedEvent: {
@@ -811,9 +819,9 @@ export interface Schemas {
     test?: true
   }
   ProposalApprovedEventData: {
-    operation: 'ban_user'
-    targetType: 'user'
-    targetId: string
+    operation: 'ban_user' | 'unban_user' | 'end_session' | 'disable_oauth_provider'
+    targetType: 'user' | 'session' | 'oauth_provider'
+    targetId: string | Schemas['OAuthProvider']
     proposedBy: string
   }
   ProposalApprover: {
@@ -834,9 +842,9 @@ export interface Schemas {
     test?: true
   }
   ProposalCreatedEventData: {
-    operation: 'ban_user'
-    targetType: 'user'
-    targetId: string
+    operation: 'ban_user' | 'unban_user' | 'end_session' | 'disable_oauth_provider'
+    targetType: 'user' | 'session' | 'oauth_provider'
+    targetId: string | Schemas['OAuthProvider']
   }
   ProposalExecutedEvent: {
     id: string
@@ -852,9 +860,9 @@ export interface Schemas {
     test?: true
   }
   ProposalExecutedEventData: {
-    operation: 'ban_user'
-    targetType: 'user'
-    targetId: string
+    operation: 'ban_user' | 'unban_user' | 'end_session' | 'disable_oauth_provider'
+    targetType: 'user' | 'session' | 'oauth_provider'
+    targetId: string | Schemas['OAuthProvider']
     approvedBy: Schemas['ProposalApprover']
   }
   ProposalFailedEvent: {
@@ -871,20 +879,20 @@ export interface Schemas {
     test?: true
   }
   ProposalFailedEventData: {
-    operation: 'ban_user'
-    targetType: 'user'
-    targetId: string
+    operation: 'ban_user' | 'unban_user' | 'end_session' | 'disable_oauth_provider'
+    targetType: 'user' | 'session' | 'oauth_provider'
+    targetId: string | Schemas['OAuthProvider']
     approvedBy: Schemas['ProposalApprover']
-    reason: 'target_not_found' | 'error' | 'incomplete'
+    reason: 'target_not_found' | 'error' | 'incomplete' | 'last_sign_in_method'
   }
   ProposalList: {
     data: Schemas['Proposal'][]
   }
-  ProposalOperation: 'ban_user'
+  ProposalOperation: 'ban_user' | 'unban_user' | 'end_session' | 'disable_oauth_provider'
   ProposalStatus: 'pending' | 'expired' | 'approved' | 'executed' | 'failed'
   ProposalTarget: {
-    type: 'user'
-    id: string
+    type: 'user' | 'session' | 'oauth_provider'
+    id: string | 'google' | 'github' | 'apple' | 'microsoft' | 'discord' | 'linkedin' | 'x' | 'facebook'
   }
   RedirectUrl: string
   RevokedSessions: {
@@ -1009,6 +1017,8 @@ export interface Schemas {
   SessionRevokedEventData: {
     userId: string
     reason: 'sign_out' | 'revoked_by_user' | 'revoked_by_admin' | 'password_changed' | 'user_banned' | 'mfa_changed' | 'session_limit'
+    proposalId?: string
+    approvedBy?: Schemas['ProposalApprover']
   }
   SessionSettings: {
     profiles?: {
@@ -1469,7 +1479,10 @@ export interface Schemas {
     data: Schemas['UserUnbannedEventData']
     test?: true
   }
-  UserUnbannedEventData: Record<string, never>
+  UserUnbannedEventData: {
+    proposalId?: string
+    approvedBy?: Schemas['ProposalApprover']
+  }
   VerifySessionRequest: {
     token: string
   }

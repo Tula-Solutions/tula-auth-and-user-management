@@ -23,14 +23,17 @@ import {
   fakeClients,
   fakeFetch,
   HANG,
+  proposalAnswer,
   TEST_ADMIN_TOKEN,
   TEST_AGENT_KEY,
   TEST_PROPOSAL_ID,
   TEST_SECRET_KEY,
+  TEST_SESSION_ID,
   TEST_USER_ID,
   withCanaries,
 } from './testing/fake-api'
 import { ALL_HIDDEN, forbiddenCodePoints, inTagCharacters, LEGITIMATE } from './testing/hidden'
+import { INJECTED_KEY, INJECTION_CORPUS } from './testing/injection'
 
 const FIXTURES = `${import.meta.dir}/testing/fixtures`
 
@@ -50,6 +53,9 @@ const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
   list_oauth_providers: {},
   run_doctor: {},
   propose_ban_user: { userId: TEST_USER_ID },
+  propose_unban_user: { userId: TEST_USER_ID },
+  propose_end_session: { sessionId: TEST_SESSION_ID },
+  propose_disable_oauth_provider: { provider: 'google' },
   draft_settings_change: {
     settings: [{ path: 'password.minLength', value: 14 }],
     providers: [{ provider: 'github', clientId: 'Iv1.example', secretEnv: 'GITHUB_CLIENT_SECRET' }],
@@ -145,7 +151,13 @@ describe('the protocol', () => {
     for (const name of SCAFFOLD_TOOL_NAMES) {
       expect(tools.find((tool) => tool.name === name)?.description).toContain('writes nothing')
     }
-    expect(PROPOSE_TOOL_NAMES).toEqual(['propose_ban_user'])
+    // Pinned: a new propose tool is added here on purpose, with its place in ADR 0053.
+    expect(PROPOSE_TOOL_NAMES).toEqual([
+      'propose_ban_user',
+      'propose_unban_user',
+      'propose_end_session',
+      'propose_disable_oauth_provider',
+    ])
     for (const name of PROPOSE_TOOL_NAMES) {
       const description = tools.find((tool) => tool.name === name)?.description
       expect(description).toContain('This tool changes nothing')
@@ -235,6 +247,53 @@ describe('the protocol', () => {
       'a proposal with a key',
       'propose_ban_user',
       { userId: TEST_USER_ID, secretKey: TEST_SECRET_KEY },
+    ],
+    ['lifting a ban with no user', 'propose_unban_user', {}],
+    ['lifting the bans of several users', 'propose_unban_user', { userId: [TEST_USER_ID] }],
+    [
+      'lifting a ban and approving it',
+      'propose_unban_user',
+      { userId: TEST_USER_ID, approve: true },
+    ],
+    ['ending a session with no session', 'propose_end_session', {}],
+    ['ending a session by its user', 'propose_end_session', { userId: TEST_USER_ID }],
+    [
+      'ending a session and every other of its user',
+      'propose_end_session',
+      { sessionId: TEST_SESSION_ID, all: true },
+    ],
+    ['ending several sessions', 'propose_end_session', { sessionId: [TEST_SESSION_ID] }],
+    ['ending a session named by a path', 'propose_end_session', { sessionId: '../sessions' }],
+    ['switching off no provider', 'propose_disable_oauth_provider', {}],
+    [
+      'switching off a provider that is not on the list',
+      'propose_disable_oauth_provider',
+      { provider: 'myspace' },
+    ],
+    [
+      'switching off a provider named in other words',
+      'propose_disable_oauth_provider',
+      { provider: 'Google' },
+    ],
+    [
+      'switching off several providers',
+      'propose_disable_oauth_provider',
+      { provider: ['google', 'github'] },
+    ],
+    [
+      'switching a provider on',
+      'propose_disable_oauth_provider',
+      { provider: 'google', enabled: true },
+    ],
+    [
+      'switching a provider off with a secret for it',
+      'propose_disable_oauth_provider',
+      { provider: 'google', clientSecret: 'x' },
+    ],
+    [
+      'switching a provider off and removing it',
+      'propose_disable_oauth_provider',
+      { provider: 'google', remove: true },
     ],
   ])('malformed input (%s) is refused before any request', async (_name, tool, args) => {
     const { client, requests } = await world()
@@ -507,6 +566,115 @@ describe('the propose tools', () => {
     expect(result.raw).not.toContain('tula_ak_')
   })
 
+  test.each([
+    [
+      'propose_unban_user',
+      { userId: TEST_USER_ID },
+      { operation: 'unban_user', target: { type: 'user', id: TEST_USER_ID } },
+      'Lift the ban on the user',
+    ],
+    [
+      'propose_end_session',
+      { sessionId: TEST_SESSION_ID },
+      { operation: 'end_session', target: { type: 'session', id: TEST_SESSION_ID } },
+      `End the session ${TEST_SESSION_ID}`,
+    ],
+    [
+      'propose_disable_oauth_provider',
+      { provider: 'google' },
+      { operation: 'disable_oauth_provider', target: { type: 'oauth_provider', id: 'google' } },
+      'Switch off sign-in with the provider google',
+    ],
+  ] as const)(
+    '%s: one POST to the agent route with the agent key, and the proposal comes back',
+    async (tool, input, asked, summary) => {
+      const { client, requests, bodies } = await world()
+      const result = await callTool(client, tool, input)
+      expect(result.isError).toBe(false)
+      expect(requests.map((request) => `${request.method} ${request.path}`)).toEqual([
+        'POST /v1/agent/proposals',
+      ])
+      expect(requests[0]?.headers.authorization).toBe(`Bearer ${TEST_AGENT_KEY}`)
+      // The body is the operation and its one target, and nothing else.
+      expect(bodies.map((body) => JSON.parse(body))).toEqual([asked])
+      expect(result.structured).toEqual({
+        proposal: {
+          id: TEST_PROPOSAL_ID,
+          ...asked,
+          summary: expect.stringContaining(summary),
+          status: 'pending',
+          createdAt: '2026-03-01T00:00:00.000Z',
+          expiresAt: '2026-03-01T00:10:00.000Z',
+        },
+        changed: false,
+        nextStep: expect.stringContaining('Nothing has been changed'),
+      })
+      expect(result.raw).not.toContain('tula_ak_')
+    }
+  )
+
+  // The refusals the API has for these: each is the API's code and nothing of its body.
+  test.each([
+    ['propose_disable_oauth_provider', 422, 'validation.failed'],
+    ['propose_disable_oauth_provider', 404, 'resource.not_found'],
+    ['propose_end_session', 404, 'resource.not_found'],
+    ['propose_end_session', 403, 'auth.forbidden'],
+    ['propose_unban_user', 429, 'rate_limited'],
+    ['propose_unban_user', 503, 'service.unavailable'],
+  ])(
+    '%s refused with %i is an error with the API’s code, and proposes nothing',
+    async (tool, status, code) => {
+      const answers = defaultAnswers()
+      answers['POST /v1/agent/proposals'] = () =>
+        Response.json(
+          {
+            status,
+            code,
+            detail: `upstream ${CANARY} ${TEST_AGENT_KEY}`,
+            errors: [{ field: 'enabled', code, message: `at least ${CANARY}` }],
+          },
+          { status }
+        )
+      const { client, logs, requests } = await world(answers)
+      const result = await callTool(client, tool, SAMPLE_ARGS[tool])
+      expect(result.isError).toBe(true)
+      expect((result.structured.error as { code: string }).code).toBe(code)
+      expect(result.structured.proposal).toBeUndefined()
+      expect(result.structured.changed).toBeUndefined()
+      // Asked once: a refusal is not tried again.
+      expect(requests).toHaveLength(1)
+      const all = [result.raw, ...logs].join('\n')
+      expect(all).not.toContain(CANARY)
+      expect(all).not.toContain(TEST_AGENT_KEY)
+    }
+  )
+
+  // The API's answer is held to what was asked: a reader must never be told, in the API's
+  // name, that something else waits for approval.
+  test.each([
+    ['another operation', { operation: 'ban_user' }],
+    ['another target', { target: { type: 'session', id: TEST_USER_ID } }],
+    ['another kind of target', { target: { type: 'user', id: TEST_SESSION_ID } }],
+    ['no target', { target: null }],
+    ['a target that is a sentence', { target: 'every session' }],
+  ])(
+    'an answer about %s than was asked for is a failure, never "proposed"',
+    async (_name, other) => {
+      const answers = defaultAnswers()
+      answers['POST /v1/agent/proposals'] = (body?: string) =>
+        Response.json({ ...proposalAnswer(JSON.parse(body ?? '{}')), ...other })
+      const { client } = await world(answers)
+      const result = await callTool(client, 'propose_end_session', { sessionId: TEST_SESSION_ID })
+      expect(result.isError).toBe(true)
+      expect(result.structured.error).toEqual({
+        code: 'response.invalid',
+        message: 'The answer was not the proposal that was asked for.',
+      })
+      expect(result.structured.proposal).toBeUndefined()
+      expect(result.structured.changed).toBeUndefined()
+    }
+  )
+
   test('with a secret key and no agent key it is not configured, and nothing is sent', async () => {
     const { admin, requests } = fakeAdmin()
     const { client, close } = await connect({ admin, cwd: FIXTURES })
@@ -574,7 +742,7 @@ describe('the propose tools', () => {
 
   test('what a proposal’s answer holds beyond the named fields is not returned', async () => {
     const answers = defaultAnswers()
-    answers['POST /v1/agent/proposals'] = withCanaries(answers['POST /v1/agent/proposals'])
+    answers['POST /v1/agent/proposals'] = withCanaries(proposalAnswer())
     const { client } = await world(answers)
     const result = await callTool(client, 'propose_ban_user', { userId: TEST_USER_ID })
     expect(result.isError).toBe(false)
@@ -626,6 +794,115 @@ describe('the propose tools', () => {
       'GET /v1/admin/users',
       'POST /v1/agent/proposals',
     ])
+  })
+})
+
+/** The field names of a projected proposal: the allow-list, and nothing beside it. */
+const PROPOSAL_FIELDS = ['createdAt', 'expiresAt', 'id', 'operation', 'status', 'summary', 'target']
+
+/** How long each returned field of a proposal may be, as `PROPOSAL` in `tools.ts` caps it. */
+const PROPOSAL_CAPS: Record<string, number> = {
+  id: 64,
+  operation: 40,
+  summary: 400,
+  status: 20,
+  createdAt: 40,
+  expiresAt: 40,
+}
+
+/** What each propose tool is called with, and the request that makes. */
+const PROPOSALS = [
+  ['propose_ban_user', 'ban_user', { type: 'user', id: TEST_USER_ID }],
+  ['propose_unban_user', 'unban_user', { type: 'user', id: TEST_USER_ID }],
+  ['propose_end_session', 'end_session', { type: 'session', id: TEST_SESSION_ID }],
+  [
+    'propose_disable_oauth_provider',
+    'disable_oauth_provider',
+    { type: 'oauth_provider', id: 'google' },
+  ],
+] as const
+
+// The injection corpus (`testing/injection.ts`) in every field a propose tool returns, for
+// every proposal. The API here is a fake that answers with whatever the test says, which
+// is more than the real one can be made to say: `tula mcp`'s tests put the same corpus
+// into what an outsider really can write, against the real API, and look at its stores.
+describe('text written to make a model act, in every field a propose tool returns', () => {
+  test('there is a row for every propose tool', () => {
+    expect(PROPOSALS.map(([tool]) => tool as string)).toEqual([...PROPOSE_TOOL_NAMES])
+    expect(INJECTION_CORPUS.length).toBeGreaterThanOrEqual(8)
+  })
+
+  /** Every case: a tool, a string of the corpus, and the field it is put in. */
+  const cases = PROPOSALS.flatMap(([tool, operation, target]) =>
+    INJECTION_CORPUS.flatMap(([kind, text]) =>
+      [...Object.keys(PROPOSAL_CAPS), 'target.type', 'target.id', 'target', 'proposedBy.id'].map(
+        (field) => [tool, kind, field, operation, target, text] as const
+      )
+    )
+  )
+
+  test.each(cases)('%s, %s in `%s`', async (tool, _kind, field, operation, target, text) => {
+    const answers = defaultAnswers()
+    answers['POST /v1/agent/proposals'] = () => {
+      const answer = proposalAnswer({ operation, target }) as Record<string, unknown>
+      if (field === 'target') {
+        answer.target = text
+      } else if (field.includes('.')) {
+        const [outer, inner] = field.split('.') as [string, string]
+        answer[outer] = { ...(answer[outer] as object), [inner]: text }
+      } else {
+        answer[field] = text
+      }
+      // And the same text where the projection names nothing.
+      answer.note = text
+      answer.approval = { status: 'approved', instructions: text }
+      return Response.json(answer, { status: 201 })
+    }
+    const { client, requests, logs } = await world(answers)
+    const result = await callTool(client, tool, SAMPLE_ARGS[tool])
+
+    // Whatever came back, one request was made, and it asked: nothing approved, nothing
+    // written, nothing tried again.
+    expect(requests.map((request) => `${request.method} ${request.path}`)).toEqual([
+      'POST /v1/agent/proposals',
+    ])
+    expect(forbiddenCodePoints(result.raw)).toEqual([])
+    expect(result.raw).not.toContain(INJECTED_KEY)
+    expect(logs.join('\n')).not.toContain(text.slice(0, 40))
+    // A result is capped as a whole, whatever was put in it.
+    expect(result.raw.length).toBeLessThan(140_000)
+
+    if (field.startsWith('target') || field === 'operation') {
+      // What names the proposal is held to what was asked: a failure, with fixed words.
+      expect(result.isError).toBe(true)
+      expect(result.structured).toEqual({
+        error: {
+          code: 'response.invalid',
+          message: expect.stringMatching(/^The answer was not /),
+        },
+      })
+      return
+    }
+    expect(result.isError).toBe(false)
+    // The allow-list projection: the named fields and nothing else, at both levels.
+    expect(Object.keys(result.structured).sort()).toEqual(['changed', 'nextStep', 'proposal'])
+    const proposal = result.structured.proposal as Record<string, unknown>
+    expect(Object.keys(proposal).sort()).toEqual(PROPOSAL_FIELDS)
+    expect(proposal.target).toEqual(target)
+    expect(proposal.operation).toBe(operation)
+    for (const [name, cap] of Object.entries(PROPOSAL_CAPS)) {
+      expect(typeof proposal[name]).toBe('string')
+      // One more than the cap: the mark that says a value was cut.
+      expect(Array.from(proposal[name] as string).length).toBeLessThanOrEqual(cap + 1)
+    }
+    // The two fields that say nothing happened are the server's own fixed values: no text
+    // of an answer can reach them.
+    expect(result.structured.changed).toBe(false)
+    expect(result.structured.nextStep).toBe(
+      'Nothing has been changed. A person must approve this proposal with their own credential ' +
+        'before it expires: `tula approve` followed by the proposal’s id, run by them in a ' +
+        'terminal. This server cannot approve it.'
+    )
   })
 })
 
@@ -692,6 +969,9 @@ describe('nothing secret is returned', () => {
 
   test('a field the projection does not name never reaches an output, at any depth', async () => {
     const answers = withCanaries(defaultAnswers()) as Answers
+    // A proposal is answered for what was asked: the canaries go into each such answer.
+    answers['POST /v1/agent/proposals'] = (body?: string) =>
+      Response.json(withCanaries(proposalAnswer(JSON.parse(body ?? '{}'))))
     const { client, logs } = await world(answers, {
       doctor: async () => withCanaries(DOCTOR_REPORT),
     })

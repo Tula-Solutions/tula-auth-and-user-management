@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import type { AdminFetch } from '@tula/admin'
 import { createApp } from '../../../apps/api/src/index'
+import * as Sessions from '../../../apps/api/src/modules/session/service'
 import {
   createTestDeps,
   seedApiKey,
@@ -42,7 +43,12 @@ async function api(key: string, method: string, path: string, body?: unknown) {
     headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
-  return { status: response.status, body: (await response.json()) as Record<string, unknown> }
+  // A removal answers 204 with no body.
+  const text = await response.text()
+  return {
+    status: response.status,
+    body: (text === '' ? {} : JSON.parse(text)) as Record<string, unknown>,
+  }
 }
 
 async function user(email = 'maya@northline.app', firstName = 'Maya'): Promise<string> {
@@ -443,5 +449,210 @@ describe('tula approve', () => {
     expect(run.code).toBe(0)
     expect(run.stdout).toContain('An agent key cannot approve')
     expect(wire).toEqual([])
+  })
+})
+
+// The other reversible operations (ADR 0053): what a person is shown and asked for each,
+// and that what was asked about is what happens.
+describe('tula approve: lifting a ban, ending a session, switching a provider off', () => {
+  const tenant = { projectId: TEST_TENANT.projectId, environmentId: TEST_TENANT.environmentId }
+
+  async function ask(operation: string, target: { type: string; id: string }, key = AGENT_KEY) {
+    const proposed = await api(key, 'POST', '/v1/agent/proposals', { operation, target })
+    expect(proposed.status).toBe(201)
+    return String(proposed.body.id)
+  }
+
+  async function configure(provider: string, body: Record<string, unknown> = {}) {
+    const saved = await api(SECRET_KEY, 'PUT', `/v1/admin/oauth-providers/${provider}`, {
+      clientId: `${provider}-client-id`,
+      clientSecret: 'a-client-secret-never-printed',
+      ...body,
+    })
+    expect(saved.status).toBe(200)
+  }
+
+  async function enabled(provider: string): Promise<unknown> {
+    const listed = await api(SECRET_KEY, 'GET', '/v1/admin/oauth-providers')
+    return (listed.body.data as { provider: string; enabled: boolean }[]).find(
+      (one) => one.provider === provider
+    )?.enabled
+  }
+
+  async function saveSettings(settings: Record<string, unknown>, key = SECRET_KEY) {
+    const current = await api(key, 'GET', '/v1/admin/settings')
+    const response = await app.request('/v1/admin/settings', {
+      method: 'PUT',
+      headers: {
+        authorization: `Bearer ${key}`,
+        'content-type': 'application/json',
+        'if-match': `"${String(current.body.revision)}"`,
+      },
+      body: JSON.stringify(settings),
+    })
+    expect(response.status).toBe(200)
+  }
+
+  test('lifting a ban: the user is shown as banned, the question says what happens, and the ban is lifted', async () => {
+    const userId = await user()
+    expect((await api(SECRET_KEY, 'POST', `/v1/admin/users/${userId}/ban`)).status).toBe(200)
+    const id = await ask('unban_user', { type: 'user', id: userId })
+    const run = await tula(['approve', id], {}, 'yes')
+    expect(run.code).toBe(0)
+    expect(run.stdout).toContain('Operation      unban_user')
+    expect(run.stdout).toContain(`user ${userId} (maya@northline.app, Maya; already banned)`)
+    expect(run.questions[0]).toContain('The user’s ban is lifted at once')
+    expect(run.stdout).toContain('Approved and carried out.')
+    expect(await bannedAt(userId)).toBeNull()
+    expect(JSON.parse(wire.find((r) => r.line.endsWith('/approve'))?.body ?? '{}')).toEqual({
+      operation: 'unban_user',
+      target: { type: 'user', id: userId },
+    })
+  })
+
+  test('ending a session: one session, named by its id, and the user’s other session lives on', async () => {
+    const userId = await user()
+    const open = { userId, client: 'ios', userAgent: null, ipAddress: null } as const
+    await Sessions.create(deps, tenant, open)
+    await Sessions.create(deps, tenant, open)
+    const sessions = await deps.sessions.listActiveByUser(
+      tenant.environmentId,
+      userId,
+      deps.clock.now()
+    )
+    const [first, second] = sessions.map((session) => session.id) as [string, string]
+    const id = await ask('end_session', { type: 'session', id: first })
+    const run = await tula(['approve', id], {}, 'yes')
+    expect(run.code).toBe(0)
+    expect(run.stdout).toContain(`About          session ${first}`)
+    expect(run.questions[0]).toContain('That one session is ended at once')
+    expect(run.questions[0]).toContain(`session ${first}`)
+    const left = await deps.sessions.listActiveByUser(
+      tenant.environmentId,
+      userId,
+      deps.clock.now()
+    )
+    expect(left.map((session) => session.id)).toEqual([second])
+    expect(writes()).toEqual([`POST /v1/admin/proposals/${id}/approve`])
+  })
+
+  test('switching a provider off: shown as it is now, switched off, its credentials kept', async () => {
+    await configure('google')
+    await configure('github')
+    const id = await ask('disable_oauth_provider', { type: 'oauth_provider', id: 'google' })
+    const run = await tula(['approve', id], {}, 'yes')
+    expect(run.code).toBe(0)
+    expect(run.stdout).toContain('About          provider google (on now)')
+    expect(run.questions[0]).toContain('Sign-in with that provider is switched off at once')
+    expect(run.questions[0]).toContain('provider google')
+    expect(await enabled('google')).toBe(false)
+    expect(await enabled('github')).toBe(true)
+    const stored = await deps.oauthProviders.find(tenant.environmentId, 'google')
+    expect(stored?.clientId).toBe('google-client-id')
+    expect(run.stdout + run.stderr).not.toContain('a-client-secret-never-printed')
+    // The only write is the approval: this command has no call that changes a provider.
+    expect(writes()).toEqual([`POST /v1/admin/proposals/${id}/approve`])
+  })
+
+  test('a provider that is already off, or gone, is said so before the question', async () => {
+    await configure('google')
+    await configure('github')
+    const id = await ask('disable_oauth_provider', { type: 'oauth_provider', id: 'google' })
+    await configure('google', { enabled: false })
+    const off = await tula(['approve', id], {}, 'no')
+    expect(off.stdout).toContain('provider google (already off)')
+    expect((await api(SECRET_KEY, 'DELETE', '/v1/admin/oauth-providers/google')).status).toBe(204)
+    const gone = await tula(['approve', id], {}, 'no')
+    expect(gone.stdout).toContain('provider google (not configured now)')
+    expect(writes()).toEqual([])
+  })
+
+  test('switching off the last way to sign in: approved, refused by the server, and said as nothing changed', async () => {
+    await configure('google')
+    await configure('github')
+    await saveSettings({ signIn: { methods: { password: { enabled: false } } } })
+    const id = await ask('disable_oauth_provider', { type: 'oauth_provider', id: 'google' })
+    // While the proposal waits the other provider goes: Google is the last way in.
+    expect((await api(SECRET_KEY, 'DELETE', '/v1/admin/oauth-providers/github')).status).toBe(204)
+    const run = await tula(['approve', id, '--yes'])
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain('would leave the environment with no way to sign in')
+    expect(run.stderr).toContain('The provider is still on')
+    expect(run.stderr).toContain('The proposal is spent')
+    expect(run.stdout).not.toContain('Approved and carried out')
+    expect(await enabled('google')).toBe(true)
+  })
+
+  test('a session that is gone says the session, not the user', async () => {
+    const userId = await user()
+    await Sessions.create(deps, tenant, { userId, client: 'ios', userAgent: null, ipAddress: null })
+    const [session] = await deps.sessions.listActiveByUser(
+      tenant.environmentId,
+      userId,
+      deps.clock.now()
+    )
+    const id = await ask('end_session', { type: 'session', id: String(session?.id) })
+    const gone = spyOn(deps.sessions, 'findById').mockResolvedValue(null)
+    let run: Run
+    try {
+      run = await tula(['approve', id, '--yes'])
+    } finally {
+      gone.mockRestore()
+    }
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain('nothing was changed: the session no longer exists')
+  })
+
+  describe('in a production environment', () => {
+    const PROD_SK = 'tula_sk_live_approvetest0000000000000000000000'
+    const PROD_AK = 'tula_ak_live_approvetest0000000000000000000000'
+    const production = { TULA_API_URL: BASE_URL, TULA_SECRET_KEY: PROD_SK }
+
+    beforeEach(async () => {
+      deps.environments.add({
+        id: TEST_TENANT.productionEnvironmentId,
+        projectId: TEST_TENANT.projectId,
+        kind: 'production',
+        createdAt: deps.clock.now(),
+      })
+      const environmentId = TEST_TENANT.productionEnvironmentId
+      await seedApiKey(deps, PROD_SK, { environmentId })
+      await seedApiKey(deps, PROD_AK, { environmentId })
+    })
+
+    async function productionUser(): Promise<string> {
+      const created = await api(PROD_SK, 'POST', '/v1/admin/users', {
+        email: 'maya@northline.app',
+        password: 'correct horse battery staple',
+      })
+      return String(created.body.id)
+    }
+
+    test('opted in, a proposal is approved like any other', async () => {
+      const userId = await productionUser()
+      await saveSettings({ agents: { proposalsInProduction: true } }, PROD_SK)
+      const id = await ask('ban_user', { type: 'user', id: userId }, PROD_AK)
+      const run = await tula(['approve', id, '--yes'], { env: production })
+      expect(run.code).toBe(0)
+      expect((await api(PROD_SK, 'GET', `/v1/admin/users/${userId}`)).body.bannedAt).not.toBeNull()
+    })
+
+    test('opted out while the proposal waited: refused, nothing changed, and said as not spent', async () => {
+      const userId = await productionUser()
+      await saveSettings({ agents: { proposalsInProduction: true } }, PROD_SK)
+      const id = await ask('ban_user', { type: 'user', id: userId }, PROD_AK)
+      await saveSettings({ agents: { proposalsInProduction: false } }, PROD_SK)
+      const run = await tula(['approve', id, '--yes'], { env: production })
+      expect(run.code).toBe(1)
+      expect(run.stderr).toContain('This is a production environment')
+      expect(run.stderr).toContain('agents.proposalsInProduction')
+      expect(run.stderr).toContain('Nothing was changed')
+      expect(run.stderr).not.toContain('PROD')
+      expect(run.stdout + run.stderr).not.toContain(PROD_SK)
+      expect((await api(PROD_SK, 'GET', `/v1/admin/users/${userId}`)).body.bannedAt).toBeNull()
+      // Not spent: switched on again within its ten minutes, the same proposal is approved.
+      await saveSettings({ agents: { proposalsInProduction: true } }, PROD_SK)
+      expect((await tula(['approve', id, '--yes'], { env: production })).code).toBe(0)
+    })
   })
 })

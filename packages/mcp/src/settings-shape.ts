@@ -81,6 +81,10 @@ export const SETTINGS_DOCUMENT_SHAPE: Shape = S.object({
     dailyMessageLimit: S.number,
   }),
   passkeys: S.object({ rpId: S.string(253) }),
+  // Whether a production environment accepts an agent's proposals (ADR 0053). A boolean, so
+  // that a tool refused with `production_environment` can say why; switching it on is a
+  // person's change, and a weakening wherever it is drafted or applied.
+  agents: S.object({ proposalsInProduction: S.boolean }),
   sessions: S.object({
     profiles: S.record(SESSION_PROFILE, 20),
     maxPerUser: S.number,

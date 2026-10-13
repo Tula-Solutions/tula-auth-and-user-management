@@ -1,0 +1,644 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "an agent proposes switching a provider off and a person approves it",
+  "description": "An agent key cannot change a provider: it asks for one to be switched off, and the provider stays on. Switching one on is not an operation a proposal has. The secret key approves, sign-in with that provider is off (that its credentials are kept is an API test: the list of providers names every provider this version knows, which a scenario cannot hold exactly). Switching off an environment’s last way to sign in is refused twice, by the rule the admin route has: when it is proposed (the same 422), and when a proposal that was fine when it was made is approved after the other ways went (approved, `failed`, `last_sign_in_method`, and the provider still on). A production environment refuses every proposal unless its settings accept them (`agents.proposalsInProduction`), when one is made and when one is approved: API tests show that, because this scenario runs against a development environment. The four proposal scenarios together ask for nine proposals, of the ten an environment takes in a minute: against a live server they run one after another, so a step that asks for one more counts against that. Changes the environment’s sign-in methods and its google and github credentials, and restores the settings and removes the credentials afterwards, even when a step fails. Each run leaves one revoked agent key behind.",
+  "needsSecretKey": true,
+  "steps": [
+    {
+      "name": "an administrator sets the environment's own google credentials",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/google",
+        "auth": "secret",
+        "body": {
+          "clientId": "conformance-client",
+          "clientSecret": "conformance-client-secret"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "google",
+          "configured": true,
+          "enabled": true
+        },
+        "bodyExcludes": ["conformance-client-secret"]
+      }
+    },
+    {
+      "name": "and github’s",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/github",
+        "auth": "secret",
+        "body": {
+          "clientId": "conformance-client",
+          "clientSecret": "conformance-client-secret"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "github",
+          "configured": true,
+          "enabled": true
+        },
+        "bodyExcludes": ["conformance-client-secret"]
+      }
+    },
+    {
+      "name": "both are offered",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/config"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "app": "$any",
+          "signIn": {
+            "methods": "$any",
+            "oauth": {
+              "$set": ["google", "github"]
+            }
+          },
+          "signUp": "$any",
+          "password": "$any",
+          "mfa": "$any"
+        }
+      }
+    },
+    {
+      "name": "and an agent key, shown once",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/api-keys",
+        "auth": "secret",
+        "body": {
+          "kind": "agent",
+          "name": "conformance agent"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "kind": "agent",
+          "key": {
+            "$matches": "^tula_ak_"
+          }
+        }
+      },
+      "capture": {
+        "agentKeyId": "id",
+        "agentKey": "key"
+      }
+    },
+    {
+      "name": "the agent key cannot switch a provider off itself",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/google",
+        "auth": "none",
+        "accessToken": "{{agentKey}}",
+        "body": {
+          "clientId": "conformance-client",
+          "clientSecret": "conformance-client-secret",
+          "enabled": false
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "auth.invalid_key"
+        }
+      }
+    },
+    {
+      "name": "nor remove one",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/oauth-providers/google",
+        "auth": "none",
+        "accessToken": "{{agentKey}}"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "auth.invalid_key"
+        }
+      }
+    },
+    {
+      "name": "switching a provider on is not something to propose",
+      "request": {
+        "method": "POST",
+        "path": "/v1/agent/proposals",
+        "auth": "none",
+        "accessToken": "{{agentKey}}",
+        "body": {
+          "operation": "enable_oauth_provider",
+          "target": {
+            "type": "oauth_provider",
+            "id": "google"
+          }
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "validation.failed"
+        }
+      }
+    },
+    {
+      "name": "the agent asks for google to be switched off",
+      "request": {
+        "method": "POST",
+        "path": "/v1/agent/proposals",
+        "auth": "none",
+        "accessToken": "{{agentKey}}",
+        "body": {
+          "operation": "disable_oauth_provider",
+          "target": {
+            "type": "oauth_provider",
+            "id": "google"
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "operation": "disable_oauth_provider",
+          "target": {
+            "type": "oauth_provider",
+            "id": "google"
+          },
+          "summary": {
+            "$matches": "^Switch off sign-in with the provider google"
+          },
+          "status": "pending",
+          "proposedBy": {
+            "type": "agent",
+            "id": "{{agentKeyId}}"
+          },
+          "expiresAt": "$any",
+          "approvedBy": null,
+          "approvedAt": null,
+          "failureReason": null
+        }
+      },
+      "capture": {
+        "proposalId": "id"
+      }
+    },
+    {
+      "name": "nothing has changed",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/config"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "app": "$any",
+          "signIn": {
+            "methods": "$any",
+            "oauth": {
+              "$set": ["google", "github"]
+            }
+          },
+          "signUp": "$any",
+          "password": "$any",
+          "mfa": "$any"
+        }
+      }
+    },
+    {
+      "name": "the secret key approves exactly what was proposed, and it is carried out",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/proposals/{{proposalId}}/approve",
+        "auth": "secret",
+        "body": {
+          "operation": "disable_oauth_provider",
+          "target": {
+            "type": "oauth_provider",
+            "id": "google"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{proposalId}}",
+          "status": "executed",
+          "approvedBy": {
+            "type": "admin",
+            "id": "$any"
+          },
+          "approvedAt": "$any",
+          "failureReason": null
+        }
+      },
+      "capture": {
+        "approverId": "approvedBy.id"
+      }
+    },
+    {
+      "name": "google is no longer offered",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/config"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "app": "$any",
+          "signIn": {
+            "methods": "$any",
+            "oauth": {
+              "$set": ["github"]
+            }
+          },
+          "signUp": "$any",
+          "password": "$any",
+          "mfa": "$any"
+        }
+      }
+    },
+    {
+      "name": "the change is recorded as the agent's, with its proposal and who approved it",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?action=oauth_provider.updated&actorId={{agentKeyId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1
+          },
+          "data": [
+            {
+              "action": "oauth_provider.updated",
+              "actor": {
+                "type": "agent",
+                "id": "{{agentKeyId}}"
+              },
+              "target": {
+                "type": "environment"
+              },
+              "metadata": {
+                "proposalId": "{{proposalId}}",
+                "approvedBy": {
+                  "type": "admin",
+                  "id": "{{approverId}}"
+                },
+                "provider": "google",
+                "changed": ["enabled"]
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "revision": "$any"
+        }
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "app": "settings.app",
+        "passwordPolicy": "settings.password",
+        "origins": "settings.urls.allowedOrigins",
+        "redirects": "settings.urls.allowedRedirectUrls"
+      }
+    },
+    {
+      "name": "every other sign-in method is switched off: github is the only way in",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{app}}"
+          },
+          "password": {
+            "$json": "{{passwordPolicy}}"
+          },
+          "signIn": {
+            "methods": {
+              "password": {
+                "enabled": false
+              },
+              "emailCode": {
+                "enabled": false
+              },
+              "emailLink": {
+                "enabled": false
+              },
+              "passkey": {
+                "enabled": false
+              }
+            }
+          },
+          "urls": {
+            "allowedOrigins": {
+              "$json": "{{origins}}"
+            },
+            "allowedRedirectUrls": {
+              "$json": "{{redirects}}"
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "an administrator cannot switch the last way to sign in off",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/github",
+        "auth": "secret",
+        "body": {
+          "clientId": "conformance-client",
+          "clientSecret": "conformance-client-secret",
+          "enabled": false
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "validation.failed"
+        }
+      }
+    },
+    {
+      "name": "and an agent cannot propose it: the same refusal",
+      "request": {
+        "method": "POST",
+        "path": "/v1/agent/proposals",
+        "auth": "none",
+        "accessToken": "{{agentKey}}",
+        "body": {
+          "operation": "disable_oauth_provider",
+          "target": {
+            "type": "oauth_provider",
+            "id": "github"
+          }
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "validation.failed"
+        }
+      }
+    },
+    {
+      "name": "google is switched on again: two ways in",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/google",
+        "auth": "secret",
+        "body": {
+          "clientId": "conformance-client",
+          "clientSecret": "conformance-client-secret"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "google",
+          "configured": true,
+          "enabled": true
+        },
+        "bodyExcludes": ["conformance-client-secret"]
+      }
+    },
+    {
+      "name": "now switching github off can be proposed",
+      "request": {
+        "method": "POST",
+        "path": "/v1/agent/proposals",
+        "auth": "none",
+        "accessToken": "{{agentKey}}",
+        "body": {
+          "operation": "disable_oauth_provider",
+          "target": {
+            "type": "oauth_provider",
+            "id": "github"
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "operation": "disable_oauth_provider",
+          "target": {
+            "type": "oauth_provider",
+            "id": "github"
+          },
+          "summary": {
+            "$matches": "^Switch off sign-in with the provider github"
+          },
+          "status": "pending",
+          "proposedBy": {
+            "type": "agent",
+            "id": "{{agentKeyId}}"
+          },
+          "expiresAt": "$any",
+          "approvedBy": null,
+          "approvedAt": null,
+          "failureReason": null
+        }
+      },
+      "capture": {
+        "lastProposalId": "id"
+      }
+    },
+    {
+      "name": "while it waits, an administrator switches google off: github is the last way in again",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/oauth-providers/google",
+        "auth": "secret",
+        "body": {
+          "clientId": "conformance-client",
+          "clientSecret": "conformance-client-secret",
+          "enabled": false
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "provider": "google",
+          "configured": true,
+          "enabled": false
+        },
+        "bodyExcludes": ["conformance-client-secret"]
+      }
+    },
+    {
+      "name": "the approval is taken and the operation refused: nothing changed, and the proposal is spent",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/proposals/{{lastProposalId}}/approve",
+        "auth": "secret",
+        "body": {
+          "operation": "disable_oauth_provider",
+          "target": {
+            "type": "oauth_provider",
+            "id": "github"
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{lastProposalId}}",
+          "status": "failed",
+          "failureReason": "last_sign_in_method",
+          "approvedBy": {
+            "type": "admin",
+            "id": "{{approverId}}"
+          }
+        }
+      }
+    },
+    {
+      "name": "github is still offered",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/config"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "app": "$any",
+          "signIn": {
+            "methods": "$any",
+            "oauth": {
+              "$set": ["github"]
+            }
+          },
+          "signUp": "$any",
+          "password": "$any",
+          "mfa": "$any"
+        }
+      }
+    },
+    {
+      "name": "and it cannot be approved again",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/proposals/{{lastProposalId}}/approve",
+        "auth": "secret",
+        "body": {
+          "operation": "disable_oauth_provider",
+          "target": {
+            "type": "oauth_provider",
+            "id": "github"
+          }
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "resource.conflict",
+          "params": {
+            "reason": "already_decided"
+          }
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "remove the google credentials",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/oauth-providers/google",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "remove the github credentials",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/oauth-providers/github",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "revoke the agent key",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/api-keys/{{agentKeyId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

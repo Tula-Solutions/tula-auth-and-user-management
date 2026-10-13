@@ -196,18 +196,35 @@ run `tula diff` and `tula apply` with your own secret key. `changed` is always `
 | Tool | Input | Returns |
 | --- | --- | --- |
 | `propose_ban_user` | `userId` | `{ proposal, changed: false, nextStep }` |
+| `propose_unban_user` | `userId` | `{ proposal, changed: false, nextStep }` |
+| `propose_end_session` | `sessionId` (one session; `list_user_sessions` has the ids) | `{ proposal, changed: false, nextStep }` |
+| `propose_disable_oauth_provider` | `provider` (its name, such as `google`) | `{ proposal, changed: false, nextStep }` |
 
 - A **proposal** is `id`, `operation`, `target` (`type`, `id`), `summary`, `status`,
   `createdAt` and `expiresAt`. `summary` is the server's own sentence for the operation.
-- **Nothing has happened when the tool answers.** The user is banned only if a person
+- **Nothing has happened when the tool answers.** The change is made only if a person
   approves the proposal within ten minutes: `tula approve <proposal id>`, with their own
   secret key ([proposals.md](proposals.md)). The server has no tool that approves, and
   holds no credential that could.
 - Asking again for the same thing while a proposal is pending returns that proposal.
 - Revoking the agent key ends the proposals it made that nobody approved: they can no
   longer be approved, and the key reads and proposes nothing more.
-- A production environment refuses (`auth.forbidden`); an unknown user is
-  `resource.not_found`; more than ten proposals a minute are `rate_limited`.
+- **What can be proposed is these four and nothing else**: banning a user, lifting a ban,
+  ending one session, switching one provider off (its credentials are kept). There is no
+  tool that deletes anything, makes or returns a key, a password or a provider's
+  credentials, switches a provider on, changes a setting, or acts on more than one thing
+  (no "end every session of this user").
+- A production environment refuses (`auth.forbidden`) unless its settings accept proposals
+  (`agents.proposalsInProduction`, off by default, which `get_settings` returns and only a
+  person can change: [proposals.md](proposals.md#production-environments)). A user, a
+  session or a provider that does not exist is `resource.not_found`.
+- `propose_disable_oauth_provider` is refused (`validation.failed`) when it would leave
+  the environment with no way to sign in; the server judges that again when a person
+  approves.
+- **Each tool is limited**: ten proposals a minute for an environment, and five a minute
+  of each operation; beyond either the tool answers `rate_limited`.
+- A tool answers `response.invalid` when the server's answer is not the proposal it asked
+  for (another operation or another target): nothing of such an answer is returned.
 - `list_audit_entries` shows what became of a proposal: `action` `proposal.created`,
   `proposal.approved`, `proposal.executed`, `proposal.failed`, and `actorType: "agent"`.
 

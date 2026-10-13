@@ -472,6 +472,48 @@
         "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Swift client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. What an app observes of the ban that follows is the \"admin ban and audit log\" journey."
       }
     },
+    "an agent proposes ending a session and a person approves it": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; a client SDK holds a publishable key and a user’s session and reaches neither. What a client observes of the session that is ended (its access token and its refresh refused, the client signed out) is what it observes of any session an administrator ends."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; an app holds a publishable key and a user’s session and reaches neither. What an app observes of the session that is ended (its access token and its refresh refused, the client signed out) is what it observes of any session an administrator ends."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Swift client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. What an app observes of the session that is ended (its refresh refused, the client signed out) is what it observes of any session an administrator ends."
+      }
+    },
+    "an agent proposes lifting a ban and a person approves it": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; a client SDK holds a publishable key and a user’s session and reaches neither. Lifting a ban signs nobody in and ends nothing: there is nothing for a client to observe but that a later sign-in works, which is the \"admin ban and audit log\" journey."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; an app holds a publishable key and a user’s session and reaches neither. Lifting a ban signs nobody in and ends nothing: there is nothing for an app to observe but that a later sign-in works, which is the \"admin ban and audit log\" journey."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Swift client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. Lifting a ban signs nobody in and ends nothing: there is nothing for an app to observe but that a later sign-in works, which is the \"admin ban and audit log\" journey."
+      }
+    },
+    "an agent proposes switching a provider off and a person approves it": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; a client SDK holds a publishable key and a user’s session and reaches neither. What a client observes of a provider that is off (it is no longer in the client configuration, and a sign-in with it is `auth.method_disabled`) is the provider sign-in journeys’."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; an app holds a publishable key and a user’s session and reaches neither. What an app observes of a provider that is off (it is no longer in the client configuration, and a sign-in with it is `auth.method_disabled`) is the provider sign-in journeys’."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "a proposal is asked for with an agent key and approved with a secret key or a dashboard session, on `/v1/agent/*` and `/v1/admin/*`; the Swift client holds a publishable key and a user’s session, talks to `/v1/client/*` only and reaches neither. What an app observes of a provider that is off (it is no longer in the client configuration, and a sign-in with it is `auth.method_disabled`) is the provider sign-in journeys’."
+      }
+    },
     "app link or custom scheme that is not listed": {
       "core": {
         "decision": "journey"

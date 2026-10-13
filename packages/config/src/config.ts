@@ -989,14 +989,15 @@ function canonical(value: unknown): unknown {
  * email wording one (`emails`: no template), text message wording one inside `sms`
  * (`sms.templates`: no template), a texted code as the second step one (`mfa.smsCode`, off),
  * device binding one on every profile (`deviceBinding`: `none` for `web`, `optional` for
- * every other, which is what each did before).
+ * every other, which is what each did before), proposals from an agent in a production
+ * environment one (`agents.proposalsInProduction`, off).
  *
  * The fingerprint says which version of the file is applied. A field that every document
  * gained by upgrading must not change it, or each applied environment would report a new
  * version of a file nobody touched.
  */
 function withoutUnusedDefaults(environment: EnvironmentConfig): unknown {
-  const { sessions, sms, signIn, emails, mfa, ...settings } = environment.settings
+  const { sessions, sms, signIn, emails, mfa, agents, ...settings } = environment.settings
   const { smsCode: smsSecondStep, ...mfaBefore } = mfa
   const { jwtTemplates, ...rest } = sessions
   const { smsCode, ...methods } = signIn.methods
@@ -1042,6 +1043,8 @@ function withoutUnusedDefaults(environment: EnvironmentConfig): unknown {
       }),
       // Email templates arrived later still: written only when there is one.
       ...(Object.keys(emails.templates).length > 0 && { emails }),
+      // Proposals in a production environment are written only when they are accepted.
+      ...(agents.proposalsInProduction && { agents }),
     },
   }
 }
@@ -1059,8 +1062,9 @@ function withoutUnusedDefaults(environment: EnvironmentConfig): unknown {
  * written). So does one
  * that defines no JWT template and whose profiles name none, and one that leaves text messages
  * (`sms`), their daily limit, the texted sign-in code (`signIn.methods.smsCode`) or a texted
- * code as the second step (`mfa.smsCode`) at the default, and one whose profiles leave
- * `deviceBinding` at their default; the order templates and their claims are written in
+ * code as the second step (`mfa.smsCode`) at the default, one whose profiles leave
+ * `deviceBinding` at their default, and one that does not accept an agent's proposals in
+ * production (`agents.proposalsInProduction`); the order templates and their claims are written in
  * never counts.
  *
  * @param environment - The environment's validated config.

@@ -10,6 +10,7 @@ import {
   MAX_ACCESS_TOKEN_TTL,
   type NamedJwtTemplate,
   type NamedSessionProfile,
+  type ProposalApprover,
   profileOfSession,
   REFRESH_TOKEN_PREFIX,
   resolveSessionProfile,
@@ -415,7 +416,8 @@ function revoked(
   scope: Scope,
   session: { id: string; userId: string },
   reason: SessionRevokeReason,
-  actor: Actor
+  actor: Actor,
+  proposal?: CarriedOutProposal
 ) {
   const target = { type: 'session', id: session.id } as const
   // Two calls, not one with a computed type: each type's `reason` is checked against its own
@@ -431,7 +433,11 @@ function revoked(
         type: 'session.revoked',
         actor,
         target,
-        data: { userId: session.userId, reason },
+        data: {
+          userId: session.userId,
+          reason,
+          ...(proposal && { proposalId: proposal.proposalId, approvedBy: proposal.approvedBy }),
+        },
       })
 }
 
@@ -1195,16 +1201,65 @@ export async function revoke(deps: RevokeDeps, scope: Scope, input: RevokeInput)
   if (!session || session.userId !== input.userId) {
     throw new NotFoundError()
   }
+  await end(deps, scope, session, input.reason ?? 'revoked_by_user', input.actor)
+}
+
+/** Denylist one session and end it, with its entry: the one way a single session is ended. */
+async function end(
+  deps: RevokeDeps,
+  scope: Scope,
+  session: { id: string; userId: string },
+  reason: SessionRevokeReason,
+  actor: Actor,
+  proposal?: CarriedOutProposal
+): Promise<void> {
   const now = deps.clock.now()
-  const reason = input.reason ?? 'revoked_by_user'
   await denylist(deps, [session.id], now)
   await deps.sessions.revoke(
     scope.environmentId,
     session.id,
     reason,
     now,
-    revoked(deps, scope, session, reason, input.actor)
+    revoked(deps, scope, session, reason, actor, proposal)
   )
+}
+
+/** The human-approved proposal a change carried out, as its audit entry names it (ADR 0053). */
+export interface CarriedOutProposal {
+  proposalId: string
+  approvedBy: ProposalApprover
+}
+
+/**
+ * End one session of the environment, named by its id alone: what an approved
+ * `end_session` proposal runs (ADR 0053). Exactly one session: there is no counterpart here
+ * that takes a user and ends all of theirs.
+ *
+ * It is the ending every other path makes ({@link revoke}): the session's id is denylisted
+ * first, then the row is ended with its `session.revoked` entry (`revoked_by_admin`), which
+ * names the proposal and who approved it. A session that had already ended is left as it
+ * was.
+ *
+ * @param deps - Session store, denylist, ids and clock.
+ * @param scope - The project and environment.
+ * @param sessionId - The session.
+ * @param actor - Who ends it, for the audit log: the agent whose proposal was approved.
+ * @param proposal - The approved proposal this carries out.
+ * @throws NotFoundError when the environment has no such session (another environment's is
+ *   answered the same).
+ */
+export async function revokeForProposal(
+  deps: RevokeDeps,
+  scope: Scope,
+  sessionId: string,
+  actor: Actor,
+  proposal: CarriedOutProposal
+): Promise<void> {
+  const session = await deps.sessions.findById(scope.environmentId, sessionId)
+  if (!session) {
+    throw new NotFoundError()
+  }
+  await end(deps, scope, session, 'revoked_by_admin', actor, proposal)
 }
 
 /**

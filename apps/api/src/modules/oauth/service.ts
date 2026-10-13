@@ -15,6 +15,7 @@ import {
   type OAuthProviderUpdate,
   oauthProviderWeakenings,
   ownClientIdAmong,
+  type ProposalApprover,
   type SessionClient,
   takesAdditionalClientIds,
 } from '@tula/contract'
@@ -351,9 +352,16 @@ export async function requireIdTokenAudiences(
  *
  * Call it inside the environment's `sign_in_methods` lock, which `Settings.replace` takes too:
  * it reads the settings past the cache and the provider rows from the store, and what it reads
- * must still be true when the caller writes.
+ * must still be true when the caller writes. Called outside the lock it is a courtesy and
+ * decides nothing: an agent's proposal to switch a provider off asks it so (ADR 0053), and
+ * the approval asks again, under the lock, in {@link switchOff}.
+ *
+ * @param deps - Provider store, settings and config.
+ * @param tenant - The environment.
+ * @param provider - The provider that would be switched off or removed.
+ * @throws ValidationError (422, field `enabled`) when no way to sign in would remain.
  */
-async function requireWayIn(
+export async function requireWayIn(
   deps: Pick<Deps, 'oauthProviders' | 'environmentSettings' | 'config'>,
   tenant: Pick<Tenant, 'environmentId'>,
   provider: OAuthProvider
@@ -513,6 +521,72 @@ export async function update(
       })
     )
     return toSettings(deps.config, provider, stored)
+  })
+}
+
+/** The human-approved proposal a change carried out, as its audit entry names it (ADR 0053). */
+export interface CarriedOutProposal {
+  proposalId: string
+  approvedBy: ProposalApprover
+}
+
+/**
+ * Switch a configured provider off, and change nothing else of it: `enabled: false`. Its
+ * client id, its sealed secret and the rest of its configuration are written back as they
+ * were read, under the lock. This is what an approved `disable_oauth_provider` proposal
+ * runs (ADR 0053): there is no counterpart that switches a provider on, removes one or
+ * touches a secret.
+ *
+ * It is held to what an administrator's own change is held to, by the same function, in the
+ * same place: {@link requireWayIn} inside the environment's `sign_in_methods` lock, which
+ * `Settings.replace` takes too. Like {@link update} it records `oauth_provider.updated` with
+ * `changed: ['enabled']` in the transaction of the write; switching a provider off is not a
+ * weakening there, and is not one here.
+ *
+ * A provider that is already off is left alone and nothing is recorded.
+ *
+ * @param deps - Provider store, settings, the environment lock, ids and clock.
+ * @param tenant - The environment.
+ * @param provider - The provider.
+ * @param actor - Who switches it off, for the audit log.
+ * @param proposal - The approved proposal this carries out, named in the entry.
+ * @throws NotFoundError when the provider is not configured.
+ * @throws ValidationError (422) when no way to sign in would remain.
+ */
+export async function switchOff(
+  deps: Pick<
+    Deps,
+    'oauthProviders' | 'environmentSettings' | 'environmentLock' | 'config' | 'ids' | 'clock'
+  >,
+  tenant: Scope,
+  provider: OAuthProvider,
+  actor: Actor,
+  proposal?: CarriedOutProposal
+): Promise<void> {
+  await deps.environmentLock.runExclusive(tenant.environmentId, 'sign_in_methods', async () => {
+    const existing = await deps.oauthProviders.find(tenant.environmentId, provider)
+    if (!existing) {
+      throw new NotFoundError()
+    }
+    if (!existing.enabled) {
+      return
+    }
+    await requireWayIn(deps, tenant, provider)
+    await deps.oauthProviders.upsert(
+      // The row as it was read under the lock, with the switch turned: nothing of it is
+      // built from a request.
+      { ...existing, enabled: false, updatedAt: deps.clock.now() },
+      Audit.entry(deps, tenant, {
+        type: 'oauth_provider.updated',
+        actor,
+        target: { type: 'environment', id: tenant.environmentId },
+        data: {
+          provider,
+          changed: ['enabled'],
+          ...(proposal && { proposalId: proposal.proposalId, approvedBy: proposal.approvedBy }),
+        },
+      })
+    )
   })
 }
 
