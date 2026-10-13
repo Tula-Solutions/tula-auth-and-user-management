@@ -158,6 +158,10 @@ jobs:
   # not part of `bun run verify`: it needs a JDK, and Gradle downloads what the build pins.
   # No device and no emulator: what only a phone can show is on the Phase 2 unverified list.
   #
+  # Nothing of Android is in this job: the two SDK variables are emptied, so the build has
+  # the JVM module alone and a problem with the runner's Android SDK cannot fail, or hide,
+  # the client's tests. The Android module is `kotlin-android`, below.
+  #
   # Nothing is cached, on purpose (a push must do all the work itself): no `cache:` on
   # setup-java, and no setup-gradle action, which caches by default.
   kotlin:
@@ -175,20 +179,55 @@ jobs:
         with: { distribution: temurin, java-version: '25' }
       - run: bun install --frozen-lockfile
       - name: The client's tests and its coverage bound, against the real API
+        env:
+          ANDROID_HOME: ''
+          ANDROID_SDK_ROOT: ''
         run: bun run native:kotlin:test
-      # The runner has an Android SDK (ANDROID_HOME), so the build includes the module that
-      # holds the Keystore-backed storage. It is compiled and linted; nothing here runs it.
-      - name: The Android module compiles and passes lint
-        working-directory: native/android
-        run: ./gradlew --console=plain :tula-auth-android:assembleRelease :tula-auth-android:lintRelease
       - name: Upload the test reports
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: kotlin-test-report
+          path: native/android/tula-auth/build/reports
+          retention-days: 7
+
+  # The module that holds the Keystore-backed storage (native/android/tula-auth-android):
+  # compiled and linted against the Android SDK, never run (no device, no emulator). A job
+  # of its own, so that its outcome and the JVM tests' are read apart. The platform and the
+  # build tools the module pins are installed by name first: a component the runner's image
+  # does not have, or no longer has, fails that step and says which, instead of failing
+  # somewhere inside the build. `.claude/hooks/ci.test.ts` holds the two names to the
+  # module's own build file. Nothing is cached, as in `kotlin`.
+  kotlin-android:
+    needs: duplicate
+    if: needs.duplicate.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: The Gradle wrapper's jar is one Gradle published
+        uses: gradle/actions/wrapper-validation@v4
+      - uses: actions/setup-java@v5
+        with: { distribution: temurin, java-version: '25' }
+      - name: The Android platform and build tools the module pins
+        run: |
+          test -n "$ANDROID_HOME"
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$sdkmanager" --licenses > /dev/null || true
+          "$sdkmanager" --install "platforms;android-36.1" "build-tools;36.1.0"
+          test -d "$ANDROID_HOME/platforms/android-36.1"
+          test -d "$ANDROID_HOME/build-tools/36.1.0"
+      - name: The Android module compiles and passes lint
+        working-directory: native/android
+        run: ./gradlew --console=plain :tula-auth-android:assembleRelease :tula-auth-android:lintRelease
+      - name: Upload the build and lint reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: kotlin-android-report
           path: |
-            native/android/tula-auth/build/reports
             native/android/tula-auth-android/build/reports
+            native/android/build/reports
           retention-days: 7
 
   # The packaged server, as a self-hoster runs it: build the image, start two instances of it
@@ -475,7 +514,7 @@ jobs:
   # skipped them. Only a push writes one: its run read no cache, and a fork cannot push.
   passed:
     name: record the pass
-    needs: [duplicate, verify, e2e, kotlin, self-host, self-host-worker]
+    needs: [duplicate, verify, e2e, kotlin, kotlin-android, self-host, self-host-worker]
     if: needs.duplicate.outputs.skip != 'true' && github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 5
