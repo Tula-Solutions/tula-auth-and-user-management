@@ -4,7 +4,14 @@ The headless TypeScript client for [Tula Auth](../../README.md): server-driven s
 and password reset, the session, and token refresh. No UI and no framework. It runs in browsers,
 Node, Bun and edge runtimes, and is what `@tula/react` and `@tula/nextjs` are built on.
 
-> Not published yet. Inside this repository, depend on it with `"@tula/core": "workspace:*"`.
+```sh
+bun add @tula/core@alpha        # or: npm install @tula/core@alpha
+```
+
+> **Alpha.** Released under the `alpha` dist-tag: the API may change from one alpha to the
+> next. It talks to a Tula API, which you host yourself
+> ([docs/self-host.md](../../docs/self-host.md)); everything else is in the
+> [repository](https://github.com/Tula-Solutions/tula-auth-and-user-management#readme).
 
 ## Quickstart
 

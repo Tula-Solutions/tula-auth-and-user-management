@@ -5,7 +5,14 @@ sign-in, forgotten-password reset and account management, themeable from one set
 accessible by default. Built on [`@tula/core`](../core/README.md); the components draw whatever
 step the server answers with and hold no flow logic of their own.
 
-> Not published yet. Inside this repository, depend on it with `"@tula/react": "workspace:*"`.
+```sh
+bun add @tula/react@alpha       # or: npm install @tula/react@alpha
+```
+
+> **Alpha.** Released under the `alpha` dist-tag: the API may change from one alpha to the
+> next. The components talk to a Tula API, which you host yourself
+> ([docs/self-host.md](../../docs/self-host.md)); everything else is in the
+> [repository](https://github.com/Tula-Solutions/tula-auth-and-user-management#readme).
 
 | | |
 | --- | --- |

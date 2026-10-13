@@ -2,9 +2,28 @@
   "name": "@tula/react",
   "version": "0.0.0",
   "license": "Apache-2.0",
-  "private": true,
   "type": "module",
   "description": "Tula's React SDK: a provider, hooks and prebuilt, themeable, accessible components for sign-up, sign-in, password reset and account management.",
+  "keywords": [
+    "tula",
+    "auth",
+    "authentication",
+    "user-management",
+    "react",
+    "components",
+    "sign-in",
+    "sign-up",
+    "passkeys"
+  ],
+  "homepage": "https://github.com/Tula-Solutions/tula-auth-and-user-management/tree/main/packages/react#readme",
+  "bugs": {
+    "url": "https://github.com/Tula-Solutions/tula-auth-and-user-management/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tula-Solutions/tula-auth-and-user-management.git",
+    "directory": "packages/react"
+  },
   "sideEffects": [
     "**/*.css"
   ],

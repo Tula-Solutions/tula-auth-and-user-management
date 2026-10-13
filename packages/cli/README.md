@@ -9,7 +9,14 @@ in [docs/config.md](../../docs/config.md); the decisions in
 [ADR 0030](../../docs/adr/0030-config-and-apply.md) and
 [ADR 0031](../../docs/adr/0031-instance-admin-and-cli.md).
 
-> Not published yet. Inside this repository: `bun run tula -- <command>`.
+```sh
+bun add -d @tula/cli@alpha      # then: bunx tula <command>
+```
+
+> **Alpha.** Released under the `alpha` dist-tag: commands and flags may change from one
+> alpha to the next. The executable runs on [Bun](https://bun.sh) 1.2 or later, not on Node.
+> Inside this repository it is `bun run tula -- <command>`. Everything else is in the
+> [repository](https://github.com/Tula-Solutions/tula-auth-and-user-management#readme).
 
 ```sh
 export TULA_API_URL=https://auth.example.com

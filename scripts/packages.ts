@@ -1,27 +1,54 @@
-import { cp, mkdir, rm, stat } from 'node:fs/promises'
+import { cp, mkdir, readdir, rm, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import {
+  HELD_PACKAGES,
+  leakedPackedFiles,
   type Manifest,
   missingPackedFiles,
   PUBLISHABLE_PACKAGES,
+  privateStateProblems,
   publishManifest,
+  RELEASED_PACKAGES,
+  releaseState,
+  stagedManifestProblems,
+  unreleasedRuntimeDependencies,
 } from './publish-manifest'
+import {
+  chooseChannel,
+  type Fetcher,
+  parseReleaseArgs,
+  planRelease,
+  refusals,
+  registryStates,
+  releaseReport,
+  type StagedPackage,
+  type TreeState,
+  uploadCommands,
+} from './release'
 
-// Builds, packs and checks the packages that will be published to npm, exactly as they would
-// be published. Two modes:
+// Builds, packs and checks the packages built for npm, exactly as they would be published,
+// and publishes the released ones. Modes:
 //
-//   bun run packages:check     build → stage → pack → publint → attw        (part of verify)
-//   bun run release:dry-run    the same, then report what a release would publish
+//   bun run packages:check     build → stage → pack → publint → attw          (part of verify)
+//   bun run packages:states    only: is every package's `private` field what its state says
+//   bun run release:dry-run    packages:check, then report what a release would publish
+//   bun run release:publish    the same, then upload              (`release --publish`)
 //
-// NOTHING HERE PUBLISHES. The licence and the npm scope are undecided (docs/releasing.md), so
-// this script has no code path that uploads a package: `release` ends by describing the
-// tarballs. Publishing for real takes three deliberate edits, listed in docs/releasing.md:
-// remove `"private": true` from the package, add a publish step here, and give the release
-// workflow its npm credentials.
+// Eleven packages are built and checked (`PUBLISHABLE_PACKAGES`); the release publishes nine
+// of them (`RELEASED_PACKAGES`) and holds two back (`HELD_PACKAGES`), which stay private.
+//
+// AN UPLOAD HAPPENS IN ONE PLACE, the loop at the end of `main`, over what `uploadCommands`
+// (scripts/release.ts) returns: nothing without the explicit `--publish`, nothing while a
+// single refusal stands, and only ever a staged tarball from `.release/`. The script holds
+// no credential and reads none: the package manager it spawns uses its own login.
+// docs/releasing.md is the runbook.
 
 const root = resolve(import.meta.dir, '..')
 /** Staging area: one directory per package holding exactly what its tarball contains. */
 const outDir = join(root, '.release')
+
+/** How long a package manager may take to upload one tarball, a person's second factor included. */
+const UPLOAD_TIMEOUT_MS = 15 * 60_000
 
 async function run(command: string[], cwd: string): Promise<string> {
   const child = Bun.spawn(command, { cwd, stdout: 'pipe', stderr: 'pipe' })
@@ -41,12 +68,42 @@ async function readManifest(dir: string): Promise<Manifest> {
   return (await Bun.file(join(dir, 'package.json')).json()) as Manifest
 }
 
+async function exists(path: string): Promise<boolean> {
+  return stat(path).then(
+    () => true,
+    () => false
+  )
+}
+
+/** Every workspace package (the root's `workspaces`), and the root itself. */
+async function workspaceManifests(): Promise<{ dir: string; manifest: Manifest }[]> {
+  const rootManifest = await readManifest(root)
+  const found = [{ dir: '.', manifest: rootManifest }]
+  for (const pattern of (rootManifest.workspaces as string[] | undefined) ?? []) {
+    const group = pattern.replace(/\/\*$/, '')
+    if (group === pattern) {
+      throw new Error(`the workspace pattern ${pattern} is not of the form <directory>/*`)
+    }
+    for (const entry of await readdir(join(root, group), { withFileTypes: true })) {
+      const dir = `${group}/${entry.name}`
+      if (entry.isDirectory() && (await exists(join(root, dir, 'package.json')))) {
+        found.push({ dir, manifest: await readManifest(join(root, dir)) })
+      }
+    }
+  }
+  return found
+}
+
 interface Packed {
+  dir: string
   name: string
   version: string
-  private: boolean
   tarball: string
   files: number
+  bytes: number
+  sha256: string
+  /** The package.json read back out of the tarball: what npm would serve. */
+  packed: Manifest
   /** Entry points that are not modules (a stylesheet): they have no types to check. */
   assets: string[]
 }
@@ -57,6 +114,12 @@ function assetEntryPoints(manifest: Manifest): string[] {
   return Object.entries(published)
     .filter(([, target]) => typeof target === 'string' && target.endsWith('.css'))
     .map(([subpath]) => subpath.replace(/^\.\//, ''))
+}
+
+async function sha256(path: string): Promise<string> {
+  const hasher = new Bun.CryptoHasher('sha256')
+  hasher.update(await Bun.file(path).arrayBuffer())
+  return hasher.digest('hex')
 }
 
 async function stageAndPack(dir: string, versions: ReadonlyMap<string, string>): Promise<Packed> {
@@ -94,21 +157,24 @@ async function stageAndPack(dir: string, versions: ReadonlyMap<string, string>):
   if (missing.length > 0) {
     throw new Error(`${manifest.name}: the tarball does not hold ${missing.join(', ')}`)
   }
+  const leaked = leakedPackedFiles(listing)
+  if (leaked.length > 0) {
+    throw new Error(`${manifest.name}: the tarball holds what must not ship: ${leaked.join(', ')}`)
+  }
   return {
+    dir,
     name: manifest.name,
     version: manifest.version,
-    private: manifest.private === true,
     tarball,
     files: listing.trim().split('\n').length,
+    bytes: Bun.file(tarball).size,
+    sha256: await sha256(tarball),
+    // Read from the tarball, not from the staging directory: the tarball is what is uploaded.
+    packed: JSON.parse(
+      await run(['tar', '-xzOf', tarball, 'package/package.json'], root)
+    ) as Manifest,
     assets: assetEntryPoints(manifest),
   }
-}
-
-async function exists(path: string): Promise<boolean> {
-  return stat(path).then(
-    () => true,
-    () => false
-  )
 }
 
 async function check(packed: Packed): Promise<void> {
@@ -125,35 +191,185 @@ async function check(packed: Packed): Promise<void> {
   )
 }
 
-const mode = process.argv[2]
-if (mode !== 'check' && mode !== 'release') {
-  process.stderr.write('usage: bun run scripts/packages.ts <check|release>\n')
-  process.exit(2)
+/** The commit the tree is at and whether anything in it is uncommitted (untracked files count). */
+async function treeState(): Promise<TreeState> {
+  return {
+    head: (await run(['git', 'rev-parse', 'HEAD'], root)).trim(),
+    clean: (await run(['git', 'status', '--porcelain'], root)).trim() === '',
+  }
 }
 
-const versions = new Map<string, string>()
-for (const dir of PUBLISHABLE_PACKAGES) {
-  const manifest = await readManifest(join(root, dir))
-  versions.set(manifest.name, manifest.version)
+/** What `npm --version` prints, or `null` where there is no npm. */
+async function npmVersion(): Promise<string | null> {
+  try {
+    const child = Bun.spawn(['npm', '--version'], {
+      cwd: root,
+      stdout: 'pipe',
+      stderr: 'ignore',
+      timeout: 30_000,
+    })
+    const [stdout, code] = await Promise.all([new Response(child.stdout).text(), child.exited])
+    return code === 0 ? stdout.trim() : null
+  } catch {
+    return null
+  }
 }
 
-await rm(outDir, { recursive: true, force: true })
-const packages: Packed[] = []
-for (const dir of PUBLISHABLE_PACKAGES) {
-  const packed = await stageAndPack(dir, versions)
-  await check(packed)
-  packages.push(packed)
-  process.stdout.write(
-    `ok   ${packed.name}@${packed.version}: built, packed (${packed.files} files), publint and attw clean\n`
-  )
-}
-
-if (mode === 'release') {
-  for (const packed of packages) {
-    process.stdout.write(
-      `DRY RUN: would publish ${packed.name}@${packed.version} from ${packed.tarball.slice(root.length + 1)}` +
-        `${packed.private ? ' (the package is still "private": npm would refuse it)' : ''}\n`
+/**
+ * Fail unless every workspace package's `private` field is what its state says. It runs in
+ * every mode, so `bun run verify` stops a package that became publishable by one edit.
+ */
+async function assertStates(print: boolean): Promise<void> {
+  const workspace = await workspaceManifests()
+  if (print) {
+    for (const { dir, manifest } of workspace) {
+      process.stdout.write(
+        `${releaseState(dir).padEnd(8)} ${manifest.private === true ? 'private' : 'public '}  ${dir} (${manifest.name})\n`
+      )
+    }
+  }
+  const problems = privateStateProblems(workspace)
+  if (problems.length > 0) {
+    throw new Error(
+      `a package's "private" field does not match its release state (scripts/publish-manifest.ts, docs/releasing.md):\n  ${problems.join('\n  ')}`
     )
   }
-  process.stdout.write('DRY RUN: nothing was published. See docs/releasing.md.\n')
+  const released = new Set(
+    workspace
+      .filter(({ dir }) => releaseState(dir) === 'released')
+      .map((entry) => entry.manifest.name)
+  )
+  const names = new Set(workspace.map((entry) => entry.manifest.name))
+  for (const { dir, manifest } of workspace) {
+    if (releaseState(dir) !== 'released') {
+      continue
+    }
+    const unreleased = unreleasedRuntimeDependencies(manifest, released, names)
+    if (unreleased.length > 0) {
+      throw new Error(
+        `${manifest.name} is released and depends at run time on what is not: ${unreleased.join(', ')}. A consumer could not install it. Release the dependency too, or remove it.`
+      )
+    }
+  }
+}
+
+async function main(argv: readonly string[]): Promise<number> {
+  const [mode, ...rest] = argv
+  if (mode !== 'check' && mode !== 'release' && mode !== 'states') {
+    process.stderr.write(
+      'usage: bun run scripts/packages.ts <check | states | release [--dry-run | --publish]>\n'
+    )
+    return 2
+  }
+  // Before anything is built: an argument that is not understood must never mean "default".
+  const args = mode === 'release' ? parseReleaseArgs(rest) : { publish: false }
+  if (mode !== 'release' && rest.length > 0) {
+    throw new Error(`${mode} takes no argument`)
+  }
+
+  await assertStates(mode === 'states')
+  if (mode === 'states') {
+    return 0
+  }
+
+  const before = mode === 'release' ? await treeState() : null
+
+  const versions = new Map<string, string>()
+  for (const dir of PUBLISHABLE_PACKAGES) {
+    const manifest = await readManifest(join(root, dir))
+    versions.set(manifest.name, manifest.version)
+  }
+
+  await rm(outDir, { recursive: true, force: true })
+  const packages: Packed[] = []
+  for (const dir of PUBLISHABLE_PACKAGES) {
+    const packed = await stageAndPack(dir, versions)
+    await check(packed)
+    const state = releaseState(dir)
+    if (state === 'released') {
+      const problems = stagedManifestProblems(packed.packed)
+      if (problems.length > 0) {
+        throw new Error(`the packed manifest cannot be published:\n  ${problems.join('\n  ')}`)
+      }
+    }
+    packages.push(packed)
+    process.stdout.write(
+      `ok   ${packed.name}@${packed.version}: built, packed (${packed.files} files), publint and attw clean` +
+        `${state === 'held' ? ' [held back: never published]' : ''}\n`
+    )
+  }
+
+  if (before === null) {
+    return 0
+  }
+
+  const staged: StagedPackage[] = RELEASED_PACKAGES.map((dir) => {
+    const packed = packages.find((entry) => entry.dir === dir)
+    if (!packed) {
+      throw new Error(`${dir} is released and was not packed`)
+    }
+    const { name, version, tarball, bytes, files, sha256: sum, packed: manifest } = packed
+    return { name, version, tarball, bytes, files, sha256: sum, manifest }
+  })
+  const after = await treeState()
+  const channel = chooseChannel(
+    process.env,
+    process.env.GITHUB_ACTIONS === 'true' ? await npmVersion() : null
+  )
+  const plan = planRelease(
+    staged,
+    await registryStates(staged, fetch as unknown as Fetcher),
+    channel,
+    refusals({ packages: staged, before, after })
+  )
+  process.stdout.write(releaseReport(args, plan, { head: after.head, root }))
+  process.stdout.write(
+    `${args.publish ? 'RELEASE' : 'DRY RUN'}: held back, built and checked but not published: ${HELD_PACKAGES.map(
+      (dir) => packages.find((entry) => entry.dir === dir)?.name ?? dir
+    ).join(', ')}\n`
+  )
+  if (args.publish && plan.refusals.length > 0) {
+    return 1
+  }
+
+  // THE ONLY UPLOAD. `uploadCommands` is empty for a dry run and for a refused run.
+  const published: string[] = []
+  for (const { pkg, command } of uploadCommands(args, plan, outDir)) {
+    const now = await treeState()
+    if (now.head !== before.head || !now.clean || (await sha256(pkg.tarball)) !== pkg.sha256) {
+      throw new Error(
+        `stopped before ${pkg.name}: the tree or the tarball changed since it was checked. Published in this run: ${published.join(', ') || 'nothing'}. Run it again: what is on the registry is skipped.`
+      )
+    }
+    process.stdout.write(`RELEASE: publishing ${pkg.name}@${pkg.version} …\n`)
+    // The terminal is the package manager's while it runs: it may ask for a second factor.
+    // Nothing it prints is captured, and nothing is passed to it but the tarball and flags.
+    const child = Bun.spawn(command, {
+      cwd: root,
+      stdin: 'inherit',
+      stdout: 'inherit',
+      stderr: 'inherit',
+      timeout: UPLOAD_TIMEOUT_MS,
+    })
+    const code = await child.exited
+    if (code !== 0) {
+      throw new Error(
+        `\`${command.slice(0, 2).join(' ')}\` failed for ${pkg.name}@${pkg.version} (exit ${code}). Published in this run: ${published.join(', ') || 'nothing'}. Fix the cause and run it again: what is on the registry is skipped.`
+      )
+    }
+    published.push(`${pkg.name}@${pkg.version}`)
+  }
+  if (args.publish) {
+    process.stdout.write(
+      `RELEASE: published ${published.length} package${published.length === 1 ? '' : 's'}${published.length > 0 ? `: ${published.join(', ')}` : ' (everything was already on the registry)'}\n`
+    )
+  }
+  return 0
+}
+
+try {
+  process.exit(await main(process.argv.slice(2)))
+} catch (error) {
+  process.stderr.write(`error: ${error instanceof Error ? error.message : 'unexpected failure'}\n`)
+  process.exit(1)
 }

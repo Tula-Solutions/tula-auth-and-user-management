@@ -8,7 +8,7 @@ Phase 1 status: passwords, emailed codes and links, Google, GitHub, Apple, Micro
 two-step verification, session profiles, user administration and the audit log (one page per
 method under [methods/](README.md#sign-in-methods)). Administration is through the dashboard at
 `/dashboard` ([dashboard.md](dashboard.md)), settings as code (`tula apply`,
-[config.md](config.md)) or the HTTP API (`/v1/docs` lists it). **No image and no package is
+[config.md](config.md)) or the HTTP API (`/v1/docs` lists it). **No image is
 published yet**: the image is built from this repository. What has only been tested against a
 stand-in (real providers, a physical passkey authenticator, and more) is listed in
 [plans/phase-1-unverified.md](plans/phase-1-unverified.md).

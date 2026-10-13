@@ -2,9 +2,26 @@
   "name": "@tula/mcp",
   "version": "0.0.0",
   "license": "Apache-2.0",
-  "private": true,
   "type": "module",
   "description": "Tula's Model Context Protocol server (`tula mcp`): tools that read an environment's users, sessions, audit entries and settings, scaffolds for the provider, a protected route and a sign-in page, and one tool that runs a sign-in test where the environment allows one (a throwaway user, made and deleted). It changes nothing else and returns no secret.",
+  "keywords": [
+    "tula",
+    "auth",
+    "authentication",
+    "user-management",
+    "mcp",
+    "model-context-protocol",
+    "ai-agents"
+  ],
+  "homepage": "https://github.com/Tula-Solutions/tula-auth-and-user-management/tree/main/packages/mcp#readme",
+  "bugs": {
+    "url": "https://github.com/Tula-Solutions/tula-auth-and-user-management/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tula-Solutions/tula-auth-and-user-management.git",
+    "directory": "packages/mcp"
+  },
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts"

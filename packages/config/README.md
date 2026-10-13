@@ -5,7 +5,13 @@
 code. `tula diff` and `tula apply` (`@tula/cli`) make a server match it. See
 [docs/config.md](../../docs/config.md).
 
-> Not published yet. Inside this repository, depend on it with `"@tula/config": "workspace:*"`.
+```sh
+bun add -d @tula/config@alpha @tula/cli@alpha
+```
+
+> **Alpha.** Released under the `alpha` dist-tag: the file's shape may change from one alpha
+> to the next. Install it at the same version as `@tula/cli`. Everything else is in the
+> [repository](https://github.com/Tula-Solutions/tula-auth-and-user-management#readme).
 
 ```ts
 import { defineConfig, env } from '@tula/config'

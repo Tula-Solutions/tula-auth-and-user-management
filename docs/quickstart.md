@@ -2,10 +2,13 @@
 
 You need [Bun](https://bun.sh) 1.2 or newer and Docker.
 
-> **Nothing is published yet.** There is no `create-tula` on npm and no Tula API image in a
-> registry, so today the first two steps happen in a checkout of this repository. Once the
-> packages and the image are published, steps 1 and 2 disappear and step 3 becomes
-> `bun create tula my-app`.
+> **What is on npm, and what is not.** The web packages and `create-tula` are released to npm
+> under the `alpha` dist-tag ([releasing.md](releasing.md)), so for a web app steps 2 and 3
+> can be `bunx create-tula@alpha my-app --framework react-vite`. **No Tula API image is in a
+> registry yet**: step 1 still happens in a checkout of this repository. **The Expo SDK is not
+> released**: `--framework expo` is refused without `--tula-packages`, so for it steps 2 and 3
+> stay as written. The steps below, all from a checkout, are the ones that were run; the
+> path through npm has not been walked yet.
 
 ## 1. Build the API image
 
@@ -43,7 +46,8 @@ bun install
 `--framework` is `react-vite` or `nextjs` for a web app, and `expo`, `swiftui` or `compose`
 for a native one: [the native path](#the-native-path) below replaces steps 3 and 6 for those.
 `--tula-packages` points the project's `@tula/*`
-dependencies at the tarballs; leave it out once they are on npm. `--api-port` and
+dependencies at the tarballs; leave it out to install the released packages from npm (not
+for `expo`, whose SDK is not released). `--api-port` and
 `--mailpit-port` move the two published ports (3003 and 8025) if they are taken.
 
 The project has a `.env` with secrets generated for it (a master key, an instance admin token,

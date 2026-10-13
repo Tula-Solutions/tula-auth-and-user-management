@@ -19,7 +19,7 @@ Android 9 minimum).
 > after the move, no app was built, no Metro bundle was made, and no screen was drawn
 > through this package anywhere
 > ([what was run](../../docs/plans/phase-2-unverified.md#step-216-the-expo-native-screens-tula-62-adr-0063)).
-> Nothing is published yet.
+> This package is held back from npm until it has been run on a device.
 
 ```tsx
 import { createTulaScreens, TulaAccountView, TulaAuthView } from '@tula/expo-screens'

@@ -89,7 +89,8 @@ no native module by itself. Why these modules, and what was read of each, is in
 [ADR 0052](adr/0052-expo-native-providers-and-device-keys.md); none of the last three
 was ever installed or called for this package.
 
-Nothing is published yet ([releasing.md](releasing.md)); the
+`@tula/expo` and `@tula/expo-screens` are held back from npm until they have been run on a
+device ([releasing.md](releasing.md)); the
 [example app](../examples/expo/README.md) installs the packed packages of a checkout.
 
 ## The client and the provider

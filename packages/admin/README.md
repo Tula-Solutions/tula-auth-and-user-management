@@ -6,7 +6,14 @@ and `verifyWebhook`, for the server that receives Tula's webhooks. Its types are
 generated from the OpenAPI contract, so it cannot drift from the API it calls. It is what the
 `tula` CLI talks through, and what the dashboard and the MCP server will.
 
-> Not published yet. Inside this repository, depend on it with `"@tula/admin": "workspace:*"`.
+```sh
+bun add @tula/admin@alpha       # or: npm install @tula/admin@alpha
+```
+
+> **Alpha.** Released under the `alpha` dist-tag: the API may change from one alpha to the
+> next. It calls a Tula API, which you host yourself
+> ([docs/self-host.md](../../docs/self-host.md)); everything else is in the
+> [repository](https://github.com/Tula-Solutions/tula-auth-and-user-management#readme).
 
 **Server-side only.** It holds a secret key, which can do anything in its environment. The
 client refuses a publishable key, refuses to be created where `window` and `document` exist,

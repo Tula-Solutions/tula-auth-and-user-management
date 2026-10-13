@@ -24,10 +24,19 @@ passwords from `crypto.getRandomValues`, never a default), `.gitignore` (covers 
 `.env.local`), `.env.example`, `tula.config.ts`, `README.md`, `docker/postgres/init.sh` and
 the app.
 
-**Nothing is published yet.** Until it is, the API image is built from the Tula repository
-(`docker build -f apps/api/Dockerfile -t tula-api:local .`) and the packages come from
-tarballs: `bun run packages:check` writes them to `.release/`, and
-`--tula-packages <repo>/.release` points the project at them. The full walk-through is
+> **Alpha.** Released under the `alpha` dist-tag (`bun create tula@alpha`,
+> `bunx create-tula@alpha`): what it writes may change from one alpha to the next. It runs on
+> [Bun](https://bun.sh) 1.2 or later, not on Node. Everything else is in the
+> [repository](https://github.com/Tula-Solutions/tula-auth-and-user-management#readme).
+
+**What is on npm, and what is not.** The web templates (`react-vite`, `nextjs`) install their
+`@tula/*` packages from npm, at this package's own version. **No Tula API image is published
+yet**: it is built from the Tula repository
+(`docker build -f apps/api/Dockerfile -t tula-api:local .`), and the stack does not start
+without it. **Tula's Expo SDK (`@tula/expo`) is not released to npm yet**, because it has not
+been run on a device: `--framework expo` is refused, before anything is written, unless
+`--tula-packages <repo>/.release` points the project at tarballs from a checkout
+(`bun run packages:check` writes them there). The full walk-through is
 [docs/quickstart.md](../../docs/quickstart.md).
 
 A native app is a directory of its own beside the stack's files: `app` (Expo), `ios` (an

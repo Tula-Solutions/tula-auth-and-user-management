@@ -12,6 +12,35 @@ this file under "Area rules" and does not repeat it. A section named in a senten
 
 ## Publishable packages (see ADR 0020)
 
+- **Eleven packages are built for npm; nine are released and two are held back**
+  ([docs/releasing.md](../../docs/releasing.md)). The lists are in
+  `scripts/publish-manifest.ts`: `PUBLISHABLE_PACKAGES` (all eleven, built and checked by
+  `packages:check`), `HELD_PACKAGES` (`@tula/expo` and `@tula/expo-screens`: built and
+  checked, never published, `"private": true`) and `RELEASED_PACKAGES`, derived from the
+  two. **Only a released package is without `"private": true`**: never remove the field
+  from a held-back or private package, and never add a package to the release without its
+  `repository`, `homepage`, `bugs` and `keywords`. **A released package never depends at run
+  time on a workspace package that is not released** (`dependencies`, `peerDependencies`,
+  `optionalDependencies`; `packages:check` stops for one, by name whatever its range).
+  `create-tula` keeps the held-back names itself (`UNRELEASED_TULA_PACKAGES`) and refuses a
+  template that needs one unless the packages come from tarballs; `release.test.ts` holds
+  the two lists equal.
+- **An upload happens in one place**: the loop at the end of `scripts/packages.ts`, over
+  what `uploadCommands` (`scripts/release.ts`) returns. It is empty without the explicit
+  `--publish` (the dry run is the default; an unknown argument is refused), and while any
+  refusal stands (version `0.0.0` or not an `-alpha.N`, a tree that is not clean or a
+  commit that moved, a packed manifest that is private or has a `workspace:` range, a
+  registry that did not answer). Only a `.tgz` directly inside `.release/` is ever passed
+  to a publish command, never a package directory. **The script holds and reads no
+  credential**: no `.npmrc`, no token or one-time password as an argument, and of the
+  environment only whether a variable is set. Never add a second path that uploads
+  (`changeset publish`, a publish command in a workflow or a `package.json` script), and a
+  new refusal or a change to the gate gets a row in `.claude/hooks/release-publish.test.ts`.
+- **`bun publish` on a person's machine, `npm publish --provenance` in the release
+  workflow**: the one use of npm in the repository, because Bun's publish has no provenance
+  and no trusted publishing. The workflow holds no long-lived token and never gets one
+  (`NPM_TOKEN`, `NODE_AUTH_TOKEN`, any `secrets.`); its `publish` job alone has
+  `id-token: write` and runs only when the repository variable `NPM_PUBLISH` is `true`.
 - `exports` point at `./src/*.ts`, so the workspace resolves packages from source with no build
   step. `publishConfig.exports` point at `./dist/*`; `scripts/packages.ts` applies them when it
   stages a package for packing. Add an entry point to **both**.

@@ -2,7 +2,8 @@
 
 `tula` (the `@tula/cli` package) and `create-tula` run on [Bun](https://bun.sh). The design is
 in [ADR 0030](adr/0030-config-and-apply.md) and [ADR 0031](adr/0031-instance-admin-and-cli.md).
-Nothing is published yet: inside this repository run `bun run tula -- <command>`, and see
+Both are released to npm as alphas (`bun add -d @tula/cli@alpha`, then `bunx tula <command>`;
+[releasing.md](releasing.md)). Inside this repository run `bun run tula -- <command>`, and see
 [quickstart.md](quickstart.md) for a project of your own.
 
 | Command | What |

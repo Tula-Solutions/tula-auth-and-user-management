@@ -5,6 +5,15 @@ who is signed in, and session cookies that belong to your own origin. See
 [ADR 0029](../../docs/adr/0029-nextjs-sdk.md) for the design and
 [`examples/nextjs-app-router`](../../examples/nextjs-app-router) for a complete app.
 
+```sh
+bun add @tula/nextjs@alpha @tula/react@alpha    # or: npm install …
+```
+
+> **Alpha.** Released under the `alpha` dist-tag: the API may change from one alpha to the
+> next. Install `@tula/react` at the same version. It talks to a Tula API, which you host
+> yourself ([docs/self-host.md](../../docs/self-host.md)); everything else is in the
+> [repository](https://github.com/Tula-Solutions/tula-auth-and-user-management#readme).
+
 ## Set up
 
 ```bash

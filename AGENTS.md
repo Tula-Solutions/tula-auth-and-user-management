@@ -120,8 +120,9 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 
 ### Publishable packages (see ADR 0020)
 
-`@tula/contract`, `@tula/core`, `@tula/react`, `@tula/nextjs`, `@tula/expo`, `@tula/expo-screens`, `@tula/admin`, `@tula/config`, `@tula/mcp`, `@tula/cli` and `create-tula` are built for npm; **nothing is published yet** and every
-package stays `"private": true` ([docs/releasing.md](docs/releasing.md)).
+`@tula/contract`, `@tula/core`, `@tula/react`, `@tula/nextjs`, `@tula/expo`, `@tula/expo-screens`, `@tula/admin`, `@tula/config`, `@tula/mcp`, `@tula/cli` and `create-tula` are built for npm. **Nine are released** (alphas, dist-tag
+`alpha`); **`@tula/expo` and `@tula/expo-screens` are held back**: built and checked, never published,
+and `"private": true` like every package that is not released ([docs/releasing.md](docs/releasing.md)).
 
 ### Area rules
 
@@ -691,6 +692,7 @@ bun run docs:generate       # rewrite docs/reference/ from the JSDoc and fill th
 bun run docs:check          # fail if either is out of date (part of verify)
 bun run packages:check      # build, pack, publint + attw every publishable package (part of verify)
 bun run release:dry-run     # the same, then report what a release would publish (publishes nothing)
+bun run release:publish     # the same, then UPLOAD the nine released packages (docs/releasing.md; never unasked)
 bun run playground          # @tula/core test bench on http://localhost:5173 (examples/core-playground)
 bun run --filter @tula/example-react-vite dev
                             # the @tula/react example on http://localhost:5174 (needs

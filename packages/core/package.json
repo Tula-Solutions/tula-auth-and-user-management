@@ -2,9 +2,27 @@
   "name": "@tula/core",
   "version": "0.0.0",
   "license": "Apache-2.0",
-  "private": true,
   "type": "module",
   "description": "Tula's headless TypeScript client for browsers, Node, Bun and edge runtimes: server-driven flows, sessions and single-flight token refresh.",
+  "keywords": [
+    "tula",
+    "auth",
+    "authentication",
+    "user-management",
+    "client",
+    "sdk",
+    "sessions",
+    "passkeys"
+  ],
+  "homepage": "https://github.com/Tula-Solutions/tula-auth-and-user-management/tree/main/packages/core#readme",
+  "bugs": {
+    "url": "https://github.com/Tula-Solutions/tula-auth-and-user-management/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tula-Solutions/tula-auth-and-user-management.git",
+    "directory": "packages/core"
+  },
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts"

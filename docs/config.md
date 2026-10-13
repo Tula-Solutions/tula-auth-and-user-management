@@ -7,7 +7,8 @@ applied by a pipeline. So can its **webhook endpoints** ([Webhook endpoints](#we
 below). The decisions behind this page are in
 [ADR 0030](adr/0030-config-and-apply.md).
 
-> Nothing is published to npm yet. Inside this repository the CLI is `bun run tula -- <args>`,
+> `@tula/config` and `@tula/cli` are released to npm as alphas
+> (`bun add -d @tula/config@alpha @tula/cli@alpha`). Inside this repository the CLI is `bun run tula -- <args>`,
 > and a working example is [`examples/tula-config/tula.config.ts`](../examples/tula-config/tula.config.ts).
 
 ## The file

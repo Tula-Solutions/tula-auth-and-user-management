@@ -171,7 +171,10 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   **Five templates: `react-vite`, `nextjs`, `expo`, `swiftui`, `compose`** (`FRAMEWORKS`;
   the last three copies of `examples/expo/app`, `examples/swiftui` and `examples/compose`).
   A native app is a directory of its own (`app`, `ios`, `android`) beside the stack's
-  files, and holds no key. **The Swift package and the Kotlin libraries are published
+  files, and holds no key. **A template that names a Tula package that is not released to
+  npm is refused before anything is written, unless `--tula-packages` is given**
+  (`UNRELEASED_TULA_PACKAGES`, held equal to `HELD_PACKAGES` by `release.test.ts`; today
+  that is `expo`, for `@tula/expo`): never scaffold a project whose install would fail. **The Swift package and the Kotlin libraries are published
   nowhere, so a `swiftui` or a `compose` project names its SDK by a relative path into a
   checkout** (`--tula-repo`, required for those two and refused for the others;
   `checkoutPaths`: real paths, the checkout proven by a file it must hold, a path with a

@@ -39,7 +39,7 @@ export type Framework = (typeof FRAMEWORKS)[number]
 
 /**
  * The image reference a new project's `.env` names by default: the tag the Tula repository's
- * own Compose file builds. Nothing is published to a registry yet, so the default is a local
+ * own Compose file builds. No image is published to a registry yet, so the default is a local
  * tag, and `apiImage` (`--api-image`) overrides it.
  *
  * @example
@@ -134,6 +134,20 @@ const TULA_PACKAGES = [
   'cli',
 ] as const
 
+/**
+ * The Tula packages that are built and not released to npm: the two Expo packages, which
+ * have never been run on a device. A template whose manifest names one cannot be installed
+ * from the registry, so scaffolding it is refused unless the packages come from tarballs
+ * (`tulaPackages`). It is the repository's list of held-back packages (`HELD_PACKAGES` in
+ * `scripts/publish-manifest.ts`), by name; a test holds the two equal.
+ *
+ * @example
+ * ```ts
+ * UNRELEASED_TULA_PACKAGES.includes('@tula/expo') // true
+ * ```
+ */
+export const UNRELEASED_TULA_PACKAGES: readonly string[] = ['@tula/expo', '@tula/expo-screens']
+
 /** Never written over, whatever `force` says: they hold secrets that data depends on. */
 const NEVER_REPLACED: ReadonlySet<string> = new Set(['.env', '.env.local'])
 
@@ -202,8 +216,9 @@ export interface ScaffoldOptions {
   /**
    * A directory of packed Tula tarballs (`tula-react-<version>.tgz`, …, as
    * `bun run packages:check` leaves them in `.release/`). The project then installs every
-   * `@tula/*` package from there instead of a registry: the way to try a project while
-   * nothing is published.
+   * `@tula/*` package from there instead of a registry: the way to try a project against a
+   * checkout, and the only way to scaffold a template that needs a package that is not
+   * released yet ({@link UNRELEASED_TULA_PACKAGES}).
    */
   tulaPackages?: string
   /**
@@ -462,7 +477,8 @@ async function checkoutPaths(
  * @param options - What to scaffold and where.
  * @returns The directory and the files written.
  * @throws ScaffoldError for an unusable name or option, a directory that is not empty, a
- *   missing tarball, or a symbolic link in the way.
+ *   missing tarball, a symbolic link in the way, or a template that needs a Tula package
+ *   that is not released to npm ({@link UNRELEASED_TULA_PACKAGES}) without `tulaPackages`.
  *
  * @example
  * ```ts
@@ -544,6 +560,8 @@ export async function scaffold(options: ScaffoldOptions): Promise<ScaffoldResult
     output.set(path, { contents, mode: path.endsWith('.sh') ? 0o755 : 0o644 })
   }
 
+  /** The unreleased Tula packages the project's manifests name. */
+  const unreleased = new Set<string>()
   /** A manifest of the template with its name and its Tula packages as this project has them. */
   const pinned = (text: string, name: string): string => {
     const manifest = JSON.parse(text) as {
@@ -555,6 +573,9 @@ export async function scaffold(options: ScaffoldOptions): Promise<ScaffoldResult
     manifest.name = name
     for (const dependencies of [manifest.dependencies ?? {}, manifest.devDependencies ?? {}]) {
       for (const dependency of Object.keys(dependencies)) {
+        if (UNRELEASED_TULA_PACKAGES.includes(dependency)) {
+          unreleased.add(dependency)
+        }
         if (dependency.startsWith('@tula/')) {
           dependencies[dependency] = specs.get(dependency) ?? VERSION
         }
@@ -581,6 +602,14 @@ export async function scaffold(options: ScaffoldOptions): Promise<ScaffoldResult
     contents: pinned(await readFile(join(frameworkRoot, 'package.json'), 'utf8'), options.name),
     mode: 0o644,
   })
+  // A project that cannot be installed is not scaffolded: `bun install` would fail on a
+  // package the registry does not have, after the secrets were already written.
+  if (unreleased.size > 0 && !local) {
+    const names = [...unreleased].sort().join(', ')
+    throw new ScaffoldError(
+      `The ${details.label} template needs ${names}, which is not released to npm yet: Tula's Expo SDK has not been run on a device. Nothing was written. The web templates (react-vite, nextjs) install from npm. To try this one from a checkout of the Tula repository, run \`bun run packages:check\` there and pass --tula-packages <checkout>/.release.`
+    )
+  }
 
   const keptEnv = await exists(join(directory, '.env'))
   if (!keptEnv) {
