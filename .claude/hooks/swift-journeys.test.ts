@@ -9,7 +9,7 @@ import {
   scanSwiftJourneys,
   swiftJourneyProblems,
 } from '../../native/swift/fixture/journeys'
-import { pickSimulator, xcodebuildArguments } from '../../native/swift/fixture/ui-tests'
+import { pickSimulator, readyPort, xcodebuildArguments } from '../../native/swift/fixture/ui-tests'
 import { loadClientJourneys, notBuilt } from '../../packages/conformance/src/client-journeys'
 
 // The Swift client's journey tests are XCTest methods, which no CI job of `verify` can run (it
@@ -270,14 +270,108 @@ describe('the run of the SwiftUI screens’ UI tests', () => {
     expect(args.at(-1)).toBe('-only-testing:T/C/testX')
   })
 
-  test('every process the run starts has a timeout, and the fixture keeps its guard', async () => {
+  /** The text of every `Bun.spawn(…)` and `Bun.spawnSync(…)` call, to its closing parenthesis. */
+  function spawnCalls(source: string): string[] {
+    const calls: string[] = []
+    for (const match of source.matchAll(/Bun\.spawn(?:Sync)?\(/g)) {
+      const open = match.index + match[0].length
+      let depth = 1
+      let end = open
+      while (end < source.length && depth > 0) {
+        const character = source[end]
+        depth += character === '(' ? 1 : character === ')' ? -1 : 0
+        end += 1
+      }
+      calls.push(source.slice(match.index, end))
+    }
+    return calls
+  }
+
+  test('the scan of spawn calls finds both kinds, each whole', () => {
+    const calls = spawnCalls(
+      "Bun.spawnSync(['a', f(1)], { timeout: 1 })\nconst x = Bun.spawn(['b'], {\n  cwd: g(),\n})\n"
+    )
+    expect(calls).toEqual([
+      "Bun.spawnSync(['a', f(1)], { timeout: 1 })",
+      "Bun.spawn(['b'], {\n  cwd: g(),\n})",
+    ])
+  })
+
+  test('every Bun.spawn and Bun.spawnSync call of the run names a timeout among its arguments', async () => {
     const source = await Bun.file(
       new URL('../../native/swift/fixture/ui-tests.ts', import.meta.url)
     ).text()
-    expect(source.match(/Bun\.spawnSync\(/g)?.length).toBe(
-      source.match(/timeout: ASK_TIMEOUT_MS/g)?.length
-    )
-    expect(source).toContain('timeout: TEST_TIMEOUT_MS')
+    const calls = spawnCalls(source)
+    // The question to simctl, the fixture and xcodebuild.
+    expect(calls.length).toBe(3)
+    expect(calls.filter((call) => !/\btimeout: [A-Z_]+_TIMEOUT_MS\b/.test(call))).toEqual([])
+  })
+
+  test('the fixture keeps its guard, and is ended in a finally and on a signal', async () => {
+    const source = await Bun.file(
+      new URL('../../native/swift/fixture/ui-tests.ts', import.meta.url)
+    ).text()
     expect(source).toContain("TULA_NATIVE_FIXTURE: '1'")
+    expect(source).toMatch(/finally \{\s+stop\(\)/)
+    for (const signal of ['SIGINT', 'SIGTERM']) {
+      expect(source).toContain(`'${signal}'`)
+    }
+  })
+
+  test('the fixture’s line is read whole, however it is cut, and waited for no longer than said', async () => {
+    const encode = (text: string) => new TextEncoder().encode(text)
+    const cut = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encode('{"po'))
+        controller.enqueue(encode('rt":51'))
+        controller.enqueue(encode('234}\nlater output\n'))
+        controller.close()
+      },
+    })
+    expect(await readyPort(cut, 1_000)).toBe(51234)
+
+    const ended = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encode('{"port":51'))
+        controller.close()
+      },
+    })
+    expect(await readyPort(ended, 1_000)).toBeNull()
+
+    const other = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encode('something else\n{"port":1}\n'))
+      },
+    })
+    expect(await readyPort(other, 1_000)).toBeNull()
+
+    const silent = new ReadableStream<Uint8Array>({ start() {} })
+    const before = Date.now()
+    expect(await readyPort(silent, 50)).toBeNull()
+    expect(Date.now() - before).toBeLessThan(900)
+  })
+
+  test('what the fixture prints after its line is read and dropped, so that it never waits on a full pipe', async () => {
+    let pulled = 0
+    const chatty = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          pulled += 1
+          if (pulled === 1) {
+            controller.enqueue(new TextEncoder().encode('{"port":4000}\n'))
+          } else if (pulled <= 20) {
+            controller.enqueue(new Uint8Array(1024))
+          } else {
+            controller.close()
+          }
+        },
+      },
+      { highWaterMark: 0 }
+    )
+    expect(await readyPort(chatty, 1_000)).toBe(4000)
+    for (let turn = 0; turn < 100 && pulled < 21; turn += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+    expect(pulled).toBe(21)
   })
 })

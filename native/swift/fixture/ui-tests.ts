@@ -104,10 +104,69 @@ export function xcodebuildArguments(udid: string, derivedData: string, extra: st
   ]
 }
 
+/**
+ * Read the port the fixture says it listens on: the `"port":<n>` of the first line it prints.
+ *
+ * The line is read whole, however the pipe cuts it into chunks, and only the first line is
+ * looked at. On a port the rest of the stream is read and dropped in the background, so that
+ * a fixture that prints more never waits on a full pipe; otherwise the stream is cancelled.
+ *
+ * @param stream - The fixture's standard output.
+ * @param deadlineMs - How long to wait for the line.
+ * @returns The port, or `null` when the first line names none, the stream ended before a
+ *   whole line, or the deadline passed.
+ */
+export async function readyPort(
+  stream: ReadableStream<Uint8Array>,
+  deadlineMs: number
+): Promise<number | null> {
+  const reader = stream.getReader()
+  const decoder = new TextDecoder()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), deadlineMs)
+  })
+  let text = ''
+  let port: number | null = null
+  try {
+    while (!text.includes('\n')) {
+      const chunk = await Promise.race([reader.read(), late])
+      if (chunk === null || chunk.done) {
+        break
+      }
+      text += decoder.decode(chunk.value, { stream: true })
+    }
+    const end = text.indexOf('\n')
+    const match = end < 0 ? null : /"port":(\d+)/.exec(text.slice(0, end))
+    port = match ? Number(match[1]) : null
+  } finally {
+    clearTimeout(timer)
+  }
+  if (port === null) {
+    // Nothing more is wanted of it. A cancel that fails changes nothing the caller does.
+    await reader.cancel().catch(() => undefined)
+    return null
+  }
+  void (async () => {
+    try {
+      while (!(await reader.read()).done) {
+        // Read and dropped.
+      }
+    } catch {
+      // The fixture went away while its output was being dropped: there is nothing to keep.
+    }
+  })()
+  return port
+}
+
 /** How long a tool that only answers a question may take. */
 const ASK_TIMEOUT_MS = 60_000
 /** How long the build and the tests may take together. */
 const TEST_TIMEOUT_MS = 40 * 60_000
+/** How long the fixture may take to say it listens. */
+const READY_TIMEOUT_MS = 60_000
+/** How long the fixture may live at most: the tests' time and a margin to start in. */
+const FIXTURE_TIMEOUT_MS = TEST_TIMEOUT_MS + 5 * 60_000
 
 if (import.meta.main) {
   const root = join(import.meta.dir, '../../..')
@@ -137,37 +196,60 @@ if (import.meta.main) {
     stdin: 'pipe',
     stdout: 'pipe',
     stderr: 'inherit',
+    // Longer than the tests may take: the fixture is ended below, and this ends it when this
+    // process is no longer there to do it in time.
+    timeout: FIXTURE_TIMEOUT_MS,
   })
-  // The fixture prints one line when it listens.
-  const first = await fixture.stdout.getReader().read()
-  const ready = /"port":(\d+)/.exec(new TextDecoder().decode(first.value))
-  if (!ready) {
-    process.stderr.write('the fixture did not start\n')
-    fixture.kill()
-    process.exit(1)
-  }
-  const origin = `http://127.0.0.1:${ready[1]}`
-  process.stdout.write(`fixture: ${origin}\n`)
+  let tests: ReturnType<typeof Bun.spawn> | undefined
 
-  const derivedData = join(root, 'examples/swiftui/build')
-  const tests = Bun.spawn(xcodebuildArguments(udid as string, derivedData, rest), {
-    cwd: root,
-    // `xcodebuild` hands a variable named TEST_RUNNER_<NAME> to the test runner as <NAME>.
-    env: {
-      ...process.env,
-      TEST_RUNNER_TULA_FIXTURE_ORIGIN: origin,
-      // Where a failed test keeps a picture of the screen, when the caller named a directory.
-      ...(process.env.TULA_SCREENSHOT_DIR
-        ? { TEST_RUNNER_TULA_SCREENSHOT_DIR: process.env.TULA_SCREENSHOT_DIR }
-        : {}),
-    },
-    stdout: 'inherit',
-    stderr: 'inherit',
-    timeout: TEST_TIMEOUT_MS,
-  })
-  const code = await tests.exited
-  // The fixture ends when its standard input closes.
-  fixture.stdin.end()
-  fixture.kill()
+  /** End what this run started. Safe to call twice: on a signal and again in the `finally`. */
+  const stop = (): void => {
+    tests?.kill()
+    try {
+      // The fixture ends when its standard input closes.
+      fixture.stdin.end()
+    } catch {
+      // Already closed, by an earlier call or because the fixture is gone: it is killed next.
+    }
+    fixture.kill()
+  }
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+    process.on(signal, () => {
+      stop()
+      process.exit(signal === 'SIGINT' ? 130 : 143)
+    })
+  }
+
+  let code = 1
+  try {
+    // The fixture prints one line when it listens.
+    const port = await readyPort(fixture.stdout, READY_TIMEOUT_MS)
+    if (port === null) {
+      process.stderr.write('the fixture did not start\n')
+    } else {
+      const origin = `http://127.0.0.1:${port}`
+      process.stdout.write(`fixture: ${origin}\n`)
+
+      const derivedData = join(root, 'examples/swiftui/build')
+      tests = Bun.spawn(xcodebuildArguments(udid as string, derivedData, rest), {
+        cwd: root,
+        // `xcodebuild` hands a variable named TEST_RUNNER_<NAME> to the test runner as <NAME>.
+        env: {
+          ...process.env,
+          TEST_RUNNER_TULA_FIXTURE_ORIGIN: origin,
+          // Where a failed test keeps a picture of the screen, when the caller named a directory.
+          ...(process.env.TULA_SCREENSHOT_DIR
+            ? { TEST_RUNNER_TULA_SCREENSHOT_DIR: process.env.TULA_SCREENSHOT_DIR }
+            : {}),
+        },
+        stdout: 'inherit',
+        stderr: 'inherit',
+        timeout: TEST_TIMEOUT_MS,
+      })
+      code = await tests.exited
+    }
+  } finally {
+    stop()
+  }
   process.exit(code)
 }
