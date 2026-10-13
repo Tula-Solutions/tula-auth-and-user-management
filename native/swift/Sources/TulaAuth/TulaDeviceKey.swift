@@ -52,6 +52,13 @@ public protocol TulaDeviceKeyStore: Sendable {
     func existing() async throws -> (any TulaDeviceKey)?
     /// Make the key and keep it. Called only after `existing()` answered `nil`; a store that
     /// finds a key was made meanwhile returns that one.
+    ///
+    /// **It may be called while an earlier call is still out.** The client asks one thing at
+    /// a time, but a removal drops the calls from before it without stopping them, so a
+    /// `create()` (or an `existing()`) from before a removal can still be running when the
+    /// next one starts. A store must tolerate two at once and end with one key, as
+    /// `KeychainDeviceKeyStore` does by returning the stored key when its add finds one
+    /// already there.
     func create() async throws -> any TulaDeviceKey
     /// Remove what is kept of the key; nothing there is not an error.
     ///
@@ -420,6 +427,10 @@ final class DeviceProofs: @unchecked Sendable, TulaRedacted {
         return try await making.value { try await store.create() }
     }
 
+    /// How many callers wait for the look that is out. For the tests, which have no other
+    /// way to know that a caller has joined a look before they let the store answer.
+    var lookWaiters: Int { looking.waiting }
+
     /// The key was removed: what a look or a making still out answers is used by nobody.
     private func forgetFlights() {
         looking.drop()
@@ -492,6 +503,9 @@ final class DeviceProofs: @unchecked Sendable, TulaRedacted {
             }
         }
 
+        /// How many callers wait for the call that is out.
+        var waiting: Int { lock.withLock { waiters.count } }
+
         private func abandon(_ id: Int) {
             let waiter = lock.withLock { waiters.removeValue(forKey: id) }
             waiter?.resume(throwing: CancellationError())
@@ -558,20 +572,32 @@ final class DeviceProofs: @unchecked Sendable, TulaRedacted {
     /// start that took it would bind a session to a key the store no longer holds.
     ///
     /// Who joined such a call **before** the removal is ended with `device.key_failed`, at
-    /// once; who asks **after** it starts a new look. A removal that failed forgets nothing.
+    /// once; who asks **after** it starts a new look.
     ///
-    /// - Throws: `device.key_failed` when the store refused, `network.timeout` when it did
-    ///   not answer in time. What the store threw is dropped.
+    /// **A removal the store refused forgets nothing; one whose outcome is not known forgets
+    /// as one that succeeded does.** The store did not answer in time, or the caller's task
+    /// was cancelled: the store's call is not stopped by either and may remove the key
+    /// afterwards, so the looks from before it are dropped all the same. Dropping for a
+    /// removal that then did not happen costs one more look.
+    ///
+    /// - Throws: `network.timeout` when the store did not answer in time, and
+    ///   `device.key_failed` when it refused or when the caller's task was cancelled: the
+    ///   client has no code of its own for a cancelled call, and a cancelled look for the key
+    ///   ends the same way. What the store threw is dropped.
     func remove(within seconds: TimeInterval) async throws {
         let store = self.store
         do {
             try await ApiTransport.within(seconds) { try await store.remove() }
-            forgetFlights()
         } catch let error as TulaError where error.code == TulaClientErrorCode.networkTimeout {
+            forgetFlights()
             throw error
         } catch {
+            if Task.isCancelled {
+                forgetFlights()
+            }
             throw TulaError.client(TulaClientErrorCode.deviceKeyFailed)
         }
+        forgetFlights()
     }
 
     /// At a sign-out: when the store says its key will **never** be had again

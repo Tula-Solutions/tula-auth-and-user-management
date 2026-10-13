@@ -194,7 +194,14 @@ key. Until then every sign-in start fails with `device.key_failed` too, with not
 **Call the client's `removeDeviceKey()`, not the store's own `remove()`**: the client then
 also forgets a look for the key that is still out. A call that had joined that look ends
 with `device.key_failed` at once, and the next call looks again; told nothing, the client
-could hand a later sign-in the key that was just removed.
+could hand a later sign-in the key that was just removed. Call it with no sign-in under
+way: a start that already holds the key when the removal runs binds its session to the
+removed key, and that session is ended at its next refresh. `removeDeviceKey()` throws
+`device.key_failed` when the store refused (nothing is forgotten) or when your task was
+cancelled, and `network.timeout` when the store did not answer in time; after a timeout or
+a cancellation the store may still remove the key, the client has forgotten its looks as if
+it had, and calling again is safe. A key store of your own must tolerate a `create()` or an
+`existing()` that starts while one from before a removal is still running.
 Offer both wherever you show this error, and remove only when you have reason to think the
 failure will not pass (the device is unlocked and it has failed since a restore). Two
 clients that share one `KeychainDeviceKeyStore` name share its key; give them two names.

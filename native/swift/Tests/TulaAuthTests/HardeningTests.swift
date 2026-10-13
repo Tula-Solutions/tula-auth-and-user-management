@@ -166,6 +166,65 @@ actor HungRemoval: TulaDeviceKeyStore {
     func remove() async throws { await never.wait() }
 }
 
+/// A key store whose looks can be held one by one, each at a gate of its own, and whose
+/// removal can be held too. A held look hands back the key the store had when it began.
+actor HeldStore: TulaDeviceKeyStore {
+    private var key: ScriptedKey? = ScriptedKey()
+    private var held: [Gate] = []
+    private var removal: Gate?
+    /// What a removal does once it has removed, when the test says so.
+    private var noticesCancellation = false
+    private(set) var looks = 0
+    private(set) var waiting = 0
+    private(set) var left = 0
+    private(set) var made = 0
+    private(set) var removing = 0
+    private(set) var removed = 0
+
+    var current: TulaDevicePublicKey? { key?.publicKey }
+
+    /// Hold the next look that is not yet spoken for; the gate lets it answer.
+    func holdNextLook() -> Gate {
+        let gate = Gate()
+        held.append(gate)
+        return gate
+    }
+
+    func holdRemoval(noticingCancellation: Bool = false) -> Gate {
+        let gate = Gate()
+        removal = gate
+        noticesCancellation = noticingCancellation
+        return gate
+    }
+
+    func existing() async throws -> (any TulaDeviceKey)? {
+        looks += 1
+        guard !held.isEmpty else { return key }
+        let gate = held.removeFirst()
+        let old = key
+        waiting += 1
+        await gate.wait()
+        left += 1
+        return old
+    }
+
+    func create() async throws -> any TulaDeviceKey {
+        if let key { return key }
+        made += 1
+        let next = ScriptedKey()
+        key = next
+        return next
+    }
+
+    func remove() async throws {
+        removing += 1
+        if let removal { await removal.wait() }
+        key = nil
+        removed += 1
+        if noticesCancellation { try Task.checkCancellation() }
+    }
+}
+
 /// A class that holds a secret and says it prints nothing, and a subclass of it.
 class RedactedBase: TulaRedacted {
     let secret = "CANARY-inherited"
@@ -373,6 +432,150 @@ final class HardeningTests: XCTestCase {
             let jwk = proof.header["jwk"] as? [String: String]
             XCTAssertNotEqual(jwk?["x"], DeviceProofs.base64url(removed.x), "bound to a key the store no longer holds")
         }
+    }
+
+    /// Ask for a key apart from the test, and keep what came of it: the key's x coordinate,
+    /// or the code of the error.
+    private func asking(_ proofs: DeviceProofs, _ use: DeviceProofs.Use) -> Ending {
+        let ended = Ending()
+        Task {
+            do {
+                let key = try await proofs.key(for: use)
+                ended.set(key.map { DeviceProofs.base64url($0.publicKey.x) } ?? "no key")
+            } catch {
+                ended.set((error as? TulaError)?.code ?? "not a TulaError")
+            }
+        }
+        return ended
+    }
+
+    func testAStaleLookThatAnswersWhileANewLookIsOutAnswersNobodyAndEndsNothing() async throws {
+        let store = HeldStore()
+        let proofs = DeviceProofs(store: store)
+        let had = await store.current
+        let removed = DeviceProofs.base64url(try XCTUnwrap(had).x)
+
+        // A look from before the removal, held, with a caller on it.
+        let stale = await store.holdNextLook()
+        let before = asking(proofs, .refresh)
+        await eventually("the first look is out") { await store.waiting == 1 }
+        try await proofs.remove(within: 5)
+        await eventually("the caller from before the removal ended") { before.value != nil }
+        XCTAssertEqual(before.value, "device.key_failed")
+
+        // A look from after it, held as well, with a caller on it.
+        let fresh = await store.holdNextLook()
+        let first = asking(proofs, .start)
+        await eventually("the new look is out") { await store.waiting == 2 }
+        await eventually("its caller waits") { proofs.lookWaiters == 1 }
+
+        // The stale look answers first, with the removed key.
+        stale.open()
+        await eventually("the stale look left the store") { await store.left == 1 }
+        // A further caller joins the new look, which the stale answer did not end.
+        let second = asking(proofs, .start)
+        await eventually("a further caller joined the new look") { proofs.lookWaiters == 2 }
+        XCTAssertNil(first.value, "the stale answer was given to a caller of the new look")
+        var looks = await store.looks
+        XCTAssertEqual(looks, 2, "the stale look and the new one, and none for the further caller")
+
+        fresh.open()
+        await eventually("both callers ended") { first.value != nil && second.value != nil }
+        XCTAssertNotEqual(first.value, removed, "bound to a key the store no longer holds")
+        XCTAssertNotEqual(second.value, removed, "bound to a key the store no longer holds")
+        XCTAssertEqual(first.value, second.value)
+        let now = await store.current
+        XCTAssertEqual(first.value, DeviceProofs.base64url(try XCTUnwrap(now).x))
+        looks = await store.looks
+        XCTAssertEqual(looks, 2)
+        let made = await store.made
+        XCTAssertEqual(made, 1)
+    }
+
+    func testARemovalThatDidNotAnswerInTimeDropsTheLookAllTheSame() async throws {
+        let store = HeldStore()
+        let proofs = DeviceProofs(store: store)
+        let had = await store.current
+        let removed = DeviceProofs.base64url(try XCTUnwrap(had).x)
+        let stale = await store.holdNextLook()
+        let before = asking(proofs, .refresh)
+        await eventually("the look is out") { await store.waiting == 1 }
+
+        // The store takes longer than the deadline, and removes the key all the same.
+        let removal = await store.holdRemoval()
+        let code = await thrownCode { try await proofs.remove(within: 0.2) }
+        XCTAssertEqual(code, "network.timeout")
+        await eventually("the caller from before the removal ended") { before.value != nil }
+        XCTAssertEqual(before.value, "device.key_failed")
+        removal.open()
+        await eventually("the store removed the key") { await store.removed == 1 }
+
+        // A start now must not be handed what the look from before the removal answers.
+        let start = asking(proofs, .start)
+        await eventually("the start joined the old look or ended") {
+            proofs.lookWaiters == 2 || start.value != nil
+        }
+        stale.open()
+        await eventually("the start ended") { start.value != nil }
+        XCTAssertNotEqual(start.value, removed, "bound to a key the store no longer holds")
+        let now = await store.current
+        XCTAssertEqual(start.value, DeviceProofs.base64url(try XCTUnwrap(now).x))
+    }
+
+    func testARemovalThatWasCancelledDropsTheLookAndIsAKeyFailure() async throws {
+        let store = HeldStore()
+        let proofs = DeviceProofs(store: store)
+        let had = await store.current
+        let removed = DeviceProofs.base64url(try XCTUnwrap(had).x)
+        let stale = await store.holdNextLook()
+        let before = asking(proofs, .refresh)
+        await eventually("the look is out") { await store.waiting == 1 }
+
+        // The store removes the key and only then notices that its caller was cancelled.
+        let removal = await store.holdRemoval(noticingCancellation: true)
+        let ended = Ending()
+        let task = Task {
+            do {
+                try await proofs.remove(within: 5)
+                ended.set("")
+            } catch {
+                ended.set((error as? TulaError)?.code ?? "not a TulaError")
+            }
+        }
+        await eventually("the removal reached the store") { await store.removing == 1 }
+        task.cancel()
+        removal.open()
+        await eventually("the cancelled removal ended") { ended.value != nil }
+        XCTAssertEqual(ended.value, "device.key_failed")
+        let gone = await store.removed
+        XCTAssertEqual(gone, 1)
+        await eventually("the caller from before the removal ended") { before.value != nil }
+        XCTAssertEqual(before.value, "device.key_failed")
+
+        let start = asking(proofs, .start)
+        await eventually("the start joined the old look or ended") {
+            proofs.lookWaiters == 2 || start.value != nil
+        }
+        stale.open()
+        await eventually("the start ended") { start.value != nil }
+        XCTAssertNotEqual(start.value, removed, "bound to a key the store no longer holds")
+    }
+
+    func testARemovalTheStoreRefusesDropsNoLook() async throws {
+        let store = FailingStore()
+        let proofs = DeviceProofs(store: store)
+        await store.hold()
+        let joined = asking(proofs, .refresh)
+        await eventually("the look is out") { await store.reached == 1 }
+        await eventually("its caller waits") { proofs.lookWaiters == 1 }
+        await store.failRemoving()
+        let code = await thrownCode { try await proofs.remove(within: 5) }
+        XCTAssertEqual(code, "device.key_failed")
+        XCTAssertEqual(proofs.lookWaiters, 1, "a removal the store refused dropped the look")
+        XCTAssertNil(joined.value)
+        await store.release()
+        await eventually("the caller got the look's answer") { joined.value != nil }
+        XCTAssertNotEqual(joined.value, "device.key_failed")
     }
 
     func testARemovalTheStoreRefusesIsAKeyFailureAndAClientWithNoStoreRemovesNothing() async throws {

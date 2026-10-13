@@ -2045,7 +2045,13 @@ SwiftUI screens are TULA-49 and TULA-60; a texted code is TULA-60.
   succeeded drops the flights** (`DeviceProofs.remove`, the one way the client removes a
   key: the sign-out's and `TulaClient.removeDeviceKey()`): who had joined gets
   `device.key_failed` at once, who asks afterwards looks again, and a late answer of the
-  dropped look is used by nobody. Keep the test of each (`HardeningTests`). The sign-out of
+  dropped look is used by nobody, also while a newer look is out (`Shared.finish` asks the
+  generation: keep that guard and the test that fails without it). **A removal whose
+  outcome is not known (no answer in time, the caller cancelled) drops them too; one the
+  store refused drops nothing.** A cancelled removal is `device.key_failed`: the client
+  has no code for a cancelled call and throws no `CancellationError`. A dropped call is not
+  stopped, so two calls of a store can run at once: `TulaDeviceKeyStore.create` says a
+  store must tolerate it. Keep the test of each (`HardeningTests`). The sign-out of
   a lost key runs inside the shared refresh and has `refreshTimeout`, never the client's
   timeout. A new await on a store, a sheet's result excepted (the gate's ceiling), goes
   through `within`, with the test that it ends (`HardeningTests`).

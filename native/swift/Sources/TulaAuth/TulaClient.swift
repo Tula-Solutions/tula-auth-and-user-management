@@ -345,12 +345,18 @@ public final class TulaClient: Sendable, TulaRedacted {
     /// (`device.key_failed` at every start): the next sign-in then makes a new key.
     ///
     /// **Call this, not the store's own `remove()`**: the client then also forgets a look for
-    /// the key that is still out, so that no later sign-in is bound to the key that was just
-    /// removed. Sign out first: a session bound to the key cannot be refreshed after this and
-    /// is ended at its next refresh. A client with no key store does nothing.
+    /// the key that is still out, so that a sign-in that starts afterwards is not handed the
+    /// key that was just removed. Sign out first: a session bound to the key cannot be
+    /// refreshed after this and is ended at its next refresh. **The same holds for a sign-in
+    /// that is under way**: a start that already holds the key when this runs binds its
+    /// session to the removed key, and that session is ended at its next refresh. Call this
+    /// with no sign-in in flight. A client with no key store does nothing.
     ///
-    /// - Throws: `device.key_failed` when the store refused, `network.timeout` when it did
-    ///   not answer in time.
+    /// - Throws: `network.timeout` when the store did not answer in time, and
+    ///   `device.key_failed` when it refused or when the calling task was cancelled (the
+    ///   client has no code of its own for a cancelled call). After a timeout or a
+    ///   cancellation the store may still remove the key: the client has forgotten its looks
+    ///   as if it had, and calling again is safe.
     public func removeDeviceKey() async throws {
         try await transport.proofs?.remove(within: transport.timeout)
     }

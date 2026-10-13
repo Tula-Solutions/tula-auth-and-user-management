@@ -250,9 +250,36 @@ the store no longer has. So a removal that succeeded, the sign-out's own and the
 whenever it comes, is given to nobody. **Who joined before the removal gets an error**,
 `device.key_failed`, at once (the answer it waited for is about a key that is gone, and a
 refresh so refused keeps its session, as for any key failure); **who asks after it starts a
-new look**, beside the old one if that is still out. A removal that failed drops nothing.
-The client can only know of a removal made through it: an app that calls the store's own
-`remove()` keeps the old exposure, which is why the documented way out is the client's call.
+new look**, beside the old one if that is still out.
+
+**A removal the store refused drops nothing; a removal whose outcome is not known drops as
+one that succeeded does.** The store answered with an error inside the deadline: the key is
+taken to be there still, and the look that is out is right about it. The store did not
+answer in time, or the caller's task was cancelled: neither stops the store's call, which
+may remove the key afterwards, so the flights are dropped all the same; dropping for a
+removal that then did not happen costs one more look. `removeDeviceKey()` ends
+`network.timeout` for the first and `device.key_failed` for the second. **A cancelled
+removal has no code of its own**: nothing in the client surfaces a `CancellationError` (a
+cancelled request is `network.failed`, a cancelled look for the key `device.key_failed`),
+every public call throws a `TulaError`, and a key-store call that was cancelled is a key
+failure like the look. What tells the cancelled from the refused is the caller's own task,
+not the error the store threw.
+
+**Two calls of the store can run at once after a drop.** The dropped call is not cancelled
+(nothing can stop a store), so the look or the making that follows a removal may start
+while one from before it is still out. A store must tolerate that and end with one key;
+the protocol's `create()` says so. `KeychainDeviceKeyStore` is written for it: an add that
+finds an item already there (`errSecDuplicateItem`) returns the stored key. That is read
+from its source and shown on a fake of `KeychainItems`; no real Keychain was asked.
+
+**What a drop does not cover.** The client can only know of a removal made through it: an
+app that calls the store's own `remove()` keeps the old exposure, which is why the
+documented way out is the client's call. And a start that **already holds** the key when
+`removeDeviceKey()` runs (the look answered before the removal, the request is on its way)
+binds its session to the removed key; that session is ended at its next refresh, as a
+session whose key is gone is. The same is true of a look that starts after a removal that
+timed out and is answered before the store gets to removing. "Sign out first" is said
+beside "with no sign-in under way" for that reason.
 
 A `device.*` answer never ends the session, **with one exception, which is the answer to
 "what if the key is gone"**:
