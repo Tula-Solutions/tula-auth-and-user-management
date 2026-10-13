@@ -4,6 +4,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
+import javax.crypto.Cipher
+import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
 
 /**
  * Where the client keeps its refresh token between runs of the app.
@@ -66,12 +69,13 @@ interface ValueSealer {
     /**
      * @param sealed What [seal] returned.
      * @param context The context it was sealed with.
-     * @return The plaintext, or `null` when the value **can never be opened** on this device:
-     *   the key that sealed it no longer exists, or the device's key is another one (a backup
-     *   restored onto another phone, app data partly cleared), or the bytes are not something
-     *   this sealer wrote.
-     * @throws Exception for every other failure: a key store that could not be reached now
-     *   may be reached later, and must not read as "no token".
+     * @return The plaintext, or `null` when the value **can never be opened** on this device,
+     *   which is two cases and no third: the key that would open it does not exist (a backup
+     *   restored onto another phone, the app's data partly cleared), or the bytes are not
+     *   something this sealer wrote.
+     * @throws Exception for every other failure, **a failed authentication tag while the key
+     *   exists among them**: a key store that misbehaves now may answer later, and must not
+     *   read as "no token".
      */
     fun open(sealed: ByteArray, context: ByteArray): ByteArray?
 }
@@ -93,9 +97,12 @@ interface SealedEntries {
  * `base64(seal(value))`, with the entry's name bound in, so a sealed token cannot be moved
  * under another name.
  *
- * A value that can never be opened ([ValueSealer.open] answers `null`, or the entry is not
- * base64 and so not this storage's writing) is removed and read as "no token". Every other
- * failure is thrown, and the client keeps the session.
+ * A value that can never be opened ([ValueSealer.open] answers `null`: no key, or bytes the
+ * sealer did not write; or the entry is not base64 and so not this storage's writing) is
+ * removed and read as "no token". Every other failure is thrown, nothing is removed, and the
+ * client keeps the session: a value whose authentication tag fails while the key exists is
+ * one of those. Such an entry goes when the user signs out or signs in again: [remove] and
+ * [set] never open what is stored.
  *
  * The sealer and the entries may block (a Keystore operation, a write to disk): every call
  * runs on `Dispatchers.IO`.
@@ -127,5 +134,68 @@ class SealedTokenStorage(
 
     override suspend fun remove(key: String): Unit = withContext(Dispatchers.IO) {
         entries.delete(key)
+    }
+}
+
+/** The one key an [AesGcmSealer] seals with, wherever it is kept. */
+interface SealingKeys {
+    /** @return The key, or `null` when none exists. It never makes one. */
+    fun existing(): SecretKey?
+
+    /** @return The key, made now when none exists. */
+    fun obtain(): SecretKey
+}
+
+private const val TRANSFORMATION = "AES/GCM/NoPadding"
+private const val TAG_BITS = 128
+private const val FORMAT: Byte = 1
+
+/** The nonce a provider makes for AES-GCM, and the only length the Android Keystore takes. */
+private const val NONCE_BYTES = 12
+
+/**
+ * A [ValueSealer] over one AES-GCM key. A sealed value is `version, nonce length, nonce,
+ * ciphertext and tag`; the context is the additional authenticated data.
+ *
+ * What [open] answers for a value it cannot open is decided here, for every key store:
+ *
+ * - bytes this sealer did not write (another format, another nonce length, cut short) and
+ *   **no key** are `null`: the value can never be opened;
+ * - **a tag that fails while the key exists is thrown** ([javax.crypto.AEADBadTagException]),
+ *   like every other failure of the key store. A key store that answers wrongly once must
+ *   not cost the user their session, and nothing here can tell that from an entry that was
+ *   altered.
+ *
+ * @param keys Where the key is: the Android Keystore on a device, memory in a test.
+ */
+class AesGcmSealer(private val keys: SealingKeys) : ValueSealer {
+    override fun seal(plaintext: ByteArray, context: ByteArray): ByteArray {
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        // The provider picks the nonce: a key made in the Android Keystore refuses a
+        // caller's own by default.
+        cipher.init(Cipher.ENCRYPT_MODE, keys.obtain())
+        cipher.updateAAD(context)
+        val sealed = cipher.doFinal(plaintext)
+        val nonce = cipher.iv
+        return byteArrayOf(FORMAT, nonce.size.toByte()) + nonce + sealed
+    }
+
+    override fun open(sealed: ByteArray, context: ByteArray): ByteArray? {
+        // Not a value this sealer wrote: it can never be opened, so it is no token. Thrown,
+        // it would be a storage that fails at every start.
+        if (sealed.size < 2 || sealed[0] != FORMAT) {
+            return null
+        }
+        val nonceLength = sealed[1].toInt()
+        if (nonceLength != NONCE_BYTES || sealed.size < 2 + nonceLength + TAG_BITS / 8) {
+            return null
+        }
+        // No key: the value was sealed on another device or before the app's data was cleared.
+        val key = keys.existing() ?: return null
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(TAG_BITS, sealed, 2, nonceLength))
+        cipher.updateAAD(context)
+        // A failed tag is thrown, on purpose: see the class's own words.
+        return cipher.doFinal(sealed, 2 + nonceLength, sealed.size - 2 - nonceLength)
     }
 }

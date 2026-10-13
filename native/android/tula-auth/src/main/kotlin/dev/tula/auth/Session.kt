@@ -563,10 +563,19 @@ internal class SessionManager(
         } catch (_: TulaError) {
             // Nothing was issued.
         }
-        try {
-            if (unread) {
+        if (unread) {
+            try {
                 presented = storage.get(storageKey)?.takeIf { it.isNotEmpty() }
+            } catch (cause: CancellationException) {
+                throw cause
+            } catch (cause: Exception) {
+                // The token cannot be read, so the server cannot be told: the caller hears
+                // of it. The entry is still removed below: an entry that cannot be opened
+                // (its tag fails) would otherwise be one no sign-out could clear.
+                failure = clientError(ClientErrorCodes.STORAGE_FAILED, messages(), cause)
             }
+        }
+        try {
             // After the refresh has settled, so a token it was storing does not reappear. A
             // sign-in that finished meanwhile has stored its own token; that one stays.
             if (generation == mine) {

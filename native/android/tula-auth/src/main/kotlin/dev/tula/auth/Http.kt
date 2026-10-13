@@ -78,6 +78,12 @@ fun interface HttpEngine {
  * Redirects are not followed, nothing is cached and no cookie is kept.
  *
  * `HttpURLConnection` has no `PATCH`; the client's calls do not need one today.
+ *
+ * **It was tested on a desktop JVM only.** Android's `HttpURLConnection` is another
+ * implementation, and the API refuses a sign-in and ends a session with a `401` that has no
+ * `WWW-Authenticate` header: that Android hands over such an answer's status and body was
+ * not tried on a device. An app that does not want to rest on it passes an [HttpEngine] of
+ * its own (over OkHttp, for one).
  */
 class UrlConnectionEngine : HttpEngine {
     private val threads: ExecutorService = Executors.newCachedThreadPool { task ->

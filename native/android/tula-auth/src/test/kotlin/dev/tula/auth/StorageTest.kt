@@ -12,9 +12,7 @@ import java.security.SecureRandom
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import javax.crypto.AEADBadTagException
-import javax.crypto.Cipher
 import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -25,37 +23,22 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * AES-256-GCM with a key in memory: what the Android Keystore's sealer does, with a key a JVM
- * test can hold. `null` stands for a key that no longer exists.
+ * The sealing key in memory, so that a JVM test runs the sealer a device runs
+ * ([AesGcmSealer]). `null` stands for a key that no longer exists; `broken` for a key store
+ * that cannot be reached.
  */
-private class SoftwareSealer(@Volatile var key: SecretKey? = newKey()) : ValueSealer {
+private class MemoryKeys(@Volatile var key: SecretKey? = newKey()) : SealingKeys {
     @Volatile
     var broken = false
 
-    override fun seal(plaintext: ByteArray, context: ByteArray): ByteArray {
+    override fun existing(): SecretKey? {
         if (broken) {
             throw GeneralSecurityException("the key store is unavailable")
         }
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, key ?: newKey().also { key = it })
-        cipher.updateAAD(context)
-        return cipher.iv + cipher.doFinal(plaintext)
+        return key
     }
 
-    override fun open(sealed: ByteArray, context: ByteArray): ByteArray? {
-        if (broken) {
-            throw GeneralSecurityException("the key store is unavailable")
-        }
-        val held = key ?: return null
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.DECRYPT_MODE, held, GCMParameterSpec(128, sealed, 0, 12))
-        cipher.updateAAD(context)
-        return try {
-            cipher.doFinal(sealed, 12, sealed.size - 12)
-        } catch (_: AEADBadTagException) {
-            null
-        }
-    }
+    override fun obtain(): SecretKey = existing() ?: newKey().also { key = it }
 
     companion object {
         fun newKey(): SecretKey = SecretKeySpec(ByteArray(32).also { SecureRandom().nextBytes(it) }, "AES")
@@ -99,7 +82,7 @@ class StorageTest {
     @Test
     fun `the sealed storage writes nothing a reader of the entries could use`() = runTest {
         val entries = MapEntries()
-        val storage = SealedTokenStorage(SoftwareSealer(), entries)
+        val storage = SealedTokenStorage(AesGcmSealer(MemoryKeys()), entries)
         storage.set("tula.refresh.x", "tula_rt_a-refresh-token")
         assertEquals("tula_rt_a-refresh-token", storage.get("tula.refresh.x"))
 
@@ -116,45 +99,88 @@ class StorageTest {
     }
 
     @Test
-    fun `a sealed value moved under another name does not open, and is removed`() = runTest {
+    fun `a value whose key is gone is no token, and is removed`() = runTest {
         val entries = MapEntries()
-        val storage = SealedTokenStorage(SoftwareSealer(), entries)
+        val keys = MemoryKeys()
+        val storage = SealedTokenStorage(AesGcmSealer(keys), entries)
         storage.set("one", "tula_rt_of-one")
-        entries.values["two"] = entries.values.getValue("one")
-        assertNull(storage.get("two"))
-        assertFalse(entries.values.containsKey("two"))
+        // A backup restored onto another phone: the entry is there, the key is not.
+        keys.key = null
+        assertNull(storage.get("one"))
+        assertTrue(entries.values.isEmpty())
+        // Reading made no key: only a seal does.
+        assertNull(keys.key)
+    }
+
+    @Test
+    fun `a tag that fails while the key exists is thrown, and nothing is removed`() = runTest {
+        // A key store that answers wrongly once must not cost the user their session, and
+        // nothing can tell that from an entry that was altered.
+        val entries = MapEntries()
+        val keys = MemoryKeys()
+        val storage = SealedTokenStorage(AesGcmSealer(keys), entries)
+        storage.set("one", "tula_rt_of-one")
+        val written = entries.values.getValue("one")
+
+        // Moved under another name: the name is bound in.
+        entries.values["two"] = written
+        assertFailsWith<AEADBadTagException> { storage.get("two") }
+        assertEquals(written, entries.values["two"])
+
+        // One bit of the ciphertext turned.
+        val altered = java.util.Base64.getDecoder().decode(written)
+        altered[altered.size - 1] = (altered[altered.size - 1].toInt() xor 1).toByte()
+        entries.values["one"] = java.util.Base64.getEncoder().encodeToString(altered)
+        assertFailsWith<AEADBadTagException> { storage.get("one") }
+        assertTrue(entries.values.containsKey("one"))
+
+        // Another key than the one that sealed it (a restore onto a device that has one).
+        entries.values["one"] = written
+        val sealing = keys.key
+        keys.key = MemoryKeys.newKey()
+        assertFailsWith<AEADBadTagException> { storage.get("one") }
+        assertEquals(written, entries.values["one"])
+        // The same entry opens once the key store answers with the right key again.
+        keys.key = sealing
         assertEquals("tula_rt_of-one", storage.get("one"))
     }
 
     @Test
-    fun `a value whose key is gone is no token, and is removed`() = runTest {
+    fun `bytes the sealer did not write are no token, and are removed`() = runTest {
         val entries = MapEntries()
-        val sealer = SoftwareSealer()
-        val storage = SealedTokenStorage(sealer, entries)
+        val storage = SealedTokenStorage(AesGcmSealer(MemoryKeys()), entries)
         storage.set("one", "tula_rt_of-one")
-        // A backup restored onto another phone: the entry is there, the key is not.
-        sealer.key = null
-        assertNull(storage.get("one"))
-        assertTrue(entries.values.isEmpty())
-        // And another device's key is not this one's.
-        storage.set("one", "tula_rt_of-one")
-        sealer.key = SoftwareSealer.newKey()
-        assertNull(storage.get("one"))
+        val sealed = java.util.Base64.getDecoder().decode(entries.values.getValue("one"))
+        val forms = listOf(
+            ByteArray(0),
+            byteArrayOf(1),
+            // Another format.
+            sealed.copyOf().also { it[0] = 2 },
+            // Another nonce length than the one this sealer writes.
+            sealed.copyOf().also { it[1] = 16 },
+            // Cut short: no room for a nonce and a tag.
+            sealed.copyOf(2 + 12 + 15),
+        )
+        for (form in forms) {
+            entries.values["one"] = java.util.Base64.getEncoder().encodeToString(form)
+            assertNull(storage.get("one"))
+            assertFalse(entries.values.containsKey("one"))
+        }
     }
 
     @Test
     fun `a key store or an entry store that fails is thrown, never read as no token`() = runTest {
         val entries = MapEntries()
-        val sealer = SoftwareSealer()
-        val storage = SealedTokenStorage(sealer, entries)
+        val keys = MemoryKeys()
+        val storage = SealedTokenStorage(AesGcmSealer(keys), entries)
         storage.set("one", "tula_rt_of-one")
 
-        sealer.broken = true
+        keys.broken = true
         assertFailsWith<GeneralSecurityException> { storage.get("one") }
         assertFailsWith<GeneralSecurityException> { storage.set("one", "tula_rt_next") }
         // The entry is left alone: the store may answer later.
         assertTrue(entries.values.containsKey("one"))
-        sealer.broken = false
+        keys.broken = false
         assertEquals("tula_rt_of-one", storage.get("one"))
 
         entries.failWrites = true
@@ -166,7 +192,7 @@ class StorageTest {
         // It can never be opened, whatever the key store does later. Thrown, it would be
         // `storage.failed` at every start, and a sign-out could not clear it either.
         val entries = MapEntries()
-        val bench = Bench(storage = SealedTokenStorage(SoftwareSealer(), entries))
+        val bench = Bench(storage = SealedTokenStorage(AesGcmSealer(MemoryKeys()), entries))
         entries.values[TEST_STORAGE_KEY] = "not base64 !"
         assertEquals(AuthState.SignedOut, bench.tula.load())
         assertTrue(entries.values.isEmpty())
@@ -174,13 +200,50 @@ class StorageTest {
 
     @Test
     fun `a client over a sealed storage that fails keeps its session and says storage_failed`() = runTest {
-        val sealer = SoftwareSealer()
-        val bench = Bench(storage = SealedTokenStorage(sealer, MapEntries()))
+        val keys = MemoryKeys()
+        val bench = Bench(storage = SealedTokenStorage(AesGcmSealer(keys), MapEntries()))
         bench.signIn()
         bench.engine.on("POST", "/v1/client/sessions/refresh") { ok(tokensJson("next")) }
-        sealer.broken = true
+        keys.broken = true
         assertEquals("storage.failed", caught { bench.tula.session.refresh() }.code)
         assertIs<AuthState.SignedIn>(bench.tula.state.value)
+    }
+
+    @Test
+    fun `an entry whose tag fails is storage_failed at a start, is left alone, and a sign-out clears it`() = runTest {
+        val entries = MapEntries()
+        val keys = MemoryKeys()
+        val sealed = SealedTokenStorage(AesGcmSealer(keys), entries)
+        sealed.set(TEST_STORAGE_KEY, "tula_rt_stored")
+        val written = entries.values.getValue(TEST_STORAGE_KEY)
+        keys.key = MemoryKeys.newKey()
+
+        val bench = Bench(storage = sealed)
+        assertEquals("storage.failed", caught { bench.tula.session.refresh() }.code)
+        // Not "no token": nothing was deleted, and no request was made on a guess.
+        assertEquals(written, entries.values[TEST_STORAGE_KEY])
+        assertTrue(bench.engine.requests.isEmpty())
+
+        // The token could not be read, so the server cannot be told: the sign-out says so.
+        // The entry is cleared all the same, and the next start is an ordinary signed-out one.
+        assertEquals("storage.failed", caught { bench.tula.session.signOut() }.code)
+        assertTrue(entries.values.isEmpty())
+        assertEquals(AuthState.SignedOut, bench.tula.state.value)
+        assertEquals(AuthState.SignedOut, Bench(storage = sealed).tula.load())
+    }
+
+    @Test
+    fun `a sign-in writes over an entry whose tag fails`() = runTest {
+        val entries = MapEntries()
+        val keys = MemoryKeys()
+        val sealed = SealedTokenStorage(AesGcmSealer(keys), entries)
+        sealed.set(TEST_STORAGE_KEY, "tula_rt_stored")
+        keys.key = MemoryKeys.newKey()
+
+        val bench = Bench(storage = sealed)
+        bench.signIn()
+        assertIs<AuthState.SignedIn>(bench.tula.state.value)
+        assertEquals("tula_rt_first", sealed.get(TEST_STORAGE_KEY))
     }
 
     /** A server on a loopback port for one test. */
