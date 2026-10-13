@@ -51,6 +51,12 @@ function markdownFiles(): string[] {
       found.push(join(root, file))
     }
   }
+  // The rules of one area, which `AGENTS.md` sends an agent to (and which link to the ADRs).
+  for (const name of readdirSync(join(root, '.claude/rules')).sort()) {
+    if (name.endsWith('.md')) {
+      found.push(join(root, '.claude/rules', name))
+    }
+  }
   return found
 }
 

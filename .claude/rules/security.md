@@ -273,7 +273,7 @@ Before finishing any change here, confirm each item holds and has a test:
     rotated and never in a body. Test that it is refused as a refresh token and a refresh token
     as it; another environment's key; a revoked, idle and over-age session on the **very next**
     request; and that a Bearer header, when present, decides alone.
-39. **Cookie authentication and CSRF:** the session cookie is read only where
+39. **Cookie authentication and CSRF:** the session cookie is honoured only where
     `requestMayUseSessionCookie` allows. Test, for a read and for every kind of mutating
     route: an `Origin` the environment does not allow, `Sec-Fetch-Site: cross-site` with an
     allowed `Origin`, and an unsafe method with no `Origin`. Each must leave the request
@@ -414,7 +414,7 @@ Before finishing any change here, confirm each item holds and has a test:
     for another hook, another environment or under the webhooks' purpose does not open.
     Another environment's hook, a disabled hook and a removed hook are never asked; a hook
     changed mid-attempt applies as it is when the account is about to be created. An answer
-    with extra fields changes nothing about the account or its session. An administrator's
+    with extra fields alters nothing about the account or its session. An administrator's
     create asks nothing. Nothing of an answer beyond the decision and the code reaches a
     store, a log line or an error (canary in the answer's headers and body), and no log line
     holds the address asked about. `allow` on failure, switching a hook off and removing one

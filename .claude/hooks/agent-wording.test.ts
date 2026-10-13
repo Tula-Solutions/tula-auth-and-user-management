@@ -131,8 +131,8 @@ function readFiles(): string[] {
     join(root, 'README.md'),
     join(root, 'GLOSSARY.md'),
     join(root, 'AGENTS.md'),
-    join(root, '.claude/rules/api.md'),
-    join(root, '.claude/rules/sdk.md'),
+    // Every area's rules: what `AGENTS.md` said of the server and the key is in them now.
+    ...walk(join(root, '.claude/rules'), (path) => path.endsWith('.md')),
     join(root, 'conformance/README.md'),
     join(root, 'packages/contract/src/error-codes.ts'),
     join(root, 'packages/admin/src/errors.ts'),
@@ -226,6 +226,8 @@ describe('the check itself', () => {
     expect(files).toContain('docs/proposals.md')
     expect(files).toContain('GLOSSARY.md')
     expect(files).toContain('AGENTS.md')
+    expect(files).toContain('.claude/rules/mcp.md')
+    expect(files).toContain('.claude/rules/proposals.md')
     expect(files).toContain('README.md')
     expect(files).toContain('packages/mcp/README.md')
     expect(files).toContain('packages/mcp/package.json')
