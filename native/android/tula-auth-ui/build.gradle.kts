@@ -1,7 +1,7 @@
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
-// What is behind the Compose screens and has no Compose in it (ADR 0058): the model, what a
+// What is behind the Compose screens and has no Compose in it (ADR 0061): the model, what a
 // screen offers as data, the table of strings and the theme's grammar. Plain Kotlin on the JVM,
 // so that everything that decides is tested, and counted, where no screen is drawn.
 plugins {
@@ -51,7 +51,7 @@ kover {
             rule {
                 // Lines of everything that decides what a screen shows. The same bound as the
                 // client's; the composables that draw are in `tula-auth-compose`, which no JVM
-                // test runs and which is therefore not counted anywhere (ADR 0058).
+                // test runs and which is therefore not counted anywhere (ADR 0061).
                 minBound(90)
             }
         }

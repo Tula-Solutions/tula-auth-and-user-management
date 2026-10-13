@@ -212,7 +212,7 @@ describe('where the Kotlin suite runs', () => {
     const scripts = (await Bun.file(join(ROOT, 'package.json')).json()).scripts
     expect(scripts['native:kotlin:test']).toBe('bun run scripts/kotlin-test.ts')
     // By default the script runs the `check` of both JVM modules, the client and what the
-    // Compose screens decide (ADR 0058): the tests and the coverage bound of each.
+    // Compose screens decide (ADR 0061): the tests and the coverage bound of each.
     expect(await Bun.file(join(ROOT, 'scripts/kotlin-test.ts')).text()).toContain(
       "tasks.length > 0 ? tasks : [':tula-auth:check', ':tula-auth-ui:check']"
     )

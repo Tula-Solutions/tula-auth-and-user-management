@@ -7,7 +7,7 @@ refreshes the session, bound to a key the device keeps where the app passes a ke
 it tells your screens which one the server is asking for. Beside it are **Compose screens**
 for a sign-in, a sign-up and a password reset, for an app that does not want to draw its own
 ([Screens](#screens), below); they draw less than the client can do. The reasoning is in
-[ADR 0054](adr/0054-kotlin-client.md) and [ADR 0058](adr/0058-compose-screens.md).
+[ADR 0054](adr/0054-kotlin-client.md) and [ADR 0061](adr/0061-compose-screens.md).
 
 > **The screens ran on one emulator; nothing ran on a device.** The client is plain Kotlin
 > and is tested on a JVM, against the real API, in CI, with a software authenticator, a
@@ -23,7 +23,7 @@ for a sign-in, a sign-up and a password reset, for an app that does not want to 
 > What was not verified:
 > [the client](plans/phase-2-unverified.md#step-215-the-kotlin-client-tula-38-adr-0054),
 > [passkeys, providers and the device key](plans/phase-2-unverified.md#step-215-the-kotlin-client-passkeys-providers-and-a-device-key-tula-57-adr-0054),
-> [the screens](plans/phase-2-unverified.md#step-215-the-compose-screens-tula-50-adr-0058).
+> [the screens](plans/phase-2-unverified.md#step-215-the-compose-screens-tula-50-adr-0061).
 
 ## What this version does
 
@@ -535,10 +535,13 @@ label and its error are what make the screens usable with TalkBack.
 ### Accessibility
 
 Every field has a visible label and the same words for a screen reader; a problem is said
-in words under its field ("Error: …"), is part of what the field is read as, and is
-announced; when the step changes the focus is asked to the new title, and after a failure
-to the first field with a problem; controls are at least 48 dp high and sizes follow the
-system's font scale. **This was checked against the semantics tree in UI tests and never
+in words under its field ("Error: …"), is the field's error for a screen reader (and not
+a second time in its label), and is announced; when the step changes the focus is asked to
+the new title, and after a failure to the first field with a problem; a field, a link and
+a button are at least 48 dp high, a link and the button that shows a password at least
+48 dp wide too; the main button, the links and that button have an edge in the theme's
+focus colour while they have the focus (a `primaryButton` slot of your own draws its own);
+sizes follow the system's font scale. **This was checked against the semantics tree in UI tests and never
 with TalkBack switched on.**
 
 ### The example and its UI tests
@@ -551,7 +554,9 @@ machine:
 bun run native/android/fixture/ui-tests.ts --avd <name of an emulator>
 ```
 
-They are run by hand: no workflow starts an emulator. CI compiles and lints the screens,
+The script refuses a device that is not an emulator unless it is given `--allow-physical`:
+`adb reverse` puts the API's port on the device's own loopback address, where every app
+installed on a phone can reach it. They are run by hand: no workflow starts an emulator. CI compiles and lints the screens,
 the example and the tests.
 
 ## Running its tests

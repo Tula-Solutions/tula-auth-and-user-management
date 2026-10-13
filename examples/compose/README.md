@@ -3,7 +3,7 @@
 An Android app whose sign-in, sign-up and password reset are the Compose screens of the
 Kotlin SDK (`TulaAuth`, from `native/android/tula-auth-compose`; how to use them is in
 [docs/kotlin.md](../../docs/kotlin.md#screens), why they are built this way in
-[ADR 0058](../../docs/adr/0058-compose-screens.md)). What it adds is what every app adds: a
+[ADR 0061](../../docs/adr/0061-compose-screens.md)). What it adds is what every app adds: a
 client with the Keystore-backed storage, a screen for a signed-in user with a sign-out, and
 a setup screen that asks where the API is.
 
@@ -56,7 +56,17 @@ and reads its codes from the emails the API sent. From the repository's root, af
 bun run native/android/fixture/ui-tests.ts --avd <name>      # starts that emulator, and ends it
 bun run native/android/fixture/ui-tests.ts                   # the one device adb already sees
 bun run native/android/fixture/ui-tests.ts --device <serial>
+bun run native/android/fixture/ui-tests.ts --device <serial> --allow-physical   # a phone: read below
 ```
+
+**A device that is not an emulator is refused unless you pass `--allow-physical`.** The
+script forwards the API's port into the device with `adb reverse`, and a forwarded port is
+the device's own `127.0.0.1`: every app installed on it can open it for as long as the run
+lasts, and with it the fixture's test routes and their relay to the admin API of the run's
+environments. On an emulator those apps are the image's; on a phone they are whatever you
+have installed. The environments are made for the run and hold no real user, and the
+forward is removed when the run ends, but pass the flag only for a device that holds
+nothing you do not trust. Nothing here was run on a phone.
 
 Run from Android Studio, or with `./gradlew :compose-example:connectedDebugAndroidTest`
 alone, the tests fail: a test on a device cannot start a process of the machine, so the
@@ -65,9 +75,9 @@ port into the device with `adb reverse`, and ends what it started.
 
 ## What was run, and what was not
 
-The seven tests of `AuthScreensTest` passed on one emulator (an Android 17 image, on one
+The eight tests of `AuthScreensTest` passed on one emulator (an Android 17 image, on one
 Mac), started by the script; the run, with its result line, is recorded in
-[the unverified list](../../docs/plans/phase-2-unverified.md#step-215-the-compose-screens-tula-50-adr-0058).
+[the unverified list](../../docs/plans/phase-2-unverified.md#step-215-the-compose-screens-tula-50-adr-0061).
 
 Not run: a phone; TalkBack (the tests read the semantics tree, they do not listen); an
 accessibility checker; the dark scheme; any other API level, the floor (API 28) included;

@@ -6,7 +6,7 @@ token storage, Credential Manager's sheets, a Custom Tab and a Keystore device k
 Compose screens for a sign-in, a sign-up and a password reset. How to use it is in
 [docs/kotlin.md](../../docs/kotlin.md); why it is built this way is
 [ADR 0054](../../docs/adr/0054-kotlin-client.md) and, for the screens,
-[ADR 0058](../../docs/adr/0058-compose-screens.md).
+[ADR 0061](../../docs/adr/0061-compose-screens.md).
 
 **The screens ran on one emulator; nothing ran on a device, and nothing is published.** The
 tests of the client and of what the screens decide run on a JVM; the Android modules are
@@ -15,7 +15,7 @@ emulator by the example's UI tests, by hand. The other adapters have never run: 
 sheet, no Google sheet and no browser has been opened by this SDK. What was not verified:
 [the client](../../docs/plans/phase-2-unverified.md#step-215-the-kotlin-client-tula-38-adr-0054),
 [passkeys, providers and the device key](../../docs/plans/phase-2-unverified.md#step-215-the-kotlin-client-passkeys-providers-and-a-device-key-tula-57-adr-0054),
-[the screens](../../docs/plans/phase-2-unverified.md#step-215-the-compose-screens-tula-50-adr-0058).
+[the screens](../../docs/plans/phase-2-unverified.md#step-215-the-compose-screens-tula-50-adr-0061).
 
 ## Layout
 
@@ -83,11 +83,14 @@ bun run native/android/fixture/ui-tests.ts --avd <name>
 The script starts `e2e/kotlin-fixture.ts` on 127.0.0.1, forwards its port into the device
 with `adb reverse` (the fixture's bind address and its guard are unchanged: inside the
 device the address is still 127.0.0.1), and runs `:compose-example:connectedDebugAndroidTest`.
+A device that is not an emulator is refused unless `--allow-physical` is given: forwarded
+into a phone, the port is open to every app installed on it
+([why](../../examples/compose/README.md)).
 Every process it starts has a timeout, and what it started is ended when Gradle has, also
 on `SIGHUP`, `SIGINT` and `SIGTERM`. A `SIGKILL` of the script runs none of that: end the
 emulator yourself (`adb emu kill`). After a change under `tula-auth-compose` or
 `examples/compose`, run it and record the run (the image, the result line) in
-[the unverified list](../../docs/plans/phase-2-unverified.md#step-215-the-compose-screens-tula-50-adr-0058).
+[the unverified list](../../docs/plans/phase-2-unverified.md#step-215-the-compose-screens-tula-50-adr-0061).
 
 What decides how a stored value is read (`AesGcmSealer`) is in `tula-auth` and is tested
 there with a key in memory; this module supplies the Keystore's key. The same holds for the sheets, the browser and the device key: what a dismissal, a returned address or a lost key means is decided and tested in `tula-auth`, behind `PasskeySheet`, `GoogleSheet`, `BrowserSession` and `DeviceKeyStore`, with a software authenticator, a scripted browser and a software key; the classes here call the system and map its exceptions. Their libraries are `androidx.credentials` (with `credentials-play-services-auth`, for Android 13 and lower) and Google's `googleid`, and nothing else.

@@ -16,7 +16,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 
 // The model is tested on the real client, over an engine that is a table of answers: what a
-// screen would show is asserted without anything being drawn (ADR 0058).
+// screen would show is asserted without anything being drawn (ADR 0061).
 
 const val TEST_KEY = "tula_pk_dev_unit0000000000000000000000000000"
 const val TEST_BASE = "https://auth.example.test"

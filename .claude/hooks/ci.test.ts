@@ -331,7 +331,7 @@ describe('the Kotlin client: the JVM tests and the Android build are read apart'
     expect(all.filter((step) => step.uses?.includes('setup-gradle'))).toEqual([])
   })
 
-  // The Compose screens (ADR 0058): the library, the example app and the example's UI tests
+  // The Compose screens (ADR 0061): the library, the example app and the example's UI tests
   // are compiled and linted where the Android SDK is. The UI tests need a device, so they are
   // run by hand (native/android/fixture/ui-tests.ts) and never by a workflow.
   test('the Android job compiles and lints the Compose screens, the example and its UI tests', () => {

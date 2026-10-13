@@ -15,7 +15,7 @@
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <!-- The activity handles a rotation itself: a sign-in that is half way is not started
-             again by turning the phone (ADR 0058, "A recreated activity"). -->
+             again by turning the phone (ADR 0061, "A recreated activity"). -->
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|uiMode"

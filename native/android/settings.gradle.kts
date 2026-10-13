@@ -1,4 +1,4 @@
-// The Kotlin SDK's build (ADR 0054, ADR 0058). Its modules:
+// The Kotlin SDK's build (ADR 0054, ADR 0061). Its modules:
 //   tula-auth          the client with no UI: plain Kotlin on the JVM, no Android SDK needed.
 //   tula-auth-ui       what is behind the screens: the model, the strings and the theme's
 //                      grammar. Plain Kotlin on the JVM, no Compose.

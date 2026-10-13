@@ -197,7 +197,7 @@ jobs:
   # (native/android/tula-auth-android), the Compose screens (tula-auth-compose) and the example
   # app with its UI tests (examples/compose, a module of this build). Compiled and linted
   # against the Android SDK, never run (no device, no emulator: the UI tests are compiled here
-  # and run by hand, ADR 0058). A job
+  # and run by hand, ADR 0061). A job
   # of its own, so that its outcome and the JVM tests' are read apart. The platform and the
   # build tools the module pins are installed by name first: a component the runner's image
   # does not have, or no longer has, fails that step and says which, instead of failing

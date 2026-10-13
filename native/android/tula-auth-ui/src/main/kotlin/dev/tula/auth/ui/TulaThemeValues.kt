@@ -4,7 +4,7 @@ import dev.tula.auth.generated.TulaTheme
 import dev.tula.auth.generated.TulaThemeDefaults
 import dev.tula.auth.generated.TulaThemeScheme
 
-// A theme reaches the screens in two steps, and both refuse rather than guess (ADR 0058):
+// A theme reaches the screens in two steps, and both refuse rather than guess (ADR 0061):
 //
 //   1. `TulaThemeGrammar.isValid` is the contract's `isValidThemeValue`
 //      (packages/contract/src/theme.ts), rule for rule. A theme value is untrusted (a brand
