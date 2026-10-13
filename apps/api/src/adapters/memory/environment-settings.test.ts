@@ -13,7 +13,7 @@ describeEnvironmentSettingsStore('MemoryEnvironmentSettingsStore', async () => {
     log,
     storeManager: async (tenant, manager) => store.seedManager(tenant.environmentId, manager),
     storeDocument: async (tenant, settings) =>
-      store.seed(tenant.environmentId, { revision: 1, settings: settings as never }),
+      store.seedStored(tenant.environmentId, { revision: 1, settings }),
     freshTenant: async () => ({
       projectId: '00000000-0000-7000-8000-00000000a001',
       environmentId: Bun.randomUUIDv7(),
@@ -34,10 +34,23 @@ test('a seeded document is kept apart from what was seeded and from what callers
   expect((await store.get('e1'))?.settings.app.name).toBe(DEFAULT_ENVIRONMENT_SETTINGS.app.name)
 })
 
-test('a seeded document is kept as a JSON column would keep it', async () => {
+test('`seed` takes a settings document and nothing else: a misspelled key does not compile', async () => {
+  const store = new MemoryEnvironmentSettingsStore()
+  // The tolerant read drops a key it does not know, so a misspelled section seeded through an
+  // untyped `seed` would be lost in silence and its test would pass for the wrong reason. The
+  // compiler is what catches it: this line fails the typecheck if `seed` is loosened again.
+  store.seed('e1', {
+    revision: 1,
+    // @ts-expect-error `audt` is no section of the settings: a free-form document goes through `seedStored`.
+    settings: { ...DEFAULT_ENVIRONMENT_SETTINGS, audt: { retentionDays: 30 } },
+  })
+  expect((await store.get('e1'))?.settings).toEqual(DEFAULT_ENVIRONMENT_SETTINGS)
+})
+
+test('a stored document is kept as a JSON column would keep it', async () => {
   const store = new MemoryEnvironmentSettingsStore()
   // `NaN` is `null` in JSON, and `null` is no audit period; a key that is `undefined` is gone.
-  store.seed('e1', {
+  store.seedStored('e1', {
     revision: 1,
     settings: {
       audit: { retentionDays: Number.NaN },
@@ -51,18 +64,19 @@ test('a seeded document is kept as a JSON column would keep it', async () => {
 })
 
 describe('seedUnread, the one way past the tolerant read', () => {
-  // A wording no save and no read of a real store lets through: `seed` loses it, as Postgres
-  // would, and only `seedUnread` hands it on, for a test of the renderer's own fallback.
+  // A wording no save and no read of a real store lets through: `seedStored` loses it, as
+  // Postgres would, and only `seedUnread` hands it on, for a test of the renderer's own
+  // fallback.
   const unusable = {
     ...DEFAULT_ENVIRONMENT_SETTINGS,
     emails: { templates: { step_up: { body: 'no code here' } } },
   }
 
-  test('`seed` reads the document as a real store would', async () => {
+  test('`seedStored` reads the document as a real store would', async () => {
     const warn = spyOn(logger, 'warn').mockImplementation(() => {})
     try {
       const store = new MemoryEnvironmentSettingsStore()
-      store.seed('e1', { revision: 1, settings: unusable })
+      store.seedStored('e1', { revision: 1, settings: unusable })
       expect((await store.get('e1'))?.settings.emails).toEqual({ templates: {} })
     } finally {
       warn.mockRestore()

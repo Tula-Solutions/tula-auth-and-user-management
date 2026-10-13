@@ -57,10 +57,13 @@ nothing.
   stored document: what the read leaves out or defaults, and a document it cannot read (a
   scalar of a known field that is not valid: the read throws, and whatever reads the
   settings has to stand that; the union of allowed origins is still listed). The memory
-  store's `seed` puts a row there as a JSON column would keep it; `seedUnread` is its one
-  way past the read, for a test whose subject is a service's own defence against a
-  document no store hands on, and for nothing else. A test of what a deployment does
-  with a stored document never uses it. `password.minLength` has a floor of 8 on input, and the audit entry carries
+  store has three ways in, and a test names the one it means: `seed` (a typed settings
+  document: a misspelled key does not compile, where the read would drop it in silence;
+  never loosen its parameter, a `@ts-expect-error` line in the adapter's test holds it),
+  `seedStored` (any document, as an older or foreign writer left it in the column, read
+  tolerantly like every row) and `seedUnread` (past the read: for a test whose subject is
+  a service's own defence against a document no store hands on, and for nothing else). A
+  test of what a deployment does with a stored document never uses `seedUnread`. `password.minLength` has a floor of 8 on input, and the audit entry carries
   `weakened: true` when `Settings.weakened` says the change weakened something: the password
   policy, a security notice, the MFA policy, the sessions, the audit retention period
   (set where there was none, or shortened: older entries are then deleted), or the daily

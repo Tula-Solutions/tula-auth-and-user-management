@@ -43,7 +43,10 @@ function configure(
   more: Partial<EnvironmentSettings> = {}
 ) {
   revision += 1
-  deps.environmentSettings.seed(environmentId, { revision, settings: document(templates, more) })
+  deps.environmentSettings.seedStored(environmentId, {
+    revision,
+    settings: document(templates, more),
+  })
 }
 
 /**

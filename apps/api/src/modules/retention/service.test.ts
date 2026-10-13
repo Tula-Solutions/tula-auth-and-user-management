@@ -701,7 +701,7 @@ describe('audit retention', () => {
    * the database: read back as a deployment's store reads them.
    */
   function keepAuditFor(scope: Tenant, retentionDays: unknown): void {
-    deps.environmentSettings.seed(scope.environmentId, {
+    deps.environmentSettings.seedStored(scope.environmentId, {
       revision: 1,
       settings: { ...DEFAULT_ENVIRONMENT_SETTINGS, audit: { retentionDays } },
     })
@@ -806,6 +806,10 @@ describe('audit retention', () => {
       keepAuditFor(otherTenant, 1)
       const entry = auditEntry(tenant)
       auditEntry(otherTenant)
+      // A count of texted codes in each environment: its purge comes after the audit purge.
+      const day = deps.clock.now().toISOString().slice(0, 10)
+      await deps.smsUsage.takeFromDay(tenant, day, '+1', 1_000_000, deps.clock.now())
+      await deps.smsUsage.takeFromDay(otherTenant, day, '+1', 1_000_000, deps.clock.now())
       const deleteAudit = spyOn(deps.activityLog, 'deleteAuditBefore')
       spies.push(deleteAudit)
       deps.clock.advance(4_000 * DAY)
@@ -814,9 +818,15 @@ describe('audit retention', () => {
         environments: 2,
         failed: 1,
         auditLogs: 1,
+        smsCodeCounts: 1,
       })
       expect(auditIds(tenant)).toEqual([entry])
       expect(auditIds(otherTenant)).toEqual([])
+      // A known limitation, TULA-79: the purges after the audit purge are not reached for the
+      // environment whose settings cannot be read, so its old count is still there. When
+      // that is fixed this is 0 and `smsCodeCounts` above is 2.
+      expect((await deps.smsUsage.summary(tenant.environmentId, day, 10)).sent).toBe(1)
+      expect((await deps.smsUsage.summary(otherTenant.environmentId, day, 10)).sent).toBe(0)
       expect(deleteAudit.mock.calls.map(([environmentId]) => environmentId)).toEqual([
         otherTenant.environmentId,
       ])
@@ -1392,7 +1402,7 @@ describe('previous passwords beyond the password history (ADR 0038)', () => {
    * database: read back as a deployment's store reads them.
    */
   function historyOf(scope: Tenant, history: unknown): void {
-    deps.environmentSettings.seed(scope.environmentId, {
+    deps.environmentSettings.seedStored(scope.environmentId, {
       revision: 1,
       settings: {
         ...DEFAULT_ENVIRONMENT_SETTINGS,

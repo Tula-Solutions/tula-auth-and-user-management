@@ -64,7 +64,7 @@ keyed by kind). The layout is the server's.
   the store's log line (kinds only) is the notice of it. **The memory settings store runs
   the tolerant read too**: every adapter reads a row through `readStoredRow`
   (`~/adapters/stored-settings`), and the shared suite holds them to the same answer for
-  the same stored document, so a document a test puts there with `seed` is read as a
+  the same stored document, so a document a test puts there with `seed` or `seedStored` is read as a
   deployment's store reads it (a wording that no longer passes is gone, with the store's
   log line). A test whose subject is the renderer's **own** fallback for a wording that
   reaches a send unjudged uses `seedUnread`, the memory store's one way past the read,

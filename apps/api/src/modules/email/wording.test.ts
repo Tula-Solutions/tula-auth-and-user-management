@@ -582,7 +582,7 @@ describe('send', () => {
 
   /** Store an environment's templates, read as a deployment's store reads them. */
   function save(environmentId: string, templates: unknown, name = 'Acme') {
-    deps.environmentSettings.seed(environmentId, {
+    deps.environmentSettings.seedStored(environmentId, {
       revision: 1,
       settings: {
         ...DEFAULT_ENVIRONMENT_SETTINGS,

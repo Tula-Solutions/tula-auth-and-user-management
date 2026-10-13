@@ -32,6 +32,9 @@ interface MemorySettingsRow extends StoredSettingsRow {
  * not valid makes the read throw. The shared suite holds the two adapters to the same answer
  * for the same stored document. The one exception is
  * {@link MemoryEnvironmentSettingsStore.seedUnread}.
+ *
+ * Unlike `jsonb`, it keeps a document's keys in insertion order and does not de-duplicate
+ * them: nothing may rest on either.
  */
 export class MemoryEnvironmentSettingsStore implements EnvironmentSettingsStore {
   readonly #documents: Map<string, MemorySettingsRow>
@@ -45,17 +48,36 @@ export class MemoryEnvironmentSettingsStore implements EnvironmentSettingsStore 
   }
 
   /**
-   * Put a row in the store directly, without a revision check or an audit entry: an
-   * environment in a state the admin API refuses to create, or a document another version, or
-   * a hand, left behind. The document is kept as a JSON column would keep it, and **read as
-   * a real store reads it**: what the tolerant read leaves out or defaults is left out or
-   * defaulted, and a document it cannot read makes {@link get} throw.
+   * Put a settings document in the store directly, without a revision check or an audit
+   * entry: the way a test sets an environment up. It is typed, so that a misspelled key does
+   * not compile (the tolerant read would drop it in silence), kept as a JSON column would keep
+   * it and **read as a real store reads it**.
+   *
+   * The three ways in: `seed` (a typed document), {@link seedStored} (any document, read
+   * tolerantly) and {@link seedUnread} (past the read).
+   *
+   * @param environmentId - The environment.
+   * @param stored - The document, its revision and, optionally, the managing tool's record.
+   */
+  seed(environmentId: string, stored: StoredEnvironmentSettings): void {
+    this.seedStored(environmentId, stored)
+  }
+
+  /**
+   * Put a row in the store as some older or foreign writer left it in the column: another
+   * version's document, a hand's, one this version would refuse to save. Anything JSON holds
+   * is taken, and it is **read as a real store reads it**, through `readStoredRow`: what the
+   * tolerant read leaves out or defaults is left out or defaulted, and a document it cannot
+   * read makes {@link get} throw.
+   *
+   * For a test of what a deployment does with such a document, and for the shared suite. A
+   * test that sets up a valid document uses {@link seed}, which the compiler checks.
    *
    * @param environmentId - The environment.
    * @param stored - The row: its revision, the document as it would sit in the column
    *   (anything JSON holds) and, optionally, the managing tool's record.
    */
-  seed(
+  seedStored(
     environmentId: string,
     stored: { revision: number; settings: unknown; managedBy?: unknown }
   ): void {
@@ -75,7 +97,8 @@ export class MemoryEnvironmentSettingsStore implements EnvironmentSettingsStore 
    * It exists for one kind of test: one whose subject is a service's **own** defence against
    * a document the store's read should already have cleaned (the renderer replacing a
    * wording that no longer passes with the built-in copy, say), which only a raw document can
-   * reach. A test of what a deployment does with a stored document uses {@link seed}.
+   * reach. A test of what a deployment does with a stored document uses {@link seed} or
+   * {@link seedStored}.
    *
    * @param environmentId - The environment.
    * @param stored - The document and its revision, handed on unjudged.

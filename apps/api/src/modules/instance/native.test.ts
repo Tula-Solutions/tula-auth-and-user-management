@@ -116,7 +116,7 @@ function passkeys(
   rpId: string | null,
   environmentId: string = TEST_TENANT.environmentId,
   more: Partial<EnvironmentSettings> = {},
-  how: 'seed' | 'seedUnread' = 'seed'
+  how: 'seed' | 'seedStored' | 'seedUnread' = 'seed'
 ) {
   const methods = DEFAULT_ENVIRONMENT_SETTINGS.signIn.methods
   deps.environmentSettings[how](environmentId, {
@@ -995,7 +995,7 @@ describe('the native_app_passkeys check', () => {
       try {
         const { deps } = await setup(tier('prod'))
         await store(deps, android())
-        passkeys(deps, true, rpId)
+        passkeys(deps, true, rpId, TEST_TENANT.environmentId, {}, 'seedStored')
         await expect(deps.environmentSettings.get(TEST_TENANT.environmentId)).rejects.toThrow()
         const result = await Instance.diagnostics(deps)
         expect(byId(result.checks, 'native_app_passkeys')).toEqual({
