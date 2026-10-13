@@ -4,7 +4,18 @@ import dev.tula.auth.Clock
 import dev.tula.auth.HttpEngine
 import dev.tula.auth.HttpRequest
 import dev.tula.auth.HttpResponse
+import dev.tula.auth.BrowserSession
+import dev.tula.auth.GoogleSheet
 import dev.tula.auth.MemoryTokenStorage
+import dev.tula.auth.PasskeySheet
+import dev.tula.auth.SheetFailure
+import dev.tula.auth.TulaSheetException
+import dev.tula.auth.generated.PasskeyAssertionCredential
+import dev.tula.auth.generated.PasskeyAssertionCredentialResponse
+import dev.tula.auth.generated.PasskeyCreationOptions
+import dev.tula.auth.generated.PasskeyRegistrationCredential
+import dev.tula.auth.generated.PasskeyRegistrationCredentialResponse
+import dev.tula.auth.generated.PasskeyRequestOptions
 import dev.tula.auth.TokenStorage
 import dev.tula.auth.TulaClient
 import kotlinx.coroutines.CompletableDeferred
@@ -49,13 +60,64 @@ fun firstFactor(vararg strategies: String, prepared: Boolean = false): String {
     return """{"status":"needs_first_factor","strategies":[$list]$sent}"""
 }
 
-fun configJson(name: String = "Tula", password: String = "required"): String =
-    """{"app":{"name":"$name","supportEmail":null},"signIn":{"methods":["password"],"oauth":[]},""" +
+fun configJson(
+    name: String = "Tula",
+    password: String = "required",
+    methods: List<String> = listOf("password"),
+    oauth: List<String> = emptyList(),
+    policy: String = "optional",
+    phone: Boolean = false,
+): String =
+    """{"app":{"name":"$name","supportEmail":null},"signIn":{"methods":[${methods.joinToString(",") { "\"$it\"" }}],""" +
+        """"oauth":[${oauth.joinToString(",") { "\"$it\"" }}]},""" +
         """"signUp":{"password":"$password"},"password":{"preset":"recommended","minLength":10,""" +
         """"maxLength":128,"requireLowercase":false,"requireUppercase":false,"requireNumber":false,""" +
         """"requireSpecial":false,"minCharacterClasses":0,"specialChars":"!","disallowUserInfo":true,""" +
         """"disallowCommon":true,"breachCheck":"block","maxRepeatedChars":null,"blockSequences":false,""" +
-        """"history":0,"expiryDays":null},"mfa":{"policy":"optional","smsCode":false},"phone":{"enabled":false}}"""
+        """"history":0,"expiryDays":null},"mfa":{"policy":"$policy","smsCode":false},"phone":{"enabled":$phone}}"""
+
+/** The options of a passkey request as the API writes them. */
+const val PASSKEY_OPTIONS = """{"challenge":"Y2hhbGxlbmdl","timeout":300000,"rpId":"example.test","userVerification":"required"}"""
+
+const val PASSKEY_START = "$SIGN_INS/passkey"
+
+/** A passkey sheet a test scripts: it answers, is closed by the user, fails, or waits at a gate. */
+class ScriptedPasskeySheet : PasskeySheet {
+    val asked = AtomicInteger()
+
+    /** What the next request does. `null`: the user closes the sheet. */
+    @Volatile
+    var failure: SheetFailure? = null
+
+    @Volatile
+    var gate: Gate? = null
+
+    private suspend fun shown() {
+        asked.incrementAndGet()
+        gate?.pass()
+        failure?.let { throw TulaSheetException(it) }
+    }
+
+    override suspend fun create(options: PasskeyCreationOptions): PasskeyRegistrationCredential {
+        shown()
+        return PasskeyRegistrationCredential(
+            id = "Y3JlZA",
+            rawId = "Y3JlZA",
+            response = PasskeyRegistrationCredentialResponse(clientDataJSON = "Y2xpZW50", attestationObject = "YXR0ZXN0"),
+        )
+    }
+
+    override suspend fun get(options: PasskeyRequestOptions): PasskeyAssertionCredential {
+        shown()
+        return PasskeyAssertionCredential(
+            id = "Y3JlZA",
+            rawId = "Y3JlZA",
+            response = PasskeyAssertionCredentialResponse(
+                clientDataJSON = "Y2xpZW50", authenticatorData = "YXV0aA", signature = "c2ln",
+            ),
+        )
+    }
+}
 
 /** Fail a test rather than hang the build when something never returns. */
 fun runTest(limitMs: Long = 30_000, block: suspend CoroutineScope.() -> Unit) {
@@ -168,6 +230,10 @@ class Bench(
     mode: TulaAuthMode = TulaAuthMode.SIGN_IN,
     val storage: TokenStorage = MemoryTokenStorage(),
     strings: TulaStrings = TulaStrings(),
+    passkeys: PasskeySheet? = null,
+    google: GoogleSheet? = null,
+    browser: BrowserSession? = null,
+    redirectUrl: String? = null,
 ) {
     val engine = ScriptedEngine()
     val client = TulaClient(
@@ -176,7 +242,13 @@ class Bench(
         storage = storage,
         http = engine,
         clock = Clock { ISSUED_AT * 1000 },
+        passkeys = passkeys,
+        google = google,
+        browser = browser,
     )
+
+    /** Everything that was put on the clipboard, oldest first. */
+    val copied = CopyOnWriteArrayList<String>()
 
     /** Everything that was announced, oldest first. */
     val said = CopyOnWriteArrayList<String>()
@@ -184,7 +256,13 @@ class Bench(
     /** How many times the app was told somebody is signed in. */
     val signedIn = AtomicInteger()
 
-    val model = TulaAuthModel(client, mode, strings, announce = { said.add(it) }, onSignedIn = { signedIn.incrementAndGet() })
+    val model = TulaAuthModel(
+        client, mode, strings,
+        announce = { said.add(it) },
+        onSignedIn = { signedIn.incrementAndGet() },
+        redirectUrl = redirectUrl,
+        copy = { copied.add(it) },
+    )
 
     val state: TulaAuthState get() = model.state.value
     val screen: TulaAuthScreen get() = state.screen
@@ -211,8 +289,14 @@ class Bench(
         begin()
     }
 
+    /** Read a configuration with these sign-in methods and providers. */
+    suspend fun configure(methods: List<String> = listOf("password"), oauth: List<String> = emptyList()) {
+        engine.on("GET", CONFIG) { ok(configJson(methods = methods, oauth = oauth)) }
+        model.loadConfig()
+    }
+
     /** What every drawn or announced word is looked for in. */
     fun everythingSaid(): String = listOfNotNull(
-        state.formError, state.status, model.formProblem,
+        state.formError, state.status, state.notice, model.formProblem,
     ).plus(state.fieldErrors.values.flatten()).plus(said).joinToString("\n")
 }
