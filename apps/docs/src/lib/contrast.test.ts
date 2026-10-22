@@ -99,7 +99,7 @@ describe('the colours of highlighted code', () => {
     ['light', lightTheme, CODE_THEMES.light],
     ['dark', darkTheme, CODE_THEMES.dark],
   ] as const) {
-    test(`${scheme}: every token colour of ${name} reaches 4.5:1 on the code background`, () => {
+    test(`${scheme}: every token colour of ${name} reaches 4.5:1 on the code background and its line tints`, () => {
       const replacements = CODE_COLOR_REPLACEMENTS[name] ?? {}
       const colors = new Set<string>([(theme.colors ?? {})['editor.foreground'] as string])
       for (const rule of theme.tokenColors ?? []) {
@@ -115,10 +115,13 @@ describe('the colours of highlighted code', () => {
         if (used === '#FFFFFF') {
           continue
         }
-        expect(
-          contrastRatio(used, COLORS[scheme].surface),
-          `${color} as ${used}`
-        ).toBeGreaterThanOrEqual(4.5)
+        // The code background, and the tints a highlighted line and an added or removed one take.
+        for (const background of ['surface', 'accentSoft', 'addBg', 'removeBg'] as const) {
+          expect(
+            contrastRatio(used, COLORS[scheme][background]),
+            `${color} as ${used} on ${background}`
+          ).toBeGreaterThanOrEqual(4.5)
+        }
       }
     })
   }

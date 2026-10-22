@@ -39,6 +39,10 @@ export interface ColorScheme {
   ok: string
   warn: string
   danger: string
+  /** The background of a line of code a change adds. */
+  addBg: string
+  /** The background of a line of code a change removes. */
+  removeBg: string
   /** The primary button: ink on paper, the brand's own two tones. */
   btnBg: string
   btnFg: string
@@ -62,6 +66,8 @@ export const COLORS: { light: ColorScheme; dark: ColorScheme } = {
     ok: '#1A6B3C',
     warn: '#8A5300',
     danger: '#B42318',
+    addBg: '#DDF0E3',
+    removeBg: '#F9E0DC',
     btnBg: '#1A1A18',
     btnFg: '#F1EFE8',
   },
@@ -81,6 +87,8 @@ export const COLORS: { light: ColorScheme; dark: ColorScheme } = {
     ok: '#5FCB8A',
     warn: '#E0A64A',
     danger: '#FF8A7A',
+    addBg: '#17301F',
+    removeBg: '#3B1B18',
     btnBg: '#F1EFE8',
     btnFg: '#141412',
   },
@@ -193,6 +201,8 @@ export const COLOR_PAIRS: readonly ColorPair[] = [
   { fg: 'warn', bg: 'surface', min: 4.5, use: 'a caution callout' },
   { fg: 'danger', bg: 'bg', min: 4.5, use: 'an error note' },
   { fg: 'danger', bg: 'surface', min: 4.5, use: 'a danger callout' },
+  { fg: 'ok', bg: 'addBg', min: 4.5, use: 'the + beside an added line of code' },
+  { fg: 'danger', bg: 'removeBg', min: 4.5, use: 'the - beside a removed line of code' },
   { fg: 'borderStrong', bg: 'bg', min: 3, use: 'the edge of a control' },
   { fg: 'borderStrong', bg: 'raised', min: 3, use: 'the edge of the search box' },
   { fg: 'accent', bg: 'bg', min: 3, use: 'the focus ring on the page' },
