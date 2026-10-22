@@ -3,13 +3,12 @@
 @import "./styles/shadcn-theme.css";
 
 /*
- * The playground island has its own stylesheet (playground/playground.css), loaded only by the
- * pages that hold a playground. Its sources and the primitives only it draws are kept out of
- * this one, so that the stylesheet every page loads does not grow with the island's classes.
+ * The playground island's sources are scanned here too, so that Tailwind's utilities are written
+ * once, in this stylesheet. The island's own stylesheet (playground/playground.css) holds its
+ * layout and the components' styles, and no utilities: a second copy of the utilities layer,
+ * loaded after this one, beat the site's variants at equal specificity (its `.hidden` hid the
+ * header's `dark:block` sun icon on every page with a playground).
  */
-@source not "./playground";
-@source not "./client/playground.ts";
-@source not "./components/ui/{badge,label,select,separator,slider,switch,tabs,toggle,toggle-group}.tsx";
 
 /*
  * The site's look. Every colour, radius, shadow, type step and duration is a custom property

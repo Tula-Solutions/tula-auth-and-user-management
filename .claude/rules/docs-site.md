@@ -98,10 +98,12 @@ static HTML. Its commands are in its README.
     variables, and a `tula.config.ts` that `config.test.ts` loads with `@tula-tech/config`)
     are all computed from it. A new control changes the object and gets a line in each output.
   - **The panel uses the shadcn primitives in `src/components/ui/`**, which are now also
-    client-rendered. `playground.css` builds its own Tailwind utilities (`source(none)` and an
-    `@source` of the island and the primitives) and imports the theme mapping the site shares
-    (`src/styles/shadcn-theme.css`); `styles.css` excludes the island's sources from its own
-    scan. It reads the site's tokens and writes no colour (`contrast.test.ts` scans it).
+    client-rendered. Their Tailwind utilities are written once, by `styles.css`, whose scan
+    takes in the island and the primitives; `playground.css` imports `@tula-tech/react`'s
+    stylesheet and no Tailwind layer. A second copy of the utilities, loaded after
+    `main.css`, beats the site's variants at equal specificity: its `.hidden` hid the theme
+    toggle's sun in the dark scheme. It reads the site's tokens and writes no colour
+    (`contrast.test.ts` scans it).
   - `/playground/` is a wide page (`WIDE_ROUTES` in `layout.tsx`): no table of contents column.
   - `PLAYGROUND_PRESETS` (the directive) and `EMBED_PRESETS` (the island) are held equal by a
     test; a new preset is added to both.

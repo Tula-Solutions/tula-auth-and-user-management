@@ -1,19 +1,12 @@
-@layer theme, base, components, utilities;
-@import "tailwindcss/theme.css" layer(theme);
-@import "tailwindcss/utilities.css" layer(utilities) source(none);
-@import "../styles/shadcn-theme.css";
 @import "@tula-tech/react/styles.css";
 
 /*
  * The playground island's stylesheet, loaded by the pages that hold one and by no other page.
- * Three parts: Tailwind's utilities for the shadcn primitives the panel uses (scanned from the
- * island's sources only; `styles.css` leaves the same files out), the components' own stylesheet,
- * and the playground's layout below. Colours, radii, shadows and motion are the site's tokens
+ * Two parts: the components' own stylesheet and the playground's layout below. Tailwind's
+ * utilities for the island's classes are written by the site's stylesheet (`styles.css` scans
+ * the island's sources), never here: a second utilities layer would override the site's. Colours, radii, shadows and motion are the site's tokens
  * (`styles/tokens.gen.css`); nothing here is a colour of its own, and `contrast.test.ts` holds that.
  */
-@source "./ui";
-@source "../components/ui";
-@source not "./**/*.test.ts";
 
 /* ----------------------------------------------------------- the placeholder and the frame */
 
