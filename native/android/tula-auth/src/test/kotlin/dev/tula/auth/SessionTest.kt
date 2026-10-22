@@ -33,6 +33,23 @@ class SessionTest {
         return count
     }
 
+    /**
+     * Sign in on a client with the default deadline, and hand back a second client over the
+     * same storage, engine and clock that has the session and a 200 ms deadline.
+     */
+    private suspend fun signedInThenImpatient(storage: TokenStorage): Bench {
+        val setup = Bench(storage = storage)
+        setup.signIn()
+        setup.tula.close()
+        val bench = Bench(engine = setup.engine, storage = storage, clock = setup.clock, timeoutMs = 200)
+        // Loading takes the stored session in with one refresh; the test counts from its own.
+        bench.rotating()
+        bench.tula.load()
+        bench.engine.requests.clear()
+        bench.rotating()
+        return bench
+    }
+
     private fun Bench.refreshes() = engine.sent(REFRESH)
 
     @Test
@@ -728,9 +745,9 @@ class SessionTest {
     @Test
     fun `a storage whose write never returns ends the refresh for everyone who joined it`() = runTest {
         val storage = StallingStorage()
-        val bench = Bench(storage = storage, timeoutMs = 200)
-        bench.signIn()
-        bench.rotating()
+        // The setup must answer, so it runs under the default deadline; only the stalled
+        // write runs under a short one, on a second client over the same storage (TULA-95).
+        val bench = signedInThenImpatient(storage)
         storage.stallWrites = true
         bench.clock.advance(120_000)
 
@@ -750,9 +767,9 @@ class SessionTest {
     @Test
     fun `a sign-out does not wait without bound for a refresh stuck in the storage`() = runTest {
         val storage = StallingStorage()
-        val bench = Bench(storage = storage, timeoutMs = 200)
-        bench.signIn()
-        bench.rotating()
+        // The setup must answer, so it runs under the default deadline; only the stalled
+        // write runs under a short one, on a second client over the same storage (TULA-95).
+        val bench = signedInThenImpatient(storage)
         bench.engine.on("POST", SIGN_OUT) { answer(204, "") }
         storage.stallWrites = true
         bench.clock.advance(120_000)

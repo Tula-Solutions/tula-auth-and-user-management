@@ -22,8 +22,20 @@ import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
-/** A wait short enough for a test and long enough for a busy runner to start a coroutine. */
+/**
+ * A deadline for a step that is meant to time out. Virtual milliseconds in every test but the
+ * one that goes through `TulaClient` (a real-thread scope), which gives its own generous one.
+ */
 private const val SHORT_MS = 150L
+
+/**
+ * The deadline of a step that must answer. The make step's budget is taken from the real
+ * clock even in virtual time (DeviceKey.kt), so a pause must not be able to use it up.
+ */
+private const val MUST_ANSWER_MS = 30_000L
+
+/** The real deadline of the one client that must time out; generous, so its look is asked first. */
+private const val IMPATIENT_MS = 1_500L
 
 /** What a returned address said, as a list a test can compare (the type itself prints nothing). */
 private fun ProviderRoundTrip.Answer.parts(): List<String?> = listOf(ticket, attemptId, error)
@@ -481,7 +493,7 @@ class NativeWaysTest {
             val proofs = proofs(store, workScope)
             assertNull(proofs.key(DeviceProofs.Use.REFRESH, SHORT_MS))
             assertEquals(0, store.makes.get())
-            val made = assertIs<DeviceKey>(proofs.key(DeviceProofs.Use.START, SHORT_MS))
+            val made = assertIs<DeviceKey>(proofs.key(DeviceProofs.Use.START, MUST_ANSWER_MS))
             assertEquals(1, store.makes.get())
             assertTrue(made.publicKey.x.contentEquals(proofs.key(DeviceProofs.Use.REFRESH, SHORT_MS)?.publicKey?.x))
             assertEquals(1, store.makes.get())
@@ -495,7 +507,7 @@ class NativeWaysTest {
 
             store.inner.remove()
             store.failMake = IllegalStateException(canary)
-            val making = caught { proofs.key(DeviceProofs.Use.START, SHORT_MS) }
+            val making = caught { proofs.key(DeviceProofs.Use.START, MUST_ANSWER_MS) }
             assertEquals("device.key_failed", making.code)
             assertNull(making.cause)
             // A store that cancels its own call is a failure, not a cancelled caller.
@@ -660,13 +672,17 @@ class NativeWaysTest {
                 baseUrl = TEST_BASE,
                 storage = MemoryTokenStorage(),
                 http = engine,
-                timeoutMs = 2 * SHORT_MS,
+                timeoutMs = IMPATIENT_MS,
                 deviceKeys = store,
             )
             val looks = store.looks.get()
             store.script.add { awaitCancellation() }
             assertEquals("network.timeout", caught { impatient.signIn("maya@example.com") }.code)
             assertEquals("network.timeout", caught { impatient.signIn("maya@example.com") }.code)
+            // The call's budget is real time: say the look was asked before counting it.
+            while (store.looks.get() == looks) {
+                yield()
+            }
             assertEquals(looks + 1, store.looks.get())
             assertEquals(1, engine.requests.size)
             impatient.close()
