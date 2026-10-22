@@ -17,7 +17,8 @@ import { tokensCss } from '../src/lib/tokens'
 // stops the build with the file and the link named.
 
 const root = join(import.meta.dir, '..')
-const outDir = join(root, 'dist')
+// `DOCS_OUT_DIR` is for the build script's own test; Vite (vite.config.ts) reads the same variable.
+const outDir = process.env.DOCS_OUT_DIR ?? join(root, 'dist')
 const check = process.argv.includes('--check')
 
 async function bundle(): Promise<{ css: string[]; js: string }> {
@@ -43,11 +44,13 @@ async function bundle(): Promise<{ css: string[]; js: string }> {
 }
 
 try {
-  const assets = check ? { css: [], js: '' } : await bundle()
-  const site = await buildSite(assets)
+  // Render first: a file or a link that cannot be rendered stops the build before `bundle()`
+  // empties dist/, so a bad edit leaves the previous build in place.
+  const checked = await buildSite({ css: [], js: '' })
   if (check) {
-    console.log(`docs site: ${site.pages.length} pages render, every link and anchor resolves`)
+    console.log(`docs site: ${checked.pages.length} pages render, every link and anchor resolves`)
   } else {
+    const site = await buildSite(await bundle())
     await writeSite(site, outDir)
     console.log(
       `docs site: wrote ${site.documents.size} pages and ${site.index.length} search entries to apps/docs/dist`

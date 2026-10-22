@@ -21,7 +21,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: 'dist',
+    outDir: process.env.DOCS_OUT_DIR ?? 'dist',
     emptyOutDir: true,
     manifest: true,
     sourcemap: false,
