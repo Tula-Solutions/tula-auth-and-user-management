@@ -7,6 +7,7 @@ import {
   attempt,
   expectAbsent,
   expectFocus,
+  expectRateLimited,
   failure,
   json,
   openDialogs,
@@ -313,6 +314,7 @@ describe('<UserProfile>', () => {
     await waitFor(() =>
       expect(screen.getByRole('alert').textContent).toMatch(/Try again in (30|29)s\./)
     )
+    expectRateLimited(screen.getByRole('alert'))
     expect(
       screen.getByRole('button', { name: 'Update password' }).getAttribute('aria-disabled')
     ).toBe('true')

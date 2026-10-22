@@ -96,6 +96,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `packages/tsconfig` | Shared tsconfig bases. |
 | `packages/core` | `@tula-tech/core` — the headless TypeScript client: flows, session, single-flight refresh. Runs in browsers, Node, Bun and edge runtimes ([ADR 0021](docs/adr/0021-core-sdk.md)). |
 | `packages/react` | `@tula-tech/react` — provider, hooks and prebuilt components (sign-up, sign-in, reset, account) with one themeable stylesheet ([ADR 0022](docs/adr/0022-react-sdk.md)). |
+| `packages/ui` | `@tula-tech/ui` — the Tula UI registry in shadcn's format: the sources of the items a developer copies (`items/`), the build that refuses an unsafe one and writes `r/*.json` (`registry:generate`, `registry:check`), and the theme bridge. Private, never published ([ADR 0064](docs/adr/0064-tula-ui.md)). |
 | `packages/nextjs` | `@tula-tech/nextjs` — the Next.js App Router SDK: a same-origin route handler, a request interceptor that verifies sessions offline, server helpers and the React components ([ADR 0029](docs/adr/0029-nextjs-sdk.md)). |
 | `packages/admin` | `@tula-tech/admin` — the typed client for `/v1/admin/*`, generated from `openapi.json`. Holds a secret key: server-side only ([ADR 0030](docs/adr/0030-config-and-apply.md)). |
 | `packages/config` | `@tula-tech/config` — `defineConfig()` for `tula.config.ts`: an environment's settings, OAuth providers and webhook endpoints as code, validated with the contract's schemas; secrets only as `env('NAME')`, and none at all for a webhook endpoint. |
@@ -655,6 +656,9 @@ bun run scripts/worker-check/check.ts -- docker compose -f docker-compose.yml \
 bun run dev                 # API on http://localhost:3003, docs at /v1/docs
 bun run verify              # full quality gate (what CI runs)
 bun run verify:changed      # affected packages only (what the Stop hook runs)
+bun run verify:static       # verify without the unit tests (CI's `verify-static` job); the tests are
+                            # `test:coverage:{api,dashboard,rest}`, one job each in CI; `verify`'s commands
+                            # are exactly these (.claude/hooks/ci-split.test.ts)
 bun run check               # Biome lint + format check
 bun run format              # Biome format --write
 bun run typecheck

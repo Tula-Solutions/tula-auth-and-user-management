@@ -39,10 +39,23 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   (`support.ts`). Its component tests (`bun test`, happy-dom) render the whole app against
   `src/testing/fake-api.ts`. The API image builds the app in its own `dashboard` stage and
   copies only `dist`: the `install` stage still gets no manifest of a browser package.
-- **The `docs` project is its own CI job, on four workers.** `e2e` runs
-  `--project=nextjs --project=dashboard --project=chromium` and `e2e-docs` runs
-  `--project=docs --workers=4` (both are in the `ci` gate's `needs`); axe on every page of
-  the site, in both schemes, is what takes the time, and no rule is disabled to shorten it.
+- **The browser tests run as shards, in Playwright's own image.** `e2e` is the aggregate the
+  repository's ruleset requires: it waits for `e2e-shard` (four jobs, each `bun run e2e
+  --project=nextjs --project=dashboard --project=chromium --shard=i/4`) and `e2e-docs` waits
+  for `e2e-docs-shard` (four jobs, `--project=docs --workers=4 --shard=i/4`); both aggregates
+  are in `passed`'s `needs`, and each fails unless every shard succeeded (a skipped or
+  cancelled shard is a failure: `.claude/hooks/ci-split.test.ts`). A shard is a job of its own
+  with its own fixture and servers, so the in-memory world is never shared; the tests of one
+  shard still run one after the other on one worker (`docs` is the exception, `fullyParallel`,
+  on four). Each shard keeps the project order of `playwright.config.ts` (`nextjs`, `dashboard`, then
+  `chromium`).
+  Axe on every page of the site, in both schemes, is what takes the time, and no rule is
+  disabled to shorten it. The jobs run in `mcr.microsoft.com/playwright:v<version>-noble`, the
+  version `bun.lock` installs for `@playwright/test` (the test fails when they differ: bump
+  the tag in both shard jobs with the dependency), so no browser is downloaded in CI and
+  `playwright install` appears in no job; `--ipc=host` is needed for Chromium. A new
+  shard count changes the matrix and the `/n` of the command together. A failed shard uploads
+  its report as `playwright-report-<i>` (`playwright-report-docs-<i>`).
   The config starts only the servers of the projects named on the command line
   (`playwright.config.ts`: a run of `docs` alone starts no API, a run without it no docs server).
   The fixture API uses ports 4317 to 4320 and the docs server 4321 with `reuseExistingServer`:
@@ -50,6 +63,6 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   local run (`lsof -nP -iTCP:4317-4321 -sTCP:LISTEN`) rather than reuse another checkout's
   server, which serves its own build.
   `.claude/hooks/e2e-projects.test.ts` (in `test:harness`) holds that every project of
-  `playwright.config.ts` is named by exactly one of the two jobs, so a new project is added to
+  `playwright.config.ts` is named by exactly one of the two sets of shards, so a new project is added to
   one of them in the same change; `e2e/projects.ts` (tested in `e2e/projects.test.ts`) decides
   which servers a command line starts.

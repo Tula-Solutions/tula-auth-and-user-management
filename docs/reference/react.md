@@ -1763,6 +1763,8 @@ export interface TulaLocalization {
     required: string
     /** `{time}` is a duration from `seconds` or `minutesSeconds`. */
     retryIn: string
+    /** The whole message of a rate limit whose wait is known; `{time}` as in `retryIn`. */
+    rateLimitedIn: string
     /** `{seconds}`. */
     seconds: string
     /** `{minutes}`, `{seconds}`. */
@@ -2956,6 +2958,91 @@ const known = firstFactorStrategies(step.strategies, forms, {
 })
 // the links under the form, once the browser has been asked:
 const others = firstFactorStrategies(step.strategies, forms, can, 'alternatives')
+```
+
+### `formatDuration`
+
+_function_, defined in `packages/react/src/components/form-errors.ts`
+
+A duration for a countdown, e.g. `42s` or `4m 12s`, in the provider's locale table.
+
+```ts
+export function formatDuration(totalSeconds: number, t: TulaLocalization): string
+```
+
+**Parameters**
+
+- `totalSeconds`: Whole seconds.
+- `t`: The strings (`useLocalization()`).
+
+**Returns** The text.
+
+**Example**
+
+```tsx
+const t = useLocalization()
+const wait = useRetryCountdown(error)
+// 'Try again in 1m 5s.'
+formatText(t.common.retryIn, { time: formatDuration(wait, t) })
+```
+
+### `formatText`
+
+_function_, defined in `packages/react/src/localization.ts`
+
+Fill a string's `{name}` placeholders. A placeholder with no value is left as it is.
+
+```ts
+export function formatText(
+  template: string,
+  values: Record<string, string | number | boolean>
+): string
+```
+
+**Parameters**
+
+- `template`: The string.
+- `values`: Values by placeholder name.
+
+**Returns** The filled string.
+
+**Example**
+
+```ts
+formatText('to continue to {appName}', { appName: 'Northline' }) // 'to continue to Northline'
+```
+
+### `rateLimitedAlert`
+
+_function_, defined in `packages/react/src/components/form-errors.ts`
+
+The alert of a form that may be rate limited: while a wait is known, one sentence that holds it.
+
+Saying "Try again shortly." and then "Try again in 41s." asks twice, so the known wait
+replaces the generic request. Without a wait the message is returned as it is.
+
+```ts
+export function rateLimitedAlert(
+  message: string | null,
+  wait: number,
+  t: TulaLocalization
+): { message: string | null; detail: null }
+```
+
+**Parameters**
+
+- `message`: The form's message (`placed.form`).
+- `wait`: Seconds left of a rate limit (`useRetryCountdown`), `0` for none.
+- `t`: The strings (`useLocalization()`).
+
+**Returns** Props for `FormError`.
+
+**Example**
+
+```tsx
+const wait = useRetryCountdown(error)
+// 'Too many requests. Try again in 41s.' while a wait runs
+<FormAlert {...rateLimitedAlert(placed.form, wait, t)} />
 ```
 
 ### `useAuth`

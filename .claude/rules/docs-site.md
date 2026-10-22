@@ -133,6 +133,51 @@ static HTML. Its commands are in its README.
   restructure the header or the bar. Inline code is a bordered chip, and
   prose breaks a word only as a last resort (`overflow-wrap: break-word`; `anywhere` is for
   table cells alone): `styles.test.ts` holds both.
+- **A page's anatomy is in `components/page-anatomy.tsx`, its script in `client/page.ts`, its
+  rules in pure functions.** Top to bottom: the breadcrumb (tab, group, parents, page, from the
+  sidebar tree: `anatomy.ts`), the actions in `data-slot="page-actions"`, the article, then a
+  footer **outside the article** (the article's children are the sections `wrapSections`
+  numbers, and a test holds that nothing else is one): feedback, the source link and the date,
+  and the previous and next pages (`pageOrder`: the tabs in order, the groups, a page before
+  its children). The lead is the paragraph after the `h1` (`.doc h1 + p`).
+  - **The actions work without a script.** The markup holds two forms and CSS shows one
+    (`data-js` on the root, set by the head script before the first paint): with a script a
+    split button (the main action copies the page's Markdown twin; the chevron is a menu
+    button, `role="menu"`, arrow keys, Home, End, Escape back to the button, Tab leaves, an
+    outside click closes; "Copied" is announced in a `role="status"` region); without one the
+    main action is a link to the twin and the menu a `details` of plain links ("Copy MCP setup"
+    is then a link to `/mcp/`). Copy uses `ClipboardItem` with the promise of the text (Safari
+    ends the permission at an `await`) and falls back to `writeText`. Nothing but the page's own
+    twin is fetched.
+  - **The deeplinks are `assistantLinks` in `page-actions.ts`**, the prompt `Read <absolute .md
+    address> and help me with it`, `encodeURIComponent`ed, every link `target="_blank"
+    rel="noopener noreferrer"`. Checked 2026-10-22: Cursor `https://cursor.com/link/prompt?text=`
+    is in Cursor's own docs (https://cursor.com/docs/integrations/deeplinks: `text`, 10,000
+    characters of URL at most; the `cursor://anysphere.cursor-deeplink/prompt?text=` form does
+    nothing in a browser without the app, so the web form is used). **Claude
+    `https://claude.ai/new?q=` and ChatGPT `https://chatgpt.com/?q=` are in no vendor
+    documentation**: they are what shadcn/ui's "Open in Claude" and "Open in ChatGPT" use, and
+    either vendor may change them. A change is one function and its test. "Copy MCP setup"
+    copies `MCP_SETUP`, the `.mcp.json` of `docs/mcp.md` (a `${TULA_AGENT_KEY}` placeholder,
+    never a key): change both together.
+  - **The source link** (`sourceLink`, `page-source.ts`) is GitHub's editor on `develop` for a
+    hand-written file and only the file (`blob`) for a generated one (`docs/reference/**`, the
+    error codes' `packages/contract/src/error-codes.ts`): never offer to edit generated text.
+    `page-source.test.ts` holds that every page's file exists; a new generated directory is
+    added to `GENERATED` there.
+  - **"Last updated" is `git log -1 --format=%cs` of the source** (`lastUpdated`, passed to
+    `buildSite` as `options.updated`), and absent where git cannot say it honestly (a shallow
+    clone, a `--check` build, the tests). A page never shows a guessed date.
+  - **"Was this page helpful?" keeps nothing and sends nothing.** An answer is a thank-you and
+    a link to a prefilled GitHub issue (`issueLink`); no request, no storage, no cookie
+    (`anatomy.spec.ts` holds all three). Never add a tracker or an endpoint to it.
+  - **The table of contents follows the scroll** with one `IntersectionObserver` that wakes a
+    check reading the headings' positions (`activeHeading`), so a fast scroll that skips a
+    heading still lands right. The lit entry has `aria-current="location"` and the accent bar,
+    the phone disclosure is sticky under the header and names the current section, and the rail
+    is scrolled by hand: never `scrollIntoView`, which scrolls the page too. Under
+    `prefers-reduced-motion` nothing eases.
+  - A new colour pair on these parts is a row of `COLOR_PAIRS` (`design-tokens.ts`).
 - **Accessibility is tested on every page.** The `docs` Playwright project
   (`e2e/tests/docs/site.spec.ts`) opens each page the build wrote (`pages.json`), runs axe
   in light and dark through `expectAccessible` (no rule is disabled) and fails for a page that

@@ -5,7 +5,7 @@ import { toTulaError } from '../errors'
 import { useStepUp } from '../hooks/use-step-up'
 import { formatText } from '../localization'
 import { CODE_LENGTH, CodeField, useRetryAfter } from './flow-screens'
-import { formatDuration, placeErrors } from './form-errors'
+import { placeErrors, rateLimitedAlert } from './form-errors'
 import { Button, Form, FormError, Heading, Status, TextField, useUi } from './ui'
 
 /** Which screen the section shows: that there is no address, the address form, or the code form. */
@@ -165,12 +165,7 @@ export function EmailAddressSection(props: { user: User }) {
   const fieldErrors = (field: 'address' | 'code') =>
     local ? [local.message] : (placed.fields[field] ?? [])
   const wait = limits.secondsLeft(view === 'code' ? 'verify' : 'send')
-  const formError = (
-    <FormError
-      message={placed.form}
-      detail={wait > 0 ? formatText(t.common.retryIn, { time: formatDuration(wait, t) }) : null}
-    />
-  )
+  const formError = <FormError {...rateLimitedAlert(placed.form, wait, t)} />
   return (
     <section {...el('section')} aria-labelledby={titleId}>
       <Heading offset={1} {...el('sectionTitle')} id={titleId} headingRef={title}>

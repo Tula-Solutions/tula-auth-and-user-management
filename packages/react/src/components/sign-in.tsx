@@ -33,7 +33,7 @@ import {
   useRetryAfter,
   VerificationScreen,
 } from './flow-screens'
-import { attemptsLeft, fieldResolver, formatDuration, placeErrors } from './form-errors'
+import { attemptsLeft, fieldResolver, placeErrors, rateLimitedAlert } from './form-errors'
 import {
   canEnrolTotp,
   drawableFactors,
@@ -225,10 +225,7 @@ function IdentifierScreen(props: {
         failure={missing ?? signIn.error}
         blocked={signIn.isPending || wait > 0}
       >
-        <FormError
-          message={placed.form}
-          detail={wait > 0 ? formatText(t.common.retryIn, { time: formatDuration(wait, t) }) : null}
-        />
+        <FormError {...rateLimitedAlert(placed.form, wait, t)} />
         {byPhone ? (
           // One field for both: a text field, since a browser's own check of an email field
           // would refuse a number. `username`, not `tel`: it is what a password manager fills.
@@ -306,10 +303,7 @@ function PasswordScreen(props: FirstFactorFormProps) {
         failure={missing ?? signIn.error}
         blocked={signIn.isPending || wait > 0}
       >
-        <FormError
-          message={placed.form}
-          detail={wait > 0 ? formatText(t.common.retryIn, { time: formatDuration(wait, t) }) : null}
-        />
+        <FormError {...rateLimitedAlert(placed.form, wait, t)} />
         {/* For password managers: the account this password belongs to. Not shown, not focusable. */}
         <input
           className='tula-visually-hidden'
@@ -420,9 +414,6 @@ function EmailFactorScreen(
       setCode('')
     }
   }
-  const retry = (seconds: number) =>
-    seconds > 0 ? formatText(t.common.retryIn, { time: formatDuration(seconds, t) }) : null
-
   if (!sent) {
     return (
       <Card
@@ -437,7 +428,7 @@ function EmailFactorScreen(
           failure={signIn.error}
           blocked={signIn.isPending || sendWait > 0}
         >
-          <FormError message={placed.form} detail={retry(sendWait)} />
+          <FormError {...rateLimitedAlert(placed.form, sendWait, t)} />
           <Button type='submit' pending={signIn.isPending} disabled={sendWait > 0}>
             {viaLink ? t.signIn.emailLink : t.signIn.emailCode}
           </Button>
@@ -474,7 +465,7 @@ function EmailFactorScreen(
         failure={incomplete ?? signIn.error}
         blocked={signIn.isPending || submitWait > 0}
       >
-        <FormError message={placed.form} detail={retry(Math.max(submitWait, sendWait))} />
+        <FormError {...rateLimitedAlert(placed.form, Math.max(submitWait, sendWait), t)} />
         <CodeField
           value={code}
           onValue={(value) => {
@@ -566,9 +557,6 @@ function SmsCodeScreen(props: FirstFactorFormProps) {
       setCode('')
     }
   }
-  const retry = (seconds: number) =>
-    seconds > 0 ? formatText(t.common.retryIn, { time: formatDuration(seconds, t) }) : null
-
   if (!sent) {
     return (
       <Card
@@ -583,7 +571,7 @@ function SmsCodeScreen(props: FirstFactorFormProps) {
           failure={signIn.error}
           blocked={signIn.isPending || sendWait > 0}
         >
-          <FormError message={placed.form} detail={retry(sendWait)} />
+          <FormError {...rateLimitedAlert(placed.form, sendWait, t)} />
           <Button type='submit' pending={signIn.isPending} disabled={sendWait > 0}>
             {t.signIn.smsCode}
           </Button>
@@ -608,7 +596,7 @@ function SmsCodeScreen(props: FirstFactorFormProps) {
         failure={incomplete ?? signIn.error}
         blocked={signIn.isPending || submitWait > 0}
       >
-        <FormError message={placed.form} detail={retry(Math.max(submitWait, sendWait))} />
+        <FormError {...rateLimitedAlert(placed.form, Math.max(submitWait, sendWait), t)} />
         <CodeField
           value={code}
           onValue={(value) => {
@@ -822,10 +810,7 @@ function ResetStartScreen(props: {
         failure={missing ?? reset.error}
         blocked={reset.isPending || wait > 0}
       >
-        <FormError
-          message={placed.form}
-          detail={wait > 0 ? formatText(t.common.retryIn, { time: formatDuration(wait, t) }) : null}
-        />
+        <FormError {...rateLimitedAlert(placed.form, wait, t)} />
         <EmailField
           label={t.resetPassword.emailLabel}
           name='email'
@@ -907,10 +892,7 @@ function NewPasswordScreen(props: {
       }
     >
       <Form onSubmit={submit} failure={local ?? reset.error} blocked={reset.isPending || wait > 0}>
-        <FormError
-          message={placed.form}
-          detail={wait > 0 ? formatText(t.common.retryIn, { time: formatDuration(wait, t) }) : null}
-        />
+        <FormError {...rateLimitedAlert(placed.form, wait, t)} />
         <input
           className='tula-visually-hidden'
           type='text'
@@ -1016,10 +998,7 @@ function ExpiredPasswordScreen(props: {
         failure={missing ?? signIn.error}
         blocked={signIn.isPending || wait > 0}
       >
-        <FormError
-          message={placed.form}
-          detail={wait > 0 ? formatText(t.common.retryIn, { time: formatDuration(wait, t) }) : null}
-        />
+        <FormError {...rateLimitedAlert(placed.form, wait, t)} />
         <input
           className='tula-visually-hidden'
           type='text'

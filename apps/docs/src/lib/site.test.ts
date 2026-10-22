@@ -95,8 +95,10 @@ describe('the site built from docs/', () => {
   test('links between pages are routes, with their anchors', () => {
     const html = site.documents.get('/methods/password/') as string
     expect(html).toContain('href="/dashboard/#screens"')
-    // The one address of a Markdown file in the page is the alternate pointing at its twin.
-    expect(html.replace(/<link rel="alternate"[^>]*>/, '')).not.toMatch(/href="[^"#:]*\.md/)
+    // The addresses of a Markdown file in the page are its own twin: the alternate in the head and
+    // the page actions' link to it (both go to `password.md`).
+    const own = /<(?:link|a) [^>]*href="[^"]*\/methods\/password\.md"[^>]*>/g
+    expect(html.replace(own, '')).not.toMatch(/href="[^"#:]*\.md/)
   })
 
   test('every page, the landing page included, points at its Markdown twin in its head', () => {

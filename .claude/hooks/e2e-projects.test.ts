@@ -46,23 +46,28 @@ function projectsIn(run: string): string[] {
 }
 
 // The browser tests run in two CI jobs, split by project because the docs project is slow and
-// needs no API (`e2e` and `e2e-docs`). A project in neither job is never run in CI, and one in
+// needs no API (`e2e` and `e2e-docs`, each a set of shards: `e2e-shard` and `e2e-docs-shard`). A project in neither job is never run in CI, and one in
 // both runs twice; a new project must be given to exactly one of them.
 describe('the Playwright projects and the CI jobs that run them', () => {
   test('the config has projects, and the two jobs name some', () => {
     expect(projectNames().length).toBeGreaterThanOrEqual(4)
-    expect(projectsRunBy('e2e').length).toBeGreaterThan(0)
-    expect(projectsRunBy('e2e-docs').length).toBeGreaterThan(0)
+    expect(projectsRunBy('e2e-shard').length).toBeGreaterThan(0)
+    expect(projectsRunBy('e2e-docs-shard').length).toBeGreaterThan(0)
   })
 
-  test.each(projectNames())('the project %s is run by exactly one of e2e and e2e-docs', (name) => {
-    const runners = ['e2e', 'e2e-docs'].filter((job) => projectsRunBy(job).includes(name))
-    expect(runners, `${name} runs in: ${runners.join(', ') || 'no job'}`).toHaveLength(1)
-  })
+  test.each(projectNames())(
+    'the project %s is run by exactly one of e2e-shard and e2e-docs-shard',
+    (name) => {
+      const runners = ['e2e-shard', 'e2e-docs-shard'].filter((job) =>
+        projectsRunBy(job).includes(name)
+      )
+      expect(runners, `${name} runs in: ${runners.join(', ') || 'no job'}`).toHaveLength(1)
+    }
+  )
 
   test('the jobs name no project the config does not have', () => {
     const known = projectNames()
-    for (const job of ['e2e', 'e2e-docs']) {
+    for (const job of ['e2e-shard', 'e2e-docs-shard']) {
       for (const name of projectsRunBy(job)) {
         expect(known, `${job} runs ${name}`).toContain(name)
       }
