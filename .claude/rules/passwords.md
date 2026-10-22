@@ -146,7 +146,7 @@ new one is stored. `null` is off.
 - **`expiryDays` is not a weakening**, set, shortened or removed (`settingsWeakenings`).
   Changing that is a decision.
 - **A scenario that needs more than ten minutes to pass sets `needsTestClock`** and runs in
-  process only; a live target skips it and CI's `self-host` jobs list it by name. Never add
+  process only; a live target skips it and CI's `self-host` job lists it by name. Never add
   a route or a setting that ages a password on a running server.
 
 ## What to test

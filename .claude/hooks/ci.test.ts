@@ -132,54 +132,198 @@ describe('the Turborepo cache', () => {
   })
 })
 
-// TULA-52: a webhook delivered by the worker running as a service of its own.
-describe('the self-host run with the worker as its own service', () => {
-  const steps = () => job('self-host-worker').steps
+// The packaged server, in one job (`self-host`): the image is built once, and three Compose
+// projects of it run side by side on the one runner, each with its own host ports and its own
+// file of settings (docker/self-host/*.env). Both conformance runs (two ports, and one
+// address in front of both instances) go at once in the background, and the worker check
+// (TULA-52: a webhook delivered by the worker running as a service of its own) runs while
+// they wait. They were three jobs, each building the same image and starting its own stack.
+describe('the self-host job: one image, three stacks side by side', () => {
+  const repository = join(workflowsDir, '..', '..')
+  const steps = () => job('self-host').steps
   const scripts = () => steps().map((step) => step.run ?? '')
   const indexOf = (text: string) => scripts().findIndex((script) => script.includes(text))
-  const COMPOSE =
-    'docker compose -f docker-compose.yml -f docker/worker-check/compose.yml --profile app --profile worker'
+  const stepWith = (text: string) => steps().find((step) => step.run?.includes(text))
 
-  test('every container is told the worker is separate, and nothing else is changed', () => {
-    // No `ENVIRONMENT` and nothing that loosens the outbound guard: the stack runs in the
-    // tier the other self-host jobs run in, and the receiver is reached within its rules.
-    expect(Object.keys(job('self-host-worker').env ?? {}).sort()).toEqual([
-      'TULA_MASTER_KEY',
-      'WEBHOOK_WORKER',
+  const STACKS = {
+    ONE_ADDRESS: 'one-address',
+    TWO_PORTS: 'two-ports',
+    WORKER_STACK: 'worker',
+  } as const
+  const compose = (file: string) =>
+    `docker compose -p self-host-${file} --env-file docker/self-host/${file}.env`
+  const WORKER_CHECK = `${compose('worker')} -f docker-compose.yml -f docker/worker-check/compose.yml --profile app --profile worker`
+
+  /** A stack's file of settings, as Compose reads it: `NAME=value` lines, `#` comments. */
+  const settings = (file: string): Record<string, string> =>
+    Object.fromEntries(
+      readFileSync(join(repository, 'docker/self-host', `${file}.env`), 'utf8')
+        .split('\n')
+        .filter((line) => line.trim() !== '' && !line.trimStart().startsWith('#'))
+        .map((line) => {
+          const at = line.indexOf('=')
+          return [line.slice(0, at), line.slice(at + 1)]
+        })
+    )
+  /** Every variable the Compose files read, and those of them that name a host port. */
+  const composeVariables = [
+    ...new Set(
+      ['docker-compose.yml', 'docker/worker-check/compose.yml'].flatMap((file) =>
+        [...readFileSync(join(repository, file), 'utf8').matchAll(/\$\{([A-Z0-9_]+)/g)].map(
+          (match) => match[1] as string
+        )
+      )
+    ),
+  ]
+  const PORTS = composeVariables.filter((name) => name.endsWith('_PORT'))
+  const at = (file: string, port: string) => `http://localhost:${settings(file)[port]}`
+
+  test('one job runs every mode and the worker check: no matrix, and no job beside it', () => {
+    expect(Object.keys(jobs).filter((name) => name.startsWith('self-host'))).toEqual(['self-host'])
+    expect((job('self-host') as Job & { strategy?: unknown }).strategy).toBeUndefined()
+  })
+
+  test('the image is built once, and nothing that starts a stack builds it again', () => {
+    const lines = scripts().flatMap((script) => script.split('\n'))
+    expect(lines.filter((line) => /\sbuild(\s|$)/.test(line))).toEqual([
+      'docker compose --profile app build api',
     ])
-    expect(job('self-host-worker').env?.WEBHOOK_WORKER).toBe('separate')
+    expect(scripts().filter((script) => script.includes('--build'))).toEqual([])
+    const ups = scripts().flatMap((script) =>
+      script.split('\n').filter((line) => /\bup -d\b/.test(line))
+    )
+    expect(ups.length).toBe(3)
+    for (const line of ups) {
+      expect(line).toContain('up -d --no-build')
+    }
+    expect(indexOf('build api')).toBeLessThan(indexOf('up -d'))
   })
 
-  test('the stack is started without the worker: the check has to see nothing delivered first', () => {
-    const start = indexOf('up -d --build')
-    expect(start).toBeGreaterThan(-1)
-    expect(scripts()[start]).toContain('--profile app up -d --build')
-    expect(scripts()[start]).not.toContain('--profile worker')
-    // The check starts the worker itself, after it has seen the event wait.
-    expect(scripts().filter((script) => /up -d[^\n]*\bworker\b/.test(script))).toEqual([])
+  test('each stack is a Compose project of its own, with its own file of settings', () => {
+    const env = job('self-host').env ?? {}
+    expect(Object.keys(env).sort()).toEqual([...Object.keys(STACKS), 'TULA_MASTER_KEY'].sort())
+    for (const [name, file] of Object.entries(STACKS)) {
+      expect(env[name]).toBe(`${compose(file)} --profile app`)
+    }
+    // Every stack is started, by its own command.
+    const start = scripts()[indexOf('up -d')] ?? ''
+    for (const name of Object.keys(STACKS)) {
+      expect(start).toMatch(new RegExp(`\\$${name} up -d --no-build`))
+    }
   })
 
-  test('the check runs against that stack, with the receiver’s file laid over it', () => {
+  test('nothing a stack reads comes from the job but the master key', () => {
+    // The job's environment reaches every Compose command of every stack: a setting of one
+    // mode there would be every mode's. The settings are in each stack's own file.
+    const env = Object.keys(job('self-host').env ?? {})
+    expect(env.filter((name) => composeVariables.includes(name))).toEqual(['TULA_MASTER_KEY'])
+    const written = scripts().flatMap((script) =>
+      [...script.matchAll(/echo "([A-Z0-9_]+)=[^\n]*>> "\$GITHUB_ENV"/g)].map((m) => m[1])
+    )
+    expect(written.length).toBeGreaterThan(0)
+    expect(written.filter((name) => composeVariables.includes(name as string))).toEqual([])
+  })
+
+  test('every stack has every host port of its own: the three run on one runner', () => {
+    const used: string[] = []
+    for (const file of Object.values(STACKS)) {
+      for (const port of PORTS) {
+        expect(settings(file)[port]).toMatch(/^[0-9]+$/)
+        used.push(settings(file)[port] as string)
+      }
+    }
+    expect(PORTS.length).toBeGreaterThanOrEqual(7)
+    expect(new Set(used).size).toBe(used.length)
+  })
+
+  test('each mode keeps its own settings, and the worker stack is told nothing else', () => {
+    const ports = (file: string) => Object.fromEntries(PORTS.map((p) => [p, settings(file)[p]]))
+    const conformance = {
+      TRUST_PROXY: 'true',
+      // The OAuth scenarios run against the mock provider and the texted codes are read from
+      // the development inbox: both are accepted in the `local` tier only.
+      OAUTH_MOCK_PROVIDER: 'true',
+      SMS_PROVIDER: 'dev',
+    }
+    expect(settings('two-ports')).toEqual({
+      ...ports('two-ports'),
+      ...conformance,
+      LB_CLIENT_ADDRESS: 'peer',
+    })
+    expect(settings('one-address')).toEqual({
+      ...ports('one-address'),
+      ...conformance,
+      // The issuer of the tokens, and where the mock provider's pages are reached.
+      API_PUBLIC_URL: at('one-address', 'LB_PORT'),
+      LB_CLIENT_ADDRESS: 'client',
+    })
+    // No `ENVIRONMENT` and nothing that loosens the outbound guard: the worker's stack runs
+    // in the tier the others run in, and the receiver is reached within its rules.
+    expect(settings('worker')).toEqual({ ...ports('worker'), WEBHOOK_WORKER: 'separate' })
+  })
+
+  test('the two runs: one against each instance on its own port, one through the proxy', () => {
+    const start = stepWith('bun run conformance')?.run ?? ''
+    expect(start.match(/bun run conformance/g)).toHaveLength(1)
+    const section = (mode: string) => start.slice(start.indexOf(`start ${mode} `)).split('\n\n')[0]
+    expect(section('two-ports')).toContain(
+      [
+        `CONFORMANCE_BASE_URL=${at('two-ports', 'API_PORT')}`,
+        `CONFORMANCE_SECOND_BASE_URL=${at('two-ports', 'API_2_PORT')}`,
+        'CONFORMANCE_SETTLE_MS=0',
+        `CONFORMANCE_SMS_INBOX_URLS=${at('two-ports', 'API_PORT')},${at('two-ports', 'API_2_PORT')}`,
+        `CONFORMANCE_MAILPIT_URL=${at('two-ports', 'MAILPIT_UI_PORT')}`,
+        'CONFORMANCE_PUBLISHABLE_KEY="$TWO_PORTS_PUBLISHABLE_KEY"',
+        'CONFORMANCE_SECRET_KEY="$TWO_PORTS_SECRET_KEY"',
+      ].join(' \\\n  ')
+    )
+    expect(section('one-address')).toContain(
+      [
+        `CONFORMANCE_BASE_URL=${at('one-address', 'LB_PORT')}`,
+        'CONFORMANCE_SECOND_BASE_URL=',
+        'CONFORMANCE_SETTLE_MS=6000',
+        // Each instance keeps its own inbox, and through the one address a request may reach
+        // either: the runner asks both, on their own ports.
+        `CONFORMANCE_SMS_INBOX_URLS=${at('one-address', 'API_PORT')},${at('one-address', 'API_2_PORT')}`,
+        `CONFORMANCE_MAILPIT_URL=${at('one-address', 'MAILPIT_UI_PORT')}`,
+        'CONFORMANCE_PUBLISHABLE_KEY="$ONE_ADDRESS_PUBLISHABLE_KEY"',
+        'CONFORMANCE_SECRET_KEY="$ONE_ADDRESS_SECRET_KEY"',
+      ].join(' \\\n  ')
+    )
+    // Every scenario must run: a missing secret key would skip the admin ones.
+    expect(start).toContain('test -n "$CONFORMANCE_PUBLISHABLE_KEY"')
+    expect(start).toContain('test -n "$CONFORMANCE_SECRET_KEY"')
+  })
+
+  test('a run that failed, or never ended, fails the job', () => {
+    const wait = steps().find((step) => step.run?.includes('--pid='))
+    expect(wait?.run).toContain('for mode in two-ports one-address; do')
+    expect(wait?.run).toContain('.exit")" = 0')
+    // Each run's output is shown, whole, in the log.
+    expect(wait?.run).toMatch(/tail -n \+1 -f --pid=/)
+  })
+
+  test('the runs are reported even when the worker check before them failed', () => {
+    const runs = steps().find((step) => step.run?.includes('bun run conformance'))
     const check = indexOf('scripts/worker-check/check.ts')
-    expect(check).toBeGreaterThan(indexOf('up -d --build'))
-    expect(scripts()[check]).toContain(`bun run scripts/worker-check/check.ts -- ${COMPOSE}`)
-    // Its exit code is the step's: nothing after it on the line, nothing that swallows it.
-    expect(scripts()[check]).not.toMatch(/check\.ts[^\n]*(\|\||\|\s|;)/)
+    expect(runs?.id).toBe('runs')
+    // The worker check runs while the conformance runs wait, after they were started.
+    expect(check).toBeGreaterThan(indexOf('bun run conformance'))
+    const after = steps().filter(
+      (step, index) => index > check && step.if !== 'failure()' && step.run !== undefined
+    )
+    expect(after.length).toBe(3)
+    for (const step of after) {
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: a GitHub Actions expression, not a template
+      expect(step.if).toBe("${{ !cancelled() && steps.runs.outcome == 'success' }}")
+    }
   })
 
-  test('the instance token is generated for the run, never written in the workflow', () => {
-    const token = indexOf('TULA_ADMIN_TOKEN=')
-    expect(token).toBeGreaterThan(-1)
-    expect(token).toBeLessThan(indexOf('up -d --build'))
-    expect(scripts()[token]).toContain('openssl rand -hex 32')
-    expect(scripts()[token]).toContain('::add-mask::')
-  })
-
-  test('the conformance run still names the scenarios it skips, all nine', () => {
-    // The worker job replaces none of that: a receiver on the runner is still out of reach
+  test('the conformance runs still name the scenarios they skip, all nine, both modes', () => {
+    // The worker check replaces none of that: a receiver on the runner is still out of reach
     // for a server in a container, and the skip is still checked by name. The ninth waits a
     // day, which a live server cannot be made to do.
-    const run = job('self-host').steps.find((step) => step.run?.includes('bun run conformance'))
+    const run = stepWith('if [ "$skipped" != "$expected" ]; then')
     for (const name of [
       'claims added by a hook',
       'hook that times out',
@@ -193,9 +337,81 @@ describe('the self-host run with the worker as its own service', () => {
     ]) {
       expect(run?.run).toContain(`'${name}'`)
     }
-    expect(run?.run).toContain('if [ "$skipped" != "$expected" ]; then')
-    // And the count in both summary lines is the list's own.
+    expect(run?.run).toContain('for mode in two-ports one-address; do')
+    // And the count in both summary lines is the list's own, against each mode's addresses.
     expect(run?.run?.match(/ 0 failed, 9 skipped against /g)).toHaveLength(2)
+    const port = (file: string, name: string) => settings(file)[name]
+    expect(run?.run).toContain(
+      ` 0 failed, 9 skipped against http://localhost:${port('two-ports', 'API_PORT')} and http://localhost:${port('two-ports', 'API_2_PORT')}$`
+    )
+    expect(run?.run).toContain(
+      ` 0 failed, 9 skipped against http://localhost:${port('one-address', 'LB_PORT')} \\(one address, 6000 ms after each settings change\\)$`
+    )
+  })
+
+  test('every scenario either mode had to see pass is still required, in both', () => {
+    const run = stepWith('if [ "$skipped" != "$expected" ]; then')?.run ?? ''
+    for (const name of [
+      'two instances',
+      'webhook endpoint on a refused address',
+      'phone number on an account',
+      'text messages to a blocked destination',
+      'text messages past the daily limit',
+      'sign in with a texted code',
+      'a texted sign-in code for an unknown number',
+      'a texted sign-in code after the method is switched off',
+      'text message wording',
+      'a texted code as the second factor',
+      'a texted code is never used beside an authenticator app',
+      'a texted sign-in code is not completed by a texted second step',
+    ]) {
+      expect(run).toContain(`must '(^|: )PASSED ${name}$'`)
+    }
+  })
+
+  test('the checks of one mode alone are still made, on that mode’s stack', () => {
+    const dashboard = stepWith('/dashboard/')?.run ?? ''
+    expect(dashboard).toContain(`${at('two-ports', 'API_PORT')}/dashboard/`)
+    expect(dashboard).toContain('grep -F "script-src \'self\'"')
+    expect(dashboard).toContain('$TWO_PORTS run --rm -T api sh -c')
+    const proxy = stepWith('upstream=')?.run ?? ''
+    expect(proxy).toContain('$ONE_ADDRESS logs --no-color --no-log-prefix lb')
+    expect(proxy).toContain('test "$((count * 3))" -ge "$total"')
+  })
+
+  test('the worker stack is started without the worker: the check has to see nothing delivered first', () => {
+    expect(job('self-host').env?.WORKER_STACK).not.toContain('--profile worker')
+    // The check starts the worker itself, after it has seen the event wait.
+    expect(scripts().filter((script) => /up -d[^\n]*\bworker\b/.test(script))).toEqual([])
+  })
+
+  test('the check runs against that stack, with the receiver’s file laid over it', () => {
+    const check = indexOf('scripts/worker-check/check.ts')
+    expect(check).toBeGreaterThan(indexOf('up -d'))
+    expect(scripts()[check]).toContain(`bun run scripts/worker-check/check.ts -- ${WORKER_CHECK}`)
+    // Its exit code is the step's: nothing after it on the line, nothing that swallows it.
+    expect(scripts()[check]).not.toMatch(/check\.ts[^\n]*(\|\||\|\s|;)/)
+    const env = (steps()[check] as Step & { env?: Record<string, string> }).env
+    expect(env?.WORKER_CHECK_API_URLS).toBe(
+      `${at('worker', 'API_PORT')},${at('worker', 'API_2_PORT')}`
+    )
+  })
+
+  test('the instance token is generated for the run, and only the worker stack is given it', () => {
+    const token = indexOf('WORKER_CHECK_ADMIN_TOKEN=')
+    expect(token).toBeGreaterThan(-1)
+    expect(token).toBeLessThan(indexOf('up -d'))
+    expect(scripts()[token]).toContain('openssl rand -hex 32')
+    expect(scripts()[token]).toContain('::add-mask::')
+    // Under the name the API reads, it is set only beside the worker stack's own commands.
+    const given = scripts().flatMap((script) =>
+      script.split('\n').filter((line) => line.includes('TULA_ADMIN_TOKEN='))
+    )
+    expect(given.length).toBe(2)
+    for (const line of given) {
+      expect(line).toContain('TULA_ADMIN_TOKEN="$WORKER_CHECK_ADMIN_TOKEN"')
+      expect(line).toMatch(/\$WORKER_STACK up -d|^\s*export TULA_ADMIN_TOKEN=/)
+    }
   })
 })
 

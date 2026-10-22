@@ -276,122 +276,210 @@ jobs:
   # scenario signs in through one and out through the other, and spreads wrong passwords over
   # both, so this job is what proves the instances share their state (ADR 0016).
   #
-  # It runs twice, side by side. `two-ports` talks to each instance on its own port, which is
-  # the only way to say which instance a step went to. `one-address` sends every scenario
-  # through the proxy in front of both (`lb`, round robin), as a real deployment is reached:
-  # the Phase 1 exit criterion "two packaged instances behind one address"
-  # (conformance/README.md, "Behind one address").
+  # It runs three stacks of the one image, side by side: Compose projects of their own, each
+  # with its own host ports and settings (docker/self-host/*.env).
+  # - `two-ports` talks to each instance on its own port, which is the only way to say which
+  #   instance a step went to.
+  # - `one-address` sends every scenario through the proxy in front of both (`lb`, round
+  #   robin), as a real deployment is reached: the Phase 1 exit criterion "two packaged
+  #   instances behind one address" (conformance/README.md, "Behind one address").
+  # - `worker` runs the webhook worker as a service of its own (docs/self-host.md, "The webhook
+  #   worker as its own service"): `WEBHOOK_WORKER=separate` on every container. The stack is
+  #   started WITHOUT the worker, so the check can see that an API instance delivers nothing;
+  #   it then starts the worker itself and sees the delivery made.
+  #
+  # The two conformance runs are almost all waiting (the scenarios' own waits, and in
+  # `one-address` six seconds after each settings change), so they go at once, in the
+  # background, and the worker check runs while they wait. They were three jobs, each of which
+  # built the same image and started its own stack.
+  #
+  # The conformance scenarios with a receiver are skipped by both runs: their receiver is on
+  # the runner, at a private address for a server in a container, and the outbound guard
+  # refuses those. The worker check does not loosen the guard either. Its receiver is a
+  # container in the worker's own network namespace (docker/worker-check/compose.yml), which
+  # the worker reaches on the loopback, allowed in the `local` tier Compose runs the stack in,
+  # and which the API instances cannot reach at all: a request it gets is the worker's.
   self-host:
-    name: self-host (${{ matrix.mode }})
+    name: self-host
     needs: duplicate
     if: needs.duplicate.outputs.skip != 'true'
     runs-on: ubuntu-latest
-    # A full run is about ten minutes of waiting the scenarios ask for; through the one
-    # address, about six more for the settings to reach the other instance after each change.
-    # With 107 scenarios the one-address run takes 29 to 30 minutes, so a limit of 30
-    # cancelled runs in which every scenario had passed.
+    # The one-address run is the longest: about ten minutes of waiting the scenarios ask for,
+    # and about six more for the settings to reach the other instance after each change: 29 to
+    # 30 minutes, which the rest of the job runs beside. A limit of 30 cancelled runs in which
+    # every scenario had passed.
     timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - mode: two-ports
-            base_url: http://localhost:3003
-            second_base_url: http://localhost:3004
-            public_url: ''
-            lb_client_address: peer
-            settle_ms: '0'
-          - mode: one-address
-            base_url: http://localhost:3005
-            second_base_url: ''
-            # The issuer of the tokens, and where the mock provider's pages are reached.
-            public_url: http://localhost:3005
-            # The runner sends each scenario from its own address in X-Forwarded-For; the
-            # proxy passes it through for this run only (docker/lb/forwarded-for.client.conf).
-            lb_client_address: client
-            settle_ms: '6000'
     env:
-      API_PUBLIC_URL: ${{ matrix.public_url }}
-      LB_CLIENT_ADDRESS: ${{ matrix.lb_client_address }}
-      # Throwaway values for this job's own containers.
+      # A throwaway value for this job's own containers, the same in every stack.
       TULA_MASTER_KEY: 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
-      TRUST_PROXY: 'true'
-      # The OAuth scenarios run against the API's own mock provider (ADR 0026). Compose runs
-      # the stack in the `local` tier, the only one the API accepts this in.
-      OAUTH_MOCK_PROVIDER: 'true'
-      # The phone number scenario reads its codes from the development SMS inbox (ADR 0037),
-      # accepted in the `local` tier only like the mock provider.
-      SMS_PROVIDER: dev
+      # Each stack's Compose command. Nothing else here reaches a stack: a setting of one mode
+      # in the job's environment would be every mode's, so each has its own file.
+      ONE_ADDRESS: docker compose -p self-host-one-address --env-file docker/self-host/one-address.env --profile app
+      TWO_PORTS: docker compose -p self-host-two-ports --env-file docker/self-host/two-ports.env --profile app
+      WORKER_STACK: docker compose -p self-host-worker --env-file docker/self-host/worker.env --profile app
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with: { bun-version-file: package.json }
       - run: bun install --frozen-lockfile
-      - name: Build and start the stack
-        run: docker compose --profile app up -d --build
-      - name: Wait until both API instances are ready
+      - name: Generate the worker stack's instance admin token
         run: |
+          # The diagnostics are behind it. Generated per run: the API refuses a typed value. It
+          # is kept under a name no Compose file reads, and handed to the worker stack alone.
+          set -euo pipefail
+          token=$(openssl rand -hex 32)
+          echo "::add-mask::$token"
+          echo "WORKER_CHECK_ADMIN_TOKEN=$token" >> "$GITHUB_ENV"
+      # Once, for all three stacks (`tula-api:local`): every stack below is started with
+      # `--no-build`, so none of them can make an image of its own.
+      - name: Build the API image
+        run: docker compose --profile app build api
+      - name: Start the three stacks, the worker stack without its worker
+        run: |
+          set -euo pipefail
+          $ONE_ADDRESS up -d --no-build &
+          one_address=$!
+          $TWO_PORTS up -d --no-build &
+          two_ports=$!
+          TULA_ADMIN_TOKEN="$WORKER_CHECK_ADMIN_TOKEN" $WORKER_STACK up -d --no-build &
+          worker=$!
+          wait "$one_address"
+          wait "$two_ports"
+          wait "$worker"
+      - name: Wait until every API instance is ready
+        run: |
+          # one-address 3003-3005, two-ports 3013-3015, worker 3023 and 3024.
           for attempt in $(seq 1 60); do
-            if curl -fsS http://localhost:3003/v1/ready > /dev/null &&
-              curl -fsS http://localhost:3004/v1/ready > /dev/null &&
-              curl -fsS http://localhost:3005/v1/ready > /dev/null; then
+            ready=true
+            for port in 3003 3004 3005 3013 3014 3015 3023 3024; do
+              if ! curl -fsS "http://localhost:$port/v1/ready" > /dev/null; then
+                ready=false
+                break
+              fi
+            done
+            if [ "$ready" = true ]; then
               exit 0
             fi
             sleep 2
           done
-          echo "the API instances did not both become ready" >&2
+          echo "the API instances did not all become ready" >&2
           exit 1
       - name: The image serves the dashboard under its Content-Security-Policy
-        if: matrix.mode == 'two-ports'
         run: |
           set -euo pipefail
-          headers=$(curl -fsS -o /dev/null -D - http://localhost:3003/dashboard/)
+          headers=$(curl -fsS -o /dev/null -D - http://localhost:3013/dashboard/)
           echo "$headers" | grep -i '^content-security-policy:' | grep -F "script-src 'self'" > /dev/null
           if echo "$headers" | grep -i '^content-security-policy:' | grep -q 'unsafe-'; then
             echo "the dashboard's Content-Security-Policy allows something unsafe" >&2
             exit 1
           fi
           # The page is the app (a script of this origin), and a missing asset is a 404, not HTML.
-          curl -fsS http://localhost:3003/dashboard/ | grep -q '/dashboard/assets/'
-          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3003/dashboard/assets/missing.js)" = 404
+          curl -fsS http://localhost:3013/dashboard/ | grep -q '/dashboard/assets/'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3013/dashboard/assets/missing.js)" = 404
           # Only the static files: no React and no dashboard sources in the image.
-          docker compose --profile app run --rm -T api sh -c \
+          $TWO_PORTS run --rm -T api sh -c \
             '! test -e /usr/src/app/node_modules/react && ! test -e /usr/src/app/apps/dashboard/src'
-      - name: Create an environment and its keys
+      - name: Create an environment and its keys in each stack
         run: |
           # Without pipefail a failed command before `| tail` would be swallowed, and an empty
           # secret key would make the admin scenarios skip instead of fail.
           set -euo pipefail
-          compose() { docker compose --profile app run --rm -T api "$@"; }
-          seed=$(compose bun run ../../packages/db/src/scripts/seed.ts)
-          environment=$(echo "$seed" | awk '/development environment/ {print $NF}')
-          if ! echo "$environment" | grep -Eq '^[0-9a-f-]{36}$'; then
-            echo "seed did not print a development environment id" >&2
-            exit 1
-          fi
-          for kind in publishable secret; do
-            minted=$(compose bun run src/scripts/create-api-key.ts --environment "$environment" --kind "$kind")
-            key=$(echo "$minted" | tail -1)
-            case "$key" in
-              tula_pk_* | tula_sk_*) ;;
-              *) echo "could not create a $kind key" >&2; exit 1 ;;
-            esac
-            echo "::add-mask::$key"
-            name=$(echo "$kind" | tr '[:lower:]' '[:upper:]')
-            echo "CONFORMANCE_${name}_KEY=$key" >> "$GITHUB_ENV"
-          done
-      - name: Run the conformance scenarios against both instances
-        env:
-          CONFORMANCE_BASE_URL: ${{ matrix.base_url }}
-          CONFORMANCE_SECOND_BASE_URL: ${{ matrix.second_base_url }}
-          CONFORMANCE_SETTLE_MS: ${{ matrix.settle_ms }}
+          # keys <stack> <kind>...: seeds the stack named by the variable <stack> and mints its
+          # keys, as <stack>_PUBLISHABLE_KEY and <stack>_SECRET_KEY.
+          keys() {
+            local stack=$1
+            shift
+            local -a compose
+            read -r -a compose <<< "${!stack}"
+            seed=$("${compose[@]}" run --rm -T api bun run ../../packages/db/src/scripts/seed.ts)
+            environment=$(echo "$seed" | awk '/development environment/ {print $NF}')
+            if ! echo "$environment" | grep -Eq '^[0-9a-f-]{36}$'; then
+              echo "$stack: seed did not print a development environment id" >&2
+              exit 1
+            fi
+            for kind in "$@"; do
+              minted=$("${compose[@]}" run --rm -T api bun run src/scripts/create-api-key.ts --environment "$environment" --kind "$kind")
+              key=$(echo "$minted" | tail -1)
+              case "$kind:$key" in
+                publishable:tula_pk_* | secret:tula_sk_*) ;;
+                *) echo "$stack: could not create a $kind key" >&2; exit 1 ;;
+              esac
+              echo "::add-mask::$key"
+              name=$(echo "$kind" | tr '[:lower:]' '[:upper:]')
+              echo "${stack}_${name}_KEY=$key" >> "$GITHUB_ENV"
+            done
+          }
+          keys ONE_ADDRESS publishable secret
+          keys TWO_PORTS publishable secret
+          keys WORKER_STACK secret
+      - name: Start both conformance runs, side by side
+        id: runs
+        run: |
+          set -euo pipefail
+          # start <mode> <variable=value>...: the run in the background, its output in
+          # $RUNNER_TEMP/<mode>.log and its exit code in <mode>.exit. Nothing of it is written to
+          # this step's output: a process holding that open would keep the step from ending.
+          start() {
+            local mode=$1
+            shift
+            # Every scenario must run: a missing secret key would skip the admin ones.
+            env "$@" bash -c 'test -n "$CONFORMANCE_PUBLISHABLE_KEY" && test -n "$CONFORMANCE_SECRET_KEY"'
+            nohup env "$@" bash -c \
+              'bun run conformance > "$RUNNER_TEMP/$0.log" 2>&1; echo $? > "$RUNNER_TEMP/$0.exit"' \
+              "$mode" > /dev/null 2>&1 &
+            echo $! > "$RUNNER_TEMP/$mode.pid"
+          }
+
           # Each instance keeps its own inbox, and through the one address a request may reach
           # either: the runner asks both, on their own ports, in both modes.
-          CONFORMANCE_SMS_INBOX_URLS: http://localhost:3003,http://localhost:3004
+          start one-address \
+            CONFORMANCE_BASE_URL=http://localhost:3005 \
+            CONFORMANCE_SECOND_BASE_URL= \
+            CONFORMANCE_SETTLE_MS=6000 \
+            CONFORMANCE_SMS_INBOX_URLS=http://localhost:3003,http://localhost:3004 \
+            CONFORMANCE_MAILPIT_URL=http://localhost:8025 \
+            CONFORMANCE_PUBLISHABLE_KEY="$ONE_ADDRESS_PUBLISHABLE_KEY" \
+            CONFORMANCE_SECRET_KEY="$ONE_ADDRESS_SECRET_KEY"
+
+          start two-ports \
+            CONFORMANCE_BASE_URL=http://localhost:3013 \
+            CONFORMANCE_SECOND_BASE_URL=http://localhost:3014 \
+            CONFORMANCE_SETTLE_MS=0 \
+            CONFORMANCE_SMS_INBOX_URLS=http://localhost:3013,http://localhost:3014 \
+            CONFORMANCE_MAILPIT_URL=http://localhost:8026 \
+            CONFORMANCE_PUBLISHABLE_KEY="$TWO_PORTS_PUBLISHABLE_KEY" \
+            CONFORMANCE_SECRET_KEY="$TWO_PORTS_SECRET_KEY"
+      - name: A webhook is delivered by the worker, and by no API instance
+        env:
+          WORKER_CHECK_API_URLS: http://localhost:3023,http://localhost:3024
         run: |
-          # Every scenario must run: a missing secret key would skip the admin ones.
-          test -n "$CONFORMANCE_PUBLISHABLE_KEY" && test -n "$CONFORMANCE_SECRET_KEY"
-          bun run conformance | tee conformance.log
+          set -euo pipefail
+          export TULA_ADMIN_TOKEN="$WORKER_CHECK_ADMIN_TOKEN" WORKER_CHECK_SECRET_KEY="$WORKER_STACK_SECRET_KEY"
+          bun run scripts/worker-check/check.ts -- docker compose -p self-host-worker --env-file docker/self-host/worker.env -f docker-compose.yml -f docker/worker-check/compose.yml --profile app --profile worker
+      # The steps below report on the conformance runs, so they run once the runs were started,
+      # whether or not the worker check passed: a failure there must not hide theirs.
+      - name: Wait for both runs, and show what each printed
+        if: ${{ !cancelled() && steps.runs.outcome == 'success' }}
+        run: |
+          for mode in two-ports one-address; do
+            echo "======== conformance ($mode) ========"
+            # The whole log, then what the run writes until its process ends.
+            tail -n +1 -f --pid="$(cat "$RUNNER_TEMP/$mode.pid")" "$RUNNER_TEMP/$mode.log"
+          done
+          status=0
+          for mode in two-ports one-address; do
+            if [ "$(cat "$RUNNER_TEMP/$mode.exit")" = 0 ]; then
+              echo "conformance ($mode) passed"
+            else
+              echo "conformance ($mode) failed" >&2
+              status=1
+            fi
+          done
+          exit "$status"
+        shell: bash -euo pipefail {0}
+      - name: Each run skipped exactly the nine, and passed what it must
+        if: ${{ !cancelled() && steps.runs.outcome == 'success' }}
+        run: |
           # `bun run --filter` prefixes every line with the package name, so none of these
           # patterns may be anchored to the start of a line.
           #
@@ -416,53 +504,65 @@ jobs:
             'webhook delivered and signed' \
             'webhook retried after a 500' \
             'webhook secret rotated with an overlap' | sort)
-          skipped=$(grep -Eo '(^|: )SKIPPED .*$' conformance.log |
-            sed -E 's/^(: )?SKIPPED //' | sort || true)
-          if [ "$skipped" != "$expected" ]; then
-            echo "the scenarios skipped are not exactly the ones expected" >&2
-            echo "expected:" >&2; echo "$expected" >&2
-            echo "skipped:" >&2; echo "$skipped" >&2
-            exit 1
-          fi
-          grep -Eq '(^|: )PASSED two instances$' conformance.log
-          # The outbound guard's refusals at save time need no receiver: they run here,
-          # against the packaged server and a real Postgres.
-          grep -Eq '(^|: )PASSED webhook endpoint on a refused address$' conformance.log
-          # The texted code is read from the instances' development inboxes: the scenarios
-          # must have run, not been skipped for want of one. The two about the send limits
-          # (a blocked destination, the daily limit) each send a message of their own first.
-          grep -Eq '(^|: )PASSED phone number on an account$' conformance.log
-          grep -Eq '(^|: )PASSED text messages to a blocked destination$' conformance.log
-          grep -Eq '(^|: )PASSED text messages past the daily limit$' conformance.log
-          # Signing in with a texted code (ADR 0037). The scenario about an unknown number
-          # reads no code, and still needs a server that can send one: without a sender the
-          # method is not offered at all.
-          grep -Eq '(^|: )PASSED sign in with a texted code$' conformance.log
-          grep -Eq '(^|: )PASSED a texted sign-in code for an unknown number$' conformance.log
-          grep -Eq '(^|: )PASSED a texted sign-in code after the method is switched off$' conformance.log
-          # An environment's own words for a text message (ADR 0042): the message is read
-          # whole from the inbox, not only its code.
-          grep -Eq '(^|: )PASSED text message wording$' conformance.log
-          # A texted code as the second step (ADR 0025): enrolment, the sign-in and each
-          # refusal read their codes from the same inboxes.
-          grep -Eq '(^|: )PASSED a texted code as the second factor$' conformance.log
-          grep -Eq '(^|: )PASSED a texted code is never used beside an authenticator app$' conformance.log
-          grep -Eq '(^|: )PASSED a texted sign-in code is not completed by a texted second step$' conformance.log
-          if [ "${{ matrix.mode }}" = two-ports ]; then
-            # The cross-instance scenario must have run against two instances: without the
-            # second URL its steps would all go to one server and prove nothing about sharing.
-            grep -Eq ' 0 failed, 9 skipped against http://localhost:3003 and http://localhost:3004$' conformance.log
-          else
-            grep -Eq ' 0 failed, 9 skipped against http://localhost:3005 \(one address, 6000 ms after each settings change\)$' conformance.log
-          fi
+          must() {
+            if ! grep -Eq "$1" "$log"; then
+              echo "conformance ($mode): no line matches $1" >&2
+              exit 1
+            fi
+          }
+          for mode in two-ports one-address; do
+            log="$RUNNER_TEMP/$mode.log"
+            skipped=$(grep -Eo '(^|: )SKIPPED .*$' "$log" |
+              sed -E 's/^(: )?SKIPPED //' | sort || true)
+            if [ "$skipped" != "$expected" ]; then
+              echo "conformance ($mode): the scenarios skipped are not exactly the ones expected" >&2
+              echo "expected:" >&2; echo "$expected" >&2
+              echo "skipped:" >&2; echo "$skipped" >&2
+              exit 1
+            fi
+            must '(^|: )PASSED two instances$'
+            # The outbound guard's refusals at save time need no receiver: they run here,
+            # against the packaged server and a real Postgres.
+            must '(^|: )PASSED webhook endpoint on a refused address$'
+            # The texted code is read from the instances' development inboxes: the scenarios
+            # must have run, not been skipped for want of one. The two about the send limits
+            # (a blocked destination, the daily limit) each send a message of their own first.
+            must '(^|: )PASSED phone number on an account$'
+            must '(^|: )PASSED text messages to a blocked destination$'
+            must '(^|: )PASSED text messages past the daily limit$'
+            # Signing in with a texted code (ADR 0037). The scenario about an unknown number
+            # reads no code, and still needs a server that can send one: without a sender the
+            # method is not offered at all.
+            must '(^|: )PASSED sign in with a texted code$'
+            must '(^|: )PASSED a texted sign-in code for an unknown number$'
+            must '(^|: )PASSED a texted sign-in code after the method is switched off$'
+            # An environment's own words for a text message (ADR 0042): the message is read
+            # whole from the inbox, not only its code.
+            must '(^|: )PASSED text message wording$'
+            # A texted code as the second step (ADR 0025): enrolment, the sign-in and each
+            # refusal read their codes from the same inboxes.
+            must '(^|: )PASSED a texted code as the second factor$'
+            must '(^|: )PASSED a texted code is never used beside an authenticator app$'
+            must '(^|: )PASSED a texted sign-in code is not completed by a texted second step$'
+            case "$mode" in
+              two-ports)
+                # The cross-instance scenario must have run against two instances: without the
+                # second URL its steps would all go to one server and prove nothing about sharing.
+                must ' 0 failed, 9 skipped against http://localhost:3013 and http://localhost:3014$'
+                ;;
+              one-address)
+                must ' 0 failed, 9 skipped against http://localhost:3005 \(one address, 6000 ms after each settings change\)$'
+                ;;
+            esac
+          done
         shell: bash -euo pipefail {0}
       - name: Both instances answered behind the one address
-        if: matrix.mode == 'one-address'
+        if: ${{ !cancelled() && steps.runs.outcome == 'success' }}
         run: |
           # The proxy logs the instance that answered each request. Round robin over two
           # instances: each must have answered at least a third of them, or the run did not
           # exercise what it claims to.
-          docker compose --profile app logs --no-color --no-log-prefix lb > lb.log
+          $ONE_ADDRESS logs --no-color --no-log-prefix lb > lb.log
           total=$(grep -c 'upstream=' lb.log)
           instances=$(grep -o 'upstream=[0-9.]*:3003' lb.log | sort | uniq -c | awk '{print $1}')
           echo "requests: $total; per instance: $(echo $instances)"
@@ -473,89 +573,20 @@ jobs:
         shell: bash -euo pipefail {0}
       - name: Stack logs
         if: failure()
-        run: docker compose --profile app logs --no-color
-
-  # The webhook worker as a service of its own (docs/self-host.md, "The webhook worker as its
-  # own service"): the same image, `WEBHOOK_WORKER=separate` on every container. The stack is
-  # started WITHOUT the worker first, so the check can see that an API instance delivers
-  # nothing; it then starts the worker itself and sees the delivery made.
-  #
-  # The conformance scenarios with a receiver stay skipped in the jobs above: their receiver
-  # is on the runner, at a private address for a server in a container, and the outbound
-  # guard refuses those. This job does not loosen the guard either. Its receiver is a
-  # container in the worker's own network namespace (docker/worker-check/compose.yml), which
-  # the worker reaches on the loopback, allowed in the `local` tier Compose runs the stack in,
-  # and which the API instances cannot reach at all: a request it gets is the worker's.
-  self-host-worker:
-    name: self-host (worker as its own service)
-    needs: duplicate
-    if: needs.duplicate.outputs.skip != 'true'
-    runs-on: ubuntu-latest
-    # The build, then about two minutes: one for an event to count as stuck with no worker.
-    timeout-minutes: 20
-    env:
-      # A throwaway value for this job's own containers.
-      TULA_MASTER_KEY: 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
-      # Read by Compose for the API instances and for the worker alike.
-      WEBHOOK_WORKER: separate
-    steps:
-      - uses: actions/checkout@v7
-      - uses: oven-sh/setup-bun@v2
-        with: { bun-version-file: package.json }
-      - run: bun install --frozen-lockfile
-      - name: Generate the instance admin token
         run: |
-          # The diagnostics are behind it. Generated per run: the API refuses a typed value.
-          set -euo pipefail
-          token=$(openssl rand -hex 32)
-          echo "::add-mask::$token"
-          echo "TULA_ADMIN_TOKEN=$token" >> "$GITHUB_ENV"
-      - name: Build and start the stack, without the worker
-        run: docker compose --profile app up -d --build
-      - name: Wait until both API instances are ready
-        run: |
-          for attempt in $(seq 1 60); do
-            if curl -fsS http://localhost:3003/v1/ready > /dev/null &&
-              curl -fsS http://localhost:3004/v1/ready > /dev/null; then
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "the API instances did not both become ready" >&2
-          exit 1
-      - name: Create an environment and its secret key
-        run: |
-          set -euo pipefail
-          compose() { docker compose --profile app run --rm -T api "$@"; }
-          seed=$(compose bun run ../../packages/db/src/scripts/seed.ts)
-          environment=$(echo "$seed" | awk '/development environment/ {print $NF}')
-          if ! echo "$environment" | grep -Eq '^[0-9a-f-]{36}$'; then
-            echo "seed did not print a development environment id" >&2
-            exit 1
-          fi
-          minted=$(compose bun run src/scripts/create-api-key.ts --environment "$environment" --kind secret)
-          key=$(echo "$minted" | tail -1)
-          case "$key" in
-            tula_sk_*) ;;
-            *) echo "could not create a secret key" >&2; exit 1 ;;
-          esac
-          echo "::add-mask::$key"
-          echo "WORKER_CHECK_SECRET_KEY=$key" >> "$GITHUB_ENV"
-      - name: A webhook is delivered by the worker, and by no API instance
-        run: |
-          set -euo pipefail
-          export WORKER_CHECK_ADMIN_TOKEN="$TULA_ADMIN_TOKEN"
-          bun run scripts/worker-check/check.ts -- docker compose -f docker-compose.yml -f docker/worker-check/compose.yml --profile app --profile worker
-      - name: Stack logs
-        if: failure()
-        run: docker compose -f docker-compose.yml -f docker/worker-check/compose.yml --profile app --profile worker logs --no-color
+          echo "======== one-address ========"
+          $ONE_ADDRESS logs --no-color
+          echo "======== two-ports ========"
+          $TWO_PORTS logs --no-color
+          echo "======== worker ========"
+          docker compose -p self-host-worker --env-file docker/self-host/worker.env -f docker-compose.yml -f docker/worker-check/compose.yml --profile app --profile worker logs --no-color
 
   # The marker `duplicate` looks for. It needs every other job, with no status function in its
   # condition, so it is written only when all of them succeeded, and never by a run that
   # skipped them. Only a push writes one: its run read no cache, and a fork cannot push.
   passed:
     name: record the pass
-    needs: [duplicate, verify, e2e, e2e-docs, kotlin, kotlin-android, self-host, self-host-worker]
+    needs: [duplicate, verify, e2e, e2e-docs, kotlin, kotlin-android, self-host]
     if: needs.duplicate.outputs.skip != 'true' && github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 5
