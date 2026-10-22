@@ -186,4 +186,16 @@ describe('laneTargets', () => {
     ])
     expect(lanes[1]?.baseUrl).toBe(base.baseUrl)
   })
+
+  test('an environment named twice, or the primary again, is refused', () => {
+    const base = { ...target('base'), secretKey: 'sk_base' }
+    const x = { publishableKey: 'pk_x', secretKey: 'sk_x' }
+    expect(() => laneTargets(base, [x, x])).toThrow('environment')
+    expect(() => laneTargets(base, [{ publishableKey: 'pk_base', secretKey: 'sk_y' }])).toThrow(
+      'environment'
+    )
+    expect(() => laneTargets(base, [{ publishableKey: 'pk_y', secretKey: 'sk_base' }])).toThrow(
+      'environment'
+    )
+  })
 })

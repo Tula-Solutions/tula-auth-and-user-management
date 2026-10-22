@@ -60,8 +60,19 @@ export function parseEnvironments(value: string | undefined): LaneEnvironment[] 
  * @param base - The target of the primary environment.
  * @param extra - The other environments.
  * @returns The targets; the first is `base` itself.
+ * @throws Error when two lanes would share an environment (a repeated key).
  */
 export function laneTargets(base: Target, extra: readonly LaneEnvironment[]): Target[] {
+  // Two lanes in one environment would see each other's settings: flaky failures, not a clear one.
+  const publishable = new Set([base.publishableKey])
+  const secret = new Set(base.secretKey ? [base.secretKey] : [])
+  for (const environment of extra) {
+    if (publishable.has(environment.publishableKey) || secret.has(environment.secretKey)) {
+      throw new Error('an environment is named twice: each lane needs an environment of its own')
+    }
+    publishable.add(environment.publishableKey)
+    secret.add(environment.secretKey)
+  }
   return [base, ...extra.map((environment) => ({ ...base, ...environment }))]
 }
 

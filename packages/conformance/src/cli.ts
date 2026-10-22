@@ -108,16 +108,15 @@ try {
   process.stderr.write(`conformance: ${error instanceof Error ? error.message : String(error)}\n`)
   process.exit(2)
 }
-if (environments.some(({ publishableKey: key }) => key === publishableKey)) {
-  process.stderr.write(
-    "conformance: CONFORMANCE_ENVIRONMENTS must not repeat the primary environment: two scenarios in one environment would see each other's settings\n"
-  )
-  process.exit(2)
-}
-
 const counts = { passed: 0, failed: 0, skipped: 0 }
 const scenarios = (await loadScenarios()).map(({ scenario }) => scenario)
-const lanes = laneTargets(target, environments)
+let lanes: Target[]
+try {
+  lanes = laneTargets(target, environments)
+} catch (error) {
+  process.stderr.write(`conformance: ${error instanceof Error ? error.message : String(error)}\n`)
+  process.exit(2)
+}
 if (lanes.length > 1) {
   process.stdout.write(
     `running ${scenarios.length} scenarios in ${lanes.length} environments at once\n`

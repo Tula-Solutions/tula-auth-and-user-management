@@ -314,7 +314,7 @@ jobs:
     # The target is under ten minutes. The scenarios' waits (about 17 minutes of them in one
     # run, and about 12 more for the settings to reach the other instance after each change in
     # `one-address`) overlap, in eight environments at once, so the longest single scenario and
-    # the setup are what is left. The limit is a guard against a hang, not an expectation.
+    # the setup are what is left: 5 to 6 minutes measured. The limit is a guard against a hang.
     timeout-minutes: 20
     env:
       # A throwaway value for this job's own containers, the same in every stack.
