@@ -1412,3 +1412,194 @@
     color: inherit;
   }
 }
+
+/* ------------------------------------------------- native screens gallery */
+/*
+ * `:::native-screens` (src/lib/native-captures.ts, src/client/native-screens.ts). Without a script
+ * the page lists every capture in the page's scheme; with one, a picker shows a single screen,
+ * step and scheme in a device frame. The pictures are real screenshots: nothing here draws one.
+ */
+.native-screens {
+  --ns-radius: 44px;
+  margin-block: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 16px;
+}
+.native-screens[data-native-screens="android"] {
+  --ns-radius: 28px;
+}
+.ns-caption > :first-child {
+  margin-top: 0;
+}
+.ns-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.ns-toolbar[hidden],
+.ns-steps[hidden],
+.ns-panel[hidden],
+.ns-shot[hidden] {
+  display: none;
+}
+.ns-tabs,
+.ns-options,
+.ns-steps,
+.ns-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ns-tab,
+.ns-step,
+.ns-option {
+  min-height: 44px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--muted);
+  padding: 0 14px;
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+.ns-tab:hover,
+.ns-step:hover,
+.ns-option:hover {
+  color: var(--ink);
+}
+.ns-step[aria-pressed="true"],
+.ns-option[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+.ns-tab[aria-selected="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.ns-steps {
+  margin-bottom: 16px;
+}
+.ns-options {
+  align-items: center;
+}
+
+/* Without a script: every capture, in a grid, in the page's scheme. */
+.ns-shots {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ns-shot {
+  margin: 0;
+  padding: 0;
+}
+.ns-device {
+  margin: 0;
+}
+.ns-screen {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.ns-img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.ns-img[data-theme="dark"] {
+  display: none;
+}
+:root[data-theme="dark"] .native-screens:not([data-enhanced]) .ns-img[data-theme="light"] {
+  display: none;
+}
+:root[data-theme="dark"] .native-screens:not([data-enhanced]) .ns-img[data-theme="dark"] {
+  display: block;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .native-screens:not([data-enhanced]) .ns-img[data-theme="light"] {
+    display: none;
+  }
+  :root:not([data-theme="light"]) .native-screens:not([data-enhanced]) .ns-img[data-theme="dark"] {
+    display: block;
+  }
+}
+.ns-label {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: var(--fs-small);
+  text-align: center;
+}
+.ns-provenance {
+  margin: 16px 0 0;
+  color: var(--faint);
+  font-size: var(--fs-small);
+}
+.ns-missing {
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  padding: 16px;
+}
+.ns-missing-title {
+  margin: 0 0 4px;
+  color: var(--ink);
+  font-weight: 600;
+}
+.ns-missing > p {
+  margin: 0 0 8px;
+}
+.ns-missing pre {
+  margin: 0;
+}
+
+/* With a script: one device, one screen, one scheme. */
+.native-screens[data-enhanced] .ns-shots {
+  display: block;
+}
+.native-screens[data-enhanced] .ns-device {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  padding: 24px 16px 16px;
+}
+.native-screens[data-enhanced] .ns-screen {
+  width: min(100%, 280px);
+  border-radius: 12px;
+}
+.native-screens[data-enhanced][data-ns-frame="on"] .ns-screen {
+  border: 8px solid var(--border-strong);
+  border-radius: var(--ns-radius);
+  box-shadow: var(--sh2);
+}
+.native-screens[data-enhanced][data-ns-theme="light"] .ns-img[data-theme="dark"],
+.native-screens[data-enhanced][data-ns-theme="dark"] .ns-img[data-theme="light"] {
+  display: none;
+}
+.native-screens[data-enhanced][data-ns-theme="light"] .ns-img[data-theme="light"],
+.native-screens[data-enhanced][data-ns-theme="dark"] .ns-img[data-theme="dark"] {
+  display: block;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ns-tab,
+  .ns-step,
+  .ns-option {
+    transition: none;
+  }
+}
