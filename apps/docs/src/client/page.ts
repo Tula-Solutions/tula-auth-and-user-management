@@ -119,6 +119,10 @@ function initActions(): void {
       event.preventDefault()
       event.stopPropagation()
       setOpen(false, 'trigger')
+    } else if (event.key === ' ' && document.activeElement instanceof HTMLAnchorElement) {
+      // Space activates an item as Enter does; on a link it would scroll the page.
+      event.preventDefault()
+      document.activeElement.click()
     } else if (event.key === 'Tab') {
       // Tab leaves the menu where focus would have gone on: it closes and does not trap.
       setOpen(false)
@@ -147,8 +151,9 @@ function initActions(): void {
     if (item.getAttribute('data-action') === 'mcp') {
       void run(null, () => MCP_SETUP, 'MCP setup copied')
     }
-    // A link has opened in a new tab; either way the menu has done its work.
-    setOpen(false, item.tagName === 'A' ? 'none' : 'trigger')
+    // Whatever the item did (a link has opened a tab), focus goes back to the button: the
+    // focused item is about to be hidden.
+    setOpen(false, 'trigger')
   })
 }
 
@@ -213,7 +218,10 @@ function initToc(): void {
 
   function update(): void {
     // The bottom of the page lights the last entry, which a short last section never reaches.
-    const atEnd = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2
+    // A page that does not scroll is at its top, not its end.
+    const atEnd =
+      window.scrollY > 0 &&
+      window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2
     mark(
       atEnd
         ? headings.length - 1

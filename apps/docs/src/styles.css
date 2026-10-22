@@ -1318,7 +1318,6 @@ html[data-js] .feedback-nojs,
 .doc h6 {
   color: var(--ink);
   text-wrap: balance;
-  scroll-margin-top: calc(var(--header-h) + 16px);
 }
 .doc h1 {
   margin: 0 0 16px;

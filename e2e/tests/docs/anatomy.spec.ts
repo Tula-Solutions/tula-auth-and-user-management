@@ -100,6 +100,32 @@ test.describe('the page actions', () => {
     await expect(page.getByRole('menu')).toBeHidden()
   })
 
+  for (const key of ['Enter', 'Space']) {
+    test(`${key} on a link of the menu opens it in a new tab and puts focus back on the button`, async ({
+      page,
+      context,
+    }) => {
+      // The new tab would load a vendor's site: it is counted and closed, never followed.
+      let opened = 0
+      context.on('page', (popup) => {
+        opened += 1
+        void popup.close()
+      })
+      await page.route(/^https:\/\/(claude\.ai|chatgpt\.com|cursor\.com)\//, (route) =>
+        route.abort()
+      )
+      await page.goto(PASSWORD)
+      await menuButton(page).click()
+      await page.getByRole('menuitem', { name: 'Open in Claude' }).focus()
+      const before = await page.evaluate(() => window.scrollY)
+      await page.keyboard.press(key)
+      await expect(page.getByRole('menu')).toBeHidden()
+      await expect(menuButton(page)).toBeFocused()
+      await expect.poll(() => opened).toBe(1)
+      expect(await page.evaluate(() => window.scrollY)).toBe(before)
+    })
+  }
+
   test('a click outside closes the menu', async ({ page }) => {
     await page.goto(PASSWORD)
     await menuButton(page).click()
@@ -200,6 +226,19 @@ test.describe('the table of contents', () => {
     // The bottom of the page lights the last one.
     await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
     await expect(links.nth(count - 1)).toHaveAttribute('aria-current', 'location')
+  })
+
+  test('a page that does not scroll lights the first entry, not the last', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 30000 })
+    await page.goto(PASSWORD)
+    expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(
+      30010
+    )
+    const links = page.getByRole('navigation', { name: 'On this page' }).getByRole('link')
+    await expect(links.first()).toHaveAttribute('aria-current', 'location')
+    await expect(
+      page.getByRole('navigation', { name: 'On this page' }).locator('a[aria-current]')
+    ).toHaveCount(1)
   })
 
   test('clicking an entry lights it and goes to the heading', async ({ page }) => {
