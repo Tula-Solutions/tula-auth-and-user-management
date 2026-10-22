@@ -222,6 +222,86 @@ export interface FactorEnrolmentHookActions {
 const { startTotpEnrolment, confirmTotpEnrolment }: FactorEnrolmentHookActions = useSignIn()
 ```
 
+### `FirstFactorCapabilities`
+
+_interface_, defined in `packages/react/src/components/first-factor-forms.ts`
+
+What the browser and the identifier rule out; see {@link firstFactorStrategies}.
+
+```ts
+export interface FirstFactorCapabilities {
+  /** Whether an emailed link can be honoured here (storage is usable and a link URL is set). */
+  link: boolean
+  /**
+   * What the browser said about WebAuthn: `usePasskeySupport()` as it is, `undefined` while it
+   * has not been asked yet. Hidden until known: how `undefined` counts depends on the list
+   * (see {@link firstFactorStrategies}).
+   */
+  passkey: boolean | undefined
+  /** Whether what was typed is a phone number rather than an address. */
+  phone: boolean
+}
+```
+
+### `FirstFactorFormProps`
+
+_interface_, defined in `packages/react/src/components/first-factor-forms.ts`
+
+What a first-factor form is given: the sign-in flow, the address typed on the first screen
+and the ways to leave the form. A form draws one strategy (the password, an emailed code, ...)
+and calls the flow; it decides nothing about which strategy is shown.
+
+```ts
+export interface FirstFactorFormProps {
+  /** The address (or phone number) the sign-in was started with. */
+  email: string
+  /** The sign-in flow to submit to. */
+  signIn: UseSignInResult
+  /** Whether the title takes the focus (true once the user has moved on from the first screen). */
+  focusTitle: boolean
+  /** Leave for the password reset. */
+  onForgotPassword(): void
+  /** Go back to the first screen to change the address. */
+  onChangeEmail(): void
+  /** What the server last emailed for this attempt, when it has. */
+  prepared?: FirstFactorStep['prepared']
+  /** Ask the server for the email of an email strategy (again, for a fresh one). */
+  sendEmail?(strategy: 'email_code' | 'email_link'): Promise<FlowStep | null>
+  /** Ask the server to text the code of `sms_code` (again, for a fresh one). */
+  sendText?(): Promise<FlowStep | null>
+  /** The other ways to sign in the attempt offers, drawn under the form. */
+  alternatives?: ReactNode
+}
+```
+
+**Example**
+
+```tsx
+function MyPasswordForm(props: FirstFactorFormProps) {
+  return <button onClick={props.onForgotPassword}>Forgot password?</button>
+}
+```
+
+### `FirstFactorForms`
+
+_type_, defined in `packages/react/src/components/first-factor-forms.ts`
+
+The first factors a set of screens can draw, as data: which strategy is drawn by which form.
+A copied component supplies its own table; a strategy with no entry is skipped (the OAuth
+providers are buttons on the first screen, not forms).
+
+```ts
+export type FirstFactorForms = Partial<
+  Record<FirstFactorStrategy, ComponentType<FirstFactorFormProps>>
+>
+```
+
+**Example**
+
+```tsx
+const forms: FirstFactorForms = { password: MyPasswordForm, email_code: MyCodeForm }
+```
+
 ### `FlowResult`
 
 _interface_, defined in `packages/react/src/components/flow-screens.tsx`
@@ -483,6 +563,21 @@ export interface PasswordChecklist {
 const { checks, ok }: PasswordChecklist = usePasswordChecklist(password)
 ```
 
+### `PlacedErrors`
+
+_interface_, defined in `packages/react/src/components/form-errors.ts`
+
+A failed action's messages, sorted by where a form shows them.
+
+```ts
+export interface PlacedErrors {
+  /** Shown above the form: what is not about one field (rate limits, network, the server). */
+  form: string | null
+  /** Shown under a field, by the form's own field name. */
+  fields: Record<string, string[]>
+}
+```
+
 ### `Session`
 
 _type_, defined in `packages/core/src/types.ts`
@@ -699,6 +794,150 @@ export function SignedOut(props: { children?: ReactNode })
 <SignedOut>
   <SignIn />
 </SignedOut>
+```
+
+### `StepOf`
+
+_type_, defined in `packages/react/src/components/step-renderer.tsx`
+
+A step with the given status, narrowed to the fields that status has.
+
+```ts
+export type StepOf<S extends StepStatus> = Extract<FlowStep, { status: S }>
+```
+
+**Example**
+
+```ts
+type Verification = StepOf<'needs_email_verification'> // has `destination`
+```
+
+### `StepRenderer`
+
+_function_, defined in `packages/react/src/components/step-renderer.tsx`
+
+Draw the screen of a flow step: the one place a step becomes a screen.
+
+Anything with no screen in the map (a status a newer server added, a status the map leaves
+out, a screen that returns `null`) draws the package's "not supported" screen with a way to
+start again. There is no prop to change or remove that fallback: every status maps to an
+element or to the fallback, and no action is ever guessed. (A screen that is an element
+which itself renders nothing is its author's responsibility.) Each screen is its own
+component, remounted when the screen's name or status changes, so one step's half-typed
+state never carries over to the next. A screen renders a component: put hooks in that
+component, not in the screen's arrow (inline hooks work, but are not the pattern).
+
+Draw it where the other `@tula-tech/react` screens are drawn, inside a `<TulaProvider>`.
+
+```ts
+export function StepRenderer(props: StepRendererProps)
+```
+
+**Parameters**
+
+- `props`: The step, the screens and how to start again.
+
+**Returns** The step's screen, or the "not supported" screen.
+
+**Throws** Error when the fallback is drawn outside a `<TulaProvider>`.
+
+**Example**
+
+```tsx
+const flow = useSignUp()
+return (
+  <StepRenderer
+    step={flow.step}
+    start={<AccountForm flow={flow} />}
+    screens={{
+      needs_email_verification: (step) => <CodeScreen step={step} />,
+    }}
+    onRestart={flow.reset}
+  />
+)
+```
+
+### `StepRendererProps`
+
+_interface_, defined in `packages/react/src/components/step-renderer.tsx`
+
+Props of {@link StepRenderer}.
+
+```ts
+export interface StepRendererProps {
+  /** What the server is waiting for (a flow hook's `step`), or `null` before the flow starts. */
+  step: FlowStep | null
+  /** A screen per status. See {@link StepScreens}. */
+  screens: StepScreens
+  /**
+   * The screen before the flow has a step. Without one, `null` draws the "not supported"
+   * screen like any other step with no screen.
+   */
+  start?: ReactElement | null
+  /**
+   * A name for the current screen, for a flow that has more than one view with the same
+   * statuses (a sign-in and a reset). A new name draws the screen afresh. Defaults to the
+   * status.
+   */
+  screen?: string
+  /** Whether the "not supported" screen's title takes the focus (see `useScreenChanged`). */
+  focusTitle?: boolean
+  /** Start again: what the "not supported" screen's button does. */
+  onRestart(): void
+}
+```
+
+**Example**
+
+```tsx
+const props: StepRendererProps = { step: null, screens: {}, start: <p>Start</p>, onRestart }
+```
+
+### `StepScreens`
+
+_type_, defined in `packages/react/src/components/step-renderer.tsx`
+
+A screen per step status. A key that is not a step status is a type error, and each screen
+is given its step narrowed to that status. A screen returns an element, or `null` to say it
+cannot draw the step it was given (an option this version does not know): the "not
+supported" screen is drawn instead.
+
+A screen renders a component: put hooks in that component, not in the arrow. Inline hooks
+work at run time (each screen is hosted in a component of its own, so the order of hooks is
+safe) but are not the pattern: a hook in a lower-case function is flagged by the
+rules-of-hooks lint rules.
+
+```ts
+export type StepScreens = {
+  [S in StepStatus]?: (step: StepOf<S>) => ReactElement | null
+}
+```
+
+**Example**
+
+```tsx
+const screens: StepScreens = {
+  // each screen is a component; its hooks live there
+  needs_password: (step) => <PasswordScreen step={step} />,
+  needs_email_verification: (step) => <CodeScreen step={step} />,
+}
+```
+
+### `StepStatus`
+
+_type_, defined in `packages/react/src/components/step-renderer.tsx`
+
+Every status a flow step can have, as the contract defines them (`needs_password`,
+`needs_first_factor`, `complete`, ...).
+
+```ts
+export type StepStatus = FlowStep['status']
+```
+
+**Example**
+
+```ts
+const status: StepStatus = 'needs_password'
 ```
 
 ### `TulaClient`
@@ -1524,6 +1763,8 @@ export interface TulaLocalization {
     required: string
     /** `{time}` is a duration from `seconds` or `minutesSeconds`. */
     retryIn: string
+    /** The whole message of a rate limit whose wait is known; `{time}` as in `retryIn`. */
+    rateLimitedIn: string
     /** `{seconds}`. */
     seconds: string
     /** `{minutes}`, `{seconds}`. */
@@ -2671,6 +2912,139 @@ export type WithStepUp = <Result>(action: () => Promise<Result>) => Promise<Resu
 const withStepUp: WithStepUp = useStepUp()
 ```
 
+### `firstFactorStrategies`
+
+_function_, defined in `packages/react/src/components/first-factor-forms.ts`
+
+Choose the strategies of an attempt that a table of forms can draw, in the server's order.
+
+A strategy the table has no form for, or one the browser or the identifier rules out, is
+skipped, never guessed at (a newer server may offer more). For a phone number a texted code is
+the only form: a password or an emailed code for a number signs nobody in.
+
+A passkey is where "hidden until known" is decided, for both lists, so that a copy cannot
+drift from the prebuilt screens. For the **active** list (the form the screen itself opens
+on) a passkey whose support is not known yet (`undefined`) is not ruled out: a screen whose
+only way is a passkey must not open on "not supported" and then change its mind. For the
+**alternatives** list (the other ways, drawn as links under the form) it is hidden until the
+browser has said `true`: a link that is then taken away is a broken control for as long as
+it shows. `false` rules a passkey out of both.
+
+```ts
+export function firstFactorStrategies(
+  offered: readonly string[],
+  forms: FirstFactorForms,
+  can: FirstFactorCapabilities,
+  list: 'active' | 'alternatives' = 'active'
+): FirstFactorStrategy[]
+```
+
+**Parameters**
+
+- `offered`: The strategies the server offers (`step.strategies`).
+- `forms`: The table of forms.
+- `can`: What the browser and the identifier allow.
+- `list`: Which list is wanted: `'active'` (default) or `'alternatives'`.
+
+**Returns** The strategies to draw; empty when there is none (draw the "not supported" screen).
+
+**Example**
+
+```ts
+const known = firstFactorStrategies(step.strategies, forms, {
+  link: false,
+  passkey: true,
+  phone: false,
+})
+// the links under the form, once the browser has been asked:
+const others = firstFactorStrategies(step.strategies, forms, can, 'alternatives')
+```
+
+### `formatDuration`
+
+_function_, defined in `packages/react/src/components/form-errors.ts`
+
+A duration for a countdown, e.g. `42s` or `4m 12s`, in the provider's locale table.
+
+```ts
+export function formatDuration(totalSeconds: number, t: TulaLocalization): string
+```
+
+**Parameters**
+
+- `totalSeconds`: Whole seconds.
+- `t`: The strings (`useLocalization()`).
+
+**Returns** The text.
+
+**Example**
+
+```tsx
+const t = useLocalization()
+const wait = useRetryCountdown(error)
+// 'Try again in 1m 5s.'
+formatText(t.common.retryIn, { time: formatDuration(wait, t) })
+```
+
+### `formatText`
+
+_function_, defined in `packages/react/src/localization.ts`
+
+Fill a string's `{name}` placeholders. A placeholder with no value is left as it is.
+
+```ts
+export function formatText(
+  template: string,
+  values: Record<string, string | number | boolean>
+): string
+```
+
+**Parameters**
+
+- `template`: The string.
+- `values`: Values by placeholder name.
+
+**Returns** The filled string.
+
+**Example**
+
+```ts
+formatText('to continue to {appName}', { appName: 'Northline' }) // 'to continue to Northline'
+```
+
+### `rateLimitedAlert`
+
+_function_, defined in `packages/react/src/components/form-errors.ts`
+
+The alert of a form that may be rate limited: while a wait is known, one sentence that holds it.
+
+Saying "Try again shortly." and then "Try again in 41s." asks twice, so the known wait
+replaces the generic request. Without a wait the message is returned as it is.
+
+```ts
+export function rateLimitedAlert(
+  message: string | null,
+  wait: number,
+  t: TulaLocalization
+): { message: string | null; detail: null }
+```
+
+**Parameters**
+
+- `message`: The form's message (`placed.form`).
+- `wait`: Seconds left of a rate limit (`useRetryCountdown`), `0` for none.
+- `t`: The strings (`useLocalization()`).
+
+**Returns** Props for `FormError`.
+
+**Example**
+
+```tsx
+const wait = useRetryCountdown(error)
+// 'Too many requests. Try again in 41s.' while a wait runs
+<FormAlert {...rateLimitedAlert(placed.form, wait, t)} />
+```
+
 ### `useAuth`
 
 _function_, defined in `packages/react/src/hooks/use-auth.ts`
@@ -2721,6 +3095,26 @@ const config = useClientConfig()
 return <h1>Sign in to {config?.app.name ?? 'your account'}</h1>
 ```
 
+### `useCountdown`
+
+_function_, defined in `packages/react/src/hooks/use-countdown.ts`
+
+Count down to a moment, one tick a second.
+
+Keep it pure: never compute `until` from `Date.now()` in render (a render must not read the
+clock, and the value would change on every render and restart the timer). Take it from an
+effect or an event handler, or use {@link useRetryCountdown}.
+
+```ts
+export function useCountdown(until: number | null): number
+```
+
+**Parameters**
+
+- `until`: The moment (`Date.now()` scale), or `null` for no countdown.
+
+**Returns** Whole seconds left; `0` when there is no countdown or it has ended.
+
 ### `useEmailLinkCallback`
 
 _function_, defined in `packages/react/src/hooks/use-email-link-callback.ts`
@@ -2748,6 +3142,72 @@ function LinkPage() {
   if (status === 'signed_in') return <Navigate to='/app' />
   if (status === 'different_browser') return <p>Open the link where you started, or use the code.</p>
   return <p>{status === 'loading' ? 'Signing you in…' : 'This link is no longer valid.'}</p>
+}
+```
+
+### `useFieldErrors`
+
+_function_, defined in `packages/react/src/hooks/use-field-errors.ts`
+
+Sort a failed action's messages into "under this field" and "above the form".
+
+A message belongs to the field the server named (`error.errors[].field`) when the form has
+that field, and otherwise to the field its code's area names (`email.*`, `password.*`,
+`verification.*` go to `email`, `password`, `code`). `auth.invalid_credentials` goes to
+`credentialsField`, because the server never says which of the two was wrong. What belongs to
+no field is the form's. Every message is text from the client's locale table: render it as
+text, never as HTML.
+
+```ts
+export function useFieldErrors(
+  error: TulaError | null,
+  fields: readonly string[],
+  credentialsField?: string
+): PlacedErrors
+```
+
+**Parameters**
+
+- `error`: The failed action's error (a flow hook's `error`), or `null`.
+- `fields`: The form's field names. Pass a stable array (a module constant).
+- `credentialsField`: Where `auth.invalid_credentials` is shown; none by default (it is
+  then the form's).
+
+**Returns** The messages by place: `form` and `fields[name]`.
+
+**Example**
+
+```tsx
+const { error } = useSignIn()
+const placed = useFieldErrors(error, ['email', 'password'], 'password')
+// <TextField name='email' errors={placed.fields.email} />
+// <FormError message={placed.form} />
+```
+
+### `useLocalization`
+
+_function_, defined in `packages/react/src/hooks/use-localization.ts`
+
+The strings the provider uses: {@link EN_LOCALIZATION } with the provider's `localization`
+overrides merged in, and the error messages of `@tula-tech/core`'s table.
+
+A component that draws words takes them from here, never from a literal, so that an app's
+translation reaches it.
+
+```ts
+export function useLocalization(): TulaLocalization
+```
+
+**Returns** The merged table. The same object while the provider's overrides are the same.
+
+**Throws** Error outside a `<TulaProvider>`.
+
+**Example**
+
+```tsx
+function Title() {
+  const t = useLocalization()
+  return <h1>{t.signIn.title}</h1>
 }
 ```
 
@@ -2779,6 +3239,34 @@ function Landing() {
   const { status, message } = useOAuthCallback()
   if (status === 'loading') return <p>Signing you in…</p>
   return <p>{status === 'refused' ? message : status}</p>
+}
+```
+
+### `usePasskeySupport`
+
+_function_, defined in `packages/react/src/hooks/use-passkey-support.ts`
+
+Whether this browser can run a passkey ceremony. A fact about the browser, read after mount:
+nothing during render touches `navigator`.
+
+Hidden until known: draw a passkey control only when this is `true`. `undefined` means "not
+asked yet", which is not the same as "no": a screen whose only way in is a passkey treats it
+as "not ruled out" so that it does not open on "not supported" and then change its mind.
+
+```ts
+export function usePasskeySupport(): boolean | undefined
+```
+
+**Returns** `undefined` until the component has mounted, then whether WebAuthn is there.
+
+**Throws** Error outside a `<TulaProvider>`.
+
+**Example**
+
+```tsx
+function PasskeyLink() {
+  const supported = usePasskeySupport()
+  return supported === true ? <a href='/passkey'>Use a passkey</a> : null
 }
 ```
 
@@ -2847,6 +3335,61 @@ function MyReset() {
   }
   return <EmailForm onSubmit={(email) => reset.start({ email })} />
 }
+```
+
+### `useRetryCountdown`
+
+_function_, defined in `packages/react/src/hooks/use-countdown.ts`
+
+Count down a rate limit: the seconds until a failed action may be tried again.
+
+The moment is read from the clock in an effect when the error arrives, never during render.
+It restarts for each new `rate_limited` error and is `0` for any other error, or none.
+
+It lags the error by one commit: the render that first sees a new error returns `0`, because
+the moment is read from the clock in an effect; the next render returns the wait. Draw the
+wait from this value, not from a render-time subtraction.
+
+```ts
+export function useRetryCountdown(error: TulaError | null): number
+```
+
+**Parameters**
+
+- `error`: The failed action's error (a flow hook's `error`), or `null`.
+
+**Returns** Whole seconds left; `0` when nothing is limited or the wait is over.
+
+**Example**
+
+```tsx
+const { error } = useSignIn()
+const wait = useRetryCountdown(error)
+// <button aria-disabled={wait > 0}>Try again{wait > 0 ? ` in ${wait}s` : ''}</button>
+```
+
+### `useScreenChanged`
+
+_function_, defined in `packages/react/src/components/ui.tsx`
+
+Whether a screen is the first one its component drew. Later screens move focus to their
+title; the first leaves focus where the page put it.
+
+```ts
+export function useScreenChanged(screen: string): boolean
+```
+
+**Parameters**
+
+- `screen`: A key naming the current screen.
+
+**Returns** `true` once the component has moved on from its first screen.
+
+**Example**
+
+```tsx
+const focusTitle = useScreenChanged(`${view}:${step?.status ?? 'start'}`)
+// <StepRenderer step={step} screen={view} focusTitle={focusTitle} ... />
 ```
 
 ### `useSession`

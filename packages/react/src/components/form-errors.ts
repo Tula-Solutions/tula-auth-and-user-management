@@ -113,11 +113,19 @@ export function attemptsLeft(error: TulaError | null, t: TulaLocalization): stri
 }
 
 /**
- * A duration for a countdown, e.g. `42s` or `4m 12s`.
+ * A duration for a countdown, e.g. `42s` or `4m 12s`, in the provider's locale table.
  *
  * @param totalSeconds - Whole seconds.
- * @param t - The strings.
+ * @param t - The strings (`useLocalization()`).
  * @returns The text.
+ *
+ * @example
+ * ```tsx
+ * const t = useLocalization()
+ * const wait = useRetryCountdown(error)
+ * // 'Try again in 1m 5s.'
+ * formatText(t.common.retryIn, { time: formatDuration(wait, t) })
+ * ```
  */
 export function formatDuration(totalSeconds: number, t: TulaLocalization): string {
   const minutes = Math.floor(totalSeconds / 60)
@@ -125,4 +133,36 @@ export function formatDuration(totalSeconds: number, t: TulaLocalization): strin
   return minutes > 0
     ? formatText(t.common.minutesSeconds, { minutes, seconds })
     : formatText(t.common.seconds, { seconds })
+}
+
+/**
+ * The alert of a form that may be rate limited: while a wait is known, one sentence that holds it.
+ *
+ * Saying "Try again shortly." and then "Try again in 41s." asks twice, so the known wait
+ * replaces the generic request. Without a wait the message is returned as it is.
+ *
+ * @param message - The form's message (`placed.form`).
+ * @param wait - Seconds left of a rate limit (`useRetryCountdown`), `0` for none.
+ * @param t - The strings (`useLocalization()`).
+ * @returns Props for `FormError`.
+ *
+ * @example
+ * ```tsx
+ * const wait = useRetryCountdown(error)
+ * // 'Too many requests. Try again in 41s.' while a wait runs
+ * <FormAlert {...rateLimitedAlert(placed.form, wait, t)} />
+ * ```
+ */
+export function rateLimitedAlert(
+  message: string | null,
+  wait: number,
+  t: TulaLocalization
+): { message: string | null; detail: null } {
+  if (message && wait > 0) {
+    return {
+      message: formatText(t.common.rateLimitedIn, { time: formatDuration(wait, t) }),
+      detail: null,
+    }
+  }
+  return { message, detail: null }
 }

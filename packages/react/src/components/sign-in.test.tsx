@@ -10,6 +10,7 @@ import {
   EXPIRED_PASSWORD_STEP,
   expectAbsent,
   expectFocus,
+  expectRateLimited,
   failure,
   NEW_PASSWORD_STEP,
   ROUTE,
@@ -116,9 +117,11 @@ describe('<SignIn> draws the step the server answers with', () => {
     await w.user.type(await screen.findByLabelText('Password'), 'wrong-password')
     await w.user.click(screen.getByRole('button', { name: 'Sign in' }))
     const alert = await screen.findByRole('alert')
-    expect(alert.textContent).toContain('Too many requests. Try again shortly.')
     // The countdown is drawn one render after the alert (`useCountdown` starts in an effect).
     await waitFor(() => expect(alert.textContent).toMatch(/Try again in [12]s\./))
+    // One request to try again: the known wait replaces "shortly", it does not follow it.
+    expect(alert.textContent).toMatch(/^Too many requests\. Try again in [12]s\.$/)
+    expect(alert.textContent?.match(/try again/gi)).toHaveLength(1)
     const submit = screen.getByRole('button', { name: 'Sign in' })
     expect(submit.getAttribute('aria-disabled')).toBe('true')
 
@@ -395,6 +398,7 @@ describe('<SignIn> an expired password', () => {
     const alert = await screen.findByRole('alert')
     // The countdown is drawn one render after the alert (`useCountdown` starts in an effect).
     await waitFor(() => expect(alert.textContent).toMatch(/Try again in (30|29)s\./))
+    expectRateLimited(alert)
     expect(submit.getAttribute('aria-disabled')).toBe('true')
     await w.user.click(submit)
     expect(w.api.calls(ROUTE.signInNewPassword)).toHaveLength(1)

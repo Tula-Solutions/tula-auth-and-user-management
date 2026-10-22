@@ -1,0 +1,31 @@
+{
+  "name": "@tula-tech/ui",
+  "version": "0.1.1",
+  "private": true,
+  "type": "module",
+  "description": "Tula UI: the source of the copy-in component registry (shadcn's registry format) and its build. Private: what is published is the registry's JSON, never this package.",
+  "scripts": {
+    "registry:generate": "bun run scripts/registry.ts",
+    "registry:check": "bun run scripts/registry.ts --check",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@happy-dom/global-registrator": "^20.14.5",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
+    "@tula-tech/contract": "workspace:*",
+    "@tula-tech/core": "workspace:*",
+    "@tula-tech/react": "workspace:*",
+    "@tula-tech/tsconfig": "workspace:*",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "happy-dom": "^20.14.5",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "ts-morph": "28.0.0"
+  }
+}

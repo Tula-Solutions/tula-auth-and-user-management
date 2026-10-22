@@ -73,7 +73,7 @@ as the public contract that every SDK, the dashboard, the CLI and the MCP server
 | [`packages/conformance`](packages/conformance) | `@tula-tech/conformance`: runs the conformance scenarios, in process or against a live server |
 | [`conformance/`](conformance) | Language-neutral [scenarios](conformance/README.md) every server and SDK must pass |
 | [`examples/`](examples) | A [Next.js app](examples/nextjs-app-router/README.md) and a [Vite + React app](examples/react-vite/README.md) built from the SDKs, an example `tula.config.ts`, and a browser test bench for `@tula-tech/core` |
-| [`docs/`](docs/README.md) | The [documentation index](docs/README.md): quickstart, one page per method, the generated SDK reference, self-hosting, architecture decisions |
+| [`docs/`](docs/README.md) | The [documentation index](docs/README.md): quickstart, one page per method, the generated SDK reference, self-hosting, architecture decisions; also published as a site at https://tula-solutions.github.io/tula-auth-and-user-management/ |
 
 ## Development
 

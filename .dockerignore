@@ -19,6 +19,9 @@ conformance
 # The browser-test fixture serves an API with in-memory data and publishes every email it
 # "sends"; it must never be in an image (e2e/server.ts).
 e2e
+# The documentation site (apps/docs): a static site that nothing serves and no image holds. Its
+# build output would otherwise be sent to the daemon as context for nothing.
+apps/docs
 # The native SDKs, and the fixture the Swift journey tests run against (native/swift/fixture):
 # the same kind of server as e2e's, and no image needs anything under native/.
 native

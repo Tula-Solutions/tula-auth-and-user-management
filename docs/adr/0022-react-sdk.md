@@ -2,6 +2,7 @@
 
 - Status: accepted
 - Date: 2026-10-03
+- Amended by [ADR 0064](0064-tula-ui.md): the headless layer (the step renderer and five hooks) is public API, and the components are no longer the package's only UI surface.
 
 ## Context
 

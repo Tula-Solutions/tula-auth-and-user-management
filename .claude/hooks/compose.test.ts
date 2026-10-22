@@ -56,6 +56,21 @@ function resolved(
       .map(([name, value]) => `${name}=${value}`)
       .join('\n')
   )
+  return resolvedWith(envFile, profiles, files)
+}
+
+/**
+ * The Compose file as Docker resolves it with an environment file of the repository.
+ *
+ * @param envFile - The path of the environment file, the only source of variables.
+ * @param profiles - The profiles asked for.
+ * @param files - Further Compose files laid over the repository's, relative to its root.
+ */
+function resolvedWith(
+  envFile: string,
+  profiles: readonly string[] = ['app'],
+  files: readonly string[] = []
+): Record<string, Service> {
   const result = Bun.spawnSync(
     [
       'docker',
@@ -366,9 +381,9 @@ describe.skipIf(!hasCompose)('the optional worker service', () => {
   })
 })
 
-// The receiver CI's `self-host-worker` job delivers to (scripts/worker-check). The server's
-// outbound guard refuses a private address in every tier, so a receiver in a container of its
-// own could not be reached without loosening it. This one shares the worker's network
+// The receiver the worker check of CI's `self-host` job delivers to (scripts/worker-check).
+// The server's outbound guard refuses a private address in every tier, so a receiver in a
+// container of its own could not be reached without loosening it. This one shares the worker's network
 // namespace instead: the worker reaches it on the loopback, which the `local` tier allows,
 // and the API instances cannot reach it at all.
 describe.skipIf(!hasCompose)('docker/worker-check/compose.yml', () => {
@@ -406,6 +421,73 @@ describe.skipIf(!hasCompose)('docker/worker-check/compose.yml', () => {
     expect(rest).toEqual(resolved({ WEBHOOK_WORKER: 'separate' }, ['app', 'worker']))
     // Without the worker profile there is no receiver either: it has nothing to live in.
     expect(Object.keys(resolved({}, ['app'], CHECK))).not.toContain('receiver')
+  })
+})
+
+// CI's `self-host` job runs three stacks of the image side by side on one runner, each a
+// Compose project with a file of its own (docker/self-host/*.env). They must not share a host
+// port, and each must be the mode it is named for.
+describe.skipIf(!hasCompose)('docker/self-host: the three stacks of the self-host job', () => {
+  const stack = (name: string, profiles?: readonly string[], files?: readonly string[]) =>
+    resolvedWith(join(root, 'docker/self-host', `${name}.env`), profiles, files)
+  const published = (services: Record<string, Service>) =>
+    Object.values(services).flatMap((service) => (service.ports ?? []).map((p) => p.published))
+
+  test('no two stacks publish the same host port', () => {
+    const ports = [
+      ...published(stack('one-address')),
+      ...published(stack('two-ports')),
+      // The worker stack as the check finally runs it, with the worker and the receiver.
+      ...published(stack('worker', ['app', 'worker'], ['docker/worker-check/compose.yml'])),
+    ]
+    expect(ports.length).toBe(3 * 7)
+    expect(new Set(ports).size).toBe(ports.length)
+    // Three `docker compose config` runs: more than the default five seconds of a test on a
+    // slow runner. Each spawn still has its own limit.
+  }, 60_000)
+
+  test('one-address: the proxy’s address is the issuer, and it passes the runner’s address on', () => {
+    const { api, lb } = stack('one-address')
+    const proxy = lb?.ports?.[0]?.published
+    expect(api?.environment?.PUBLIC_URL).toBe(`http://localhost:${proxy}`)
+    expect(api?.environment).toMatchObject({
+      TRUST_PROXY: 'true',
+      OAUTH_MOCK_PROVIDER: 'true',
+      SMS_PROVIDER: 'dev',
+      ENVIRONMENT: 'local',
+      WEBHOOK_WORKER: 'api',
+    })
+    expect(lb?.volumes).toContainEqual(
+      expect.objectContaining({ source: join(root, 'docker/lb/forwarded-for.client.conf') })
+    )
+  })
+
+  test('two-ports: the first instance’s address is the issuer, and the proxy keeps its peer', () => {
+    const { api, lb } = stack('two-ports')
+    expect(api?.environment?.PUBLIC_URL).toBe(`http://localhost:${api?.ports?.[0]?.published}`)
+    expect(api?.environment).toMatchObject({
+      TRUST_PROXY: 'true',
+      OAUTH_MOCK_PROVIDER: 'true',
+      SMS_PROVIDER: 'dev',
+      ENVIRONMENT: 'local',
+      WEBHOOK_WORKER: 'api',
+    })
+    expect(lb?.volumes).toContainEqual(
+      expect.objectContaining({ source: join(root, 'docker/lb/forwarded-for.peer.conf') })
+    )
+  })
+
+  test('worker: every container delivers nowhere but the worker, and nothing else is changed', () => {
+    const services = stack('worker', ['app', 'worker'], ['docker/worker-check/compose.yml'])
+    for (const name of ['api', 'api-2', 'worker']) {
+      expect(services[name]?.environment?.WEBHOOK_WORKER).toBe('separate')
+    }
+    expect(services.api?.environment).toMatchObject({
+      ENVIRONMENT: 'local',
+      TRUST_PROXY: 'false',
+      OAUTH_MOCK_PROVIDER: 'false',
+      SMS_PROVIDER: 'none',
+    })
   })
 })
 
@@ -515,10 +597,28 @@ test('the API image installs no browser package: their manifests never reach the
     .map((line) => line.split(/\s+/)[1] ?? '')
   expect(copied.length).toBeGreaterThan(5)
   expect(
-    copied.filter((source) => /^(packages\/react|packages\/nextjs|examples|e2e)(\/|$)/.test(source))
+    copied.filter((source) =>
+      /^(packages\/react|packages\/nextjs|apps\/docs|examples|e2e)(\/|$)/.test(source)
+    )
   ).toEqual([])
   // Nothing copies the whole repository or a whole workspace group either.
   expect(
     copied.filter((source) => ['.', './', 'packages', 'packages/', 'apps'].includes(source))
   ).toEqual([])
+})
+
+test('the documentation site is in no image: no stage copies it and the build context leaves it out', async () => {
+  // `apps/docs` is a browser app (React, Vite, a syntax highlighter) that nothing serves: the
+  // API does not host it and no image holds it. A COPY of it, from the build context or from
+  // another stage, or a context that lets it in, would put it there.
+  const dockerfile = await Bun.file(join(root, 'apps/api/Dockerfile')).text()
+  const instructions = dockerfile
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('#'))
+    .join('\n')
+  expect(instructions).not.toMatch(/apps\/docs/)
+  const ignored = (await Bun.file(join(root, '.dockerignore')).text())
+    .split('\n')
+    .map((line) => line.trim())
+  expect(ignored).toContain('apps/docs')
 })

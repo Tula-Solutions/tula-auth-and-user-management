@@ -345,6 +345,32 @@ image: `https://github.com/orgs/Tula-Solutions/packages` lists them, and each on
 settings has **Change visibility**. A version that is on GitHub Packages is never
 replaced; one published by mistake is deleted there by hand.
 
+## The documentation site
+
+A release updates the documentation site by itself; there is no step to remember.
+`.github/workflows/docs-pages.yml` runs for the same event as the two workflows above, a push to
+`main` (the merge of the release PR; the repository makes no tag and no GitHub Release), builds
+the site from that commit and deploys it to GitHub Pages as the **docs of the latest release**:
+
+- https://tula-solutions.github.io/tula-auth-and-user-management/ shows the released docs, with
+  the release's version in the header.
+- The same address with `next/` added shows `develop`'s docs,
+  with a banner that says they are unreleased. A push to `develop` refreshes it. It is not
+  indexed by search engines.
+
+Every run builds both from the tips of `main` and `develop` (Pages holds one artifact), so
+neither push can remove the other's docs. The released docs are built by the release's own copy of
+the docs site, which is why a release that carries `apps/docs` is what makes the root the
+released docs: until one does, the root shows `develop`'s docs marked **unreleased**.
+
+Two things are a person's, once: Pages is set to deploy from GitHub Actions, and the
+`github-pages` environment allows `main` **and** `develop` to deploy (a repository setting; a
+run for a branch the environment refuses fails at the deploy job, and nothing is published).
+Nothing in a release needs the docs site to build, but a release that breaks it (a docs link that
+no longer resolves) fails this workflow and leaves the previous site in place; `bun run verify`
+catches that before the merge. Details: [`apps/docs/README.md`](../apps/docs/README.md),
+"Where it is published".
+
 ## What stops a publish that was not meant
 
 Each of these is independent, and the guardrail tests (`.claude/hooks/release.test.ts` and
