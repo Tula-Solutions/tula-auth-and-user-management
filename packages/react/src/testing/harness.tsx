@@ -273,3 +273,15 @@ export function world(options: WorldOptions = {}): World {
       ),
   }
 }
+
+/**
+ * Assert that an alert says a rate limit once: "Too many requests. Try again in 41s." and not
+ * "Try again shortly." followed by the countdown, which asks twice.
+ *
+ * @param alert - The alert element (`findByRole('alert')`).
+ */
+export function expectRateLimited(alert: Element): void {
+  const text = alert.textContent ?? ''
+  expect(text).toMatch(/^Too many requests\. Try again in [\dms ]+\.$/)
+  expect(text.match(/try again/gi)).toHaveLength(1)
+}

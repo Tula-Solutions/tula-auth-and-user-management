@@ -6,7 +6,13 @@ import { useCountdown } from '../hooks/use-countdown'
 import type { FactorEnrolmentHookActions } from '../hooks/use-flow'
 import { formatText } from '../localization'
 import { go } from '../navigation'
-import { attemptsLeft, fieldResolver, formatDuration, placeErrors } from './form-errors'
+import {
+  attemptsLeft,
+  fieldResolver,
+  formatDuration,
+  placeErrors,
+  rateLimitedAlert,
+} from './form-errors'
 import { Button, Card, Form, FormError, Status, TextField, useUi } from './ui'
 
 /** What a completed flow hands to `onComplete`. */
@@ -338,14 +344,7 @@ export function VerificationScreen(props: {
       footer={props.footer}
     >
       <Form onSubmit={submit} failure={incomplete ?? error} blocked={isPending || verifyWait > 0}>
-        <FormError
-          message={placed.form}
-          detail={
-            verifyWait > 0
-              ? formatText(t.common.retryIn, { time: formatDuration(verifyWait, t) })
-              : null
-          }
-        />
+        <FormError {...rateLimitedAlert(placed.form, verifyWait, t)} />
         <CodeField
           value={code}
           onValue={(value) => {

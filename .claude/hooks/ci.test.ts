@@ -26,8 +26,14 @@ const { jobs } = Bun.YAML.parse(source) as Workflow
 
 const job = (name: string) => jobs[name] ?? { steps: [] }
 const needs = (name: string) => [job(name).needs ?? []].flat()
-// The jobs that check something: every one but the two that decide and record.
-const checks = Object.keys(jobs).filter((name) => name !== 'duplicate' && name !== 'passed')
+// `verify`, `e2e` and `e2e-docs` are aggregates of jobs that run side by side
+// (`ci-split.test.ts`); `passed` waits for the aggregates, which fail unless every part passed.
+const AGGREGATES = ['verify', 'e2e', 'e2e-docs']
+const PARTS = ['verify-static', 'verify-tests', 'verify-integration', 'e2e-shard', 'e2e-docs-shard']
+// The jobs that do the checking: every one but the two that decide and record, and the aggregates.
+const checks = Object.keys(jobs).filter(
+  (name) => name !== 'duplicate' && name !== 'passed' && !AGGREGATES.includes(name)
+)
 const SKIPPABLE = "needs.duplicate.outputs.skip != 'true'"
 
 /** The script of the step that decides whether the run is a duplicate. */
@@ -49,7 +55,9 @@ describe('skipping a run whose tree already passed', () => {
   })
 
   test('the pass is recorded only after every other job', () => {
-    expect(needs('passed').sort()).toEqual(['duplicate', ...checks].sort())
+    expect(needs('passed').sort()).toEqual(
+      ['duplicate', ...checks.filter((name) => !PARTS.includes(name)), ...AGGREGATES].sort()
+    )
   })
 
   test('the pass is recorded only by a push whose jobs all ran and succeeded', () => {
@@ -99,36 +107,55 @@ describe('skipping a run whose tree already passed', () => {
 })
 
 // A push is what vouches for a tree, so a push must do all the work itself.
+// The jobs of `verify` that run Turborepo's tasks are the only ones with a cache.
+const TURBO_JOBS = ['verify-static', 'verify-tests']
 describe('the Turborepo cache', () => {
   test('only a pull request reads it, and only a push saves it', () => {
-    const [restore, ...moreRestores] = uses('verify', 'actions/cache/restore@')
-    const [save, ...moreSaves] = uses('verify', 'actions/cache/save@')
-    expect([moreRestores, moreSaves]).toEqual([[], []])
-    expect(restore?.if).toBe("github.event_name == 'pull_request'")
-    expect(save?.if).toBe("github.event_name == 'push'")
-    expect(restore?.with?.path).toBe('.turbo/cache')
-    expect(save?.with?.path).toBe('.turbo/cache')
+    for (const name of TURBO_JOBS) {
+      const [restore, ...moreRestores] = uses(name, 'actions/cache/restore@')
+      const [save, ...moreSaves] = uses(name, 'actions/cache/save@')
+      expect([moreRestores, moreSaves]).toEqual([[], []])
+      expect(restore?.if).toBe("github.event_name == 'pull_request'")
+      expect(save?.if).toBe("github.event_name == 'push'")
+      expect(restore?.with?.path).toBe('.turbo/cache')
+      expect(save?.with?.path).toBe('.turbo/cache')
+    }
+  })
+
+  test('each job that has one keeps a cache of its own: two saves under one key would collide', () => {
+    const keys = TURBO_JOBS.map((name) => String(uses(name, 'actions/cache/save@')[0]?.with?.key))
+    expect(new Set(keys).size).toBe(TURBO_JOBS.length)
+    for (const name of TURBO_JOBS) {
+      const [restore] = uses(name, 'actions/cache/restore@')
+      const [save] = uses(name, 'actions/cache/save@')
+      expect(String(restore?.with?.['restore-keys'])).toContain(`turbo-\${{ runner.os }}-${name}-`)
+      expect(String(save?.with?.key)).toContain(`turbo-\${{ runner.os }}-${name}-`)
+    }
   })
 
   test('no step restores and saves in one go, and no other job has a cache', () => {
     for (const name of Object.keys(jobs)) {
       expect(uses(name, 'actions/cache@')).toEqual([])
-      if (name !== 'verify') {
+      if (!TURBO_JOBS.includes(name)) {
         expect(uses(name, 'actions/cache')).toEqual([])
       }
     }
   })
 
   test('the cache is saved after the checks it records', () => {
-    const steps = job('verify').steps
-    const verify = steps.findIndex((step) => step.run === 'bun run verify')
-    expect(verify).toBeGreaterThan(-1)
-    expect(steps.findIndex((step) => step.uses?.startsWith('actions/cache/restore@'))).toBeLessThan(
-      verify
-    )
-    expect(steps.findIndex((step) => step.uses?.startsWith('actions/cache/save@'))).toBeGreaterThan(
-      verify
-    )
+    for (const name of TURBO_JOBS) {
+      const steps = job(name).steps
+      const checked = steps.findIndex((step) =>
+        /^bun run (verify:static|\$\{\{ matrix\.script \}\})$/.test(step.run ?? '')
+      )
+      expect(checked, name).toBeGreaterThan(-1)
+      expect(
+        steps.findIndex((step) => step.uses?.startsWith('actions/cache/restore@'))
+      ).toBeLessThan(checked)
+      expect(
+        steps.findIndex((step) => step.uses?.startsWith('actions/cache/save@'))
+      ).toBeGreaterThan(checked)
+    }
   })
 })
 
@@ -275,6 +302,7 @@ describe('the self-host job: one image, three stacks side by side', () => {
         `CONFORMANCE_MAILPIT_URL=${at('two-ports', 'MAILPIT_UI_PORT')}`,
         'CONFORMANCE_PUBLISHABLE_KEY="$TWO_PORTS_PUBLISHABLE_KEY"',
         'CONFORMANCE_SECRET_KEY="$TWO_PORTS_SECRET_KEY"',
+        'CONFORMANCE_ENVIRONMENTS="$TWO_PORTS_ENVIRONMENTS"',
       ].join(' \\\n  ')
     )
     expect(section('one-address')).toContain(
@@ -288,11 +316,36 @@ describe('the self-host job: one image, three stacks side by side', () => {
         `CONFORMANCE_MAILPIT_URL=${at('one-address', 'MAILPIT_UI_PORT')}`,
         'CONFORMANCE_PUBLISHABLE_KEY="$ONE_ADDRESS_PUBLISHABLE_KEY"',
         'CONFORMANCE_SECRET_KEY="$ONE_ADDRESS_SECRET_KEY"',
+        'CONFORMANCE_ENVIRONMENTS="$ONE_ADDRESS_ENVIRONMENTS"',
       ].join(' \\\n  ')
     )
     // Every scenario must run: a missing secret key would skip the admin ones.
     expect(start).toContain('test -n "$CONFORMANCE_PUBLISHABLE_KEY"')
     expect(start).toContain('test -n "$CONFORMANCE_SECRET_KEY"')
+  })
+
+  test('each conformance run goes through eight environments, so that its waits overlap', () => {
+    // Scenarios restore the settings they change, so they overlap only in environments of
+    // their own. The seeded one is the primary; the other seven are made before the runs start,
+    // for the two modes that run the scenarios (the worker stack runs none).
+    const make = stepWith('create-environments.ts')
+    expect(make?.run).toContain('--count 7')
+    expect(make?.run).toContain('lanes ONE_ADDRESS &')
+    expect(make?.run).toContain('lanes TWO_PORTS &')
+    expect(make?.run).not.toContain('WORKER_STACK')
+    // Every key is masked, and a stack that did not give seven pairs fails the step.
+    expect(make?.run).toContain('::add-mask::$key')
+    expect(make?.run).toContain('!= 7')
+    expect(make?.run).toContain('_ENVIRONMENTS=')
+    const runs = indexOf('bun run conformance')
+    expect(indexOf('create-environments.ts')).toBeGreaterThan(indexOf('create-api-key.ts'))
+    expect(indexOf('create-environments.ts')).toBeLessThan(runs)
+    // The script the image runs is there, and it prints one pair a line.
+    const script = readFileSync(
+      join(repository, 'apps/api/src/scripts/create-environments.ts'),
+      'utf8'
+    )
+    expect(script).toContain('`${publishable.key}:${secret.key}\\n`')
   })
 
   test('a run that failed, or never ended, fails the job', () => {

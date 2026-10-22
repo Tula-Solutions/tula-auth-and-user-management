@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
-import { DEFAULT_THEME, THEME_TOKENS } from '@tula-tech/contract/theme'
+import {
+  contrastRatio,
+  DEFAULT_THEME,
+  THEME_TOKENS,
+  themeToCssVariables,
+} from '@tula-tech/contract/theme'
 import { tokenBlockIsCurrent } from '../scripts/generate-tokens'
 import { ELEMENT_NAMES } from './appearance'
 
@@ -52,6 +57,16 @@ describe('the stylesheet', () => {
 
   test('respects reduced motion', () => {
     expect(stylesheet.includes('@media (prefers-reduced-motion: reduce)')).toBe(true)
+  })
+
+  test('no entrance animation is declared after the reduced-motion block, which must name [open]', () => {
+    // Same specificity (:where), so a later `animation: tula-in` would beat the reset: the
+    // modal kept sliding in under prefers-reduced-motion.
+    const start = stylesheet.indexOf('@media (prefers-reduced-motion: reduce)')
+    const end = stylesheet.indexOf('\n}\n', start)
+    const after = stylesheet.slice(end)
+    expect(after.match(/animation:\s*tula-/g) ?? []).toEqual([])
+    expect(stylesheet.slice(start, end)).toContain(':where(.tula-modal)[open]')
   })
 
   test('every element name’s class is styled or deliberately bare', () => {
@@ -106,7 +121,9 @@ describe('what the step renderer teaches a copy about hooks', () => {
 
   test('the screens example shows a component screen', () => {
     const screens = examples.find((text) => /StepScreens/.test(text)) ?? ''
-    expect(screens).toMatch(/\(step\) => <\w+ step=\{step\} \/>/)
+    // Any arrow that returns a component element: renaming the parameter or adding a prop to
+    // the example must not fail this.
+    expect(screens).toMatch(/=> <[A-Z]\w*\b/)
   })
 })
 
@@ -138,6 +155,7 @@ describe('server rendering', () => {
     expect(has('passkey:undefined')).toBe(true)
     expect(has('wait:0')).toBe(true)
     expect(has('changed:false|strategies:password')).toBe(true)
+    expect(has('retry:Try again in 1m 5s.')).toBe(true)
     expect(has('<p>copied password screen</p>')).toBe(true)
     expect(has('data-tula-unsupported')).toBe(true)
   })
@@ -254,6 +272,75 @@ describe('what @tula-tech/react costs a browser bundle', () => {
   })
 
   test('the stylesheet is small', () => {
-    expect(Bun.gzipSync(Buffer.from(stylesheet)).byteLength).toBeLessThan(6_000)
+    // 8 KB: the premium polish (focus halo, entrances, press feedback, narrow and coarse-pointer
+    // rules) cost about 0.9 KB over the first 6 KB budget; still no CSS framework.
+    expect(Bun.gzipSync(Buffer.from(stylesheet)).byteLength).toBeLessThan(8_000)
   })
+})
+
+describe('the default theme as shipped in the stylesheet', () => {
+  /** Each scheme's colour defaults, read out of the generated block's own text. */
+  function shipped(scheme: 'light' | 'dark'): Record<string, string> {
+    const prefix = scheme === 'dark' ? '--tula-dark-color-' : '--tula-color-'
+    const out: Record<string, string> = {}
+    for (const match of stylesheet.matchAll(
+      new RegExp(`var\\(${prefix}([a-z-]+), (#[0-9a-f]{6})\\)`, 'g')
+    )) {
+      // The dark block appears twice (media query and attribute); both must agree.
+      const [, name, value] = match as unknown as [string, string, string]
+      expect(out[name] ?? value).toBe(value)
+      out[name] = value
+    }
+    return out
+  }
+
+  test('resolves with nothing refused: every token of the default theme passes its grammar', () => {
+    const variables = themeToCssVariables(DEFAULT_THEME)
+    const schemeTokens = THEME_TOKENS.filter((token) => token.scope === 'scheme')
+    expect(Object.keys(variables)).toHaveLength(THEME_TOKENS.length + schemeTokens.length)
+  })
+
+  // Text on each background it is drawn on; the 4.5:1 of WCAG 1.4.3 in both schemes.
+  const PAIRS: [string, string][] = [
+    ['text', 'background'],
+    ['text', 'surface'],
+    ['text', 'input'],
+    ['text-muted', 'background'],
+    ['text-muted', 'surface'],
+    ['text-muted', 'input'],
+    ['primary-text', 'primary'],
+    ['primary-text', 'primary-hover'],
+    ['link', 'background'],
+    ['link', 'surface'],
+    ['danger', 'background'],
+    ['danger', 'danger-surface'],
+    ['danger', 'surface'],
+    ['success', 'background'],
+    ['success', 'surface'],
+    ['text', 'danger-surface'],
+  ]
+  for (const scheme of ['light', 'dark'] as const) {
+    test.each(PAIRS)(`${scheme}: %s on %s is at least 4.5:1`, (foreground, background) => {
+      const colours = shipped(scheme)
+      expect(colours[foreground]).toBeDefined()
+      expect(colours[background]).toBeDefined()
+      expect(
+        contrastRatio(colours[foreground] as string, colours[background] as string)
+      ).toBeGreaterThanOrEqual(4.5)
+    })
+
+    test(`${scheme}: control edges and the focus ring are at least 3:1`, () => {
+      const colours = shipped(scheme) as Record<string, string>
+      for (const [edge, ground] of [
+        ['border-strong', 'background'],
+        ['border-strong', 'input'],
+        ['focus', 'background'],
+        ['focus', 'surface'],
+      ] as const) {
+        expect(
+          contrastRatio(colours[edge] as string, colours[ground] as string)
+        ).toBeGreaterThanOrEqual(3)
+      }
+    })
+  }
 })

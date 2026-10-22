@@ -397,6 +397,26 @@
       "name": "@tula-tech/tsconfig",
       "version": "0.0.0",
     },
+    "packages/ui": {
+      "name": "@tula-tech/ui",
+      "version": "0.1.1",
+      "devDependencies": {
+        "@happy-dom/global-registrator": "^20.14.5",
+        "@testing-library/dom": "^10.4.2",
+        "@testing-library/react": "^16.3.3",
+        "@testing-library/user-event": "^14.6.7",
+        "@tula-tech/contract": "workspace:*",
+        "@tula-tech/core": "workspace:*",
+        "@tula-tech/react": "workspace:*",
+        "@tula-tech/tsconfig": "workspace:*",
+        "@types/react": "^19.3.0",
+        "@types/react-dom": "^19.3.0",
+        "happy-dom": "^20.14.5",
+        "react": "^19.3.0",
+        "react-dom": "^19.3.0",
+        "ts-morph": "28.0.0",
+      },
+    },
   },
   "packages": {
     "@ai-sdk/gateway": ["@ai-sdk/gateway@3.0.13", "", { "dependencies": { "@ai-sdk/provider": "3.0.2", "@ai-sdk/provider-utils": "4.0.5", "@vercel/oidc": "3.1.0" }, "peerDependencies": { "zod": "^3.25.76 || ^4.1.8" } }, "sha512-g7nE4PFtngOZNZSy1lOPpkC+FAiHxqBJXqyRMEG7NUrEVZlz5goBdtHg1YgWRJIX776JTXAmbOI5JreAKVAsVA=="],
@@ -1272,6 +1292,8 @@
     "@tula-tech/react": ["@tula-tech/react@workspace:packages/react"],
 
     "@tula-tech/tsconfig": ["@tula-tech/tsconfig@workspace:packages/tsconfig"],
+
+    "@tula-tech/ui": ["@tula-tech/ui@workspace:packages/ui"],
 
     "@turbo/darwin-64": ["@turbo/darwin-64@2.11.7", "", { "os": "darwin", "cpu": "x64" }, "sha512-Z2LFOxwbiJueD1miByXJS/BrW21vv6YaQXZustty5jEX4vQYw6zyh101Sz1QO7WG0mqBzKagZ/DoAeeujI0/Sw=="],
 
