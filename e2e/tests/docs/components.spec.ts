@@ -102,6 +102,25 @@ test.describe('tabs', () => {
     await expect(tabs.nth(1)).toBeFocused()
   })
 
+  test('a browser shortcut on a focused tab is left alone', async ({ page }) => {
+    await page.goto(PAGE)
+    const { first } = frameworkGroups(page)
+    const tabs = first.getByRole('tab')
+    await tabs.nth(0).focus()
+    const prevented = await page.evaluate(() => {
+      const event = new KeyboardEvent('keydown', {
+        key: 'ArrowRight',
+        altKey: true,
+        bubbles: true,
+        cancelable: true,
+      })
+      document.activeElement?.dispatchEvent(event)
+      return event.defaultPrevented
+    })
+    expect(prevented).toBe(false)
+    await expect(tabs.nth(0)).toHaveAttribute('aria-selected', 'true')
+  })
+
   test('each tab names its panel and each panel its tab, and one panel is shown', async ({
     page,
   }) => {
@@ -272,6 +291,30 @@ test.describe('code blocks', () => {
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
       'export const auth = createClient({\n  baseUrl: process.env.TULA_API_URL,\n  publishableKey: process.env.TULA_PUBLISHABLE_KEY,\n})'
     )
+  })
+
+  test('a diff block is copied as the patch it is, with its removed lines', async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+    await page.goto(PAGE)
+    const block = page.locator('.code-block:has(pre[data-language="diff"])').first()
+    await block.getByRole('button', { name: /^Copy/ }).click()
+    const text = await page.evaluate(() => navigator.clipboard.readText())
+    expect(text).toContain('- "start": "node server.js"')
+    expect(text).toContain('+ "start": "bun run server.ts"')
+  })
+
+  test('the copy fallback gives focus back to the button', async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true })
+    })
+    await page.goto(PAGE)
+    const button = page.getByRole('button', { name: 'Copy app/layout.tsx' })
+    await button.focus()
+    await page.keyboard.press('Enter')
+    await expect(button).toBeFocused()
   })
 
   test('the copy button is reachable and works from the keyboard', async ({ page }) => {

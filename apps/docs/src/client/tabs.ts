@@ -167,6 +167,10 @@ export function tabsRuntime(): void {
     }
     const tabs = tabsOf(group)
     const at = tabs.indexOf(tab as HTMLElement)
+    // Alt+Left and Cmd+Left are the browser's Back, Ctrl+Home is a scroll: leave them alone.
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+      return
+    }
     let next = -1
     if (event.key === 'ArrowRight') {
       next = (at + 1) % tabs.length

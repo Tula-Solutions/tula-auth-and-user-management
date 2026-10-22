@@ -294,7 +294,8 @@ function initSearch(): void {
 /** What the clipboard gets from a code block: the lines it shows, less those a change removes. */
 function codeText(pre: Element): string {
   const lines = [...pre.querySelectorAll('.line')]
-  if (lines.length === 0) {
+  // A `diff` block is a patch: its `-` lines are part of it, so copy it as written.
+  if (lines.length === 0 || pre.getAttribute('data-language') === 'diff') {
     return pre.textContent ?? ''
   }
   return (
@@ -312,6 +313,8 @@ async function writeClipboard(text: string): Promise<boolean> {
     await navigator.clipboard.writeText(text)
     return true
   } catch {
+    // select() moves focus into the textarea; give it back so a keyboard user keeps their place.
+    const before = document.activeElement as HTMLElement | null
     const area = document.createElement('textarea')
     area.value = text
     area.setAttribute('readonly', '')
@@ -325,6 +328,7 @@ async function writeClipboard(text: string): Promise<boolean> {
       return false
     } finally {
       area.remove()
+      before?.focus({ preventScroll: true })
     }
   }
 }
