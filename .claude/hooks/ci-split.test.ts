@@ -202,6 +202,21 @@ describe('the browser jobs: a pinned image, and shards that each have their own 
     }
   )
 
+  test.each(['e2e-shard', 'e2e-docs-shard'])(
+    '%s installs unzip before setup-bun needs it',
+    (name) => {
+      // The Playwright image has none, and setup-bun fails without it ("Unable to locate
+      // executable file: unzip").
+      const steps = job(name).steps
+      const install = steps.findIndex((step) =>
+        /apt-get\b.*\binstall\b.*\bunzip\b/.test(step.run ?? '')
+      )
+      const setup = steps.findIndex((step) => step.uses?.startsWith('oven-sh/setup-bun@'))
+      expect(install).toBeGreaterThan(-1)
+      expect(install).toBeLessThan(setup)
+    }
+  )
+
   test('no job downloads a browser: that was the step a dropped connection failed', () => {
     for (const name of Object.keys(jobs)) {
       for (const run of runs(name)) {

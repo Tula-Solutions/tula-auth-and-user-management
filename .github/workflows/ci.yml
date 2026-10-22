@@ -232,6 +232,9 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4]
     steps:
+      # The image has no `unzip`, which setup-bun unpacks Bun with.
+      - name: Install unzip
+        run: apt-get -o Acquire::Retries=3 update -qq && apt-get -o Acquire::Retries=3 install -y -qq unzip
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with: { bun-version-file: package.json }
@@ -289,6 +292,9 @@ jobs:
     env:
       DOCS_BASE: /tula-auth-and-user-management/
     steps:
+      # The image has no `unzip`, which setup-bun unpacks Bun with.
+      - name: Install unzip
+        run: apt-get -o Acquire::Retries=3 update -qq && apt-get -o Acquire::Retries=3 install -y -qq unzip
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with: { bun-version-file: package.json }
