@@ -36,7 +36,10 @@ const projects: NonNullable<PlaywrightTestConfig['projects']> = [
   {
     name: 'nextjs',
     testMatch: /nextjs\/.*\.spec\.ts/,
-    use: { ...devices['Desktop Chrome'], baseURL: NEXT_URL },
+    // Reduced motion: the components' entrances are off, which is what a user with that
+    // preference gets, and Playwright does not wait out a 240ms animation on every dialog.
+    // `motion.spec.ts` runs the real motion path.
+    use: { ...devices['Desktop Chrome'], baseURL: NEXT_URL, reducedMotion: 'reduce' },
   },
   // The dashboard (apps/dashboard), served by the API itself at /dashboard under its real
   // Content-Security-Policy. Before `chromium` for the same reason as `nextjs`: its session
@@ -59,7 +62,7 @@ const projects: NonNullable<PlaywrightTestConfig['projects']> = [
   {
     name: 'chromium',
     testIgnore: [/nextjs\//, /dashboard\//, /docs\//],
-    use: { ...devices['Desktop Chrome'] },
+    use: { ...devices['Desktop Chrome'], reducedMotion: 'reduce' },
   },
 ]
 
