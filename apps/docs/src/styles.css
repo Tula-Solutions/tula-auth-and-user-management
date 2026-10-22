@@ -2372,7 +2372,7 @@ html[data-js] .feedback-nojs,
 }
 
 /* Without a script: every capture, in a grid, in the page's scheme. */
-.ns-shots {
+.doc .ns-shots {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 16px;
@@ -2380,7 +2380,7 @@ html[data-js] .feedback-nojs,
   padding: 0;
   list-style: none;
 }
-.ns-shot {
+.doc .ns-shot {
   margin: 0;
   padding: 0;
 }

@@ -191,6 +191,15 @@ test.describe('the gallery without a script', () => {
     await expect(root.locator('li.ns-shot')).toHaveCount(11)
     await expect(visibleImages(root)).toHaveCount(11)
     await expect(root.locator('img.ns-img')).toHaveCount(22)
+    // The page's own list style (a disc) is not the gallery's.
+    const style = await root
+      .locator('ul.ns-shots')
+      .first()
+      .evaluate((node) => ({
+        type: getComputedStyle(node).listStyleType,
+        pad: getComputedStyle(node).paddingLeft,
+      }))
+    expect(style).toEqual({ type: 'none', pad: '0px' })
   })
 
   test('shows the dark captures, all of them, where the system prefers the dark', async ({
@@ -207,16 +216,18 @@ test.describe('the gallery without a script', () => {
     }
   })
 
-  test('is accessible and does not scroll sideways at a phone’s width', async ({ page }) => {
+  // Axe is itself a script, so it cannot run here: the markup the script starts from is what
+  // `expectAccessible` checks in the cases below, and this one holds the layout.
+  test('does not scroll sideways at a phone’s width, in either scheme', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 })
-    await page.goto(PAGES.ios)
-    const overflow = await page.evaluate(
-      () => document.documentElement.scrollWidth - document.documentElement.clientWidth
-    )
-    expect(overflow).toBe(0)
-    await expectAccessible(page, 'swift without a script', {
-      include: ['[data-native-screens]'],
-    })
+    for (const scheme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme: scheme })
+      await page.goto(PAGES.ios)
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+      )
+      expect(overflow).toBe(0)
+    }
   })
 })
 
