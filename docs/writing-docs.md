@@ -328,6 +328,36 @@ type first, with the word _required_ beside the ones that are. The columns are `
 
 :::
 
+## Native screens
+
+`:::native-screens{platform="ios"}` (or `"android"`) shows the pictures of the SwiftUI or the
+Compose screens: real screenshots, taken by the example apps' UI tests, in a gallery you can
+switch by screen, step and scheme. The text inside the block is the gallery's caption. It is
+used on [the Swift page](swift.md#what-the-screens-look-like), [the Kotlin page](kotlin.md#what-the-screens-look-like)
+and [the Expo page](expo.md#what-the-screens-look-like), and nowhere else: it is not a place for a
+mock-up.
+
+```markdown
+:::native-screens{platform="ios"}
+
+These are `TulaAuthView` and `TulaAccountView` as the example app draws them.
+
+:::
+```
+
+The pictures are not in the Markdown. They are the files under `apps/docs/public/native/<platform>/`
+and a `manifest.json` beside them (the device, the tools, the commit and the date of the run
+that made them), written by `bun run native/swift/fixture/ui-tests.ts --screenshots
+apps/docs/public/native/ios` and its Android twin ([refreshing the captures](swift.md#refreshing-the-captures)).
+The build reads the manifest, so a picture is shown with the words of what made it. On GitHub the
+two `:::` lines show as text and the caption reads as a paragraph; there is no picture there, and
+the Markdown twin keeps only the caption.
+
+Without a script the gallery is a plain list of every capture, in the reader's scheme. With one it
+becomes a picker with tabs for the screens, a button for each step, a switch for the scheme and one
+for the device frame. A platform with no manifest says "Not captured yet" and gives the command
+that takes the pictures: the site never draws a picture it was not given.
+
 ## What the build checks
 
 The site is built from these files, and the build stops, naming the file and the line, for a
@@ -346,6 +376,8 @@ component it cannot draw. It is part of `bun run verify`.
 | A code block in an unknown language | the language is not one the site highlights |
 | `titel="…"` or `{1,x}` after a language | the word is not a `title="…"` or a line range |
 | A tree indented by a tab, or by two levels at once | the line of the tree |
+| `:::native-screens` with no `platform`, or another one | it needs `platform="ios"` or `platform="android"` |
+| A `manifest.json` that is not the runners' format, or whose names do not match | the file and what is wrong; nothing is shown from it |
 
 ## Writing for the Markdown twin
 

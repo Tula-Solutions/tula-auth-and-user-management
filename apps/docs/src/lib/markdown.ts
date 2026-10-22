@@ -15,6 +15,11 @@ import { BlockError, transformBlocks } from './blocks'
 import { type CodeMeta, parseCodeMeta } from './code-meta'
 import { renderTree } from './file-tree'
 import { isExternal, type LinkEnvironment, resolveLink } from './links'
+import { galleryElement, type NativeManifest, type NativePlatform } from './native-captures'
+
+/** Where a page gets the capture manifest of a native platform (`null`: not captured). */
+export type NativeCaptures = (platform: NativePlatform) => NativeManifest | null
+
 import { TABS_CALL, TABS_SCRIPT } from './tabs-runtime'
 
 /** A heading of a page: what the table of contents and the anchors are made from. */
@@ -412,13 +417,16 @@ function codeBlock(file: string, code: Element, highlighter: Highlighter): Eleme
  * @param doc - A document from {@link parseMarkdown}; its tree is copied, not consumed.
  * @param environment - What links may point at.
  * @param highlighter - From {@link createCodeHighlighter}.
+ * @param captures - The capture manifest of a native platform, or `null` where it has none: what
+ *   a `:::native-screens` block is drawn from.
  * @returns The HTML, the files the page shows and the files it links to.
  * @throws RenderError for an unknown code language; LinkError for a link that does not resolve.
  */
 export function renderMarkdown(
   doc: ParsedDoc,
   environment: LinkEnvironment,
-  highlighter: Highlighter
+  highlighter: Highlighter,
+  captures: NativeCaptures = () => null
 ): RenderedDoc {
   const tree = structuredClone(doc.tree)
   const assets: string[] = []
@@ -475,6 +483,24 @@ export function renderMarkdown(
       element('script', {}, [{ type: 'text', value: position === 0 ? TABS_SCRIPT : TABS_CALL }])
     )
   }
+
+  // A native screens block is a slot until now, so that its caption's links were resolved above.
+  let galleries = 0
+  visit(tree, 'element', (node, index, parent) => {
+    const platform = node.properties?.dataNativeScreensSlot
+    if (parent === undefined || index === undefined || typeof platform !== 'string') {
+      return
+    }
+    galleries += 1
+    ;(parent as Element).children[index] = galleryElement(
+      platform as NativePlatform,
+      captures(platform as NativePlatform),
+      environment.base,
+      node.children,
+      galleries
+    )
+    return 'skip'
+  })
 
   // A permalink after each heading, so that a reader can copy the address of a section.
   visit(tree, 'element', (node) => {

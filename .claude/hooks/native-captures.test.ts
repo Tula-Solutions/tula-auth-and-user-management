@@ -1,4 +1,8 @@
 import { describe, expect, test } from 'bun:test'
+import { createHash } from 'node:crypto'
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { parseManifest } from '../../apps/docs/src/lib/native-captures'
 import { gradleArguments } from '../../native/android/fixture/ui-tests'
 import {
   ANDROID_CAPTURE_DIRECTORY,
@@ -234,4 +238,39 @@ describe('the runners', () => {
       }
     }
   })
+})
+
+describe('the manifests of the docs site', () => {
+  const ROOT = join(import.meta.dir, '../../apps/docs/public/native')
+
+  test('what the runners write is what the site reads', () => {
+    const made = buildManifest({
+      ...input([file('sign-in.email.light.webp'), file('sign-in.email.dark.webp')]),
+      commit: 'a'.repeat(40),
+    })
+    const read = parseManifest('manifest.json', JSON.stringify(made), 'ios')
+    expect(read.captures.map((one) => one.file)).toEqual(made.captures.map((one) => one.file))
+  })
+
+  test.each(['ios', 'android'] as const)(
+    'the committed %s captures are the ones their manifest lists, byte for byte',
+    (platform) => {
+      const directory = join(ROOT, platform)
+      if (!existsSync(join(directory, 'manifest.json'))) {
+        // A platform nobody has captured yet: the site says so, and there is nothing to hold.
+        return
+      }
+      const manifest = parseManifest(
+        join(directory, 'manifest.json'),
+        readFileSync(join(directory, 'manifest.json'), 'utf8'),
+        platform
+      )
+      for (const one of manifest.captures) {
+        const bytes = readFileSync(join(directory, one.file))
+        expect(bytes.length).toBe(one.bytes)
+        expect(bytes.length).toBeLessThanOrEqual(MAX_CAPTURE_BYTES)
+        expect(createHash('sha256').update(bytes).digest('hex')).toBe(one.sha256)
+      }
+    }
+  )
 })

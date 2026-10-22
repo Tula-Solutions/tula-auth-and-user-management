@@ -234,6 +234,26 @@ static HTML. Its commands are in its README.
   `llms.txt` and `skill.md` at the root. `updated` and `lastmod` come from the repository's
   history and only in a clone that has it (`src/lib/ai/git.ts`): the Pages workflow checks out
   one commit, where every file would get that commit's date, so there they are left out.
+- **The native screens are pictures a UI test took, never drawn here** (`:::native-screens
+  {platform="ios"|"android"}`, `src/lib/native-captures.ts`, `src/client/native-screens.ts`, written in
+  `docs/writing-docs.md`, "Native screens"). The files are `apps/docs/public/native/<platform>/`:
+  one WebP per screen, step and scheme (`<screen>.<step>.<theme>.webp`, 560 px wide, each under
+  `MAX_CAPTURE_BYTES` of `native/fixture/captures.ts`, 80 KB) and a `manifest.json` (version 1: the
+  device, the tools, the commit, `dirty`, the date, and each file's size, SHA-256 and labels). They
+  are made by `bun run native/swift/fixture/ui-tests.ts --screenshots apps/docs/public/native/ios`
+  and `bun run native/android/fixture/ui-tests.ts --avd <name> --screenshots
+  apps/docs/public/native/android`, by hand: no workflow runs a simulator or an emulator. **Never
+  make, edit, crop or compose a capture by another route, and never commit one a run did not write**:
+  the manifest is read by `parseManifest`, which refuses what it cannot check (a name that is not
+  `<screen>.<step>.<theme>.webp`, markup in a label, a platform that is not the directory's), and a
+  wrong manifest stops the build rather than showing less. A platform with no manifest shows "Not
+  captured yet" and the command; it never shows a picture of the other platform in its place (the
+  Expo page says in words that its pictures are the Swift and Kotlin examples'). A change to a
+  screen under `native/` or to an example app means the captures are taken again in the same
+  change, or the gallery's line (which names the commit) is left saying what it was made from.
+  The gallery works with no script (every capture listed, in the reader's scheme) and the script
+  only adds the picker: keep both, and the Playwright cases for each (`native-screens.spec.ts`).
+  Its alternative text names the platform, screen, step and scheme; its styles use tokens only.
 - **shadcn primitives** in `src/components/ui/` are written by `bunx shadcn@latest add` and
   not edited (as in the dashboard). They import `cn` from the bare specifier, mapped by
   `tsconfig.json` and `vite.config.ts`. The primitives used are rendered on the server only.

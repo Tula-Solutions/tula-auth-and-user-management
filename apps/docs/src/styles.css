@@ -2060,7 +2060,7 @@
 .native-screens[data-enhanced][data-ns-frame="on"] .ns-screen {
   border: 8px solid var(--border-strong);
   border-radius: var(--ns-radius);
-  box-shadow: var(--sh2);
+  box-shadow: var(--sh-2);
 }
 .native-screens[data-enhanced][data-ns-theme="light"] .ns-img[data-theme="dark"],
 .native-screens[data-enhanced][data-ns-theme="dark"] .ns-img[data-theme="light"] {

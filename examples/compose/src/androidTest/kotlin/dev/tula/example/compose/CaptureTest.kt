@@ -2,15 +2,20 @@ package dev.tula.example.compose
 
 import android.app.UiAutomation
 import android.content.Intent
+import android.graphics.Bitmap
+import android.os.ParcelFileDescriptor
 import android.os.Build
 import android.os.SystemClock
 import android.view.WindowInsets
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ComposeTimeoutException
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -24,6 +29,8 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.ByteArrayOutputStream
+import java.io.FileInputStream
 
 /**
  * The screen captures of the documentation (docs/kotlin.md, "What the screens look like"): the
@@ -32,7 +39,8 @@ import org.junit.runner.RunWith
  * These run only for `bun run native/android/fixture/ui-tests.ts --screenshots <dir>`, which
  * hands the device's directory over as the instrumentation argument `tulaCaptureDir`; without
  * it every test here is skipped, so a normal run is unchanged. A picture is the device's own
- * `screencap` of the real screen, named `<screen>.<step>.<theme>.png`; the script pulls them,
+ * capture of the real screen's content (the app's window, without the system bars: the example
+ * is not edge to edge, and an emulator without a window draws its status bar empty), named `<screen>.<step>.<theme>.png`; the script pulls them,
  * turns them into the files the documentation serves and writes the manifest. Nothing is drawn
  * or edited here.
  */
@@ -70,6 +78,18 @@ class CaptureTest {
         automation.executeShellCommand(command).use { descriptor ->
             java.io.FileInputStream(descriptor.fileDescriptor).use { it.readBytes() }
         }
+    }
+
+    /**
+     * Write a picture where the shell can read it: the test's own process cannot write the directory.
+     * The command is split on spaces and run without a shell, so there is no redirection or quoting
+     * to use: `dd` reads the picture from standard input and writes it to the file.
+     */
+    private fun keep(picture: Bitmap, name: String) {
+        val bytes = ByteArrayOutputStream().also { picture.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+        val (output, input) = instrumentation.uiAutomation.executeShellCommandRw("dd of=$directory/$name")
+        ParcelFileDescriptor.AutoCloseOutputStream(input).use { it.write(bytes) }
+        output.use { FileInputStream(it.fileDescriptor).use { stream -> stream.readBytes() } }
     }
 
     private fun launch(dark: Boolean) {
@@ -114,7 +134,7 @@ class CaptureTest {
         }
         SystemClock.sleep(SETTLE_MS * 2)
         val theme = if (dark) "dark" else "light"
-        shell("screencap -p $directory/$screen.$step.$theme.png")
+        keep(rule.onRoot().captureToImage().asAndroidBitmap(), "$screen.$step.$theme.png")
     }
 
     private fun signIn(email: String) {
