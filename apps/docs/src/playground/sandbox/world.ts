@@ -63,12 +63,19 @@ export interface WorldOptions {
   now?: () => number
   /** The environment's settings. */
   settings?: SandboxSettings
+  /**
+   * The one origin a redirect URL may have (the environment's allowed redirect URLs, as the
+   * generated config shows them). Without it any address is accepted, as in a unit test.
+   */
+  redirectOrigin?: string
 }
 
 /** The sandbox's state and the few operations on it that more than one route needs. */
 export interface World {
   now(): number
   settings: SandboxSettings
+  /** See `WorldOptions.redirectOrigin`. */
+  redirectOrigin: string | null
   users: Map<string, SandboxUser>
   attempts: Map<string, SandboxAttempt>
   sessions: Map<string, SandboxSession>
@@ -182,6 +189,7 @@ export function createWorld(options: WorldOptions = {}): World {
   const world: World = {
     now,
     settings: options.settings ?? DEFAULT_SANDBOX_SETTINGS,
+    redirectOrigin: options.redirectOrigin ?? null,
     users: new Map(),
     attempts: new Map(),
     sessions: new Map(),

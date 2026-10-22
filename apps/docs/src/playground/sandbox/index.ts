@@ -87,6 +87,7 @@ export interface Sandbox {
 export function createSandbox(options: SandboxOptions): Sandbox {
   const world = createWorld({
     settings: options.settings,
+    redirectOrigin: new URL(options.pageUrl).origin,
     ...(options.now && { now: options.now }),
   })
   const { environment, page, authenticator } = createSandboxEnvironment({

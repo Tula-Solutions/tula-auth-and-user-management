@@ -18,6 +18,7 @@ import {
   loadAttempt,
   newBackupCodes,
   oauthStrategy,
+  redirect,
   requireStep,
   SANDBOX_ORIGIN,
   secondFactorsFor,
@@ -222,7 +223,7 @@ function startProviderRound(
   if (!world.settings.oauth.includes(provider)) {
     throw new SandboxError('auth.method_disabled', { params: { method: provider } })
   }
-  const redirectUrl = text(body.redirectUrl, 'redirectUrl')
+  const redirectUrl = redirect(world, body.redirectUrl, 'redirectUrl')
   const binding = `sbx_ob_${world.secret(18)}`
   const linkUser = intent === 'link' ? authenticate(ctx).user : null
   if (linkUser?.identities.some((identity) => identity.provider === provider)) {
@@ -343,7 +344,8 @@ export const HANDLERS: Handlers = {
     }
     world.assertNotLocked(attempt.identifier)
     const known = userByEmail(world, attempt.identifier) !== undefined
-    const link = strategy === 'email_link' ? text(body.redirectUrl, 'redirectUrl') : undefined
+    const link =
+      strategy === 'email_link' ? redirect(world, body.redirectUrl, 'redirectUrl') : undefined
     attempt.prepared = strategy
     attempt.linkVerified = false
     attempt.linkRedirectUrl = link ?? null

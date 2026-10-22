@@ -7,7 +7,13 @@ import {
   SessionListSchema,
 } from '@tula-tech/contract'
 import { OPERATIONS } from './api-types'
-import { createSandbox, DEFAULT_SANDBOX_SETTINGS, DEMO_PASSWORD, type Sandbox } from './index'
+import {
+  createSandbox,
+  DEFAULT_SANDBOX_SETTINGS,
+  DEMO_EMAIL,
+  DEMO_PASSWORD,
+  type Sandbox,
+} from './index'
 
 const BASE = 'https://sandbox.tula.invalid'
 
@@ -41,6 +47,60 @@ async function signedIn(): Promise<{
   }
   return { sandbox, call }
 }
+
+describe('redirect URLs', () => {
+  const sandbox = createSandbox({
+    settings: {
+      ...DEFAULT_SANDBOX_SETTINGS,
+      oauth: ['github'],
+      methods: { password: true, emailCode: true, emailLink: true, passkey: false },
+    },
+    pageUrl: 'http://localhost:4321/playground/',
+  })
+
+  // The client refuses a cross-origin address itself (`link.cross_origin`); these are the
+  // requests a client that did not would send.
+  const post = async (path: string, body: unknown, headers: Record<string, string> = {}) => {
+    const response = await sandbox.fetch(
+      new Request(`${BASE}${path}`, {
+        method: 'POST',
+        headers: {
+          'x-tula-publishable-key': 'tula_pk_dev_x',
+          'content-type': 'application/json',
+          ...headers,
+        },
+        body: JSON.stringify(body),
+      })
+    )
+    return { status: response.status, body: (await response.json().catch(() => null)) as unknown }
+  }
+
+  test('a provider sign-in to another origin is refused, as the real API refuses it', async () => {
+    const answer = await post('/v1/client/sign-ins/oauth', {
+      provider: 'github',
+      redirectUrl: 'https://evil.example/cb',
+    })
+    expect(ErrorEnvelopeSchema.parse(answer.body).code).toBe('request.redirect_not_allowed')
+    const fine = await post('/v1/client/sign-ins/oauth', {
+      provider: 'github',
+      redirectUrl: 'http://localhost:4321/cb',
+    })
+    expect(fine.status).toBeLessThan(400)
+  })
+
+  test('an emailed link to another origin is refused', async () => {
+    const started = (await post('/v1/client/sign-ins', { identifier: DEMO_EMAIL })).body as {
+      id: string
+      attemptSecret?: string
+    }
+    const answer = await post(
+      `/v1/client/sign-ins/${started.id}/first-factor/prepare`,
+      { strategy: 'email_link', redirectUrl: 'https://evil.example/x' },
+      { 'x-tula-attempt': started.attemptSecret ?? '' }
+    )
+    expect(ErrorEnvelopeSchema.parse(answer.body).code).toBe('request.redirect_not_allowed')
+  })
+})
 
 describe('a sandbox with no one listening', () => {
   const options = {

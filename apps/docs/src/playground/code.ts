@@ -122,7 +122,8 @@ function literal(value: unknown, depth: number): string {
       .join('\n')}\n${pad}}`
   }
   if (typeof value === 'string') {
-    return `'${value.replaceAll("'", "\\'")}'`
+    // The backslash first: the quote's own escape must not be escaped again.
+    return `'${value.replaceAll('\\', '\\\\').replaceAll("'", "\\'")}'`
   }
   return String(value)
 }

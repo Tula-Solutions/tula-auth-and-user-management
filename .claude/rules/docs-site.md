@@ -71,7 +71,7 @@ static HTML. Its commands are in its README.
   `blocks.ts`, `Frame.assets.playground`), which fetches the island's one chunk
   (`mount-*.js`, 610 KB raw, 185 KB gzipped, plus its stylesheet) when a placeholder is within
   600 px of the viewport. The site's own script and stylesheet are unchanged for every page
-  (`main.js` 6.8 KB raw; `main.css` grew 1.3 KB for the guard below), and
+  (`main.js` is byte-for-byte what it was without the playground, 6.8 KB raw when measured; `main.css` grew 1.3 KB for the guard below), and
   `e2e/tests/docs/playground.spec.ts` fails if a page with no playground loads any of it.
   Never import the island from `main.ts`, never add a playground script to a page without a
   placeholder, never add a second island.

@@ -56,6 +56,31 @@ export function text(value: unknown, field: string): string {
 }
 
 /**
+ * A redirect URL the environment allows: on the origin the sandbox's page is on, as the real
+ * API refuses an address outside the environment's allowed redirect URLs.
+ *
+ * @param world - The sandbox.
+ * @param value - The address the client sent.
+ * @param field - Its field name, for the error.
+ * @returns The address.
+ * @throws SandboxError `request.redirect_not_allowed` for another origin or an address that is
+ *   not a URL.
+ */
+export function redirect(world: World, value: unknown, field: string): string {
+  const url = text(value, field)
+  let origin: string | null = null
+  try {
+    origin = new URL(url).origin
+  } catch {
+    origin = null
+  }
+  if (world.redirectOrigin !== null && origin !== world.redirectOrigin) {
+    throw new SandboxError('request.redirect_not_allowed')
+  }
+  return url
+}
+
+/**
  * Check an email address the way the sign-up form does.
  *
  * @param value - What was typed.

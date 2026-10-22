@@ -165,6 +165,32 @@ describe('the settings the copied config writes', () => {
     expect(configTs(DEFAULT_CONFIG)).not.toContain('env(')
   })
 
+  test.each(['Acme\\', "it's", "back\\'slash"])(
+    'an app name of %p comes back from the generated file as typed',
+    async (name) => {
+      const dir = join(
+        import.meta.dir,
+        '..',
+        '..',
+        'node_modules',
+        '.playground-config-name',
+        String(Math.random()).slice(2)
+      )
+      mkdirSync(dir, { recursive: true })
+      try {
+        const file = join(dir, 'tula.config.ts')
+        writeFileSync(
+          file,
+          configTs({ ...DEFAULT_CONFIG, settings: { ...DEFAULT_CONFIG.settings, appName: name } })
+        )
+        const loaded = await loadConfig(file)
+        expect(loaded.config.environments.dev?.settings.app?.name).toBe(name)
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    }
+  )
+
   test('the generated file loads as a real tula.config.ts', async () => {
     // Inside node_modules so that `@tula-tech/config` resolves from here and git ignores it.
     const dir = join(import.meta.dir, '..', '..', 'node_modules', '.playground-config-test')

@@ -293,7 +293,7 @@ test.describe('the playground: configuration and code', () => {
   test('copy puts the whole file on the clipboard', async ({ page, context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write'])
     await open(page, '/playground/')
-    await page.getByRole('button', { name: /^Copy/ }).first().click()
+    await page.locator('.pg').getByRole('button', { name: /^Copy/ }).first().click()
     const text = await page.evaluate(() => navigator.clipboard.readText())
     expect(text).toContain('@tula-tech/react')
   })
@@ -318,10 +318,35 @@ test.describe('the playground: what a page costs', () => {
   test('a page with no playground loads no playground script, style or chunk', async ({ page }) => {
     const assets = await assetsOf(page, '/quickstart/')
     expect(assets.length).toBeGreaterThan(0)
-    expect(assets.filter((one) => /playground|mount-|qr-/.test(one.name))).toEqual([])
-    // The site's own script is the same few kilobytes it was before the playground existed.
-    const script = assets.find((one) => one.name.endsWith('.js'))
-    expect(script?.bytes).toBeLessThan(7500)
+    expect(assets.filter((one) => /playground|mount-/.test(one.name))).toEqual([])
+    // The site script is the one every page loads (13.9 KB on develop at the merge, 6.8 KB before
+    // the native gallery); the playground adds nothing to it, so the bound sits just above.
+    const script = assets.find((one) => /\/main-[^/]*\.js$/.test(one.name))
+    expect(script, 'the site script is loaded').toBeDefined()
+    expect(script?.bytes).toBeLessThan(14500)
+  })
+
+  test('nothing of the sandbox is written to web storage', async ({ page }) => {
+    const { frame } = await open(page, '/methods/oauth/')
+    await startSignIn(frame, 'ada@example.test')
+    await field(frame, 'Password').fill(PASSWORD)
+    await frame.getByRole('button', { name: 'Sign in', exact: true }).click()
+    await expectSignedIn(frame, 'ada@example.test')
+    await frame
+      .getByRole('button', { name: /sign out/i })
+      .first()
+      .click()
+    await frame.getByRole('button', { name: /google/i }).click()
+    await frame.getByRole('button', { name: 'Approve' }).click()
+    await expectSignedIn(frame, 'ada@example.test')
+    const keys = await page.evaluate(() => [
+      ...Object.keys(localStorage),
+      ...Object.keys(sessionStorage),
+    ])
+    // The site's own choices (theme, tabs) may be there; the sandbox's tokens and bindings not.
+    expect(
+      keys.filter((key) => /tula\.|sbx|token|session/i.test(key) && !/^tula-docs-/.test(key))
+    ).toEqual([])
   })
 
   test('a page with a playground loads the island only when it is near', async ({ page }) => {
