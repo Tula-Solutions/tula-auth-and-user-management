@@ -354,7 +354,7 @@ the site from that commit and deploys it to GitHub Pages as the **docs of the la
 
 - https://tula-solutions.github.io/tula-auth-and-user-management/ shows the released docs, with
   the release's version in the header.
-- https://tula-solutions.github.io/tula-auth-and-user-management/next/ shows `develop`'s docs,
+- The same address with `next/` added shows `develop`'s docs,
   with a banner that says they are unreleased. A push to `develop` refreshes it. It is not
   indexed by search engines.
 
