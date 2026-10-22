@@ -66,10 +66,93 @@ jobs:
           echo "skip=$skip" >> "$GITHUB_OUTPUT"
         shell: bash -euo pipefail {0}
 
-  verify:
+  # `bun run verify` is the gate a person runs; CI runs the same checks as jobs side by side,
+  # because as one job they took ten minutes. `.claude/hooks/ci-split.test.ts` holds that the
+  # parts are exactly `verify`'s commands. The aggregate jobs (`verify`, `e2e`, `e2e-docs`) keep
+  # the names the repository's ruleset requires: each runs after its parts, even when one
+  # failed (a job whose needed job failed is skipped, and a skipped check reads as passed), and
+  # fails unless every part succeeded.
+  #
+  # `verify-static`: Biome, the harness tests, the typecheck, the generated files, the migration,
+  # contract and docs drift checks and the packages' build.
+  verify-static:
     needs: duplicate
     if: needs.duplicate.outputs.skip != 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with: { fetch-depth: 0 }
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version-file: package.json }
+      - run: bun install --frozen-lockfile
+      # Turborepo's record of the typecheck and test tasks that passed. A pull request starts
+      # from the newest one a push saved, and so redoes only the packages whose inputs changed
+      # since: quick feedback, as safe as those inputs are complete
+      # (.claude/hooks/turbo-inputs.test.ts). A push never reads it: what lands on `develop`
+      # and `main` is checked from scratch, and that run's record is the one saved, so the
+      # cache never carries anything a pull request wrote. `verify-static` and `verify-tests`
+      # each keep one under a key of their own.
+      - name: Restore the Turborepo cache
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v6
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-verify-static-${{ github.sha }}
+          restore-keys: turbo-${{ runner.os }}-verify-static-
+      - run: bun run verify:static
+      - name: Save the Turborepo cache
+        if: github.event_name == 'push'
+        uses: actions/cache/save@v6
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-verify-static-${{ github.sha }}
+
+  # The unit tests of every package, with their coverage thresholds, in three groups that run
+  # at once (the root `test:coverage:*` scripts; `ci-split.test.ts` holds that every package is
+  # in exactly one). The API's 12,000 tests are most of the time, so they have a runner of
+  # their own and run on four workers (`--parallel=4`, in the package's script).
+  verify-tests:
+    name: verify tests (${{ matrix.name }})
+    needs: duplicate
+    if: needs.duplicate.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: api, script: 'test:coverage:api' }
+          - { name: dashboard, script: 'test:coverage:dashboard' }
+          - { name: other packages, script: 'test:coverage:rest' }
+    steps:
+      - uses: actions/checkout@v7
+        with: { fetch-depth: 0 }
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version-file: package.json }
+      - run: bun install --frozen-lockfile
+      - name: Restore the Turborepo cache
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v6
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-verify-tests-${{ matrix.name }}-${{ github.sha }}
+          restore-keys: turbo-${{ runner.os }}-verify-tests-${{ matrix.name }}-
+      - run: bun run ${{ matrix.script }}
+      - name: Save the Turborepo cache
+        if: github.event_name == 'push'
+        uses: actions/cache/save@v6
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-verify-tests-${{ matrix.name }}-${{ github.sha }}
+
+  # The tests that need a real Postgres and a real Redis (not part of `bun run verify`: it
+  # needs the services).
+  verify-integration:
+    needs: duplicate
+    if: needs.duplicate.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     services:
       postgres:
         image: postgres:18-alpine
@@ -93,76 +176,114 @@ jobs:
       DATABASE_URL: postgres://tula_api:tula_api@localhost:5432/tula
       DATABASE_MIGRATION_URL: postgres://tula:tula@localhost:5432/tula
       REDIS_TEST_URL: redis://localhost:6379
-      TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha || 'HEAD~1' }}
     steps:
       - uses: actions/checkout@v7
-        with: { fetch-depth: 0 }
       - uses: oven-sh/setup-bun@v2
         with: { bun-version-file: package.json }
       - run: bun install --frozen-lockfile
-      # Turborepo's record of the typecheck and test tasks that passed. A pull request starts
-      # from the newest one a push saved, and so redoes only the packages whose inputs changed
-      # since: quick feedback, as safe as those inputs are complete
-      # (.claude/hooks/turbo-inputs.test.ts). A push never reads it: what lands on `develop`
-      # and `main` is checked from scratch, and that run's record is the one saved, so the
-      # cache never carries anything a pull request wrote.
-      - name: Restore the Turborepo cache
-        if: github.event_name == 'pull_request'
-        uses: actions/cache/restore@v6
-        with:
-          path: .turbo/cache
-          key: turbo-${{ runner.os }}-${{ github.sha }}
-          restore-keys: turbo-${{ runner.os }}-
-      - run: bun run verify
-      - name: Save the Turborepo cache
-        if: github.event_name == 'push'
-        uses: actions/cache/save@v6
-        with:
-          path: .turbo/cache
-          key: turbo-${{ runner.os }}-${{ github.sha }}
       - name: Create database roles (mirrors docker/postgres/init.sql)
         run: psql "$DATABASE_MIGRATION_URL" -v ON_ERROR_STOP=1 -f docker/postgres/init.sql
       - run: bun run db:migrate
       - run: bun run test:integration
 
+  verify:
+    needs: [duplicate, verify-static, verify-tests, verify-integration]
+    if: ${{ !cancelled() && needs.duplicate.outputs.skip != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every part passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Results: $RESULTS"
+          test -n "$RESULTS"
+          for result in $RESULTS; do
+            test "$result" = success
+          done
+        shell: bash -euo pipefail {0}
+
   # Browser behaviour is tested in a browser (Phase 1 plan, rule 3): the example app, built only
   # from @tula-tech/react components, against the real API served in process with memory adapters
   # (e2e/server.ts), driven by Playwright, with axe on every screen in light and dark. Its own
-  # job, not part of `bun run verify`: it needs a browser download.
-  e2e:
+  # jobs, not part of `bun run verify`: they need a browser.
+  #
+  # The browser is Playwright's own image, of the version `bun.lock` installs (a test holds the
+  # two equal), so nothing is downloaded: `playwright install` fetched 200 MB from a CDN on every
+  # run, and a dropped connection failed the job after ten minutes. Nothing is cached either.
+  #
+  # The suite is split into shards, each a job with its own servers (the fixture API keeps one
+  # in-memory world per process, so the tests of one shard run one after the other, as before;
+  # shards never share a world). `e2e` is the aggregate the ruleset requires. Playwright's
+  # `--shard=i/n` splits the test files evenly, and each shard keeps the order of the projects
+  # (the Next.js and dashboard projects run before the one that moves the fixture's clock:
+  # `playwright.config.ts`).
+  e2e-shard:
+    name: e2e shard (${{ matrix.shard }}/4)
     needs: duplicate
     if: needs.duplicate.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      options: --ipc=host
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with: { bun-version-file: package.json }
       - run: bun install --frozen-lockfile
-      - name: Install Chromium and its system libraries
-        run: bunx playwright install --with-deps chromium
-      # The `docs` project is the `e2e-docs` job's: it needs no API and is the slow one (axe on
-      # every page of the site), so it runs beside this job and not in it.
-      - run: bun run e2e --project=nextjs --project=dashboard --project=chromium
+      # The `docs` project is the `e2e-docs` shards': it needs no API and is the slow one (axe on
+      # every page of the site), so it runs beside these jobs and not in them.
+      - run: bun run e2e --project=nextjs --project=dashboard --project=chromium --shard=${{ matrix.shard }}/4
       - name: Upload the report and traces
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.shard }}
           path: |
             e2e/playwright-report
             e2e/test-results
           retention-days: 7
 
+  e2e:
+    needs: [duplicate, e2e-shard]
+    if: ${{ !cancelled() && needs.duplicate.outputs.skip != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every shard passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Results: $RESULTS"
+          test -n "$RESULTS"
+          for result in $RESULTS; do
+            test "$result" = success
+          done
+        shell: bash -euo pipefail {0}
+
   # The documentation site (apps/docs): built from docs/** and served as static files, every page
-  # opened in a browser with axe in light and dark. Its own job beside `e2e`: it needs no API, and
-  # the large reference pages make it the slowest part of the browser tests, so it runs on four
-  # workers (the pages are static and the tests share no state).
-  e2e-docs:
+  # opened in a browser with axe in light and dark. Its own jobs beside `e2e`: it needs no API,
+  # and the large reference pages make it the slowest part of the browser tests. The pages are
+  # static and the tests share no state, so each shard runs four workers; every shard builds and
+  # serves the site for itself.
+  e2e-docs-shard:
+    name: e2e docs shard (${{ matrix.shard }}/4)
     needs: duplicate
     if: needs.duplicate.outputs.skip != 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      options: --ipc=host
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     # Built and served under the path GitHub Pages publishes it at (docs-pages.yml), so the
     # site that is tested is the one that is deployed: an address that ignores the base is a 404.
     env:
@@ -172,18 +293,33 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with: { bun-version-file: package.json }
       - run: bun install --frozen-lockfile
-      - name: Install Chromium and its system libraries
-        run: bunx playwright install --with-deps chromium
-      - run: bun run e2e --project=docs --workers=4
+      - run: bun run e2e --project=docs --workers=4 --shard=${{ matrix.shard }}/4
       - name: Upload the report and traces
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report-docs
+          name: playwright-report-docs-${{ matrix.shard }}
           path: |
             e2e/playwright-report
             e2e/test-results
           retention-days: 7
+
+  e2e-docs:
+    needs: [duplicate, e2e-docs-shard]
+    if: ${{ !cancelled() && needs.duplicate.outputs.skip != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every shard passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Results: $RESULTS"
+          test -n "$RESULTS"
+          for result in $RESULTS; do
+            test "$result" = success
+          done
+        shell: bash -euo pipefail {0}
 
   # The Kotlin client (native/android, ADR 0054) on the JVM: its unit tests, its journeys
   # against the real API served in process with memory adapters (e2e/kotlin-fixture.ts, which
