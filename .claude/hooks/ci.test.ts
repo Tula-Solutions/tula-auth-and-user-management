@@ -301,6 +301,29 @@ describe('the self-host job: one image, three stacks side by side', () => {
     expect(wait?.run).toContain('.exit")" = 0')
     // Each run's output is shown, whole, in the log.
     expect(wait?.run).toMatch(/tail -n \+1 -f --pid=/)
+    // A run whose process ended without an exit code (killed, reaped) fails with a message.
+    expect(wait?.run).toContain('did not finish')
+    // The background command writes the exit code the wait step reads.
+    const start = stepWith('bun run conformance')?.run ?? ''
+    expect(start).toContain(
+      'bun run conformance > "$RUNNER_TEMP/$0.log" 2>&1; echo $? > "$RUNNER_TEMP/$0.exit"'
+    )
+  })
+
+  test('every step that starts or reports on the stacks stops at its first failed command', () => {
+    // Without it a failed `grep` or `test` in the middle of a script would be ignored, and only
+    // the last command's status would be the step's.
+    for (const step of steps()) {
+      const script = step.run ?? ''
+      if (step.name === undefined || script === '' || !script.includes('\n')) {
+        continue
+      }
+      const strict =
+        (step as Step & { shell?: string }).shell === 'bash -euo pipefail {0}' ||
+        script.trimStart().startsWith('set -euo pipefail') ||
+        /^(# [^\n]*\n)+set -euo pipefail/.test(script.trimStart())
+      expect({ step: step.name, strict }).toEqual({ step: step.name, strict: true })
+    }
   })
 
   test('the runs are reported even when the worker check before them failed', () => {

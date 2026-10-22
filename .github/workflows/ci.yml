@@ -364,6 +364,7 @@ jobs:
           done
           echo "the API instances did not all become ready" >&2
           exit 1
+        shell: bash -euo pipefail {0}
       - name: The image serves the dashboard under its Content-Security-Policy
         run: |
           set -euo pipefail
@@ -468,7 +469,11 @@ jobs:
           done
           status=0
           for mode in two-ports one-address; do
-            if [ "$(cat "$RUNNER_TEMP/$mode.exit")" = 0 ]; then
+            if [ ! -f "$RUNNER_TEMP/$mode.exit" ]; then
+              # Its process ended without writing a code: killed, or reaped by the runner.
+              echo "conformance ($mode) did not finish" >&2
+              status=1
+            elif [ "$(cat "$RUNNER_TEMP/$mode.exit")" = 0 ]; then
               echo "conformance ($mode) passed"
             else
               echo "conformance ($mode) failed" >&2
@@ -580,6 +585,7 @@ jobs:
           $TWO_PORTS logs --no-color
           echo "======== worker ========"
           docker compose -p self-host-worker --env-file docker/self-host/worker.env -f docker-compose.yml -f docker/worker-check/compose.yml --profile app --profile worker logs --no-color
+        shell: bash -euo pipefail {0}
 
   # The marker `duplicate` looks for. It needs every other job, with no status function in its
   # condition, so it is written only when all of them succeeded, and never by a run that
