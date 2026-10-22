@@ -691,7 +691,7 @@ bun run --filter create-tula templates:sync
 bun run dashboard:generate  # regenerate the dashboard's hooks, route tree and theme tokens
 bun run dashboard:dev       # the dashboard on http://localhost:5175/dashboard/, proxying /v1 to the API
 bun run dashboard:build     # apps/dashboard/dist, which `bun run dev` then serves at /dashboard
-bun run docs-site:dev        # build the documentation site and serve it on http://127.0.0.1:4321/ (docs-site:build only builds)
+bun run docs-site:dev       # build the documentation site and serve it on http://127.0.0.1:4321/ (docs-site:build only builds)
 bun run docs:generate       # rewrite docs/reference/ from the JSDoc and fill the docs' snippet blocks
 bun run docs:check          # fail if either is out of date (part of verify)
 bun run packages:check      # build, pack, publint + attw every publishable package (part of verify)
