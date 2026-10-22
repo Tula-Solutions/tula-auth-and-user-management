@@ -120,6 +120,26 @@ describe('renderMarkdown', () => {
     expect(() => render('# T\n\n[x](missing.md)\n')).toThrow('docs/a.md')
   })
 
+  test('an external link with a scheme other than http, https or mailto fails the build', () => {
+    for (const target of [
+      'javascript:alert(1)',
+      'data:text/html,x',
+      'vbscript:x',
+      'file:///etc/passwd',
+    ]) {
+      expect(() => render(`# T\n\n[x](${target})\n`), target).toThrow(RenderError)
+      expect(() => render(`# T\n\n[x](${target})\n`), target).toThrow('docs/a.md')
+    }
+    expect(() =>
+      render('# T\n\n[m](mailto:a@example.com) [h](https://example.com)\n')
+    ).not.toThrow()
+  })
+
+  test('a malformed percent escape in an anchor is a RenderError naming the file', () => {
+    expect(() => render('# T\n\n[x](#%E0)\n')).toThrow(RenderError)
+    expect(() => render('# T\n\n[x](#%E0)\n')).toThrow('docs/a.md')
+  })
+
   test('an anchor the page or the target lacks fails the build', () => {
     expect(() => render('# T\n\n[x](#nowhere)\n')).toThrow('does not have')
     expect(() => render('# T\n\n[x](b.md#nowhere)\n')).toThrow('does not have')

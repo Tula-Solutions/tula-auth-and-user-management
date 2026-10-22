@@ -367,6 +367,9 @@ function nameHeaderCells(table: Element): void {
   }
 }
 
+/** The schemes a link may leave the site by. */
+const EXTERNAL_SCHEMES = /^(https?|mailto):/i
+
 /** The rewritten address of a link or an image of a document. */
 function rewrite(
   doc: ParsedDoc,
@@ -376,13 +379,23 @@ function rewrite(
   assets: string[]
 ): string {
   if (target.startsWith('#')) {
-    const fragment = decodeURIComponent(target.slice(1))
+    let fragment: string
+    try {
+      fragment = decodeURIComponent(target.slice(1))
+    } catch {
+      throw new RenderError(doc.file, `link "${target}" is not a valid anchor`)
+    }
     if (fragment !== '' && fragment !== 'top' && !doc.ids.has(fragment)) {
       throw new RenderError(doc.file, `link "${target}" points at an anchor the page does not have`)
     }
     return target
   }
   const resolved = resolveLink(doc.file, target, environment)
+  // The Markdown is ours, but a link is still a way to run script on a reader's page: only
+  // addresses a reader may follow are allowed out of the site.
+  if (resolved.kind === 'external' && !EXTERNAL_SCHEMES.test(target)) {
+    throw new RenderError(doc.file, `link "${target}" has a scheme the site does not link to`)
+  }
   if (resolved.kind === 'asset') {
     assets.push(resolved.file)
     return `${environment.base}files/${resolved.file}`
