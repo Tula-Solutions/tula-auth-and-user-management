@@ -172,8 +172,13 @@ export const WEBHOOK_WAIT_MS = 30_000
 /** How often a waiting `webhook` step looks at what has arrived. */
 const WEBHOOK_POLL_MS = 100
 
-/** Whether a request replaces the environment's settings, which instances cache (ADR 0018). */
-function changesSettings(request: ScenarioRequest): boolean {
+/**
+ * Whether a request replaces the environment's settings, which instances cache (ADR 0018).
+ *
+ * @param request - A scenario request.
+ * @returns `true` for any write to `/v1/admin/settings`.
+ */
+export function changesSettings(request: ScenarioRequest): boolean {
   return request.method !== 'GET' && request.path.split('?')[0] === '/v1/admin/settings'
 }
 

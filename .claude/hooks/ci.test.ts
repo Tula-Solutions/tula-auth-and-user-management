@@ -275,6 +275,7 @@ describe('the self-host job: one image, three stacks side by side', () => {
         `CONFORMANCE_MAILPIT_URL=${at('two-ports', 'MAILPIT_UI_PORT')}`,
         'CONFORMANCE_PUBLISHABLE_KEY="$TWO_PORTS_PUBLISHABLE_KEY"',
         'CONFORMANCE_SECRET_KEY="$TWO_PORTS_SECRET_KEY"',
+        'CONFORMANCE_ENVIRONMENTS="$TWO_PORTS_ENVIRONMENTS"',
       ].join(' \\\n  ')
     )
     expect(section('one-address')).toContain(
@@ -288,11 +289,36 @@ describe('the self-host job: one image, three stacks side by side', () => {
         `CONFORMANCE_MAILPIT_URL=${at('one-address', 'MAILPIT_UI_PORT')}`,
         'CONFORMANCE_PUBLISHABLE_KEY="$ONE_ADDRESS_PUBLISHABLE_KEY"',
         'CONFORMANCE_SECRET_KEY="$ONE_ADDRESS_SECRET_KEY"',
+        'CONFORMANCE_ENVIRONMENTS="$ONE_ADDRESS_ENVIRONMENTS"',
       ].join(' \\\n  ')
     )
     // Every scenario must run: a missing secret key would skip the admin ones.
     expect(start).toContain('test -n "$CONFORMANCE_PUBLISHABLE_KEY"')
     expect(start).toContain('test -n "$CONFORMANCE_SECRET_KEY"')
+  })
+
+  test('each conformance run goes through eight environments, so that its waits overlap', () => {
+    // Scenarios restore the settings they change, so they overlap only in environments of
+    // their own. The seeded one is the primary; the other seven are made before the runs start,
+    // for the two modes that run the scenarios (the worker stack runs none).
+    const make = stepWith('create-environments.ts')
+    expect(make?.run).toContain('--count 7')
+    expect(make?.run).toContain('lanes ONE_ADDRESS &')
+    expect(make?.run).toContain('lanes TWO_PORTS &')
+    expect(make?.run).not.toContain('WORKER_STACK')
+    // Every key is masked, and a stack that did not give seven pairs fails the step.
+    expect(make?.run).toContain('::add-mask::$key')
+    expect(make?.run).toContain('!= 7')
+    expect(make?.run).toContain('_ENVIRONMENTS=')
+    const runs = indexOf('bun run conformance')
+    expect(indexOf('create-environments.ts')).toBeGreaterThan(indexOf('create-api-key.ts'))
+    expect(indexOf('create-environments.ts')).toBeLessThan(runs)
+    // The script the image runs is there, and it prints one pair a line.
+    const script = readFileSync(
+      join(repository, 'apps/api/src/scripts/create-environments.ts'),
+      'utf8'
+    )
+    expect(script).toContain('`${publishable.key}:${secret.key}\\n`')
   })
 
   test('a run that failed, or never ended, fails the job', () => {
