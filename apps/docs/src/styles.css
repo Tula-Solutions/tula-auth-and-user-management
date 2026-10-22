@@ -339,6 +339,11 @@
 .menu-btn {
   margin-inline-start: -10px;
 }
+/* Without a script nothing opens a drawer: the sidebar stays in the page, above the content. */
+:root:not([data-js]) .menu-btn,
+:root:not([data-js]) .search-toggle {
+  display: none;
+}
 @media (min-width: 1024px) {
   .menu-btn {
     display: none;
@@ -542,7 +547,7 @@
   line-height: var(--lh-small);
 }
 @media (max-width: 1023.98px) {
-  .sidebar {
+  :root[data-js] .sidebar {
     position: fixed;
     z-index: 45;
     top: var(--header-h);
@@ -561,7 +566,7 @@
       transform var(--dur-slow) var(--ease),
       visibility 0s linear var(--dur-slow);
   }
-  .sidebar[data-open="true"] {
+  :root[data-js] .sidebar[data-open="true"] {
     transform: none;
     visibility: visible;
     transition-delay: 0s;

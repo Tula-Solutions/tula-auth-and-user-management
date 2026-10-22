@@ -49,6 +49,9 @@ function initTheme(): void {
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), summary, [tabindex]:not([tabindex="-1"])'
 
+/** Sent by anything that takes the reader out of the drawer (the search shortcuts). */
+const CLOSE_DRAWER = 'docs:close-drawer'
+
 /** The viewport width from which the sidebar is a column and not a drawer. */
 const DRAWER_BELOW = 1024
 
@@ -64,9 +67,9 @@ function initMenu(): void {
   if (button === null || sidebar === null) {
     return
   }
-  const behind = [...document.querySelectorAll<HTMLElement>('main, .toc, .landing')].filter(
-    (element) => !sidebar.contains(element)
-  )
+  const behind = [
+    ...document.querySelectorAll<HTMLElement>('main, .toc, .landing, .header-end, .tabs'),
+  ].filter((element) => !sidebar.contains(element))
   function isOpen(): boolean {
     return sidebar?.getAttribute('data-open') === 'true'
   }
@@ -85,6 +88,8 @@ function initMenu(): void {
     }
   }
   button.addEventListener('click', () => set(!isOpen()))
+  // The search shortcuts leave the drawer first: the search is part of the page behind it.
+  document.addEventListener(CLOSE_DRAWER, () => isOpen() && set(false, false))
   scrim?.addEventListener('click', () => set(false))
   sidebar.addEventListener('click', (event) => {
     if ((event.target as Element).closest('a') !== null) {
@@ -118,6 +123,11 @@ function initMenu(): void {
 }
 
 /** On a phone the search box is a row under the header, opened by its button. */
+function setSearchRow(open: boolean): void {
+  document.getElementById('site-header')?.setAttribute('data-search', open ? 'open' : 'closed')
+  document.getElementById('search-toggle')?.setAttribute('aria-expanded', String(open))
+}
+
 function initSearchToggle(): void {
   const toggle = document.getElementById('search-toggle')
   const header = document.getElementById('site-header')
@@ -127,8 +137,7 @@ function initSearchToggle(): void {
   }
   toggle.addEventListener('click', () => {
     const open = header.getAttribute('data-search') !== 'open'
-    header.setAttribute('data-search', open ? 'open' : 'closed')
-    toggle.setAttribute('aria-expanded', String(open))
+    setSearchRow(open)
     if (open) {
       input.focus()
     }
@@ -261,14 +270,16 @@ function initSearch(): void {
     ) {
       // Command K (Control K elsewhere) is the search everywhere on the web docs.
       event.preventDefault()
-      const header = document.getElementById('site-header')
-      header?.setAttribute('data-search', 'open')
+      document.dispatchEvent(new Event(CLOSE_DRAWER))
+      setSearchRow(true)
       input.focus()
       input.select()
     } else if (event.key === '/' && document.activeElement !== input) {
       const target = event.target as HTMLElement
       if (!['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) && !target.isContentEditable) {
         event.preventDefault()
+        document.dispatchEvent(new Event(CLOSE_DRAWER))
+        setSearchRow(true)
         input.focus()
       }
     }

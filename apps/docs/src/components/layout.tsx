@@ -30,7 +30,7 @@ export interface PageProps {
  * Runs before the first paint, so a reader who chose a theme never sees the other one flash.
  * With no choice it follows the system. The body is a constant string, not built from input.
  */
-const THEME_SCRIPT = `(function(){try{var s=localStorage.getItem('tula-docs-theme');var t=s==='light'||s==='dark'?s:(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t)}catch(e){}})()`
+const THEME_SCRIPT = `(function(){document.documentElement.setAttribute('data-js','');try{var s=localStorage.getItem('tula-docs-theme');var t=s==='light'||s==='dark'?s:(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t)}catch(e){}})()`
 
 /** The two background colours the browser's own chrome takes, one for each scheme. */
 const THEME_COLORS = { light: '#FAF9F5', dark: '#141412' } as const

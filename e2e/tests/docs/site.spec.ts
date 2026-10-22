@@ -298,15 +298,31 @@ test.describe('the documentation site', () => {
       'hidden'
     )
     await expect(page.locator('main')).toHaveAttribute('inert', '')
-    // Tab cycles through the drawer and its button, and never reaches the page behind it.
-    for (let step = 0; step < 60; step += 1) {
-      await page.keyboard.press('Tab')
-      const inside = await page.evaluate(
-        () =>
-          document.activeElement?.id === 'menu-toggle' ||
-          document.getElementById('sidebar')?.contains(document.activeElement) === true
-      )
-      expect(inside, `focus left the drawer at step ${step}`).toBe(true)
+    // Tab (and Shift+Tab) cycles through the button and the drawer's links and wraps round: a
+    // full turn visits both, never leaves them, and ends where it began.
+    for (const key of ['Tab', 'Shift+Tab']) {
+      const visited = new Set<string>()
+      const start = await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 80))
+      let returned = false
+      for (let step = 0; step < 200 && !returned; step += 1) {
+        await page.keyboard.press(key)
+        const where = await page.evaluate(() => ({
+          button: document.activeElement?.id === 'menu-toggle',
+          link:
+            document.activeElement?.tagName === 'A' &&
+            document.getElementById('sidebar')?.contains(document.activeElement) === true,
+          html: document.activeElement?.outerHTML.slice(0, 80),
+        }))
+        expect(where.button || where.link, `${key} left the drawer at step ${step}`).toBe(true)
+        visited.add(where.button ? 'button' : 'link')
+        returned = where.html === start
+      }
+      expect(returned, `${key} wraps round`).toBe(true)
+      expect([...visited].sort()).toEqual(['button', 'link'])
+    }
+    // Everything else on the page is inert, the header's controls included.
+    for (const selector of ['main', '.header-end', '.tabs']) {
+      await expect(page.locator(selector).first()).toHaveAttribute('inert', '')
     }
     await page.keyboard.press('Escape')
     await expect(sidebar).toHaveAttribute('data-open', 'false')
@@ -315,6 +331,32 @@ test.describe('the documentation site', () => {
     expect(await page.evaluate(() => getComputedStyle(document.documentElement).overflow)).toBe(
       'visible'
     )
+  })
+
+  test('the search shortcuts leave the drawer, and keep the search button in step', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto(at('/quickstart/'))
+    await page.getByRole('button', { name: 'Menu' }).click()
+    await expect(page.locator('#sidebar')).toHaveAttribute('data-open', 'true')
+    await page.keyboard.press('ControlOrMeta+k')
+    await expect(page.locator('#sidebar')).toHaveAttribute('data-open', 'false')
+    await expect(page.getByRole('searchbox', { name: 'Search the documentation' })).toBeFocused()
+    await expect(page.locator('#search-toggle')).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  test.describe('without a script', () => {
+    test.use({ javaScriptEnabled: false })
+
+    test('a phone still has the navigation, in the page', async ({ page }) => {
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.goto(at('/quickstart/'))
+      const nav = page.getByRole('navigation', { name: 'Documentation' })
+      await expect(nav).toBeVisible()
+      await expect(nav.getByRole('link', { name: 'Guides' })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Menu' })).toBeHidden()
+    })
   })
 
   test('the drawer closes from its scrim and when the window becomes a desktop', async ({
@@ -326,9 +368,14 @@ test.describe('the documentation site', () => {
     await expect(page.locator('#sidebar')).toHaveAttribute('data-open', 'true')
     await page.mouse.click(385, 600)
     await expect(page.locator('#sidebar')).toHaveAttribute('data-open', 'false')
+    await expect(page.locator('main')).not.toHaveAttribute('inert', '')
+    await expect(page.locator('html')).not.toHaveClass(/drawer-open/)
     await page.getByRole('button', { name: 'Menu' }).click()
     await page.setViewportSize({ width: 1280, height: 800 })
     await expect(page.locator('#sidebar')).toHaveAttribute('data-open', 'false')
+    await expect(page.locator('main')).not.toHaveAttribute('inert', '')
+    await expect(page.locator('.header-end')).not.toHaveAttribute('inert', '')
+    await expect(page.locator('html')).not.toHaveClass(/drawer-open/)
     await expect(page.getByRole('navigation', { name: 'Documentation' })).toBeVisible()
   })
 
