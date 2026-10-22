@@ -116,13 +116,13 @@ describe('the docs site workflow', () => {
     )
   })
 
-  test('both trees are checked out at the tips of main and develop, leaving no token behind', () => {
+  test('both trees are checked out at the tips of main and develop, with their whole history and no token left behind', () => {
     const checkouts = job('build').steps.filter((step) =>
       step.uses?.startsWith('actions/checkout@')
     )
     expect(checkouts.map((step) => step.with)).toEqual([
-      { ref: 'main', path: 'release-src', 'persist-credentials': false },
-      { ref: 'develop', path: 'next-src', 'persist-credentials': false },
+      { ref: 'main', path: 'release-src', 'fetch-depth': 0, 'persist-credentials': false },
+      { ref: 'develop', path: 'next-src', 'fetch-depth': 0, 'persist-credentials': false },
     ])
   })
 
@@ -154,6 +154,7 @@ describe('the docs site workflow', () => {
     expect(read('apps/docs/src/lib/config.ts')).toContain(
       `REPO_URL = 'https://github.com/Tula-Solutions${PAGES_BASE.slice(0, -1)}'`
     )
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: shell text, not a template
     expect(script()).toContain('DOCS_BASE="${DOCS_BASE_PATH}next/"')
     expect(script()).toContain('DOCS_BASE="$DOCS_BASE_PATH"')
     for (const step of job('build').steps) {

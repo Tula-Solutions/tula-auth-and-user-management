@@ -110,17 +110,23 @@ function VersionMarker(props: VersionProps) {
     )
   }
   const label = release.version === null ? 'released' : `v${release.version}`
+  // Before any release carries the site the root is not released docs: nothing to switch to.
+  if (release.channel === 'next' && release.version === null) {
+    return (
+      <span className='shrink-0 rounded-md border bg-muted px-2 py-0.5 text-xs font-medium'>
+        next
+      </span>
+    )
+  }
   const [current, other] = release.channel === 'next' ? ['next', label] : [label, 'next']
   return (
     <span className='flex shrink-0 items-center gap-1 text-xs'>
-      <span aria-current='true' className='rounded-md border bg-muted px-2 py-0.5 font-medium'>
-        {current}
-      </span>
+      <span className='rounded-md border bg-muted px-2 py-0.5 font-medium'>{current}</span>
       <a
         data-docs-version=''
         href={siblingOf(props)}
-        className='hidden rounded-md px-2 py-0.5 sm:inline'
-        title={`Read the ${other === 'next' ? 'unreleased' : 'released'} docs`}
+        className='rounded-md px-2 py-0.5'
+        aria-label={`Read the ${other === 'next' ? 'unreleased' : 'released'} docs (${other})`}
       >
         {other}
       </a>
@@ -133,7 +139,7 @@ function VersionBanner(props: VersionProps) {
   if (release.channel === 'release') {
     return null
   }
-  const label = release.version === null ? 'the latest release' : `v${release.version}`
+  const label = `v${release.version}`
   return (
     <section
       aria-label='Version notice'
@@ -143,11 +149,17 @@ function VersionBanner(props: VersionProps) {
       {release.channel === 'next' ? (
         <>
           These are the unreleased docs, written for the <code>develop</code> branch. They can
-          describe things the latest release does not have.{' '}
-          <a data-docs-version='' href={siblingOf(props)} className='underline'>
-            Read the docs of {label}
-          </a>
-          .
+          describe things no release has.{' '}
+          {release.version === null ? (
+            'No release carries them yet.'
+          ) : (
+            <>
+              <a data-docs-version='' href={siblingOf(props)} className='underline'>
+                Read the docs of {label}
+              </a>
+              .
+            </>
+          )}
         </>
       ) : (
         <>

@@ -73,9 +73,10 @@ describe('the development docs', () => {
     expect(page(next, '/quickstart/')).toContain(`href="${NEXT}docs/"`)
   })
 
-  test('without a known release the link says the latest release', async () => {
+  test('without a release there is no link to released docs, and no claim of one', async () => {
     const site = await build({ channel: 'next', version: null, origin: null }, NEXT)
-    expect(page(site, LANDING_ROUTE)).toContain('Read the docs of the latest release')
+    expect(page(site, LANDING_ROUTE)).toContain('No release carries them yet.')
+    expect(page(site, LANDING_ROUTE)).not.toContain('latest release')
   })
 })
 

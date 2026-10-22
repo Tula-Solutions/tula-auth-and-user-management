@@ -60,16 +60,19 @@ jobs:
     permissions:
       contents: read
     steps:
-      # The two trees, side by side, whichever branch started the run.
+      # The two trees, side by side, whichever branch started the run, with their whole history:
+      # a page's "last updated" date is read from it, and a shallow clone has none.
       - uses: actions/checkout@v7
         with:
           ref: main
           path: release-src
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/checkout@v7
         with:
           ref: develop
           path: next-src
+          fetch-depth: 0
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with: { bun-version-file: next-src/package.json }
