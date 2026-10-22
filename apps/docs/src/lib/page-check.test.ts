@@ -1,0 +1,61 @@
+import { describe, expect, test } from 'bun:test'
+import { RenderError } from './markdown'
+import { checkPage } from './page-check'
+
+function page(body: string): string {
+  return `<!doctype html><html><head><title>t</title></head><body><main>${body}</main></body></html>`
+}
+
+describe('checkPage', () => {
+  test('a well-formed page passes', () => {
+    expect(() =>
+      checkPage(
+        '/ok/',
+        page(
+          '<h1 id="a">A</h1><div data-docs-section="1"><h2 id="b">B</h2><h3 id="c">C</h3></div><div data-docs-section="2"><h2 id="d">D</h2><nav aria-labelledby="a d">x</nav><label for="in">l</label><input id="in"/></div><h1 id="z">Z</h1>'
+        )
+      )
+    ).not.toThrow()
+  })
+
+  test('a heading may go back up any number of levels', () => {
+    expect(() =>
+      checkPage('/ok/', page('<h1>A</h1><h2>B</h2><h3>C</h3><h2>D</h2><h1>E</h1>'))
+    ).not.toThrow()
+  })
+
+  test('an h3 after an h1 across a section boundary fails', () => {
+    const html = page(
+      '<div data-docs-section="0"><h1>A</h1></div><div data-docs-section="1"><h3>C</h3></div>'
+    )
+    expect(() => checkPage('/skip/', html)).toThrow(RenderError)
+    expect(() => checkPage('/skip/', html)).toThrow('/skip/: has an h3 after an h1')
+  })
+
+  test('an h4 after an h2 fails, as does a page with no h1', () => {
+    expect(() => checkPage('/x/', page('<h1>A</h1><h2>B</h2><h4>D</h4>'))).toThrow('h4 after an h2')
+    expect(() => checkPage('/x/', page('<h2>B</h2>'))).toThrow('/x/: has no h1')
+  })
+
+  test('headings before the h1, the chrome of the page, are not part of the outline', () => {
+    expect(() =>
+      checkPage('/ok/', page('<aside><h2>Group</h2></aside><h1>A</h1><h2>B</h2>'))
+    ).not.toThrow()
+  })
+
+  test('the same id in two sections fails', () => {
+    const html = page(
+      '<div data-docs-section="0"><h1 id="t">A</h1></div><div data-docs-section="1"><h2 id="dup">B</h2></div><div data-docs-section="2"><h2 id="dup">C</h2></div>'
+    )
+    expect(() => checkPage('/dup/', html)).toThrow('/dup/: has the id "dup" more than once')
+  })
+
+  test.each([
+    ['aria-labelledby', '<h1>A</h1><section aria-labelledby="gone">x</section>'],
+    ['aria-describedby', '<h1 id="a">A</h1><p aria-describedby="a gone">x</p>'],
+    ['for', '<h1>A</h1><label for="gone">l</label>'],
+  ])('a dangling %s fails', (attribute, body) => {
+    expect(() => checkPage('/ref/', page(body))).toThrow(`"gone" matches no element`)
+    expect(() => checkPage('/ref/', page(body))).toThrow(attribute === 'for' ? 'for' : 'aria')
+  })
+})

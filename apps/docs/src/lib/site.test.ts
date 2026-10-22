@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { LANDING_LINKS } from '../components/landing'
 import { ERROR_CODES_ROUTE, errorCodeEntries } from './error-codes'
+import { SECTION_ATTRIBUTE, SECTION_CAP } from './markdown'
 import { navRoutes } from './nav'
 import { collectPages } from './pages'
 import { search } from './search'
@@ -27,6 +28,7 @@ const SAMPLE = [
   '/quickstart/',
   '/methods/password/',
   '/reference/core/',
+  '/reference/admin/',
   ERROR_CODES_ROUTE,
 ]
 
@@ -147,6 +149,12 @@ describe('pageStats', () => {
     expect(stats.sections[1]).toBeGreaterThan(stats.sections[0] as number)
   })
 
+  test('counts the lines of highlighted code of each section', () => {
+    const html =
+      '<div data-docs-section="0">x</div><div data-docs-section="1"><pre><code><span class="line">a</span>\n<span class="line">b</span></code></pre></div>'
+    expect(pageStats(html).lines).toEqual([0, 2])
+  })
+
   test('a page of the sample is cut into sections', () => {
     const html = site.documents.get('/methods/password/') as string
     const stats = pageStats(html)
@@ -161,6 +169,25 @@ describe('pageStats', () => {
       const inner = article.slice(article.indexOf('>') + 1)
       expect(inner.startsWith('<div data-docs-section="0">'), route).toBe(true)
       expect(inner.endsWith('</div>'), route).toBe(true)
+    }
+  })
+})
+
+describe('the size of the sections of the built pages', () => {
+  test('no section is over the cap unless it is a single block', () => {
+    for (const route of site.documents.keys()) {
+      const html = site.documents.get(route) as string
+      const article = html.slice(html.indexOf('<article'), html.indexOf('</article>'))
+      const sections = article.split(`<div ${SECTION_ATTRIBUTE}="`).slice(1)
+      for (const [index, section] of sections.entries()) {
+        if (section.length > SECTION_CAP + 1000) {
+          // One block: the section's own tag opens and closes around a single top-level element.
+          const body = section.slice(section.indexOf('>') + 1, section.lastIndexOf('</div>'))
+          const top = body.trim().match(/^<([a-z0-9]+)[\s>]/)?.[1] as string
+          expect(body.trim().startsWith(`<${top}`), `${route} section ${index}`).toBe(true)
+          expect(body.trim().endsWith(`</${top}>`), `${route} section ${index}`).toBe(true)
+        }
+      }
     }
   })
 })

@@ -108,3 +108,10 @@ static HTML. Its commands are in its README.
   plus runs of sections of about `CHUNK_BUDGET`, each its own test per theme, and every page
   has a test that all its article's children are sections. Never raise a timeout or disable a
   rule for a big page: lower `CHUNK_BUDGET`.
+  A section that grows past `SECTION_CAP` is closed at the next block and goes on in a new
+  one (`wrapSections`); a single block bigger than the browser tests' piece, a long code block,
+  is checked as the block without its lines plus ranges of its `.line`s
+  (`e2e/chunks.ts`, `page-stats.json` holds the line counts). Because axe sees only the piece it
+  is given, `page-check.ts` checks each whole rendered page at build (so in `generate:check`):
+  no `h1`, a heading level skipped from the `h1` on, a duplicate id, a dangling
+  `aria-labelledby` / `aria-describedby` / `for`. Never replace it with an axe `runOnly`.

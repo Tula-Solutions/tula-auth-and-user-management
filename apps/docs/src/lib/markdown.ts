@@ -364,11 +364,19 @@ function nameHeaderCells(table: Element): void {
 export const SECTION_ATTRIBUTE = 'data-docs-section'
 
 /**
+ * The size, in characters of HTML, past which `wrapSections` closes a section at the next block.
+ * Below the browser tests' piece size (`CHUNK_BUDGET` in `e2e/chunks.ts`, which a test holds
+ * above it), so that a section is never a piece too big for axe unless one block is.
+ */
+export const SECTION_CAP = 60_000
+
+/**
  * Wrap the content of a page in sections: a `div` for what comes before the first `h2` (the
  * title and the introduction, number 0) and one for each `h2` or `h3` and what follows it.
  * The generated reference pages put most of their content under a handful of `h2`, so the
- * unit is the `h3` too; the tests group the small ones back into chunks of a size axe can do
- * in well under a minute.
+ * unit is the `h3` too, and a section that grows past {@link SECTION_CAP} is closed at the next
+ * block (a paragraph, a list, a table, a code block, a deeper heading) and goes on in a new one;
+ * the tests group the small ones back into chunks of a size axe can do in well under a minute.
  *
  * The browser tests run the accessibility checker on one section at a time, so that the
  * megabyte-sized reference pages are checked in pieces, none of it skipped: every child of the
@@ -379,12 +387,21 @@ export const SECTION_ATTRIBUTE = 'data-docs-section'
  */
 export function wrapSections(root: Root): void {
   const sections: Element[] = []
+  let size = 0
   for (const child of root.children) {
-    const starts = child.type === 'element' && (child.tagName === 'h2' || child.tagName === 'h3')
-    if (sections.length === 0 || starts) {
+    const heading = child.type === 'element' && (child.tagName === 'h2' || child.tagName === 'h3')
+    const blockSize = unified()
+      .use(rehypeStringify)
+      .stringify({ type: 'root', children: [child] } as Root).length
+    // A heading starts a section; so does a block that would take the current one past the cap
+    // (the section is closed at the block boundary, so one block is never cut). A block bigger
+    // than the cap ends up alone in its section.
+    if (sections.length === 0 || heading || (size > 0 && size + blockSize > SECTION_CAP)) {
       sections.push(element('div', { [SECTION_ATTRIBUTE]: String(sections.length) }, []))
+      size = 0
     }
     ;(sections[sections.length - 1] as Element).children.push(child as ElementContent)
+    size += blockSize
   }
   root.children = sections
 }

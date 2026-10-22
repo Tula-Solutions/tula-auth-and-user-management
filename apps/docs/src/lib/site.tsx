@@ -18,6 +18,7 @@ import {
   type Section,
 } from './markdown'
 import { buildNav, type NavGroup } from './nav'
+import { checkPage } from './page-check'
 import { collectPages, type SourcePage } from './pages'
 import { buildIndex, type SearchEntry } from './search'
 
@@ -211,6 +212,12 @@ export async function buildSite(
     </div>
   )
 
+  // Whole-page rules that axe cannot judge when a large page is checked in pieces.
+  for (const [route, document] of documents) {
+    checkPage(route, document)
+  }
+  checkPage('/404', notFound)
+
   return {
     pages,
     nav,
@@ -269,6 +276,8 @@ export interface PageStats {
   bytes: number
   /** The size of each content section (`data-docs-section`, in order), in characters. */
   sections: number[]
+  /** How many lines of highlighted code (`class="line"`) each section holds. */
+  lines: number[]
 }
 
 /**
@@ -280,7 +289,11 @@ export interface PageStats {
  */
 export function pageStats(html: string): PageStats {
   const parts = html.split(`<div ${SECTION_ATTRIBUTE}="`).slice(1)
-  return { bytes: html.length, sections: parts.map((part) => part.length) }
+  return {
+    bytes: html.length,
+    sections: parts.map((part) => part.length),
+    lines: parts.map((part) => part.split('class="line"').length - 1),
+  }
 }
 
 /**

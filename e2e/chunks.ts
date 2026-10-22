@@ -12,7 +12,7 @@ export const CHUNK_THRESHOLD = 200_000
  * two minutes on a laptop and over five on CI), so a piece of this size stays well under a minute
  * on CI.
  */
-export const CHUNK_BUDGET = 150_000
+export const CHUNK_BUDGET = 90_000
 
 /** A run of consecutive sections, both ends included. */
 export interface Chunk {
@@ -65,3 +65,37 @@ export function selectorsOf(chunk: Chunk): string[] {
 
 /** Everything in the content but the introduction: what the frame test leaves out. */
 export const BEYOND_INTRODUCTION = '[data-docs-section]:not([data-docs-section="0"])'
+
+/**
+ * Cut one oversize section, a single code block of many lines, into ranges of lines.
+ *
+ * A block cannot be split in the page without changing it, but axe can be pointed at part of
+ * it: the block itself without its lines (`shellExclude`), then the lines in ranges.
+ *
+ * @param size - The section's size, in characters.
+ * @param lines - How many lines (`.line` elements) it has.
+ * @param budget - The size a piece aims at.
+ * @returns Ranges of lines (1-based, both ends included) that together cover 1 to `lines`.
+ */
+export function lineRangesOf(size: number, lines: number, budget: number = CHUNK_BUDGET): Chunk[] {
+  if (lines <= 0) {
+    return []
+  }
+  const pieces = Math.max(1, Math.ceil(size / budget))
+  const per = Math.ceil(lines / pieces)
+  const ranges: Chunk[] = []
+  for (let from = 1; from <= lines; from += per) {
+    ranges.push({ from, to: Math.min(lines, from + per - 1) })
+  }
+  return ranges
+}
+
+/** The lines `from` to `to` of the code block of a section. */
+export function lineSelector(section: number, range: Chunk): string {
+  return `[data-docs-section="${section}"] .line:nth-child(n+${range.from}):nth-child(-n+${range.to})`
+}
+
+/** The lines of the code block of a section: what the block's own check leaves out. */
+export function linesOf(section: number): string {
+  return `[data-docs-section="${section}"] .line`
+}

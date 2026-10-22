@@ -1,6 +1,15 @@
 import { readFileSync } from 'node:fs'
 import { expect, type Page, test } from '@playwright/test'
-import { BEYOND_INTRODUCTION, CHUNK_THRESHOLD, chunksOf, selectorsOf } from '../../chunks'
+import {
+  BEYOND_INTRODUCTION,
+  CHUNK_BUDGET,
+  CHUNK_THRESHOLD,
+  chunksOf,
+  lineRangesOf,
+  lineSelector,
+  linesOf,
+  selectorsOf,
+} from '../../chunks'
 import { expectAccessible } from '../support'
 
 // The documentation site (apps/docs), built from docs/** and served as static files. Every page
@@ -14,7 +23,20 @@ const pages = JSON.parse(
 // The size of each page and of its content sections, as the build measured them.
 const pageStats = JSON.parse(
   readFileSync(`${import.meta.dirname}/../../../apps/docs/dist/page-stats.json`, 'utf8')
-) as Record<string, { bytes: number; sections: number[] }>
+) as Record<string, { bytes: number; sections: number[]; lines: number[] }>
+
+/** Whether a run is one section bigger than a piece that holds lines of code to cut it by. */
+function isOversize(
+  stats: { sections: number[]; lines: number[] } | undefined,
+  chunk: { from: number; to: number }
+): boolean {
+  return (
+    stats !== undefined &&
+    chunk.from === chunk.to &&
+    (stats.sections[chunk.from] as number) > CHUNK_BUDGET &&
+    (stats.lines[chunk.from] as number) > 0
+  )
+}
 
 /** A page that fails to load, logs an error or throws fails the test that opened it. */
 function watch(page: Page): string[] {
@@ -82,6 +104,36 @@ test.describe('the documentation site', () => {
         expect(problems).toEqual([])
       })
       for (const chunk of chunks) {
+        const section = chunk.from
+        if (isOversize(stats, chunk)) {
+          // One code block bigger than a piece: the block without its lines, then its lines in
+          // ranges. A block cannot be split in the page, but axe can be pointed at its parts.
+          test(`${route} section ${section} (the block itself) is accessible in ${scheme}`, async ({
+            page,
+          }) => {
+            await open(page)
+            await expectAccessible(page, `${route} section ${section} block (${scheme})`, {
+              include: selectorsOf(chunk),
+              exclude: [linesOf(section)],
+            })
+          })
+          for (const range of lineRangesOf(
+            stats?.sections[section] as number,
+            stats?.lines[section] as number
+          )) {
+            test(`${route} section ${section} lines ${range.from} to ${range.to} are accessible in ${scheme}`, async ({
+              page,
+            }) => {
+              await open(page)
+              await expectAccessible(
+                page,
+                `${route} section ${section} lines ${range.from}-${range.to} (${scheme})`,
+                { include: [lineSelector(section, range)] }
+              )
+            })
+          }
+          continue
+        }
         test(`${route} sections ${chunk.from} to ${chunk.to} are accessible in ${scheme}`, async ({
           page,
         }) => {
@@ -93,8 +145,25 @@ test.describe('the documentation site', () => {
       }
     }
 
+    test(`${route} has no piece of axe's work bigger than a piece's budget`, () => {
+      for (const chunk of chunks) {
+        const total = (stats?.sections ?? [])
+          .slice(chunk.from, chunk.to + 1)
+          .reduce((sum, size) => sum + size, 0)
+        // A run is within the budget, or it is one section that can be cut into lines.
+        expect(
+          total <= CHUNK_BUDGET || isOversize(stats, chunk),
+          `${route} sections ${chunk.from}-${chunk.to} are ${total} characters and cannot be cut`
+        ).toBe(true)
+      }
+    })
+
+    // The landing page is not a page of the docs: it has no article.
+    const sectioned = route !== '/'
     test(`${route} is cut into sections that hold all its content`, async ({ page }) => {
+      test.skip(!sectioned, 'the landing page has no article')
       await page.goto(route)
+      await expect(page.locator('article.doc'), `${route} has its article`).toHaveCount(1)
       const children = await page
         .locator('article.doc > *')
         .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-docs-section')))

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { chunksOf, selectorsOf } from './chunks'
+import { readFileSync } from 'node:fs'
+import { CHUNK_BUDGET, chunksOf, lineRangesOf, lineSelector, selectorsOf } from './chunks'
 
 // Run with the harness tests (`bun run test:harness`).
 
@@ -52,5 +53,49 @@ describe('selectorsOf', () => {
       '[data-docs-section="4"]',
       '[data-docs-section="5"]',
     ])
+  })
+})
+
+describe('lineRangesOf', () => {
+  test('a block that fits the budget is one range', () => {
+    expect(lineRangesOf(100, 40, 150)).toEqual([{ from: 1, to: 40 }])
+  })
+
+  test.each([
+    [552_000, 8_800, 150_000],
+    [301, 7, 100],
+    [1_000_000, 3, 10],
+  ])(
+    'the ranges cover every line once, in order (%d characters, %d lines)',
+    (size, lines, budget) => {
+      const ranges = lineRangesOf(size, lines, budget)
+      const covered = ranges.flatMap((range) =>
+        Array.from({ length: range.to - range.from + 1 }, (_, offset) => range.from + offset)
+      )
+      expect(covered).toEqual(Array.from({ length: lines }, (_, index) => index + 1))
+    }
+  )
+
+  test('a big block is cut into pieces of about the budget', () => {
+    expect(lineRangesOf(552_000, 8_800, 150_000)).toHaveLength(4)
+  })
+
+  test('no lines, no ranges', () => {
+    expect(lineRangesOf(500_000, 0)).toEqual([])
+  })
+
+  test('selects a range of the lines of one section', () => {
+    expect(lineSelector(15, { from: 2201, to: 4400 })).toBe(
+      '[data-docs-section="15"] .line:nth-child(n+2201):nth-child(-n+4400)'
+    )
+  })
+})
+
+describe('the size of a section and the size of a piece', () => {
+  test("the renderer's section cap is below the browser tests' piece", () => {
+    const source = readFileSync(`${import.meta.dir}/../apps/docs/src/lib/markdown.ts`, 'utf8')
+    const cap = Number(/SECTION_CAP = ([\d_]+)/.exec(source)?.[1]?.replaceAll('_', ''))
+    expect(cap).toBeGreaterThan(0)
+    expect(cap).toBeLessThan(CHUNK_BUDGET)
   })
 })

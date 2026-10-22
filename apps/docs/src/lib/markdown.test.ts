@@ -11,6 +11,7 @@ import {
   RenderError,
   renderMarkdown,
   SECTION_ATTRIBUTE,
+  SECTION_CAP,
   wrapSections,
 } from './markdown'
 
@@ -326,5 +327,74 @@ describe('sections', () => {
     }
     wrapSections(root)
     expect(root.children).toHaveLength(1)
+  })
+
+  describe('a section that grows past the cap', () => {
+    function block(tag: string, size: number): Element {
+      return {
+        type: 'element',
+        tagName: tag,
+        properties: {},
+        children: [{ type: 'text', value: 'x'.repeat(size) }],
+      }
+    }
+
+    test('is closed at the next block boundary and goes on in a new section', () => {
+      const third = Math.floor(SECTION_CAP / 3) + 1
+      const root: Root = {
+        type: 'root',
+        children: [
+          block('h1', 10),
+          block('h2', 10),
+          block('p', third),
+          block('p', third),
+          block('p', third),
+          block('h4', 10),
+          block('p', third),
+        ],
+      }
+      const before = [...root.children]
+      wrapSections(root)
+      const sections = root.children as Element[]
+      // The introduction; the h2 with two paragraphs (a third would pass the cap); the third, h4 and last.
+      expect(sections.map((section) => section.children.length)).toEqual([1, 3, 3])
+      expect(sections.map((section) => section.properties?.[SECTION_ATTRIBUTE])).toEqual([
+        '0',
+        '1',
+        '2',
+      ])
+      // Nothing is lost or moved.
+      expect(sections.flatMap((section) => section.children) as unknown[]).toEqual(before)
+    })
+
+    test('a block bigger than the cap is a section of its own, and only it', () => {
+      const root: Root = {
+        type: 'root',
+        children: [block('h2', 10), block('table', SECTION_CAP * 3), block('p', 10)],
+      }
+      wrapSections(root)
+      const sections = root.children as Element[]
+      expect(sections.map((section) => section.children.length)).toEqual([1, 1, 1])
+    })
+
+    test('a rendered page has no section over the cap but a single block', () => {
+      const html = render(
+        [
+          '# T',
+          '',
+          '## A',
+          '',
+          ...Array.from({ length: 400 }, (_, i) => `Paragraph ${i} ${'y'.repeat(600)}\n`),
+        ].join('\n')
+      ).html
+      const sizes = html
+        .split(`<div ${SECTION_ATTRIBUTE}="`)
+        .slice(1)
+        .map((part) => part.length)
+      expect(sizes.length).toBeGreaterThan(2)
+      for (const size of sizes) {
+        expect(size).toBeLessThanOrEqual(SECTION_CAP + 1000)
+      }
+    })
   })
 })
