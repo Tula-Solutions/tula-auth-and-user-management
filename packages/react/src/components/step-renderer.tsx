@@ -28,13 +28,19 @@ export type StepOf<S extends StepStatus> = Extract<FlowStep, { status: S }>
  * A screen per step status. A key that is not a step status is a type error, and each screen
  * is given its step narrowed to that status. A screen returns an element, or `null` to say it
  * cannot draw the step it was given (an option this version does not know): the "not
- * supported" screen is drawn instead. A screen is a component's render, so it may call hooks.
+ * supported" screen is drawn instead.
+ *
+ * A screen renders a component: put hooks in that component, not in the arrow. Inline hooks
+ * work at run time (each screen is hosted in a component of its own, so the order of hooks is
+ * safe) but are not the pattern: a hook in a lower-case function is flagged by the
+ * rules-of-hooks lint rules.
  *
  * @example
  * ```tsx
  * const screens: StepScreens = {
- *   needs_password: () => <PasswordForm />,
- *   needs_email_verification: (step) => <CodeForm destination={step.destination} />,
+ *   // each screen is a component; its hooks live there
+ *   needs_password: (step) => <PasswordScreen step={step} />,
+ *   needs_email_verification: (step) => <CodeScreen step={step} />,
  * }
  * ```
  */
@@ -81,7 +87,8 @@ export interface StepRendererProps {
  * element or to the fallback, and no action is ever guessed. (A screen that is an element
  * which itself renders nothing is its author's responsibility.) Each screen is its own
  * component, remounted when the screen's name or status changes, so one step's half-typed
- * state never carries over to the next, and a screen may call hooks.
+ * state never carries over to the next. A screen renders a component: put hooks in that
+ * component, not in the screen's arrow (inline hooks work, but are not the pattern).
  *
  * Draw it where the other `@tula-tech/react` screens are drawn, inside a `<TulaProvider>`.
  *
@@ -97,7 +104,7 @@ export interface StepRendererProps {
  *     step={flow.step}
  *     start={<AccountForm flow={flow} />}
  *     screens={{
- *       needs_email_verification: (step) => <CodeForm destination={step.destination} />,
+ *       needs_email_verification: (step) => <CodeScreen step={step} />,
  *     }}
  *     onRestart={flow.reset}
  *   />

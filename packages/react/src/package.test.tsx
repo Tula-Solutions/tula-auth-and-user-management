@@ -80,6 +80,36 @@ describe('what the sources must never do', () => {
   })
 })
 
+describe('what the step renderer teaches a copy about hooks', () => {
+  const source = sources.find((entry) => entry.path === 'components/step-renderer.tsx')?.text ?? ''
+  // The `@example` blocks of the JSDoc of `StepScreens` and `StepRenderer`.
+  const examples = [
+    ...source
+      .split('/**')
+      .filter((block) => /@example/.test(block) && /\bStep(Screens|Renderer)\b/.test(block))
+      .flatMap((block) =>
+        [...block.matchAll(/```tsx([\s\S]*?)```/g)].map((match) => match[1] ?? '')
+      ),
+  ]
+
+  test('the examples are found', () => {
+    expect(examples.length).toBeGreaterThanOrEqual(2)
+  })
+
+  test('no example calls a hook inside a screen: the pattern is a component that holds them', () => {
+    for (const example of examples) {
+      // What follows `screens`: a hook above it (`useSignUp()` for the flow) is the app's own.
+      const inScreens = example.slice(example.indexOf('screens'))
+      expect(inScreens).not.toMatch(/\buse[A-Z]\w*\(/)
+    }
+  })
+
+  test('the screens example shows a component screen', () => {
+    const screens = examples.find((text) => /StepScreens/.test(text)) ?? ''
+    expect(screens).toMatch(/\(step\) => <\w+ step=\{step\} \/>/)
+  })
+})
+
 describe('server rendering', () => {
   test('the provider and every component render without a DOM, in the loading state', () => {
     // A process of its own, without this suite's DOM preload: see `testing/ssr-render.tsx`.

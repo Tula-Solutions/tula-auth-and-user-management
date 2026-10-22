@@ -107,6 +107,8 @@ export function firstFactorStrategies(
   const known = offered.filter(
     (strategy): strategy is FirstFactorStrategy =>
       Object.hasOwn(forms, strategy) &&
+      // `Partial` allows an explicit `undefined`: an entry with no form is no entry.
+      (forms as Record<string, unknown>)[strategy] !== undefined &&
       (strategy !== 'email_link' || can.link) &&
       // Hidden, not broken, in a browser without WebAuthn; and among the alternatives only
       // once the browser is known to have it.

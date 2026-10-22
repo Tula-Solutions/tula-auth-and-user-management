@@ -70,8 +70,11 @@ needs and the prebuilt components already use:
   nothing, because the rule "never a blank card, never a guessed action" is the one a copy
   is most likely to break by accident. The guarantee is that every status maps to an element
   or to the fallback; an element that itself renders nothing is its author's responsibility.
-  Each screen is rendered as a component of its own (keyed by screen name and status), so a
-  screen may call hooks (`useLocalization()`) without upsetting the order of the renderer's. `start` is the screen before the first step (`step === null`), kept apart from
+  Each screen is rendered inside a component of its own (keyed by screen name and status),
+  so hooks cannot upset the order of the renderer's. The pattern is still: a screen renders a
+  component, and hooks live in that component (`needs_password: (step) => <PasswordScreen
+  step={step} />`). An inline hook in the arrow works at run time but is flagged by
+  rules-of-hooks lint, and a copy should not learn to suppress it. `start` is the screen before the first step (`step === null`), kept apart from
   `screens` so that the keys are exactly the contract's statuses. The prebuilt `<SignIn>`
   and `<SignUp>` are drawn through it, with no change to their markup or behaviour.
   `useScreenChanged` is exported with it, for the focus that moves to a new screen's title.

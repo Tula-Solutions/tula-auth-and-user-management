@@ -215,6 +215,16 @@ describe('firstFactorStrategies', () => {
     ])
   })
 
+  test('a strategy whose entry is explicitly undefined has no form and is skipped', () => {
+    expect(
+      firstFactorStrategies(
+        ['password', 'email_code'],
+        { password: undefined, email_code: Form },
+        can
+      )
+    ).toEqual(['email_code'])
+  })
+
   test('a name that is only on the object’s prototype is not a strategy', () => {
     expect(firstFactorStrategies(['constructor', 'toString'], forms, can)).toEqual([])
   })

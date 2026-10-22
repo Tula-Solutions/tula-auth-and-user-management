@@ -29,8 +29,9 @@ rules (`react.md`) apply to the headless files above as they do to the rest of
   screen takes its step narrowed to that status, and a key that is not a status is a type
   error. A status with no screen, one this version does not know and a screen that returns
   nothing all draw `UnsupportedScreen`. A screen returns a `ReactElement` or `null` (never
-  `ReactNode`: `''` and `[]` must not compile) and runs as a component of its own, so it
-  may call hooks. The guarantee is "every status maps to an element or to the fallback"; an
+  `ReactNode`: `''` and `[]` must not compile) and renders a component: put hooks in
+  that component (`(step) => <PasswordScreen step={step} />`). Inline hooks work at run time
+  (the renderer hosts each screen in a component of its own) but are not the pattern. The guarantee is "every status maps to an element or to the fallback"; an
   element that renders nothing is its author's. **There is no fallback prop and there never is one**:
   the "not supported" screen cannot be replaced, hidden or set to `null`. `step-renderer.test.tsx`
   holds the type tests (`@ts-expect-error`) and the unknown-status render; keep both.
