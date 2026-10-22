@@ -45,17 +45,25 @@ async function bundle(): Promise<{ css: string[]; js: string }> {
   return { js: `${BASE}${entry.file}`, css: (entry.css ?? []).map((file) => `${BASE}${file}`) }
 }
 
+// The base the first render (and so `--check`) uses. At `/` an address written from the host's
+// root cannot be told from a correct one, so with no base set the pages are rendered under a
+// sub-path instead, and an address that ignores the base (a 404 on GitHub Pages, where the site
+// lives under the repository's name) stops `verify`.
+const CHECK_BASE = BASE === '/' ? '/base-path-check/' : BASE
+
 try {
   // Render first: a file or a link that cannot be rendered stops the build before `bundle()`
   // empties dist/, so a bad edit leaves the previous build in place.
-  const checked = await buildSite({ css: [], js: '' })
+  const checked = await buildSite({ css: [], js: '' }, CHECK_BASE)
   if (check) {
-    console.log(`docs site: ${checked.pages.length} pages render, every link and anchor resolves`)
+    console.log(
+      `docs site: ${checked.pages.length} pages render under ${CHECK_BASE}, every link and anchor resolves`
+    )
   } else {
-    const site = await buildSite(await bundle())
+    const site = await buildSite(await bundle(), BASE)
     await writeSite(site, outDir)
     console.log(
-      `docs site: wrote ${site.documents.size} pages and ${site.index.length} search entries to apps/docs/dist`
+      `docs site: wrote ${site.documents.size} pages and ${site.index.length} search entries to apps/docs/dist, served under ${BASE}`
     )
   }
 } catch (error) {

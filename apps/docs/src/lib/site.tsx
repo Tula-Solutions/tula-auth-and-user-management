@@ -249,11 +249,12 @@ export async function buildSite(
     </div>
   )
 
-  // Whole-page rules that axe cannot judge when a large page is checked in pieces.
+  // Whole-page rules that axe cannot judge when a large page is checked in pieces, and that
+  // every address stays under the base path.
   for (const [route, document] of documents) {
-    checkPage(route, document)
+    checkPage(route, document, base)
   }
-  checkPage('/404', notFound)
+  checkPage('/404', notFound, base)
 
   return {
     pages,

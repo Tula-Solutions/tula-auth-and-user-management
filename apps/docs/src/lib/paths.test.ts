@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { resolveOutDir, resolveRepoRoot } from './paths'
+import { resolveBase, resolveOutDir, resolveRepoRoot } from './paths'
 
 const APP_ROOT = resolve(import.meta.dir, '../..')
 const REPO = resolve(APP_ROOT, '../..')
@@ -88,5 +88,43 @@ describe('resolveRepoRoot', () => {
     ['a directory of the repository', join(REPO, 'docs')],
   ])('%s is refused', (_name, value) => {
     expect(() => resolveRepoRoot({ DOCS_REPO_ROOT: value })).toThrow('DOCS_REPO_ROOT')
+  })
+})
+
+describe('resolveBase', () => {
+  test('unset or empty, it is the root', () => {
+    expect(resolveBase({})).toBe('/')
+    expect(resolveBase({ DOCS_BASE: '' })).toBe('/')
+  })
+
+  test.each(['/', '/tula-auth-and-user-management/', '/docs/v1.2/', '/a/b_c/~d/'])(
+    '%s is accepted as written',
+    (value) => {
+      expect(resolveBase({ DOCS_BASE: value })).toBe(value)
+    }
+  )
+
+  test.each([
+    ['no leading slash', 'tula-auth-and-user-management/'],
+    ['no trailing slash', '/tula-auth-and-user-management'],
+    ['no slash at all', 'docs'],
+    ['a double slash', '//evil.example/'],
+    ['an empty segment', '/a//b/'],
+    ['a segment that climbs', '/a/../b/'],
+    ['a segment of one dot', '/./'],
+    ['a hidden segment', '/.git/'],
+    ['a full address', 'https://example.com/'],
+    ['a space', '/a b/'],
+    ['a quote', '/a"b/'],
+    ['an angle bracket', '/<script>/'],
+    ['a percent escape', '/a%2e/'],
+    ['a query', '/a?b/'],
+    ['a fragment', '/a#b/'],
+    ['a backslash', '/a\\b/'],
+    ['a new line', '/a\n/'],
+    ['a letter outside ASCII', '/é/'],
+    ['a path that is far too long', `/${'a'.repeat(250)}/`],
+  ])('%s is refused', (_name, value) => {
+    expect(() => resolveBase({ DOCS_BASE: value })).toThrow('DOCS_BASE')
   })
 })

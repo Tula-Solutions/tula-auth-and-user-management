@@ -1,0 +1,75 @@
+name: Docs site
+
+# Publishes the documentation site (apps/docs: the Markdown of docs/ rendered to static HTML)
+# to GitHub Pages, at https://tula-solutions.github.io/tula-auth-and-user-management/.
+#
+# It runs for a push to `develop`, where the docs are written (git-flow: `main` is
+# release-only), and by hand from `develop`. Pages serves a project's site under the
+# repository's name, so the site is built with that base path (`DOCS_BASE`): every link,
+# script, stylesheet, image and the search index is addressed under it, and `apps/docs` refuses
+# a base that is not a plain path. Pages must be set to deploy from GitHub Actions in the
+# repository's settings, and the `github-pages` environment must allow `develop` to deploy.
+#
+# What keeps it to that:
+#   1. two jobs: `build` reads the repository and nothing else (`contents: read`); `deploy`
+#      holds the two permissions Pages needs (`pages: write`, `id-token: write`) and checks
+#      nothing out and runs no code of the repository;
+#   2. no secret and no cache: the build starts from the lockfile every time;
+#   3. one deployment at a time, and a newer one waits rather than cancelling one in flight.
+# `.claude/hooks/docs-pages.test.ts` holds this file to those rules.
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build the docs site
+    # A run by hand from another branch publishes nothing: the site is develop's.
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version-file: package.json }
+      - run: bun install --frozen-lockfile
+      - name: Build under the repository's path
+        env:
+          DOCS_BASE: /tula-auth-and-user-management/
+        run: bun run docs-site:build
+      # Vite's manifest is for the build script, not for readers; `.nojekyll` tells Pages to
+      # serve the files as they are.
+      - name: Prepare the files Pages serves
+        run: rm -rf apps/docs/dist/.vite && touch apps/docs/dist/.nojekyll
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: apps/docs/dist
+          include-hidden-files: true
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

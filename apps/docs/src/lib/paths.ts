@@ -90,3 +90,40 @@ export function resolveRepoRoot(env: PathEnvironment = process.env): string {
   }
   return inTemporaryDirectory('DOCS_REPO_ROOT', value)
 }
+
+/**
+ * A base path the site may be served under: `/`, or segments of unreserved URL characters
+ * (letters, digits, `-`, `_`, `.`, `~`), none starting with a dot, each followed by `/`.
+ * Nothing in it needs escaping in an `href`, a `src` or a CSS `url()`, and it cannot climb.
+ */
+const BASE_PATTERN = /^\/(?:[A-Za-z0-9_~-][A-Za-z0-9._~-]*\/)*$/
+
+/** The longest base accepted: a sub-path, not a place to put data. */
+const BASE_MAX_LENGTH = 200
+
+/**
+ * The path the site is served under, from `DOCS_BASE`: `/` at a domain's root, or a sub-path
+ * such as `/tula-auth-and-user-management/` (where GitHub Pages serves this repository's site).
+ *
+ * Every address the build writes (links, the bundle, images, the search index, the 404 page)
+ * starts with it, and Vite reads it too, so a value is taken exactly as written and checked
+ * here rather than tidied: it must start and end with `/` and hold only unreserved URL
+ * characters, in segments that do not start with a dot. Anything else throws before a file is
+ * written.
+ *
+ * @param env - The environment; `process.env` by default.
+ * @returns `/` when `DOCS_BASE` is unset or empty, else its value.
+ * @throws Error naming the variable for any other value.
+ */
+export function resolveBase(env: PathEnvironment = process.env): string {
+  const value = env.DOCS_BASE
+  if (value === undefined || value === '') {
+    return '/'
+  }
+  if (value.length > BASE_MAX_LENGTH || !BASE_PATTERN.test(value)) {
+    throw new Error(
+      `DOCS_BASE must start and end with "/" and hold only letters, digits, "-", "_", "." and "~", in segments that do not start with a dot, such as /tula-auth-and-user-management/ (got ${JSON.stringify(value.slice(0, BASE_MAX_LENGTH))})`
+    )
+  }
+  return value
+}

@@ -40,18 +40,52 @@ export function locate(
 }
 
 /**
+ * Where a request is answered from when the site is served under a base path, as GitHub Pages
+ * serves it under the repository's name: the base is taken off before {@link locate}, a
+ * redirect gets it back, the base without its last slash is sent to the base, and a path
+ * outside it is nothing.
+ *
+ * @param directory - The output directory.
+ * @param pathname - The URL's path, as sent.
+ * @param base - The path the site is served under, `/` or `/a/b/`.
+ * @returns What {@link locate} returns, for the path under the base.
+ */
+export function locateUnder(
+  directory: string,
+  pathname: string,
+  base: string
+): { file: string } | { redirect: string } | null {
+  if (base !== '/' && pathname === base.slice(0, -1)) {
+    return { redirect: base }
+  }
+  if (!pathname.startsWith(base)) {
+    return null
+  }
+  const found = locate(directory, `/${pathname.slice(base.length)}`)
+  if (found !== null && 'redirect' in found) {
+    return { redirect: `${base}${found.redirect.slice(1)}` }
+  }
+  return found
+}
+
+/**
  * Serve a built site over HTTP, for the browser tests and for looking at it by hand.
  *
  * @param directory - The output directory.
  * @param port - The port to listen on.
+ * @param base - The path the site is served under (`/` by default): the one it was built for.
  * @returns The running server.
  */
-export function serveStatic(directory: string, port: number): ReturnType<typeof Bun.serve> {
+export function serveStatic(
+  directory: string,
+  port: number,
+  base = '/'
+): ReturnType<typeof Bun.serve> {
   return Bun.serve({
     port,
     hostname: '127.0.0.1',
     fetch(request) {
-      const found = locate(directory, new URL(request.url).pathname)
+      const found = locateUnder(directory, new URL(request.url).pathname, base)
       if (found === null) {
         const missing = join(directory, '404.html')
         return existsSync(missing)

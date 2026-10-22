@@ -60,6 +60,57 @@ describe('checkPage', () => {
   })
 })
 
+describe('checkPage: every address stays under the base path', () => {
+  const BASE = '/tula-auth-and-user-management/'
+
+  test('addresses under the base, relative ones, anchors and other sites pass', () => {
+    const body = [
+      '<h1>A</h1>',
+      `<a href="${BASE}quickstart/">q</a>`,
+      `<a href="${BASE}">home</a>`,
+      '<a href="#part">part</a>',
+      '<a href="../x/">up</a>',
+      '<a href="https://github.com/Tula-Solutions">gh</a>',
+      '<a href="mailto:a@example.com">mail</a>',
+      `<img alt="" src="${BASE}files/a.png" srcset="${BASE}files/a.png 1x, ${BASE}files/b.png 2x"/>`,
+      `<script src="${BASE}assets/main.js"></script>`,
+    ].join('')
+    expect(() => checkPage('/ok/', page(body), BASE)).not.toThrow()
+  })
+
+  test.each([
+    ['a link from the host root', '<a href="/quickstart/">q</a>', '/quickstart/'],
+    ['the host root itself', '<a href="/">home</a>', '/'],
+    ['a script from the host root', '<script src="/assets/main.js"></script>', '/assets/main.js'],
+    [
+      'a stylesheet from the host root',
+      '<link rel="stylesheet" href="/assets/main.css"/>',
+      '/assets/main.css',
+    ],
+    ['an image from the host root', '<img alt="" src="/files/a.png"/>', '/files/a.png'],
+    [
+      'one candidate of a srcset',
+      `<img alt="" src="${BASE}a.png" srcset="${BASE}a.png 1x, /b.png 2x"/>`,
+      '/b.png',
+    ],
+    ['a form from the host root', '<form action="/search"></form>', '/search'],
+    ['a base that only shares a prefix', '<a href="/tula-auth-and-user-management-x/">x</a>', ''],
+    ['another host with no scheme', `<a href="//evil.example${BASE}">x</a>`, '//evil.example'],
+  ])('%s fails', (_what, body, address) => {
+    expect(() => checkPage('/bad/', page(`<h1>A</h1>${body}`), BASE)).toThrow(
+      `is outside the base path ${BASE}`
+    )
+    expect(() => checkPage('/bad/', page(`<h1>A</h1>${body}`), BASE)).toThrow(address)
+  })
+
+  test('at the root, an address from the host root is the base, and another host is not', () => {
+    expect(() => checkPage('/ok/', page('<h1>A</h1><a href="/quickstart/">q</a>'))).not.toThrow()
+    expect(() => checkPage('/bad/', page('<h1>A</h1><a href="//evil.example/">x</a>'))).toThrow(
+      'outside the base path /'
+    )
+  })
+})
+
 describe('checkPage section sizes', () => {
   const big = 'x'.repeat(SECTION_CAP + 2000)
   const article = (inner: string) =>
