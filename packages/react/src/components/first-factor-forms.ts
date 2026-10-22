@@ -56,8 +56,12 @@ export type FirstFactorForms = Partial<
 export interface FirstFactorCapabilities {
   /** Whether an emailed link can be honoured here (storage is usable and a link URL is set). */
   link: boolean
-  /** Whether a passkey is not ruled out (`usePasskeySupport() !== false`). */
-  passkey: boolean
+  /**
+   * What the browser said about WebAuthn: `usePasskeySupport()` as it is, `undefined` while it
+   * has not been asked yet. Hidden until known: how `undefined` counts depends on the list
+   * (see {@link firstFactorStrategies}).
+   */
+  passkey: boolean | undefined
   /** Whether what was typed is a phone number rather than an address. */
   phone: boolean
 }
@@ -69,9 +73,18 @@ export interface FirstFactorCapabilities {
  * skipped, never guessed at (a newer server may offer more). For a phone number a texted code is
  * the only form: a password or an emailed code for a number signs nobody in.
  *
+ * A passkey is where "hidden until known" is decided, for both lists, so that a copy cannot
+ * drift from the prebuilt screens. For the **active** list (the form the screen itself opens
+ * on) a passkey whose support is not known yet (`undefined`) is not ruled out: a screen whose
+ * only way is a passkey must not open on "not supported" and then change its mind. For the
+ * **alternatives** list (the other ways, drawn as links under the form) it is hidden until the
+ * browser has said `true`: a link that is then taken away is a broken control for as long as
+ * it shows. `false` rules a passkey out of both.
+ *
  * @param offered - The strategies the server offers (`step.strategies`).
  * @param forms - The table of forms.
  * @param can - What the browser and the identifier allow.
+ * @param list - Which list is wanted: `'active'` (default) or `'alternatives'`.
  * @returns The strategies to draw; empty when there is none (draw the "not supported" screen).
  *
  * @example
@@ -81,19 +94,24 @@ export interface FirstFactorCapabilities {
  *   passkey: true,
  *   phone: false,
  * })
+ * // the links under the form, once the browser has been asked:
+ * const others = firstFactorStrategies(step.strategies, forms, can, 'alternatives')
  * ```
  */
 export function firstFactorStrategies(
   offered: readonly string[],
   forms: FirstFactorForms,
-  can: FirstFactorCapabilities
+  can: FirstFactorCapabilities,
+  list: 'active' | 'alternatives' = 'active'
 ): FirstFactorStrategy[] {
   const known = offered.filter(
     (strategy): strategy is FirstFactorStrategy =>
       Object.hasOwn(forms, strategy) &&
       (strategy !== 'email_link' || can.link) &&
-      // Hidden, not broken, in a browser without WebAuthn.
-      (strategy !== 'passkey' || can.passkey) &&
+      // Hidden, not broken, in a browser without WebAuthn; and among the alternatives only
+      // once the browser is known to have it.
+      (strategy !== 'passkey' ||
+        (list === 'alternatives' ? can.passkey === true : can.passkey !== false)) &&
       // A code is texted to a number: for an address the form could only ever fail.
       (strategy !== 'sms_code' || can.phone)
   )

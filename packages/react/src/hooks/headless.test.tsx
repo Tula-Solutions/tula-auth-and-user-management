@@ -160,6 +160,20 @@ describe('useRetryCountdown', () => {
     expect(result.current).toBe(2)
   })
 
+  test('lags the error by one commit: the first value is 0, the next is the wait', () => {
+    jest.useFakeTimers()
+    const failed = limited(4_000)
+    const seen: number[] = []
+    renderHook(() => {
+      const seconds = useRetryCountdown(failed)
+      seen.push(seconds)
+      return seconds
+    })
+    // The render that first saw the error could not read the clock; the effect's commit did.
+    expect(seen[0]).toBe(0)
+    expect(seen.at(-1)).toBe(4)
+  })
+
   test('an error without a wait, and no error, are zero', () => {
     jest.useFakeTimers()
     expect(renderHook(() => useRetryCountdown(limited(undefined))).result.current).toBe(0)
@@ -210,6 +224,36 @@ describe('firstFactorStrategies', () => {
     expect(
       firstFactorStrategies(offered, forms, { link: false, passkey: false, phone: false })
     ).toEqual(['password'])
+  })
+
+  describe('a passkey is hidden until known, decided here for both lists', () => {
+    const offered = ['password', 'passkey']
+    const withSupport = (passkey: boolean | undefined) => ({ ...can, passkey })
+
+    test('the alternatives list: no passkey while support is unknown', () => {
+      expect(firstFactorStrategies(offered, forms, withSupport(undefined), 'alternatives')).toEqual(
+        ['password']
+      )
+    })
+
+    test('the alternatives list: the passkey once the browser said true, none for false', () => {
+      expect(firstFactorStrategies(offered, forms, withSupport(true), 'alternatives')).toEqual([
+        'password',
+        'passkey',
+      ])
+      expect(firstFactorStrategies(offered, forms, withSupport(false), 'alternatives')).toEqual([
+        'password',
+      ])
+    })
+
+    test('the active list keeps a passkey while support is unknown, and drops it for false', () => {
+      expect(firstFactorStrategies(['passkey'], forms, withSupport(undefined))).toEqual(['passkey'])
+      expect(firstFactorStrategies(['passkey'], forms, withSupport(undefined), 'active')).toEqual([
+        'passkey',
+      ])
+      expect(firstFactorStrategies(['passkey'], forms, withSupport(true))).toEqual(['passkey'])
+      expect(firstFactorStrategies(['passkey'], forms, withSupport(false))).toEqual([])
+    })
   })
 
   test('for a phone number a texted code is the only form', () => {

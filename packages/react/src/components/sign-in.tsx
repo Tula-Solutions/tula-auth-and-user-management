@@ -1,5 +1,12 @@
 import type { FirstFactorStrategy, FlowStep } from '@tula-tech/core'
-import { type MouseEvent, type ReactNode, useEffect, useRef, useState } from 'react'
+import {
+  type MouseEvent,
+  type ReactElement,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
 import type { Appearance } from '../appearance'
 import { useTulaContext } from '../context'
 import { usePasskeySupport } from '../hooks/use-passkey-support'
@@ -687,11 +694,12 @@ function FirstFactorScreen(
   // Until the browser has been asked (after mount) a passkey is not ruled out: where it is the
   // only method, the screen must not open on "not supported" and then change its mind.
   const passkeySupport = usePasskeySupport()
-  const known = firstFactorStrategies(step.strategies, FIRST_FACTOR_FORMS, {
+  const can = {
     link: storageUsable && linkConfigured,
-    passkey: passkeySupport !== false,
+    passkey: passkeySupport,
     phone: isPhoneNumber(props.email),
-  })
+  }
+  const known = firstFactorStrategies(step.strategies, FIRST_FACTOR_FORMS, can)
   // What the user picked on this screen; until then, what the server last emailed for, or the
   // first strategy on offer.
   const [chosen, setChosen] = useState<FirstFactorStrategy | null>(null)
@@ -704,18 +712,22 @@ function FirstFactorScreen(
     return <UnsupportedScreen focusTitle={props.focusTitle} onRestart={onRestart} />
   }
 
-  const others = known.filter(
+  // The other ways: a passkey among them only once the browser is known to have WebAuthn
+  // (`firstFactorStrategies`' `'alternatives'` list), as on the second-factor and step-up
+  // screens (`mfa.tsx`, `prompts.tsx`); "not ruled out" above is for the screen itself. The
+  // cost, accepted: support is asked after mount, so in a browser that has WebAuthn the link
+  // (and, where it is the only other way, this whole list) is drawn one commit after the
+  // screen, a frame late and after the title has taken the focus. The other choice draws, in a
+  // browser that has none, a link that is then taken away. Late is better than wrong.
+  // `passkey.test.tsx` pins both halves.
+  const others = firstFactorStrategies(
+    step.strategies,
+    FIRST_FACTOR_FORMS,
+    can,
+    'alternatives'
+  ).filter(
     (strategy) =>
       strategy !== active &&
-      // Among the other ways only once the browser is known to have WebAuthn, as on the
-      // second-factor and step-up screens (`mfa.tsx`, `prompts.tsx`): "not ruled out" above is
-      // for the screen itself. The cost, accepted: support is asked after mount, so in a
-      // browser that has WebAuthn the link (and, where it is the only other way, this whole
-      // list) is drawn one commit after the screen, a frame late and after the title has taken
-      // the focus. The other choice draws, in a browser that has none, a link that is then
-      // taken away: a control that is broken for as long as it shows. Late is better than
-      // wrong. `passkey.test.tsx` pins both halves.
-      (strategy !== 'passkey' || passkeySupport === true) &&
       // The email a link came in carries the code, and that screen takes it.
       !(strategy === 'email_code' && active === 'email_link' && prepared?.strategy === 'email_link')
   )
@@ -1151,7 +1163,7 @@ function SignInScreens(props: SignInProps) {
       />
     ) : null
 
-  const rendered = (screens: StepScreens, start: ReactNode) => (
+  const rendered = (screens: StepScreens, start: ReactElement) => (
     <StepRenderer
       step={step}
       screens={screens}

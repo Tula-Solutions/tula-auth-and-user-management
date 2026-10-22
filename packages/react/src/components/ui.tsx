@@ -521,6 +521,12 @@ export function Status(props: { message: string | null; tone?: 'success' | 'neut
  *
  * @param screen - A key naming the current screen.
  * @returns `true` once the component has moved on from its first screen.
+ *
+ * @example
+ * ```tsx
+ * const focusTitle = useScreenChanged(`${view}:${step?.status ?? 'start'}`)
+ * // <StepRenderer step={step} screen={view} focusTitle={focusTitle} ... />
+ * ```
  */
 export function useScreenChanged(screen: string): boolean {
   const first = useRef(screen)

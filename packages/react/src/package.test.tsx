@@ -107,6 +107,7 @@ describe('server rendering', () => {
     // screen from the map and the "not supported" screen for a status it has none for.
     expect(has('passkey:undefined')).toBe(true)
     expect(has('wait:0')).toBe(true)
+    expect(has('changed:false|strategies:password')).toBe(true)
     expect(has('<p>copied password screen</p>')).toBe(true)
     expect(has('data-tula-unsupported')).toBe(true)
   })

@@ -1,8 +1,9 @@
-import { describe, expect, mock, test } from 'bun:test'
+import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { act, screen } from '@testing-library/react'
 import type { FlowStep } from '@tula-tech/core'
 import { useEffect, useState } from 'react'
-import { expectAbsent, world } from '../testing/harness'
+import { useLocalization } from '../hooks/use-localization'
+import { expectAbsent, expectFocus, world } from '../testing/harness'
 import { StepRenderer, type StepRendererProps, type StepScreens } from './step-renderer'
 import { useScreenChanged } from './ui'
 
@@ -14,6 +15,10 @@ const VERIFY: FlowStep = {
 } as FlowStep
 /** A status no version of this package knows: what a newer server may send. */
 const FROM_THE_FUTURE = { status: 'needs_teleport' } as unknown as FlowStep
+
+afterEach(() => {
+  mock.restore()
+})
 
 const NOT_SUPPORTED = 'This step is not supported'
 
@@ -90,13 +95,115 @@ describe('<StepRenderer>', () => {
       const view = w.mount(
         <StepRenderer
           step={PASSWORD}
-          screens={{ needs_password: () => nothing }}
+          // An untyped caller can return anything: the types allow an element or `null`.
+          screens={{ needs_password: () => nothing as never }}
           onRestart={() => undefined}
         />
       )
       expect(screen.getByText(NOT_SUPPORTED)).toBeTruthy()
       view.unmount()
     }
+  })
+
+  test('a screen may call hooks, and the step changing does not break their order', () => {
+    // React reports a change in the order of hooks with `console.error`, not by throwing.
+    const reported = spyOn(console, 'error').mockImplementation(() => undefined)
+    const w = world()
+    let change = (_status: 'needs_password' | 'needs_email_verification') => {}
+    function Host() {
+      const [status, setStatus] = useState<'needs_password' | 'needs_email_verification'>(
+        'needs_password'
+      )
+      change = setStatus
+      return (
+        <StepRenderer
+          step={status === 'needs_password' ? PASSWORD : VERIFY}
+          screens={{
+            needs_password: () => {
+              // biome-ignore lint/correctness/useHookAtTopLevel: a screen is the render of its own host component, which is what is tested
+              const t = useLocalization()
+              return <p>{t.signIn.title}</p>
+            },
+            needs_email_verification: (step) => {
+              // A different number of hooks than the screen before it.
+              // biome-ignore lint/correctness/useHookAtTopLevel: a screen is the render of its own host component, which is what is tested
+              const t = useLocalization()
+              // biome-ignore lint/correctness/useHookAtTopLevel: a screen is the render of its own host component, which is what is tested
+              const [seen] = useState(step.destination)
+              return (
+                <p>
+                  {t.common.seconds}|{seen}
+                </p>
+              )
+            },
+          }}
+          onRestart={() => undefined}
+        />
+      )
+    }
+    w.mount(<Host />)
+    expect(screen.getByText('Sign in')).toBeTruthy()
+    act(() => change('needs_email_verification'))
+    expect(screen.getByText(/m\*\*\*@northline.app/)).toBeTruthy()
+    act(() => change('needs_password'))
+    expect(screen.getByText('Sign in')).toBeTruthy()
+    expect(reported).not.toHaveBeenCalled()
+  })
+
+  test('the same screen name for two statuses does not carry hooks from one to the other', () => {
+    // React reports a change in the order of hooks with `console.error`, not by throwing.
+    const reported = spyOn(console, 'error').mockImplementation(() => undefined)
+    const w = world()
+    let change = (_status: 'needs_password' | 'needs_email_verification') => {}
+    function Host() {
+      const [status, setStatus] = useState<'needs_password' | 'needs_email_verification'>(
+        'needs_password'
+      )
+      change = setStatus
+      return (
+        <StepRenderer
+          step={status === 'needs_password' ? PASSWORD : VERIFY}
+          screen='same'
+          screens={{
+            // biome-ignore lint/correctness/useHookAtTopLevel: a screen is the render of its own host component, which is what is tested
+            needs_password: () => <p>{useLocalization().signIn.title}</p>,
+            needs_email_verification: () => {
+              // biome-ignore lint/correctness/useHookAtTopLevel: a screen is the render of its own host component, which is what is tested
+              const [value] = useState('a')
+              // biome-ignore lint/correctness/useHookAtTopLevel: a screen is the render of its own host component, which is what is tested
+              const [other] = useState('b')
+              return <p>{value + other}</p>
+            },
+          }}
+          onRestart={() => undefined}
+        />
+      )
+    }
+    w.mount(<Host />)
+    act(() => change('needs_email_verification'))
+    expect(screen.getByText('ab')).toBeTruthy()
+    expect(reported).not.toHaveBeenCalled()
+  })
+
+  test('with focusTitle the fallback’s title takes the focus; without it focus stays put', async () => {
+    const w = world()
+    const view = w.mount(
+      <>
+        <button type='button'>elsewhere</button>
+        <StepRenderer step={FROM_THE_FUTURE} screens={{}} focusTitle onRestart={() => undefined} />
+      </>
+    )
+    await expectFocus(screen.getByRole('heading', { name: NOT_SUPPORTED }))
+    view.unmount()
+    w.mount(
+      <>
+        <button type='button'>elsewhere</button>
+        <StepRenderer step={FROM_THE_FUTURE} screens={{}} onRestart={() => undefined} />
+      </>
+    )
+    const elsewhere = screen.getByRole('button', { name: 'elsewhere' })
+    act(() => elsewhere.focus())
+    await expectFocus(elsewhere)
   })
 
   test('a status named like an inherited property is not a screen of the map', () => {
@@ -176,10 +283,22 @@ describe('the types of the step map', () => {
   test('a screen is given its step narrowed to its status', () => {
     const screens: StepScreens = {
       // @ts-expect-error a password step has no `destination`
-      needs_password: (step) => step.destination,
-      needs_email_verification: (step) => step.destination,
+      needs_password: (step) => <p>{step.destination}</p>,
+      needs_email_verification: (step) => <p>{step.destination}</p>,
     }
     expect(Object.keys(screens)).toHaveLength(2)
+  })
+
+  test('a screen that renders a non-element does not compile: no blank card by type', () => {
+    const screens: StepScreens = {
+      // @ts-expect-error a string is not an element
+      needs_password: () => '',
+      // @ts-expect-error an array is not an element
+      needs_identifier: () => [],
+      // @ts-expect-error `true` is not an element
+      needs_email_verification: () => true,
+    }
+    expect(Object.keys(screens)).toHaveLength(3)
   })
 
   test('the fallback cannot be replaced, removed or set to nothing', () => {
