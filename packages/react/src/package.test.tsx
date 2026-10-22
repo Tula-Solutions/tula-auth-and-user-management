@@ -102,6 +102,13 @@ describe('server rendering', () => {
     expect(has('Signing you in…')).toBe(true)
     expect(has('href="/sign-up"')).toBe(true)
     expect(has('--tula-color-primary:#0f766e')).toBe(true)
+    // The headless layer a copied component uses renders without a DOM too: the hooks ask the
+    // browser nothing during render (support is not known yet), the step renderer draws a
+    // screen from the map and the "not supported" screen for a status it has none for.
+    expect(has('passkey:undefined')).toBe(true)
+    expect(has('wait:0')).toBe(true)
+    expect(has('<p>copied password screen</p>')).toBe(true)
+    expect(has('data-tula-unsupported')).toBe(true)
   })
 })
 
@@ -177,9 +184,12 @@ describe('what @tula-tech/react costs a browser bundle', () => {
    * bytes of room left. The profile's section (a form, the code step, "sign in again" for a
    * user with nothing to step up with, ten strings) is this package's: with it the bundle
    * measures 53,997 bytes, 822 more. The budget was set from that measurement, to 54,433,
-   * so the 436 bytes of room are what is left again.
+   * so the 436 bytes of room are what is left again. The headless layer made public for the
+   * copy-in components (ADR 0064: the step renderer, the first-factor table's helper, five
+   * hooks) took it to 54,436 bytes, 439 more. The budget moved by exactly those bytes, to
+   * 54,872, so the 436 bytes of room are still what is left.
    */
-  const GZIP_BUDGET_BYTES = 54_433
+  const GZIP_BUDGET_BYTES = 54_872
   /**
    * The QR encoder, in a chunk of its own: loaded when an enrolment is first drawn, so an app
    * that never shows one does not pay for it.

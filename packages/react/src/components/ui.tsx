@@ -49,6 +49,15 @@ export function useUi(): Ui {
 }
 
 /**
+ * Whether the caller is drawn inside a {@link Root}.
+ *
+ * @returns `true` inside a component's root.
+ */
+export function useIsInRoot(): boolean {
+  return useContext(UiContext) !== null
+}
+
+/**
  * The outermost element of every component: carries the `tula-root` class the stylesheet
  * hangs its tokens on, the theme as inline custom properties, and a forced colour scheme.
  */

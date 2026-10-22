@@ -6,11 +6,12 @@ import type {
   TulaError,
 } from '@tula-tech/core'
 import { useEffect, useId, useRef, useState } from 'react'
+import { usePasskeySupport } from '../hooks/use-passkey-support'
 import { formatText } from '../localization'
 import type { QrDrawing } from '../qr'
 import { CODE_LENGTH, CodeField, digitsOnly, ResendButton, useRetryAfter } from './flow-screens'
 import { type FieldResolver, formatDuration, placeErrors } from './form-errors'
-import { PasskeyPanel, usePasskeySupport } from './passkey'
+import { PasskeyPanel } from './passkey'
 import { Button, Card, Form, FormError, Status, TextField, useUi } from './ui'
 
 /** Modules of white around a QR code: the quiet zone a scanner needs (the standard's four). */

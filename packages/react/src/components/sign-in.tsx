@@ -1,19 +1,18 @@
 import type { FirstFactorStrategy, FlowStep } from '@tula-tech/core'
-import {
-  type ComponentType,
-  type MouseEvent,
-  type ReactNode,
-  useEffect,
-  useRef,
-  useState,
-} from 'react'
+import { type MouseEvent, type ReactNode, useEffect, useRef, useState } from 'react'
 import type { Appearance } from '../appearance'
 import { useTulaContext } from '../context'
+import { usePasskeySupport } from '../hooks/use-passkey-support'
 import { useClientConfig, usePasswordChecklist } from '../hooks/use-password-checklist'
 import { type UseResetPasswordResult, useResetPassword } from '../hooks/use-reset-password'
 import { type UseSignInResult, useSignIn } from '../hooks/use-sign-in'
 import { formatText } from '../localization'
 import { safeUrl } from '../navigation'
+import {
+  type FirstFactorFormProps,
+  type FirstFactorForms,
+  firstFactorStrategies,
+} from './first-factor-forms'
 import {
   CODE_LENGTH,
   CodeField,
@@ -36,7 +35,8 @@ import {
   SecondFactorScreen,
 } from './mfa'
 import { OAuthButtons } from './oauth'
-import { PasskeySignIn, usePasskeyOffered, usePasskeySupport } from './passkey'
+import { PasskeySignIn, usePasskeyOffered } from './passkey'
+import { type StepOf, StepRenderer, type StepScreens } from './step-renderer'
 import {
   Button,
   Card,
@@ -138,29 +138,12 @@ export function SwitchLink(props: {
 /** The `needs_first_factor` step. */
 type FirstFactorStep = Extract<FlowStep, { status: 'needs_first_factor' }>
 
-/** What a first-factor form gets. */
-interface FirstFactorProps {
-  email: string
-  signIn: UseSignInResult
-  focusTitle: boolean
-  onForgotPassword(): void
-  onChangeEmail(): void
-  /** What the server last emailed for this attempt, when it has. */
-  prepared?: FirstFactorStep['prepared']
-  /** Ask the server for the email of an email strategy (again, for a fresh one). */
-  sendEmail?(strategy: 'email_code' | 'email_link'): Promise<FlowStep | null>
-  /** Ask the server to text the code of `sms_code` (again, for a fresh one). */
-  sendText?(): Promise<FlowStep | null>
-  /** The other ways to sign in the attempt offers, drawn under the form. */
-  alternatives?: ReactNode
-}
-
 /**
  * The first factors this version can draw, by strategy. A later step adds a method by adding
  * its form here; a strategy with no entry is skipped (the OAuth ones are buttons on the first
  * screen, not forms).
  */
-const FIRST_FACTOR_FORMS: Partial<Record<FirstFactorStrategy, ComponentType<FirstFactorProps>>> = {
+const FIRST_FACTOR_FORMS: FirstFactorForms = {
   password: PasswordScreen,
   email_code: EmailCodeScreen,
   email_link: EmailLinkScreen,
@@ -181,24 +164,6 @@ const PHONE_SHAPE = /^\+[1-9][0-9]{7,14}$/
  */
 function isPhoneNumber(identifier: string): boolean {
   return PHONE_SHAPE.test(identifier.replace(PHONE_SEPARATORS, ''))
-}
-
-function supportedStrategies(
-  strategies: readonly string[],
-  can: { link: boolean; passkey: boolean; phone: boolean }
-): FirstFactorStrategy[] {
-  const known = strategies.filter(
-    (strategy): strategy is FirstFactorStrategy =>
-      Object.hasOwn(FIRST_FACTOR_FORMS, strategy) &&
-      (strategy !== 'email_link' || can.link) &&
-      // Hidden, not broken, in a browser without WebAuthn.
-      (strategy !== 'passkey' || can.passkey) &&
-      // A code is texted to a number: for an address the form could only ever fail.
-      (strategy !== 'sms_code' || can.phone)
-  )
-  // And the other way round: a password or an emailed code for a phone number signs nobody
-  // in, so where a texted code is offered for a number it is the form that is drawn.
-  return can.phone && known.includes('sms_code') ? ['sms_code'] : known
 }
 
 /**
@@ -307,7 +272,7 @@ function IdentifierScreen(props: {
   )
 }
 
-function PasswordScreen(props: FirstFactorProps) {
+function PasswordScreen(props: FirstFactorFormProps) {
   const { t } = useUi()
   const { signIn, email } = props
   const [password, setPassword] = useState('')
@@ -385,7 +350,9 @@ function PasswordScreen(props: FirstFactorProps) {
  * link also waits for the link to be opened in this browser. The waiting is the flow's (the
  * hook's `waitForEmailLink`): this screen starts it when it appears and stops it when it goes.
  */
-function EmailFactorScreen(props: FirstFactorProps & { strategy: 'email_code' | 'email_link' }) {
+function EmailFactorScreen(
+  props: FirstFactorFormProps & { strategy: 'email_code' | 'email_link' }
+) {
   const { el, t } = useUi()
   const { signIn, strategy, prepared } = props
   const [code, setCode] = useState('')
@@ -536,7 +503,7 @@ function EmailFactorScreen(props: FirstFactorProps & { strategy: 'email_code' | 
  * The `passkey` first factor, chosen after an address was given. A passkey names its own
  * account, so this is a sign-in of its own that takes the place of the attempt on screen.
  */
-function PasskeyScreen(props: FirstFactorProps) {
+function PasskeyScreen(props: FirstFactorFormProps) {
   const { t } = useUi()
   return (
     <Card title={t.passkey.signIn} subtitle={t.passkey.signInPrompt} focusTitle={props.focusTitle}>
@@ -554,7 +521,7 @@ function PasskeyScreen(props: FirstFactorProps) {
  * arriving on this screen sends none. What the screen says after asking never claims a
  * message was sent, because the server answers the same for a number that signs nobody in.
  */
-function SmsCodeScreen(props: FirstFactorProps) {
+function SmsCodeScreen(props: FirstFactorFormProps) {
   const { t } = useUi()
   const { signIn, prepared } = props
   const [code, setCode] = useState('')
@@ -666,11 +633,11 @@ function SmsCodeScreen(props: FirstFactorProps) {
   )
 }
 
-function EmailCodeScreen(props: FirstFactorProps) {
+function EmailCodeScreen(props: FirstFactorFormProps) {
   return <EmailFactorScreen {...props} strategy='email_code' />
 }
 
-function EmailLinkScreen(props: FirstFactorProps) {
+function EmailLinkScreen(props: FirstFactorFormProps) {
   return <EmailFactorScreen {...props} strategy='email_link' />
 }
 
@@ -697,7 +664,7 @@ function strategyLabel(
 
 /** `needs_first_factor`: one form per strategy the server offered that this version knows. */
 function FirstFactorScreen(
-  props: Omit<FirstFactorProps, 'prepared' | 'alternatives' | 'sendEmail' | 'sendText'> & {
+  props: Omit<FirstFactorFormProps, 'prepared' | 'alternatives' | 'sendEmail' | 'sendText'> & {
     step: FirstFactorStep
     /** The page an emailed link leads to, as the developer gave it. */
     emailLinkUrl?: string
@@ -720,7 +687,7 @@ function FirstFactorScreen(
   // Until the browser has been asked (after mount) a passkey is not ruled out: where it is the
   // only method, the screen must not open on "not supported" and then change its mind.
   const passkeySupport = usePasskeySupport()
-  const known = supportedStrategies(step.strategies, {
+  const known = firstFactorStrategies(step.strategies, FIRST_FACTOR_FORMS, {
     link: storageUsable && linkConfigured,
     passkey: passkeySupport !== false,
     phone: isPhoneNumber(props.email),
@@ -1140,80 +1107,84 @@ function SignInScreens(props: SignInProps) {
   if (signedIn) {
     return <SignedInNotice key={screen} focusTitle={focusTitle} />
   }
-  const unsupported = (
-    <UnsupportedScreen key={screen} focusTitle={focusTitle} onRestart={toSignIn} />
-  )
   // The two steps that can stand between a first factor (or a reset) and the session. The
-  // same screens serve a sign-in and a reset.
-  const afterFactors = (flow: typeof signInFlow | typeof resetFlow) => {
-    if (step?.status === 'needs_second_factor') {
-      const methods = drawableFactors(step.options)
-      const texted = offersTextedCode(step.options)
-      return methods.length === 0 && !texted ? null : (
-        <SecondFactorScreen
-          key={screen}
-          methods={methods}
-          focusTitle={focusTitle}
-          isPending={flow.isPending}
-          error={flow.error}
-          submit={(proof) => flow.submitSecondFactor(proof).then(finish)}
-          submitPasskey={(signal) => flow.submitSecondFactorWithPasskey({ signal }).then(finish)}
-          texted={
-            texted
-              ? {
-                  destination: step.prepared?.destination ?? null,
-                  send: () => flow.prepareSecondFactor({ method: 'sms_code' }),
-                }
-              : undefined
-          }
-          onRestart={toSignIn}
-        />
-      )
-    }
-    if (step?.status === 'needs_factor_enrolment' && canEnrolTotp(step.methods)) {
-      return (
-        <FactorEnrolmentScreen
-          key={screen}
-          focusTitle={focusTitle}
-          isPending={flow.isPending}
-          error={flow.error}
-          start={flow.startTotpEnrolment}
-          confirm={confirmEnrolment}
-          onRestart={toSignIn}
-        />
-      )
-    }
-    return null
+  // same screens serve a sign-in and a reset; a screen that returns `null` cannot draw its
+  // step, and the renderer draws the "not supported" screen.
+  const secondFactor = (
+    step: StepOf<'needs_second_factor'>,
+    flow: typeof signInFlow | typeof resetFlow
+  ) => {
+    const methods = drawableFactors(step.options)
+    const texted = offersTextedCode(step.options)
+    return methods.length === 0 && !texted ? null : (
+      <SecondFactorScreen
+        methods={methods}
+        focusTitle={focusTitle}
+        isPending={flow.isPending}
+        error={flow.error}
+        submit={(proof) => flow.submitSecondFactor(proof).then(finish)}
+        submitPasskey={(signal) => flow.submitSecondFactorWithPasskey({ signal }).then(finish)}
+        texted={
+          texted
+            ? {
+                destination: step.prepared?.destination ?? null,
+                send: () => flow.prepareSecondFactor({ method: 'sms_code' }),
+              }
+            : undefined
+        }
+        onRestart={toSignIn}
+      />
+    )
   }
+  const factorEnrolment = (
+    step: StepOf<'needs_factor_enrolment'>,
+    flow: typeof signInFlow | typeof resetFlow
+  ) =>
+    canEnrolTotp(step.methods) ? (
+      <FactorEnrolmentScreen
+        focusTitle={focusTitle}
+        isPending={flow.isPending}
+        error={flow.error}
+        start={flow.startTotpEnrolment}
+        confirm={confirmEnrolment}
+        onRestart={toSignIn}
+      />
+    ) : null
+
+  const rendered = (screens: StepScreens, start: ReactNode) => (
+    <StepRenderer
+      step={step}
+      screens={screens}
+      start={start}
+      screen={screen}
+      focusTitle={focusTitle}
+      onRestart={toSignIn}
+    />
+  )
 
   if (view === 'reset-password') {
-    switch (step?.status) {
-      case undefined:
-        return (
-          <ResetStartScreen
-            key={screen}
-            email={email}
-            setEmail={setEmail}
-            reset={reset}
-            focusTitle={focusTitle}
-            onBack={toSignIn}
-          />
-        )
-      case 'needs_new_password':
-        return (
+    return rendered(
+      {
+        needs_new_password: (step) => (
           <NewPasswordScreen
-            key={screen}
             email={email}
             destination={step.destination}
             reset={reset}
             focusTitle={focusTitle}
             onBack={toSignIn}
           />
-        )
-      default:
-        // A step a newer server added.
-        return afterFactors(resetFlow) ?? unsupported
-    }
+        ),
+        needs_second_factor: (step) => secondFactor(step, resetFlow),
+        needs_factor_enrolment: (step) => factorEnrolment(step, resetFlow),
+      },
+      <ResetStartScreen
+        email={email}
+        setEmail={setEmail}
+        reset={reset}
+        focusTitle={focusTitle}
+        onBack={toSignIn}
+      />
+    )
   }
 
   const factor = {
@@ -1224,36 +1195,33 @@ function SignInScreens(props: SignInProps) {
     onChangeEmail: toSignIn,
     emailLinkUrl,
   }
-  switch (step?.status) {
-    case undefined:
-    case 'needs_identifier':
-      return (
-        <IdentifierScreen
-          key={screen}
-          email={email}
-          setEmail={setEmail}
-          signIn={signIn}
-          focusTitle={focusTitle}
-          oauthCallbackUrl={props.oauthCallbackUrl ?? navigation.oauthCallbackUrl}
-          holdCompletion={hold}
-          footer={
-            <SwitchLink
-              prompt={t.signIn.noAccount}
-              label={t.signIn.signUpLink}
-              url={props.signUpUrl ?? navigation.signUpUrl}
-              onSwitch={props.onSwitchToSignUp}
-            />
-          }
+  const identifier = (
+    <IdentifierScreen
+      email={email}
+      setEmail={setEmail}
+      signIn={signIn}
+      focusTitle={focusTitle}
+      oauthCallbackUrl={props.oauthCallbackUrl ?? navigation.oauthCallbackUrl}
+      holdCompletion={hold}
+      footer={
+        <SwitchLink
+          prompt={t.signIn.noAccount}
+          label={t.signIn.signUpLink}
+          url={props.signUpUrl ?? navigation.signUpUrl}
+          onSwitch={props.onSwitchToSignUp}
         />
-      )
-    case 'needs_password':
-      return <PasswordScreen key={screen} {...factor} />
-    case 'needs_first_factor':
-      return <FirstFactorScreen key={screen} {...factor} step={step} onRestart={toSignIn} />
-    case 'needs_email_verification':
-      return (
+      }
+    />
+  )
+  return rendered(
+    {
+      needs_identifier: () => identifier,
+      needs_password: () => <PasswordScreen {...factor} />,
+      needs_first_factor: (step) => (
+        <FirstFactorScreen {...factor} step={step} onRestart={toSignIn} />
+      ),
+      needs_email_verification: (step) => (
         <VerificationScreen
-          key={screen}
           destination={step.destination}
           focusTitle={focusTitle}
           isPending={signIn.isPending}
@@ -1261,24 +1229,22 @@ function SignInScreens(props: SignInProps) {
           verify={(code) => signIn.verifyEmail({ code })}
           resend={signIn.resendCode}
         />
-      )
-    case 'needs_new_password':
+      ),
       // A sign-in asks for a new password for one reason this version knows.
-      return step.reason === 'expired' ? (
-        <ExpiredPasswordScreen
-          key={screen}
-          email={email}
-          signIn={signIn}
-          focusTitle={focusTitle}
-          onChangeEmail={toSignIn}
-        />
-      ) : (
-        unsupported
-      )
-    default:
-      // A step a newer server added.
-      return afterFactors(signInFlow) ?? unsupported
-  }
+      needs_new_password: (step) =>
+        step.reason === 'expired' ? (
+          <ExpiredPasswordScreen
+            email={email}
+            signIn={signIn}
+            focusTitle={focusTitle}
+            onChangeEmail={toSignIn}
+          />
+        ) : null,
+      needs_second_factor: (step) => secondFactor(step, signInFlow),
+      needs_factor_enrolment: (step) => factorEnrolment(step, signInFlow),
+    },
+    identifier
+  )
 }
 
 /**
