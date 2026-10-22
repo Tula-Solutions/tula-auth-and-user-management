@@ -231,18 +231,19 @@ whose answer decides what happens next (step 2.3).
 - **The `webhook` conformance step needs a receiver the server can reach.** A scenario with
   one is marked `needsWebhookReceiver` and skipped by a target without one; a live server in
   a container cannot reach the runner's loopback, and the answer to that is the skip, never a
-  looser guard. CI's `self-host` jobs check the **exact set of skipped scenarios by name**
-  (`.github/workflows/ci.yml`): a new scenario with a receiver is added to that list (and
-  to the count in the two summary lines beside it), never covered by a count alone. What cannot be shown over HTTP (a name re-pointed between save and delivery)
+  looser guard. CI's `self-host` job checks the **exact set of skipped scenarios by name**,
+  for both of its conformance runs (`.github/workflows/ci.yml`): a new scenario with a
+  receiver is added to that list (and to the count in the two summary lines beside it), never covered by a count alone. What cannot be shown over HTTP (a name re-pointed between save and delivery)
   is an API test, and the scenario's description says so.
-- **The one delivery CI makes from a container is the worker check's** (the
-  `self-host-worker` job, `scripts/worker-check/check.ts`), and it keeps to the guard: its
+- **The one delivery CI makes from a container is the worker check's** (its stack in the
+  `self-host` job, `scripts/worker-check/check.ts`), and it keeps to the guard: its
   receiver runs in the **worker's network namespace** (`docker/worker-check/compose.yml`,
   `network_mode: service:worker`) and listens on 127.0.0.1, which the `local` tier allows
   and which no API container can reach. Never give the receiver a port, a network of its
-  own or a private address, never set `ENVIRONMENT` or anything else in that job to make an
-  address pass, and keep the job starting the stack **without** the worker: the check has to
-  see an owed event wait before it starts the worker itself.
+  own or a private address, never set `ENVIRONMENT` or anything else in that stack's file
+  (`docker/self-host/worker.env`: its ports and `WEBHOOK_WORKER=separate`, nothing more) or
+  in the job to make an address pass, and keep the job starting that stack **without** the
+  worker: the check has to see an owed event wait before it starts the worker itself.
   `.claude/hooks/{ci,compose,worker-check}.test.ts` hold all of it.
 - A new event type, a new store method that changes an endpoint, or a new kind of secret
   follows the existing rules: a schema and a fixture in the contract, an `Activity` and a
