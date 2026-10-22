@@ -69,7 +69,10 @@ rules (`react.md`) apply to the headless files above as they do to the rest of
   `@tula-tech/react`, `@/components/ui/*`, `@/components/tula/*` and `@/lib/utils`, and each of
   those it uses must be declared in its `registryDependencies` or `dependencies`
   (`@tula-tech/react` is the only npm package an item may need). `checks.test.ts` holds one
-  fixture per rule.
+  fixture per rule. **The scan is syntactic, and says so**: a string held in a variable and
+  then drawn (`const m = 'Oops'; <p>{m}</p>`), a client held under another name
+  (`const s = client.session; s.signOut()`) and `window.console` are not seen. They are for
+  review, which reads every item; do not rely on the build alone.
 - **`r/` is built output, checked like `docs/reference/`.** `bun run registry:generate` writes
   `packages/ui/r/*.json`; `registry:check` (part of `verify`) fails for any drift. The vendored
   shadcn schemas in `schema/` are pinned by hash in `src/registry.ts` (`SHADCN`); a move to a

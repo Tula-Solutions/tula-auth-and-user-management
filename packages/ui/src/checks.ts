@@ -59,6 +59,15 @@ const VISIBLE_ATTRIBUTES = new Set([
   'placeholder',
   'label',
   'summary',
+  // The items' own props that carry words: StepCard, Status, FormAlert and the like.
+  'description',
+  'message',
+  'detail',
+  'text',
+  'heading',
+  'caption',
+  'helperText',
+  'hint',
 ])
 
 /** What an item may import: React, the headless package, shadcn's primitives and its siblings. */
@@ -161,7 +170,7 @@ export function checkSource(source: string): Refusal[] {
         )
       }
     }
-    if (isClientSignOut(node)) {
+    if (isClientSignOut(node) || isDestructuredClientSignOut(node)) {
       refuse(
         node,
         'client-sign-out',
@@ -268,6 +277,28 @@ function isClientSignOut(node: ts.Node): boolean {
   // The receiver's last name: `…​.session`, `…​.client`, or the client a hook returns.
   const text = receiver.getText().replace(/\s+/g, '')
   return /(?:^|[.)\]])(?:session|client)$/.test(text) || /^useTula\(\)$/.test(text)
+}
+
+/**
+ * `const { signOut } = client.session` (or `useTula()`): the same call, written by destructuring.
+ * The check reads text, so a client held under another name (`const s = client.session`) is
+ * not seen: the rules file says so.
+ */
+function isDestructuredClientSignOut(node: ts.Node): boolean {
+  if (
+    !ts.isVariableDeclaration(node) ||
+    !ts.isObjectBindingPattern(node.name) ||
+    !node.initializer
+  ) {
+    return false
+  }
+  const takesSignOut = node.name.elements.some(
+    (element) => (element.propertyName ?? element.name).getText() === 'signOut'
+  )
+  const text = node.initializer.getText().replace(/\s+/g, '')
+  return (
+    takesSignOut && (/(?:^|[.)\]])(?:session|client)$/.test(text) || /^useTula\(\)$/.test(text))
+  )
 }
 
 /** Whether an identifier is a reference to a variable, not a name being declared or a property. */

@@ -82,6 +82,31 @@ export function Out() {
   })
 })
 
+describe('review findings (round 1)', () => {
+  test('a visible string in an item prop is refused, a class name is not', () => {
+    expect(rules(`export const a = () => <StepCard description='Hi there' />`)).toContain(
+      'hard-coded-string'
+    )
+    expect(rules(`export const a = () => <FormAlert message='Nope' />`)).toContain(
+      'hard-coded-string'
+    )
+    expect(
+      rules(`export const a = () => <FormAlert message={t.x} detail='Try again' />`)
+    ).toContain('hard-coded-string')
+    expect(rules(`export const a = () => <Button className='w-full' variant='link' />`)).toEqual([])
+  })
+
+  test('a destructured signOut of the client is refused, the provider-level one is not', () => {
+    expect(rules(`const { signOut } = client.session\nexport const a = () => signOut()`)).toContain(
+      'client-sign-out'
+    )
+    expect(rules(`const { signOut } = useTula()\nexport const a = () => signOut()`)).toContain(
+      'client-sign-out'
+    )
+    expect(rules(`const { signOut } = useAuth()\nexport const a = () => signOut()`)).toEqual([])
+  })
+})
+
 describe('the build allows', () => {
   test('browser globals inside effects and handlers', () => {
     const source = `import { useEffect } from 'react'
