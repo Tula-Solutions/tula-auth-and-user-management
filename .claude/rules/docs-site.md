@@ -20,10 +20,21 @@ static HTML. Its commands are in its README.
   `/` is the landing page). `pages.test.ts` compares the file list to the pages built. A new
   page of `docs/` needs a link in `docs/README.md` to be in the sidebar; one the README never
   mentions still gets a page and lands in the last sidebar group, "More".
-- **Private, never published, never served by the API, never in an image.** The API does not
-  host it and nothing deploys it. The API image's Dockerfile copies nothing of it and
-  `.dockerignore` leaves it out (`.claude/hooks/compose.test.ts` holds both): never add it to
-  an image stage. Hosting it somewhere is a decision of its own, with `DOCS_BASE` for a sub-path.
+- **Private, never published to npm, never served by the API, never in an image.** The API
+  does not host it. The API image's Dockerfile copies nothing of it and `.dockerignore` leaves
+  it out (`.claude/hooks/compose.test.ts` holds both): never add it to an image stage.
+- **GitHub Pages publishes it, from `develop`, under `/tula-auth-and-user-management/`**
+  (`.github/workflows/docs-pages.yml`, held by `.claude/hooks/docs-pages.test.ts`): a `build`
+  job with `contents: read` only, then a `deploy` job with `pages: write` and `id-token: write`
+  that runs nothing but `actions/deploy-pages`. Never give the build job a permission to write
+  or the deploy job a step of the repository's code. The base comes from `DOCS_BASE`, read only
+  through `resolveBase()` in `src/lib/paths.ts` (`config.ts`, `vite.config.ts`, `serve.ts`, the
+  Playwright config): `/` or a path that starts and ends with `/` and holds only unreserved
+  characters, refused otherwise. Every address the site writes is built from the base; an
+  address from the host's root outside it (or `//host`) fails the build in `checkPage`, and
+  `build --check` renders under a placeholder sub-path when no base is set so that `verify`
+  sees one. A link written as `/x` in a component is a 404 on Pages: build it from `base`.
+  CI's `e2e-docs` job builds and serves the site under the Pages base.
 - **Prerendered by our own script, not by a router's prerender.** The pages are documents: each
   is a React 19 component tree rendered with `react-dom/server` to a complete `index.html`
   (`src/lib/site.tsx`, started by `scripts/build.ts`), and the browser gets one small script

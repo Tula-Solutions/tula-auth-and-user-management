@@ -1,5 +1,5 @@
 import { resolve } from 'node:path'
-import { resolveRepoRoot } from './paths'
+import { resolveBase, resolveRepoRoot } from './paths'
 
 /**
  * The repository root (`DOCS_REPO_ROOT` is for the build script's own test: `paths.ts` says
@@ -24,21 +24,11 @@ export const REPO_URL = 'https://github.com/Tula-Solutions/tula-auth-and-user-ma
 export const REPO_BRANCH = 'develop'
 
 /**
- * Normalise a base path to `/`, or `/a/b/`.
- *
- * @param value - A path such as `docs`, `/docs` or `/docs/`.
- * @returns The path with exactly one leading and one trailing slash.
- */
-export function normalizeBase(value: string): string {
-  const trimmed = value.replace(/^\/+|\/+$/g, '')
-  return trimmed === '' ? '/' : `/${trimmed}/`
-}
-
-/**
  * The path the site is served under, with a leading and a trailing slash (`/` at a domain's
- * root). Set `DOCS_BASE` at build time to host it under a sub-path.
+ * root). Set `DOCS_BASE` at build time to host it under a sub-path; `resolveBase` in
+ * `paths.ts` says which values it accepts.
  */
-export const BASE = normalizeBase(process.env.DOCS_BASE ?? '/')
+export const BASE = resolveBase()
 
 /** The name shown in the header and in every page's title. */
 export const SITE_NAME = 'Tula Auth docs'

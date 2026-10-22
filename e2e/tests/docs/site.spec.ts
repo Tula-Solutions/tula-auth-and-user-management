@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { expect, type Page, test } from '@playwright/test'
+import { resolveBase } from '../../../apps/docs/src/lib/paths'
 import {
   BEYOND_INTRODUCTION,
   CHUNK_BUDGET,
@@ -15,6 +16,16 @@ import { expectAccessible } from '../support'
 // The documentation site (apps/docs), built from docs/** and served as static files. Every page
 // is opened, checked with axe in both themes (no rule disabled) and measured at a phone's width.
 // The list of pages is the one the build wrote (`pages.json`), so a page cannot be left out.
+//
+// With DOCS_BASE set (`/tula-auth-and-user-management/`, as GitHub Pages serves it) the site is
+// built and served under that path, and every address below is taken under it.
+
+const BASE = resolveBase()
+
+/** A route of the site (`/quickstart/`) as the address it is served at, under the base. */
+function at(route: string): string {
+  return `${BASE.slice(0, -1)}${route}`
+}
 
 const pages = JSON.parse(
   readFileSync(`${import.meta.dirname}/../../../apps/docs/dist/pages.json`, 'utf8')
@@ -80,7 +91,7 @@ test.describe('the documentation site', () => {
       async function open(page: Page): Promise<string[]> {
         const problems = watch(page)
         await page.emulateMedia({ colorScheme: scheme })
-        await page.goto(route)
+        await page.goto(at(route))
         // With no choice made the site follows the system, and says so on the root.
         await expect(page.locator('html')).toHaveAttribute('data-theme', scheme)
         await expect(page.locator('main h1').first()).toBeVisible()
@@ -162,7 +173,7 @@ test.describe('the documentation site', () => {
     const sectioned = route !== '/'
     test(`${route} is cut into sections that hold all its content`, async ({ page }) => {
       test.skip(!sectioned, 'the landing page has no article')
-      await page.goto(route)
+      await page.goto(at(route))
       await expect(page.locator('article.doc'), `${route} has its article`).toHaveCount(1)
       const children = await page
         .locator('article.doc > *')
@@ -184,7 +195,7 @@ test.describe('the documentation site', () => {
     test(`${route} fits a phone`, async ({ page }) => {
       const problems = watch(page)
       await page.setViewportSize({ width: 375, height: 800 })
-      await page.goto(route)
+      await page.goto(at(route))
       const overflow = await page.evaluate(
         () => document.documentElement.scrollWidth - document.documentElement.clientWidth
       )
@@ -194,14 +205,14 @@ test.describe('the documentation site', () => {
   }
 
   test('an unknown address answers 404 with the site’s own page', async ({ page }) => {
-    const response = await page.goto('/no/such/page/')
+    const response = await page.goto(at('/no/such/page/'))
     expect(response?.status()).toBe(404)
     await expect(page.getByRole('heading', { name: 'Page not found' })).toBeVisible()
   })
 
   test('the theme toggle switches the page and the choice is kept', async ({ page }) => {
     await page.emulateMedia({ colorScheme: 'light' })
-    await page.goto('/quickstart/')
+    await page.goto(at('/quickstart/'))
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
     await page.getByRole('button', { name: 'Dark theme' }).click()
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
@@ -217,19 +228,19 @@ test.describe('the documentation site', () => {
   test('searching an error code finds its anchor, and following it lands on the code', async ({
     page,
   }) => {
-    await page.goto('/')
+    await page.goto(at('/'))
     await page
       .getByRole('searchbox', { name: 'Search the documentation' })
       .fill('password.too_short')
     const first = page.getByRole('list', { name: 'Search results' }).getByRole('link').first()
-    await expect(first).toHaveAttribute('href', '/reference/error-codes/#password.too_short')
+    await expect(first).toHaveAttribute('href', at('/reference/error-codes/#password.too_short'))
     await first.click()
     await expect(page).toHaveURL(/\/reference\/error-codes\/#password\.too_short$/)
     await expect(page.locator('[id="password.too_short"]')).toBeInViewport()
   })
 
   test('search finds prose, and Escape closes the results', async ({ page }) => {
-    await page.goto('/')
+    await page.goto(at('/'))
     const box = page.getByRole('searchbox', { name: 'Search the documentation' })
     await box.fill('quickstart')
     await expect(
@@ -244,7 +255,7 @@ test.describe('the documentation site', () => {
   test('search results are reached and left with the arrow keys, and Enter follows the first', async ({
     page,
   }) => {
-    await page.goto('/')
+    await page.goto(at('/'))
     const box = page.getByRole('searchbox', { name: 'Search the documentation' })
     await box.fill('password')
     const links = page.getByRole('list', { name: 'Search results' }).getByRole('link')
@@ -264,7 +275,7 @@ test.describe('the documentation site', () => {
 
   test('the menu button opens the sidebar on a phone', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 800 })
-    await page.goto('/quickstart/')
+    await page.goto(at('/quickstart/'))
     const sidebar = page.getByRole('navigation', { name: 'Documentation' })
     await expect(sidebar).toBeHidden()
     await page.getByRole('button', { name: 'Menu' }).click()
@@ -275,10 +286,29 @@ test.describe('the documentation site', () => {
   test('relative links between pages lead to the site’s routes, with their anchors', async ({
     page,
   }) => {
-    await page.goto('/methods/password/')
-    const link = page.locator('main a[href^="/"]').first()
+    await page.goto(at('/methods/password/'))
+    const link = page.locator(`main a[href^="${BASE}"]`).first()
     await expect(link).toBeVisible()
     const href = (await link.getAttribute('href')) as string
-    expect(pages).toContain(href.split('#')[0])
+    expect(pages).toContain(href.slice(BASE.length - 1).split('#')[0])
+  })
+
+  // GitHub Pages serves the site under the repository's name (DOCS_BASE): an address that
+  // leaves the base is another site's, and answers its 404.
+  test('nothing of the site is served outside its base', async ({ page }) => {
+    test.skip(BASE === '/', 'the site is served at the root')
+    const response = await page.goto('/quickstart/')
+    expect(response?.status()).toBe(404)
+    await page.goto(at('/quickstart/'))
+    const outside = await page
+      .locator('a[href], link[href], script[src], img[src]')
+      .evaluateAll(
+        (nodes, base) =>
+          nodes
+            .map((node) => node.getAttribute('href') ?? node.getAttribute('src') ?? '')
+            .filter((value) => value.startsWith('/') && !value.startsWith(base)),
+        BASE
+      )
+    expect(outside).toEqual([])
   })
 })

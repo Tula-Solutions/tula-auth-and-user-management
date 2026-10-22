@@ -90,7 +90,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | --- | --- |
 | `apps/api` | `@tula-tech/api` — the Bun + Hono auth server (data plane). |
 | `apps/dashboard` | `@tula-tech/dashboard` — the operator's dashboard: a Vite + React single-page app the API serves at `/dashboard` ([ADR 0032](docs/adr/0032-dashboard.md), [docs/dashboard.md](docs/dashboard.md), `apps/dashboard/README.md`). Private, never published. |
-| `apps/docs` | `@tula-tech/docs` — the documentation site: `docs/**/*.md` prerendered to static HTML, search and an error-code reference included. Private; the API does not serve it, no image holds it, nothing deploys it (`apps/docs/README.md`). |
+| `apps/docs` | `@tula-tech/docs` — the documentation site: `docs/**/*.md` prerendered to static HTML, search and an error-code reference included. Private; the API does not serve it and no image holds it; `.github/workflows/docs-pages.yml` publishes it to GitHub Pages from `develop` (`apps/docs/README.md`). |
 | `packages/contract` | `@tula-tech/contract` — Zod schemas, flow protocol, error codes, token claims, password policy, OpenAPI snapshot. Imported by the API and every TS SDK. |
 | `packages/db` | `@tula-tech/db` — Drizzle schema, committed migrations, RLS policies, tenant helpers, seed. |
 | `packages/tsconfig` | Shared tsconfig bases. |

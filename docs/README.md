@@ -107,6 +107,6 @@ The example apps: [Next.js](../examples/nextjs-app-router/README.md),
 | [Architecture decisions](adr/) | One record per decision, with the reasoning the pages above link to. |
 | [Phase 1 plan](plans/phase-1.md) | What was built, in what order, and the exit criteria with their evidence. |
 | [Phase 2 plan](plans/phase-2.md) | Approved: webhooks, hooks, SMS, more providers, the Expo, Swift and Kotlin SDKs; the decisions it was started on. |
-| [Documentation site](../apps/docs/README.md) | `bun run docs-site:dev` builds these pages as a static site and serves it on this machine; nothing deploys it. |
+| [Documentation site](../apps/docs/README.md) | These pages as a static site, published from `develop` at https://tula-solutions.github.io/tula-auth-and-user-management/; `bun run docs-site:dev` builds it and serves it on this machine. |
 | [Releasing](releasing.md) | How the packages are built, packed and checked. |
 | [Business plan](business-plan.md) | Product context. |
