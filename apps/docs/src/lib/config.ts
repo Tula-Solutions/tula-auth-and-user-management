@@ -32,3 +32,13 @@ export const BASE = resolveBase()
 
 /** The name shown in the header and in every page's title. */
 export const SITE_NAME = 'Tula Auth docs'
+
+/**
+ * Where the published site lives, for the addresses a crawler or a chat client needs in full
+ * (the Open Graph image). The page's own links stay under {@link BASE}.
+ */
+export const SITE_ORIGIN = 'https://tula-solutions.github.io'
+
+/** What the site is, in one sentence: the description of the landing page and of a card. */
+export const SITE_DESCRIPTION =
+  'Self-hosted authentication and user management with prebuilt UI and native mobile SDKs.'

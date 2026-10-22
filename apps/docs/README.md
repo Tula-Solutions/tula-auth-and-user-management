@@ -22,13 +22,25 @@ bun run --filter @tula-tech/docs generate:check   # render everything in memory:
   (`#password.too_short`). A code added to the contract is on the page in the same build.
 - **A sidebar** from the sections and tables of `docs/README.md`.
 - **Search**: `search-index.json`, written at build time, matched in the browser. No service.
-- **A light and a dark theme**, following the system until the reader chooses one.
+- **A design system**: Geist and Geist Mono self-hosted, warm ink and paper tokens in a light and
+  a dark theme (following the system until the reader chooses one), the Tula logo as an inline
+  SVG, a favicon set, a web manifest and a social card, a header with section tabs, and a shell of
+  sidebar, 720 px prose and table of contents that holds from a 390 px phone to a 2560 px
+  ultrawide. The tokens are in `src/lib/design-tokens.ts`; the design is specified in
+  [`docs/plans/docs-overhaul.md`](../../docs/plans/docs-overhaul.md).
 
 A Markdown file that cannot be rendered, a relative link to a file that does not exist and an
 anchor the target does not have all **fail the build**. A link to a repository file that is not
 a page (an ADR, a package README, a source file) becomes its address on GitHub.
 
 The rules for working on it are in [`.claude/rules/docs-site.md`](../../.claude/rules/docs-site.md).
+
+## Looking at it
+
+`bun run docs-site:dev` serves the build. `bun run apps/docs/scripts/og.ts` rewrites
+`public/og.png` (needs Playwright's Chromium). The browser tests (`bun run e2e --project=docs`)
+open every page in both themes and check the drawer, the theme toggle and the layout at six
+widths (390, 768, 1280, 1440, 1920, 2560).
 
 ## Where it is published
 

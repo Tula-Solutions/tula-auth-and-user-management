@@ -1,16 +1,17 @@
-import { Menu, Moon, Search, Sun } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { Button } from '~/components/ui/button'
-import { Input } from '~/components/ui/input'
+import { SITE_NAME, SITE_ORIGIN } from '~/lib/config'
 import type { Heading } from '~/lib/markdown'
 import type { NavGroup, NavItem } from '~/lib/nav'
+import { buildSections, type Section, sectionHome, sectionOf } from '~/lib/sections'
+import { Header } from './header'
 
 /** What a page needs from the build to be drawn. */
 export interface Frame {
   /** The path the site is served under. */
   base: string
-  /** The site's stylesheet and script, as the bundler named them. */
-  assets: { css: string[]; js: string }
+  /** The site's stylesheet and script, as the bundler named them, and the fonts to preload. */
+  assets: { css: string[]; js: string; fonts?: string[] }
   nav: NavGroup[]
 }
 
@@ -31,9 +32,12 @@ export interface PageProps {
  */
 const THEME_SCRIPT = `(function(){try{var s=localStorage.getItem('tula-docs-theme');var t=s==='light'||s==='dark'?s:(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t)}catch(e){}})()`
 
+/** The two background colours the browser's own chrome takes, one for each scheme. */
+const THEME_COLORS = { light: '#FAF9F5', dark: '#141412' } as const
+
 function NavList({ items, route, base }: { items: NavItem[]; route: string; base: string }) {
   return (
-    <ul className='m-0 list-none space-y-0.5 p-0'>
+    <ul className='nav-list'>
       {items.map((item) => (
         <li key={item.route}>
           <a
@@ -44,7 +48,7 @@ function NavList({ items, route, base }: { items: NavItem[]; route: string; base
             {item.label}
           </a>
           {item.children.length > 0 ? (
-            <div className='ml-3 border-l pl-1'>
+            <div className='nav-children'>
               <NavList items={item.children} route={route} base={base} />
             </div>
           ) : null}
@@ -55,105 +59,102 @@ function NavList({ items, route, base }: { items: NavItem[]; route: string; base
 }
 
 /**
- * The sidebar: the groups of `docs/README.md`.
+ * The sidebar: the groups of the current tab, which come from `docs/README.md`. Below 1024 px
+ * it is the drawer, and then also lists the tabs, which the header has no room for.
  *
- * @param props - The groups, the current route and the base path.
- * @returns A navigation landmark.
+ * @param props - The tabs, the current one, the current route and the base path.
+ * @returns The sidebar's container with a navigation landmark inside.
  */
-export function Sidebar({ nav, route, base }: { nav: NavGroup[]; route: string; base: string }) {
+export function Sidebar({
+  sections,
+  active,
+  route,
+  base,
+}: {
+  sections: readonly Section[]
+  active: Section | undefined
+  route: string
+  base: string
+}) {
+  const prefix = base.replace(/\/$/, '')
   return (
-    <nav aria-label='Documentation' className='space-y-5 text-sm'>
-      <a
-        className='nav-link'
-        href={`${base.replace(/\/$/, '')}/docs/`}
-        aria-current={route === '/docs/' ? 'page' : undefined}
-      >
-        Overview
-      </a>
-      {nav.map((group) => (
-        <div key={group.title}>
-          <h2 className='mb-1 px-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground'>
-            {group.title}
-          </h2>
-          <NavList items={group.items} route={route} base={base} />
-        </div>
-      ))}
-    </nav>
+    <div
+      id='sidebar'
+      className='sidebar'
+      data-open='false'
+      data-drawer-only={active === undefined ? 'true' : undefined}
+    >
+      <nav aria-label='Documentation'>
+        <ul className='drawer-sections'>
+          {sections.map((section) => (
+            <li key={section.id}>
+              <a
+                href={`${prefix}${sectionHome(section)}`}
+                aria-current={section.id === active?.id ? 'true' : undefined}
+              >
+                {section.label}
+              </a>
+            </li>
+          ))}
+        </ul>
+        <a
+          className='nav-link'
+          href={`${prefix}/docs/`}
+          aria-current={route === '/docs/' ? 'page' : undefined}
+        >
+          Overview
+        </a>
+        {(active?.groups ?? []).map((group) => (
+          <div className='nav-group' key={group.title}>
+            <h2 className='nav-group-title'>{group.title}</h2>
+            <NavList items={group.items} route={route} base={base} />
+          </div>
+        ))}
+      </nav>
+    </div>
   )
 }
 
-function Header({ base }: { base: string }) {
+/** The head's links to the icons, the manifest and the social card. */
+function SiteIdentity({
+  base,
+  title,
+  description,
+}: {
+  base: string
+  title: string
+  description: string
+}) {
+  const image = `${SITE_ORIGIN}${base}og.png`
   return (
-    <header className='sticky top-0 z-40 border-b bg-background'>
-      <div className='mx-auto flex h-14 max-w-[88rem] items-center gap-2 px-4'>
-        <Button
-          type='button'
-          variant='ghost'
-          size='icon'
-          id='menu-toggle'
-          className='lg:hidden'
-          aria-label='Menu'
-          aria-expanded='false'
-          aria-controls='sidebar'
-        >
-          <Menu aria-hidden='true' />
-        </Button>
-        <a
-          href={base}
-          className='mr-2 shrink-0 whitespace-nowrap font-semibold text-foreground no-underline'
-        >
-          Tula Auth <span className='hidden font-normal text-muted-foreground sm:inline'>docs</span>
-        </a>
-        <search className='relative ml-auto block w-full min-w-0 max-w-sm'>
-          <label htmlFor='search-input' className='sr-only'>
-            Search the documentation
-          </label>
-          <Search
-            aria-hidden='true'
-            className='pointer-events-none absolute left-2.5 top-2.5 size-4 text-muted-foreground'
-          />
-          <Input
-            id='search-input'
-            type='search'
-            placeholder='Search'
-            autoComplete='off'
-            spellCheck={false}
-            aria-controls='search-results'
-            className='pl-8'
-          />
-          <div
-            id='search-panel'
-            hidden
-            className='absolute right-0 top-11 z-50 max-h-[70vh] w-[min(32rem,calc(100vw-2rem))] overflow-y-auto rounded-lg border bg-popover p-1 text-popover-foreground shadow-lg'
-          >
-            <ul
-              id='search-results'
-              aria-label='Search results'
-              className='search-results m-0 list-none p-0'
-            />
-          </div>
-          <div id='search-status' role='status' className='sr-only' />
-        </search>
-        <Button
-          type='button'
-          variant='ghost'
-          size='icon'
-          id='theme-toggle'
-          aria-label='Dark theme'
-          aria-pressed='false'
-        >
-          <Sun aria-hidden='true' className='hidden dark:block' />
-          <Moon aria-hidden='true' className='dark:hidden' />
-        </Button>
-      </div>
-    </header>
+    <>
+      <link rel='icon' href={`${base}favicon.ico`} sizes='48x48' />
+      <link rel='icon' href={`${base}favicon.svg`} type='image/svg+xml' sizes='any' />
+      <link rel='apple-touch-icon' href={`${base}apple-touch-icon.png`} />
+      <link rel='manifest' href={`${base}site.webmanifest`} />
+      <meta name='theme-color' content={THEME_COLORS.light} media='(prefers-color-scheme: light)' />
+      <meta name='theme-color' content={THEME_COLORS.dark} media='(prefers-color-scheme: dark)' />
+      <meta property='og:site_name' content={SITE_NAME} />
+      <meta property='og:type' content='website' />
+      <meta property='og:title' content={title} />
+      <meta property='og:description' content={description} />
+      <meta property='og:image' content={image} />
+      <meta property='og:image:width' content='1200' />
+      <meta property='og:image:height' content='630' />
+      <meta property='og:image:alt' content='Tula Auth: ink and paper, in balance' />
+      <meta name='twitter:card' content='summary_large_image' />
+      <meta name='twitter:title' content={title} />
+      <meta name='twitter:description' content={description} />
+      <meta name='twitter:image' content={image} />
+    </>
   )
 }
 
 /**
  * A whole document: head, header, sidebar, the page, and the table of contents.
  *
- * @param props - The page and the build's frame.
+ * @param props - The page and the build's frame. `children` replaces the article (the landing
+ *   page and the 404 page), and then there is no column layout.
  * @returns The `<html>` element, to be rendered to static markup.
  */
 export function Document({
@@ -166,17 +167,27 @@ export function Document({
   children?: ReactNode
 }) {
   const { base } = frame
+  const sections = buildSections(frame.nav)
+  // The documentation index belongs to the first tab; the landing and 404 pages to none.
+  const active =
+    sectionOf(sections, page.route) ?? (page.route === '/docs/' ? sections[0] : undefined)
   const toc = page.headings.filter((heading) => heading.depth === 2)
+  const hasToc = children === undefined && toc.length > 1
+  const title = page.route === '/' ? page.title : `${page.title} · ${SITE_NAME}`
   return (
     <html lang='en'>
       <head>
         <meta charSet='utf-8' />
-        <meta name='viewport' content='width=device-width, initial-scale=1' />
+        <meta name='viewport' content='width=device-width, initial-scale=1, viewport-fit=cover' />
         <meta name='color-scheme' content='light dark' />
-        <title>{page.route === '/' ? page.title : `${page.title} · Tula Auth docs`}</title>
+        <title>{title}</title>
         <meta name='description' content={page.description} />
+        <SiteIdentity base={base} title={title} description={page.description} />
         {/* biome-ignore lint/security/noDangerouslySetInnerHtml: a constant script, no input */}
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        {(frame.assets.fonts ?? []).map((href) => (
+          <link key={href} rel='preload' as='font' type='font/woff2' href={href} crossOrigin='' />
+        ))}
         {frame.assets.css.map((href) => (
           <link key={href} rel='stylesheet' href={href} />
         ))}
@@ -187,40 +198,60 @@ export function Document({
         <a href='#content' className='skip-link'>
           Skip to content
         </a>
-        <Header base={base} />
-        <div className='mx-auto flex max-w-[88rem] gap-8 px-4'>
-          <div
-            id='sidebar'
-            data-open='false'
-            className='fixed inset-x-0 bottom-0 top-14 z-30 hidden overflow-y-auto bg-background p-4 data-[open=true]:block lg:sticky lg:top-14 lg:block lg:h-[calc(100vh-3.5rem)] lg:w-64 lg:shrink-0 lg:self-start lg:p-0 lg:py-6'
-          >
-            <Sidebar nav={frame.nav} route={page.route} base={base} />
+        <Header base={base} sections={sections} active={active?.id} />
+        <div id='scrim' className='scrim' data-open='false' aria-hidden='true' />
+        {children === undefined ? (
+          <div className='shell layout' data-toc={hasToc ? '' : undefined}>
+            <Sidebar sections={sections} active={active} route={page.route} base={base} />
+            <main id='content' className='main' tabIndex={-1}>
+              <div className='page-head'>
+                {active === undefined ? null : <span className='page-eyebrow'>{active.label}</span>}
+                {/* Slot: the page's actions (copy as Markdown and the like). */}
+                <div className='page-actions' data-slot='page-actions' />
+              </div>
+              {hasToc ? (
+                <details className='toc-mobile'>
+                  <summary>
+                    On this page
+                    <ChevronDown aria-hidden='true' />
+                  </summary>
+                  <nav aria-label='Page contents'>
+                    <ul className='toc-list'>
+                      {toc.map((heading) => (
+                        <li key={heading.id}>
+                          <a href={`#${heading.id}`}>{heading.text}</a>
+                        </li>
+                      ))}
+                    </ul>
+                  </nav>
+                </details>
+              ) : null}
+              {/* biome-ignore lint/security/noDangerouslySetInnerHtml: the build's own render of docs/** */}
+              <article className='doc' dangerouslySetInnerHTML={{ __html: page.html }} />
+            </main>
+            {hasToc ? (
+              <aside className='toc'>
+                <nav aria-label='On this page'>
+                  <h2 className='toc-title'>On this page</h2>
+                  <ul className='toc-list'>
+                    {toc.map((heading) => (
+                      <li key={heading.id}>
+                        <a href={`#${heading.id}`}>{heading.text}</a>
+                      </li>
+                    ))}
+                  </ul>
+                </nav>
+              </aside>
+            ) : null}
           </div>
-          <main id='content' className='min-w-0 flex-1 py-8' tabIndex={-1}>
-            {children ?? (
-              // biome-ignore lint/security/noDangerouslySetInnerHtml: the build's own render of docs/**
-              <article className='doc max-w-3xl' dangerouslySetInnerHTML={{ __html: page.html }} />
-            )}
-          </main>
-          {toc.length > 1 ? (
-            <div className='hidden w-56 shrink-0 self-start py-8 xl:sticky xl:top-14 xl:block xl:max-h-[calc(100vh-3.5rem)] xl:overflow-y-auto'>
-              <nav aria-label='On this page' className='text-sm'>
-                <h2 className='mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground'>
-                  On this page
-                </h2>
-                <ul className='m-0 list-none space-y-1 p-0'>
-                  {toc.map((heading) => (
-                    <li key={heading.id}>
-                      <a className='nav-link' href={`#${heading.id}`}>
-                        {heading.text}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              </nav>
-            </div>
-          ) : null}
-        </div>
+        ) : (
+          <>
+            <Sidebar sections={sections} active={undefined} route={page.route} base={base} />
+            <main id='content' tabIndex={-1}>
+              {children}
+            </main>
+          </>
+        )}
       </body>
     </html>
   )
