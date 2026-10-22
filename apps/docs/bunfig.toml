@@ -1,0 +1,14 @@
+[test]
+# No `timeout` here: Bun does not read one from bunfig.toml. The tests that render the whole of
+# docs/ (`src/lib/site.test.ts`) pass a limit of their own, with the reason.
+coverageSkipTestFiles = true
+coverageThreshold = { lines = 0.8, functions = 0.8 }
+# The browser script is exercised by the `docs` Playwright project, not by `bun test`; the
+# shadcn primitives are not this package's to test; scripts are thin launchers.
+coveragePathIgnorePatterns = [
+  "../../packages/**",
+  "src/client/**",
+  "src/components/ui/**",
+  "src/testing/**",
+  "scripts/**",
+]

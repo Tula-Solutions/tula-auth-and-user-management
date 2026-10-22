@@ -1,4 +1,4 @@
-import { defineConfig, devices } from '@playwright/test'
+import { defineConfig, devices, type PlaywrightTestConfig } from '@playwright/test'
 
 // Browser tests for @tula-tech/react (plan rule 3): the example app, built from the components
 // only, against the real API served in process with memory adapters (e2e/server.ts). A second
@@ -17,6 +17,20 @@ const PUBLISHABLE_KEY = 'tula_pk_dev_e2e000000000000000000000000000000'
 const NEXT_URL = 'http://localhost:4319'
 const SECRET_KEY = 'tula_sk_dev_e2e000000000000000000000000000000'
 const ENVIRONMENT_ID = '00000000-0000-7000-8000-00000000e001'
+// The documentation site (apps/docs): built once, then served as static files. It needs no API,
+// so a run of this project alone starts nothing else (see `docsOnly`).
+const DOCS_URL = 'http://127.0.0.1:4321'
+
+// `--project=docs` (or E2E_DOCS_ONLY=1) starts only the docs server: Playwright launches every
+// `webServer` of the config whatever project is selected, and the docs project has no use for
+// the API fixture or the Next.js build.
+const docsOnly =
+  process.env.E2E_DOCS_ONLY === '1' ||
+  process.argv.some(
+    (argument, index) =>
+      argument === '--project=docs' ||
+      (argument === '--project' && process.argv[index + 1] === 'docs')
+  )
 
 export default defineConfig({
   testDir: './tests',
@@ -55,13 +69,39 @@ export default defineConfig({
       testMatch: /dashboard\/.*\.spec\.ts/,
       use: { ...devices['Desktop Chrome'], baseURL: `${API_URL}/dashboard/` },
     },
+    // The documentation site (apps/docs), built and served as static files: no API behind it.
+    {
+      name: 'docs',
+      testMatch: /docs\/.*\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'], baseURL: DOCS_URL },
+    },
     {
       name: 'chromium',
-      testIgnore: [/nextjs\//, /dashboard\//],
+      testIgnore: [/nextjs\//, /dashboard\//, /docs\//],
       use: { ...devices['Desktop Chrome'] },
     },
   ],
   webServer: [
+    ...(docsOnly ? [] : apiServers()),
+    {
+      // The site is built from docs/** and apps/docs, then served from its output directory.
+      // `exec`: the server must be the process Playwright stops.
+      command: 'bun run docs-site:build && DOCS_PORT=4321 exec bun run apps/docs/scripts/serve.ts',
+      cwd: `${import.meta.dirname}/..`,
+      url: DOCS_URL,
+      reuseExistingServer: !process.env.CI,
+      timeout: 180_000,
+      stdout: 'ignore',
+      stderr: 'pipe',
+    },
+  ],
+})
+
+type WebServer = Extract<PlaywrightTestConfig['webServer'], unknown[]>[number]
+
+/** The fixture API (with the two example apps) and the Next.js example's server. */
+function apiServers(): WebServer[] {
+  return [
     {
       // The example is built with the fixture's fixed API URL and key, and the dashboard as the
       // image builds it; then the fixture serves both.
@@ -95,5 +135,5 @@ export default defineConfig({
       stdout: 'ignore',
       stderr: 'pipe',
     },
-  ],
-})
+  ]
+}

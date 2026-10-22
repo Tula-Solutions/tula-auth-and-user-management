@@ -90,6 +90,7 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | --- | --- |
 | `apps/api` | `@tula-tech/api` — the Bun + Hono auth server (data plane). |
 | `apps/dashboard` | `@tula-tech/dashboard` — the operator's dashboard: a Vite + React single-page app the API serves at `/dashboard` ([ADR 0032](docs/adr/0032-dashboard.md), [docs/dashboard.md](docs/dashboard.md), `apps/dashboard/README.md`). Private, never published. |
+| `apps/docs` | `@tula-tech/docs` — the documentation site: `docs/**/*.md` prerendered to static HTML, search and an error-code reference included. Private; the API does not serve it, no image holds it, nothing deploys it (`apps/docs/README.md`). |
 | `packages/contract` | `@tula-tech/contract` — Zod schemas, flow protocol, error codes, token claims, password policy, OpenAPI snapshot. Imported by the API and every TS SDK. |
 | `packages/db` | `@tula-tech/db` — Drizzle schema, committed migrations, RLS policies, tenant helpers, seed. |
 | `packages/tsconfig` | Shared tsconfig bases. |
@@ -156,6 +157,7 @@ above or below and the file it is in has none of that name, the section is in th
 | Compose screens (`native/android/tula-auth-ui`, `tula-auth-compose`, see ADR 0061 and ADR 0062) | `.claude/rules/kotlin.md` |
 | React SDK (see ADR 0022) | `.claude/rules/react.md` |
 | Dashboard app (`apps/dashboard`, see ADR 0032) | `.claude/rules/dashboard.md` |
+| Documentation site (`apps/docs`) | `.claude/rules/docs-site.md` |
 | Expo SDK (`packages/expo`, see ADR 0046, ADR 0048, ADR 0052 and ADR 0055) | `.claude/rules/expo.md` |
 | Expo native screens (`packages/expo-screens`, see ADR 0063) | `.claude/rules/expo-screens.md` |
 | Tula UI: the copy-in registry and the headless layer it calls (`packages/ui`, see ADR 0064) | `.claude/rules/tula-ui.md` |
@@ -689,6 +691,7 @@ bun run --filter create-tula templates:sync
 bun run dashboard:generate  # regenerate the dashboard's hooks, route tree and theme tokens
 bun run dashboard:dev       # the dashboard on http://localhost:5175/dashboard/, proxying /v1 to the API
 bun run dashboard:build     # apps/dashboard/dist, which `bun run dev` then serves at /dashboard
+bun run docs-site:dev        # build the documentation site and serve it on http://127.0.0.1:4321/ (docs-site:build only builds)
 bun run docs:generate       # rewrite docs/reference/ from the JSDoc and fill the docs' snippet blocks
 bun run docs:check          # fail if either is out of date (part of verify)
 bun run packages:check      # build, pack, publint + attw every publishable package (part of verify)

@@ -1,0 +1,180 @@
+import { beforeAll, describe, expect, test } from 'bun:test'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { LANDING_LINKS } from '../components/landing'
+import { ERROR_CODES_ROUTE, errorCodeEntries } from './error-codes'
+import { navRoutes } from './nav'
+import { collectPages } from './pages'
+import { search } from './search'
+import {
+  buildSite,
+  fileOfRoute,
+  LANDING_ROUTE,
+  repositoryEnvironment,
+  type Site,
+  writeSite,
+} from './site'
+import { tokensCss } from './tokens'
+
+// The whole of docs/ is rendered once (shiki loads its grammars, then 49 pages): two seconds here
+// and several on a slow runner, over Bun's five for a hook. The limit is this file's own, given
+// to the hooks and tests that render it; no package-wide flag.
+let site: Site
+beforeAll(async () => {
+  site = await buildSite({ css: ['/assets/main.css'], js: '/assets/main.js' })
+}, 60_000)
+
+describe('the site built from docs/', () => {
+  test('every in-scope Markdown file has a page, besides the landing page and the error codes', () => {
+    const routes = site.pages.map((page) => page.route).sort()
+    const expected = [...collectPages().map((page) => page.route), ERROR_CODES_ROUTE].sort()
+    expect(routes).toEqual(expected)
+    expect([...site.documents.keys()].sort()).toEqual([LANDING_ROUTE, ...expected].sort())
+  })
+
+  test('every page is a whole document with the site’s script and stylesheet', () => {
+    for (const [route, html] of site.documents) {
+      expect(html.startsWith('<!doctype html>'), route).toBe(true)
+      expect(html, route).toContain('<link rel="stylesheet" href="/assets/main.css"/>')
+      expect(html, route).toContain('src="/assets/main.js"')
+      expect(html, route).toContain('<h1')
+      expect(html, route).not.toContain('<!-- snippet')
+    }
+  })
+
+  test('the sidebar lists every page once, the error codes among them', () => {
+    const listed = navRoutes(site.nav)
+    expect(new Set(listed).size).toBe(listed.length)
+    expect(listed).toContain(ERROR_CODES_ROUTE)
+    const pages = collectPages()
+      .map((page) => page.route)
+      .filter((route) => route !== '/docs/')
+    for (const route of pages) {
+      expect(listed, route).toContain(route)
+    }
+  })
+
+  test('the sidebar is derived from the README’s sections', () => {
+    expect(site.nav.map((group) => group.title)).toEqual(
+      expect.arrayContaining(['Start here', 'Sign-in methods', 'SDK reference'])
+    )
+    expect(site.nav[0]?.items[0]).toEqual({
+      label: 'Quickstart',
+      route: '/quickstart/',
+      children: [],
+    })
+  })
+
+  test('the landing page links only to pages that exist', () => {
+    const routes = new Set(site.pages.map((page) => page.route))
+    for (const link of LANDING_LINKS) {
+      expect(routes.has(link.route), link.route).toBe(true)
+    }
+    expect(site.documents.get(LANDING_ROUTE)).toContain('href="/quickstart/"')
+  })
+
+  test('a code block of a method page is highlighted, and its snippet markers are gone', () => {
+    const html = site.documents.get('/methods/password/') as string
+    expect(html).toContain('class="shiki')
+    expect(html).not.toContain('snippet:')
+  })
+
+  test('links between pages are routes, with their anchors', () => {
+    const html = site.documents.get('/methods/password/') as string
+    expect(html).toContain('href="/dashboard/"')
+    expect(html).not.toMatch(/href="[^"#:]*\.md/)
+  })
+
+  test('a link to an ADR leaves for GitHub', () => {
+    const html = site.documents.get('/methods/password/') as string
+    expect(html).toContain(
+      'href="https://github.com/Tula-Solutions/tula-auth-and-user-management/blob/develop/docs/adr/0006-passwords.md"'
+    )
+  })
+
+  test('the quickstart’s screenshot is copied and shown from the site', () => {
+    expect(site.assets).toContain('docs/assets/quickstart-sign-in.png')
+    expect(site.documents.get('/quickstart/')).toContain(
+      'src="/files/docs/assets/quickstart-sign-in.png"'
+    )
+  })
+
+  test('every error code of the contract is findable in the search index', () => {
+    for (const { code } of errorCodeEntries()) {
+      expect(search(site.index, code, 1)[0]?.u).toBe(`${ERROR_CODES_ROUTE}#${code}`)
+    }
+  })
+
+  test('searching password.too_short finds its anchor', () => {
+    expect(search(site.index, 'password.too_short')[0]).toMatchObject({
+      t: 'password.too_short',
+      u: '/reference/error-codes/#password.too_short',
+    })
+  })
+
+  test('the pages carry a title, a description and a table of contents source', () => {
+    for (const page of site.pages) {
+      expect(page.title, page.route).not.toBe('')
+      expect(page.description, page.route).not.toBe('')
+      expect(page.headings.length, page.route).toBeGreaterThan(0)
+    }
+  })
+
+  test('the unknown-address page exists', () => {
+    expect(site.notFound).toContain('Page not found')
+  })
+})
+
+describe('writeSite', () => {
+  test('writes one index.html per route, the search index and the copied images', async () => {
+    const out = mkdtempSync(join(tmpdir(), 'docs-site-'))
+    try {
+      await writeSite(site, out)
+      expect(existsSync(join(out, 'index.html'))).toBe(true)
+      expect(existsSync(fileOfRoute(out, '/methods/password/'))).toBe(true)
+      expect(existsSync(join(out, '404.html'))).toBe(true)
+      expect(existsSync(join(out, 'files/docs/assets/quickstart-sign-in.png'))).toBe(true)
+      const index = JSON.parse(readFileSync(join(out, 'search-index.json'), 'utf8')) as unknown[]
+      expect(index.length).toBe(site.index.length)
+      const listed = JSON.parse(readFileSync(join(out, 'pages.json'), 'utf8')) as string[]
+      expect(listed).toContain('/reference/error-codes/')
+    } finally {
+      rmSync(out, { recursive: true, force: true })
+    }
+  }, 30_000)
+
+  test('fileOfRoute puts a route in its own directory', () => {
+    expect(fileOfRoute('/out', '/')).toBe('/out/index.html')
+    expect(fileOfRoute('/out', '/a/b/')).toBe('/out/a/b/index.html')
+  })
+})
+
+describe('the site under a base path', () => {
+  test('every address it writes carries the base', async () => {
+    const under = await buildSite({ css: [], js: '' }, '/docs-site/')
+    expect(under.documents.get('/quickstart/')).toContain('href="/docs-site/methods/password/"')
+    expect(under.index[0]?.u.startsWith('/docs-site/')).toBe(true)
+  }, 60_000)
+})
+
+describe('repositoryEnvironment', () => {
+  test('reads the repository: files, directories, anchors of Markdown the site does not render', () => {
+    const environment = repositoryEnvironment(collectPages(), new Map(), '/')
+    expect(environment.kind('docs')).toBe('directory')
+    expect(environment.kind('docs/quickstart.md')).toBe('file')
+    expect(environment.kind('docs/not-there.md')).toBeNull()
+    expect(environment.anchorsOf('docs/adr/0006-passwords.md')?.size).toBeGreaterThan(0)
+    expect(environment.anchorsOf('docs/assets/quickstart-sign-in.png')).toBeNull()
+  })
+})
+
+describe('tokensCss', () => {
+  test('writes the product’s palette for light, for a dark system, and for a page set to dark', () => {
+    const css = tokensCss()
+    expect(css).toContain('--tula-background:')
+    expect(css).toContain('@media (prefers-color-scheme: dark)')
+    expect(css).toContain(":root:not([data-theme='light'])")
+    expect(css).toContain(":root[data-theme='dark']")
+  })
+})

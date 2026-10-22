@@ -40,6 +40,8 @@
     "dashboard:dev": "bun run --filter @tula-tech/dashboard dev",
     "dashboard:build": "bun run --filter @tula-tech/dashboard build",
     "dashboard:generate": "bun run --filter @tula-tech/dashboard generate",
+    "docs-site:dev": "bun run --filter @tula-tech/docs dev",
+    "docs-site:build": "bun run --filter @tula-tech/docs build",
     "packages:check": "bun run scripts/packages.ts check",
     "packages:states": "bun run scripts/packages.ts states",
     "docs:generate": "bun run scripts/docs.ts",
