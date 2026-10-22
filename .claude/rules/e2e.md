@@ -49,3 +49,7 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   only one checkout (or git worktree) can hold 4317 to 4320 at a time, so check them before a
   local run (`lsof -nP -iTCP:4317-4321 -sTCP:LISTEN`) rather than reuse another checkout's
   server, which serves its own build.
+  `.claude/hooks/e2e-projects.test.ts` (in `test:harness`) holds that every project of
+  `playwright.config.ts` is named by exactly one of the two jobs, so a new project is added to
+  one of them in the same change; `e2e/projects.ts` (tested in `e2e/projects.test.ts`) decides
+  which servers a command line starts.
