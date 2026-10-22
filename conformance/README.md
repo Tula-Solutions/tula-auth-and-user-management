@@ -43,6 +43,7 @@ bun run conformance
 | `CONFORMANCE_WEBHOOK_RECEIVER_HOST` | none | An address of this machine that the server can reach, for the [webhook scenarios](#the-webhook-scenarios-need-a-receiver-the-server-can-reach): `127.0.0.1` for a server running on this machine in the `local` tier. Without it, scenarios marked `needsWebhookReceiver` are skipped. |
 | `CONFORMANCE_SMS_INBOX_URLS` | none | The origins whose development SMS inbox the runner reads (`GET /v1/dev/sms/messages`), separated by commas: every instance of the deployment, each on its own address, because an instance keeps its own inbox (`http://localhost:3003,http://localhost:3004` for the packaged stack, also when the run goes through the proxy). The server needs `SMS_PROVIDER=dev`. Without it, scenarios marked `needsSmsInbox` are skipped. |
 | `CONFORMANCE_SECOND_BASE_URL` | none | Origin of a second instance of the same deployment (same database, Redis and keys), e.g. `http://localhost:3004` for the packaged stack. Steps marked `"instance": "second"` go there. Without it they go to `CONFORMANCE_BASE_URL`, and the run's last line says `(one instance)`. |
+| `CONFORMANCE_ENVIRONMENTS` | none | More environments of the same server, as `publishableKey:secretKey` pairs separated by commas ([below](#several-environments-at-once)). With them the scenarios run at the same time, one at a time in each environment. |
 
 Use a development environment: every run creates users (with `@example.com` addresses) and
 audit entries, and leaves them there. A full run takes about ten minutes, most of
@@ -107,6 +108,30 @@ The run against the two ports (`CONFORMANCE_SECOND_BASE_URL`) stays the one that
 particular request went to a particular instance. CI runs both at once, each against a
 Compose project of its own (the `self-host` job in `.github/workflows/ci.yml`, with the
 settings of `docker/self-host/one-address.env` and `two-ports.env`).
+
+## Several environments at once
+
+Almost all of a run is waiting (see above), and the scenarios do not depend on each other, so
+the waits can overlap. A scenario changes its environment's settings and puts them back in
+`cleanup`, which is why two of them never run in one environment at once; but each can run
+in an environment of its own. With `CONFORMANCE_ENVIRONMENTS` the runner makes one lane for the
+primary environment and one for each pair named there, and every lane runs one scenario at a
+time, starting with the longest. The report is printed as scenarios finish, not in file
+order, and starts with a line saying how many environments the run uses; the summary line is
+the same as for a run in one environment.
+
+```bash
+# in the packaged stack: seven more environments (a workspace of their own), keys printed once
+docker compose --profile app run --rm -T api bun run src/scripts/create-environments.ts --count 7
+CONFORMANCE_ENVIRONMENTS=tula_pk_dev_…:tula_sk_dev_…,tula_pk_dev_…:tula_sk_dev_… bun run conformance
+```
+
+What the lanes share is the server, its Redis and the mail and SMS inboxes. Nothing in a
+scenario depends on those being empty: every scenario presents a client address of its own,
+generates its own addresses and numbers, and reads a code only from the newest message to its
+own recipient. A scenario that could not run beside others would be marked in `lanes.ts`
+(`runScenarios`' `serial` option: it then runs alone, after the rest); none is.
+CI's `self-host` job uses it for both runs.
 
 ## Scenario format
 
