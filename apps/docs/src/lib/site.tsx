@@ -24,6 +24,7 @@ import {
 import { type NativeManifest, type NativePlatform, parseManifest } from './native-captures'
 import { buildNav, type NavGroup } from './nav'
 import { checkPage } from './page-check'
+import { ERROR_CODES_SOURCE } from './page-source'
 import { collectPages, type SourcePage } from './pages'
 import { type ReleaseInfo, versionBases } from './release'
 import { buildIndex, type SearchEntry } from './search'
@@ -43,6 +44,8 @@ export interface BuiltPage {
   /** Everything a link may point at in the page: heading ids and explicit anchors. */
   ids: ReadonlySet<string>
   sections: Section[]
+  /** The date (`YYYY-MM-DD`) its source last changed, when the build was given git's answer. */
+  updated?: string
 }
 
 /** The site, built and not yet written. */
@@ -248,6 +251,7 @@ export async function buildSite(
       headings: doc.headings,
       ids: doc.ids,
       sections: doc.sections,
+      updated: options.updated?.(source.file),
     })
   }
   if (only === undefined) {
@@ -267,6 +271,7 @@ export async function buildSite(
       headings: errors.headings,
       ids: new Set(errors.headings.map((heading) => heading.id)),
       sections: errors.sections,
+      updated: options.updated?.(ERROR_CODES_SOURCE),
     })
   }
 

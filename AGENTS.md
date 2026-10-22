@@ -656,6 +656,9 @@ bun run scripts/worker-check/check.ts -- docker compose -f docker-compose.yml \
 bun run dev                 # API on http://localhost:3003, docs at /v1/docs
 bun run verify              # full quality gate (what CI runs)
 bun run verify:changed      # affected packages only (what the Stop hook runs)
+bun run verify:static       # verify without the unit tests (CI's `verify-static` job); the tests are
+                            # `test:coverage:{api,dashboard,rest}`, one job each in CI; `verify`'s commands
+                            # are exactly these (.claude/hooks/ci-split.test.ts)
 bun run check               # Biome lint + format check
 bun run format              # Biome format --write
 bun run typecheck

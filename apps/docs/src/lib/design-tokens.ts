@@ -203,6 +203,7 @@ export const COLOR_PAIRS: readonly ColorPair[] = [
   { fg: 'danger', bg: 'surface', min: 4.5, use: 'a danger callout' },
   { fg: 'ok', bg: 'addBg', min: 4.5, use: 'the + beside an added line of code' },
   { fg: 'danger', bg: 'removeBg', min: 4.5, use: 'the - beside a removed line of code' },
+  { fg: 'ok', bg: 'raised', min: 3, use: 'the tick on the copy button' },
   { fg: 'borderStrong', bg: 'bg', min: 3, use: 'the edge of a control' },
   { fg: 'borderStrong', bg: 'raised', min: 3, use: 'the edge of the search box' },
   { fg: 'accent', bg: 'bg', min: 3, use: 'the focus ring on the page' },
