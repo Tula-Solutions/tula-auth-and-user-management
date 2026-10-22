@@ -150,10 +150,16 @@ published to npm: what is published is the registry's JSON, served at `/r/*.json
 
 ### A static docs site
 
-A private static app, **Vite + React + TanStack Router + Tailwind v4 + shadcn**, renders
-`docs/**` as the single source of the documentation, with **live previews** of the
-components running on `@tula-tech/core`'s fake API (no server), and serves the registry at
-`/r/*.json`. The docs stay in `docs/` and are tested as they are
+A private static app (`apps/docs`), **Vite + React + Tailwind v4 + shadcn**, renders
+`docs/**` as the single source of the documentation and serves the registry at `/r/*.json`.
+Each page is **prerendered on its own with `react-dom/server`** to a complete HTML file;
+there is **no client router** and no hydration of the page as a whole. A router would
+hydrate every page, which means shipping the content of `docs/**` (several MB of generated
+reference) to the browser as JavaScript, or fetching each page twice, for links that are
+already plain `<a href>`. The **live previews** of the components, running on
+`@tula-tech/core`'s fake API (no server), come with TULA-94 as **islands**: a small React
+root mounted on the one place in a page that has a preview, hydrating that page only.
+The docs stay in `docs/` and are tested as they are
 (`.claude/hooks/docs.test.ts`); the site is a renderer, not a second copy. **Where it is
 hosted is undecided** and decided in its own ticket: nothing here depends on it, since both
 `bunx shadcn add` and `tula ui add` take a URL.
