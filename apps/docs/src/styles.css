@@ -757,27 +757,23 @@
   color: var(--ink);
   font-weight: 550;
 }
-/* The mark's motif, small: a level beam with a solid and an open end. */
+/*
+ * The logo kit's mark (the geometry of `LogoMark` in `components/logo.tsx`, with a heavier stroke
+ * so that it holds at 20 px) as a mask, painted in `--ink`: ink on the light page and paper on
+ * the dark one, following the theme toggle like the header's logo does.
+ */
 .nav-link[aria-current="page"]::before {
+  --nav-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-78 -60 156 125'%3E%3Cg fill='none' stroke='black' stroke-width='10' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M0 -52V56M-60 -34H60M-26 56H26M-60 -34V-10M60 -34V-10'/%3E%3Ccircle cx='-60' cy='4' r='16' fill='black' stroke='none'/%3E%3Ccircle cx='60' cy='4' r='13'/%3E%3C/g%3E%3C/svg%3E");
   content: "";
   position: absolute;
   inset-inline-end: 12px;
   top: 50%;
-  width: 14px;
-  height: 7px;
+  width: 20px;
+  height: 16px;
   transform: translateY(-50%);
-  background:
-    radial-gradient(circle at 3.5px 3.5px, var(--accent) 3px, transparent 3.4px) left center / 7px
-    7px no-repeat,
-    linear-gradient(var(--accent), var(--accent)) center / 100% 1.5px no-repeat,
-    radial-gradient(
-      circle at 3.5px 3.5px,
-      transparent 1.7px,
-      var(--accent) 2px,
-      var(--accent) 3px,
-      transparent 3.4px
-    )
-    right center / 7px 7px no-repeat;
+  background-color: var(--ink);
+  -webkit-mask: var(--nav-mark) center / contain no-repeat;
+  mask: var(--nav-mark) center / contain no-repeat;
 }
 @media (max-width: 1023.98px) {
   .nav-link[aria-current="page"]::before {
@@ -1381,6 +1377,10 @@
 /* ---------------------------------------------------------------- other */
 
 @media (forced-colors: active) {
+  .nav-link[aria-current="page"]::before {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
   .nav-link[aria-current="page"],
   .tab[aria-current="true"] {
     outline: 1px solid CanvasText;
