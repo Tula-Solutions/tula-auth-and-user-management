@@ -23,9 +23,28 @@ function projectsRunBy(name: string): string[] {
   const commands = (jobs[name]?.steps ?? [])
     .map((step) => step.run ?? '')
     .filter((run) => /\b(bun run e2e|playwright test)\b/.test(run))
-  return commands.flatMap((run) =>
-    [...run.matchAll(/--project[= ]([\w*-]+)/g)].map((match) => match[1] as string)
-  )
+  return commands.flatMap(projectsIn)
+}
+
+/** The projects one command line names. */
+function projectsIn(run: string): string[] {
+  {
+    const found: string[] = []
+    const words = run.split(/\s+/)
+    for (let index = 0; index < words.length; index += 1) {
+      const word = words[index] as string
+      if (word.startsWith('--project=')) {
+        found.push(word.slice('--project='.length))
+      } else if (word === '--project') {
+        // Variadic: every word up to the next option is a project.
+        while (index + 1 < words.length && !(words[index + 1] as string).startsWith('-')) {
+          index += 1
+          found.push(words[index] as string)
+        }
+      }
+    }
+    return found
+  }
 }
 
 // The browser tests run in two CI jobs, split by project because the docs project is slow and
@@ -50,5 +69,16 @@ describe('the Playwright projects and the CI jobs that run them', () => {
         expect(known, `${job} runs ${name}`).toContain(name)
       }
     }
+  })
+
+  test('a variadic --project is read in full', () => {
+    expect(projectsIn('bun run e2e --project docs chromium --workers=4')).toEqual([
+      'docs',
+      'chromium',
+    ])
+    expect(projectsIn('bun run e2e --project=docs --project=chromium')).toEqual([
+      'docs',
+      'chromium',
+    ])
   })
 })

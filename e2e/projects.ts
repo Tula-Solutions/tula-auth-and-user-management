@@ -10,15 +10,24 @@ export interface Servers {
   docs: boolean
 }
 
-/** The project patterns of `--project=x` and `--project x`, as written. */
+/**
+ * The project patterns of `--project=x` and of `--project x y` (the option is variadic: every
+ * argument after a bare `--project` up to the next option is a project).
+ */
 function patternsOf(argv: string[]): string[] {
-  return argv.flatMap((argument, index) => {
+  const found: string[] = []
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index] as string
     if (argument.startsWith('--project=')) {
-      return [argument.slice('--project='.length)]
+      found.push(argument.slice('--project='.length))
+    } else if (argument === '--project') {
+      while (index + 1 < argv.length && !(argv[index + 1] as string).startsWith('-')) {
+        index += 1
+        found.push(argv[index] as string)
+      }
     }
-    const next = argv[index + 1]
-    return argument === '--project' && next !== undefined ? [next] : []
-  })
+  }
+  return found
 }
 
 /** Playwright matches a project name case-insensitively, `*` standing for any run of characters. */

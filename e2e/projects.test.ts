@@ -35,6 +35,21 @@ describe('serversFor', () => {
     })
   })
 
+  test('--project is variadic: every value up to the next option is a project', () => {
+    expect(serversFor(['--project', 'docs', 'chromium'], {}, PROJECTS)).toEqual({
+      api: true,
+      docs: true,
+    })
+    expect(serversFor(['--project', 'nextjs', 'dashboard', '--workers=4'], {}, PROJECTS)).toEqual({
+      api: true,
+      docs: false,
+    })
+    expect(serversFor(['--project', 'docs', '--workers', '4'], {}, PROJECTS)).toEqual({
+      api: false,
+      docs: true,
+    })
+  })
+
   test('projects without docs start no docs server', () => {
     expect(
       serversFor(['--project=nextjs', '--project=dashboard', '--project=chromium'], {}, PROJECTS)
