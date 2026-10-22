@@ -119,3 +119,32 @@ describe('the fonts', () => {
     }
   })
 })
+
+describe('the content components', () => {
+  test('the copy button is drawn only where the page has script', () => {
+    expect(ruleOf(':root:not([data-js]) .doc .copy')).toContain('display: none')
+  })
+
+  test('tabs: without script every panel and its label show; with it the label and the hidden panels go', () => {
+    expect(ruleOf('.doc .docs-tab-label')).not.toContain('display: none')
+    expect(ruleOf('.doc .docs-tabs[data-ready] .docs-tab-label')).toContain('display: none')
+    expect(ruleOf('.doc .docs-tab-panel[hidden]')).toContain('display: none')
+  })
+
+  test('code never wraps: a long line scrolls the block', () => {
+    expect(ruleOf('.doc pre code')).toContain('white-space: pre')
+    expect(ruleOf('.doc pre')).toContain('overflow-x: auto')
+  })
+
+  test('a changed line is told by a mark as well as a colour', () => {
+    expect(ruleOf('.doc .code-frame .line.diff.add::before')).toContain('content: "+"')
+    expect(ruleOf('.doc .code-frame .line.diff.remove::before')).toContain('content: "-"')
+  })
+
+  test('a callout is told by an icon and its word, not by its colour alone', () => {
+    expect(ruleOf('.doc .callout-title::before')).toContain('content: ""')
+    for (const kind of ['tip', 'important', 'warning', 'caution']) {
+      expect(CSS).toContain(`.doc .callout[data-callout="${kind}"] .callout-title::before`)
+    }
+  })
+})

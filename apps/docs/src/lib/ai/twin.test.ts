@@ -208,3 +208,55 @@ describe('errorCodesMarkdown', () => {
     expect(text).toContain('### `rate_limited`')
   })
 })
+
+describe('the content components in a twin', () => {
+  const body = (source: string) =>
+    twinBody({
+      file: 'docs/quickstart.md',
+      route: '/quickstart/',
+      title: 'Q',
+      description: '',
+      source,
+      environment,
+      urls,
+    })
+
+  test('a callout stays a GitHub alert', () => {
+    expect(body('# Q\n\n> [!NOTE]\n> Mind the gap.\n')).toContain('> [!NOTE]\n> Mind the gap.')
+  })
+
+  test('the fences of steps go and the headings stay, so the steps are sections in order', () => {
+    const text = body('# Q\n\n:::steps\n\n### Install\n\nRun it.\n\n### Start\n\nGo.\n\n:::\n')
+    expect(text).not.toContain(':::')
+    expect(text).toBe('# Q\n\n### Install\n\nRun it.\n\n### Start\n\nGo.\n')
+  })
+
+  test('tabs become sequential labelled sections', () => {
+    const text = body('# Q\n\n:::tabs{sync="fw"}\n\n#### Next.js\n\nA.\n\n#### Vite\n\nB.\n\n:::\n')
+    expect(text).not.toContain(':::')
+    expect(text).not.toContain('sync')
+    expect(text.indexOf('#### Next.js')).toBeLessThan(text.indexOf('#### Vite'))
+  })
+
+  test('each block of a code group is labelled with its tab', () => {
+    const text = body(
+      '# Q\n\n:::code-group{sync="pm"}\n\n```sh title="npm"\nnpm i\n```\n\n```sh title="bun"\nbun add\n```\n\n:::\n'
+    )
+    expect(text).toContain('**npm**\n\n```sh title="npm"\nnpm i\n```')
+    expect(text).toContain('**bun**\n\n```sh title="bun"\nbun add\n```')
+    expect(text).not.toContain(':::')
+  })
+
+  test('a parameter table is the table, and a tree is its fence', () => {
+    const text = body(
+      '# Q\n\n:::params\n\n| Name | Description |\n| --- | --- |\n| `a` | b |\n\n:::\n\n```tree\napp/\n  page.tsx\n```\n'
+    )
+    expect(text).toContain('| `a` | b |')
+    expect(text).toContain('```tree\napp/\n  page.tsx\n```')
+    expect(text).not.toContain(':::')
+  })
+
+  test('a fence that was never valid still stops the twin, naming the line', () => {
+    expect(() => body('# Q\n\ntext\n:::steps\n')).toThrow('docs/quickstart.md: line 3')
+  })
+})

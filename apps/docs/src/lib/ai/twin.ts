@@ -3,6 +3,7 @@ import remarkGfm from 'remark-gfm'
 import remarkParse from 'remark-parse'
 import { unified } from 'unified'
 import { visit } from 'unist-util-visit'
+import { BlockError, twinEdits } from '../blocks'
 import type { ErrorCodeEntry } from '../error-codes'
 import { isExternal, type LinkEnvironment, resolveLink } from '../links'
 import { RenderError } from '../markdown'
@@ -89,7 +90,9 @@ function twinAddress(input: TwinInput, target: string): string {
  * and the HTML-only parts taken out.
  *
  * Links to another page become the address of its Markdown twin, links to repository files
- * their address on GitHub, images their copy under `files/`. A `<!-- snippet -->` marker is a
+ * their address on GitHub, images their copy under `files/`. The fences of the content
+ * components (`:::steps`, `:::tabs`, …) are taken out, and each block of a code group is
+ * labelled with its tab; a callout stays `> [!NOTE]`. A `<!-- snippet -->` marker is a
  * comment and goes; the code block between two of them is the snippet already copied in by
  * `docs:generate`, and stays. Any other raw HTML is dropped.
  *
@@ -132,6 +135,16 @@ export function twinBody(input: TwinInput): string {
       text: twinAddress(input, target),
     })
   })
+  // The `:::` fences go and a code group's blocks are labelled, so that tabs read as
+  // sequential labelled sections; callouts and everything else stay as the author wrote them.
+  try {
+    edits.push(...twinEdits(input.source, tree))
+  } catch (error) {
+    if (error instanceof BlockError) {
+      throw new RenderError(input.file, `line ${error.line}: ${error.message}`)
+    }
+    throw error
+  }
   let body = input.source
   for (const edit of edits.sort((a, b) => b.start - a.start)) {
     body = body.slice(0, edit.start) + edit.text + body.slice(edit.end)
