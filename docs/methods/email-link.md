@@ -66,6 +66,16 @@ allowed without being listed.
 
 ## What the user sees
 
+### Try it in the sandbox
+
+:::playground{preset="email-link"}
+
+A sandbox of the sign-in component with the emailed link on: the link arrives in a sandbox inbox
+and can be opened in this browser or in "another browser". It needs a browser with script; the
+screens are described below.
+
+:::
+
 - **Email me a link** beside the other ways to sign in, then "Check your email" with a field
   for the code from the same email.
 - Clicking the link opens a new tab that says the sign-in was confirmed. The tab that asked

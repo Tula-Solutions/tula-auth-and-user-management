@@ -1,5 +1,15 @@
 @import "tailwindcss";
 @import "./styles/tokens.gen.css";
+@import "./styles/shadcn-theme.css";
+
+/*
+ * The playground island has its own stylesheet (playground/playground.css), loaded only by the
+ * pages that hold a playground. Its sources and the primitives only it draws are kept out of
+ * this one, so that the stylesheet every page loads does not grow with the island's classes.
+ */
+@source not "./playground";
+@source not "./client/playground.ts";
+@source not "./components/ui/{badge,label,select,separator,slider,switch,tabs,toggle,toggle-group}.tsx";
 
 /*
  * The site's look. Every colour, radius, shadow, type step and duration is a custom property
@@ -54,8 +64,6 @@
   line-gap-override: 0%;
 }
 
-@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
-
 :root {
   color-scheme: light dark;
   --font-sans-stack:
@@ -77,34 +85,6 @@
     --header-h: 60px;
     --gutter: 32px;
   }
-}
-
-/* The shadcn primitives (src/components/ui) read these names; they map onto the tokens. */
-@theme inline {
-  --color-background: var(--bg);
-  --color-foreground: var(--body);
-  --color-card: var(--surface);
-  --color-card-foreground: var(--body);
-  --color-popover: var(--raised);
-  --color-popover-foreground: var(--body);
-  --color-primary: var(--btn-bg);
-  --color-primary-foreground: var(--btn-fg);
-  --color-secondary: var(--surface);
-  --color-secondary-foreground: var(--ink);
-  --color-muted: var(--surface);
-  --color-muted-foreground: var(--muted);
-  --color-accent: var(--accent-soft);
-  --color-accent-foreground: var(--ink);
-  --color-destructive: var(--danger);
-  --color-link: var(--accent);
-  --color-border: var(--border);
-  --color-input: var(--border-strong);
-  --color-ring: var(--accent);
-  --radius-sm: var(--r-sm);
-  --radius-md: var(--r-md);
-  --radius-lg: var(--r-lg);
-  --font-sans: var(--font-sans-stack);
-  --font-mono: var(--font-mono-stack);
 }
 
 @layer base {
@@ -898,7 +878,14 @@
 
 /* ---------------------------------------------------------------- prose */
 
-/* The prose of a page: the Markdown, rendered. */
+/*
+ * The prose of a page: the Markdown, rendered.
+ *
+ * A rule for a bare element (`.doc p`, `.doc a`, `.doc code`) stops at the playground
+ * (`.pg-host`, the placeholder a `:::playground` writes): the components inside it are not
+ * prose and bring their own zero-specificity styles, which `.doc p` would otherwise win.
+ * `:where()` keeps the exclusion at no specificity, so no rule changes rank against another.
+ */
 .doc {
   min-width: 0;
   overflow-wrap: break-word;
@@ -907,108 +894,108 @@
 .doc > :first-child {
   margin-top: 0;
 }
-.doc h1,
-.doc h2,
-.doc h3,
-.doc h4,
-.doc h5,
-.doc h6 {
+.doc h1:not(:where(.pg-host *)),
+.doc h2:not(:where(.pg-host *)),
+.doc h3:not(:where(.pg-host *)),
+.doc h4:not(:where(.pg-host *)),
+.doc h5:not(:where(.pg-host *)),
+.doc h6:not(:where(.pg-host *)) {
   color: var(--ink);
   text-wrap: balance;
   scroll-margin-top: calc(var(--header-h) + 16px);
 }
-.doc h1 {
+.doc h1:not(:where(.pg-host *)) {
   margin: 0 0 16px;
   font-size: 2rem;
   line-height: 2.5rem;
   font-weight: var(--fw-h1);
   letter-spacing: var(--ls-h1);
 }
-.doc h2 {
+.doc h2:not(:where(.pg-host *)) {
   margin: 56px 0 12px;
   font-size: 1.5rem;
   line-height: 2rem;
   font-weight: var(--fw-h2);
   letter-spacing: var(--ls-h2);
 }
-.doc h3 {
+.doc h3:not(:where(.pg-host *)) {
   margin: 36px 0 8px;
   font-size: 1.1875rem;
   line-height: 1.75rem;
   font-weight: var(--fw-h3);
   letter-spacing: var(--ls-h3);
 }
-.doc h4,
-.doc h5,
-.doc h6 {
+.doc h4:not(:where(.pg-host *)),
+.doc h5:not(:where(.pg-host *)),
+.doc h6:not(:where(.pg-host *)) {
   margin: 28px 0 6px;
   font-size: var(--fs-h4);
   line-height: var(--lh-h4);
   font-weight: var(--fw-h4);
 }
 @media (min-width: 640px) {
-  .doc h1 {
+  .doc h1:not(:where(.pg-host *)) {
     font-size: var(--fs-h1);
     line-height: var(--lh-h1);
   }
-  .doc h2 {
+  .doc h2:not(:where(.pg-host *)) {
     font-size: var(--fs-h2);
     line-height: var(--lh-h2);
   }
-  .doc h3 {
+  .doc h3:not(:where(.pg-host *)) {
     font-size: var(--fs-h3);
     line-height: var(--lh-h3);
   }
 }
 /* The lead: the paragraph under the title. */
-.doc h1 + p {
+.doc h1 + p:not(:where(.pg-host *)) {
   color: var(--muted);
   font-size: 1.0625rem;
   line-height: 1.6875rem;
   letter-spacing: var(--ls-lead);
 }
 @media (min-width: 640px) {
-  .doc h1 + p {
+  .doc h1 + p:not(:where(.pg-host *)) {
     font-size: var(--fs-lead);
     line-height: var(--lh-lead);
   }
 }
-.doc p,
-.doc ul,
-.doc ol,
-.doc blockquote,
+.doc p:not(:where(.pg-host *)),
+.doc ul:not(:where(.pg-host *)),
+.doc ol:not(:where(.pg-host *)),
+.doc blockquote:not(:where(.pg-host *)),
 .doc .code-block,
 .doc .table-wrap,
-.doc details {
+.doc details:not(:where(.pg-host *)) {
   margin: 0 0 16px;
 }
-.doc p {
+.doc p:not(:where(.pg-host *)) {
   text-wrap: pretty;
 }
-.doc strong {
+.doc strong:not(:where(.pg-host *)) {
   color: var(--ink);
   font-weight: 600;
 }
-.doc ul,
-.doc ol {
+.doc ul:not(:where(.pg-host *)),
+.doc ol:not(:where(.pg-host *)) {
   padding-left: 1.5rem;
 }
-.doc ul {
+.doc ul:not(:where(.pg-host *)) {
   list-style: disc;
 }
-.doc ol {
+.doc ol:not(:where(.pg-host *)) {
   list-style: decimal;
 }
-.doc li::marker {
+.doc li:not(:where(.pg-host *))::marker {
   color: var(--faint);
 }
-.doc li + li {
+.doc li + li:not(:where(.pg-host *)) {
   margin-top: 6px;
 }
-.doc li > :is(ul, ol) {
+.doc li > :is(ul, ol):not(:where(.pg-host *)) {
   margin: 6px 0 0;
 }
-.doc a {
+.doc a:not(:where(.pg-host *)) {
   color: var(--accent);
   text-decoration: underline;
   text-decoration-color: color-mix(in srgb, var(--accent) 38%, transparent);
@@ -1016,7 +1003,7 @@
   text-underline-offset: 3px;
   transition: text-decoration-color var(--dur-fast) var(--ease);
 }
-.doc a:hover {
+.doc a:hover:not(:where(.pg-host *)) {
   text-decoration-color: currentColor;
 }
 .doc a.permalink {
@@ -1031,7 +1018,7 @@
   opacity: 1;
 }
 /* A note: the document's blockquote, on a card. */
-.doc blockquote {
+.doc blockquote:not(:where(.pg-host *)) {
   padding: 14px 18px;
   border: 1px solid var(--border);
   border-left: 3px solid var(--accent);
@@ -1041,7 +1028,7 @@
   font-size: 0.9375rem;
   line-height: 1.625rem;
 }
-.doc blockquote > :last-child {
+.doc blockquote > :last-child:not(:where(.pg-host *)) {
   margin-bottom: 0;
 }
 /*
@@ -1049,13 +1036,13 @@
  * or a quote beside it never looks like it has a stray space. A chip that wraps keeps its edges
  * on both lines, and a long identifier breaks where it has to (after a slash or a hyphen first).
  */
-.doc code {
+.doc code:not(:where(.pg-host *)) {
   font-family: var(--font-mono-stack);
   font-size: 0.875em;
   font-weight: 450;
   font-variant-ligatures: none;
 }
-.doc :not(pre) > code {
+.doc :not(pre) > code:not(:where(.pg-host *)) {
   padding: 0.1em 0.35em;
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
@@ -1065,13 +1052,13 @@
   box-decoration-break: clone;
   overflow-wrap: break-word;
 }
-.doc :is(h2, h3, h4) > code {
+.doc :is(h2, h3, h4) > code:not(:where(.pg-host *)) {
   font-size: 0.85em;
   background: transparent;
   border-color: transparent;
   padding-inline: 0;
 }
-.doc pre {
+.doc pre:not(:where(.pg-host *)) {
   margin: 0;
   overflow-x: auto;
   padding: 16px 0;
@@ -1081,7 +1068,7 @@
   scrollbar-width: thin;
   scrollbar-color: var(--border-strong) transparent;
 }
-.doc pre code {
+.doc pre code:not(:where(.pg-host *)) {
   background: none;
   border: 0;
   padding: 0;
@@ -1098,7 +1085,7 @@
     border-radius: 0;
     font-size: 0.8125rem;
   }
-  .doc pre {
+  .doc pre:not(:where(.pg-host *)) {
     font-size: 0.8125rem;
   }
 }
@@ -1110,15 +1097,15 @@
   border-radius: var(--r-md);
   scrollbar-width: thin;
 }
-.doc table {
+.doc table:not(:where(.pg-host *)) {
   border-collapse: collapse;
   width: 100%;
   font-size: 0.875rem;
   line-height: 1.375rem;
   font-variant-numeric: tabular-nums;
 }
-.doc th,
-.doc td {
+.doc th:not(:where(.pg-host *)),
+.doc td:not(:where(.pg-host *)) {
   text-align: left;
   vertical-align: top;
   padding: 10px 14px;
@@ -1126,28 +1113,28 @@
   min-width: 8rem;
   overflow-wrap: anywhere;
 }
-.doc th {
+.doc th:not(:where(.pg-host *)) {
   background: var(--surface);
   color: var(--ink);
   font-size: 0.8125rem;
   font-weight: 600;
   white-space: nowrap;
 }
-.doc tr:last-child td {
+.doc tr:last-child td:not(:where(.pg-host *)) {
   border-bottom: 0;
 }
-.doc img {
+.doc img:not(:where(.pg-host *)) {
   max-width: 100%;
   height: auto;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
 }
-.doc hr {
+.doc hr:not(:where(.pg-host *)) {
   border: 0;
   border-top: 1px solid var(--border);
   margin: 40px 0;
 }
-.doc kbd {
+.doc kbd:not(:where(.pg-host *)) {
   padding: 1px 6px;
   border: 1px solid var(--border-strong);
   border-bottom-width: 2px;
@@ -1157,12 +1144,12 @@
   font-family: var(--font-mono-stack);
   font-size: 0.8125em;
 }
-.doc details {
+.doc details:not(:where(.pg-host *)) {
   padding: 12px 16px;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
 }
-.doc summary {
+.doc summary:not(:where(.pg-host *)) {
   cursor: pointer;
   color: var(--ink);
   font-weight: 550;

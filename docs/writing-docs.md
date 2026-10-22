@@ -328,6 +328,24 @@ type first, with the word _required_ beside the ones that are. The columns are `
 
 :::
 
+## Playground
+
+`:::playground{preset="password"}` puts a live sign-in, sign-up and account component on the page,
+with a panel to configure it and the code to copy (the [full playground](playground.md) shows
+every control). What is inside the block is what GitHub, the Markdown twin and a reader without
+script see, so say in a sentence or two what the playground does. The presets are `full`,
+`password`, `email-code`, `email-link`, `oauth`, `passkey` and `mfa`: each starts with those
+methods on and shows the controls that belong to them. Only a page with the block loads the
+playground's script and stylesheet.
+
+````markdown
+:::playground{preset="oauth"}
+
+A sandbox sign-in with Google and GitHub. It needs a browser with script.
+
+:::
+````
+
 ## What the build checks
 
 The site is built from these files, and the build stops, naming the file and the line, for a
@@ -342,6 +360,7 @@ component it cannot draw. It is part of `bun run verify`.
 | A step or tab heading of another depth | a heading of a different depth inside the block |
 | Two tabs with one label | two tabs with the same label |
 | `> [!INFO]` | an unknown callout, and lists the kinds |
+| `:::playground{preset="x"}` with an unknown preset, or with nothing inside | the preset is not one the playground has; the block needs a sentence for a reader without script |
 | `> [!NOTE] text` | put the text on the next line |
 | A code block in an unknown language | the language is not one the site highlights |
 | `titel="…"` or `{1,x}` after a language | the word is not a `title="…"` or a line range |

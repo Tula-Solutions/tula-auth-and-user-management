@@ -73,6 +73,16 @@ How long a sign-in counts as recent is the session profile's `stepUpAfter`
 
 ## What the user sees
 
+### Try it in the sandbox
+
+:::playground{preset="mfa"}
+
+A sandbox of the sign-in and account components with two-step verification: an account that already
+has an authenticator app, enrolment inside a sign-in when the policy is required, and backup codes.
+It needs a browser with script; the screens are described below.
+
+:::
+
 - **Account page**: "Turn on" shows a QR code and a setup key, asks for a code from the app,
   then shows ten backup codes once (copy or download) and waits for "I have saved these codes".
   Later: how many codes are left, "New backup codes", "Turn off".

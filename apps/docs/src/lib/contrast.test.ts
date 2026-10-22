@@ -8,7 +8,11 @@ import { COLOR_PAIRS, COLORS, type ColorScheme } from './design-tokens'
 import { CODE_COLOR_REPLACEMENTS, CODE_THEMES } from './markdown'
 import { tokensCss } from './tokens'
 
-const STYLESHEET = readFileSync(join(import.meta.dir, '../styles.css'), 'utf8')
+// The site's stylesheet, the theme mapping it shares with the playground's, and the
+// playground's own: none of the three may write a colour of its own.
+const STYLESHEET = ['../styles.css', '../styles/shadcn-theme.css', '../playground/playground.css']
+  .map((file) => readFileSync(join(import.meta.dir, file), 'utf8'))
+  .join('\n')
 
 describe('contrastRatio', () => {
   test('black on white is 21 and a colour on itself is 1', () => {
