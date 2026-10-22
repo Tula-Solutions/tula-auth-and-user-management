@@ -45,28 +45,111 @@ function initTheme(): void {
   })
 }
 
+/** What can take focus inside a container. */
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), summary, [tabindex]:not([tabindex="-1"])'
+
+/** Sent by anything that takes the reader out of the drawer (the search shortcuts). */
+const CLOSE_DRAWER = 'docs:close-drawer'
+
+/** The viewport width from which the sidebar is a column and not a drawer. */
+const DRAWER_BELOW = 1024
+
+/**
+ * The sidebar as a drawer on a narrow screen: the menu button opens it, focus stays inside it
+ * (and on the button that closes it), the page behind is inert and does not scroll, and Escape,
+ * the scrim, a followed link or a wider window close it and give focus back.
+ */
 function initMenu(): void {
   const button = document.getElementById('menu-toggle')
   const sidebar = document.getElementById('sidebar')
+  const scrim = document.getElementById('scrim')
   if (button === null || sidebar === null) {
     return
   }
-  function set(open: boolean): void {
-    sidebar?.setAttribute('data-open', String(open))
-    button?.setAttribute('aria-expanded', String(open))
+  const behind = [
+    ...document.querySelectorAll<HTMLElement>('main, .toc, .landing, .header-end, .tabs'),
+  ].filter((element) => !sidebar.contains(element))
+  function isOpen(): boolean {
+    return sidebar?.getAttribute('data-open') === 'true'
   }
-  button.addEventListener('click', () => set(sidebar.getAttribute('data-open') !== 'true'))
+  function set(open: boolean, restoreFocus = true): void {
+    sidebar?.setAttribute('data-open', String(open))
+    scrim?.setAttribute('data-open', String(open))
+    button?.setAttribute('aria-expanded', String(open))
+    document.documentElement.classList.toggle('drawer-open', open)
+    for (const element of behind) {
+      element.toggleAttribute('inert', open)
+    }
+    if (open) {
+      sidebar?.querySelector<HTMLElement>('a[aria-current], a')?.focus()
+    } else if (restoreFocus) {
+      button?.focus()
+    }
+  }
+  button.addEventListener('click', () => set(!isOpen()))
+  // The search shortcuts leave the drawer first: the search is part of the page behind it.
+  document.addEventListener(CLOSE_DRAWER, () => isOpen() && set(false, false))
+  scrim?.addEventListener('click', () => set(false))
   sidebar.addEventListener('click', (event) => {
     if ((event.target as Element).closest('a') !== null) {
-      set(false)
+      set(false, false)
     }
   })
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && sidebar.getAttribute('data-open') === 'true') {
+    if (!isOpen()) {
+      return
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault()
       set(false)
-      button.focus()
+    } else if (event.key === 'Tab') {
+      // The drawer and the button that closes it are the only things that take focus.
+      const stops = [button, ...sidebar.querySelectorAll<HTMLElement>(FOCUSABLE)]
+      // Focus is moved by hand, so that it goes from the button into the drawer and round again
+      // whatever else the header holds between them in the page's order.
+      const at = stops.indexOf(document.activeElement as HTMLElement)
+      const next = at === -1 ? 0 : (at + (event.shiftKey ? -1 : 1) + stops.length) % stops.length
+      event.preventDefault()
+      stops[next]?.focus()
     }
   })
+  // A window made wider than the drawer's breakpoint turns it into a column: nothing stays locked.
+  matchMedia(`(min-width: ${DRAWER_BELOW}px)`).addEventListener('change', (event) => {
+    if (event.matches && isOpen()) {
+      set(false, false)
+    }
+  })
+}
+
+/** On a phone the search box is a row under the header, opened by its button. */
+function setSearchRow(open: boolean): void {
+  document.getElementById('site-header')?.setAttribute('data-search', open ? 'open' : 'closed')
+  document.getElementById('search-toggle')?.setAttribute('aria-expanded', String(open))
+}
+
+function initSearchToggle(): void {
+  const toggle = document.getElementById('search-toggle')
+  const header = document.getElementById('site-header')
+  const input = document.getElementById('search-input')
+  if (toggle === null || header === null || input === null) {
+    return
+  }
+  toggle.addEventListener('click', () => {
+    const open = header.getAttribute('data-search') !== 'open'
+    setSearchRow(open)
+    if (open) {
+      input.focus()
+    }
+  })
+}
+
+/** Shows the shortcut for the reader's platform: Command K on a Mac, Control K elsewhere. */
+function initShortcutHint(): void {
+  const hint = document.getElementById('search-hint')
+  if (hint !== null && !/Mac|iPhone|iPad/.test(navigator.platform)) {
+    hint.textContent = 'Ctrl K'
+  }
 }
 
 function initSearch(): void {
@@ -117,10 +200,10 @@ function initSearch(): void {
         const link = document.createElement('a')
         link.href = hit.u
         const title = document.createElement('span')
-        title.className = 'block text-sm font-medium'
+        title.className = 'title'
         title.textContent = hit.t
         const where = document.createElement('span')
-        where.className = 'block text-xs text-muted-foreground'
+        where.className = 'where'
         where.textContent = hit.p
         link.append(title, where)
         item.append(link)
@@ -129,7 +212,7 @@ function initSearch(): void {
     )
     if (hits.length === 0) {
       const none = document.createElement('li')
-      none.className = 'px-3 py-2 text-sm text-muted-foreground'
+      none.className = 'search-none'
       none.textContent = 'No results'
       list.append(none)
     }
@@ -179,10 +262,24 @@ function initSearch(): void {
     if (event.key === 'Escape' && !panel.hasAttribute('hidden')) {
       close()
       input.focus()
+    } else if (
+      event.key.toLowerCase() === 'k' &&
+      (event.metaKey || event.ctrlKey) &&
+      !event.shiftKey &&
+      !event.altKey
+    ) {
+      // Command K (Control K elsewhere) is the search everywhere on the web docs.
+      event.preventDefault()
+      document.dispatchEvent(new Event(CLOSE_DRAWER))
+      setSearchRow(true)
+      input.focus()
+      input.select()
     } else if (event.key === '/' && document.activeElement !== input) {
       const target = event.target as HTMLElement
       if (!['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) && !target.isContentEditable) {
         event.preventDefault()
+        document.dispatchEvent(new Event(CLOSE_DRAWER))
+        setSearchRow(true)
         input.focus()
       }
     }
@@ -196,4 +293,6 @@ function initSearch(): void {
 
 initTheme()
 initMenu()
+initSearchToggle()
+initShortcutHint()
 initSearch()

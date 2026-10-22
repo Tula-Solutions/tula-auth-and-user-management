@@ -55,7 +55,7 @@ static HTML. Its commands are in its README.
 - **Prerendered by our own script, not by a router's prerender.** The pages are documents: each
   is a React 19 component tree rendered with `react-dom/server` to a complete `index.html`
   (`src/lib/site.tsx`, started by `scripts/build.ts`), and the browser gets one small script
-  (`src/client/main.ts`: theme toggle, the sidebar button, the search) and one stylesheet,
+  (`src/client/main.ts`: theme toggle, the sidebar drawer, the search) and one stylesheet,
   built by Vite and Tailwind v4 like the dashboard's. TanStack Router is not used: a router
   would hydrate every page, which means shipping the content of all of `docs/` (several MB of
   generated reference) to the browser as JavaScript or fetching each page twice, for links
@@ -92,10 +92,47 @@ static HTML. Its commands are in its README.
   every code is on the page. Codes are append-only, so an address never moves. An area's
   heading id is prefixed (`area-password`) so that it can never equal a code.
 - **The theme is `data-theme` on the root.** A script in the head sets it before the first paint
-  from the reader's saved choice or else the system; the toggle saves a choice; CSS falls back to
-  `prefers-color-scheme` where there is no script. The palette is `@tula-tech/contract/theme`,
-  written at build time to `src/styles/tokens.gen.css` (generated, ignored by git, never
-  edited): no colour is a literal in the site's CSS.
+  from the reader's saved choice or else the system; the toggle saves a choice (`localStorage`,
+  `tula-docs-theme`); CSS falls back to `prefers-color-scheme` where there is no script.
+- **The design tokens are the site's own, in `src/lib/design-tokens.ts`**: the colours of both
+  schemes, the type scale, radii, shadows, motion and the shell's widths, from
+  `docs/plans/docs-overhaul.md` section (e). `tokensCss()` (`src/lib/tokens.ts`) writes them to
+  `src/styles/tokens.gen.css` (generated, ignored, never edited) as custom properties, and
+  `styles.css` reads them by name: **no colour is a literal in the stylesheet**
+  (`contrast.test.ts` fails for one). The site does not read `@tula-tech/contract/theme`: the
+  sign-in components' default theme is a product-wide decision made in the contract, which is
+  meant to adopt the same values; never edit the contract from here. `COLOR_PAIRS` lists every
+  text-on-background and control-edge pair the stylesheet draws (4.5:1 for text, 3:1 for an edge
+  or a focus ring) and the test measures each in both schemes, with every colour of the code
+  themes on the code background (`CODE_COLOR_REPLACEMENTS` in `markdown.ts` changes the one that
+  fails): a new pair of colours in `styles.css` is added to `COLOR_PAIRS` in the same change.
+  Dark is ink surfaces with paper text, never blue-grey.
+- **Fonts are Geist and Geist Mono, self-hosted** (`src/assets/fonts/`, latin variable woff2,
+  SIL OFL in `OFL.txt`; about 52 KB together, and the budget is 60 KB). `font-display: swap`,
+  a fallback face sized to Geist's metrics, and only the text face is preloaded
+  (`PRELOADED_FONT` in `scripts/build.ts`, read from Vite's manifest). Add no other font, weight
+  or italic without staying under the budget, and no font from a CDN.
+- **The logo is drawn in `src/components/logo.tsx`, from the brand kit's mark** (a balance scale,
+  a solid pan and an open one). Every stroke is `currentColor`; the words are Geist outlined to
+  paths, so no font loads to draw it. The kit's rules hold: clear space of a pan's height (the
+  link's padding), the lockup no narrower than about 120 px (below 480 px of screen the mark
+  stands alone). The favicon set, the manifest and `og.png` are in `public/`, copied from the
+  kit; `og.png` is made by `scripts/og.ts` by hand and committed. The repository never refers
+  to a path outside itself for them.
+- **The shell is a header, then at most 1480 px of sidebar, prose and table of contents.**
+  The prose is 720 px and never fluid; body text is 16/28; the table of contents is a column
+  from 1280 px and a disclosure below it; the sidebar is a column from 1024 px and a drawer
+  below it (focus trapped, `inert` page behind, scroll locked; Escape, the scrim, a followed
+  link or a wider window close it). Nothing stretches on an ultrawide. The header's tabs come
+  from `src/lib/sections.ts` (`SECTION_RULES`: which `docs/README.md` groups or pages a tab
+  shows; a tab with no page is not drawn); the sidebar shows the current tab's groups.
+  **Slots**: `data-slot="banner"` is a row above the header (not inside it: it scrolls away, so
+  the sticky bar keeps the height `--header-h` names; the version notice is drawn in it),
+  the header has `data-slot="version"` (beside the logo; the version marker is drawn in it), and
+  each page has `data-slot="page-actions"` in its bar. Other changes fill a slot; they do not
+  restructure the header or the bar. Inline code is a bordered chip, and
+  prose breaks a word only as a last resort (`overflow-wrap: break-word`; `anywhere` is for
+  table cells alone): `styles.test.ts` holds both.
 - **Accessibility is tested on every page.** The `docs` Playwright project
   (`e2e/tests/docs/site.spec.ts`) opens each page the build wrote (`pages.json`), runs axe
   in light and dark through `expectAccessible` (no rule is disabled) and fails for a page that

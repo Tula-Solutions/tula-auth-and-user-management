@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { Landing } from '~/components/landing'
 import { Document, type Frame, type PageProps } from '~/components/layout'
 import { buildAiFiles, SITE_ORIGIN, SKILL_SOURCE, twinPath, withAlternate } from './ai'
-import { BASE, RELEASE, REPO_BRANCH, REPO_ROOT, REPO_URL } from './config'
+import { BASE, RELEASE, REPO_BRANCH, REPO_ROOT, REPO_URL, SITE_DESCRIPTION } from './config'
 import { buildErrorCodesPage, ERROR_CODES_ROUTE, errorCodeEntries } from './error-codes'
 import { checkCacheInputs } from './inputs'
 import type { LinkEnvironment } from './links'
@@ -247,8 +247,7 @@ export async function buildSite(
   }
   const landing: PageProps = {
     title: 'Tula Auth',
-    description:
-      'Self-hosted authentication and user management with prebuilt UI and native mobile SDKs.',
+    description: SITE_DESCRIPTION,
     route: LANDING_ROUTE,
     html: '',
     headings: [],
@@ -265,11 +264,14 @@ export async function buildSite(
       headings: [],
     },
     frame,
-    <div className='max-w-3xl'>
-      <h1 className='text-2xl font-semibold'>Page not found</h1>
-      <p>
-        There is nothing at this address. <a href={base}>Go to the start page</a>.
-      </p>
+    <div className='shell'>
+      <div className='doc notfound'>
+        <h1>Page not found</h1>
+        <p>
+          There is nothing at this address. <a href={base}>Go to the start page</a>, or search the
+          documentation from the box above.
+        </p>
+      </div>
     </div>
   )
 

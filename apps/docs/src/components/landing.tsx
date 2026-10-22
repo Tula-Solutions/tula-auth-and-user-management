@@ -1,3 +1,18 @@
+import {
+  BookOpen,
+  KeyRound,
+  Rocket,
+  Server,
+  ShieldCheck,
+  Smartphone,
+  Terminal,
+  TriangleAlert,
+} from 'lucide-react'
+import type { ComponentType } from 'react'
+import { REPO_URL } from '~/lib/config'
+import { GitHubMark } from './icons'
+import { LogoMark } from './logo'
+
 /** A card of the landing page: where to go, and why. */
 export interface LandingLink {
   title: string
@@ -55,6 +70,18 @@ export const LANDING_LINKS: readonly LandingLink[] = [
   },
 ]
 
+/** The icon of each card, by route: a picture to find a card by, not decoration alone. */
+const ICONS: Record<string, ComponentType> = {
+  '/quickstart/': Rocket,
+  '/self-host/': Server,
+  '/methods/password/': KeyRound,
+  '/methods/sessions/': ShieldCheck,
+  '/reference/': BookOpen,
+  '/reference/error-codes/': TriangleAlert,
+  '/cli/': Terminal,
+  '/native-apps/': Smartphone,
+}
+
 /**
  * The body of the landing page.
  *
@@ -64,29 +91,48 @@ export const LANDING_LINKS: readonly LandingLink[] = [
 export function Landing({ base }: { base: string }) {
   const prefix = base.replace(/\/$/, '')
   return (
-    <div className='mx-auto max-w-4xl'>
-      <h1 className='text-4xl font-semibold tracking-tight'>Tula Auth</h1>
-      <p className='mt-4 max-w-2xl text-lg text-muted-foreground'>
-        Self-hosted authentication and user management, with prebuilt UI, native mobile SDKs and
-        data you own. These pages are the documentation that ships with the repository.
-      </p>
-      <ul className='mt-10 grid list-none gap-4 p-0 sm:grid-cols-2'>
-        {LANDING_LINKS.map((link) => (
-          <li key={link.route}>
-            <a
-              href={`${prefix}${link.route}`}
-              className='block h-full rounded-lg border bg-card p-5 text-card-foreground no-underline hover:border-input'
-            >
-              <span className='block text-base font-semibold'>{link.title}</span>
-              <span className='mt-1 block text-sm text-muted-foreground'>{link.description}</span>
-            </a>
-          </li>
-        ))}
+    <div className='shell landing'>
+      <section className='hero' aria-labelledby='hero-title'>
+        <LogoMark className='hero-mark' />
+        <h1 id='hero-title' className='hero-title'>
+          Authentication you host. Users you own.
+        </h1>
+        <p className='hero-lead'>
+          Tula Auth is self-hosted authentication and user management, with prebuilt UI, native
+          mobile SDKs and data that stays in your database.
+        </p>
+        <div className='hero-actions'>
+          <a className='btn' href={`${prefix}/quickstart/`}>
+            Get started
+          </a>
+          <a className='btn btn-outline' href={REPO_URL}>
+            <GitHubMark />
+            View on GitHub
+          </a>
+        </div>
+        <div className='hero-command'>
+          <span aria-hidden='true'>$</span>
+          <code>bunx create-tula@latest</code>
+        </div>
+      </section>
+      <ul className='cards'>
+        {LANDING_LINKS.map((link) => {
+          const Icon = ICONS[link.route] ?? BookOpen
+          return (
+            <li key={link.route}>
+              <a href={`${prefix}${link.route}`} className='card'>
+                <span className='card-icon' aria-hidden='true'>
+                  <Icon />
+                </span>
+                <span className='card-title'>{link.title}</span>
+                <span className='card-text'>{link.description}</span>
+              </a>
+            </li>
+          )
+        })}
       </ul>
-      <p className='mt-10 text-sm'>
-        <a className='text-link underline underline-offset-4' href={`${prefix}/docs/`}>
-          All of the documentation
-        </a>
+      <p className='landing-foot'>
+        <a href={`${prefix}/docs/`}>All of the documentation</a>
       </p>
     </div>
   )

@@ -94,7 +94,7 @@ describe('the site built from docs/', () => {
 
   test('links between pages are routes, with their anchors', () => {
     const html = site.documents.get('/methods/password/') as string
-    expect(html).toContain('href="/dashboard/"')
+    expect(html).toContain('href="/dashboard/#screens"')
     // The one address of a Markdown file in the page is the alternate pointing at its twin.
     expect(html.replace(/<link rel="alternate"[^>]*>/, '')).not.toMatch(/href="[^"#:]*\.md/)
   })
@@ -234,6 +234,36 @@ describe('the site under a base path', () => {
     expect(under.documents.get('/quickstart/')).toContain('href="/docs-site/methods/password/"')
     expect(under.index.every((entry) => entry.u.startsWith('/docs-site/'))).toBe(true)
   })
+
+  test('the icons, the manifest and the social card are named under the base, and the font is preloaded', async () => {
+    const under = await buildSite(
+      { css: [], js: '', fonts: ['/docs-site/assets/geist.woff2'] },
+      '/docs-site/',
+      ['/quickstart/']
+    )
+    const html = under.documents.get('/quickstart/') as string
+    expect(html).toContain('href="/docs-site/favicon.ico"')
+    expect(html).toContain('href="/docs-site/favicon.svg"')
+    expect(html).toContain('href="/docs-site/apple-touch-icon.png"')
+    expect(html).toContain('href="/docs-site/site.webmanifest"')
+    expect(html).toContain('content="https://tula-solutions.github.io/docs-site/og.png"')
+    expect(html).toContain(
+      '<link rel="preload" as="font" type="font/woff2" href="/docs-site/assets/geist.woff2" crossorigin=""/>'
+    )
+  })
+
+  test('the header leaves a slot for the version marker and one for the page’s actions', () => {
+    const html = site.documents.get('/quickstart/') as string
+    expect(html).toContain('data-slot="version"')
+    expect(html).toContain('data-slot="banner"')
+    expect(html).toContain('data-slot="page-actions"')
+  })
+
+  test('the header has a tab for each section that has pages, the page’s own marked current', () => {
+    const html = site.documents.get('/quickstart/') as string
+    expect(html).toMatch(/<a class="tab" href="\/quickstart\/" aria-current="true"/)
+    expect(html).toContain('>Reference</a>')
+  })
 })
 
 describe('repositoryEnvironment', () => {
@@ -248,9 +278,10 @@ describe('repositoryEnvironment', () => {
 })
 
 describe('tokensCss', () => {
-  test('writes the product’s palette for light, for a dark system, and for a page set to dark', () => {
+  test('writes the site’s palette for light, for a dark system, and for a page set to dark', () => {
     const css = tokensCss()
-    expect(css).toContain('--tula-background:')
+    expect(css).toContain('--bg: #FAF9F5;')
+    expect(css).toContain('--bg: #141412;')
     expect(css).toContain('@media (prefers-color-scheme: dark)')
     expect(css).toContain(":root:not([data-theme='light'])")
     expect(css).toContain(":root[data-theme='dark']")

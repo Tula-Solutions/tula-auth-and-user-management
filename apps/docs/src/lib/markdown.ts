@@ -233,6 +233,15 @@ export const CODE_THEMES = {
   dark: 'github-dark-high-contrast',
 }
 
+/**
+ * Colours of the two themes that are changed, by theme: the light theme's comment grey is 4.37:1
+ * on the site's code background, under AA. `contrast.test.ts` checks every colour the themes
+ * use against that background.
+ */
+export const CODE_COLOR_REPLACEMENTS: Record<string, Record<string, string>> = {
+  [CODE_THEMES.light]: { '#66707b': '#58616b' },
+}
+
 /** A shiki highlighter loaded with {@link CODE_LANGUAGES} and {@link CODE_THEMES}. */
 export type Highlighter = HighlighterGeneric<BundledLanguage, string>
 
@@ -312,6 +321,7 @@ export function renderMarkdown(
       const highlighted = highlighter.codeToHast(hastText(code).replace(/\n$/, ''), {
         lang: language,
         themes: CODE_THEMES,
+        colorReplacements: CODE_COLOR_REPLACEMENTS,
         defaultColor: false,
       })
       const pre = highlighted.children[0] as Element

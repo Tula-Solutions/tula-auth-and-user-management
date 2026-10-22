@@ -41,3 +41,7 @@ export const RELEASE = resolveRelease(process.env, BASE)
 
 /** The name shown in the header and in every page's title. */
 export const SITE_NAME = 'Tula Auth docs'
+
+/** What the site is, in one sentence: the description of the landing page and of a card. */
+export const SITE_DESCRIPTION =
+  'Self-hosted authentication and user management with prebuilt UI and native mobile SDKs.'
