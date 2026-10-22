@@ -25,7 +25,11 @@ const turbo = JSON.parse(
  * page reads them to check that a link resolves (and, for Markdown, its anchors), so a change to
  * one has to invalidate the cached tasks.
  */
+let linked: string[] | undefined
 function linkedOutsideDocs(): string[] {
+  if (linked !== undefined) {
+    return linked
+  }
   const environment = repositoryEnvironment(collectPages(), new Map(), '/')
   const found = new Set<string>()
   for (const page of collectPages()) {
@@ -36,7 +40,8 @@ function linkedOutsideDocs(): string[] {
       }
     }
   }
-  return [...found].sort()
+  linked = [...found].sort()
+  return linked
 }
 
 function covers(inputs: string[], path: string, isDirectory: (path: string) => boolean): boolean {
