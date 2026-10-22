@@ -126,9 +126,11 @@ static HTML. Its commands are in its README.
   link or a wider window close it). Nothing stretches on an ultrawide. The header's tabs come
   from `src/lib/sections.ts` (`SECTION_RULES`: which `docs/README.md` groups or pages a tab
   shows; a tab with no page is not drawn); the sidebar shows the current tab's groups.
-  **Slots**: the header has `data-slot="banner"` (a row above the bar) and `data-slot="version"`
-  (beside the logo), and each page has `data-slot="page-actions"` in its bar. Other changes fill
-  a slot; they do not restructure the header or the bar. Inline code is a bordered chip, and
+  **Slots**: `data-slot="banner"` is a row above the header (not inside it: it scrolls away, so
+  the sticky bar keeps the height `--header-h` names; the version notice is drawn in it),
+  the header has `data-slot="version"` (beside the logo; the version marker is drawn in it), and
+  each page has `data-slot="page-actions"` in its bar. Other changes fill a slot; they do not
+  restructure the header or the bar. Inline code is a bordered chip, and
   prose breaks a word only as a last resort (`overflow-wrap: break-word`; `anywhere` is for
   table cells alone): `styles.test.ts` holds both.
 - **Accessibility is tested on every page.** The `docs` Playwright project
