@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { RenderError } from './markdown'
+import { RenderError, SECTION_CAP } from './markdown'
 import { checkPage } from './page-check'
 
 function page(body: string): string {
@@ -57,5 +57,21 @@ describe('checkPage', () => {
   ])('a dangling %s fails', (attribute, body) => {
     expect(() => checkPage('/ref/', page(body))).toThrow(`"gone" matches no element`)
     expect(() => checkPage('/ref/', page(body))).toThrow(attribute === 'for' ? 'for' : 'aria')
+  })
+})
+
+describe('checkPage section sizes', () => {
+  const big = 'x'.repeat(SECTION_CAP + 2000)
+  const article = (inner: string) =>
+    page(`<h1>T</h1><article><div data-docs-section="0">${inner}</div></article>`)
+
+  test('a section over the cap passes as a single block', () => {
+    expect(() => checkPage('/one/', article(`<pre><code>${big}</code></pre>`))).not.toThrow()
+  })
+
+  test('a section over the cap in several blocks fails, naming the section', () => {
+    const two = `<p>${big}</p><p>more</p>`
+    expect(() => checkPage('/two/', article(two))).toThrow(RenderError)
+    expect(() => checkPage('/two/', article(two))).toThrow('/two/: has a section 0 over')
   })
 })

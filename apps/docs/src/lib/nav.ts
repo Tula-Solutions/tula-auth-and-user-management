@@ -64,7 +64,7 @@ export function buildNav(
   source: string,
   readmeFile: string,
   environment: LinkEnvironment,
-  titles: ReadonlyMap<string, string>
+  titles: { get(route: string): string | undefined }
 ): NavGroup[] {
   const tree = unified().use(remarkParse).use(remarkGfm).parse(source) as Root
   const listed = new Set<string>()
