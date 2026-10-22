@@ -4,7 +4,7 @@ import { dirname, join, posix } from 'node:path'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Landing } from '~/components/landing'
 import { Document, type Frame, type PageProps } from '~/components/layout'
-import { BASE, REPO_ROOT } from './config'
+import { BASE, RELEASE, REPO_ROOT } from './config'
 import { buildErrorCodesPage, ERROR_CODES_ROUTE, errorCodeEntries } from './error-codes'
 import { checkCacheInputs } from './inputs'
 import type { LinkEnvironment } from './links'
@@ -22,6 +22,7 @@ import {
 import { buildNav, type NavGroup } from './nav'
 import { checkPage } from './page-check'
 import { collectPages, type SourcePage } from './pages'
+import { type ReleaseInfo, versionBases } from './release'
 import { buildIndex, type SearchEntry } from './search'
 
 /** The docs app's `turbo.json`, whose inputs a whole build checks against the links. */
@@ -121,6 +122,8 @@ function html(page: PageProps, frame: Frame, children?: React.ReactNode): string
  * @param only - Routes to render and index, for a test that needs the shape of the site and
  *   not all of it (the sidebar is complete, and a link into a page that is not rendered still
  *   has its anchor checked). Omitted, every page is parsed and rendered.
+ * @param release - Which docs these are (marker, banner, canonical address, `noindex`); the
+ *   build's `DOCS_CHANNEL` by default, `null` for an unversioned site.
  * @returns The pages, the search index and the finished HTML.
  * @throws RenderError or LinkError for a file or link that cannot be rendered, and, for a build
  *   of every page, RenderError when the app's cached tasks do not name an input for a file the
@@ -129,7 +132,8 @@ function html(page: PageProps, frame: Frame, children?: React.ReactNode): string
 export async function buildSite(
   assets: Frame['assets'] = { css: [], js: '' },
   base: string = BASE,
-  only?: readonly string[]
+  only?: readonly string[],
+  release: ReleaseInfo | null = RELEASE
 ): Promise<Site> {
   const wanted = (route: string) => only === undefined || only.includes(route)
   const sources = collectPages()
@@ -175,7 +179,7 @@ export async function buildSite(
   }
 
   const highlighter = await createCodeHighlighter()
-  const frame: Frame = { base, assets, nav }
+  const frame: Frame = { base, assets, nav, release }
   const pages: BuiltPage[] = []
   const copied = new Set<string>()
   const linked = new Set<string>()
@@ -251,10 +255,11 @@ export async function buildSite(
 
   // Whole-page rules that axe cannot judge when a large page is checked in pieces, and that
   // every address stays under the base path.
+  const siblingBase = release === null ? undefined : versionBases(release, base).siblingBase
   for (const [route, document] of documents) {
-    checkPage(route, document, base)
+    checkPage(route, document, base, siblingBase)
   }
-  checkPage('/404', notFound, base)
+  checkPage('/404', notFound, base, siblingBase)
 
   return {
     pages,

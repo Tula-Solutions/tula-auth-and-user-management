@@ -23,18 +23,35 @@ static HTML. Its commands are in its README.
 - **Private, never published to npm, never served by the API, never in an image.** The API
   does not host it. The API image's Dockerfile copies nothing of it and `.dockerignore` leaves
   it out (`.claude/hooks/compose.test.ts` holds both): never add it to an image stage.
-- **GitHub Pages publishes it, from `develop`, under `/tula-auth-and-user-management/`**
-  (`.github/workflows/docs-pages.yml`, held by `.claude/hooks/docs-pages.test.ts`): a `build`
-  job with `contents: read` only, then a `deploy` job with `pages: write` and `id-token: write`
-  that runs nothing but `actions/deploy-pages`. Never give the build job a permission to write
-  or the deploy job a step of the repository's code. The base comes from `DOCS_BASE`, read only
-  through `resolveBase()` in `src/lib/paths.ts` (`config.ts`, `vite.config.ts`, `serve.ts`, the
-  Playwright config): `/` or a path that starts and ends with `/` and holds only unreserved
-  characters, refused otherwise. Every address the site writes is built from the base; an
-  address from the host's root outside it (or `//host`) fails the build in `checkPage`, and
-  `build --check` renders under a placeholder sub-path when no base is set so that `verify`
-  sees one. A link written as `/x` in a component is a 404 on Pages: build it from `base`.
-  CI's `e2e-docs` job builds and serves the site under the Pages base.
+- **GitHub Pages publishes it, in two versions, under `/tula-auth-and-user-management/`**
+  (`.github/workflows/docs-pages.yml`, held by `.claude/hooks/docs-pages.test.ts`): the docs of
+  the latest release at the root (built from the tip of `main`, by that tree's own copy of the
+  site) and `develop`'s under `/next/` (a banner says they are unreleased, `noindex`). A release
+  is a push to `main` (no tag and no GitHub Release is made; `release.yml` starts on the same
+  event), `develop` pushes refresh `/next/`, and both versions are built on every run from the
+  tips of both branches, because Pages holds one artifact: never make a run build only one. While
+  `main` has no `apps/docs` the root is built from `develop` as channel `unreleased`; keep that
+  fallback and its test. A `build` job with `contents: read` only, then a `deploy` job with
+  `pages: write` and `id-token: write` that runs nothing but `actions/deploy-pages`. Never give
+  the build job a permission to write or the deploy job a step of the repository's code; never
+  cancel a deployment in flight (`cancel-in-progress: false`). The `github-pages` environment
+  must allow `main` and `develop`. What a build is comes from `DOCS_CHANNEL` (`release`, `next`,
+  `unreleased`), `DOCS_VERSION` and `DOCS_ORIGIN`, read only through `resolveRelease()` in
+  `src/lib/release.ts` (the same style as `resolveBase()`: refused, not tidied; `release.test.ts`
+  holds the table); the marker, the banner, `noindex` and the canonical address come from it
+  (`layout.tsx`, which this rule does not otherwise describe). The base comes from `DOCS_BASE`,
+  read only through `resolveBase()` in `src/lib/paths.ts` (`config.ts`, `vite.config.ts`,
+  `serve.ts`, the Playwright config): `/` or a path that starts and ends with `/` and holds only
+  unreserved characters, refused otherwise; the `next` channel's must end with `/next/`. Every
+  address the site writes is built from the base; an address from the host's root outside it (or
+  `//host`) fails the build in `checkPage`, and `build --check` renders under a placeholder
+  sub-path when no base is set so that `verify` sees one. The one exception is a link marked
+  `data-docs-version` (the header's marker, the banner), which `checkPage` requires to lead into
+  the other version's base (`siblingBase`) and nowhere else: a new link to the other version
+  carries that attribute, and any other link from `/next/` into the released docs fails the
+  build. A link written as `/x` in a component is a 404 on Pages: build it from `base`.
+  CI's `e2e-docs` job builds and serves both versions under the Pages base (`build:versions`:
+  the root as the release, `next/` as the development docs; `e2e/tests/docs/versions.spec.ts`).
 - **Prerendered by our own script, not by a router's prerender.** The pages are documents: each
   is a React 19 component tree rendered with `react-dom/server` to a complete `index.html`
   (`src/lib/site.tsx`, started by `scripts/build.ts`), and the browser gets one small script

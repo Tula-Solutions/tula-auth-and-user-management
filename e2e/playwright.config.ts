@@ -94,8 +94,10 @@ export default defineConfig({
 /** The documentation site, built from docs/** and apps/docs, then served from its output directory. */
 function docsServer(): WebServer {
   return {
+    // The released docs at the base and the development docs under `next/`, as deployed.
     // `exec`: the server must be the process Playwright stops.
-    command: 'bun run docs-site:build && DOCS_PORT=4321 exec bun run apps/docs/scripts/serve.ts',
+    command:
+      'bun run --filter @tula-tech/docs build:versions && DOCS_PORT=4321 exec bun run apps/docs/scripts/serve.ts',
     cwd: `${import.meta.dirname}/..`,
     // Built and served under DOCS_BASE when it is set (as GitHub Pages serves the site): the
     // root answers 404 then, so the server is ready when its base answers.

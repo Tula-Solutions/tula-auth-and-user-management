@@ -1,26 +1,46 @@
 name: Docs site
 
 # Publishes the documentation site (apps/docs: the Markdown of docs/ rendered to static HTML)
-# to GitHub Pages, at https://tula-solutions.github.io/tula-auth-and-user-management/.
+# to GitHub Pages, at https://tula-solutions.github.io/tula-auth-and-user-management/, in two
+# versions held by one deployment:
 #
-# It runs for a push to `develop`, where the docs are written (git-flow: `main` is
-# release-only), and by hand from `develop`. Pages serves a project's site under the
-# repository's name, so the site is built with that base path (`DOCS_BASE`): every link,
-# script, stylesheet, image and the search index is addressed under it, and `apps/docs` refuses
-# a base that is not a plain path. Pages must be set to deploy from GitHub Actions in the
-# repository's settings, and the `github-pages` environment must allow `develop` to deploy.
+#   /tula-auth-and-user-management/        the docs of the latest release (`main`)
+#   /tula-auth-and-user-management/next/   the docs of `develop`: unreleased, `noindex`, with a
+#                                          banner that says so and links to the released docs
+#
+# A release is a push to `main` (git-flow: `main` is release-only; `release.yml` and
+# `github-packages.yml` run for the same event, and the repository makes no tag and no GitHub
+# Release). That push is what makes the released docs update, and a push to `develop` is what
+# updates `/next/`. A merge is made by a person, so the push starts this workflow: the rule
+# that a run made with GITHUB_TOKEN starts no other workflow does not apply. The released docs
+# are built from the tip of `main`, the commit the release is, so each release shows its own docs.
+#
+# Pages holds one artifact, so every run builds BOTH versions from the tips of `main` and
+# `develop` whichever branch started it: a run for `develop` cannot take down the released docs,
+# and a queued run replaced by a newer one loses nothing, because the newer one builds the same.
+# While `main` has no `apps/docs` (the docs site is on `develop` until the next release merges
+# it), the root is built from `develop` as well, labelled "unreleased" in its marker and its
+# banner, and `/next/` is built too so that its address exists from the start.
+#
+# Pages serves a project's site under the repository's name, so the site is built with that base
+# path (`DOCS_BASE`): every link, script, stylesheet, image and the search index is addressed
+# under it, and `apps/docs` refuses a base that is not a plain path (and a channel, version or
+# origin that is not one it knows). Pages must be set to deploy from GitHub Actions in the
+# repository's settings, and the `github-pages` environment must allow `main` AND `develop` to
+# deploy.
 #
 # What keeps it to that:
 #   1. two jobs: `build` reads the repository and nothing else (`contents: read`); `deploy`
 #      holds the two permissions Pages needs (`pages: write`, `id-token: write`) and checks
 #      nothing out and runs no code of the repository;
-#   2. no secret and no cache: the build starts from the lockfile every time;
-#   3. one deployment at a time, and a newer one waits rather than cancelling one in flight.
+#   2. no secret and no cache: each build starts from its tree's lockfile every time;
+#   3. one deployment at a time, and a newer one waits rather than cancelling one in flight, so a
+#      release's deployment is never cut short.
 # `.claude/hooks/docs-pages.test.ts` holds this file to those rules.
 
 on:
   push:
-    branches: [develop]
+    branches: [develop, main]
   workflow_dispatch:
 
 permissions:
@@ -33,30 +53,84 @@ concurrency:
 jobs:
   build:
     name: Build the docs site
-    # A run by hand from another branch publishes nothing: the site is develop's.
-    if: github.ref == 'refs/heads/develop'
+    # A run by hand from another branch publishes nothing: the site is `main`'s and `develop`'s.
+    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
+      # The two trees, side by side, whichever branch started the run.
       - uses: actions/checkout@v7
         with:
+          ref: main
+          path: release-src
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          ref: develop
+          path: next-src
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
-        with: { bun-version-file: package.json }
-      - run: bun install --frozen-lockfile
-      - name: Build under the repository's path
+        with: { bun-version-file: next-src/package.json }
+      - name: Build the released docs and the unreleased docs into one site
+        shell: bash
         env:
-          DOCS_BASE: /tula-auth-and-user-management/
-        run: bun run docs-site:build
-      # Vite's manifest is for the build script, not for readers; `.nojekyll` tells Pages to
-      # serve the files as they are.
-      - name: Prepare the files Pages serves
-        run: rm -rf apps/docs/dist/.vite && touch apps/docs/dist/.nojekyll
+          DOCS_BASE_PATH: /tula-auth-and-user-management/
+          DOCS_ORIGIN: https://tula-solutions.github.io
+        run: |
+          set -euo pipefail
+          site="$PWD/site"
+          mkdir "$site"
+
+          # The version `main` carries, which every released package shares: the root's marker.
+          version=""
+          if [ -f release-src/apps/docs/package.json ]; then
+            version="$(bun -e "console.log(JSON.parse(require('fs').readFileSync('release-src/packages/contract/package.json', 'utf8')).version)")"
+          fi
+
+          # The unreleased docs, under next/. Built first and moved out of the way: building a
+          # tree empties its own dist/. Its banner names the release only where there is one.
+          (
+            cd next-src
+            bun install --frozen-lockfile
+            DOCS_BASE="${DOCS_BASE_PATH}next/" DOCS_CHANNEL=next DOCS_VERSION="$version" \
+              bun run docs-site:build
+          )
+          cp -R next-src/apps/docs/dist "$site/next"
+
+          # The docs at the root: the release's own, from its own tree and its own build, or, while
+          # no release has the docs site, the development docs labelled as such.
+          if [ -n "$version" ]; then
+            (
+              cd release-src
+              bun install --frozen-lockfile
+              DOCS_BASE="$DOCS_BASE_PATH" DOCS_CHANNEL=release DOCS_VERSION="$version" \
+                bun run docs-site:build
+            )
+            root=release-src/apps/docs/dist
+          else
+            (
+              cd next-src
+              DOCS_BASE="$DOCS_BASE_PATH" DOCS_CHANNEL=unreleased DOCS_VERSION="" \
+                bun run docs-site:build
+            )
+            root=next-src/apps/docs/dist
+          fi
+          # A page of the docs at /next/ would be written over, or over the unreleased docs.
+          if [ -e "$root/next" ]; then
+            echo "the docs have a route /next/, which the unreleased docs are served at" >&2
+            exit 1
+          fi
+          cp -R "$root/." "$site/"
+
+          # Vite's manifest is for the build script, not for readers; `.nojekyll` tells Pages to
+          # serve the files as they are.
+          rm -rf "$site/.vite" "$site/next/.vite"
+          touch "$site/.nojekyll"
       - uses: actions/upload-pages-artifact@v5
         with:
-          path: apps/docs/dist
+          path: site
           include-hidden-files: true
 
   deploy:
