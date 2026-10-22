@@ -23,6 +23,16 @@ bun run --filter @tula-tech/docs generate:check   # render everything in memory:
   (`#password.too_short`). A code added to the contract is on the page in the same build.
 - **A sidebar** from the sections and tables of `docs/README.md`.
 - **Search**: `search-index.json`, written at build time, matched in the browser. No service.
+- **Files for AI agents**, written by the same build (`src/lib/ai/`), all under the base:
+  a Markdown twin of every page (`/methods/password/` is `/methods/password.md`, with front
+  matter and absolute links), `llms.txt` (the llmstxt.org index, one line per page),
+  `llms-full.txt` (the hand-written pages in one file, under a cap; the generated SDK reference
+  is left out), `skill.md` (an agent skill for adding Tula Auth, from
+  [`content/skill.md`](content/skill.md)), `sitemap.xml` and `robots.txt`, and a
+  `<link rel="alternate" type="text/markdown">` in each page's head. `generate:check` fails for a
+  page without a twin, a link in a twin, `llms.txt` or `skill.md` that goes nowhere, and a file
+  over its cap. Crawlers read `robots.txt` only at a host's root, so under GitHub Pages' sub-path
+  it is there for whoever asks for it by name.
 - **A light and a dark theme**, following the system until the reader chooses one.
 
 A Markdown file that cannot be rendered, a relative link to a file that does not exist and an

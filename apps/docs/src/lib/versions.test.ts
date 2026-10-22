@@ -16,6 +16,7 @@ function build(release: ReleaseInfo | null, base: string): Promise<Site> {
     { css: [`${base}assets/main.css`], js: `${base}assets/main.js` },
     base,
     SAMPLE,
+    {},
     release
   )
 }

@@ -87,3 +87,25 @@ test.describe('the development docs under next/', () => {
     await expect(page.locator('main h1')).toHaveText('Page not found')
   })
 })
+
+test.describe('the files for agents of each version', () => {
+  test('the released docs have a sitemap and robots.txt for their own base', async ({
+    request,
+  }) => {
+    const sitemap = await (await request.get(`${BASE}sitemap.xml`)).text()
+    expect(sitemap).toContain(`${BASE}quickstart/</loc>`)
+    expect(sitemap).not.toContain('/next/')
+    expect((await request.get(`${BASE}llms.txt`)).status()).toBe(200)
+  })
+
+  test('the development docs keep llms.txt and the twins under next/, and are not in a sitemap', async ({
+    request,
+  }) => {
+    const llms = await request.get(`${NEXT}llms.txt`)
+    expect(llms.status()).toBe(200)
+    expect(await llms.text()).toContain(`${NEXT}quickstart.md`)
+    expect((await request.get(`${NEXT}quickstart.md`)).status()).toBe(200)
+    expect((await request.get(`${NEXT}sitemap.xml`)).status()).toBe(404)
+    expect((await request.get(`${NEXT}robots.txt`)).status()).toBe(404)
+  })
+})
