@@ -320,7 +320,7 @@ class ScreenTestCase: XCTestCase {
     /// keyboard's ("Secured by Tula" and "Forgot password?" failed on the password screen
     /// and on no screen without a keyboard). So a screen is audited with the keyboard
     /// away, and no contrast finding is left out.
-    private func putKeyboardAway() throws {
+    func putKeyboardAway() throws {
         let keyboard = app.keyboards.firstMatch
         guard keyboard.exists else { return }
         let from = title.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))

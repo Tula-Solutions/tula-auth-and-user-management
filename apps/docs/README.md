@@ -35,6 +35,12 @@ bun run --filter @tula-tech/docs generate:check   # render everything in memory:
   Each is documented, with its result beside it, in
   [`docs/writing-docs.md`](../../docs/writing-docs.md); a malformed one fails `generate:check`
   with the file and the line.
+- **Native screens**: `:::native-screens{platform="ios"}` shows the SwiftUI or Compose screens as
+  the example apps' UI tests photographed them (`public/native/<platform>/` and its
+  `manifest.json`), as a picker with a script and as a plain list without one. The pictures are
+  taken by hand (`bun run native/swift/fixture/ui-tests.ts --screenshots apps/docs/public/native/ios`;
+  Android in [`docs/kotlin.md`](../../docs/kotlin.md#refreshing-the-captures)); a platform with none
+  says "Not captured yet" and shows the command.
 - **Files for AI agents**, written by the same build (`src/lib/ai/`), all under the base:
   a Markdown twin of every page (`/methods/password/` is `/methods/password.md`, with front
   matter and absolute links), `llms.txt` (the llmstxt.org index, one line per page),

@@ -1,6 +1,7 @@
 import type { Blockquote, Code, Heading, Parent, Root, RootContent, Table } from 'mdast'
 import { visit } from 'unist-util-visit'
 import { parseCodeMeta, withoutTitle } from './code-meta'
+import { NATIVE_PLATFORMS } from './native-captures'
 
 // The content components of a page, written in Markdown that GitHub renders too:
 //
@@ -14,6 +15,9 @@ import { parseCodeMeta, withoutTitle } from './code-meta'
 //   :::tabs{sync="framework"} tabs: the headings are the labels
 //   :::code-group{sync="pm"}  tabs of fenced code blocks, labelled by title="…" or language
 //   :::params                 a table of name, type, required, default, description
+//   :::native-screens{platform="ios"}   the captured screens of a native SDK (a gallery; the
+//   A caption.                          block's text is its caption)
+//   :::
 //
 // A fence stands alone on its line with a blank line either side, so that it is a paragraph of
 // its own for every Markdown parser. This module turns the fences and the alerts into plain
@@ -33,7 +37,7 @@ export class BlockError extends Error {
 }
 
 /** The containers a page may open with `:::name`. */
-export const CONTAINERS = ['steps', 'tabs', 'code-group', 'params'] as const
+export const CONTAINERS = ['steps', 'tabs', 'code-group', 'params', 'native-screens'] as const
 
 /** The kinds of callout, by the word between `[!` and `]` (GitHub's alerts). */
 export const CALLOUTS = {
@@ -53,6 +57,7 @@ const ATTRIBUTES: Record<string, readonly string[]> = {
   tabs: ['sync'],
   'code-group': ['sync'],
   params: [],
+  'native-screens': ['platform'],
 }
 
 /** A container fence found in a document. */
@@ -106,10 +111,7 @@ function lineOf(node: { position?: { start: { line: number } } }, fallback: numb
 /** `key="value"` pairs, each key at most once; anything else is an error. */
 function parseAttributes(line: number, name: string, raw: string | undefined) {
   const attributes: Record<string, string> = {}
-  if (raw === undefined) {
-    return attributes
-  }
-  const inner = raw.slice(1, -1).trim()
+  const inner = raw === undefined ? '' : raw.slice(1, -1).trim()
   const pair = /\s*([a-z][a-z-]*)="([^"]*)"\s*/y
   let at = 0
   while (at < inner.length) {
@@ -134,6 +136,15 @@ function parseAttributes(line: number, name: string, raw: string | undefined) {
     }
     attributes[key] = match[2] as string
     at = pair.lastIndex
+  }
+  if (
+    name === 'native-screens' &&
+    !(NATIVE_PLATFORMS as readonly string[]).includes(attributes.platform ?? '')
+  ) {
+    throw new BlockError(
+      line,
+      `:::native-screens needs platform="${NATIVE_PLATFORMS.join('" or platform="')}"`
+    )
   }
   if (attributes.sync !== undefined && !/^[a-z][a-z0-9-]{0,31}$/.test(attributes.sync)) {
     throw new BlockError(
@@ -393,8 +404,22 @@ function params(open: Open): RootContent {
   return block('dl', { className: ['params'] }, items)
 }
 
+/**
+ * The place a native screens gallery goes. The renderer replaces it with the gallery, built from
+ * the platform's capture manifest (`galleryElement`); what the block holds is the caption.
+ */
+function nativeScreens(open: Open): RootContent {
+  return block(
+    'div',
+    { dataNativeScreensSlot: open.fence.attributes.platform as string },
+    open.children
+  )
+}
+
 function build(open: Open): RootContent {
   switch (open.fence.name) {
+    case 'native-screens':
+      return nativeScreens(open)
     case 'steps':
       return steps(open)
     case 'tabs':

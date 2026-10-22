@@ -1,5 +1,6 @@
 import '../styles.css'
 import { type SearchEntry, search } from '../lib/search'
+import { initNativeScreens } from './native-screens'
 import { initPage } from './page'
 
 // The only script of the site. The pages are static HTML and work without it; it adds the theme
@@ -389,4 +390,5 @@ initMenu()
 initSearchToggle()
 initShortcutHint()
 initSearch()
+initNativeScreens()
 initPage()

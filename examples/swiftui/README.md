@@ -90,6 +90,20 @@ simulator cannot start a process of the machine, so the script does.
 
 The build goes to `examples/swiftui/build`, which git ignores.
 
+## The pictures of the documentation
+
+The screens in [docs/swift.md](../../docs/swift.md#what-the-screens-look-like) are taken by the
+same tests in a mode that photographs instead of asserting:
+
+```bash
+bun run native/swift/fixture/ui-tests.ts --screenshots apps/docs/public/native/ios
+```
+
+`CaptureUITests` walks the sign-in, the sign-up, the password reset, the second step and the
+account in both schemes (it skips itself without that flag), and the script writes 560 px WebP files
+and `manifest.json` there (it needs `cwebp`: `brew install webp`). They are committed; nothing
+runs them in CI. [Refreshing the captures](../../docs/swift.md#refreshing-the-captures) has the rest.
+
 ## What was run, and what was not
 
 The thirteen tests of `AuthScreensUITests` and the five of `SecondStepAndAccountUITests`
