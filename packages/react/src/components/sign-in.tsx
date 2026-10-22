@@ -33,13 +33,7 @@ import {
   useRetryAfter,
   VerificationScreen,
 } from './flow-screens'
-import {
-  attemptsLeft,
-  fieldResolver,
-  formatDuration,
-  placeErrors,
-  rateLimitedAlert,
-} from './form-errors'
+import { attemptsLeft, fieldResolver, placeErrors, rateLimitedAlert } from './form-errors'
 import {
   canEnrolTotp,
   drawableFactors,
@@ -420,9 +414,6 @@ function EmailFactorScreen(
       setCode('')
     }
   }
-  const retry = (seconds: number) =>
-    seconds > 0 ? formatText(t.common.retryIn, { time: formatDuration(seconds, t) }) : null
-
   if (!sent) {
     return (
       <Card
@@ -437,7 +428,7 @@ function EmailFactorScreen(
           failure={signIn.error}
           blocked={signIn.isPending || sendWait > 0}
         >
-          <FormError message={placed.form} detail={retry(sendWait)} />
+          <FormError {...rateLimitedAlert(placed.form, sendWait, t)} />
           <Button type='submit' pending={signIn.isPending} disabled={sendWait > 0}>
             {viaLink ? t.signIn.emailLink : t.signIn.emailCode}
           </Button>
@@ -474,7 +465,7 @@ function EmailFactorScreen(
         failure={incomplete ?? signIn.error}
         blocked={signIn.isPending || submitWait > 0}
       >
-        <FormError message={placed.form} detail={retry(Math.max(submitWait, sendWait))} />
+        <FormError {...rateLimitedAlert(placed.form, Math.max(submitWait, sendWait), t)} />
         <CodeField
           value={code}
           onValue={(value) => {
@@ -566,9 +557,6 @@ function SmsCodeScreen(props: FirstFactorFormProps) {
       setCode('')
     }
   }
-  const retry = (seconds: number) =>
-    seconds > 0 ? formatText(t.common.retryIn, { time: formatDuration(seconds, t) }) : null
-
   if (!sent) {
     return (
       <Card
@@ -583,7 +571,7 @@ function SmsCodeScreen(props: FirstFactorFormProps) {
           failure={signIn.error}
           blocked={signIn.isPending || sendWait > 0}
         >
-          <FormError message={placed.form} detail={retry(sendWait)} />
+          <FormError {...rateLimitedAlert(placed.form, sendWait, t)} />
           <Button type='submit' pending={signIn.isPending} disabled={sendWait > 0}>
             {t.signIn.smsCode}
           </Button>
@@ -608,7 +596,7 @@ function SmsCodeScreen(props: FirstFactorFormProps) {
         failure={incomplete ?? signIn.error}
         blocked={signIn.isPending || submitWait > 0}
       >
-        <FormError message={placed.form} detail={retry(Math.max(submitWait, sendWait))} />
+        <FormError {...rateLimitedAlert(placed.form, Math.max(submitWait, sendWait), t)} />
         <CodeField
           value={code}
           onValue={(value) => {

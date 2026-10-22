@@ -6,7 +6,7 @@ import { useAuthState } from '../hooks/use-auth-state'
 import { usePasskeySupport } from '../hooks/use-passkey-support'
 import { formatText } from '../localization'
 import { CODE_LENGTH, CodeField, ResendButton, useRetryAfter } from './flow-screens'
-import { attemptsLeft, formatDuration } from './form-errors'
+import { attemptsLeft, rateLimitedAlert } from './form-errors'
 import {
   BackupCodesPanel,
   drawableFactors,
@@ -140,10 +140,7 @@ function PasswordStepUp(props: {
   return (
     <Form onSubmit={submit} failure={missing || error} blocked={isPending || wait > 0}>
       <p className='tula-text'>{t.stepUp.passwordSubtitle}</p>
-      <FormError
-        message={error && !wrong ? error.message : null}
-        detail={wait > 0 ? formatText(t.common.retryIn, { time: formatDuration(wait, t) }) : null}
-      />
+      <FormError {...rateLimitedAlert(error && !wrong ? error.message : null, wait, t)} />
       <PasswordField
         label={t.stepUp.passwordLabel}
         name='current-password'
@@ -264,14 +261,11 @@ function EmailCodeStepUp(props: {
     }
   }
 
-  const retry = (seconds: number) =>
-    seconds > 0 ? formatText(t.common.retryIn, { time: formatDuration(seconds, t) }) : null
-
   if (receipt === null) {
     return (
       <Form onSubmit={() => void send(false)} failure={sendError} blocked={sending || sendWait > 0}>
         {sending ? <p className='tula-text'>{t.stepUp.emailSending}</p> : null}
-        <FormError message={sendError?.message ?? null} detail={retry(sendWait)} />
+        <FormError {...rateLimitedAlert(sendError?.message ?? null, sendWait, t)} />
         {sending ? null : (
           <Button type='submit' pending={sending} disabled={sendWait > 0}>
             {t.stepUp.emailSend}
@@ -303,7 +297,7 @@ function EmailCodeStepUp(props: {
         <p className='tula-text'>
           {formatText(t.stepUp.emailSubtitle, { destination: receipt.destination })}
         </p>
-        <FormError message={formMessage} detail={retry(verifyWait)} />
+        <FormError {...rateLimitedAlert(formMessage, verifyWait, t)} />
         <CodeField
           value={code}
           onValue={(value) => {

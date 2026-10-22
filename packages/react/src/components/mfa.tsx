@@ -10,7 +10,7 @@ import { usePasskeySupport } from '../hooks/use-passkey-support'
 import { formatText } from '../localization'
 import type { QrDrawing } from '../qr'
 import { CODE_LENGTH, CodeField, digitsOnly, ResendButton, useRetryAfter } from './flow-screens'
-import { type FieldResolver, formatDuration, placeErrors } from './form-errors'
+import { type FieldResolver, placeErrors, rateLimitedAlert } from './form-errors'
 import { PasskeyPanel } from './passkey'
 import { Button, Card, Form, FormError, Status, TextField, useUi } from './ui'
 
@@ -397,10 +397,7 @@ export function SecondFactorForm(props: {
     <Form onSubmit={submit} failure={local ?? shown} blocked={isPending || wait > 0}>
       <p className='tula-text'>{method === 'totp' ? props.totpSubtitle : props.backupSubtitle}</p>
       <div className='tula-field-slot' ref={form}>
-        <FormError
-          message={placed.form}
-          detail={wait > 0 ? formatText(t.common.retryIn, { time: formatDuration(wait, t) }) : null}
-        />
+        <FormError {...rateLimitedAlert(placed.form, wait, t)} />
         {method === 'totp' ? (
           <TotpField value={code} onValue={change} errors={errors} />
         ) : (
@@ -512,9 +509,6 @@ export function TextedCodeForm(props: {
       setCode('')
     }
   }
-  const retry = (seconds: number) =>
-    seconds > 0 ? formatText(t.common.retryIn, { time: formatDuration(seconds, t) }) : null
-
   // The app has switched texted codes, text messages or the number's country off. The server
   // goes on asking this user for the factor (it never falls open to "no second step": ADR
   // 0025) and refuses every send and every code alike, so each control here could only be
@@ -532,7 +526,7 @@ export function TextedCodeForm(props: {
     return (
       <Form onSubmit={() => void send(false)} failure={error} blocked={sending || sendWait > 0}>
         <p className='tula-text'>{props.prompt}</p>
-        <FormError message={error?.message ?? null} detail={retry(sendWait)} />
+        <FormError {...rateLimitedAlert(error?.message ?? null, sendWait, t)} />
         <Button type='submit' pending={sending} disabled={sendWait > 0}>
           {t.mfa.smsSend}
         </Button>
@@ -559,7 +553,7 @@ export function TextedCodeForm(props: {
         <p className='tula-text'>
           {formatText(t.phone.codeSent, { digits: destination.replace(/^\*+/, '') })}
         </p>
-        <FormError message={formMessage} detail={retry(verifyWait)} />
+        <FormError {...rateLimitedAlert(formMessage, verifyWait, t)} />
         <CodeField
           value={code}
           onValue={(value) => {
@@ -698,10 +692,7 @@ export function EnrolmentConfirmForm(props: {
   return (
     <Form onSubmit={submit} failure={local ?? error} blocked={isPending || wait > 0}>
       <EnrolmentDetails enrolment={props.enrolment} />
-      <FormError
-        message={placed.form}
-        detail={wait > 0 ? formatText(t.common.retryIn, { time: formatDuration(wait, t) }) : null}
-      />
+      <FormError {...rateLimitedAlert(placed.form, wait, t)} />
       <TotpField
         value={code}
         onValue={(value) => {

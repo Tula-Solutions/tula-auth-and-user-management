@@ -10,6 +10,7 @@ import {
   EXPIRED_PASSWORD_STEP,
   expectAbsent,
   expectFocus,
+  expectRateLimited,
   failure,
   NEW_PASSWORD_STEP,
   ROUTE,
@@ -397,6 +398,7 @@ describe('<SignIn> an expired password', () => {
     const alert = await screen.findByRole('alert')
     // The countdown is drawn one render after the alert (`useCountdown` starts in an effect).
     await waitFor(() => expect(alert.textContent).toMatch(/Try again in (30|29)s\./))
+    expectRateLimited(alert)
     expect(submit.getAttribute('aria-disabled')).toBe('true')
     await w.user.click(submit)
     expect(w.api.calls(ROUTE.signInNewPassword)).toHaveLength(1)
