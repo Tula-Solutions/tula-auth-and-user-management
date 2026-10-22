@@ -66,20 +66,23 @@ describe('the aggregate jobs keep the names the ruleset requires', () => {
     expect(resultsStep(name)?.env?.RESULTS).toBe("${{ join(needs.*.result, ' ') }}")
   })
 
-  function verdict(results: string) {
-    return Bun.spawnSync(['bash', '-euo', 'pipefail', '-c', resultsStep('verify')?.run ?? 'true'], {
+  function verdict(results: string, name = 'verify') {
+    return Bun.spawnSync(['bash', '-euo', 'pipefail', '-c', resultsStep(name)?.run ?? 'true'], {
       env: { PATH: process.env.PATH ?? '', RESULTS: results },
       timeout: 10_000,
     }).exitCode
   }
 
-  test('the script passes only for results that are all "success"', () => {
-    expect(verdict('success success success success')).toBe(0)
-    expect(verdict('success failure success success')).not.toBe(0)
-    expect(verdict('success skipped success success')).not.toBe(0)
-    expect(verdict('success cancelled success success')).not.toBe(0)
-    expect(verdict('')).not.toBe(0)
-  })
+  test.each(Object.keys(SPLIT))(
+    'the script of %s passes only for results that are all "success"',
+    (name) => {
+      expect(verdict('success success success success', name)).toBe(0)
+      expect(verdict('success failure success success', name)).not.toBe(0)
+      expect(verdict('success skipped success success', name)).not.toBe(0)
+      expect(verdict('success cancelled success success', name)).not.toBe(0)
+      expect(verdict('', name)).not.toBe(0)
+    }
+  )
 
   test('`passed` still waits for the three names and not for their parts', () => {
     const waits = needs('passed')
