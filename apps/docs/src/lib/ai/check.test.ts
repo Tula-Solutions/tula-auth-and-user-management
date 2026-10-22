@@ -56,6 +56,15 @@ describe('checkAiFiles', () => {
     expect(() => check(files)).toThrow(/llms\.txt.*gone\.md/)
   })
 
+  test('fails for a dead link in llms-full.txt or the sitemap', () => {
+    const files = good()
+    files.set('llms-full.txt', `# T\n\n[x](${own}/gone.md)\n`)
+    expect(() => check(files)).toThrow(/llms-full\.txt.*gone\.md/)
+    const other = good()
+    other.set('sitemap.xml', `<loc>${own}/gone/</loc>`)
+    expect(() => check(other)).toThrow(/sitemap\.xml.*gone/)
+  })
+
   test('fails for a page llms.txt leaves out', () => {
     const files = good()
     files.set('llms.txt', `# T\n\n- [Home](${own}/index.md)\n`)

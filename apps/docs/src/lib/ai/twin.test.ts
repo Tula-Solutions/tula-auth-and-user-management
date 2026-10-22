@@ -148,6 +148,33 @@ describe('twinBody links', () => {
     expect(body).toContain('(https://bun.sh)')
   })
 
+  test('a title that repeats the address is left alone, and the address is the one rewritten', () => {
+    const body = twinBody({
+      file: 'docs/quickstart.md',
+      route: '/quickstart/',
+      title: 'Q',
+      description: '',
+      source: '# Q\n\n[a](quickstart.md "quickstart.md")\n\n[b]: quickstart.md "quickstart.md"\n',
+      environment,
+      urls,
+    })
+    expect(body).toContain('[a](https://docs.example/sub/quickstart.md "quickstart.md")')
+    expect(body).toContain('[b]: https://docs.example/sub/quickstart.md "quickstart.md"')
+  })
+
+  test('a line break does not join the words around it', () => {
+    const body = twinBody({
+      file: 'docs/quickstart.md',
+      route: '/quickstart/',
+      title: 'Q',
+      description: '',
+      source: '# Q\n\na<br>b and c<br/>d\n',
+      environment,
+      urls,
+    })
+    expect(body).toContain('a b and c d')
+  })
+
   test('a link that does not resolve stops the build', () => {
     expect(() => twin('# Q\n\n[x](missing.md)\n')).toThrow(LinkError)
     expect(() => twin('# Q\n\n[x](methods/password.md#nope)\n')).toThrow('#nope')

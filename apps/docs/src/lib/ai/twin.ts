@@ -51,9 +51,9 @@ export function frontMatter(fields: Readonly<Record<string, string | undefined>>
   return `---\n${lines.join('\n')}\n---\n`
 }
 
-/** Where `needle` is in `slice`, or an error that names the file. */
-function locate(file: string, slice: string, needle: string): number {
-  const at = slice.lastIndexOf(needle)
+/** Where `needle` is in `slice` from `from` on, or an error that names the file. */
+function locate(file: string, slice: string, needle: string, from: number): number {
+  const at = slice.indexOf(needle, from)
   if (at === -1) {
     throw new RenderError(file, `the address "${needle}" cannot be found in its link's text`)
   }
@@ -107,7 +107,8 @@ export function twinBody(input: TwinInput): string {
       return
     }
     if (node.type === 'html') {
-      edits.push({ start, end, text: '' })
+      // A line break must not join the words around it; any other tag or comment goes.
+      edits.push({ start, end, text: /^<br\s*\/?>$/i.test(node.value) ? ' ' : '' })
       return
     }
     if (node.type !== 'link' && node.type !== 'image' && node.type !== 'definition') {
@@ -117,7 +118,14 @@ export function twinBody(input: TwinInput): string {
     if (target === '' || isExternal(target)) {
       return
     }
-    const at = locate(input.file, input.source.slice(start, end), target)
+    // The address comes after the label (or the `]:` of a definition), so a title that repeats
+    // it is not the one rewritten.
+    const labelEnd = (node as Link).children?.at(-1)?.position?.end.offset
+    const from =
+      node.type === 'definition'
+        ? input.source.indexOf(']:', start) - start
+        : (labelEnd ?? start + 1) - start
+    const at = locate(input.file, input.source.slice(start, end), target, Math.max(from, 0))
     edits.push({
       start: start + at,
       end: start + at + target.length,

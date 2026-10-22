@@ -80,7 +80,8 @@ group of {{file:llms.txt}}.
   and `TULA_MASTER_KEY` must be backed up by the user: stored signing keys and provider
   credentials cannot be opened without it.
 - **The secret key (`tula_sk_…`) stays on a server.** The publishable key (`tula_pk_…`) goes in
-  the app ({{page:docs/self-host.md}}). No native app is ever given the secret key.
+  the app ({{page:docs/self-host.md}}). No native app is ever given the secret key
+  ({{page:docs/quickstart.md}}).
 - No command takes a secret as an argument. Credentials come from the environment or a file
   ({{page:docs/cli.md}}).
 - Run `bunx tula` only in a project that has the CLI installed. Anywhere else the name is an

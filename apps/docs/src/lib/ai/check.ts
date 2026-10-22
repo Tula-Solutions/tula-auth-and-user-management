@@ -107,7 +107,7 @@ export function checkAiFiles(input: AiCheckInput): void {
   }
   // `llms-full.txt` holds the twins' text again, so its links are the twins' links.
   for (const [path, text] of input.files) {
-    if (!path.endsWith('.md') && path !== 'llms.txt') {
+    if (!path.endsWith('.md') && !path.endsWith('.txt') && path !== 'sitemap.xml') {
       continue
     }
     for (const address of ownAddresses(text, input.urls)) {
