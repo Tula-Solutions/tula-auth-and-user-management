@@ -99,3 +99,12 @@ static HTML. Its commands are in its README.
   a value must be absolute and strictly inside the (real) temporary directory, or, for the
   repository, the real root, and anything else throws before a write or a delete. Never read
   either variable anywhere else, and never document them as settings.
+- **A page's content is cut into sections, so that axe can check a huge page in pieces.**
+  `wrapSections` (`markdown.ts`; `error-codes.ts` writes the same markup by hand) wraps the
+  content in `<div data-docs-section="n">`: number 0 is the title and introduction, then one
+  for each `h2` and `h3`. A `div`, never a `section`: nothing is added to the landmarks. The
+  build writes the size of each section to `page-stats.json`; the `docs` project checks a page
+  above `CHUNK_THRESHOLD` (`e2e/chunks.ts`) as its frame (everything but sections 1 and up)
+  plus runs of sections of about `CHUNK_BUDGET`, each its own test per theme, and every page
+  has a test that all its article's children are sections. Never raise a timeout or disable a
+  rule for a big page: lower `CHUNK_BUDGET`.

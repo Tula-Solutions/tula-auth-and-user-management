@@ -14,6 +14,7 @@ import {
   type ParsedDoc,
   parseMarkdown,
   renderMarkdown,
+  SECTION_ATTRIBUTE,
   type Section,
 } from './markdown'
 import { buildNav, type NavGroup } from './nav'
@@ -247,11 +248,39 @@ export async function writeSite(site: Site, outDir: string): Promise<void> {
   await writeFile(join(outDir, '404.html'), site.notFound)
   await writeFile(join(outDir, 'search-index.json'), JSON.stringify(site.index))
   await writeFile(join(outDir, 'pages.json'), JSON.stringify([...site.documents.keys()].sort()))
+  await writeFile(
+    join(outDir, 'page-stats.json'),
+    JSON.stringify(
+      Object.fromEntries(
+        [...site.documents].sort().map(([route, html]) => [route, pageStats(html)])
+      )
+    )
+  )
   for (const asset of site.assets) {
     const target = join(outDir, 'files', ...asset.split(posix.sep))
     await mkdir(dirname(target), { recursive: true })
     await cp(join(REPO_ROOT, asset), target)
   }
+}
+
+/** How big a page is, for the browser tests that check it in pieces. */
+export interface PageStats {
+  /** The size of the document, in characters. */
+  bytes: number
+  /** The size of each content section (`data-docs-section`, in order), in characters. */
+  sections: number[]
+}
+
+/**
+ * Measure a rendered page.
+ *
+ * @param html - The document.
+ * @returns Its size and the size of each content section (the last one runs to the end of the
+ * document, footer included, which is a few hundred characters).
+ */
+export function pageStats(html: string): PageStats {
+  const parts = html.split(`<div ${SECTION_ATTRIBUTE}="`).slice(1)
+  return { bytes: html.length, sections: parts.map((part) => part.length) }
 }
 
 /**

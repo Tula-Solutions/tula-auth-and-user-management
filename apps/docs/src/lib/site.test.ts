@@ -11,6 +11,7 @@ import {
   buildSite,
   fileOfRoute,
   LANDING_ROUTE,
+  pageStats,
   repositoryEnvironment,
   type Site,
   writeSite,
@@ -136,6 +137,34 @@ describe('the site built from docs/', () => {
   })
 })
 
+describe('pageStats', () => {
+  test('measures the document and each of its sections', () => {
+    const html =
+      '<main><article><div data-docs-section="0">aa</div><div data-docs-section="1">bbbb</div></article></main>'
+    const stats = pageStats(html)
+    expect(stats.bytes).toBe(html.length)
+    expect(stats.sections).toHaveLength(2)
+    expect(stats.sections[1]).toBeGreaterThan(stats.sections[0] as number)
+  })
+
+  test('a page of the sample is cut into sections', () => {
+    const html = site.documents.get('/methods/password/') as string
+    const stats = pageStats(html)
+    expect(stats.sections.length).toBeGreaterThan(1)
+    expect(html.match(/data-docs-section="/g)).toHaveLength(stats.sections.length)
+  })
+
+  test('the article holds nothing but sections', () => {
+    for (const route of ['/quickstart/', '/methods/password/', '/reference/core/']) {
+      const html = site.documents.get(route) as string
+      const article = html.slice(html.indexOf('<article'), html.indexOf('</article>'))
+      const inner = article.slice(article.indexOf('>') + 1)
+      expect(inner.startsWith('<div data-docs-section="0">'), route).toBe(true)
+      expect(inner.endsWith('</div>'), route).toBe(true)
+    }
+  })
+})
+
 describe('writeSite', () => {
   test('writes one index.html per route, the search index and the copied images', async () => {
     const out = mkdtempSync(join(tmpdir(), 'docs-site-'))
@@ -148,6 +177,8 @@ describe('writeSite', () => {
       const index = JSON.parse(readFileSync(join(out, 'search-index.json'), 'utf8')) as unknown[]
       expect(index.length).toBe(site.index.length)
       const listed = JSON.parse(readFileSync(join(out, 'pages.json'), 'utf8')) as string[]
+      const stats = JSON.parse(readFileSync(join(out, 'page-stats.json'), 'utf8')) as object
+      expect(Object.keys(stats).sort()).toEqual(listed)
       expect(listed).toContain('/reference/error-codes/')
     } finally {
       rmSync(out, { recursive: true, force: true })

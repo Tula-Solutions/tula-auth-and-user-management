@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { expect, type Page, test } from '@playwright/test'
+import { BEYOND_INTRODUCTION, CHUNK_THRESHOLD, chunksOf, selectorsOf } from '../../chunks'
 import { expectAccessible } from '../support'
 
 // The documentation site (apps/docs), built from docs/** and served as static files. Every page
@@ -9,6 +10,11 @@ import { expectAccessible } from '../support'
 const pages = JSON.parse(
   readFileSync(`${import.meta.dirname}/../../../apps/docs/dist/pages.json`, 'utf8')
 ) as string[]
+
+// The size of each page and of its content sections, as the build measured them.
+const pageStats = JSON.parse(
+  readFileSync(`${import.meta.dirname}/../../../apps/docs/dist/page-stats.json`, 'utf8')
+) as Record<string, { bytes: number; sections: number[] }>
 
 /** A page that fails to load, logs an error or throws fails the test that opened it. */
 function watch(page: Page): string[] {
@@ -39,22 +45,72 @@ test.describe('the documentation site', () => {
     expect(pages).toContain('/reference/error-codes/')
   })
 
-  // One test per page and theme, so that the megabyte reference pages (axe takes minutes on
-  // them) are spread over the workers and each test keeps well inside its own limit.
+  // A small page is checked whole, one test a theme. A page above CHUNK_THRESHOLD (the generated
+  // reference pages, up to a megabyte and a half, on which axe alone takes minutes) is checked in
+  // pieces that together cover it, none of it skipped and no rule disabled: the frame (the page
+  // without the content past its introduction, so the outline and the page-level rules still
+  // see it) and each run of sections, a test of its own per theme, spread over the workers.
   for (const route of pages) {
+    const stats = pageStats[route]
+    const chunks =
+      stats !== undefined && stats.bytes > CHUNK_THRESHOLD ? chunksOf(stats.sections) : []
     for (const scheme of ['light', 'dark'] as const) {
-      test(`${route} renders and is accessible in ${scheme}`, async ({ page }) => {
-        test.setTimeout(300_000)
+      async function open(page: Page): Promise<string[]> {
         const problems = watch(page)
         await page.emulateMedia({ colorScheme: scheme })
         await page.goto(route)
         // With no choice made the site follows the system, and says so on the root.
         await expect(page.locator('html')).toHaveAttribute('data-theme', scheme)
         await expect(page.locator('main h1').first()).toBeVisible()
-        await expectAccessible(page, `${route} (${scheme})`)
+        return problems
+      }
+
+      if (chunks.length === 0) {
+        test(`${route} renders and is accessible in ${scheme}`, async ({ page }) => {
+          const problems = await open(page)
+          await expectAccessible(page, `${route} (${scheme})`)
+          expect(problems).toEqual([])
+        })
+        continue
+      }
+
+      test(`${route} renders and its frame is accessible in ${scheme}`, async ({ page }) => {
+        const problems = await open(page)
+        await expectAccessible(page, `${route} frame (${scheme})`, {
+          exclude: [BEYOND_INTRODUCTION],
+        })
         expect(problems).toEqual([])
       })
+      for (const chunk of chunks) {
+        test(`${route} sections ${chunk.from} to ${chunk.to} are accessible in ${scheme}`, async ({
+          page,
+        }) => {
+          await open(page)
+          await expectAccessible(page, `${route} sections ${chunk.from}-${chunk.to} (${scheme})`, {
+            include: selectorsOf(chunk),
+          })
+        })
+      }
     }
+
+    test(`${route} is cut into sections that hold all its content`, async ({ page }) => {
+      await page.goto(route)
+      const children = await page
+        .locator('article.doc > *')
+        .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-docs-section')))
+      // Every child of the content is a section, numbered in order, and the build measured the
+      // same number: nothing sits outside a section, so nothing escapes the pieces.
+      expect(children).toEqual(children.map((_, index) => String(index)))
+      expect(children.length, `${route} sections in the page and in page-stats.json`).toBe(
+        stats?.sections.length
+      )
+      // And the pieces of a chunked page are exactly the sections after the introduction.
+      if (chunks.length > 0) {
+        expect(chunks.flatMap((chunk) => selectorsOf(chunk))).toEqual(
+          children.slice(1).map((_, index) => `[data-docs-section="${index + 1}"]`)
+        )
+      }
+    })
 
     test(`${route} fits a phone`, async ({ page }) => {
       const problems = watch(page)

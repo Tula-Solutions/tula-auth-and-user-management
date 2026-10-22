@@ -1,5 +1,5 @@
 import { ERROR_DEFINITIONS } from '@tula-tech/contract/error-codes'
-import type { Heading, Section } from './markdown'
+import { type Heading, SECTION_ATTRIBUTE, type Section } from './markdown'
 
 /** The route of the generated error-code reference. */
 export const ERROR_CODES_ROUTE = '/reference/error-codes/'
@@ -83,7 +83,13 @@ export function buildErrorCodesPage(entries: readonly ErrorCodeEntry[]): ErrorCo
       text: 'Every error code the API returns, with its HTTP status and default message.',
     },
   ]
+  // The same sections `wrapSections` makes of a rendered Markdown page: the introduction, then
+  // one for each h2 and h3.
+  let opened = 0
+  const open = () => `<div ${SECTION_ATTRIBUTE}="${opened++}">`
+  const next = () => `</div>\n${open()}`
   const parts: string[] = [
+    open(),
     '<h1 id="error-codes">Error codes</h1>',
     `<p>Every error code the API returns, with its HTTP status and default message. The code, not the message, is the contract: an SDK switches on <code>code</code> and may word the message itself. Codes are only ever added. An error response has the shape <code>{ status, code, detail, params?, errors? }</code>; a field error carries the code of the rule that failed. The codes are defined in <code>@tula-tech/contract</code> (<a href="../contract/">reference</a>).</p>`,
   ]
@@ -91,17 +97,20 @@ export function buildErrorCodesPage(entries: readonly ErrorCodeEntry[]): ErrorCo
     const id = areaId(area)
     headings.push({ depth: 2, text: area, id })
     parts.push(
+      next(),
       `<h2 id="${escapeHtml(id)}">${escapeHtml(area)}<a class="permalink" href="#${escapeHtml(id)}" aria-label="Link to “${escapeHtml(area)}”">#</a></h2>`
     )
     for (const { code, status, message } of codes) {
       headings.push({ depth: 3, text: code, id: code })
       sections.push({ id: code, title: code, text: `${message} HTTP ${status}` })
       parts.push(
+        next(),
         `<h3 id="${escapeHtml(code)}"><code>${escapeHtml(code)}</code><a class="permalink" href="#${escapeHtml(code)}" aria-label="Link to “${escapeHtml(code)}”">#</a></h3>`,
         `<p class="error-meta">HTTP ${status}</p>`,
         `<p>${escapeHtml(message)}</p>`
       )
     }
   }
+  parts.push('</div>')
   return { title: 'Error codes', html: parts.join('\n'), headings, sections }
 }

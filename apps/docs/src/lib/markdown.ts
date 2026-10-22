@@ -323,6 +323,7 @@ export function renderMarkdown(
     }
   })
 
+  wrapSections(tree)
   const html = unified().use(rehypeStringify).stringify(tree)
   return { html, assets }
 }
@@ -357,6 +358,35 @@ function nameHeaderCells(table: Element): void {
       ]),
     ]
   }
+}
+
+/** The attribute that marks a section of a page's content (`wrapSections`). */
+export const SECTION_ATTRIBUTE = 'data-docs-section'
+
+/**
+ * Wrap the content of a page in sections: a `div` for what comes before the first `h2` (the
+ * title and the introduction, number 0) and one for each `h2` or `h3` and what follows it.
+ * The generated reference pages put most of their content under a handful of `h2`, so the
+ * unit is the `h3` too; the tests group the small ones back into chunks of a size axe can do
+ * in well under a minute.
+ *
+ * The browser tests run the accessibility checker on one section at a time, so that the
+ * megabyte-sized reference pages are checked in pieces, none of it skipped: every child of the
+ * root is inside exactly one section. A `div` and not a `section`, so that no landmark or
+ * region is added to the outline, and nothing else about the content changes.
+ *
+ * @param root - The rendered tree, changed in place.
+ */
+export function wrapSections(root: Root): void {
+  const sections: Element[] = []
+  for (const child of root.children) {
+    const starts = child.type === 'element' && (child.tagName === 'h2' || child.tagName === 'h3')
+    if (sections.length === 0 || starts) {
+      sections.push(element('div', { [SECTION_ATTRIBUTE]: String(sections.length) }, []))
+    }
+    ;(sections[sections.length - 1] as Element).children.push(child as ElementContent)
+  }
+  root.children = sections
 }
 
 /**

@@ -6,6 +6,21 @@ describe('the error-code page', () => {
   const entries = errorCodeEntries()
   const page = buildErrorCodesPage(entries)
 
+  test('the page is cut into sections like a rendered page: the introduction, each area, each code', () => {
+    const numbers = [...page.html.matchAll(/<div data-docs-section="(\d+)">/g)].map((m) => m[1])
+    const areas = new Set(entries.map((entry) => entry.area)).size
+    expect(numbers).toEqual(
+      Array.from({ length: 1 + areas + entries.length }, (_, index) => String(index))
+    )
+    expect(page.html.match(/<\/div>/g)).toHaveLength(numbers.length)
+    // Every h2 and h3 opens a section, and nothing is outside one.
+    expect(page.html.match(/<div data-docs-section="\d+">\n<h[23] /g)).toHaveLength(
+      areas + entries.length
+    )
+    expect(page.html.startsWith('<div data-docs-section="0">\n<h1')).toBe(true)
+    expect(page.html.endsWith('</div>')).toBe(true)
+  })
+
   test('lists every code the contract defines, in its order', () => {
     expect(entries.map((entry) => entry.code)).toEqual([...ERROR_CODES])
     expect(entries.length).toBeGreaterThan(60)

@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
+import type { Element, Root } from 'hast'
 import { fakeEnvironment } from '../testing/environment'
 import { LinkError } from './links'
 import {
@@ -9,6 +10,8 @@ import {
   parseMarkdown,
   RenderError,
   renderMarkdown,
+  SECTION_ATTRIBUTE,
+  wrapSections,
 } from './markdown'
 
 const environment = fakeEnvironment(
@@ -253,5 +256,75 @@ describe('linkedFiles', () => {
 
   test('a link that does not resolve fails as it does in a render', () => {
     expect(() => files('# T\n\n[x](missing.md)\n')).toThrow(LinkError)
+  })
+})
+
+describe('sections', () => {
+  const source = [
+    '# Title',
+    '',
+    'Intro.',
+    '',
+    '## One',
+    '',
+    'Text one.',
+    '',
+    '### Sub',
+    '',
+    '| a | b |',
+    '| - | - |',
+    '| 1 | 2 |',
+    '',
+    '## Two',
+    '',
+    'Text two.',
+    '',
+  ].join('\n')
+
+  test('the content is wrapped in a div for the introduction and one for each h2 and h3', () => {
+    const html = render(source).html
+    expect(html.match(new RegExp(`<div ${SECTION_ATTRIBUTE}="\\d+">`, 'g'))).toEqual([
+      `<div ${SECTION_ATTRIBUTE}="0">`,
+      `<div ${SECTION_ATTRIBUTE}="1">`,
+      `<div ${SECTION_ATTRIBUTE}="2">`,
+      `<div ${SECTION_ATTRIBUTE}="3">`,
+    ])
+    expect(html).toMatch(new RegExp(`<div ${SECTION_ATTRIBUTE}="1">\\s*<h2 id="one"`))
+    expect(html).toMatch(new RegExp(`<div ${SECTION_ATTRIBUTE}="2">\\s*<h3 id="sub"`))
+    expect(html).toMatch(new RegExp(`<div ${SECTION_ATTRIBUTE}="0">\\s*<h1`))
+    // No landmark or region is added.
+    expect(html).not.toContain('<section')
+    expect(html).not.toContain('role="region" data-docs-section')
+  })
+
+  test('every child of the root is inside exactly one section, in order', () => {
+    const root: Root = {
+      type: 'root',
+      children: [
+        { type: 'element', tagName: 'h1', properties: {}, children: [] },
+        { type: 'text', value: '\n' },
+        { type: 'element', tagName: 'p', properties: {}, children: [] },
+        { type: 'element', tagName: 'h2', properties: {}, children: [] },
+        { type: 'element', tagName: 'p', properties: {}, children: [] },
+        { type: 'element', tagName: 'h2', properties: {}, children: [] },
+      ],
+    }
+    const before = [...root.children]
+    wrapSections(root)
+    expect(
+      root.children.every((child) => child.type === 'element' && child.tagName === 'div')
+    ).toBe(true)
+    const inside = (root.children as Element[]).flatMap((section) => section.children)
+    expect(inside as unknown[]).toEqual(before)
+    expect((inside as unknown[]).every((child, index) => child === before[index])).toBe(true)
+  })
+
+  test('a page that starts with an h2 has no empty introduction section', () => {
+    const root: Root = {
+      type: 'root',
+      children: [{ type: 'element', tagName: 'h2', properties: {}, children: [] }],
+    }
+    wrapSections(root)
+    expect(root.children).toHaveLength(1)
   })
 })
