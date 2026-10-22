@@ -21,16 +21,22 @@ const ENVIRONMENT_ID = '00000000-0000-7000-8000-00000000e001'
 // so a run of this project alone starts nothing else (see `docsOnly`).
 const DOCS_URL = 'http://127.0.0.1:4321'
 
-// `--project=docs` (or E2E_DOCS_ONLY=1) starts only the docs server: Playwright launches every
-// `webServer` of the config whatever project is selected, and the docs project has no use for
-// the API fixture or the Next.js build.
+// Playwright launches every `webServer` of the config whatever project is selected, so the
+// servers follow the projects named on the command line (`--project=x` or `--project x`; none
+// means all). A run of `docs` alone (or E2E_DOCS_ONLY=1) starts only the docs server, which
+// needs no API; a run that leaves `docs` out starts none of it: that is CI's `e2e` job, with the
+// `e2e-docs` job beside it.
+const selected = process.argv.flatMap((argument, index) => {
+  if (argument.startsWith('--project=')) {
+    return [argument.slice('--project='.length)]
+  }
+  return argument === '--project' && process.argv[index + 1] !== undefined
+    ? [process.argv[index + 1] as string]
+    : []
+})
 const docsOnly =
-  process.env.E2E_DOCS_ONLY === '1' ||
-  process.argv.some(
-    (argument, index) =>
-      argument === '--project=docs' ||
-      (argument === '--project' && process.argv[index + 1] === 'docs')
-  )
+  process.env.E2E_DOCS_ONLY === '1' || (selected.length > 0 && selected.every((p) => p === 'docs'))
+const withDocs = selected.length === 0 || selected.includes('docs')
 
 export default defineConfig({
   testDir: './tests',
@@ -73,6 +79,10 @@ export default defineConfig({
     {
       name: 'docs',
       testMatch: /docs\/.*\.spec\.ts/,
+      // The pages are static files and each test opens its own: the tests of the one spec file
+      // run on the workers `--workers` gives (CI: four), where `fullyParallel: false` above
+      // would keep them all on one.
+      fullyParallel: true,
       use: { ...devices['Desktop Chrome'], baseURL: DOCS_URL },
     },
     {
@@ -81,21 +91,22 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
-  webServer: [
-    ...(docsOnly ? [] : apiServers()),
-    {
-      // The site is built from docs/** and apps/docs, then served from its output directory.
-      // `exec`: the server must be the process Playwright stops.
-      command: 'bun run docs-site:build && DOCS_PORT=4321 exec bun run apps/docs/scripts/serve.ts',
-      cwd: `${import.meta.dirname}/..`,
-      url: DOCS_URL,
-      reuseExistingServer: !process.env.CI,
-      timeout: 180_000,
-      stdout: 'ignore',
-      stderr: 'pipe',
-    },
-  ],
+  webServer: [...(docsOnly ? [] : apiServers()), ...(withDocs ? [docsServer()] : [])],
 })
+
+/** The documentation site, built from docs/** and apps/docs, then served from its output directory. */
+function docsServer(): WebServer {
+  return {
+    // `exec`: the server must be the process Playwright stops.
+    command: 'bun run docs-site:build && DOCS_PORT=4321 exec bun run apps/docs/scripts/serve.ts',
+    cwd: `${import.meta.dirname}/..`,
+    url: DOCS_URL,
+    reuseExistingServer: !process.env.CI,
+    timeout: 180_000,
+    stdout: 'ignore',
+    stderr: 'pipe',
+  }
+}
 
 type WebServer = Extract<PlaywrightTestConfig['webServer'], unknown[]>[number]
 

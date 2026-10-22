@@ -39,22 +39,25 @@ test.describe('the documentation site', () => {
     expect(pages).toContain('/reference/error-codes/')
   })
 
+  // One test per page and theme, so that the megabyte reference pages (axe takes minutes on
+  // them) are spread over the workers and each test keeps well inside its own limit.
   for (const route of pages) {
-    test(`${route} renders, is accessible in light and dark, and fits a phone`, async ({
-      page,
-    }) => {
-      // axe on the largest reference pages (a megabyte of HTML) takes a minute a theme.
-      test.setTimeout(300_000)
-      const problems = watch(page)
-      for (const scheme of ['light', 'dark'] as const) {
+    for (const scheme of ['light', 'dark'] as const) {
+      test(`${route} renders and is accessible in ${scheme}`, async ({ page }) => {
+        test.setTimeout(300_000)
+        const problems = watch(page)
         await page.emulateMedia({ colorScheme: scheme })
         await page.goto(route)
         // With no choice made the site follows the system, and says so on the root.
         await expect(page.locator('html')).toHaveAttribute('data-theme', scheme)
         await expect(page.locator('main h1').first()).toBeVisible()
         await expectAccessible(page, `${route} (${scheme})`)
-      }
+        expect(problems).toEqual([])
+      })
+    }
 
+    test(`${route} fits a phone`, async ({ page }) => {
+      const problems = watch(page)
       await page.setViewportSize({ width: 375, height: 800 })
       await page.goto(route)
       const overflow = await page.evaluate(
