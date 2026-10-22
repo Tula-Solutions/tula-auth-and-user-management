@@ -437,11 +437,30 @@ export async function signOut(page: Page): Promise<void> {
  *
  * @param page - The page.
  * @param state - Names the screen and state in the failure message.
+ * @param scope - Optionally limit the check: CSS selectors to include (the whole page by default)
+ * and to leave out. Every rule stays on; the docs project uses it to check a very large page in
+ * pieces that together cover it.
  */
-export async function expectAccessible(page: Page, state: string): Promise<void> {
-  const results = await new AxeBuilder({ page })
-    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'])
-    .analyze()
+export async function expectAccessible(
+  page: Page,
+  state: string,
+  scope: { include?: string[]; exclude?: string[] } = {}
+): Promise<void> {
+  const builder = new AxeBuilder({ page }).withTags([
+    'wcag2a',
+    'wcag2aa',
+    'wcag21a',
+    'wcag21aa',
+    'wcag22aa',
+    'best-practice',
+  ])
+  for (const selector of scope.include ?? []) {
+    builder.include(selector)
+  }
+  for (const selector of scope.exclude ?? []) {
+    builder.exclude(selector)
+  }
+  const results = await builder.analyze()
   const problems = results.violations.map((violation) => ({
     rule: violation.id,
     impact: violation.impact,

@@ -39,3 +39,17 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   (`support.ts`). Its component tests (`bun test`, happy-dom) render the whole app against
   `src/testing/fake-api.ts`. The API image builds the app in its own `dashboard` stage and
   copies only `dist`: the `install` stage still gets no manifest of a browser package.
+- **The `docs` project is its own CI job, on four workers.** `e2e` runs
+  `--project=nextjs --project=dashboard --project=chromium` and `e2e-docs` runs
+  `--project=docs --workers=4` (both are in the `ci` gate's `needs`); axe on every page of
+  the site, in both schemes, is what takes the time, and no rule is disabled to shorten it.
+  The config starts only the servers of the projects named on the command line
+  (`playwright.config.ts`: a run of `docs` alone starts no API, a run without it no docs server).
+  The fixture API uses ports 4317 to 4320 and the docs server 4321 with `reuseExistingServer`:
+  only one checkout (or git worktree) can hold 4317 to 4320 at a time, so check them before a
+  local run (`lsof -nP -iTCP:4317-4321 -sTCP:LISTEN`) rather than reuse another checkout's
+  server, which serves its own build.
+  `.claude/hooks/e2e-projects.test.ts` (in `test:harness`) holds that every project of
+  `playwright.config.ts` is named by exactly one of the two jobs, so a new project is added to
+  one of them in the same change; `e2e/projects.ts` (tested in `e2e/projects.test.ts`) decides
+  which servers a command line starts.

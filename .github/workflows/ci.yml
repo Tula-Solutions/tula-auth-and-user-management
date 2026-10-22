@@ -141,12 +141,41 @@ jobs:
       - run: bun install --frozen-lockfile
       - name: Install Chromium and its system libraries
         run: bunx playwright install --with-deps chromium
-      - run: bun run e2e
+      # The `docs` project is the `e2e-docs` job's: it needs no API and is the slow one (axe on
+      # every page of the site), so it runs beside this job and not in it.
+      - run: bun run e2e --project=nextjs --project=dashboard --project=chromium
       - name: Upload the report and traces
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 7
+
+  # The documentation site (apps/docs): built from docs/** and served as static files, every page
+  # opened in a browser with axe in light and dark. Its own job beside `e2e`: it needs no API, and
+  # the large reference pages make it the slowest part of the browser tests, so it runs on four
+  # workers (the pages are static and the tests share no state).
+  e2e-docs:
+    needs: duplicate
+    if: needs.duplicate.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version-file: package.json }
+      - run: bun install --frozen-lockfile
+      - name: Install Chromium and its system libraries
+        run: bunx playwright install --with-deps chromium
+      - run: bun run e2e --project=docs --workers=4
+      - name: Upload the report and traces
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-docs
           path: |
             e2e/playwright-report
             e2e/test-results
@@ -526,7 +555,7 @@ jobs:
   # skipped them. Only a push writes one: its run read no cache, and a fork cannot push.
   passed:
     name: record the pass
-    needs: [duplicate, verify, e2e, kotlin, kotlin-android, self-host, self-host-worker]
+    needs: [duplicate, verify, e2e, e2e-docs, kotlin, kotlin-android, self-host, self-host-worker]
     if: needs.duplicate.outputs.skip != 'true' && github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 5

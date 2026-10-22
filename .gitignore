@@ -49,3 +49,4 @@ packages/expo-screens/android/vendor/
 .gradle/
 .kotlin/
 native/android/*/bin/
+apps/docs/src/styles/tokens.gen.css
