@@ -88,6 +88,39 @@ static HTML. Its commands are in its README.
   (`markdown.ts`): fix a failing page in the renderer, never by disabling a rule or by
   editing the Markdown to suit the site. The project runs on its own, with no API behind it:
   `--project=docs` (or `E2E_DOCS_ONLY=1`) starts only the docs server, on port 4321.
+- **Every page has a Markdown twin, and the build writes the files an AI agent reads**
+  (`src/lib/ai/`, built by `buildSite` for a build of every page and written by `writeSite`;
+  none of it for a sample). `<route>.md` for every route (`/methods/password/` is
+  `/methods/password.md`, `/docs/` is `/docs.md`, `/` is `/index.md`: `twinPath`): the source
+  Markdown with front matter (title, description, url, source, section, `updated` where git can
+  say it), a pointer to `llms.txt`, relative links rewritten to the absolute `.md` address of
+  the page they name (a repository file to its address on GitHub, an image to its copy under
+  `files/`) and the HTML-only parts dropped. The links are rewritten in the source text by
+  position (`twin.ts`), never by re-printing the tree, so the Markdown stays the author's.
+  Beside them: `llms.txt` (llmstxt.org: a title, a summary, a section per sidebar group, one
+  `- [Title](url.md): first sentence` line per page, an `Optional` section), `llms-full.txt`
+  (every hand-written page, the generated `reference/**` left out, under `LLMS_FULL_CAP`),
+  `skill.md`, `sitemap.xml`, `robots.txt`, and a
+  `<link rel="alternate" type="text/markdown">` in each page's head (`withAlternate`; Pages
+  cannot send a `Link:` header). **Every address in them is built from `resolveBase()`'s base
+  and `SITE_ORIGIN` (`src/lib/ai/urls.ts`)**, never written out, and a published file names the
+  origin because an agent reads it away from the site.
+- **`checkAiFiles` (`src/lib/ai/check.ts`) is part of `generate:check`**: it fails for a page
+  with no twin, a page `llms.txt` leaves out, a link to this site in a twin, `llms.txt` or
+  `skill.md` that finds no file or an anchor its page does not have, `llms.txt` over
+  `LLMS_TXT_CAP` and `llms-full.txt` over `LLMS_FULL_CAP`. A cap is raised only by measuring
+  what an agent can load, never to make a build pass.
+- **`skill.md` is written from `apps/docs/content/skill.md`**, the one hand-written file of the
+  site that is not in `docs/`. It holds no address: `{{page:docs/quickstart.md#anchor}}` and
+  `{{file:llms.txt}}` are resolved by `buildSkill`, and a placeholder that names no page stops
+  the build. It says only what the documentation says: a step or a claim is added there in the
+  same change as the page that supports it, and what the docs say was not run is said not run.
+  Without the file in the repository (a throwaway one) no skill is written.
+- **No file of the site starts with a dot.** `actions/upload-pages-artifact` leaves hidden
+  files out, so a `/.well-known/skills/index.json` would never be served; discovery is
+  `llms.txt` and `skill.md` at the root. `updated` and `lastmod` come from the repository's
+  history and only in a clone that has it (`src/lib/ai/git.ts`): the Pages workflow checks out
+  one commit, where every file would get that commit's date, so there they are left out.
 - **shadcn primitives** in `src/components/ui/` are written by `bunx shadcn@latest add` and
   not edited (as in the dashboard). They import `cn` from the bare specifier, mapped by
   `tsconfig.json` and `vite.config.ts`. The primitives used are rendered on the server only.

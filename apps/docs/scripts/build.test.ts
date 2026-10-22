@@ -140,4 +140,62 @@ describe('scripts/build.ts', () => {
     }
     // Each `bun` start can take a second on a slow runner, and Bun's default is five.
   }, 90_000)
+
+  test('the check fails, naming the file, when llms-full.txt would be over its cap', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'docs-build-'))
+    try {
+      const repo = join(dir, 'repo')
+      mkdirSync(join(repo, 'docs'), { recursive: true })
+      writeFileSync(join(repo, 'docs/README.md'), '# Docs\n\n[Big](big.md)\n')
+      // One character past the cap in the body alone.
+      writeFileSync(join(repo, 'docs/big.md'), `# Big\n\n${'word '.repeat(300_000)}\n`)
+
+      const result = build(repo, join(dir, 'dist'), ['--check'])
+
+      expect(result.exitCode).not.toBe(0)
+      expect(result.stderr.toString()).toContain('llms-full.txt')
+      expect(result.stderr.toString()).toContain('over the cap')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+    // One `bun` start, which can take a second or more on a slow runner.
+  }, 60_000)
+
+  test('the check fails for a skill that names a page the site does not have', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'docs-build-'))
+    try {
+      const repo = join(dir, 'repo')
+      mkdirSync(join(repo, 'docs'), { recursive: true })
+      mkdirSync(join(repo, 'apps/docs/content'), { recursive: true })
+      writeFileSync(join(repo, 'docs/README.md'), '# Docs\n')
+      writeFileSync(join(repo, 'apps/docs/content/skill.md'), 'Read {{page:docs/none.md}}.\n')
+
+      const result = build(repo, join(dir, 'dist'), ['--check'])
+
+      expect(result.exitCode).not.toBe(0)
+      expect(result.stderr.toString()).toContain('docs/none.md')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+    // One `bun` start, which can take a second or more on a slow runner.
+  }, 60_000)
+
+  test('the check reports the files for agents it wrote under the base', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'docs-build-'))
+    try {
+      const repo = join(dir, 'repo')
+      mkdirSync(join(repo, 'docs'), { recursive: true })
+      writeFileSync(join(repo, 'docs/README.md'), '# Docs\n\n[Quickstart](quickstart.md)\n')
+      writeFileSync(join(repo, 'docs/quickstart.md'), '# Quickstart\n\nHello.\n')
+
+      const result = build(repo, join(dir, 'dist'), ['--check'], '/tula-auth-and-user-management/')
+
+      expect(result.stderr.toString()).toBe('')
+      expect(result.exitCode).toBe(0)
+      expect(result.stdout.toString()).toContain('Markdown twins')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+    // One `bun` start, which can take a second or more on a slow runner.
+  }, 60_000)
 })
