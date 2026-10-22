@@ -4,6 +4,7 @@ import { LinkError } from './links'
 import {
   createCodeHighlighter,
   type Highlighter,
+  linkedFiles,
   markdownAnchors,
   parseMarkdown,
   RenderError,
@@ -197,5 +198,60 @@ describe('renderMarkdown', () => {
       '<details>'
     )
     expect(() => render('# T\n\n<a href="missing.md">x</a>\n')).toThrow(LinkError)
+  })
+})
+
+describe('linkedFiles', () => {
+  const repo = fakeEnvironment(
+    {
+      'docs/a.md': new Set(['intro']),
+      'docs/b.md': new Set(),
+      'packages/zzz/src/a.ts': null,
+      'packages/zzz/src/b.ts': null,
+      'packages/zzz/src/c.png': null,
+      'packages/zzz/README.md': new Set(),
+    },
+    ['packages/zzz'],
+    { 'docs/b.md': '/b/' }
+  )
+
+  function files(source: string): string[] {
+    return linkedFiles(parseMarkdown('docs/a.md', source), repo)
+  }
+
+  test('a reference definition, an inline link, an image and quoted HTML attributes are all read', () => {
+    expect(
+      files(
+        [
+          '# T',
+          '',
+          '[ref]',
+          '[inline](b.md)',
+          '![i](../packages/zzz/src/c.png)',
+          '<a href="../packages/zzz/src/b.ts">double</a>',
+          "<a href='../packages/zzz/src/a.ts'>single</a>",
+          '',
+          '[ref]: ../packages/zzz/src/a.ts',
+        ].join('\n')
+      ).sort()
+    ).toEqual(
+      [
+        'docs/b.md',
+        'packages/zzz/src/a.ts',
+        'packages/zzz/src/a.ts',
+        'packages/zzz/src/b.ts',
+        'packages/zzz/src/c.png',
+      ].sort()
+    )
+  })
+
+  test('external links and bare anchors name no file; a directory names the file it resolves to', () => {
+    expect(
+      files('# T\n\n[x](https://example.com) [y](#t) [z](mailto:a@b.c) [d](../packages/zzz)\n')
+    ).toEqual(['packages/zzz'])
+  })
+
+  test('a link that does not resolve fails as it does in a render', () => {
+    expect(() => files('# T\n\n[x](missing.md)\n')).toThrow(LinkError)
   })
 })

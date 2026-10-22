@@ -26,8 +26,8 @@ export interface LinkEnvironment {
 /** Where a link ends up. */
 export type Resolved =
   | { kind: 'external'; href: string }
-  | { kind: 'page'; href: string }
-  | { kind: 'repository'; href: string }
+  | { kind: 'page'; href: string; file: string }
+  | { kind: 'repository'; href: string; file: string }
   | { kind: 'asset'; file: string }
 
 /** A link or an anchor the site cannot resolve: the build stops on it. */
@@ -98,7 +98,11 @@ export function resolveLink(from: string, target: string, environment: LinkEnvir
     if (route !== undefined) {
       return page(from, target, index, route, fragment, environment)
     }
-    return { kind: 'repository', href: `${REPO_URL}/tree/${REPO_BRANCH}/${resolved}` }
+    return {
+      kind: 'repository',
+      href: `${REPO_URL}/tree/${REPO_BRANCH}/${resolved}`,
+      file: resolved,
+    }
   }
 
   const route = environment.routes.get(resolved)
@@ -108,11 +112,11 @@ export function resolveLink(from: string, target: string, environment: LinkEnvir
   if (!resolved.endsWith('.md')) {
     return fragment === '' && IMAGE.test(resolved)
       ? { kind: 'asset', file: resolved }
-      : { kind: 'repository', href: repositoryHref(resolved, fragment) }
+      : { kind: 'repository', href: repositoryHref(resolved, fragment), file: resolved }
   }
   // A Markdown file the site does not render: its anchors are still checked.
   checkAnchor(from, target, resolved, fragment, environment)
-  return { kind: 'repository', href: repositoryHref(resolved, fragment) }
+  return { kind: 'repository', href: repositoryHref(resolved, fragment), file: resolved }
 }
 
 const IMAGE = /\.(png|jpe?g|gif|svg|webp|avif)$/i
@@ -131,7 +135,7 @@ function page(
 ): Resolved {
   checkAnchor(from, target, file, fragment, environment)
   const href = `${environment.base.replace(/\/$/, '')}${route}`
-  return { kind: 'page', href: fragment === '' ? href : `${href}#${fragment}` }
+  return { kind: 'page', href: fragment === '' ? href : `${href}#${fragment}`, file }
 }
 
 function checkAnchor(

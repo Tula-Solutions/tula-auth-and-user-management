@@ -298,15 +298,7 @@ export function renderMarkdown(
       )
       return
     }
-    if (node.tagName === 'a' && typeof node.properties?.href === 'string') {
-      node.properties.href = rewrite(doc, node.properties.href, environment, false, assets)
-      if (isExternal(String(node.properties.href))) {
-        node.properties.rel = ['noopener']
-      }
-    }
-    if (node.tagName === 'img' && typeof node.properties?.src === 'string') {
-      node.properties.src = rewrite(doc, node.properties.src, environment, true, assets)
-    }
+    rewriteLink(node, doc, environment, assets, [])
     return
   })
 
@@ -367,6 +359,49 @@ function nameHeaderCells(table: Element): void {
   }
 }
 
+/**
+ * Resolve the address of a link or an image element in place. The one place that reads an
+ * element's address, for the renderer and for {@link linkedFiles} alike.
+ */
+function rewriteLink(
+  node: Element,
+  doc: ParsedDoc,
+  environment: LinkEnvironment,
+  assets: string[],
+  files: string[]
+): void {
+  if (node.tagName === 'a' && typeof node.properties?.href === 'string') {
+    node.properties.href = rewrite(doc, node.properties.href, environment, false, assets, files)
+    if (isExternal(String(node.properties.href))) {
+      node.properties.rel = ['noopener']
+    }
+  }
+  if (node.tagName === 'img' && typeof node.properties?.src === 'string') {
+    node.properties.src = rewrite(doc, node.properties.src, environment, true, assets, files)
+  }
+}
+
+/**
+ * The repository files a document links to, found by the renderer's own resolution of every
+ * link and image (reference definitions and either kind of quote in raw HTML included), with
+ * no highlighting. A guard that must know what a page reads takes it from here so that it
+ * cannot disagree with the build.
+ *
+ * @param doc - A document from {@link parseMarkdown}.
+ * @param environment - What links may point at.
+ * @returns The files and directories linked to (with repeats), none for an external link or an
+ * anchor in the page itself.
+ * @throws RenderError or LinkError as {@link renderMarkdown} does.
+ */
+export function linkedFiles(doc: ParsedDoc, environment: LinkEnvironment): string[] {
+  const tree = structuredClone(doc.tree)
+  const files: string[] = []
+  visit(tree, 'element', (node) => {
+    rewriteLink(node, doc, environment, [], files)
+  })
+  return files
+}
+
 /** The schemes a link may leave the site by. */
 const EXTERNAL_SCHEMES = /^(https?|mailto):/i
 
@@ -376,7 +411,8 @@ function rewrite(
   target: string,
   environment: LinkEnvironment,
   image: boolean,
-  assets: string[]
+  assets: string[],
+  files: string[]
 ): string {
   if (target.startsWith('#')) {
     let fragment: string
@@ -395,6 +431,9 @@ function rewrite(
   // addresses a reader may follow are allowed out of the site.
   if (resolved.kind === 'external' && !EXTERNAL_SCHEMES.test(target)) {
     throw new RenderError(doc.file, `link "${target}" has a scheme the site does not link to`)
+  }
+  if (resolved.kind !== 'external') {
+    files.push(resolved.file)
   }
   if (resolved.kind === 'asset') {
     assets.push(resolved.file)

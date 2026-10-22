@@ -42,11 +42,11 @@ describe('resolveLink', () => {
     ['docs/quickstart.md', 'reference/', '/reference/'],
     ['docs/quickstart.md', 'reference/#sdk-reference', '/reference/#sdk-reference'],
   ])('a link from %s to %s is the page %s', (from, target, href) => {
-    expect(resolveLink(from, target, environment)).toEqual({ kind: 'page', href })
+    expect(resolveLink(from, target, environment)).toMatchObject({ kind: 'page', href })
   })
 
   test('a fragment alone points into the same file', () => {
-    expect(resolveLink('docs/quickstart.md', '#build-the-api-image', environment)).toEqual({
+    expect(resolveLink('docs/quickstart.md', '#build-the-api-image', environment)).toMatchObject({
       kind: 'page',
       href: '/quickstart/#build-the-api-image',
     })
@@ -59,7 +59,7 @@ describe('resolveLink', () => {
       { 'docs/a.md': '/a/' },
       '/docs-site/'
     )
-    expect(resolveLink('docs/a.md', 'a.md', under)).toEqual({
+    expect(resolveLink('docs/a.md', 'a.md', under)).toMatchObject({
       kind: 'page',
       href: '/docs-site/a/',
     })
@@ -92,11 +92,11 @@ describe('resolveLink', () => {
     // A directory with no page of its own is shown on GitHub.
     ['docs/quickstart.md', 'adr/', `${REPO}/tree/develop/docs/adr`],
   ])('a link from %s to %s leaves for the repository on GitHub', (from, target, href) => {
-    expect(resolveLink(from, target, environment)).toEqual({ kind: 'repository', href })
+    expect(resolveLink(from, target, environment)).toMatchObject({ kind: 'repository', href })
   })
 
   test('an image of the repository is an asset to copy', () => {
-    expect(resolveLink('docs/quickstart.md', 'assets/shot.png', environment)).toEqual({
+    expect(resolveLink('docs/quickstart.md', 'assets/shot.png', environment)).toMatchObject({
       kind: 'asset',
       file: 'docs/assets/shot.png',
     })
@@ -106,7 +106,7 @@ describe('resolveLink', () => {
     'a URL such as %s is left alone',
     (target) => {
       expect(isExternal(target)).toBe(true)
-      expect(resolveLink('docs/quickstart.md', target, environment)).toEqual({
+      expect(resolveLink('docs/quickstart.md', target, environment)).toMatchObject({
         kind: 'external',
         href: target,
       })
@@ -154,7 +154,9 @@ describe('resolveLink', () => {
   })
 
   test('a query string is dropped before the file is looked up', () => {
-    expect(resolveLink('docs/quickstart.md', 'methods/password.md?plain=1', environment)).toEqual({
+    expect(
+      resolveLink('docs/quickstart.md', 'methods/password.md?plain=1', environment)
+    ).toMatchObject({
       kind: 'page',
       href: '/methods/password/',
     })
