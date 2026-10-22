@@ -295,7 +295,10 @@ jobs:
   # The two conformance runs are almost all waiting (the scenarios' own waits, and in
   # `one-address` six seconds after each settings change), so they go at once, in the
   # background, and the worker check runs while they wait. They were three jobs, each of which
-  # built the same image and started its own stack.
+  # built the same image and started its own stack. Within a run the scenarios overlap too:
+  # each run has eight environments and runs eight scenarios at a time, one in each
+  # (conformance/README.md, "Several environments at once"), where they used to run one
+  # after another and took 17 and 29 minutes.
   #
   # The conformance scenarios with a receiver are skipped by both runs: their receiver is on
   # the runner, at a private address for a server in a container, and the outbound guard
@@ -308,11 +311,11 @@ jobs:
     needs: duplicate
     if: needs.duplicate.outputs.skip != 'true'
     runs-on: ubuntu-latest
-    # The one-address run is the longest: about ten minutes of waiting the scenarios ask for,
-    # and about six more for the settings to reach the other instance after each change: 29 to
-    # 30 minutes, which the rest of the job runs beside. A limit of 30 cancelled runs in which
-    # every scenario had passed.
-    timeout-minutes: 45
+    # The target is under ten minutes. The scenarios' waits (about 17 minutes of them in one
+    # run, and about 12 more for the settings to reach the other instance after each change in
+    # `one-address`) overlap, in eight environments at once, so the longest single scenario and
+    # the setup are what is left. The limit is a guard against a hang, not an expectation.
+    timeout-minutes: 20
     env:
       # A throwaway value for this job's own containers, the same in every stack.
       TULA_MASTER_KEY: 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
@@ -417,6 +420,35 @@ jobs:
           keys ONE_ADDRESS publishable secret
           keys TWO_PORTS publishable secret
           keys WORKER_STACK secret
+      - name: Create the other environments each conformance run goes through
+        run: |
+          # A scenario changes its environment's settings and puts them back, so two of them can
+          # run side by side only in environments of their own. Each run gets seven more besides
+          # the seeded one (eight lanes), made in one go by a script that prints one
+          # `<publishable key>:<secret key>` line per environment (conformance/README.md,
+          # "Several environments at once"). The API's log lines share its standard output.
+          set -euo pipefail
+          lanes() {
+            local stack=$1
+            local -a compose
+            read -r -a compose <<< "${!stack}"
+            output=$("${compose[@]}" run --rm -T api bun run src/scripts/create-environments.ts --count 7)
+            pairs=$(echo "$output" | grep '^tula_pk_' || true)
+            if [ "$(echo "$pairs" | grep -c '^tula_pk_[^:]*:tula_sk_')" != 7 ]; then
+              echo "$stack: expected seven environments with a publishable and a secret key" >&2
+              exit 1
+            fi
+            for key in $(echo "$pairs" | tr ':' ' '); do
+              echo "::add-mask::$key"
+            done
+            echo "${stack}_ENVIRONMENTS=$(echo "$pairs" | paste -sd, -)" >> "$GITHUB_ENV"
+          }
+          lanes ONE_ADDRESS &
+          one_address=$!
+          lanes TWO_PORTS &
+          two_ports=$!
+          wait "$one_address"
+          wait "$two_ports"
       - name: Start both conformance runs, side by side
         id: runs
         run: |
@@ -444,7 +476,8 @@ jobs:
             CONFORMANCE_SMS_INBOX_URLS=http://localhost:3003,http://localhost:3004 \
             CONFORMANCE_MAILPIT_URL=http://localhost:8025 \
             CONFORMANCE_PUBLISHABLE_KEY="$ONE_ADDRESS_PUBLISHABLE_KEY" \
-            CONFORMANCE_SECRET_KEY="$ONE_ADDRESS_SECRET_KEY"
+            CONFORMANCE_SECRET_KEY="$ONE_ADDRESS_SECRET_KEY" \
+            CONFORMANCE_ENVIRONMENTS="$ONE_ADDRESS_ENVIRONMENTS"
 
           start two-ports \
             CONFORMANCE_BASE_URL=http://localhost:3013 \
@@ -453,7 +486,8 @@ jobs:
             CONFORMANCE_SMS_INBOX_URLS=http://localhost:3013,http://localhost:3014 \
             CONFORMANCE_MAILPIT_URL=http://localhost:8026 \
             CONFORMANCE_PUBLISHABLE_KEY="$TWO_PORTS_PUBLISHABLE_KEY" \
-            CONFORMANCE_SECRET_KEY="$TWO_PORTS_SECRET_KEY"
+            CONFORMANCE_SECRET_KEY="$TWO_PORTS_SECRET_KEY" \
+            CONFORMANCE_ENVIRONMENTS="$TWO_PORTS_ENVIRONMENTS"
       - name: A webhook is delivered by the worker, and by no API instance
         env:
           WORKER_CHECK_API_URLS: http://localhost:3023,http://localhost:3024
