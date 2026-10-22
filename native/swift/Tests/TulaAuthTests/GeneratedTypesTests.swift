@@ -183,9 +183,9 @@ final class GeneratedTypesTests: XCTestCase {
     // MARK: Constants
 
     func testTheThemeHoldsTheDefaultsOfTheContract() {
-        XCTAssertEqual(TulaTheme.defaults.light.primary, "#5b4cf0")
-        XCTAssertEqual(TulaTheme.defaults.dark.background, "#17171c")
-        XCTAssertEqual(TulaTheme.defaults.radius, "12px")
+        XCTAssertEqual(TulaTheme.defaults.light.primary, "#1a1a18")
+        XCTAssertEqual(TulaTheme.defaults.dark.background, "#1c1c19")
+        XCTAssertEqual(TulaTheme.defaults.radius, "10px")
         XCTAssertEqual(TulaThemeToken.all.count, 25)
     }
 
