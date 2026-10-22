@@ -26,29 +26,42 @@ const REPO = 'https://github.com/Tula-Solutions/tula-auth-and-user-management'
 
 describe('resolveLink', () => {
   test.each([
-    ['docs/quickstart.md', 'methods/password.md', '/methods/password/'],
-    ['docs/quickstart.md', 'methods/password.md#switch-it-on', '/methods/password/#switch-it-on'],
+    ['docs/quickstart.md', 'methods/password.md', '/methods/password/', 'docs/methods/password.md'],
+    [
+      'docs/quickstart.md',
+      'methods/password.md#switch-it-on',
+      '/methods/password/#switch-it-on',
+      'docs/methods/password.md',
+    ],
     [
       'docs/methods/password.md',
       '../quickstart.md#build-the-api-image',
       '/quickstart/#build-the-api-image',
+      'docs/quickstart.md',
     ],
     [
       'docs/methods/password.md',
       './password.md#troubleshooting',
       '/methods/password/#troubleshooting',
+      'docs/methods/password.md',
     ],
     // A directory is its README when that is a page.
-    ['docs/quickstart.md', 'reference/', '/reference/'],
-    ['docs/quickstart.md', 'reference/#sdk-reference', '/reference/#sdk-reference'],
-  ])('a link from %s to %s is the page %s', (from, target, href) => {
-    expect(resolveLink(from, target, environment)).toMatchObject({ kind: 'page', href })
+    ['docs/quickstart.md', 'reference/', '/reference/', 'docs/reference/README.md'],
+    [
+      'docs/quickstart.md',
+      'reference/#sdk-reference',
+      '/reference/#sdk-reference',
+      'docs/reference/README.md',
+    ],
+  ])('a link from %s to %s is the page %s', (from, target, href, file) => {
+    expect(resolveLink(from, target, environment)).toEqual({ kind: 'page', href, file })
   })
 
   test('a fragment alone points into the same file', () => {
-    expect(resolveLink('docs/quickstart.md', '#build-the-api-image', environment)).toMatchObject({
+    expect(resolveLink('docs/quickstart.md', '#build-the-api-image', environment)).toEqual({
       kind: 'page',
       href: '/quickstart/#build-the-api-image',
+      file: 'docs/quickstart.md',
     })
   })
 
@@ -59,9 +72,10 @@ describe('resolveLink', () => {
       { 'docs/a.md': '/a/' },
       '/docs-site/'
     )
-    expect(resolveLink('docs/a.md', 'a.md', under)).toMatchObject({
+    expect(resolveLink('docs/a.md', 'a.md', under)).toEqual({
       kind: 'page',
       href: '/docs-site/a/',
+      file: 'docs/a.md',
     })
   })
 
@@ -70,33 +84,47 @@ describe('resolveLink', () => {
       'docs/quickstart.md',
       '../packages/core/README.md',
       `${REPO}/blob/develop/packages/core/README.md`,
+      'packages/core/README.md',
     ],
     [
       'docs/quickstart.md',
       '../packages/core/README.md#install',
       `${REPO}/blob/develop/packages/core/README.md#install`,
+      'packages/core/README.md',
     ],
     // An ADR is a file the site does not render.
     [
       'docs/methods/password.md',
       '../adr/0006-passwords.md#decision',
       `${REPO}/blob/develop/docs/adr/0006-passwords.md#decision`,
+      'docs/adr/0006-passwords.md',
     ],
-    ['docs/quickstart.md', 'plans/phase-1.md', `${REPO}/blob/develop/docs/plans/phase-1.md`],
+    [
+      'docs/quickstart.md',
+      'plans/phase-1.md',
+      `${REPO}/blob/develop/docs/plans/phase-1.md`,
+      'docs/plans/phase-1.md',
+    ],
     [
       'docs/quickstart.md',
       '../apps/api/src/index.ts#L10',
       `${REPO}/blob/develop/apps/api/src/index.ts#L10`,
+      'apps/api/src/index.ts',
     ],
-    ['docs/quickstart.md', 'design/Design.pdf', `${REPO}/blob/develop/docs/design/Design.pdf`],
+    [
+      'docs/quickstart.md',
+      'design/Design.pdf',
+      `${REPO}/blob/develop/docs/design/Design.pdf`,
+      'docs/design/Design.pdf',
+    ],
     // A directory with no page of its own is shown on GitHub.
-    ['docs/quickstart.md', 'adr/', `${REPO}/tree/develop/docs/adr`],
-  ])('a link from %s to %s leaves for the repository on GitHub', (from, target, href) => {
-    expect(resolveLink(from, target, environment)).toMatchObject({ kind: 'repository', href })
+    ['docs/quickstart.md', 'adr/', `${REPO}/tree/develop/docs/adr`, 'docs/adr'],
+  ])('a link from %s to %s leaves for the repository on GitHub', (from, target, href, file) => {
+    expect(resolveLink(from, target, environment)).toEqual({ kind: 'repository', href, file })
   })
 
   test('an image of the repository is an asset to copy', () => {
-    expect(resolveLink('docs/quickstart.md', 'assets/shot.png', environment)).toMatchObject({
+    expect(resolveLink('docs/quickstart.md', 'assets/shot.png', environment)).toEqual({
       kind: 'asset',
       file: 'docs/assets/shot.png',
     })
@@ -106,7 +134,7 @@ describe('resolveLink', () => {
     'a URL such as %s is left alone',
     (target) => {
       expect(isExternal(target)).toBe(true)
-      expect(resolveLink('docs/quickstart.md', target, environment)).toMatchObject({
+      expect(resolveLink('docs/quickstart.md', target, environment)).toEqual({
         kind: 'external',
         href: target,
       })
@@ -154,11 +182,10 @@ describe('resolveLink', () => {
   })
 
   test('a query string is dropped before the file is looked up', () => {
-    expect(
-      resolveLink('docs/quickstart.md', 'methods/password.md?plain=1', environment)
-    ).toMatchObject({
+    expect(resolveLink('docs/quickstart.md', 'methods/password.md?plain=1', environment)).toEqual({
       kind: 'page',
       href: '/methods/password/',
+      file: 'docs/methods/password.md',
     })
   })
 })
