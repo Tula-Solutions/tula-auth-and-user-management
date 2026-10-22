@@ -40,6 +40,14 @@ bun run --filter @tula-tech/docs generate:check   # render everything in memory:
   over its cap. Crawlers read `robots.txt` only at a host's root, so under GitHub Pages' sub-path
   it is there for whoever asks for it by name.
 
+Each page has the anatomy of a premium docs site: a breadcrumb, a **Copy page** split button
+(the page's Markdown twin to the clipboard; a menu with View as Markdown, Open in Claude, Open
+in ChatGPT, Open in Cursor and Copy MCP setup for `tula mcp`; plain links without a script),
+a lead, a table of contents that follows the scroll (a sticky disclosure on a phone), and a
+footer with "Edit this page on GitHub", "Last updated" from git, a "Was this page helpful?" that
+keeps and sends nothing, and the previous and next pages in sidebar order. The code is in
+`src/components/page-anatomy.tsx` and `src/client/page.ts`; the rules are in the rule file below.
+
 A Markdown file that cannot be rendered, a relative link to a file that does not exist and an
 anchor the target does not have all **fail the build**. A link to a repository file that is not
 a page (an ADR, a package README, a source file) becomes its address on GitHub.
