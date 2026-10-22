@@ -1,12 +1,11 @@
 import { resolve } from 'node:path'
+import { resolveRepoRoot } from './paths'
 
 /**
- * The repository root. `DOCS_REPO_ROOT` points the build at another tree, which only the build
- * script's own test does (a throwaway repository with a broken link in it).
+ * The repository root (`DOCS_REPO_ROOT` is for the build script's own test: `paths.ts` says
+ * which values it accepts).
  */
-export const REPO_ROOT = resolve(
-  process.env.DOCS_REPO_ROOT ?? resolve(import.meta.dir, '../../../..')
-)
+export const REPO_ROOT = resolveRepoRoot()
 
 /** The Markdown the site renders: the only source of its content. */
 export const DOCS_DIR = resolve(REPO_ROOT, 'docs')

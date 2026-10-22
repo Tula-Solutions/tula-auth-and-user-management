@@ -92,3 +92,10 @@ static HTML. Its commands are in its README.
   fails for a target no input matches, and for lists that differ: a link to a new kind of file
   adds its glob to all five lists in the same change, or the site is served from the cache
   when that file changes.
+- **`DOCS_OUT_DIR` and `DOCS_REPO_ROOT` are test-only** (the build script's own test builds a
+  throwaway repository). Vite empties its output directory, so both go through
+  `resolveOutDir()` / `resolveRepoRoot()` in `src/lib/paths.ts`, used by `build.ts`,
+  `vite.config.ts` and `serve.ts`: unset gives `apps/docs/dist` and the real repository; set,
+  a value must be absolute and strictly inside the (real) temporary directory, or, for the
+  repository, the real root, and anything else throws before a write or a delete. Never read
+  either variable anywhere else, and never document them as settings.

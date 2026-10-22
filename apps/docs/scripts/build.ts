@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { BASE } from '../src/lib/config'
 import { LinkError } from '../src/lib/links'
 import { RenderError } from '../src/lib/markdown'
+import { resolveOutDir } from '../src/lib/paths'
 import { buildSite, writeSite } from '../src/lib/site'
 import { tokensCss } from '../src/lib/tokens'
 
@@ -17,8 +18,9 @@ import { tokensCss } from '../src/lib/tokens'
 // stops the build with the file and the link named.
 
 const root = join(import.meta.dir, '..')
-// `DOCS_OUT_DIR` is for the build script's own test; Vite (vite.config.ts) reads the same variable.
-const outDir = process.env.DOCS_OUT_DIR ?? join(root, 'dist')
+// Resolved (and refused if it is not apps/docs/dist or a temporary directory) before anything is
+// written or deleted; Vite (vite.config.ts) and serve.ts use the same function.
+const outDir = resolveOutDir()
 const check = process.argv.includes('--check')
 
 async function bundle(): Promise<{ css: string[]; js: string }> {

@@ -27,3 +27,11 @@ anchor the target does not have all **fail the build**. A link to a repository f
 a page (an ADR, a package README, a source file) becomes its address on GitHub.
 
 The rules for working on it are in [`.claude/rules/docs-site.md`](../../.claude/rules/docs-site.md).
+
+## Test-only variables
+
+`DOCS_OUT_DIR` (where the build writes, and empties) and `DOCS_REPO_ROOT` (the repository it
+reads) exist for the build script's own test, which builds a throwaway repository. Both must be
+absolute and strictly inside the system's temporary directory (`DOCS_REPO_ROOT` may also be
+this repository's own root); `src/lib/paths.ts` refuses anything else before a file is written
+or deleted. Do not set them in a shell or a script.
