@@ -515,10 +515,28 @@ test('the API image installs no browser package: their manifests never reach the
     .map((line) => line.split(/\s+/)[1] ?? '')
   expect(copied.length).toBeGreaterThan(5)
   expect(
-    copied.filter((source) => /^(packages\/react|packages\/nextjs|examples|e2e)(\/|$)/.test(source))
+    copied.filter((source) =>
+      /^(packages\/react|packages\/nextjs|apps\/docs|examples|e2e)(\/|$)/.test(source)
+    )
   ).toEqual([])
   // Nothing copies the whole repository or a whole workspace group either.
   expect(
     copied.filter((source) => ['.', './', 'packages', 'packages/', 'apps'].includes(source))
   ).toEqual([])
+})
+
+test('the documentation site is in no image: no stage copies it and the build context leaves it out', async () => {
+  // `apps/docs` is a browser app (React, Vite, a syntax highlighter) that nothing serves: the
+  // API does not host it and no image holds it. A COPY of it, from the build context or from
+  // another stage, or a context that lets it in, would put it there.
+  const dockerfile = await Bun.file(join(root, 'apps/api/Dockerfile')).text()
+  const instructions = dockerfile
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('#'))
+    .join('\n')
+  expect(instructions).not.toMatch(/apps\/docs/)
+  const ignored = (await Bun.file(join(root, '.dockerignore')).text())
+    .split('\n')
+    .map((line) => line.trim())
+  expect(ignored).toContain('apps/docs')
 })
