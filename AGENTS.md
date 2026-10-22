@@ -158,6 +158,7 @@ above or below and the file it is in has none of that name, the section is in th
 | Dashboard app (`apps/dashboard`, see ADR 0032) | `.claude/rules/dashboard.md` |
 | Expo SDK (`packages/expo`, see ADR 0046, ADR 0048, ADR 0052 and ADR 0055) | `.claude/rules/expo.md` |
 | Expo native screens (`packages/expo-screens`, see ADR 0063) | `.claude/rules/expo-screens.md` |
+| Tula UI: the copy-in registry and the headless layer it calls (`packages/ui`, see ADR 0064) | `.claude/rules/tula-ui.md` |
 | Next.js SDK (see ADR 0029) | `.claude/rules/nextjs.md` |
 | The dashboard's session and the control plane (see ADR 0032) | `.claude/rules/control-plane.md` |
 | Per-environment settings | `.claude/rules/settings.md` |
