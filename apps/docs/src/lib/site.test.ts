@@ -27,8 +27,7 @@ const SAMPLE = [
   '/docs/',
   '/quickstart/',
   '/methods/password/',
-  '/reference/core/',
-  '/reference/admin/',
+  '/reference/expo-screens/',
   ERROR_CODES_ROUTE,
 ]
 
@@ -163,7 +162,7 @@ describe('pageStats', () => {
   })
 
   test('the article holds nothing but sections', () => {
-    for (const route of ['/quickstart/', '/methods/password/', '/reference/core/']) {
+    for (const route of ['/quickstart/', '/methods/password/', '/reference/expo-screens/']) {
       const html = site.documents.get(route) as string
       const article = html.slice(html.indexOf('<article'), html.indexOf('</article>'))
       const inner = article.slice(article.indexOf('>') + 1)
