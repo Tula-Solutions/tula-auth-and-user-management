@@ -80,8 +80,9 @@ static HTML. Its commands are in its README.
 - **shadcn primitives** in `src/components/ui/` are written by `bunx shadcn@latest add` and
   not edited (as in the dashboard). They import `cn` from the bare specifier, mapped by
   `tsconfig.json` and `vite.config.ts`. The primitives used are rendered on the server only.
-- **Tests.** `bun test` runs without a package-wide timeout: the two tests that render all of
-  `docs/` pass a limit of their own (`site.test.ts`), the only ones that need it. The
+- **Tests.** `bun test` runs on Bun's default timeout, with none raised: `site.test.ts`
+  renders a sample of pages, and rendering every page and resolving every link is
+  `generate:check`'s job (`build --check`, part of `verify`). The
   coverage threshold is in the app's `bunfig.toml`; the browser script is covered by the
   Playwright project. The app's cached tasks name `docs/**` and the READMEs a link may lead to
   in `turbo.json` (`.claude/rules/turbo-inputs.md`): a file the site reads outside the

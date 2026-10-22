@@ -17,20 +17,29 @@ import {
 } from './site'
 import { tokensCss } from './tokens'
 
-// The whole of docs/ is rendered once (shiki loads its grammars, then 49 pages): two seconds here
-// and several on a slow runner, over Bun's five for a hook. The limit is this file's own, given
-// to the hooks and tests that render it; no package-wide flag.
+// A few pages stand for the shape of the site (a guide, a method page, the index, one reference
+// page and the error codes): rendering every page is `generate:check`'s job (`build --check`,
+// part of `verify`), and the list of pages against the files of docs/ is `pages.test.ts`'s.
+const SAMPLE = [
+  LANDING_ROUTE,
+  '/docs/',
+  '/quickstart/',
+  '/methods/password/',
+  '/reference/core/',
+  ERROR_CODES_ROUTE,
+]
+
 let site: Site
 beforeAll(async () => {
-  site = await buildSite({ css: ['/assets/main.css'], js: '/assets/main.js' })
-}, 60_000)
+  site = await buildSite({ css: ['/assets/main.css'], js: '/assets/main.js' }, '/', SAMPLE)
+})
 
 describe('the site built from docs/', () => {
-  test('every in-scope Markdown file has a page, besides the landing page and the error codes', () => {
-    const routes = site.pages.map((page) => page.route).sort()
-    const expected = [...collectPages().map((page) => page.route), ERROR_CODES_ROUTE].sort()
-    expect(routes).toEqual(expected)
-    expect([...site.documents.keys()].sort()).toEqual([LANDING_ROUTE, ...expected].sort())
+  test('the sample is rendered, and nothing else', () => {
+    expect([...site.documents.keys()].sort()).toEqual([...SAMPLE].sort())
+    expect(site.pages.map((page) => page.route).sort()).toEqual(
+      SAMPLE.filter((route) => route !== LANDING_ROUTE).sort()
+    )
   })
 
   test('every page is a whole document with the site’s script and stylesheet', () => {
@@ -67,7 +76,8 @@ describe('the site built from docs/', () => {
   })
 
   test('the landing page links only to pages that exist', () => {
-    const routes = new Set(site.pages.map((page) => page.route))
+    const routes = new Set(collectPages().map((page) => page.route))
+    routes.add(ERROR_CODES_ROUTE)
     for (const link of LANDING_LINKS) {
       expect(routes.has(link.route), link.route).toBe(true)
     }
@@ -142,7 +152,7 @@ describe('writeSite', () => {
     } finally {
       rmSync(out, { recursive: true, force: true })
     }
-  }, 30_000)
+  })
 
   test('fileOfRoute puts a route in its own directory', () => {
     expect(fileOfRoute('/out', '/')).toBe('/out/index.html')
@@ -152,10 +162,10 @@ describe('writeSite', () => {
 
 describe('the site under a base path', () => {
   test('every address it writes carries the base', async () => {
-    const under = await buildSite({ css: [], js: '' }, '/docs-site/')
+    const under = await buildSite({ css: [], js: '' }, '/docs-site/', ['/quickstart/'])
     expect(under.documents.get('/quickstart/')).toContain('href="/docs-site/methods/password/"')
-    expect(under.index[0]?.u.startsWith('/docs-site/')).toBe(true)
-  }, 60_000)
+    expect(under.index.every((entry) => entry.u.startsWith('/docs-site/'))).toBe(true)
+  })
 })
 
 describe('repositoryEnvironment', () => {

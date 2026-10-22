@@ -111,13 +111,18 @@ function html(page: PageProps, frame: Frame, children?: React.ReactNode): string
  *
  * @param assets - The stylesheet and script the pages load (empty for a check).
  * @param base - The path the site is served under.
+ * @param only - Routes to render and index, for a test that needs the shape of the site and
+ *   not all of it (every file is still parsed, so the sidebar and every anchor are complete).
+ *   Omitted, every page is rendered.
  * @returns The pages, the search index and the finished HTML.
  * @throws RenderError or LinkError for a file or link that cannot be rendered.
  */
 export async function buildSite(
   assets: Frame['assets'] = { css: [], js: '' },
-  base: string = BASE
+  base: string = BASE,
+  only?: readonly string[]
 ): Promise<Site> {
+  const wanted = (route: string) => only === undefined || only.includes(route)
   const sources = collectPages()
   const docs = new Map<string, ParsedDoc>()
   for (const source of sources) {
@@ -144,7 +149,7 @@ export async function buildSite(
   const frame: Frame = { base, assets, nav }
   const pages: BuiltPage[] = []
   const copied = new Set<string>()
-  for (const source of sources) {
+  for (const source of sources.filter((one) => wanted(one.route))) {
     const doc = docs.get(source.file) as ParsedDoc
     const rendered = renderMarkdown(doc, environment, highlighter)
     for (const file of rendered.assets) {
@@ -161,15 +166,17 @@ export async function buildSite(
     })
   }
   const errors = buildErrorCodesPage(errorCodeEntries())
-  pages.push({
-    source: null,
-    route: ERROR_CODES_ROUTE,
-    title: errors.title,
-    description: 'Every error code the API returns, with its HTTP status and default message.',
-    html: errors.html,
-    headings: errors.headings,
-    sections: errors.sections,
-  })
+  if (wanted(ERROR_CODES_ROUTE)) {
+    pages.push({
+      source: null,
+      route: ERROR_CODES_ROUTE,
+      title: errors.title,
+      description: 'Every error code the API returns, with its HTTP status and default message.',
+      html: errors.html,
+      headings: errors.headings,
+      sections: errors.sections,
+    })
+  }
 
   const documents = new Map<string, string>()
   for (const page of pages) {
@@ -183,7 +190,9 @@ export async function buildSite(
     html: '',
     headings: [],
   }
-  documents.set(LANDING_ROUTE, html(landing, frame, <Landing base={base} />))
+  if (wanted(LANDING_ROUTE)) {
+    documents.set(LANDING_ROUTE, html(landing, frame, <Landing base={base} />))
+  }
   const notFound = html(
     {
       title: 'Page not found',
