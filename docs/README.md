@@ -12,6 +12,7 @@ published: those are still used from a checkout of the repository
 | | |
 | --- | --- |
 | [Quickstart](quickstart.md) | From nothing to a signed-in user: build the image, pack the packages, `create-tula`, `tula dev`. |
+| [Playground](playground.md) | The sign-in, sign-up and account components in your browser, against a sandbox: configure the methods, providers and look, break things on purpose, copy the code. |
 | [Self-hosting](self-host.md) | The server's settings, an environment's settings, Redis and several instances, proxies, upgrades. |
 | [What was not verified](plans/phase-1-unverified.md) | Everything in Phase 1 that was tested against a stand-in rather than the real thing. [Phase 2's list](plans/phase-2-unverified.md) is kept step by step. |
 

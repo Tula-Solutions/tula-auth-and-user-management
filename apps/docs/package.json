@@ -17,6 +17,8 @@
   "dependencies": {
     "@shikijs/transformers": "^4.5.0",
     "@tula-tech/contract": "workspace:*",
+    "@tula-tech/core": "workspace:*",
+    "@tula-tech/react": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cn": "^0.5.0",
@@ -38,8 +40,9 @@
     "unist-util-visit": "^5.1.0"
   },
   "devDependencies": {
-    "@tula-tech/tsconfig": "workspace:*",
     "@tailwindcss/vite": "^4.3.3",
+    "@tula-tech/config": "workspace:*",
+    "@tula-tech/tsconfig": "workspace:*",
     "@types/hast": "^3.0.5",
     "@types/mdast": "^4.0.4",
     "@types/react": "^19.3.0",

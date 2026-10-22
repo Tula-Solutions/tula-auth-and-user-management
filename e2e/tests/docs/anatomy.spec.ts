@@ -292,9 +292,11 @@ test.describe('the end of a page', () => {
   test('the previous and next pages follow the sidebar and lead there', async ({ page }) => {
     await page.goto(PASSWORD)
     const pager = page.getByRole('navigation', { name: 'Previous and next pages' })
-    await expect(pager.getByRole('link', { name: /Previous.*Quickstart/ })).toHaveAttribute(
+    // The sidebar runs Quickstart, Playground, then the methods, so the password page follows
+    // the playground.
+    await expect(pager.getByRole('link', { name: /Previous.*Playground/ })).toHaveAttribute(
       'href',
-      `${BASE}quickstart/`
+      `${BASE}playground/`
     )
     const next = pager.getByRole('link', { name: /^Next/ })
     const href = (await next.getAttribute('href')) as string

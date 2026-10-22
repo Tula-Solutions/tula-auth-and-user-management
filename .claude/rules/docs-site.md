@@ -60,7 +60,51 @@ static HTML. Its commands are in its README.
   would hydrate every page, which means shipping the content of all of `docs/` (several MB of
   generated reference) to the browser as JavaScript or fetching each page twice, for links
   that are already plain `<a href>`. The page works with no script. Do not add a client
-  framework or hydration without a measured reason.
+  framework or hydration without a measured reason. **The one measured reason is the
+  playground** (below).
+- **The playground is the one React island** (`src/playground/`, TULA-106). The
+  reason: it has to run the real `@tula-tech/react` components on the real `@tula-tech/core`
+  client against a sandbox, which is client state by nature; the same components inline in
+  static HTML would be a mock that drifts from the product. What it costs is measured, and kept
+  out of every other page: its own Vite entry (`src/client/playground.ts`, 2.2 KB raw, 1.1 KB
+  gzipped) that only a page holding a `:::playground` placeholder loads (`hasPlayground` in
+  `blocks.ts`, `Frame.assets.playground`), which fetches the island's one chunk
+  (`mount-*.js`, 610 KB raw, 185 KB gzipped, plus its stylesheet) when a placeholder is within
+  600 px of the viewport. The site's own script and stylesheet are unchanged for every page
+  (`main.js` is byte-for-byte what it was without the playground, 6.8 KB raw when measured; `main.css` grew 1.3 KB for the guard below), and
+  `e2e/tests/docs/playground.spec.ts` fails if a page with no playground loads any of it.
+  Never import the island from `main.ts`, never add a playground script to a page without a
+  placeholder, never add a second island.
+  - **`.pg-host` is outside the prose styles.** The island is drawn inside `.doc`, whose bare
+    element rules (`.doc p`, `.doc a`, …) would restyle the components. Each of them carries
+    `:not(:where(.pg-host *))`, which adds no specificity; a new bare-element rule under `.doc`
+    gets the same guard. (Shadow DOM, an iframe and `@scope` were tried and rejected: React's
+    focus and portal handling and the components' `document.activeElement` need the one document.)
+  - **The sandbox** (`src/playground/sandbox/`) answers every `/v1/client/*` operation of the
+    client API (`HANDLERS` covers all of them) from the client's own fetch, in the page: not a
+    service worker, so it works offline and in a preview. It returns the shapes and the error
+    codes the contract defines, applies the visible rules of the real server (one generic answer
+    for a wrong password, lockout, code guesses, expiry, single-use codes, refresh rotation) and
+    never claims to be the service: the frame is labelled Sandbox, a consent screen is its own
+    and imitates no provider, the passkey sheet says it is simulated and `navigator.credentials`
+    is never called. What it does not simulate answers with the API's error where the method is
+    off (`UNSUPPORTED`: step-up, SMS and phone numbers, signing in with a native ID token,
+    password expiry, a passkey as a second factor). **Its state is in memory only**: no token,
+    code or secret is written to web storage, and a reload or **Reset sandbox** drops it. The
+    island bundle is Zod-free (the tests, not the island, check the shapes against the contract's
+    schemas in `sandbox.test.ts`).
+  - **The configuration is one object** (`PlaygroundConfig`, `config.ts`): the frame, the panel
+    and the three copied files (`code.ts`: React, a CSS block of only the changed theme
+    variables, and a `tula.config.ts` that `config.test.ts` loads with `@tula-tech/config`)
+    are all computed from it. A new control changes the object and gets a line in each output.
+  - **The panel uses the shadcn primitives in `src/components/ui/`**, which are now also
+    client-rendered. `playground.css` builds its own Tailwind utilities (`source(none)` and an
+    `@source` of the island and the primitives) and imports the theme mapping the site shares
+    (`src/styles/shadcn-theme.css`); `styles.css` excludes the island's sources from its own
+    scan. It reads the site's tokens and writes no colour (`contrast.test.ts` scans it).
+  - `/playground/` is a wide page (`WIDE_ROUTES` in `layout.tsx`): no table of contents column.
+  - `PLAYGROUND_PRESETS` (the directive) and `EMBED_PRESETS` (the island) are held equal by a
+    test; a new preset is added to both.
 - **The build fails, and writes nothing, for a file it cannot render or a link it cannot
   resolve** (`bun run --filter @tula-tech/docs generate:check` runs it without writing; it is
   part of `verify`). That is a Markdown file with no `#` heading (the title), a code block in
@@ -301,7 +345,9 @@ static HTML. Its commands are in its README.
   Its alternative text names the platform, screen, step and scheme; its styles use tokens only.
 - **shadcn primitives** in `src/components/ui/` are written by `bunx shadcn@latest add` and
   not edited (as in the dashboard). They import `cn` from the bare specifier, mapped by
-  `tsconfig.json` and `vite.config.ts`. The primitives used are rendered on the server only.
+  `tsconfig.json` and `vite.config.ts`. The pages use them on the server only; the playground's
+  panel is the one place they reach the browser. A name a primitive leaves out (a one-thumb
+  slider's) is set from the panel, not by editing the primitive.
 - **Tests.** `bun test` runs on Bun's default timeout, with none raised, so a test does only
   what it can finish in a fraction of it on a loaded runner (CI ran this package's tests three
   to eight times slower than a laptop): `site.test.ts` renders a sample of pages, and whatever

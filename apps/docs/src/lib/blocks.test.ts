@@ -5,7 +5,8 @@ import remarkGfm from 'remark-gfm'
 import remarkParse from 'remark-parse'
 import remarkRehype from 'remark-rehype'
 import { unified } from 'unified'
-import { BlockError, transformBlocks, twinEdits } from './blocks'
+import { EMBED_PRESETS } from '../playground/config'
+import { BlockError, hasPlayground, PLAYGROUND_PRESETS, transformBlocks, twinEdits } from './blocks'
 
 const parser = unified().use(remarkParse).use(remarkGfm)
 
@@ -301,5 +302,47 @@ describe('twinEdits', () => {
 
   test('a malformed fence is still reported', () => {
     expect(() => edit('text\n:::steps\n')).toThrow(BlockError)
+  })
+})
+
+describe(':::playground', () => {
+  const block = (attributes: string, body = 'A live sandbox.') =>
+    `# T\n\n:::playground${attributes}\n\n${body}\n\n:::\n`
+
+  test('is a placeholder the island mounts into, with its body as the fallback', () => {
+    const out = html(block('{preset="password"}'))
+    expect(out).toContain('<div class="pg-host" data-playground')
+    expect(out).toContain('data-preset="password"')
+    expect(out).toContain('A live sandbox.')
+    expect(hasPlayground(out)).toBe(true)
+  })
+
+  test('a page that only talks about the block holds no playground', () => {
+    expect(hasPlayground('<pre><code>:::playground{preset="full"}</code></pre>')).toBe(false)
+    expect(hasPlayground(html('# T\n\nplain\n'))).toBe(false)
+  })
+
+  test('the presets it accepts are the presets the island has', () => {
+    const accepted: string[] = [...PLAYGROUND_PRESETS]
+    expect(accepted.sort()).toEqual(Object.keys(EMBED_PRESETS).sort())
+  })
+
+  test('refuses an unknown preset, a missing body and an unknown attribute', () => {
+    expect(failure(block('{preset="nope"}')).message).toContain('not a playground preset')
+    expect(failure('# T\n\n:::playground{preset="full"}\n\n:::\n').message).toContain(
+      'needs a sentence'
+    )
+    expect(failure(block('{preset="full" colour="red"}')).message).toContain('colour')
+  })
+
+  test('the Markdown twin drops the fence lines and keeps the fallback sentence', () => {
+    const source = block('{preset="full"}')
+    const tree = parser.parse(source) as Root
+    let text = source
+    for (const one of twinEdits(source, tree).sort((a, b) => b.start - a.start)) {
+      text = text.slice(0, one.start) + one.text + text.slice(one.end)
+    }
+    expect(text).not.toContain(':::')
+    expect(text).toContain('A live sandbox.')
   })
 })

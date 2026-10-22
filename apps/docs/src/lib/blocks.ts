@@ -15,6 +15,9 @@ import { NATIVE_PLATFORMS } from './native-captures'
 //   :::tabs{sync="framework"} tabs: the headings are the labels
 //   :::code-group{sync="pm"}  tabs of fenced code blocks, labelled by title="…" or language
 //   :::params                 a table of name, type, required, default, description
+//   :::playground{preset="password"}
+//                             a live component playground (the island, `src/playground`); its
+//                             body is what a reader without script (or GitHub) sees
 //   :::native-screens{platform="ios"}   the captured screens of a native SDK (a gallery; the
 //   A caption.                          block's text is its caption)
 //   :::
@@ -37,7 +40,45 @@ export class BlockError extends Error {
 }
 
 /** The containers a page may open with `:::name`. */
-export const CONTAINERS = ['steps', 'tabs', 'code-group', 'params', 'native-screens'] as const
+export const CONTAINERS = [
+  'steps',
+  'tabs',
+  'code-group',
+  'params',
+  'native-screens',
+  'playground',
+] as const
+
+/**
+ * The presets `:::playground{preset="…"}` may name: where the playground starts and which
+ * controls it shows. They are the keys of `EMBED_PRESETS` (`src/playground/config.ts`); a test
+ * holds the two equal. Listed here, not imported, so that the Markdown pipeline does not load
+ * the island's sources.
+ */
+export const PLAYGROUND_PRESETS = [
+  'full',
+  'password',
+  'email-code',
+  'email-link',
+  'oauth',
+  'passkey',
+  'mfa',
+] as const
+
+/** The class of the placeholder a playground is written as (the prose rules stop at it). */
+export const PLAYGROUND_HOST_CLASS = 'pg-host'
+
+/**
+ * Whether a rendered page holds a playground, and so needs the island's script and stylesheet.
+ *
+ * @param html - The page's body, as the renderer wrote it.
+ * @returns `true` when it has a placeholder.
+ */
+export function hasPlayground(html: string): boolean {
+  // The element as `playground()` writes it. A page that only talks about the block, in a code
+  // sample, has these characters escaped or split by the highlighter's markup.
+  return html.includes(`<div class="${PLAYGROUND_HOST_CLASS}" data-playground`)
+}
 
 /** The kinds of callout, by the word between `[!` and `]` (GitHub's alerts). */
 export const CALLOUTS = {
@@ -57,6 +98,7 @@ const ATTRIBUTES: Record<string, readonly string[]> = {
   tabs: ['sync'],
   'code-group': ['sync'],
   params: [],
+  playground: ['preset'],
   'native-screens': ['platform'],
 }
 
@@ -150,6 +192,15 @@ function parseAttributes(line: number, name: string, raw: string | undefined) {
     throw new BlockError(
       line,
       `sync="${attributes.sync}" must be lower-case letters, digits and hyphens, starting with a letter`
+    )
+  }
+  if (
+    attributes.preset !== undefined &&
+    !(PLAYGROUND_PRESETS as readonly string[]).includes(attributes.preset)
+  ) {
+    throw new BlockError(
+      line,
+      `preset="${attributes.preset}" is not a playground preset (the presets are ${PLAYGROUND_PRESETS.join(', ')})`
     )
   }
   return attributes
@@ -416,10 +467,34 @@ function nativeScreens(open: Open): RootContent {
   )
 }
 
+/**
+ * The playground's placeholder. Its children are the fallback for a reader without script and
+ * for a Markdown twin: a sentence on what the playground does, which the island replaces.
+ */
+function playground(open: Open): RootContent {
+  if (open.children.length === 0) {
+    throw new BlockError(
+      open.fence.line,
+      ':::playground needs a sentence or two inside it: what a reader without script (and GitHub) sees'
+    )
+  }
+  return block(
+    'div',
+    {
+      className: [PLAYGROUND_HOST_CLASS],
+      dataPlayground: '',
+      dataPreset: open.fence.attributes.preset ?? 'full',
+    },
+    open.children
+  )
+}
+
 function build(open: Open): RootContent {
   switch (open.fence.name) {
     case 'native-screens':
       return nativeScreens(open)
+    case 'playground':
+      return playground(open)
     case 'steps':
       return steps(open)
     case 'tabs':

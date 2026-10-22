@@ -3,7 +3,11 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
 const ROOT = join(import.meta.dir, '../..')
-const CSS = readFileSync(join(ROOT, 'src/styles.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+// The prose rules carry a zero-specificity guard that keeps them out of a playground
+// (`.pg-host`); the tests name a rule by its selector without it.
+const CSS = readFileSync(join(ROOT, 'src/styles.css'), 'utf8')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replaceAll(':not(:where(.pg-host *))', '')
 
 /** The declarations of the first rule whose selector is exactly `selector`. */
 function ruleOf(selector: string): string {

@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import type { Frame } from '../src/components/layout'
 import { lastUpdated, runGit } from '../src/lib/ai/git'
 import { BASE, REPO_ROOT } from '../src/lib/config'
 import { LinkError } from '../src/lib/links'
@@ -27,7 +28,7 @@ const check = process.argv.includes('--check')
 /** The font file (a key of Vite's manifest) every page preloads. */
 const PRELOADED_FONT = 'src/assets/fonts/geist-latin-wght-normal.woff2'
 
-async function bundle(): Promise<{ css: string[]; js: string; fonts: string[] }> {
+async function bundle(): Promise<Frame['assets'] & { fonts: string[] }> {
   await Bun.write(join(root, 'src/styles/tokens.gen.css'), tokensCss())
   // Vite runs as the process it launches itself as (Node): its config reads no Bun API.
   const child = Bun.spawn(['bunx', 'vite', 'build', '--logLevel', 'warn'], {
@@ -46,12 +47,20 @@ async function bundle(): Promise<{ css: string[]; js: string; fonts: string[] }>
   if (entry === undefined) {
     throw new Error('the bundle has no entry for src/client/main.ts')
   }
+  const island = manifest['src/client/playground.ts']
+  if (island === undefined) {
+    throw new Error('the bundle has no entry for src/client/playground.ts')
+  }
   // Only the text face is preloaded: the mono face is below the fold on most pages.
   const text = manifest[PRELOADED_FONT]
   return {
     js: `${BASE}${entry.file}`,
     css: (entry.css ?? []).map((file) => `${BASE}${file}`),
     fonts: text === undefined ? [] : [`${BASE}${text.file}`],
+    playground: {
+      js: `${BASE}${island.file}`,
+      css: (island.css ?? []).map((file) => `${BASE}${file}`),
+    },
   }
 }
 

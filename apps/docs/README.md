@@ -35,6 +35,16 @@ bun run --filter @tula-tech/docs generate:check   # render everything in memory:
   Each is documented, with its result beside it, in
   [`docs/writing-docs.md`](../../docs/writing-docs.md); a malformed one fails `generate:check`
   with the file and the line.
+- **A live component playground** (`:::playground{preset="…"}`, and the page
+  [`/playground/`](../../docs/playground.md)): the real `@tula-tech/react` sign-in, sign-up and
+  account components on the real `@tula-tech/core` client, against a **sandbox** that runs in the
+  page (`src/playground/sandbox/`) and answers the client's requests with the contract's shapes.
+  A panel configures the methods, providers, two-step policy and look; the React, CSS and
+  `tula.config.ts` code to copy follows it. It is a React island: its own Vite entry
+  (`src/client/playground.ts`, about 1 KB gzipped), loaded only by pages that hold a playground,
+  which fetches the island's one chunk when a placeholder comes near the viewport. Other pages
+  load exactly the script they did before. The decisions are in
+  [`.claude/rules/docs-site.md`](../../.claude/rules/docs-site.md).
 - **Native screens**: `:::native-screens{platform="ios"}` shows the SwiftUI or Compose screens as
   the example apps' UI tests photographed them (`public/native/<platform>/` and its
   `manifest.json`), as a picker with a script and as a plain list without one. The pictures are
