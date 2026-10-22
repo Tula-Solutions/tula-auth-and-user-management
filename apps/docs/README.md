@@ -1,8 +1,10 @@
 # `@tula-tech/docs`
 
 The documentation site: the Markdown of [`docs/`](../../docs/README.md) rendered to static HTML.
-Private and never published; **nothing serves or deploys it** (it is not in the API image, and
-the API does not serve it).
+Private and never published to npm; it is not in the API image, and the API does not serve it.
+It is published to GitHub Pages at
+**https://tula-solutions.github.io/tula-auth-and-user-management/** (see
+[Where it is published](#where-it-is-published)).
 
 ```bash
 bun run docs-site:dev      # build, then serve on http://127.0.0.1:4321/ (DOCS_PORT changes the port)
@@ -27,6 +29,31 @@ anchor the target does not have all **fail the build**. A link to a repository f
 a page (an ADR, a package README, a source file) becomes its address on GitHub.
 
 The rules for working on it are in [`.claude/rules/docs-site.md`](../../.claude/rules/docs-site.md).
+
+## Where it is published
+
+GitHub Pages serves the site at https://tula-solutions.github.io/tula-auth-and-user-management/.
+[`.github/workflows/docs-pages.yml`](../../.github/workflows/docs-pages.yml) builds it on every
+push to `develop` (and when started by hand from `develop`) and deploys it: a `build` job that
+can only read the repository, then a `deploy` job that holds `pages: write` and `id-token: write`
+and runs nothing but `actions/deploy-pages`. Pages must be set to deploy from GitHub Actions,
+and the `github-pages` environment must allow `develop` to deploy.
+
+Pages serves a project's site under the repository's name, so the workflow builds with
+`DOCS_BASE=/tula-auth-and-user-management/`. Every address the build writes (links, the script
+and stylesheet, images, the search index, the 404 page) starts with the base, and the build
+stops for a page that holds an address from the host's root outside it. `DOCS_BASE` must start
+and end with `/` and hold only letters, digits, `-`, `_`, `.` and `~`, in segments that do not
+start with a dot; anything else stops the build before a file is written. Unset, the site is
+built for `/`, and `generate:check` renders it under a placeholder sub-path so that an address
+that ignores the base fails `verify`. To look at the published build on this machine:
+
+```bash
+DOCS_BASE=/tula-auth-and-user-management/ bun run docs-site:dev
+# http://127.0.0.1:4321/tula-auth-and-user-management/
+```
+
+CI's `e2e-docs` job runs the browser tests against the site built and served under that base.
 
 ## Test-only variables
 

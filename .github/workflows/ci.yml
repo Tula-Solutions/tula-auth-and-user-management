@@ -163,6 +163,10 @@ jobs:
     if: needs.duplicate.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    # Built and served under the path GitHub Pages publishes it at (docs-pages.yml), so the
+    # site that is tested is the one that is deployed: an address that ignores the base is a 404.
+    env:
+      DOCS_BASE: /tula-auth-and-user-management/
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2

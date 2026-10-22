@@ -1,4 +1,5 @@
 import { defineConfig, devices, type PlaywrightTestConfig } from '@playwright/test'
+import { resolveBase } from '../apps/docs/src/lib/paths'
 import { serversFor } from './projects'
 
 // Browser tests for @tula-tech/react (plan rule 3): the example app, built from the components
@@ -96,7 +97,9 @@ function docsServer(): WebServer {
     // `exec`: the server must be the process Playwright stops.
     command: 'bun run docs-site:build && DOCS_PORT=4321 exec bun run apps/docs/scripts/serve.ts',
     cwd: `${import.meta.dirname}/..`,
-    url: DOCS_URL,
+    // Built and served under DOCS_BASE when it is set (as GitHub Pages serves the site): the
+    // root answers 404 then, so the server is ready when its base answers.
+    url: `${DOCS_URL}${resolveBase()}`,
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
     stdout: 'ignore',

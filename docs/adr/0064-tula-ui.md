@@ -162,7 +162,9 @@ root mounted on the one place in a page that has a preview, hydrating that page 
 The docs stay in `docs/` and are tested as they are
 (`.claude/hooks/docs.test.ts`); the site is a renderer, not a second copy. **Where it is
 hosted is undecided** and decided in its own ticket: nothing here depends on it, since both
-`bunx shadcn add` and `tula ui add` take a URL.
+`bunx shadcn add` and `tula ui add` take a URL. *Amended 2026-10-22:* it is hosted on GitHub
+Pages, built from `develop` under the base path `/tula-auth-and-user-management/` by
+`.github/workflows/docs-pages.yml` (`apps/docs/README.md`, "Where it is published").
 
 ### The prebuilt components stay
 
