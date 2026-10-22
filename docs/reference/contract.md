@@ -1238,7 +1238,10 @@ const DEFAULT_STEP_UP_AFTER: Duration
 
 _constant_, defined in `packages/contract/src/theme.ts`
 
-The default theme. Every text colour has a contrast of at least 4.5:1 on the backgrounds it
+The default theme: Tula's own, "ink and paper". Warm neutrals from the brand kit (ink
+`#1a1a18`, paper `#f1efe8`), a primary button that is ink in light and paper in dark (the
+mark's two tones), and one restrained violet (`link`, `focus`) kept for interaction only.
+Dark is ink surfaces with paper text. Every text colour has a contrast of at least 4.5:1 on the backgrounds it
 is drawn on, and control edges and the focus ring at least 3:1, in both schemes (WCAG 2.2
 AA); the contract's tests compute it.
 
@@ -1249,7 +1252,7 @@ const DEFAULT_THEME: Theme
 **Example**
 
 ```ts
-DEFAULT_THEME.light.primary // '#5b4cf0'
+DEFAULT_THEME.light.primary // '#1a1a18'
 ```
 
 ### `DEFAULT_WEB_SESSION_PROFILE`
@@ -8475,7 +8478,7 @@ export function contrastRatio(foreground: string, background: string): number
 **Example**
 
 ```ts
-contrastRatio('#ffffff', '#5b4cf0') >= 4.5 // white text on the default primary passes AA
+contrastRatio('#f1efe8', '#1a1a18') >= 4.5 // paper on the default primary (ink) passes AA
 ```
 
 ### `createDpopProof`
@@ -12599,7 +12602,10 @@ Source: `packages/contract/src/theme.ts`
 
 _constant_, defined in `packages/contract/src/theme.ts`
 
-The default theme. Every text colour has a contrast of at least 4.5:1 on the backgrounds it
+The default theme: Tula's own, "ink and paper". Warm neutrals from the brand kit (ink
+`#1a1a18`, paper `#f1efe8`), a primary button that is ink in light and paper in dark (the
+mark's two tones), and one restrained violet (`link`, `focus`) kept for interaction only.
+Dark is ink surfaces with paper text. Every text colour has a contrast of at least 4.5:1 on the backgrounds it
 is drawn on, and control edges and the focus ring at least 3:1, in both schemes (WCAG 2.2
 AA); the contract's tests compute it.
 
@@ -12610,7 +12616,7 @@ const DEFAULT_THEME: Theme
 **Example**
 
 ```ts
-DEFAULT_THEME.light.primary // '#5b4cf0'
+DEFAULT_THEME.light.primary // '#1a1a18'
 ```
 
 ### `THEME_TOKENS`
@@ -12800,7 +12806,7 @@ export function contrastRatio(foreground: string, background: string): number
 **Example**
 
 ```ts
-contrastRatio('#ffffff', '#5b4cf0') >= 4.5 // white text on the default primary passes AA
+contrastRatio('#f1efe8', '#1a1a18') >= 4.5 // paper on the default primary (ink) passes AA
 ```
 
 ### `darkCssVariable`
