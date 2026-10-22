@@ -5,13 +5,13 @@ import { LinkError } from './links'
 import {
   createCodeHighlighter,
   type Highlighter,
-  linkedFiles,
   markdownAnchors,
   parseMarkdown,
   RenderError,
   renderMarkdown,
   SECTION_ATTRIBUTE,
   SECTION_CAP,
+  titleOf,
   wrapSections,
 } from './markdown'
 
@@ -67,6 +67,20 @@ describe('parseMarkdown', () => {
 
   test('markdownAnchors reads a file that needs no title', () => {
     expect([...markdownAnchors('docs/x.md', '## Part one\n')]).toEqual(['part-one'])
+  })
+
+  test('titleOf finds the title the full parse finds, reading only the lines before a ##', () => {
+    const sources = [
+      '# The `code` title\n\nIntro.\n\n## Part\n\n# Another top heading\n',
+      '# Only\n',
+      'Intro first.\n\n## Early\n\n# Late title\n',
+      '```\n## in a fence\n```\n\n# After a fence\n',
+    ]
+    for (const source of sources) {
+      expect(titleOf('docs/x.md', source)).toBe(parseMarkdown('docs/x.md', source).title)
+    }
+    expect(titleOf('docs/x.md', sources[0] as string)).toBe('The code title')
+    expect(() => titleOf('docs/x.md', '## No title\n')).toThrow('has no top-level')
   })
 
   test('sections split at ## and ###, leave code out and keep the intro', () => {
@@ -205,7 +219,7 @@ describe('renderMarkdown', () => {
   })
 })
 
-describe('linkedFiles', () => {
+describe('the files a render links to', () => {
   const repo = fakeEnvironment(
     {
       'docs/a.md': new Set(['intro']),
@@ -220,7 +234,7 @@ describe('linkedFiles', () => {
   )
 
   function files(source: string): string[] {
-    return linkedFiles(parseMarkdown('docs/a.md', source), repo)
+    return renderMarkdown(parseMarkdown('docs/a.md', source), repo, highlighter).files
   }
 
   test('a reference definition, an inline link, an image and quoted HTML attributes are all read', () => {
