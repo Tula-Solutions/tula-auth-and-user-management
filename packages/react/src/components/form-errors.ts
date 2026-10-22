@@ -113,11 +113,19 @@ export function attemptsLeft(error: TulaError | null, t: TulaLocalization): stri
 }
 
 /**
- * A duration for a countdown, e.g. `42s` or `4m 12s`.
+ * A duration for a countdown, e.g. `42s` or `4m 12s`, in the provider's locale table.
  *
  * @param totalSeconds - Whole seconds.
- * @param t - The strings.
+ * @param t - The strings (`useLocalization()`).
  * @returns The text.
+ *
+ * @example
+ * ```tsx
+ * const t = useLocalization()
+ * const wait = useRetryCountdown(error)
+ * // 'Try again in 1m 5s.'
+ * formatText(t.common.retryIn, { time: formatDuration(wait, t) })
+ * ```
  */
 export function formatDuration(totalSeconds: number, t: TulaLocalization): string {
   const minutes = Math.floor(totalSeconds / 60)

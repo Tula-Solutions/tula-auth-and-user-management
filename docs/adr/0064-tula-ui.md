@@ -148,6 +148,25 @@ items' sources, the registry build and its refusals, and the theme bridge. It is
 published to npm: what is published is the registry's JSON, served at `/r/*.json`, and
 `@tula-tech/react`, which the copies import.
 
+*Built in TULA-85.* The package is laid out as `items/` (the sources a developer receives:
+`step-card.tsx`, `status.tsx`, `sign-in.tsx`), `src/` (the registry's definition, the build, the
+source checks, the theme bridge), `scripts/registry.ts` (`registry:generate` and
+`registry:check`), `schema/` (shadcn's two JSON Schemas, vendored) and `r/` (the built
+`registry.json` and one JSON per item, committed and checked for drift like `docs/reference/`).
+The format is **pinned**: the `shadcn` CLI 4.22.1, `https://ui.shadcn.com/schema/registry-item.json`
+(SHA-256 `cdf0fba75a26ebf594018264eff2d55407ec14deb3071d0fce0e2b20848e5d44`) and
+`https://ui.shadcn.com/schema/registry.json` (SHA-256
+`e716ebe595bbc189db2627cb75f0484cd765a09eb397a89b1f1c49074220d4bb`), and a test fails when a
+vendored file or an emitted key leaves them. An item names another item of the registry by its
+address (shadcn takes a URL for a dependency that is not its own), so `registry:generate
+--base-url` rebuilds the registry for a local server. The theme item maps each token to
+`var(--tula-<token>, <contract default>)`, writes the radius in light only, adds the
+`color-*` utilities to `@theme inline` (without them the CLI writes `--ring: var(--ring)`, a
+variable that refers to itself) and a `@custom-variant dark` that follows both `.dark` and
+`data-tula-theme`. It is optional: the items use only shadcn's own variables. The build also
+refuses an import the item does not declare, and the one npm dependency an item may have is
+`@tula-tech/react`.
+
 ### A static docs site
 
 A private static app (`apps/docs`), **Vite + React + Tailwind v4 + shadcn**, renders

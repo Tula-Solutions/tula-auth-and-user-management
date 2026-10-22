@@ -106,7 +106,9 @@ describe('what the step renderer teaches a copy about hooks', () => {
 
   test('the screens example shows a component screen', () => {
     const screens = examples.find((text) => /StepScreens/.test(text)) ?? ''
-    expect(screens).toMatch(/\(step\) => <\w+ step=\{step\} \/>/)
+    // Any arrow that returns a component element: renaming the parameter or adding a prop to
+    // the example must not fail this.
+    expect(screens).toMatch(/=> <[A-Z]\w*\b/)
   })
 })
 
@@ -138,6 +140,7 @@ describe('server rendering', () => {
     expect(has('passkey:undefined')).toBe(true)
     expect(has('wait:0')).toBe(true)
     expect(has('changed:false|strategies:password')).toBe(true)
+    expect(has('retry:Try again in 1m 5s.')).toBe(true)
     expect(has('<p>copied password screen</p>')).toBe(true)
     expect(has('data-tula-unsupported')).toBe(true)
   })

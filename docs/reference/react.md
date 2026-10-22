@@ -2958,6 +2958,58 @@ const known = firstFactorStrategies(step.strategies, forms, {
 const others = firstFactorStrategies(step.strategies, forms, can, 'alternatives')
 ```
 
+### `formatDuration`
+
+_function_, defined in `packages/react/src/components/form-errors.ts`
+
+A duration for a countdown, e.g. `42s` or `4m 12s`, in the provider's locale table.
+
+```ts
+export function formatDuration(totalSeconds: number, t: TulaLocalization): string
+```
+
+**Parameters**
+
+- `totalSeconds`: Whole seconds.
+- `t`: The strings (`useLocalization()`).
+
+**Returns** The text.
+
+**Example**
+
+```tsx
+const t = useLocalization()
+const wait = useRetryCountdown(error)
+// 'Try again in 1m 5s.'
+formatText(t.common.retryIn, { time: formatDuration(wait, t) })
+```
+
+### `formatText`
+
+_function_, defined in `packages/react/src/localization.ts`
+
+Fill a string's `{name}` placeholders. A placeholder with no value is left as it is.
+
+```ts
+export function formatText(
+  template: string,
+  values: Record<string, string | number | boolean>
+): string
+```
+
+**Parameters**
+
+- `template`: The string.
+- `values`: Values by placeholder name.
+
+**Returns** The filled string.
+
+**Example**
+
+```ts
+formatText('to continue to {appName}', { appName: 'Northline' }) // 'to continue to Northline'
+```
+
 ### `useAuth`
 
 _function_, defined in `packages/react/src/hooks/use-auth.ts`

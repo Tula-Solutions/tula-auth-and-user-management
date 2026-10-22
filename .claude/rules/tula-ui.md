@@ -1,5 +1,6 @@
 ---
 paths:
+  - "packages/ui/**"
   - "packages/react/src/components/step-renderer.tsx"
   - "packages/react/src/components/first-factor-forms.ts"
   - "packages/react/src/hooks/use-passkey-support.ts"
@@ -10,7 +11,7 @@ paths:
 
 # Tula UI (the copy-in registry)
 
-Canonical for this area (the path `packages/ui/**` is added to the front matter by the change that creates the package: `agent-rules.test.ts` accepts only paths that match a tracked file); `AGENTS.md` lists this file under "Area rules" and does not repeat
+Canonical for this area; `AGENTS.md` lists this file under "Area rules" and does not repeat
 it. The decisions are in [ADR 0064](../../docs/adr/0064-tula-ui.md). The React SDK's own
 rules (`react.md`) apply to the headless files above as they do to the rest of
 `packages/react`.
@@ -37,7 +38,8 @@ rules (`react.md`) apply to the headless files above as they do to the rest of
   holds the type tests (`@ts-expect-error`) and the unknown-status render; keep both.
 - **The headless exports are semver'd.** `StepRenderer`, `FirstFactorForms`,
   `FirstFactorFormProps`, `firstFactorStrategies`, `usePasskeySupport`, `useCountdown`,
-  `useRetryCountdown`, `useFieldErrors`, `useLocalization` and `useScreenChanged` carry a
+  `useRetryCountdown`, `useFieldErrors`, `useLocalization`, `useScreenChanged`, `formatDuration`
+  and `formatText` carry a
   JSDoc `@example`, appear in `docs/reference/react.md` and are rendered without a DOM by
   `testing/ssr-render.tsx`. A prebuilt component and a copy use the same one: never a second
   implementation of a rule for the registry's sake.
@@ -58,3 +60,23 @@ rules (`react.md`) apply to the headless files above as they do to the rest of
 - **`@tula-tech/ui` is private** (`"private": true`, never in `PUBLISHABLE_PACKAGES`): what
   is published is the registry's JSON at `/r/*.json`. The docs site renders `docs/**` as the
   one source of the documentation; it holds no copy of a page.
+- **The build (`packages/ui/src`) is the whole of the guard.** `checks.ts` reads each item's
+  source with the TypeScript compiler (`ts-morph`'s, pinned) and refuses by rule name:
+  `imports-core`, `client-sign-out`, `global-in-render`, `inner-html`, `console`,
+  `hard-coded-string` and `import-not-allowed`. `window`, `document`, `navigator`,
+  `localStorage` and `sessionStorage` are allowed only inside an effect hook's callback, an
+  `on*` handler or a function named `handle*` / `on*`. An item may import `react`,
+  `@tula-tech/react`, `@/components/ui/*`, `@/components/tula/*` and `@/lib/utils`, and each of
+  those it uses must be declared in its `registryDependencies` or `dependencies`
+  (`@tula-tech/react` is the only npm package an item may need). `checks.test.ts` holds one
+  fixture per rule.
+- **`r/` is built output, checked like `docs/reference/`.** `bun run registry:generate` writes
+  `packages/ui/r/*.json`; `registry:check` (part of `verify`) fails for any drift. The vendored
+  shadcn schemas in `schema/` are pinned by hash in `src/registry.ts` (`SHADCN`); a move to a
+  newer format changes the hashes, the vendored files and the ADR together. Do not edit `r/` or
+  `schema/` by hand.
+- **Items are written against shadcn's own variables and the test doubles in
+  `test-support/components/ui`.** Those doubles stand in for the developer's primitives in
+  this package's tests only; an item never imports from `test-support`. Behaviour that every
+  password sign-in must have is one suite (`test-support/sign-in.suite.tsx`), run against the
+  prebuilt `<SignIn>` and the registry item: a new behaviour goes in the suite, not in one run.
