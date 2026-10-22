@@ -43,6 +43,14 @@ export interface RenderedDoc {
   html: string
   /** Files (from the repository root) the page shows and the site must copy. */
   assets: string[]
+  /**
+   * Every repository file or directory the page links to or shows, as the resolver read it
+   * (reference definitions and either kind of quote in raw HTML included), with repeats and
+   * none for an external link or an anchor in the page itself. A page reads them to check
+   * that a link resolves, so a guard that must know what a page reads takes them from here
+   * and cannot disagree with the build.
+   */
+  files: string[]
 }
 
 /** A Markdown file the site cannot render: the build stops on it. */
@@ -109,6 +117,30 @@ export function parseMarkdown(file: string, source: string): ParsedDoc {
  */
 export function markdownAnchors(file: string, source: string): ReadonlySet<string> {
   return analyze(file, source).ids
+}
+
+/**
+ * The title of a Markdown file, without parsing the rest of it.
+ *
+ * The sidebar needs a page's title and nothing else; parsing a 500 KB reference page for one
+ * line costs hundreds of milliseconds. The text before the first `##` is parsed as the page
+ * would be, so the title is the same one {@link parseMarkdown} finds; a file whose `#` heading
+ * comes after a `##` is parsed whole.
+ *
+ * @param file - The file, from the repository root (for messages).
+ * @param source - Its text.
+ * @returns The text of the first `#` heading.
+ * @throws RenderError when the Markdown cannot be parsed or has no top-level heading.
+ */
+export function titleOf(file: string, source: string): string {
+  const cut = source.search(/^##/m)
+  if (cut > 0) {
+    const first = analyze(file, source.slice(0, cut)).headings.find((one) => one.depth === 1)
+    if (first !== undefined) {
+      return first.text
+    }
+  }
+  return parseMarkdown(file, source).title
 }
 
 function analyze(
@@ -242,7 +274,7 @@ function element(
  * @param doc - A document from {@link parseMarkdown}; its tree is copied, not consumed.
  * @param environment - What links may point at.
  * @param highlighter - From {@link createCodeHighlighter}.
- * @returns The HTML and the files the page shows.
+ * @returns The HTML, the files the page shows and the files it links to.
  * @throws RenderError for an unknown code language; LinkError for a link that does not resolve.
  */
 export function renderMarkdown(
@@ -252,6 +284,7 @@ export function renderMarkdown(
 ): RenderedDoc {
   const tree = structuredClone(doc.tree)
   const assets: string[] = []
+  const files: string[] = []
   let tables = 0
   let lastDepth = 0
 
@@ -298,7 +331,7 @@ export function renderMarkdown(
       )
       return
     }
-    rewriteLink(node, doc, environment, assets, [])
+    rewriteLink(node, doc, environment, assets, files)
     return
   })
 
@@ -325,7 +358,7 @@ export function renderMarkdown(
 
   wrapSections(tree)
   const html = unified().use(rehypeStringify).stringify(tree)
-  return { html, assets }
+  return { html, assets, files }
 }
 
 /**
@@ -408,7 +441,7 @@ export function wrapSections(root: Root): void {
 
 /**
  * Resolve the address of a link or an image element in place. The one place that reads an
- * element's address, for the renderer and for {@link linkedFiles} alike.
+ * element's address, once, for the page and for the list of files it links to.
  */
 function rewriteLink(
   node: Element,
@@ -426,27 +459,6 @@ function rewriteLink(
   if (node.tagName === 'img' && typeof node.properties?.src === 'string') {
     node.properties.src = rewrite(doc, node.properties.src, environment, true, assets, files)
   }
-}
-
-/**
- * The repository files a document links to, found by the renderer's own resolution of every
- * link and image (reference definitions and either kind of quote in raw HTML included), with
- * no highlighting. A guard that must know what a page reads takes it from here so that it
- * cannot disagree with the build.
- *
- * @param doc - A document from {@link parseMarkdown}.
- * @param environment - What links may point at.
- * @returns The files and directories linked to (with repeats), none for an external link or an
- * anchor in the page itself.
- * @throws RenderError or LinkError as {@link renderMarkdown} does.
- */
-export function linkedFiles(doc: ParsedDoc, environment: LinkEnvironment): string[] {
-  const tree = structuredClone(doc.tree)
-  const files: string[] = []
-  visit(tree, 'element', (node) => {
-    rewriteLink(node, doc, environment, [], files)
-  })
-  return files
 }
 
 /** The schemes a link may leave the site by. */

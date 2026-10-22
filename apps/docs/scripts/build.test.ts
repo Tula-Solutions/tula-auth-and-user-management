@@ -101,4 +101,43 @@ describe('scripts/build.ts', () => {
     }
     // One `bun` start, which can take a second or more on a slow runner.
   }, 60_000)
+
+  test('a link to a file that no cached task takes as an input fails the check, naming both', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'docs-build-'))
+    try {
+      const repo = join(dir, 'repo')
+      mkdirSync(join(repo, 'docs'), { recursive: true })
+      mkdirSync(join(repo, 'packages/zzz/src'), { recursive: true })
+      writeFileSync(join(repo, 'packages/zzz/src/a.ts'), 'export {}\n')
+      writeFileSync(join(repo, 'docs/README.md'), '# Docs\n\n[source](../packages/zzz/src/a.ts)\n')
+
+      const result = build(repo, join(dir, 'dist'), ['--check'])
+
+      expect(result.exitCode).not.toBe(0)
+      expect(result.stderr.toString()).toContain('apps/docs/turbo.json')
+      expect(result.stderr.toString()).toContain('packages/zzz/src/a.ts')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+    // Each `bun` start can take a second on a slow runner, and Bun's default is five.
+  }, 90_000)
+
+  test('the same check passes for a link to a file the inputs do match', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'docs-build-'))
+    try {
+      const repo = join(dir, 'repo')
+      mkdirSync(join(repo, 'docs'), { recursive: true })
+      writeFileSync(join(repo, 'LICENSE'), 'text\n')
+      writeFileSync(join(repo, 'docs/README.md'), '# Docs\n\n[licence](../LICENSE)\n')
+
+      const result = build(repo, join(dir, 'dist'), ['--check'])
+
+      expect(result.stderr.toString()).toBe('')
+      expect(result.exitCode).toBe(0)
+      expect(result.stdout.toString()).toContain('every link and anchor resolves')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+    // Each `bun` start can take a second on a slow runner, and Bun's default is five.
+  }, 90_000)
 })

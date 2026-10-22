@@ -91,18 +91,26 @@ static HTML. Its commands are in its README.
 - **shadcn primitives** in `src/components/ui/` are written by `bunx shadcn@latest add` and
   not edited (as in the dashboard). They import `cn` from the bare specifier, mapped by
   `tsconfig.json` and `vite.config.ts`. The primitives used are rendered on the server only.
-- **Tests.** `bun test` runs on Bun's default timeout, with none raised: `site.test.ts`
-  renders a sample of pages, and rendering every page and resolving every link is
-  `generate:check`'s job (`build --check`, part of `verify`). The
-  coverage threshold is in the app's `bunfig.toml`; the browser script is covered by the
-  Playwright project. The app's five cached tasks (`transit`, `build`, `test`,
+- **Tests.** `bun test` runs on Bun's default timeout, with none raised, so a test does only
+  what it can finish in a fraction of it on a loaded runner (CI ran this package's tests three
+  to eight times slower than a laptop): `site.test.ts` renders a sample of pages, and whatever
+  needs every page is `generate:check`'s job (`build --check`, part of `verify`, untimed):
+  rendering every page, resolving every link, and the cache inputs below. A unit test does not
+  scan the repository's pages. `buildSite` parses only what it renders and reads the title of
+  another page from the lines before its first `##` (`titleOf`), so a sample build does not
+  parse the reference pages.
+- **Cache inputs.** The coverage threshold is in the app's `bunfig.toml`; the browser script is
+  covered by the Playwright project. The app's five cached tasks (`transit`, `build`, `test`,
   `test:coverage`, `generate:check`) name the same inputs in `turbo.json`
   (`.claude/rules/turbo-inputs.md`): `docs/**` and every file outside `docs/` that a page
   links to (the root `*.md` and `LICENSE`, the READMEs of the apps, packages, examples and
-  native SDKs, the example config). `src/lib/turbo-inputs.test.ts` scans the pages' links and
-  fails for a target no input matches, and for lists that differ: a link to a new kind of file
-  adds its glob to all five lists in the same change, or the site is served from the cache
-  when that file changes.
+  native SDKs, the example config). **A build of every page checks them** (`checkCacheInputs`
+  in `src/lib/inputs.ts`, from the files each render read: `RenderedDoc.files`): it fails for
+  a target no input of a task matches and for lists that differ, so a link to a new kind of
+  file adds its glob to all five lists in the same change, or the site is served from the
+  cache when that file changes. `inputs.test.ts` tries the guard on synthetic inputs and
+  links, and `scripts/build.test.ts` holds that the script exits non-zero for a link no input
+  matches.
 - **`DOCS_OUT_DIR` and `DOCS_REPO_ROOT` are test-only** (the build script's own test builds a
   throwaway repository). Vite empties its output directory, so both go through
   `resolveOutDir()` / `resolveRepoRoot()` in `src/lib/paths.ts`, used by `build.ts`,
@@ -124,5 +132,6 @@ static HTML. Its commands are in its README.
   is checked as the block without its lines plus ranges of its `.line`s
   (`e2e/chunks.ts`, `page-stats.json` holds the line counts). Because axe sees only the piece it
   is given, `page-check.ts` checks each whole rendered page at build (so in `generate:check`):
-  no `h1`, a heading level skipped from the `h1` on, a duplicate id, a dangling
+  no `h1`, a section over `SECTION_CAP` that is more than one block, a heading level skipped from
+  the `h1` on, a duplicate id, a dangling
   `aria-labelledby` / `aria-describedby` / `for`. Never replace it with an axe `runOnly`.

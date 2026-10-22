@@ -6,6 +6,7 @@ import { Landing } from '~/components/landing'
 import { Document, type Frame, type PageProps } from '~/components/layout'
 import { BASE, REPO_ROOT } from './config'
 import { buildErrorCodesPage, ERROR_CODES_ROUTE, errorCodeEntries } from './error-codes'
+import { checkCacheInputs } from './inputs'
 import type { LinkEnvironment } from './links'
 import {
   createCodeHighlighter,
@@ -16,11 +17,15 @@ import {
   renderMarkdown,
   SECTION_ATTRIBUTE,
   type Section,
+  titleOf,
 } from './markdown'
 import { buildNav, type NavGroup } from './nav'
 import { checkPage } from './page-check'
 import { collectPages, type SourcePage } from './pages'
 import { buildIndex, type SearchEntry } from './search'
+
+/** The docs app's `turbo.json`, whose inputs a whole build checks against the links. */
+const TURBO_PATH = join(import.meta.dir, '../../turbo.json')
 
 /** A page of the built site. */
 export interface BuiltPage {
@@ -114,10 +119,12 @@ function html(page: PageProps, frame: Frame, children?: React.ReactNode): string
  * @param assets - The stylesheet and script the pages load (empty for a check).
  * @param base - The path the site is served under.
  * @param only - Routes to render and index, for a test that needs the shape of the site and
- *   not all of it (every file is still parsed, so the sidebar and every anchor are complete).
- *   Omitted, every page is rendered.
+ *   not all of it (the sidebar is complete, and a link into a page that is not rendered still
+ *   has its anchor checked). Omitted, every page is parsed and rendered.
  * @returns The pages, the search index and the finished HTML.
- * @throws RenderError or LinkError for a file or link that cannot be rendered.
+ * @throws RenderError or LinkError for a file or link that cannot be rendered, and, for a build
+ *   of every page, RenderError when the app's cached tasks do not name an input for a file the
+ *   pages link to.
  */
 export async function buildSite(
   assets: Frame['assets'] = { css: [], js: '' },
@@ -127,16 +134,36 @@ export async function buildSite(
   const wanted = (route: string) => only === undefined || only.includes(route)
   const sources = collectPages()
   const docs = new Map<string, ParsedDoc>()
-  for (const source of sources) {
-    docs.set(
-      source.file,
-      parseMarkdown(source.file, await readFile(join(REPO_ROOT, source.file), 'utf8'))
-    )
+  const docOf = (source: SourcePage): ParsedDoc => {
+    let doc = docs.get(source.file)
+    if (doc === undefined) {
+      doc = parseMarkdown(source.file, readFileSync(join(REPO_ROOT, source.file), 'utf8'))
+      docs.set(source.file, doc)
+    }
+    return doc
+  }
+  // A whole build parses every file, so that one that cannot be parsed stops it. A build of a
+  // sample parses only the pages it renders; the others are parsed when something asks for
+  // their title (the sidebar) and their anchors are read when a link points into them.
+  for (const source of sources.filter((one) => wanted(one.route))) {
+    docOf(source)
   }
   const environment = repositoryEnvironment(sources, docs, base)
-  const titles = new Map(
-    sources.map((source) => [source.route, (docs.get(source.file) as ParsedDoc).title])
-  )
+  const sourceOfRoute = new Map(sources.map((source) => [source.route, source]))
+  const titles = {
+    get: (route: string) => {
+      const source = sourceOfRoute.get(route)
+      if (source === undefined) {
+        return undefined
+      }
+      // A page already parsed has its title; any other costs only the lines before its first
+      // `##`, not the whole file.
+      return (
+        docs.get(source.file)?.title ??
+        titleOf(source.file, readFileSync(join(REPO_ROOT, source.file), 'utf8'))
+      )
+    },
+  }
   const readme = 'docs/README.md'
   const nav = buildNav(await readFile(join(REPO_ROOT, readme), 'utf8'), readme, environment, titles)
   const reference = nav.find((group) => group.title === 'SDK reference')
@@ -151,11 +178,15 @@ export async function buildSite(
   const frame: Frame = { base, assets, nav }
   const pages: BuiltPage[] = []
   const copied = new Set<string>()
+  const linked = new Set<string>()
   for (const source of sources.filter((one) => wanted(one.route))) {
-    const doc = docs.get(source.file) as ParsedDoc
+    const doc = docOf(source)
     const rendered = renderMarkdown(doc, environment, highlighter)
     for (const file of rendered.assets) {
       copied.add(file)
+    }
+    for (const file of rendered.files) {
+      linked.add(file)
     }
     pages.push({
       source: source.file,
@@ -166,6 +197,12 @@ export async function buildSite(
       headings: doc.headings,
       sections: doc.sections,
     })
+  }
+  if (only === undefined) {
+    // Only a build of every page knows every file the pages read (`inputs.ts` says why).
+    checkCacheInputs(readFileSync(TURBO_PATH, 'utf8'), [...linked], (path) =>
+      statSync(join(REPO_ROOT, path)).isDirectory()
+    )
   }
   const errors = buildErrorCodesPage(errorCodeEntries())
   if (wanted(ERROR_CODES_ROUTE)) {

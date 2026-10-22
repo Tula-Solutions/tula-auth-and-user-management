@@ -2,9 +2,10 @@ import type { Element, Root } from 'hast'
 import rehypeParse from 'rehype-parse'
 import { unified } from 'unified'
 import { visit } from 'unist-util-visit'
-import { RenderError } from './markdown'
+import { RenderError, SECTION_ATTRIBUTE, SECTION_CAP } from './markdown'
 
 const parser = unified().use(rehypeParse, { fragment: false })
+const fragmentParser = unified().use(rehypeParse, { fragment: true })
 
 /** The attributes whose value is a list of ids of other elements. */
 const ID_LIST_PROPERTIES = ['ariaLabelledBy', 'ariaDescribedBy'] as const
@@ -58,7 +59,10 @@ function listOf(value: unknown): string[] {
  * checked in pieces: no `h1`, a heading level that jumps by two or more across any boundary
  * (from the `h1` on), an id used twice, and a reference by id (`aria-labelledby`,
  * `aria-describedby`, a label's `for`) that points at nothing. Axe checks these only within the
- * part of the page it is given, so the build checks them for the page as a whole.
+ * part of the page it is given, so the build checks them for the page as a whole. It also
+ * fails for a section above {@link SECTION_CAP} that is more than one block (a single long code
+ * block is cut into line ranges by the browser tests instead), so that the pieces the browser
+ * tests check stay small whatever the page is.
  *
  * It also refuses an address that leaves the base path the site is served under: a link, a
  * script, a stylesheet or an image written from the host's root (`/x`) when the base is a
@@ -71,6 +75,7 @@ function listOf(value: unknown): string[] {
  * @throws RenderError naming the page and the problem.
  */
 export function checkPage(label: string, html: string, base = '/'): void {
+  checkSectionSizes(label, html)
   const tree = parser.parse(html) as Root
   const ids = new Set<string>()
   const references: { attribute: string; id: string; tag: string }[] = []
@@ -128,6 +133,27 @@ export function checkPage(label: string, html: string, base = '/'): void {
   for (const { attribute, id, tag } of references) {
     if (!ids.has(id)) {
       throw new RenderError(label, `has a ${tag} whose ${attribute} "${id}" matches no element`)
+    }
+  }
+}
+
+/** A section may pass the cap only as one top-level element (`wrapSections` cuts the rest). */
+function checkSectionSizes(label: string, html: string): void {
+  const article = html.slice(html.indexOf('<article'), html.indexOf('</article>'))
+  const sections = article.split(`<div ${SECTION_ATTRIBUTE}="`).slice(1)
+  for (const [index, section] of sections.entries()) {
+    if (section.length <= SECTION_CAP + 1000) {
+      continue
+    }
+    const body = section.slice(section.indexOf('>') + 1, section.lastIndexOf('</div>')).trim()
+    const blocks = (fragmentParser.parse(body) as Root).children.filter(
+      (node) => node.type === 'element' || (node.type === 'text' && node.value.trim() !== '')
+    )
+    if (blocks.length > 1) {
+      throw new RenderError(
+        label,
+        `has a section ${index} over ${SECTION_CAP} bytes that is more than one block`
+      )
     }
   }
 }
