@@ -84,6 +84,11 @@ static HTML. Its commands are in its README.
   renders a sample of pages, and rendering every page and resolving every link is
   `generate:check`'s job (`build --check`, part of `verify`). The
   coverage threshold is in the app's `bunfig.toml`; the browser script is covered by the
-  Playwright project. The app's cached tasks name `docs/**` and the READMEs a link may lead to
-  in `turbo.json` (`.claude/rules/turbo-inputs.md`): a file the site reads outside the
-  package that is not named there is served from the cache when it changes.
+  Playwright project. The app's five cached tasks (`transit`, `build`, `test`,
+  `test:coverage`, `generate:check`) name the same inputs in `turbo.json`
+  (`.claude/rules/turbo-inputs.md`): `docs/**` and every file outside `docs/` that a page
+  links to (the root `*.md` and `LICENSE`, the READMEs of the apps, packages, examples and
+  native SDKs, the example config). `src/lib/turbo-inputs.test.ts` scans the pages' links and
+  fails for a target no input matches, and for lists that differ: a link to a new kind of file
+  adds its glob to all five lists in the same change, or the site is served from the cache
+  when that file changes.
