@@ -1028,11 +1028,21 @@
   }
 }
 
-/* Motion */
+:where(.tula-modal)[open] {
+  animation: tula-in 240ms var(--_tula-ease);
+}
+
+:where(.tula-modal)::backdrop {
+  background: var(--_tula-color-overlay, rgba(0, 0, 0, 0.55));
+  animation: tula-fade 240ms var(--_tula-ease);
+}
+
+/* Motion: last word, so it beats every animation above at equal specificity. */
 
 @media (prefers-reduced-motion: reduce) {
   :where(.tula-root) :where(*, *::before, *::after),
   :where(.tula-modal, .tula-dialog, .tula-menu),
+  :where(.tula-modal)[open],
   :where(.tula-modal, .tula-dialog)::backdrop {
     transition: none;
     animation: none;
@@ -1061,15 +1071,6 @@
   border-radius: calc(var(--_tula-radius) + 6px);
   background: transparent;
   color: var(--_tula-color-text);
-}
-
-:where(.tula-modal)[open] {
-  animation: tula-in 240ms var(--_tula-ease);
-}
-
-:where(.tula-modal)::backdrop {
-  background: var(--_tula-color-overlay, rgba(0, 0, 0, 0.55));
-  animation: tula-fade 240ms var(--_tula-ease);
 }
 
 :where(.tula-button-row) {

@@ -59,6 +59,16 @@ describe('the stylesheet', () => {
     expect(stylesheet.includes('@media (prefers-reduced-motion: reduce)')).toBe(true)
   })
 
+  test('no entrance animation is declared after the reduced-motion block, which must name [open]', () => {
+    // Same specificity (:where), so a later `animation: tula-in` would beat the reset: the
+    // modal kept sliding in under prefers-reduced-motion.
+    const start = stylesheet.indexOf('@media (prefers-reduced-motion: reduce)')
+    const end = stylesheet.indexOf('\n}\n', start)
+    const after = stylesheet.slice(end)
+    expect(after.match(/animation:\s*tula-/g) ?? []).toEqual([])
+    expect(stylesheet.slice(start, end)).toContain(':where(.tula-modal)[open]')
+  })
+
   test('every element name’s class is styled or deliberately bare', () => {
     const kebab = (name: string) => name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)
     const bare = ELEMENT_NAMES.filter((name) => !stylesheet.includes(`.tula-${kebab(name)}`))
