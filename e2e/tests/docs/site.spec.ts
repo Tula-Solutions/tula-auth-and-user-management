@@ -113,6 +113,27 @@ test.describe('the documentation site', () => {
     )
   })
 
+  test('search results are reached and left with the arrow keys, and Enter follows the first', async ({
+    page,
+  }) => {
+    await page.goto('/')
+    const box = page.getByRole('searchbox', { name: 'Search the documentation' })
+    await box.fill('password')
+    const links = page.getByRole('list', { name: 'Search results' }).getByRole('link')
+    await expect(links.nth(1)).toBeVisible()
+    await page.keyboard.press('ArrowDown')
+    await expect(links.nth(0)).toBeFocused()
+    await page.keyboard.press('ArrowDown')
+    await expect(links.nth(1)).toBeFocused()
+    await page.keyboard.press('ArrowUp')
+    await expect(links.nth(0)).toBeFocused()
+    await page.keyboard.press('ArrowUp')
+    await expect(box).toBeFocused()
+    const target = (await links.nth(0).getAttribute('href')) as string
+    await page.keyboard.press('Enter')
+    await expect.poll(() => new URL(page.url()).pathname + new URL(page.url()).hash).toBe(target)
+  })
+
   test('the menu button opens the sidebar on a phone', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 800 })
     await page.goto('/quickstart/')
