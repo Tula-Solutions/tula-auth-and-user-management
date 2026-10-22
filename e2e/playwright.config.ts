@@ -1,4 +1,5 @@
 import { defineConfig, devices, type PlaywrightTestConfig } from '@playwright/test'
+import { serversFor } from './projects'
 
 // Browser tests for @tula-tech/react (plan rule 3): the example app, built from the components
 // only, against the real API served in process with memory adapters (e2e/server.ts). A second
@@ -22,21 +23,50 @@ const ENVIRONMENT_ID = '00000000-0000-7000-8000-00000000e001'
 const DOCS_URL = 'http://127.0.0.1:4321'
 
 // Playwright launches every `webServer` of the config whatever project is selected, so the
-// servers follow the projects named on the command line (`--project=x` or `--project x`; none
-// means all). A run of `docs` alone (or E2E_DOCS_ONLY=1) starts only the docs server, which
-// needs no API; a run that leaves `docs` out starts none of it: that is CI's `e2e` job, with the
-// `e2e-docs` job beside it.
-const selected = process.argv.flatMap((argument, index) => {
-  if (argument.startsWith('--project=')) {
-    return [argument.slice('--project='.length)]
-  }
-  return argument === '--project' && process.argv[index + 1] !== undefined
-    ? [process.argv[index + 1] as string]
-    : []
-})
-const docsOnly =
-  process.env.E2E_DOCS_ONLY === '1' || (selected.length > 0 && selected.every((p) => p === 'docs'))
-const withDocs = selected.length === 0 || selected.includes('docs')
+// servers follow the projects named on the command line (`projects.ts`). A run of `docs` alone
+// (or E2E_DOCS_ONLY=1) starts only the docs server, which needs no API; a run that leaves `docs`
+// out starts none of it: that is CI's `e2e` job, with the `e2e-docs` job beside it.
+const projects: NonNullable<PlaywrightTestConfig['projects']> = [
+  // First: the Next.js server verifies tokens against the real time, and scenarios of the
+  // later projects move the fixture's clock forward and leave it there. This project's own
+  // methods.spec.ts moves it too, and puts it back when it is done (`/__test/reset-clock`
+  // in its `afterAll`), so the specs after it start from the real time. With one worker,
+  // projects run in this order.
+  {
+    name: 'nextjs',
+    testMatch: /nextjs\/.*\.spec\.ts/,
+    use: { ...devices['Desktop Chrome'], baseURL: NEXT_URL },
+  },
+  // The dashboard (apps/dashboard), served by the API itself at /dashboard under its real
+  // Content-Security-Policy. Before `chromium` for the same reason as `nextjs`: its session
+  // lasts eight hours by the fixture's clock.
+  {
+    name: 'dashboard',
+    testMatch: /dashboard\/.*\.spec\.ts/,
+    use: { ...devices['Desktop Chrome'], baseURL: `${API_URL}/dashboard/` },
+  },
+  // The documentation site (apps/docs), built and served as static files: no API behind it.
+  {
+    name: 'docs',
+    testMatch: /docs\/.*\.spec\.ts/,
+    // The pages are static files and each test opens its own: the tests of the one spec file
+    // run on the workers `--workers` gives (CI: four), where `fullyParallel: false` above
+    // would keep them all on one.
+    fullyParallel: true,
+    use: { ...devices['Desktop Chrome'], baseURL: DOCS_URL },
+  },
+  {
+    name: 'chromium',
+    testIgnore: [/nextjs\//, /dashboard\//, /docs\//],
+    use: { ...devices['Desktop Chrome'] },
+  },
+]
+
+const servers = serversFor(
+  process.argv,
+  process.env,
+  projects.map((project) => project.name as string)
+)
 
 export default defineConfig({
   testDir: './tests',
@@ -56,42 +86,8 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
-  projects: [
-    // First: the Next.js server verifies tokens against the real time, and scenarios of the
-    // later projects move the fixture's clock forward and leave it there. This project's own
-    // methods.spec.ts moves it too, and puts it back when it is done (`/__test/reset-clock`
-    // in its `afterAll`), so the specs after it start from the real time. With one worker,
-    // projects run in this order.
-    {
-      name: 'nextjs',
-      testMatch: /nextjs\/.*\.spec\.ts/,
-      use: { ...devices['Desktop Chrome'], baseURL: NEXT_URL },
-    },
-    // The dashboard (apps/dashboard), served by the API itself at /dashboard under its real
-    // Content-Security-Policy. Before `chromium` for the same reason as `nextjs`: its session
-    // lasts eight hours by the fixture's clock.
-    {
-      name: 'dashboard',
-      testMatch: /dashboard\/.*\.spec\.ts/,
-      use: { ...devices['Desktop Chrome'], baseURL: `${API_URL}/dashboard/` },
-    },
-    // The documentation site (apps/docs), built and served as static files: no API behind it.
-    {
-      name: 'docs',
-      testMatch: /docs\/.*\.spec\.ts/,
-      // The pages are static files and each test opens its own: the tests of the one spec file
-      // run on the workers `--workers` gives (CI: four), where `fullyParallel: false` above
-      // would keep them all on one.
-      fullyParallel: true,
-      use: { ...devices['Desktop Chrome'], baseURL: DOCS_URL },
-    },
-    {
-      name: 'chromium',
-      testIgnore: [/nextjs\//, /dashboard\//, /docs\//],
-      use: { ...devices['Desktop Chrome'] },
-    },
-  ],
-  webServer: [...(docsOnly ? [] : apiServers()), ...(withDocs ? [docsServer()] : [])],
+  projects,
+  webServer: [...(servers.api ? apiServers() : []), ...(servers.docs ? [docsServer()] : [])],
 })
 
 /** The documentation site, built from docs/** and apps/docs, then served from its output directory. */
