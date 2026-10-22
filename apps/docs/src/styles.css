@@ -7,8 +7,11 @@
  * once, in this stylesheet. The island's own stylesheet (playground/playground.css) holds its
  * layout and the components' styles, and no utilities: a second copy of the utilities layer,
  * loaded after this one, beat the site's variants at equal specificity (its `.hidden` hid the
- * header's `dark:block` sun icon on every page with a playground).
+ * header's `dark:block` sun icon on every page with a playground). Tests are not scanned: a
+ * class-like string in one would add a rule every page loads.
  */
+@source not "./**/*.test.ts";
+@source not "./**/*.test.tsx";
 
 /*
  * The site's look. Every colour, radius, shadow, type step and duration is a custom property

@@ -152,3 +152,14 @@ describe('the content components', () => {
     }
   })
 })
+
+describe('the Tailwind build', () => {
+  test('one stylesheet writes the utilities, and its scan leaves the tests out', () => {
+    const playground = readFileSync(join(ROOT, 'src/playground/playground.css'), 'utf8')
+    expect(playground).not.toContain('tailwindcss')
+    // The raw file: stripping comments would also eat the `/**/` inside these globs.
+    const site = readFileSync(join(ROOT, 'src/styles.css'), 'utf8')
+    expect(site).toContain('@source not "./**/*.test.ts";')
+    expect(site).toContain('@source not "./**/*.test.tsx";')
+  })
+})

@@ -4,8 +4,9 @@
  * The playground island's stylesheet, loaded by the pages that hold one and by no other page.
  * Two parts: the components' own stylesheet and the playground's layout below. Tailwind's
  * utilities for the island's classes are written by the site's stylesheet (`styles.css` scans
- * the island's sources), never here: a second utilities layer would override the site's. Colours, radii, shadows and motion are the site's tokens
- * (`styles/tokens.gen.css`); nothing here is a colour of its own, and `contrast.test.ts` holds that.
+ * the island's sources), never here: a second utilities layer would override the site's.
+ * Colours, radii, shadows and motion are the site's tokens (`styles/tokens.gen.css`); nothing
+ * here is a colour of its own, and `contrast.test.ts` holds that.
  */
 
 /* ----------------------------------------------------------- the placeholder and the frame */
