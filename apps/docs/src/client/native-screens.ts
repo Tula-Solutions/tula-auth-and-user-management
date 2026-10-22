@@ -22,12 +22,7 @@ function enhance(root: HTMLElement): void {
   }
   toolbar.hidden = false
 
-  /** Which step of each screen is shown: the first until the reader picks one. */
-  const steps = new Map<string, string>()
-
   function showStep(panel: HTMLElement, step: string): void {
-    const screen = panel.getAttribute('data-screen') ?? ''
-    steps.set(screen, step)
     for (const item of Array.from(panel.querySelectorAll<HTMLElement>('.ns-shot'))) {
       item.hidden = item.getAttribute('data-step') !== step
     }

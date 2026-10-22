@@ -185,6 +185,17 @@ export function parseManifest(
       sha256,
     }
   })
+  // A step with one scheme only would draw an empty frame for a reader of the other.
+  const themes = new Map<string, Set<string>>()
+  for (const one of captures) {
+    const key = `${one.screen}/${one.step}`
+    themes.set(key, (themes.get(key) ?? new Set()).add(one.theme))
+  }
+  for (const [key, seen] of themes) {
+    if (seen.size !== 2) {
+      throw new ManifestError(file, `${key} needs both a light and a dark capture`)
+    }
+  }
   return {
     version: 1,
     platform,

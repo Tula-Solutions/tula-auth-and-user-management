@@ -91,6 +91,12 @@ describe('parseManifest', () => {
     expect(() => parseManifest('m.json', source, 'ios')).toThrow(message)
   })
 
+  test('refuses a step that has one scheme only: a reader of the other would see an empty frame', () => {
+    expect(() => parsed({ captures: [capture('sign-in', 'email', 'light')] })).toThrow(
+      /both a light and a dark/
+    )
+  })
+
   test('refuses a capture that is not a plain name, does not match itself or is listed twice', () => {
     const base = capture('sign-in', 'email', 'light')
     for (const [bad, message] of [
