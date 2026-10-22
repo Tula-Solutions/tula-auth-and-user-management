@@ -1,13 +1,16 @@
 import { ChevronDown } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { SITE_ORIGIN } from '~/lib/ai/urls'
+import { pageUrl, SITE_ORIGIN, twinPath, twinUrl } from '~/lib/ai/urls'
+import { breadcrumb, neighbours, pageOrder } from '~/lib/anatomy'
 import { hasPlayground } from '~/lib/blocks'
 import { SITE_NAME } from '~/lib/config'
 import type { Heading } from '~/lib/markdown'
 import type { NavGroup, NavItem } from '~/lib/nav'
+import { sourceLink } from '~/lib/page-source'
 import { canonicalOf, type ReleaseInfo } from '~/lib/release'
 import { buildSections, type Section, sectionHome, sectionOf } from '~/lib/sections'
 import { Header } from './header'
+import { Breadcrumb, PageActions, PageFooter } from './page-anatomy'
 import { VersionBanner, VersionMarker } from './version'
 
 /** The pages whose content is wider than the prose measure (the full playground). */
@@ -42,6 +45,10 @@ export interface PageProps {
   /** The rendered body. */
   html: string
   headings: readonly Heading[]
+  /** The Markdown file the page is rendered from, or `null` for a page the build writes. */
+  source?: string | null
+  /** The date (`YYYY-MM-DD`) the source last changed, when git can say it honestly. */
+  updated?: string
 }
 
 /**
@@ -194,6 +201,8 @@ export function Document({
     sectionOf(sections, page.route) ?? (page.route === '/docs/' ? sections[0] : undefined)
   // The island's script and stylesheet are for a page that holds a playground and no other.
   const playground = hasPlayground(page.html) ? frame.assets.playground : undefined
+  const urls = { origin: SITE_ORIGIN, base }
+  const around = neighbours(pageOrder(sections), page.route)
   const toc = page.headings.filter((heading) => heading.depth === 2)
   // The full playground page gives its width to the playground: wider than the prose, and no
   // table of contents column beside it (`WIDE_ROUTES`).
@@ -246,14 +255,21 @@ export function Document({
             <Sidebar sections={sections} active={active} route={page.route} base={base} />
             <main id='content' className='main' tabIndex={-1} data-wide={wide ? '' : undefined}>
               <div className='page-head'>
-                {active === undefined ? null : <span className='page-eyebrow'>{active.label}</span>}
+                <Breadcrumb crumbs={breadcrumb(sections, page.route)} base={base} />
                 {/* Slot: the page's actions (copy as Markdown and the like). */}
-                <div className='page-actions' data-slot='page-actions' />
+                <div className='page-actions' data-slot='page-actions'>
+                  <PageActions
+                    twinHref={`${base}${twinPath(page.route)}`}
+                    twinAddress={twinUrl(urls, page.route)}
+                    mcpHref={`${base.replace(/\/$/, '')}/mcp/`}
+                  />
+                </div>
               </div>
               {hasToc ? (
                 <details className='toc-mobile'>
                   <summary>
-                    On this page
+                    <span>On this page</span>
+                    <span className='toc-current' data-toc-current />
                     <ChevronDown aria-hidden='true' />
                   </summary>
                   <nav aria-label='Page contents'>
@@ -269,6 +285,15 @@ export function Document({
               ) : null}
               {/* biome-ignore lint/security/noDangerouslySetInnerHtml: the build's own render of docs/** */}
               <article className='doc' dangerouslySetInnerHTML={{ __html: page.html }} />
+              <PageFooter
+                title={page.title}
+                pageAddress={pageUrl(urls, page.route)}
+                source={sourceLink(page.source ?? null)}
+                updated={page.updated}
+                previous={around.previous}
+                next={around.next}
+                base={base}
+              />
             </main>
             {hasToc ? (
               <aside className='toc'>

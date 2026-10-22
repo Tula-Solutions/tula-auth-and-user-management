@@ -45,6 +45,12 @@ bun run --filter @tula-tech/docs generate:check   # render everything in memory:
   which fetches the island's one chunk when a placeholder comes near the viewport. Other pages
   load exactly the script they did before. The decisions are in
   [`.claude/rules/docs-site.md`](../../.claude/rules/docs-site.md).
+- **Native screens**: `:::native-screens{platform="ios"}` shows the SwiftUI or Compose screens as
+  the example apps' UI tests photographed them (`public/native/<platform>/` and its
+  `manifest.json`), as a picker with a script and as a plain list without one. The pictures are
+  taken by hand (`bun run native/swift/fixture/ui-tests.ts --screenshots apps/docs/public/native/ios`;
+  Android in [`docs/kotlin.md`](../../docs/kotlin.md#refreshing-the-captures)); a platform with none
+  says "Not captured yet" and shows the command.
 - **Files for AI agents**, written by the same build (`src/lib/ai/`), all under the base:
   a Markdown twin of every page (`/methods/password/` is `/methods/password.md`, with front
   matter and absolute links), `llms.txt` (the llmstxt.org index, one line per page),
@@ -55,6 +61,14 @@ bun run --filter @tula-tech/docs generate:check   # render everything in memory:
   page without a twin, a link in a twin, `llms.txt` or `skill.md` that goes nowhere, and a file
   over its cap. Crawlers read `robots.txt` only at a host's root, so under GitHub Pages' sub-path
   it is there for whoever asks for it by name.
+
+Each page has the anatomy of a premium docs site: a breadcrumb, a **Copy page** split button
+(the page's Markdown twin to the clipboard; a menu with View as Markdown, Open in Claude, Open
+in ChatGPT, Open in Cursor and Copy MCP setup for `tula mcp`; plain links without a script),
+a lead, a table of contents that follows the scroll (a sticky disclosure on a phone), and a
+footer with "Edit this page on GitHub", "Last updated" from git, a "Was this page helpful?" that
+keeps and sends nothing, and the previous and next pages in sidebar order. The code is in
+`src/components/page-anatomy.tsx` and `src/client/page.ts`; the rules are in the rule file below.
 
 A Markdown file that cannot be rendered, a relative link to a file that does not exist and an
 anchor the target does not have all **fail the build**. A link to a repository file that is not

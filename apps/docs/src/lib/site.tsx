@@ -13,6 +13,7 @@ import {
   createCodeHighlighter,
   type Heading,
   markdownAnchors,
+  type NativeCaptures,
   type ParsedDoc,
   parseMarkdown,
   renderMarkdown,
@@ -20,8 +21,10 @@ import {
   type Section,
   titleOf,
 } from './markdown'
+import { type NativeManifest, type NativePlatform, parseManifest } from './native-captures'
 import { buildNav, type NavGroup } from './nav'
 import { checkPage } from './page-check'
+import { ERROR_CODES_SOURCE } from './page-source'
 import { collectPages, type SourcePage } from './pages'
 import { type ReleaseInfo, versionBases } from './release'
 import { buildIndex, type SearchEntry } from './search'
@@ -41,6 +44,8 @@ export interface BuiltPage {
   /** Everything a link may point at in the page: heading ids and explicit anchors. */
   ids: ReadonlySet<string>
   sections: Section[]
+  /** The date (`YYYY-MM-DD`) its source last changed, when the build was given git's answer. */
+  updated?: string
 }
 
 /** The site, built and not yet written. */
@@ -64,6 +69,32 @@ export interface Site {
 export interface BuildOptions {
   /** The date (`YYYY-MM-DD`) a source file last changed, for the twins and the sitemap. */
   updated?: (file: string) => string | undefined
+}
+
+/**
+ * The reader of the native platforms' capture manifests, which the UI-test runners write next to
+ * the pictures (`apps/docs/public/native/<platform>/manifest.json`).
+ *
+ * A platform with no manifest is `null` (the page says it has not been captured); one that is
+ * there and wrong stops the build, because showing less than the manifest lists would pass for
+ * the whole.
+ *
+ * @param root - The repository's root.
+ * @returns The reader, which reads each manifest once.
+ * @throws ManifestError when a manifest is not valid.
+ */
+export function nativeCapturesOf(root: string): NativeCaptures {
+  const read = new Map<NativePlatform, NativeManifest | null>()
+  return (platform) => {
+    if (!read.has(platform)) {
+      const file = join(root, 'apps/docs/public/native', platform, 'manifest.json')
+      read.set(
+        platform,
+        existsSync(file) ? parseManifest(file, readFileSync(file, 'utf8'), platform) : null
+      )
+    }
+    return read.get(platform) ?? null
+  }
 }
 
 /** The route of the landing page. */
@@ -197,13 +228,14 @@ export async function buildSite(
   }
 
   const highlighter = await createCodeHighlighter()
+  const nativeCaptures = nativeCapturesOf(REPO_ROOT)
   const frame: Frame = { base, assets, nav, release }
   const pages: BuiltPage[] = []
   const copied = new Set<string>()
   const linked = new Set<string>()
   for (const source of sources.filter((one) => wanted(one.route))) {
     const doc = docOf(source)
-    const rendered = renderMarkdown(doc, environment, highlighter)
+    const rendered = renderMarkdown(doc, environment, highlighter, nativeCaptures)
     for (const file of rendered.assets) {
       copied.add(file)
     }
@@ -219,6 +251,7 @@ export async function buildSite(
       headings: doc.headings,
       ids: doc.ids,
       sections: doc.sections,
+      updated: options.updated?.(source.file),
     })
   }
   if (only === undefined) {
@@ -238,6 +271,7 @@ export async function buildSite(
       headings: errors.headings,
       ids: new Set(errors.headings.map((heading) => heading.id)),
       sections: errors.sections,
+      updated: options.updated?.(ERROR_CODES_SOURCE),
     })
   }
 

@@ -1716,3 +1716,16 @@ Not verified:
 | **The MCP scaffold tools' native answers in a client** | The tools' answers are tested (the files equal the templates). No project was assembled from an answer and built, and no MCP client was connected. |
 | **`--tula-repo` on another machine** | The project names the checkout by a relative path, worked out from the two real paths. A checkout or a project moved alone afterwards breaks the project's build; that was not tried. A path with a space is refused by the scaffold, before anything is written (the Compose start command prints the path unquoted in a shell line, and nobody built a project under such a name); which characters are refused is tested on the function, and the two scratch projects sat in directories with plain names. That a path of the allowed characters is safe in every shell was not tried beyond those two. |
 | **The native reference pages** | Written by a scan of the doc comments' text, not by a compiler: a declaration the scan does not recognise is missing from the page with no error, and nobody compared the pages with the sources declaration by declaration. |
+
+## The pictures of the native screens in the documentation (TULA-107)
+
+On 2026-10-22, on one Mac (arm64), the two example apps' capture tests ran by hand
+(`bun run native/swift/fixture/ui-tests.ts --screenshots apps/docs/public/native/ios`, and the Android
+runner with `--avd Pixel_10 --screenshots apps/docs/public/native/android`). Both passed, and each
+wrote 22 WebP pictures (11 steps, light and dark) and a manifest.
+
+| What | How far it was taken |
+| --- | --- |
+| **iOS** | Xcode 16.4, an iPhone 16 simulator with iOS 18.5, the status bar set to 9:41. The six capture tests passed. |
+| **Android** | The `Pixel_10` emulator on an Android 17 image (API 37), JDK 25 and Gradle 9.8.1. The six capture tests passed. The pictures are Compose's capture of the app's window, so they have no system bars: the example is not edge to edge, and the emulator draws an empty status bar. In the dark scheme a strip above the content is the example's own light window background. |
+| **Anything else** | No other simulator, device or OS version. The account screens show the fixture's fixed clock (31 December 2025). Nobody looked at the pictures in VoiceOver or TalkBack: they are pictures, with alternative text. |

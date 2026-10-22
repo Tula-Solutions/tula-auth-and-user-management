@@ -737,27 +737,23 @@
   color: var(--ink);
   font-weight: 550;
 }
-/* The mark's motif, small: a level beam with a solid and an open end. */
+/*
+ * The logo kit's mark (the geometry of `LogoMark` in `components/logo.tsx`, with a heavier stroke
+ * so that it holds at 20 px) as a mask, painted in `--ink`: ink on the light page and paper on
+ * the dark one, following the theme toggle like the header's logo does.
+ */
 .nav-link[aria-current="page"]::before {
+  --nav-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-78 -60 156 125'%3E%3Cg fill='none' stroke='black' stroke-width='10' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M0 -52V56M-60 -34H60M-26 56H26M-60 -34V-10M60 -34V-10'/%3E%3Ccircle cx='-60' cy='4' r='16' fill='black' stroke='none'/%3E%3Ccircle cx='60' cy='4' r='13'/%3E%3C/g%3E%3C/svg%3E");
   content: "";
   position: absolute;
   inset-inline-end: 12px;
   top: 50%;
-  width: 14px;
-  height: 7px;
+  width: 20px;
+  height: 16px;
   transform: translateY(-50%);
-  background:
-    radial-gradient(circle at 3.5px 3.5px, var(--accent) 3px, transparent 3.4px) left center / 7px
-    7px no-repeat,
-    linear-gradient(var(--accent), var(--accent)) center / 100% 1.5px no-repeat,
-    radial-gradient(
-      circle at 3.5px 3.5px,
-      transparent 1.7px,
-      var(--accent) 2px,
-      var(--accent) 3px,
-      transparent 3.4px
-    )
-    right center / 7px 7px no-repeat;
+  background-color: var(--ink);
+  -webkit-mask: var(--nav-mark) center / contain no-repeat;
+  mask: var(--nav-mark) center / contain no-repeat;
 }
 @media (max-width: 1023.98px) {
   .nav-link[aria-current="page"]::before {
@@ -765,19 +761,14 @@
   }
 }
 
-/* The page's own bar: where a page's section is named, and where its actions will go. */
+/* The page's own bar: the breadcrumb, and the page's actions at the end of the row. */
 .page-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
-  min-height: 32px;
-  margin-bottom: 16px;
-}
-.page-eyebrow {
-  color: var(--muted);
-  font-size: var(--fs-small);
-  line-height: var(--lh-small);
-  font-weight: 500;
+  gap: 12px 16px;
+  min-height: 36px;
+  margin-bottom: 20px;
 }
 .page-actions {
   display: flex;
@@ -787,6 +778,227 @@
 }
 .page-actions:empty {
   display: none;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The breadcrumb. */
+.breadcrumb {
+  min-width: 0;
+  flex: 1 1 auto;
+  color: var(--muted);
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+}
+.breadcrumb ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.breadcrumb li {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+.breadcrumb li + li::before {
+  content: "/" / "";
+  margin-inline: 8px;
+  color: var(--faint);
+}
+.breadcrumb a {
+  color: var(--muted);
+  text-decoration: none;
+  transition: color var(--dur-fast) var(--ease);
+}
+.breadcrumb a:hover {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.breadcrumb [aria-current="page"] {
+  color: var(--ink);
+  font-weight: 550;
+}
+
+/* The split button: copy the page, and a menu of the other things to do with it. Without a
+   script (`html` has no `data-js`) the main action is a link to the Markdown and the menu a
+   `details`; the root attribute is set before the first paint, so nothing flashes. */
+.split {
+  position: relative;
+}
+html:not([data-js]) .split-js,
+html[data-js] .split-nojs {
+  display: none;
+}
+.split-js,
+.split-nojs {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+}
+.split-main,
+.split-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  border: 1px solid var(--border-strong);
+  background: var(--raised);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 550;
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+.split-main {
+  padding: 0 14px;
+  border-radius: var(--r-md) 0 0 var(--r-md);
+}
+.split-more {
+  width: 40px;
+  margin-inline-start: -1px;
+  padding: 0;
+  border-radius: 0 var(--r-md) var(--r-md) 0;
+  list-style: none;
+}
+.split-more::-webkit-details-marker {
+  display: none;
+}
+.split-main:hover,
+.split-more:hover,
+.split-more[aria-expanded="true"] {
+  background: var(--surface);
+}
+.split-main:focus-visible,
+.split-more:focus-visible {
+  position: relative;
+  z-index: 1;
+}
+.split-main svg,
+.split-more svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.split-more svg {
+  color: var(--muted);
+  transition: transform var(--dur-base) var(--ease);
+}
+.split-more[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+.split-main .icon-done {
+  display: none;
+  color: var(--ok);
+}
+.split-main[data-done] .icon-copy {
+  display: none;
+}
+.split-main[data-done] .icon-done {
+  display: block;
+}
+@media (min-width: 1024px) {
+  .split-main,
+  .split-more {
+    min-height: 36px;
+  }
+  .split-main {
+    padding: 0 12px;
+  }
+  .split-more {
+    width: 32px;
+  }
+}
+
+/* The menu. */
+.menu-nojs {
+  position: relative;
+}
+.menu {
+  position: absolute;
+  inset-block-start: calc(100% + 6px);
+  inset-inline-end: 0;
+  z-index: 30;
+  width: max-content;
+  min-width: 232px;
+  max-width: calc(100vw - 32px);
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--raised);
+  box-shadow: var(--sh-2);
+}
+.menu[hidden] {
+  display: none;
+}
+.menu a,
+.menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 500;
+  text-align: start;
+  text-decoration: none;
+  cursor: pointer;
+}
+.menu a:hover,
+.menu button:hover,
+.menu a:focus-visible,
+.menu button:focus-visible {
+  background: var(--surface);
+}
+.menu a:focus-visible,
+.menu button:focus-visible {
+  outline-offset: -2px;
+}
+.menu svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--muted);
+}
+.menu .menu-label {
+  flex: 1;
+}
+.menu .menu-out {
+  width: 14px;
+  height: 14px;
+  color: var(--faint);
+}
+@media (min-width: 1024px) {
+  .menu a,
+  .menu button {
+    min-height: 36px;
+  }
 }
 
 /* On this page: a column from 1280 px, a disclosure below it. */
@@ -832,13 +1044,25 @@
   line-height: 1.25rem;
   text-decoration: none;
   overflow-wrap: break-word;
-  transition: color var(--dur-fast) var(--ease);
+  transition:
+    color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
 }
 .toc-list a:hover {
   border-left-color: var(--accent);
   color: var(--ink);
 }
+.toc-list a[aria-current="location"] {
+  border-left: 2px solid var(--accent);
+  margin-left: -1.5px;
+  padding-left: 13.5px;
+  color: var(--ink);
+  font-weight: 550;
+}
 .toc-mobile {
+  position: sticky;
+  top: calc(var(--header-h) + 8px);
+  z-index: 5;
   margin-bottom: 24px;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
@@ -848,7 +1072,6 @@
 .toc-mobile summary {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   min-height: 44px;
   padding: 0 14px;
@@ -861,9 +1084,23 @@
 .toc-mobile summary::-webkit-details-marker {
   display: none;
 }
+.toc-mobile .toc-current {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--muted);
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.toc-mobile .toc-current:not(:empty)::before {
+  content: "·";
+  margin-inline-end: 8px;
+}
 .toc-mobile summary svg {
   width: 16px;
   height: 16px;
+  margin-inline-start: auto;
   color: var(--muted);
   transition: transform var(--dur-base) var(--ease);
 }
@@ -874,6 +1111,168 @@
   max-height: 50dvh;
   margin: 0 14px 12px;
   overflow-y: auto;
+}
+
+/* The end of a page: feedback, the source and date, and the pages around it. */
+.page-foot {
+  margin-top: 72px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+}
+.feedback {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  min-height: 44px;
+  color: var(--muted);
+}
+.feedback p {
+  margin: 0;
+}
+.feedback a,
+.page-meta a {
+  color: var(--accent);
+  text-underline-offset: 3px;
+}
+.feedback-ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+.feedback-question {
+  color: var(--ink);
+  font-weight: 550;
+}
+.feedback-buttons {
+  display: inline-flex;
+  gap: 8px;
+}
+.feedback-buttons button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--raised);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 550;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+.feedback-buttons button:hover {
+  background: var(--surface);
+}
+.feedback-buttons svg {
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+}
+html:not([data-js]) .feedback-ask,
+html[data-js] .feedback-nojs,
+.feedback[data-answered] .feedback-ask {
+  display: none;
+}
+.feedback-thanks[hidden] {
+  display: none;
+}
+.feedback-thanks {
+  color: var(--ink);
+  outline-offset: 4px;
+}
+.page-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 24px;
+  margin: 8px 0 0;
+  color: var(--muted);
+}
+.page-meta a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 44px;
+}
+@media (min-width: 1024px) {
+  .page-meta a {
+    min-height: 32px;
+  }
+}
+.page-meta svg {
+  width: 14px;
+  height: 14px;
+}
+.pager {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  margin-top: 24px;
+}
+@media (min-width: 640px) {
+  .pager {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.pager-link {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--bg);
+  color: var(--ink);
+  text-decoration: none;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}
+.pager-link:hover {
+  border-color: var(--border-strong);
+  background: var(--surface);
+}
+.pager-link[data-direction="next"] {
+  align-items: flex-end;
+  text-align: end;
+  grid-column: 2;
+}
+@media (max-width: 639.98px) {
+  .pager-link[data-direction="next"] {
+    grid-column: 1;
+  }
+}
+.pager-caption {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: var(--fs-small);
+}
+.pager-caption svg {
+  width: 14px;
+  height: 14px;
+}
+.pager-title {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  overflow-wrap: break-word;
+}
+.pager-link:hover .pager-title {
+  color: var(--accent);
+}
+.pager-where {
+  color: var(--faint);
+  font-size: 0.8125rem;
 }
 
 /* ---------------------------------------------------------------- prose */
@@ -902,7 +1301,6 @@
 .doc h6:not(:where(.pg-host *)) {
   color: var(--ink);
   text-wrap: balance;
-  scroll-margin-top: calc(var(--header-h) + 16px);
 }
 .doc h1:not(:where(.pg-host *)) {
   margin: 0 0 16px;
@@ -949,6 +1347,7 @@
 }
 /* The lead: the paragraph under the title. */
 .doc h1 + p:not(:where(.pg-host *)) {
+  margin-bottom: 28px;
   color: var(--muted);
   font-size: 1.0625rem;
   line-height: 1.6875rem;
@@ -1843,6 +2242,10 @@
 /* ---------------------------------------------------------------- other */
 
 @media (forced-colors: active) {
+  .nav-link[aria-current="page"]::before {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
   .nav-link[aria-current="page"],
   .tab[aria-current="true"] {
     outline: 1px solid CanvasText;
@@ -1860,6 +2263,7 @@
   .toc,
   .toc-mobile,
   .page-head,
+  .page-foot,
   .skip-link {
     display: none !important;
   }
@@ -1872,5 +2276,196 @@
   }
   .doc a {
     color: inherit;
+  }
+}
+
+/* ------------------------------------------------- native screens gallery */
+/*
+ * `:::native-screens` (src/lib/native-captures.ts, src/client/native-screens.ts). Without a script
+ * the page lists every capture in the page's scheme; with one, a picker shows a single screen,
+ * step and scheme in a device frame. The pictures are real screenshots: nothing here draws one.
+ */
+.native-screens {
+  --ns-radius: 44px;
+  margin-block: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 16px;
+}
+.native-screens[data-native-screens="android"] {
+  --ns-radius: 28px;
+}
+.ns-caption > :first-child {
+  margin-top: 0;
+}
+.ns-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.ns-toolbar[hidden],
+.ns-steps[hidden],
+.ns-panel[hidden],
+.ns-shot[hidden] {
+  display: none;
+}
+.ns-tabs,
+.ns-options,
+.ns-steps,
+.ns-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ns-tab,
+.ns-step,
+.ns-option {
+  min-height: 44px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--muted);
+  padding: 0 14px;
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+.ns-tab:hover,
+.ns-step:hover,
+.ns-option:hover {
+  color: var(--ink);
+}
+.ns-step[aria-pressed="true"],
+.ns-option[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+.ns-tab[aria-selected="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.ns-steps {
+  margin-bottom: 16px;
+}
+.ns-options {
+  align-items: center;
+}
+
+/* Without a script: every capture, in a grid, in the page's scheme. */
+.doc .ns-shots {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.doc .ns-shot {
+  margin: 0;
+  padding: 0;
+}
+.ns-device {
+  margin: 0;
+}
+.ns-screen {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.ns-img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.ns-img[data-theme="dark"] {
+  display: none;
+}
+:root[data-theme="dark"] .native-screens:not([data-enhanced]) .ns-img[data-theme="light"] {
+  display: none;
+}
+:root[data-theme="dark"] .native-screens:not([data-enhanced]) .ns-img[data-theme="dark"] {
+  display: block;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .native-screens:not([data-enhanced]) .ns-img[data-theme="light"] {
+    display: none;
+  }
+  :root:not([data-theme="light"]) .native-screens:not([data-enhanced]) .ns-img[data-theme="dark"] {
+    display: block;
+  }
+}
+.ns-label {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: var(--fs-small);
+  text-align: center;
+}
+.ns-provenance {
+  margin: 16px 0 0;
+  color: var(--faint);
+  font-size: var(--fs-small);
+}
+.ns-missing {
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  padding: 16px;
+}
+.ns-missing-title {
+  margin: 0 0 4px;
+  color: var(--ink);
+  font-weight: 600;
+}
+.ns-missing > p {
+  margin: 0 0 8px;
+}
+.ns-missing pre {
+  margin: 0;
+}
+
+/* With a script: one device, one screen, one scheme. */
+.native-screens[data-enhanced] .ns-shots {
+  display: block;
+}
+.native-screens[data-enhanced] .ns-device {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  padding: 24px 16px 16px;
+}
+.native-screens[data-enhanced] .ns-screen {
+  width: min(100%, 280px);
+  border-radius: 12px;
+}
+.native-screens[data-enhanced][data-ns-frame="on"] .ns-screen {
+  border: 8px solid var(--border-strong);
+  border-radius: var(--ns-radius);
+  box-shadow: var(--sh-2);
+}
+.native-screens[data-enhanced][data-ns-theme="light"] .ns-img[data-theme="dark"],
+.native-screens[data-enhanced][data-ns-theme="dark"] .ns-img[data-theme="light"] {
+  display: none;
+}
+.native-screens[data-enhanced][data-ns-theme="light"] .ns-img[data-theme="light"],
+.native-screens[data-enhanced][data-ns-theme="dark"] .ns-img[data-theme="dark"] {
+  display: block;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ns-tab,
+  .ns-step,
+  .ns-option {
+    transition: none;
   }
 }

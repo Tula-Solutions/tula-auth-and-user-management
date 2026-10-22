@@ -896,6 +896,30 @@ when a version on either side changes without the written list of differences ch
 with it. [ADR 0063](adr/0063-expo-native-screens.md) has what was tried and what was only
 read from the published artifacts.
 
+### What the screens look like
+
+`@tula-tech/expo-screens` draws no screen of its own: its two components are the SwiftUI and
+the Compose screens, so they look as those do. **These pictures were taken from the Swift and
+Kotlin example apps, not from an Expo app**, because no screen has been drawn through this
+package (see the note above). They are the same screens with the same default theme; what an
+Expo app adds is the React Native view around them and the props of the
+[theme](#the-theme-of-the-native-screens).
+
+:::native-screens{platform="ios"}
+
+The iOS screens, from the [SwiftUI example](swift.md#what-the-screens-look-like).
+
+:::
+
+:::native-screens{platform="android"}
+
+The Android screens, from the [Compose example](kotlin.md#what-the-screens-look-like).
+
+:::
+
+To refresh them, see [refreshing the captures](swift.md#refreshing-the-captures) for iOS and
+[for Android](kotlin.md#refreshing-the-captures).
+
 ### One session owner
 
 **An app is on the native screens or on the headless client, never on both.** The native

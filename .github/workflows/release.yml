@@ -19,7 +19,7 @@ name: Release
 #   2. only `publish` has `id-token: write`, and there is no long-lived token anywhere: the
 #      script refuses to upload from a job that has `NPM_TOKEN` or `NODE_AUTH_TOKEN` set;
 #   3. `publish` runs in the GitHub environment `npm-publish`, which only `main` may deploy
-#      to and a reviewer approves, and npm's trusted publisher names that environment. The
+#      to (no reviewer approves a run: a merge to `main` publishes), and npm's trusted publisher names that environment. The
 #      OIDC identity npm accepts is therefore not "this file on any ref": a branch pushed
 #      with its own copy of this workflow gets an identity without the environment, which
 #      npm refuses. The environment's rules are set in the repository's settings, by a
@@ -76,7 +76,7 @@ jobs:
     needs: dry-run
     # Off until a person turns it on: see the top of this file.
     if: vars.NPM_PUBLISH == 'true'
-    # Deployment branches: `main` only, with required reviewers. npm's trusted publisher is
+    # Deployment branches: `main` only, no required reviewer. npm's trusted publisher is
     # configured with this environment's name, so no other ref's run of this file can publish.
     environment: npm-publish
     runs-on: ubuntu-latest

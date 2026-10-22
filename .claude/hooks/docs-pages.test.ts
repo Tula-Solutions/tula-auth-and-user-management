@@ -242,7 +242,7 @@ describe('the docs site workflow', () => {
 
   test('the browser tests run both versions of the site under the same path', () => {
     const ci = Bun.YAML.parse(read('.github/workflows/ci.yml')) as Workflow
-    expect(ci.jobs['e2e-docs']?.env).toEqual({ DOCS_BASE: PAGES_BASE })
+    expect(ci.jobs['e2e-docs-shard']?.env).toEqual({ DOCS_BASE: PAGES_BASE })
     expect(read('e2e/playwright.config.ts')).toContain('build:versions')
     expect(read('apps/docs/package.json')).toContain('"build:versions"')
   })
