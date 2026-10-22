@@ -1,0 +1,24 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "step-card",
+  "type": "registry:component",
+  "title": "Step card",
+  "description": "One screen of a flow: a titled card with a description, a footer and a title that takes the focus when the screen changes. Drawn from the app's own shadcn tokens.",
+  "dependencies": ["@tula-tech/react@^0.2.0"],
+  "registryDependencies": ["card"],
+  "files": [
+    {
+      "path": "items/step-card.tsx",
+      "type": "registry:component",
+      "target": "@components/tula/step-card.tsx",
+      "content": "'use client'\n\nimport { useLocalization } from '@tula-tech/react'\nimport { type ReactNode, useEffect, useId, useRef } from 'react'\nimport { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card'\nimport { cn } from '@/lib/utils'\n\n/** The level of a step card's title: 1 for a page of its own, 2 or 3 inside a page with an h1. */\nexport type StepCardLevel = 1 | 2 | 3\n\nexport interface StepCardProps {\n  /** The step's title. Takes the focus when `focusTitle` is set. */\n  title: string\n  /** A line under the title: where the user is going, or what this step asks. */\n  description?: ReactNode\n  /**\n   * Whether the title takes the focus as the card appears. Set it from the second screen of a\n   * flow on (`useScreenChanged`), so that a screen-reader user hears the new step and a\n   * keyboard user continues from its top.\n   */\n  focusTitle?: boolean\n  /** The heading level of the title. Defaults to 1. */\n  level?: StepCardLevel\n  /** Under the content, set apart by a rule: the link to the other screen. */\n  footer?: ReactNode\n  className?: string\n  children?: ReactNode\n}\n\n/**\n * One screen of a flow: a titled card, drawn in Tula's style (ink on paper, 10px corners, a\n * quiet shadow) from the app's own shadcn tokens, so it follows whatever theme the app has.\n *\n * It is presentation only: the screens that use it decide what to draw and the flow decides\n * which screen that is.\n */\nexport function StepCard(props: StepCardProps) {\n  const t = useLocalization()\n  const titleId = useId()\n  const title = useRef<HTMLHeadingElement>(null)\n  const { focusTitle = false, level = 1 } = props\n  useEffect(() => {\n    if (focusTitle) {\n      title.current?.focus()\n    }\n  }, [focusTitle])\n  const Heading = `h${level}` as const\n  return (\n    <Card\n      role='group'\n      aria-labelledby={titleId}\n      className={cn(\n        '@container/step w-full max-w-[26rem] gap-0 overflow-hidden rounded-lg border border-border bg-card py-0 text-card-foreground ring-0',\n        'shadow-[0_1px_2px_rgb(26_26_24/0.05),0_8px_24px_rgb(26_26_24/0.08)] dark:shadow-none dark:ring-1 dark:ring-foreground/5',\n        'motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 motion-safe:duration-300',\n        props.className\n      )}\n    >\n      <CardHeader className='gap-1.5 px-5 pt-7 pb-0 @sm/step:px-8 @sm/step:pt-8'>\n        <Heading\n          ref={title}\n          id={titleId}\n          tabIndex={-1}\n          className='text-balance text-[1.375rem] font-semibold leading-tight tracking-[-0.02em] outline-none'\n        >\n          {props.title}\n        </Heading>\n        {props.description ? (\n          <p className='text-pretty text-sm leading-relaxed text-muted-foreground'>\n            {props.description}\n          </p>\n        ) : null}\n      </CardHeader>\n      <CardContent className='grid gap-5 px-5 pt-6 pb-6 @sm/step:px-8 @sm/step:pb-8'>\n        {props.children}\n      </CardContent>\n      {props.footer ? (\n        <CardFooter className='justify-center rounded-none border-t border-border bg-muted/50 px-5 pt-4 pb-1 text-center text-sm text-muted-foreground @sm/step:px-8'>\n          {props.footer}\n        </CardFooter>\n      ) : null}\n      <p\n        className={cn(\n          'flex items-center justify-center gap-1.5 px-5 pt-2 pb-3.5 text-xs text-muted-foreground/80',\n          props.footer ? 'bg-muted/50' : 'border-t border-border'\n        )}\n      >\n        <svg\n          aria-hidden='true'\n          viewBox='0 0 16 16'\n          className='size-3 shrink-0'\n          fill='none'\n          stroke='currentColor'\n          strokeWidth='1.5'\n          strokeLinecap='round'\n          strokeLinejoin='round'\n        >\n          <rect x='3' y='7' width='10' height='6.5' rx='1.5' />\n          <path d='M5.5 7V5a2.5 2.5 0 0 1 5 0v2' />\n        </svg>\n        {t.common.securedBy}\n      </p>\n    </Card>\n  )\n}\n"
+    }
+  ],
+  "meta": {
+    "tula": {
+      "version": "0.2.0",
+      "minReact": "0.2.0",
+      "security": false
+    }
+  }
+}

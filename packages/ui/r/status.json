@@ -1,0 +1,22 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "status",
+  "type": "registry:component",
+  "title": "Status",
+  "description": "A quiet status line (polite, never an alert) and the alert above a form for a failure that is not about one field. The state is in the words, not only the colour.",
+  "files": [
+    {
+      "path": "items/status.tsx",
+      "type": "registry:component",
+      "target": "@components/tula/status.tsx",
+      "content": "'use client'\n\nimport { cn } from '@/lib/utils'\n\nexport interface StatusProps {\n  /**\n   * What to say; `null` keeps the live region in the page, empty, so that a message added later\n   * is announced. A live region that appears together with its text is often not read.\n   */\n  message: string | null\n  /**\n   * `success` (the default) confirms something that was done. `neutral` is for what is neither\n   * done nor wrong (a passkey dialog the user dismissed): nothing succeeded, so it must not look\n   * as if something had.\n   */\n  tone?: 'success' | 'neutral'\n  className?: string\n}\n\n/**\n * A quiet line, announced politely (an `<output>`, never an alert). The state is in the words,\n * not only in the colour.\n */\nexport function Status(props: StatusProps) {\n  const { message, tone = 'success' } = props\n  return (\n    <output\n      className={cn(\n        // Empty, it stays in the page (a live region that arrives with its text is often not\n        // read) but takes no room.\n        'flex items-start gap-2 text-sm empty:sr-only',\n        tone === 'success' ? 'text-foreground' : 'text-muted-foreground',\n        props.className\n      )}\n    >\n      {message !== null && tone === 'success' ? (\n        <svg\n          aria-hidden='true'\n          viewBox='0 0 16 16'\n          className='mt-0.5 size-4 shrink-0'\n          fill='none'\n          stroke='currentColor'\n          strokeWidth='1.75'\n          strokeLinecap='round'\n          strokeLinejoin='round'\n        >\n          <circle cx='8' cy='8' r='6.25' />\n          <path d='m5.5 8.2 1.7 1.7 3.3-3.6' />\n        </svg>\n      ) : null}\n      {message}\n    </output>\n  )\n}\n\nexport interface FormAlertProps {\n  /** The failure's message, or `null` for none. */\n  message: string | null\n  /** A second line that changes by itself (a countdown): read once, not re-announced. */\n  detail?: string | null\n  className?: string\n}\n\n/**\n * The message above a form for a failure that is not about one field. Announced at once\n * (`role=\"alert\"`), in the app's destructive colour with an icon, so that it is not colour alone.\n */\nexport function FormAlert(props: FormAlertProps) {\n  if (!props.message) {\n    return null\n  }\n  return (\n    <div\n      role='alert'\n      className={cn(\n        'flex gap-2.5 rounded-md border border-destructive/25 bg-destructive/10 px-3 py-2.5 text-sm text-destructive',\n        props.className\n      )}\n    >\n      <svg\n        aria-hidden='true'\n        viewBox='0 0 16 16'\n        className='mt-0.5 size-4 shrink-0'\n        fill='none'\n        stroke='currentColor'\n        strokeWidth='1.75'\n        strokeLinecap='round'\n        strokeLinejoin='round'\n      >\n        <circle cx='8' cy='8' r='6.25' />\n        <path d='M8 4.75v3.9M8 11.2v.05' />\n      </svg>\n      <div className='grid gap-0.5'>\n        <p>{props.message}</p>\n        {/* A countdown changes every second; it is read with the alert once. */}\n        {props.detail ? <p aria-live='off'>{props.detail}</p> : null}\n      </div>\n    </div>\n  )\n}\n"
+    }
+  ],
+  "meta": {
+    "tula": {
+      "version": "0.2.0",
+      "minReact": "0.2.0",
+      "security": false
+    }
+  }
+}

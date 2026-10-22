@@ -9,6 +9,7 @@ import {
   completed,
   expectAbsent,
   expectFocus,
+  expectRateLimited,
   type FakeLinkStorage,
   type FakeTimers,
   failure,
@@ -119,6 +120,7 @@ describe('<SignIn> with an emailed code', () => {
     expect(alert.textContent).toContain('Too many requests')
     // The countdown is drawn one render after the alert (`useCountdown` starts in an effect).
     await waitFor(() => expect(alert.textContent).toMatch(/Try again in (1m 0s|59s)\./))
+    expectRateLimited(alert)
     expect(
       screen.getByRole('button', { name: 'Email me a code' }).getAttribute('aria-disabled')
     ).toBe('true')
@@ -159,6 +161,7 @@ describe('<SignIn> with an emailed code', () => {
     await expectFocus(title)
     // The countdown is drawn one render after the alert (`useCountdown` starts in an effect).
     expect(await screen.findByText(/Try again in (1m 0s|59s)\./)).toBeTruthy()
+    expectRateLimited(await screen.findByRole('alert'))
     const button = screen.getByRole('button', { name: 'Email me a code' })
     expect(button.getAttribute('aria-disabled')).toBe('true')
     expect(alternatives()).toEqual(['Use your password'])

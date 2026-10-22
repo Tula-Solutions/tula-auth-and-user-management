@@ -1,0 +1,212 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry.json",
+  "name": "tula",
+  "homepage": "https://tula-solutions.github.io/tula-auth-and-user-management/",
+  "items": [
+    {
+      "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+      "name": "theme",
+      "type": "registry:theme",
+      "title": "Tula theme",
+      "description": "Maps Tula's theme tokens (--tula-*) to shadcn's variables, in light and dark: ink and paper neutrals, an ink primary button, violet only for links and focus, 10px corners. Follows the .dark class and data-tula-theme. Optional: Tula's components use only shadcn's own variables, so an app with a theme of its own keeps it.",
+      "cssVars": {
+        "theme": {
+          "color-background": "var(--background)",
+          "color-foreground": "var(--foreground)",
+          "color-card": "var(--card)",
+          "color-card-foreground": "var(--card-foreground)",
+          "color-popover": "var(--popover)",
+          "color-popover-foreground": "var(--popover-foreground)",
+          "color-primary": "var(--primary)",
+          "color-primary-foreground": "var(--primary-foreground)",
+          "color-secondary": "var(--secondary)",
+          "color-secondary-foreground": "var(--secondary-foreground)",
+          "color-muted": "var(--muted)",
+          "color-muted-foreground": "var(--muted-foreground)",
+          "color-accent": "var(--accent)",
+          "color-accent-foreground": "var(--accent-foreground)",
+          "color-destructive": "var(--destructive)",
+          "color-border": "var(--border)",
+          "color-input": "var(--input)",
+          "color-ring": "var(--ring)",
+          "color-link": "var(--link)"
+        },
+        "light": {
+          "background": "var(--tula-color-background, #ffffff)",
+          "foreground": "var(--tula-color-text, #1a1a18)",
+          "card": "var(--tula-color-background, #ffffff)",
+          "card-foreground": "var(--tula-color-text, #1a1a18)",
+          "popover": "var(--tula-color-background, #ffffff)",
+          "popover-foreground": "var(--tula-color-text, #1a1a18)",
+          "primary": "var(--tula-color-primary, #1a1a18)",
+          "primary-foreground": "var(--tula-color-primary-text, #f1efe8)",
+          "secondary": "var(--tula-color-surface, #f1efe8)",
+          "secondary-foreground": "var(--tula-color-text, #1a1a18)",
+          "muted": "var(--tula-color-surface, #f1efe8)",
+          "muted-foreground": "var(--tula-color-text-muted, #5f5e5a)",
+          "accent": "var(--tula-color-surface, #f1efe8)",
+          "accent-foreground": "var(--tula-color-text, #1a1a18)",
+          "destructive": "var(--tula-color-danger, #b42318)",
+          "border": "var(--tula-color-border, #d9d6cb)",
+          "input": "var(--tula-color-border-strong, #8a877e)",
+          "ring": "var(--tula-color-focus, #4a3bdc)",
+          "link": "var(--tula-color-link, #4a3bdc)",
+          "radius": "var(--tula-radius, 10px)"
+        },
+        "dark": {
+          "background": "var(--tula-dark-color-background, #1c1c19)",
+          "foreground": "var(--tula-dark-color-text, #f1efe8)",
+          "card": "var(--tula-dark-color-background, #1c1c19)",
+          "card-foreground": "var(--tula-dark-color-text, #f1efe8)",
+          "popover": "var(--tula-dark-color-background, #1c1c19)",
+          "popover-foreground": "var(--tula-dark-color-text, #f1efe8)",
+          "primary": "var(--tula-dark-color-primary, #f1efe8)",
+          "primary-foreground": "var(--tula-dark-color-primary-text, #141412)",
+          "secondary": "var(--tula-dark-color-surface, #232320)",
+          "secondary-foreground": "var(--tula-dark-color-text, #f1efe8)",
+          "muted": "var(--tula-dark-color-surface, #232320)",
+          "muted-foreground": "var(--tula-dark-color-text-muted, #b0ada2)",
+          "accent": "var(--tula-dark-color-surface, #232320)",
+          "accent-foreground": "var(--tula-dark-color-text, #f1efe8)",
+          "destructive": "var(--tula-dark-color-danger, #ff8a7a)",
+          "border": "var(--tula-dark-color-border, #34332e)",
+          "input": "var(--tula-dark-color-border-strong, #7a776d)",
+          "ring": "var(--tula-dark-color-focus, #a69dff)",
+          "link": "var(--tula-dark-color-link, #a69dff)"
+        }
+      },
+      "css": {
+        "@custom-variant dark (&:is(.dark *, [data-tula-theme=\"dark\"] *))": {},
+        "@layer base": {
+          "[data-tula-theme=\"dark\"]": {
+            "color-scheme": "dark",
+            "--background": "var(--tula-dark-color-background, #1c1c19)",
+            "--foreground": "var(--tula-dark-color-text, #f1efe8)",
+            "--card": "var(--tula-dark-color-background, #1c1c19)",
+            "--card-foreground": "var(--tula-dark-color-text, #f1efe8)",
+            "--popover": "var(--tula-dark-color-background, #1c1c19)",
+            "--popover-foreground": "var(--tula-dark-color-text, #f1efe8)",
+            "--primary": "var(--tula-dark-color-primary, #f1efe8)",
+            "--primary-foreground": "var(--tula-dark-color-primary-text, #141412)",
+            "--secondary": "var(--tula-dark-color-surface, #232320)",
+            "--secondary-foreground": "var(--tula-dark-color-text, #f1efe8)",
+            "--muted": "var(--tula-dark-color-surface, #232320)",
+            "--muted-foreground": "var(--tula-dark-color-text-muted, #b0ada2)",
+            "--accent": "var(--tula-dark-color-surface, #232320)",
+            "--accent-foreground": "var(--tula-dark-color-text, #f1efe8)",
+            "--destructive": "var(--tula-dark-color-danger, #ff8a7a)",
+            "--border": "var(--tula-dark-color-border, #34332e)",
+            "--input": "var(--tula-dark-color-border-strong, #7a776d)",
+            "--ring": "var(--tula-dark-color-focus, #a69dff)",
+            "--link": "var(--tula-dark-color-link, #a69dff)"
+          },
+          "[data-tula-theme=\"light\"]": {
+            "color-scheme": "light",
+            "--background": "var(--tula-color-background, #ffffff)",
+            "--foreground": "var(--tula-color-text, #1a1a18)",
+            "--card": "var(--tula-color-background, #ffffff)",
+            "--card-foreground": "var(--tula-color-text, #1a1a18)",
+            "--popover": "var(--tula-color-background, #ffffff)",
+            "--popover-foreground": "var(--tula-color-text, #1a1a18)",
+            "--primary": "var(--tula-color-primary, #1a1a18)",
+            "--primary-foreground": "var(--tula-color-primary-text, #f1efe8)",
+            "--secondary": "var(--tula-color-surface, #f1efe8)",
+            "--secondary-foreground": "var(--tula-color-text, #1a1a18)",
+            "--muted": "var(--tula-color-surface, #f1efe8)",
+            "--muted-foreground": "var(--tula-color-text-muted, #5f5e5a)",
+            "--accent": "var(--tula-color-surface, #f1efe8)",
+            "--accent-foreground": "var(--tula-color-text, #1a1a18)",
+            "--destructive": "var(--tula-color-danger, #b42318)",
+            "--border": "var(--tula-color-border, #d9d6cb)",
+            "--input": "var(--tula-color-border-strong, #8a877e)",
+            "--ring": "var(--tula-color-focus, #4a3bdc)",
+            "--link": "var(--tula-color-link, #4a3bdc)",
+            "--radius": "var(--tula-radius, 10px)"
+          }
+        }
+      },
+      "docs": "Set --tula-* properties (or use themeToCssVariables from @tula-tech/contract/theme for a tenant's brand) on an element above the components to change a token. Light and dark follow the .dark class or data-tula-theme=\"dark\" on an ancestor.",
+      "meta": {
+        "tula": {
+          "version": "0.2.0",
+          "minReact": "0.2.0",
+          "security": false
+        }
+      }
+    },
+    {
+      "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+      "name": "step-card",
+      "type": "registry:component",
+      "title": "Step card",
+      "description": "One screen of a flow: a titled card with a description, a footer and a title that takes the focus when the screen changes. Drawn from the app's own shadcn tokens.",
+      "dependencies": ["@tula-tech/react@^0.2.0"],
+      "registryDependencies": ["card"],
+      "files": [
+        {
+          "path": "items/step-card.tsx",
+          "type": "registry:component",
+          "target": "@components/tula/step-card.tsx"
+        }
+      ],
+      "meta": {
+        "tula": {
+          "version": "0.2.0",
+          "minReact": "0.2.0",
+          "security": false
+        }
+      }
+    },
+    {
+      "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+      "name": "status",
+      "type": "registry:component",
+      "title": "Status",
+      "description": "A quiet status line (polite, never an alert) and the alert above a form for a failure that is not about one field. The state is in the words, not only the colour.",
+      "files": [
+        {
+          "path": "items/status.tsx",
+          "type": "registry:component",
+          "target": "@components/tula/status.tsx"
+        }
+      ],
+      "meta": {
+        "tula": {
+          "version": "0.2.0",
+          "minReact": "0.2.0",
+          "security": false
+        }
+      }
+    },
+    {
+      "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+      "name": "sign-in",
+      "type": "registry:block",
+      "title": "Sign in (password)",
+      "description": "Email, then password, drawn from the step the server is waiting for. An unknown step is shown as \"not supported\", never as a blank card. Behaviour and security live in @tula-tech/react; this is presentation you own.",
+      "dependencies": ["@tula-tech/react@^0.2.0"],
+      "registryDependencies": [
+        "button",
+        "input",
+        "label",
+        "https://tula-solutions.github.io/tula-auth-and-user-management/r/step-card.json",
+        "https://tula-solutions.github.io/tula-auth-and-user-management/r/status.json"
+      ],
+      "files": [
+        {
+          "path": "items/sign-in.tsx",
+          "type": "registry:component",
+          "target": "@components/tula/sign-in.tsx"
+        }
+      ],
+      "docs": "Draw <SignIn onComplete={...} /> inside <TulaProvider> from @tula-tech/react. Import \"@tula-tech/react/styles.css\" once for the one screen the package draws itself, the \"not supported\" fallback.",
+      "meta": {
+        "tula": {
+          "version": "0.2.0",
+          "minReact": "0.2.0",
+          "security": false
+        }
+      }
+    }
+  ]
+}

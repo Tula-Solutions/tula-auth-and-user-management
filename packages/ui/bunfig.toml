@@ -1,0 +1,9 @@
+[test]
+# A DOM for component tests: the React package's own preload (happy-dom, Testing Library's
+# cleanup, the settling wrapper), so that this package's tests wait the way that package's do.
+preload = ["../react/src/testing/setup.ts"]
+coverageSkipTestFiles = true
+coverageThreshold = { lines = 0.9, functions = 0.9 }
+# The React package, the contract and the core client measure their own coverage; the test
+# doubles of shadcn's primitives and the one-line entry script are not code under test.
+coveragePathIgnorePatterns = ["../react/**", "../contract/**", "../core/**", "test-support/**", "scripts/**"]
