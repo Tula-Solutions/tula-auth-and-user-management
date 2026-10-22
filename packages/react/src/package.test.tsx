@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
-import { DEFAULT_THEME, THEME_TOKENS } from '@tula-tech/contract/theme'
+import {
+  contrastRatio,
+  DEFAULT_THEME,
+  THEME_TOKENS,
+  themeToCssVariables,
+} from '@tula-tech/contract/theme'
 import { tokenBlockIsCurrent } from '../scripts/generate-tokens'
 import { ELEMENT_NAMES } from './appearance'
 
@@ -254,6 +259,75 @@ describe('what @tula-tech/react costs a browser bundle', () => {
   })
 
   test('the stylesheet is small', () => {
-    expect(Bun.gzipSync(Buffer.from(stylesheet)).byteLength).toBeLessThan(6_000)
+    // 8 KB: the premium polish (focus halo, entrances, press feedback, narrow and coarse-pointer
+    // rules) cost about 0.9 KB over the first 6 KB budget; still no CSS framework.
+    expect(Bun.gzipSync(Buffer.from(stylesheet)).byteLength).toBeLessThan(8_000)
   })
+})
+
+describe('the default theme as shipped in the stylesheet', () => {
+  /** Each scheme's colour defaults, read out of the generated block's own text. */
+  function shipped(scheme: 'light' | 'dark'): Record<string, string> {
+    const prefix = scheme === 'dark' ? '--tula-dark-color-' : '--tula-color-'
+    const out: Record<string, string> = {}
+    for (const match of stylesheet.matchAll(
+      new RegExp(`var\\(${prefix}([a-z-]+), (#[0-9a-f]{6})\\)`, 'g')
+    )) {
+      // The dark block appears twice (media query and attribute); both must agree.
+      const [, name, value] = match as unknown as [string, string, string]
+      expect(out[name] ?? value).toBe(value)
+      out[name] = value
+    }
+    return out
+  }
+
+  test('resolves with nothing refused: every token of the default theme passes its grammar', () => {
+    const variables = themeToCssVariables(DEFAULT_THEME)
+    const schemeTokens = THEME_TOKENS.filter((token) => token.scope === 'scheme')
+    expect(Object.keys(variables)).toHaveLength(THEME_TOKENS.length + schemeTokens.length)
+  })
+
+  // Text on each background it is drawn on; the 4.5:1 of WCAG 1.4.3 in both schemes.
+  const PAIRS: [string, string][] = [
+    ['text', 'background'],
+    ['text', 'surface'],
+    ['text', 'input'],
+    ['text-muted', 'background'],
+    ['text-muted', 'surface'],
+    ['text-muted', 'input'],
+    ['primary-text', 'primary'],
+    ['primary-text', 'primary-hover'],
+    ['link', 'background'],
+    ['link', 'surface'],
+    ['danger', 'background'],
+    ['danger', 'danger-surface'],
+    ['danger', 'surface'],
+    ['success', 'background'],
+    ['success', 'surface'],
+    ['text', 'danger-surface'],
+  ]
+  for (const scheme of ['light', 'dark'] as const) {
+    test.each(PAIRS)(`${scheme}: %s on %s is at least 4.5:1`, (foreground, background) => {
+      const colours = shipped(scheme)
+      expect(colours[foreground]).toBeDefined()
+      expect(colours[background]).toBeDefined()
+      expect(
+        contrastRatio(colours[foreground] as string, colours[background] as string)
+      ).toBeGreaterThanOrEqual(4.5)
+    })
+
+    test(`${scheme}: control edges and the focus ring are at least 3:1`, () => {
+      const colours = shipped(scheme) as Record<string, string>
+      for (const [edge, ground] of [
+        ['border-strong', 'background'],
+        ['border-strong', 'input'],
+        ['focus', 'background'],
+        ['focus', 'surface'],
+      ] as const) {
+        expect(
+          contrastRatio(colours[edge] as string, colours[ground] as string)
+        ).toBeGreaterThanOrEqual(3)
+      }
+    })
+  }
 })
