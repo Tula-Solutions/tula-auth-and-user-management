@@ -39,3 +39,11 @@ file adds what they do not say, and holds the whole rule about `toMatchObject`, 
 - Name a regression test after the behaviour, e.g.
   `test('reused refresh token revokes the whole family')`.
 - Never mark a scenario `not_applicable` to get a guard green.
+- `apps/api` runs its tests with `--parallel=4` (its `test` and `test:coverage` scripts): 12,000
+  tests took 4 to 9 minutes on one process. `--parallel` implies `--isolate`, so each file has
+  its own globals and module registry: a test must not depend on another file's leftovers
+  (`spyOn` and `mock.module` do not cross files), and the coverage threshold still counts all
+  workers. CI splits `verify` into jobs that run side by side (`verify:static`,
+  `test:coverage:{api,dashboard,rest}`, the integration tests); a new package with a
+  `test:coverage` script falls into `rest`, and `.claude/hooks/ci-split.test.ts` fails if a
+  group filter would leave one out.

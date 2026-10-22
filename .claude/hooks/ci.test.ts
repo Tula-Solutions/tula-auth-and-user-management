@@ -26,8 +26,14 @@ const { jobs } = Bun.YAML.parse(source) as Workflow
 
 const job = (name: string) => jobs[name] ?? { steps: [] }
 const needs = (name: string) => [job(name).needs ?? []].flat()
-// The jobs that check something: every one but the two that decide and record.
-const checks = Object.keys(jobs).filter((name) => name !== 'duplicate' && name !== 'passed')
+// `verify`, `e2e` and `e2e-docs` are aggregates of jobs that run side by side
+// (`ci-split.test.ts`); `passed` waits for the aggregates, which fail unless every part passed.
+const AGGREGATES = ['verify', 'e2e', 'e2e-docs']
+const PARTS = ['verify-static', 'verify-tests', 'verify-integration', 'e2e-shard', 'e2e-docs-shard']
+// The jobs that do the checking: every one but the two that decide and record, and the aggregates.
+const checks = Object.keys(jobs).filter(
+  (name) => name !== 'duplicate' && name !== 'passed' && !AGGREGATES.includes(name)
+)
 const SKIPPABLE = "needs.duplicate.outputs.skip != 'true'"
 
 /** The script of the step that decides whether the run is a duplicate. */
@@ -49,7 +55,9 @@ describe('skipping a run whose tree already passed', () => {
   })
 
   test('the pass is recorded only after every other job', () => {
-    expect(needs('passed').sort()).toEqual(['duplicate', ...checks].sort())
+    expect(needs('passed').sort()).toEqual(
+      ['duplicate', ...checks.filter((name) => !PARTS.includes(name)), ...AGGREGATES].sort()
+    )
   })
 
   test('the pass is recorded only by a push whose jobs all ran and succeeded', () => {
@@ -99,36 +107,55 @@ describe('skipping a run whose tree already passed', () => {
 })
 
 // A push is what vouches for a tree, so a push must do all the work itself.
+// The jobs of `verify` that run Turborepo's tasks are the only ones with a cache.
+const TURBO_JOBS = ['verify-static', 'verify-tests']
 describe('the Turborepo cache', () => {
   test('only a pull request reads it, and only a push saves it', () => {
-    const [restore, ...moreRestores] = uses('verify', 'actions/cache/restore@')
-    const [save, ...moreSaves] = uses('verify', 'actions/cache/save@')
-    expect([moreRestores, moreSaves]).toEqual([[], []])
-    expect(restore?.if).toBe("github.event_name == 'pull_request'")
-    expect(save?.if).toBe("github.event_name == 'push'")
-    expect(restore?.with?.path).toBe('.turbo/cache')
-    expect(save?.with?.path).toBe('.turbo/cache')
+    for (const name of TURBO_JOBS) {
+      const [restore, ...moreRestores] = uses(name, 'actions/cache/restore@')
+      const [save, ...moreSaves] = uses(name, 'actions/cache/save@')
+      expect([moreRestores, moreSaves]).toEqual([[], []])
+      expect(restore?.if).toBe("github.event_name == 'pull_request'")
+      expect(save?.if).toBe("github.event_name == 'push'")
+      expect(restore?.with?.path).toBe('.turbo/cache')
+      expect(save?.with?.path).toBe('.turbo/cache')
+    }
+  })
+
+  test('each job that has one keeps a cache of its own: two saves under one key would collide', () => {
+    const keys = TURBO_JOBS.map((name) => String(uses(name, 'actions/cache/save@')[0]?.with?.key))
+    expect(new Set(keys).size).toBe(TURBO_JOBS.length)
+    for (const name of TURBO_JOBS) {
+      const [restore] = uses(name, 'actions/cache/restore@')
+      const [save] = uses(name, 'actions/cache/save@')
+      expect(String(restore?.with?.['restore-keys'])).toContain(`turbo-\${{ runner.os }}-${name}-`)
+      expect(String(save?.with?.key)).toContain(`turbo-\${{ runner.os }}-${name}-`)
+    }
   })
 
   test('no step restores and saves in one go, and no other job has a cache', () => {
     for (const name of Object.keys(jobs)) {
       expect(uses(name, 'actions/cache@')).toEqual([])
-      if (name !== 'verify') {
+      if (!TURBO_JOBS.includes(name)) {
         expect(uses(name, 'actions/cache')).toEqual([])
       }
     }
   })
 
   test('the cache is saved after the checks it records', () => {
-    const steps = job('verify').steps
-    const verify = steps.findIndex((step) => step.run === 'bun run verify')
-    expect(verify).toBeGreaterThan(-1)
-    expect(steps.findIndex((step) => step.uses?.startsWith('actions/cache/restore@'))).toBeLessThan(
-      verify
-    )
-    expect(steps.findIndex((step) => step.uses?.startsWith('actions/cache/save@'))).toBeGreaterThan(
-      verify
-    )
+    for (const name of TURBO_JOBS) {
+      const steps = job(name).steps
+      const checked = steps.findIndex((step) =>
+        /^bun run (verify:static|\$\{\{ matrix\.script \}\})$/.test(step.run ?? '')
+      )
+      expect(checked, name).toBeGreaterThan(-1)
+      expect(
+        steps.findIndex((step) => step.uses?.startsWith('actions/cache/restore@'))
+      ).toBeLessThan(checked)
+      expect(
+        steps.findIndex((step) => step.uses?.startsWith('actions/cache/save@'))
+      ).toBeGreaterThan(checked)
+    }
   })
 })
 
