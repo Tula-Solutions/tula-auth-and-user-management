@@ -189,6 +189,7 @@ describe('the native templates', () => {
         'ios/TulaExample/SetupView.swift',
         'ios/TulaExample/TulaExampleApp.swift',
         'ios/TulaExampleUITests/AuthScreensUITests.swift',
+        'ios/TulaExampleUITests/CaptureUITests.swift',
         'ios/TulaExampleUITests/SecondStepAndAccountUITests.swift',
         'ios/TulaExampleUITests/Support.swift',
       ].sort()
