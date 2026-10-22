@@ -4,7 +4,8 @@ import { dirname, join, posix } from 'node:path'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Landing } from '~/components/landing'
 import { Document, type Frame, type PageProps } from '~/components/layout'
-import { BASE, REPO_ROOT } from './config'
+import { buildAiFiles, SITE_ORIGIN, SKILL_SOURCE, twinPath, withAlternate } from './ai'
+import { BASE, RELEASE, REPO_BRANCH, REPO_ROOT, REPO_URL, SITE_DESCRIPTION } from './config'
 import { buildErrorCodesPage, ERROR_CODES_ROUTE, errorCodeEntries } from './error-codes'
 import { checkCacheInputs } from './inputs'
 import type { LinkEnvironment } from './links'
@@ -22,6 +23,7 @@ import {
 import { buildNav, type NavGroup } from './nav'
 import { checkPage } from './page-check'
 import { collectPages, type SourcePage } from './pages'
+import { type ReleaseInfo, versionBases } from './release'
 import { buildIndex, type SearchEntry } from './search'
 
 /** The docs app's `turbo.json`, whose inputs a whole build checks against the links. */
@@ -36,6 +38,8 @@ export interface BuiltPage {
   description: string
   html: string
   headings: Heading[]
+  /** Everything a link may point at in the page: heading ids and explicit anchors. */
+  ids: ReadonlySet<string>
   sections: Section[]
 }
 
@@ -49,6 +53,17 @@ export interface Site {
   /** The finished HTML of each route, by route. */
   documents: Map<string, string>
   notFound: string
+  /**
+   * The files written for AI agents (`llms.txt`, `skill.md`, a Markdown twin of every page, …),
+   * by path from the site's root. Empty for a build of a sample of the pages.
+   */
+  ai: Map<string, string>
+}
+
+/** What a build may be given besides the pages to build. */
+export interface BuildOptions {
+  /** The date (`YYYY-MM-DD`) a source file last changed, for the twins and the sitemap. */
+  updated?: (file: string) => string | undefined
 }
 
 /** The route of the landing page. */
@@ -121,7 +136,12 @@ function html(page: PageProps, frame: Frame, children?: React.ReactNode): string
  * @param only - Routes to render and index, for a test that needs the shape of the site and
  *   not all of it (the sidebar is complete, and a link into a page that is not rendered still
  *   has its anchor checked). Omitted, every page is parsed and rendered.
- * @returns The pages, the search index and the finished HTML.
+ * @param options - What only a build to write needs (the date a file changed).
+ * @param release - Which docs these are (marker, banner, canonical address, `noindex`); the
+ *   build's `DOCS_CHANNEL` by default, `null` for an unversioned site. The development docs
+ *   (`next`) get no `sitemap.xml` and no `robots.txt`, consistently with their `noindex`.
+ * @returns The pages, the search index, the finished HTML and, for a build of every page, the
+ *   files for AI agents.
  * @throws RenderError or LinkError for a file or link that cannot be rendered, and, for a build
  *   of every page, RenderError when the app's cached tasks do not name an input for a file the
  *   pages link to.
@@ -129,7 +149,9 @@ function html(page: PageProps, frame: Frame, children?: React.ReactNode): string
 export async function buildSite(
   assets: Frame['assets'] = { css: [], js: '' },
   base: string = BASE,
-  only?: readonly string[]
+  only?: readonly string[],
+  options: BuildOptions = {},
+  release: ReleaseInfo | null = RELEASE
 ): Promise<Site> {
   const wanted = (route: string) => only === undefined || only.includes(route)
   const sources = collectPages()
@@ -175,7 +197,7 @@ export async function buildSite(
   }
 
   const highlighter = await createCodeHighlighter()
-  const frame: Frame = { base, assets, nav }
+  const frame: Frame = { base, assets, nav, release }
   const pages: BuiltPage[] = []
   const copied = new Set<string>()
   const linked = new Set<string>()
@@ -195,6 +217,7 @@ export async function buildSite(
       description: describe(doc.sections[0]?.text ?? '', doc.title),
       html: rendered.html,
       headings: doc.headings,
+      ids: doc.ids,
       sections: doc.sections,
     })
   }
@@ -213,6 +236,7 @@ export async function buildSite(
       description: 'Every error code the API returns, with its HTTP status and default message.',
       html: errors.html,
       headings: errors.headings,
+      ids: new Set(errors.headings.map((heading) => heading.id)),
       sections: errors.sections,
     })
   }
@@ -223,8 +247,7 @@ export async function buildSite(
   }
   const landing: PageProps = {
     title: 'Tula Auth',
-    description:
-      'Self-hosted authentication and user management with prebuilt UI and native mobile SDKs.',
+    description: SITE_DESCRIPTION,
     route: LANDING_ROUTE,
     html: '',
     headings: [],
@@ -241,20 +264,56 @@ export async function buildSite(
       headings: [],
     },
     frame,
-    <div className='max-w-3xl'>
-      <h1 className='text-2xl font-semibold'>Page not found</h1>
-      <p>
-        There is nothing at this address. <a href={base}>Go to the start page</a>.
-      </p>
+    <div className='shell'>
+      <div className='doc notfound'>
+        <h1>Page not found</h1>
+        <p>
+          There is nothing at this address. <a href={base}>Go to the start page</a>, or search the
+          documentation from the box above.
+        </p>
+      </div>
     </div>
   )
 
+  // Every page points at its Markdown twin: GitHub Pages cannot send a `Link:` header.
+  for (const [route, document] of documents) {
+    documents.set(route, withAlternate(document, `${base}${twinPath(route)}`))
+  }
+
   // Whole-page rules that axe cannot judge when a large page is checked in pieces, and that
   // every address stays under the base path.
+  const siblingBase = release === null ? undefined : versionBases(release, base).siblingBase
   for (const [route, document] of documents) {
-    checkPage(route, document, base)
+    checkPage(route, document, base, siblingBase)
   }
-  checkPage('/404', notFound, base)
+  checkPage('/404', notFound, base, siblingBase)
+
+  const ai =
+    only === undefined
+      ? buildAiFiles({
+          urls: { origin: SITE_ORIGIN, base },
+          indexed: release?.channel !== 'next',
+          environment,
+          summary: landing.description,
+          nav,
+          pages: pages.map((page) => ({
+            route: page.route,
+            title: page.title,
+            description: page.description,
+            source: page.source,
+            ids: page.ids,
+          })),
+          landing: { route: LANDING_ROUTE, title: landing.title, description: landing.description },
+          read: (file) => readFileSync(join(REPO_ROOT, file), 'utf8'),
+          errorCodes: { route: ERROR_CODES_ROUTE, entries: errorCodeEntries() },
+          skillSource: existsSync(join(REPO_ROOT, SKILL_SOURCE))
+            ? readFileSync(join(REPO_ROOT, SKILL_SOURCE), 'utf8')
+            : null,
+          updated: options.updated,
+          repositoryUrl: (file) => `${REPO_URL}/blob/${REPO_BRANCH}/${file}`,
+          copied: [...copied],
+        })
+      : new Map<string, string>()
 
   return {
     pages,
@@ -263,6 +322,7 @@ export async function buildSite(
     assets: [...copied].sort(),
     documents,
     notFound,
+    ai,
   }
 }
 
@@ -291,6 +351,11 @@ export async function writeSite(site: Site, outDir: string): Promise<void> {
     await writeFile(file, document)
   }
   await writeFile(join(outDir, '404.html'), site.notFound)
+  for (const [path, text] of site.ai) {
+    const target = join(outDir, ...path.split('/'))
+    await mkdir(dirname(target), { recursive: true })
+    await writeFile(target, text)
+  }
   await writeFile(join(outDir, 'search-index.json'), JSON.stringify(site.index))
   await writeFile(join(outDir, 'pages.json'), JSON.stringify([...site.documents.keys()].sort()))
   await writeFile(

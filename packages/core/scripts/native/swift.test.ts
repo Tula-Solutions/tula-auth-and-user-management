@@ -413,7 +413,7 @@ describe('the Swift theme file', () => {
 
   test('light and dark are both there and differ', () => {
     expect(text).toContain('            background: "#ffffff",')
-    expect(text).toContain('            background: "#17171c",')
+    expect(text).toContain('            background: "#1c1c19",')
   })
 
   test('a value stays a string: no colour object, no parsing', () => {

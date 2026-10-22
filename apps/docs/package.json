@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit -p .",
     "test": "bun test",
     "test:coverage": "bun test --coverage",
+    "build:versions": "bun run scripts/build-versions.ts",
     "generate:check": "bun run scripts/build.ts --check"
   },
   "dependencies": {

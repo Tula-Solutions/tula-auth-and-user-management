@@ -283,6 +283,214 @@ test.describe('the documentation site', () => {
     await expectAccessible(page, 'quickstart with the menu open')
   })
 
+  test('the drawer traps focus, closes on Escape and locks the page behind it', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto(at('/methods/password/'))
+    const menu = page.getByRole('button', { name: 'Menu' })
+    const sidebar = page.locator('#sidebar')
+    await menu.click()
+    await expect(sidebar).toHaveAttribute('data-open', 'true')
+    await expect(menu).toHaveAttribute('aria-expanded', 'true')
+    await expect(page.locator('html')).toHaveClass(/drawer-open/)
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).overflow)).toBe(
+      'hidden'
+    )
+    await expect(page.locator('main')).toHaveAttribute('inert', '')
+    // Tab (and Shift+Tab) cycles through the button and the drawer's links and wraps round: a
+    // full turn visits both, never leaves them, and ends where it began.
+    for (const key of ['Tab', 'Shift+Tab']) {
+      const visited = new Set<string>()
+      const start = await page.evaluate(() => document.activeElement?.outerHTML.slice(0, 80))
+      let returned = false
+      for (let step = 0; step < 200 && !returned; step += 1) {
+        await page.keyboard.press(key)
+        const where = await page.evaluate(() => ({
+          button: document.activeElement?.id === 'menu-toggle',
+          link:
+            document.activeElement?.tagName === 'A' &&
+            document.getElementById('sidebar')?.contains(document.activeElement) === true,
+          html: document.activeElement?.outerHTML.slice(0, 80),
+        }))
+        expect(where.button || where.link, `${key} left the drawer at step ${step}`).toBe(true)
+        visited.add(where.button ? 'button' : 'link')
+        returned = where.html === start
+      }
+      expect(returned, `${key} wraps round`).toBe(true)
+      expect([...visited].sort()).toEqual(['button', 'link'])
+    }
+    // Everything else on the page is inert, the header's controls included.
+    for (const selector of ['main', '.header-end', '.tabs']) {
+      await expect(page.locator(selector).first()).toHaveAttribute('inert', '')
+    }
+    await page.keyboard.press('Escape')
+    await expect(sidebar).toHaveAttribute('data-open', 'false')
+    await expect(menu).toBeFocused()
+    await expect(page.locator('main')).not.toHaveAttribute('inert', '')
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).overflow)).toBe(
+      'visible'
+    )
+  })
+
+  test('the search shortcuts leave the drawer, and keep the search button in step', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto(at('/quickstart/'))
+    await page.getByRole('button', { name: 'Menu' }).click()
+    await expect(page.locator('#sidebar')).toHaveAttribute('data-open', 'true')
+    await page.keyboard.press('ControlOrMeta+k')
+    await expect(page.locator('#sidebar')).toHaveAttribute('data-open', 'false')
+    await expect(page.getByRole('searchbox', { name: 'Search the documentation' })).toBeFocused()
+    await expect(page.locator('#search-toggle')).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  test.describe('without a script', () => {
+    test.use({ javaScriptEnabled: false })
+
+    test('a phone still has the navigation, in the page', async ({ page }) => {
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.goto(at('/quickstart/'))
+      const nav = page.getByRole('navigation', { name: 'Documentation' })
+      await expect(nav).toBeVisible()
+      await expect(nav.getByRole('link', { name: 'Guides' })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Menu' })).toBeHidden()
+    })
+  })
+
+  test('the drawer closes from its scrim and when the window becomes a desktop', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto(at('/quickstart/'))
+    await page.getByRole('button', { name: 'Menu' }).click()
+    await expect(page.locator('#sidebar')).toHaveAttribute('data-open', 'true')
+    await page.mouse.click(385, 600)
+    await expect(page.locator('#sidebar')).toHaveAttribute('data-open', 'false')
+    await expect(page.locator('main')).not.toHaveAttribute('inert', '')
+    await expect(page.locator('html')).not.toHaveClass(/drawer-open/)
+    await page.getByRole('button', { name: 'Menu' }).click()
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await expect(page.locator('#sidebar')).toHaveAttribute('data-open', 'false')
+    await expect(page.locator('main')).not.toHaveAttribute('inert', '')
+    await expect(page.locator('.header-end')).not.toHaveAttribute('inert', '')
+    await expect(page.locator('html')).not.toHaveClass(/drawer-open/)
+    await expect(page.getByRole('navigation', { name: 'Documentation' })).toBeVisible()
+  })
+
+  for (const scheme of ['light', 'dark'] as const) {
+    test(`the open drawer is accessible in ${scheme}`, async ({ page }) => {
+      await page.emulateMedia({ colorScheme: scheme })
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.goto(at('/methods/password/'))
+      await page.getByRole('button', { name: 'Menu' }).click()
+      await expectAccessible(page, `the drawer (${scheme})`)
+    })
+  }
+
+  test('the table of contents is a disclosure on a phone and a column on a desktop', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto(at('/methods/password/'))
+    const disclosure = page.locator('details.toc-mobile')
+    await expect(disclosure).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'Page contents' })).toBeHidden()
+    await disclosure.locator('summary').click()
+    await expect(page.getByRole('navigation', { name: 'Page contents' })).toBeVisible()
+    await expectAccessible(page, 'the open table of contents')
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await expect(disclosure).toBeHidden()
+    await expect(page.getByRole('navigation', { name: 'On this page' })).toBeVisible()
+  })
+
+  test('the theme follows the system until a choice is made, and the choice wins after', async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme: 'dark' })
+    await page.goto(at('/quickstart/'))
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+    await page.getByRole('button', { name: 'Dark theme' }).click()
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+    await page.reload()
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+    await expectAccessible(page, 'quickstart, light chosen on a dark system')
+  })
+
+  // The layout at the six widths the design is held to. Nothing scrolls sideways, the shell
+  // never passes 1480 px, the prose never passes 720 px, and the columns are the ones the
+  // design names: a drawer and a disclosure below 1024, a sidebar from 1024, a table of
+  // contents from 1280.
+  const WIDTHS = [
+    { width: 390, height: 844, sidebar: false, toc: false },
+    { width: 768, height: 1024, sidebar: false, toc: false },
+    { width: 1280, height: 800, sidebar: true, toc: true },
+    { width: 1440, height: 900, sidebar: true, toc: true },
+    { width: 1920, height: 1080, sidebar: true, toc: true },
+    { width: 2560, height: 1080, sidebar: true, toc: true },
+  ]
+  for (const size of WIDTHS) {
+    test(`the layout holds at ${size.width} by ${size.height}`, async ({ page }) => {
+      const problems = watch(page)
+      await page.setViewportSize({ width: size.width, height: size.height })
+      await page.goto(at('/methods/password/'))
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+      )
+      expect(overflow).toBeLessThanOrEqual(0)
+      const shell = await page.locator('.shell.layout').boundingBox()
+      expect(shell?.width ?? 0).toBeLessThanOrEqual(1480)
+      const doc = await page.locator('article.doc').boundingBox()
+      expect(doc?.width ?? 0).toBeLessThanOrEqual(720)
+      expect(await page.evaluate(() => getComputedStyle(document.body).fontSize)).toBe('16px')
+      await expect(page.locator('.sidebar nav')).toBeVisible({ visible: size.sidebar })
+      await expect(page.locator('aside.toc')).toBeVisible({ visible: size.toc })
+      await expect(page.locator('.tabs')).toBeVisible({ visible: size.width >= 1024 })
+      // Centred in the shell, never stretched, on an ultrawide.
+      if (size.width >= 1920) {
+        expect(shell?.x ?? 0).toBeGreaterThan(200)
+      }
+      expect(problems).toEqual([])
+    })
+  }
+
+  test('the header names the sections and the page’s own is current', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto(at('/methods/password/'))
+    const tabs = page.getByRole('navigation', { name: 'Sections' })
+    await expect(tabs.getByRole('link')).toHaveText([
+      'Get started',
+      'Guides',
+      'Self-hosting',
+      'CLI & MCP',
+      'Reference',
+    ])
+    await expect(tabs.getByRole('link', { name: 'Guides' })).toHaveAttribute('aria-current', 'true')
+    await expect(page.getByRole('link', { name: 'Tula Auth on GitHub' })).toBeVisible()
+  })
+
+  test('Control or Command K focuses the search', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto(at('/quickstart/'))
+    await page.keyboard.press('ControlOrMeta+k')
+    await expect(page.getByRole('searchbox', { name: 'Search the documentation' })).toBeFocused()
+  })
+
+  test('the identity files are served under the base', async ({ request, baseURL }) => {
+    for (const file of [
+      'favicon.ico',
+      'favicon.svg',
+      'favicon-32.png',
+      'apple-touch-icon.png',
+      'site.webmanifest',
+      'og.png',
+    ]) {
+      const response = await request.get(`${baseURL}${at(`/${file}`)}`)
+      expect(response.status(), file).toBe(200)
+    }
+  })
+
   test('relative links between pages lead to the site’s routes, with their anchors', async ({
     page,
   }) => {

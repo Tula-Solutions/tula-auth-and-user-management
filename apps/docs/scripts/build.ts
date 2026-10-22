@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { BASE } from '../src/lib/config'
+import { lastUpdated, runGit } from '../src/lib/ai/git'
+import { BASE, REPO_ROOT } from '../src/lib/config'
 import { LinkError } from '../src/lib/links'
 import { RenderError } from '../src/lib/markdown'
 import { resolveOutDir } from '../src/lib/paths'
@@ -23,7 +24,10 @@ const root = join(import.meta.dir, '..')
 const outDir = resolveOutDir()
 const check = process.argv.includes('--check')
 
-async function bundle(): Promise<{ css: string[]; js: string }> {
+/** The font file (a key of Vite's manifest) every page preloads. */
+const PRELOADED_FONT = 'src/assets/fonts/geist-latin-wght-normal.woff2'
+
+async function bundle(): Promise<{ css: string[]; js: string; fonts: string[] }> {
   await Bun.write(join(root, 'src/styles/tokens.gen.css'), tokensCss())
   // Vite runs as the process it launches itself as (Node): its config reads no Bun API.
   const child = Bun.spawn(['bunx', 'vite', 'build', '--logLevel', 'warn'], {
@@ -42,7 +46,13 @@ async function bundle(): Promise<{ css: string[]; js: string }> {
   if (entry === undefined) {
     throw new Error('the bundle has no entry for src/client/main.ts')
   }
-  return { js: `${BASE}${entry.file}`, css: (entry.css ?? []).map((file) => `${BASE}${file}`) }
+  // Only the text face is preloaded: the mono face is below the fold on most pages.
+  const text = manifest[PRELOADED_FONT]
+  return {
+    js: `${BASE}${entry.file}`,
+    css: (entry.css ?? []).map((file) => `${BASE}${file}`),
+    fonts: text === undefined ? [] : [`${BASE}${text.file}`],
+  }
 }
 
 // The base the first render (and so `--check`) uses. At `/` an address written from the host's
@@ -57,13 +67,15 @@ try {
   const checked = await buildSite({ css: [], js: '' }, CHECK_BASE)
   if (check) {
     console.log(
-      `docs site: ${checked.pages.length} pages render under ${CHECK_BASE}, every link and anchor resolves`
+      `docs site: ${checked.pages.length} pages render under ${CHECK_BASE}, every link and anchor resolves; ${checked.ai.size} files for agents (${[...checked.ai.keys()].filter((path) => path.endsWith('.md')).length} Markdown twins, llms.txt ${checked.ai.get('llms.txt')?.length} and llms-full.txt ${checked.ai.get('llms-full.txt')?.length} characters) pass their checks`
     )
   } else {
-    const site = await buildSite(await bundle(), BASE)
+    const site = await buildSite(await bundle(), BASE, undefined, {
+      updated: lastUpdated(runGit(REPO_ROOT)),
+    })
     await writeSite(site, outDir)
     console.log(
-      `docs site: wrote ${site.documents.size} pages and ${site.index.length} search entries to apps/docs/dist, served under ${BASE}`
+      `docs site: wrote ${site.documents.size} pages, ${site.ai.size} files for agents and ${site.index.length} search entries to apps/docs/dist, served under ${BASE}`
     )
   }
 } catch (error) {

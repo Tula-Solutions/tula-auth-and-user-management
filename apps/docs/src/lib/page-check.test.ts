@@ -126,3 +126,25 @@ describe('checkPage section sizes', () => {
     expect(() => checkPage('/two/', article(two))).toThrow('/two/: has a section 0 over')
   })
 })
+
+describe('checkPage on a versioned site', () => {
+  const NEXT = '/tula-auth-and-user-management/next/'
+  const ROOT = '/tula-auth-and-user-management/'
+
+  test('a link marked as a version link may lead to the other docs, and only to them', () => {
+    const ok = page(`<h1>A</h1><a data-docs-version="" href="${ROOT}quickstart/">released</a>`)
+    expect(() => checkPage('/ok/', ok, NEXT, ROOT)).not.toThrow()
+    const elsewhere = page('<h1>A</h1><a data-docs-version="" href="/other/">x</a>')
+    expect(() => checkPage('/bad/', elsewhere, NEXT, ROOT)).toThrow(`outside ${ROOT}`)
+  })
+
+  test('an unmarked link from next/ into the released docs fails: it ignored the base', () => {
+    const html = page(`<h1>A</h1><a href="${ROOT}quickstart/">q</a>`)
+    expect(() => checkPage('/bad/', html, NEXT, ROOT)).toThrow(`is outside the base path ${NEXT}`)
+  })
+
+  test('a version link on a site with one version fails', () => {
+    const html = page(`<h1>A</h1><a data-docs-version="" href="${ROOT}">x</a>`)
+    expect(() => checkPage('/bad/', html, ROOT)).toThrow('only one version')
+  })
+})

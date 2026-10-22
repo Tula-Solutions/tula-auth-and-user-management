@@ -1,5 +1,6 @@
 import { resolve } from 'node:path'
 import { resolveBase, resolveRepoRoot } from './paths'
+import { resolveRelease } from './release'
 
 /**
  * The repository root (`DOCS_REPO_ROOT` is for the build script's own test: `paths.ts` says
@@ -30,5 +31,17 @@ export const REPO_BRANCH = 'develop'
  */
 export const BASE = resolveBase()
 
+/**
+ * Which docs this build is (the latest release's, the development branch's under `next/`, or the
+ * development branch's at the root while no release has the site), or `null` for a local build.
+ * `resolveRelease` in `release.ts` says which values of `DOCS_CHANNEL`, `DOCS_VERSION` and
+ * `DOCS_ORIGIN` it accepts.
+ */
+export const RELEASE = resolveRelease(process.env, BASE)
+
 /** The name shown in the header and in every page's title. */
 export const SITE_NAME = 'Tula Auth docs'
+
+/** What the site is, in one sentence: the description of the landing page and of a card. */
+export const SITE_DESCRIPTION =
+  'Self-hosted authentication and user management with prebuilt UI and native mobile SDKs.'

@@ -36,7 +36,10 @@ const projects: NonNullable<PlaywrightTestConfig['projects']> = [
   {
     name: 'nextjs',
     testMatch: /nextjs\/.*\.spec\.ts/,
-    use: { ...devices['Desktop Chrome'], baseURL: NEXT_URL },
+    // Reduced motion: the components' entrances are off, which is what a user with that
+    // preference gets, and Playwright does not wait out a 240ms animation on every dialog.
+    // `motion.spec.ts` runs the real motion path.
+    use: { ...devices['Desktop Chrome'], baseURL: NEXT_URL, reducedMotion: 'reduce' },
   },
   // The dashboard (apps/dashboard), served by the API itself at /dashboard under its real
   // Content-Security-Policy. Before `chromium` for the same reason as `nextjs`: its session
@@ -59,7 +62,7 @@ const projects: NonNullable<PlaywrightTestConfig['projects']> = [
   {
     name: 'chromium',
     testIgnore: [/nextjs\//, /dashboard\//, /docs\//],
-    use: { ...devices['Desktop Chrome'] },
+    use: { ...devices['Desktop Chrome'], reducedMotion: 'reduce' },
   },
 ]
 
@@ -94,8 +97,10 @@ export default defineConfig({
 /** The documentation site, built from docs/** and apps/docs, then served from its output directory. */
 function docsServer(): WebServer {
   return {
+    // The released docs at the base and the development docs under `next/`, as deployed.
     // `exec`: the server must be the process Playwright stops.
-    command: 'bun run docs-site:build && DOCS_PORT=4321 exec bun run apps/docs/scripts/serve.ts',
+    command:
+      'bun run --filter @tula-tech/docs build:versions && DOCS_PORT=4321 exec bun run apps/docs/scripts/serve.ts',
     cwd: `${import.meta.dirname}/..`,
     // Built and served under DOCS_BASE when it is set (as GitHub Pages serves the site): the
     // root answers 404 then, so the server is ready when its base answers.
