@@ -3,12 +3,16 @@ package dev.tula.auth
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.withTimeout
 import java.util.Base64
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.time.Duration.Companion.seconds
 
 /** A publishable key of the right shape that opens nothing. */
 const val TEST_KEY = "tula_pk_dev_unit0000000000000000000000000000"
@@ -35,6 +39,33 @@ class FakeClock(@Volatile var now: Long = 1_760_000_000_000) : Clock {
 fun runTest(limitMs: Long = 30_000, block: suspend CoroutineScope.() -> Unit) {
     runBlocking { withTimeout(limitMs) { block() } }
 }
+
+/**
+ * Run a test's body in **virtual time**, for a test that holds a deadline of the client's own.
+ *
+ * Under [runTest] a deadline (`withTimeoutOrNull`) counts real milliseconds, and the work it
+ * bounds runs on a real thread: on a loaded runner the first key made or removed can take
+ * longer than the deadline and a step that should have answered times out (TULA-95). Here the
+ * deadline counts virtual time, which moves only when every coroutine of the test is waiting,
+ * so only a step that never answers can reach its deadline. Start the code under test on
+ * [workScope] so that its work shares this scheduler.
+ *
+ * @param block The test body.
+ */
+fun virtualTest(block: suspend TestScope.() -> Unit) {
+    kotlinx.coroutines.test.runTest(timeout = 30.seconds, testBody = block)
+}
+
+/**
+ * A scope for the code under test, on the test's scheduler and ended with the test.
+ *
+ * It is supervised, as the client's own scope is: a store that throws fails the call that
+ * asked, not the whole test. (`backgroundScope` is not supervised.)
+ */
+val TestScope.workScope: CoroutineScope
+    get() = CoroutineScope(
+        backgroundScope.coroutineContext + SupervisorJob(backgroundScope.coroutineContext.job),
+    )
 
 /** The [TulaError] a call throws; an `AssertionError` when it throws nothing. */
 suspend fun caught(block: suspend () -> Any?): TulaError {

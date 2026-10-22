@@ -180,7 +180,8 @@ class TransportTest {
 
     @Test
     fun `no answer in time is network_timeout, and the request is given up`() = runTest {
-        val bench = Bench(timeoutMs = 50)
+        // Long enough for the request to be sent first on a starved runner (TULA-95).
+        val bench = Bench(timeoutMs = 500)
         val never = CompletableDeferred<HttpResponse>()
         val cancelled = CompletableDeferred<Unit>()
         bench.engine.on("GET", CONFIG) {
@@ -204,7 +205,7 @@ class TransportTest {
     fun `the deadline holds for an engine that ignores cancellation`() = runTest(limitMs = 10_000) {
         // An app's own engine may not end its request when it is cancelled. The deadline
         // must not wait for it: a refresh would hold the single flight past the grace window.
-        val bench = Bench(timeoutMs = 50)
+        val bench = Bench(timeoutMs = 500)
         val gate = CompletableDeferred<HttpResponse>()
         val entered = CompletableDeferred<Unit>()
         val gaveUp = CompletableDeferred<Unit>()
@@ -223,7 +224,10 @@ class TransportTest {
         assertFalse(gaveUp.isCompleted)
 
         // A caller that gives up is not kept either.
-        val asking = async { runCatching { bench.tula.config() } }
+        // On a client whose deadline cannot pass first: the call must be in the engine when
+        // the caller gives up, or this waits for a request that was never sent.
+        val patient = Bench(engine = bench.engine)
+        val asking = async { runCatching { patient.tula.config() } }
         while (bench.engine.requests.size < 2) {
             yield()
         }
