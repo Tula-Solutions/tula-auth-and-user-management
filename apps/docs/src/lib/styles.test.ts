@@ -33,6 +33,11 @@ describe('the prose styles', () => {
     expect(chip).toContain('box-decoration-break: clone')
   })
 
+  test('an anchor lands under the header by `scroll-padding-top` alone: a heading’s own `scroll-margin-top` doubled it', () => {
+    expect(CSS).toContain('scroll-padding-top: calc(var(--header-h) + 16px)')
+    expect(CSS).not.toContain('scroll-margin-top')
+  })
+
   test('prose is set at a fixed measure, never fluid', () => {
     expect(ruleOf('.main')).toContain('max-width: var(--prose)')
   })

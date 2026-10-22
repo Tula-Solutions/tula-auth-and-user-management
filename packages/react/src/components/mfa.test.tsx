@@ -11,6 +11,7 @@ import {
   completed,
   expectAbsent,
   expectFocus,
+  expectRateLimited,
   failure,
   json,
   NEW_PASSWORD_STEP,
@@ -175,6 +176,7 @@ describe('<SignIn> at needs_second_factor', () => {
     await w.user.type(await screen.findByLabelText('Authentication code'), '123456')
     await w.user.click(screen.getByRole('button', { name: 'Verify' }))
     expect(await screen.findByText(/Try again in \d+s\./)).toBeTruthy()
+    expectRateLimited(screen.getByRole('alert'))
     expect(screen.getByRole('button', { name: 'Verify' }).getAttribute('aria-disabled')).toBe(
       'true'
     )
@@ -880,6 +882,7 @@ describe('the step-up dialog: a code by email', () => {
     w.mount(<UserProfile />)
     const dialog = await turnOn(w)
     expect(await within(dialog).findByText(/Try again in \ds\./)).toBeTruthy()
+    expectRateLimited(within(dialog).getByRole('alert'))
     expect(within(dialog).getByRole('alert').textContent).not.toBe('')
     expect(dialog.textContent).not.toMatch(/we sent|we emailed|code is on its way/i)
     expectAbsent(within(dialog).queryByLabelText(/Verification code/))

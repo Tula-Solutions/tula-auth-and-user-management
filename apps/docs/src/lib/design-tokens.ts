@@ -193,6 +193,7 @@ export const COLOR_PAIRS: readonly ColorPair[] = [
   { fg: 'warn', bg: 'surface', min: 4.5, use: 'a caution callout' },
   { fg: 'danger', bg: 'bg', min: 4.5, use: 'an error note' },
   { fg: 'danger', bg: 'surface', min: 4.5, use: 'a danger callout' },
+  { fg: 'ok', bg: 'raised', min: 3, use: 'the tick on the copy button' },
   { fg: 'borderStrong', bg: 'bg', min: 3, use: 'the edge of a control' },
   { fg: 'borderStrong', bg: 'raised', min: 3, use: 'the edge of the search box' },
   { fg: 'accent', bg: 'bg', min: 3, use: 'the focus ring on the page' },

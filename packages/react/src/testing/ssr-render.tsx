@@ -2,6 +2,8 @@ import { renderToString } from 'react-dom/server'
 import {
   EmailLinkCallback,
   firstFactorStrategies,
+  formatDuration,
+  formatText,
   OAuthCallback,
   SignedIn,
   SignedOut,
@@ -37,7 +39,7 @@ function HeadlessProbe() {
     }
   )
   return (
-    <p>{`${t.signIn.title}|passkey:${support}|form:${placed.form}|wait:${seconds}|changed:${changed}|strategies:${strategies}`}</p>
+    <p>{`${t.signIn.title}|passkey:${support}|form:${placed.form}|wait:${seconds}|changed:${changed}|strategies:${strategies}|retry:${formatText(t.common.retryIn, { time: formatDuration(65, t) })}`}</p>
   )
 }
 
