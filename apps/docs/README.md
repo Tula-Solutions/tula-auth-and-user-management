@@ -29,6 +29,12 @@ bun run --filter @tula-tech/docs generate:check   # render everything in memory:
   sidebar, 720 px prose and table of contents that holds from a 390 px phone to a 2560 px
   ultrawide. The tokens are in `src/lib/design-tokens.ts`; the design is specified in
   [`docs/plans/docs-overhaul.md`](../../docs/plans/docs-overhaul.md).
+- **Content components** in plain Markdown that GitHub renders too: callouts (`> [!NOTE]`),
+  `:::steps`, `:::tabs` and `:::code-group` (a choice that persists), `:::params`, a file tree
+  (a `tree` fence) and code blocks with a title, highlighted and changed lines and a copy button.
+  Each is documented, with its result beside it, in
+  [`docs/writing-docs.md`](../../docs/writing-docs.md); a malformed one fails `generate:check`
+  with the file and the line.
 - **Files for AI agents**, written by the same build (`src/lib/ai/`), all under the base:
   a Markdown twin of every page (`/methods/password/` is `/methods/password.md`, with front
   matter and absolute links), `llms.txt` (the llmstxt.org index, one line per page),

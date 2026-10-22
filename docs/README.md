@@ -108,5 +108,6 @@ The example apps: [Next.js](../examples/nextjs-app-router/README.md),
 | [Phase 1 plan](plans/phase-1.md) | What was built, in what order, and the exit criteria with their evidence. |
 | [Phase 2 plan](plans/phase-2.md) | Approved: webhooks, hooks, SMS, more providers, the Expo, Swift and Kotlin SDKs; the decisions it was started on. |
 | [Documentation site](../apps/docs/README.md) | These pages as a static site, published from `develop` at https://tula-solutions.github.io/tula-auth-and-user-management/; `bun run docs-site:dev` builds it and serves it on this machine. |
+| [Writing docs](writing-docs.md) | Every component the documentation site adds to Markdown (callouts, steps, tabs and code groups, code blocks, file trees, parameter tables), with its source and its result, and what the build refuses. |
 | [Releasing](releasing.md) | How the packages are built, packed and checked. |
 | [Business plan](business-plan.md) | Product context. |
