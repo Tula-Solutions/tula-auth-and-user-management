@@ -28,23 +28,21 @@ function projectsRunBy(name: string): string[] {
 
 /** The projects one command line names. */
 function projectsIn(run: string): string[] {
-  {
-    const found: string[] = []
-    const words = run.split(/\s+/)
-    for (let index = 0; index < words.length; index += 1) {
-      const word = words[index] as string
-      if (word.startsWith('--project=')) {
-        found.push(word.slice('--project='.length))
-      } else if (word === '--project') {
-        // Variadic: every word up to the next option is a project.
-        while (index + 1 < words.length && !(words[index + 1] as string).startsWith('-')) {
-          index += 1
-          found.push(words[index] as string)
-        }
+  const found: string[] = []
+  const words = run.split(/\s+/)
+  for (let index = 0; index < words.length; index += 1) {
+    const word = words[index] as string
+    if (word.startsWith('--project=')) {
+      found.push(word.slice('--project='.length))
+    } else if (word === '--project') {
+      // Variadic: every word up to the next option is a project.
+      while (index + 1 < words.length && !(words[index + 1] as string).startsWith('-')) {
+        index += 1
+        found.push(words[index] as string)
       }
     }
-    return found
   }
+  return found
 }
 
 // The browser tests run in two CI jobs, split by project because the docs project is slow and
