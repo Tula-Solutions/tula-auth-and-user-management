@@ -1,15 +1,21 @@
+import { transformerNotationDiff, transformerNotationHighlight } from '@shikijs/transformers'
 import GithubSlugger from 'github-slugger'
 import type { Element, ElementContent, Root, RootContent } from 'hast'
 import { toString as hastText } from 'hast-util-to-string'
+import type { Root as MdastRoot } from 'mdast'
 import rehypeRaw from 'rehype-raw'
 import rehypeStringify from 'rehype-stringify'
 import remarkGfm from 'remark-gfm'
 import remarkParse from 'remark-parse'
 import remarkRehype from 'remark-rehype'
-import type { BundledLanguage, HighlighterGeneric } from 'shiki'
+import type { BundledLanguage, HighlighterGeneric, ShikiTransformer } from 'shiki'
 import { unified } from 'unified'
 import { visit } from 'unist-util-visit'
+import { BlockError, transformBlocks } from './blocks'
+import { type CodeMeta, parseCodeMeta } from './code-meta'
+import { renderTree } from './file-tree'
 import { isExternal, type LinkEnvironment, resolveLink } from './links'
+import { TABS_CALL, TABS_SCRIPT } from './tabs-runtime'
 
 /** A heading of a page: what the table of contents and the anchors are made from. */
 export interface Heading {
@@ -61,11 +67,8 @@ export class RenderError extends Error {
   }
 }
 
-const parser = unified()
-  .use(remarkParse)
-  .use(remarkGfm)
-  .use(remarkRehype, { allowDangerousHtml: true })
-  .use(rehypeRaw)
+const parser = unified().use(remarkParse).use(remarkGfm)
+const toHast = unified().use(remarkRehype, { allowDangerousHtml: true }).use(rehypeRaw)
 
 /** The text of a node without its code blocks: what a reader searches for. */
 function proseOf(node: Root | RootContent | ElementContent): string {
@@ -73,7 +76,7 @@ function proseOf(node: Root | RootContent | ElementContent): string {
     return node.value
   }
   if (node.type === 'element') {
-    if (node.tagName === 'pre') {
+    if (node.tagName === 'pre' || node.tagName === 'script') {
       return ''
     }
     return `${node.children.map((child) => proseOf(child)).join('')}${BLOCKS.has(node.tagName) ? ' ' : ''}`
@@ -149,8 +152,13 @@ function analyze(
 ): { tree: Root; headings: Heading[]; ids: Set<string> } {
   let tree: Root
   try {
-    tree = parser.runSync(parser.parse(source)) as Root
+    const mdast = parser.runSync(parser.parse(source)) as MdastRoot
+    transformBlocks(source, mdast)
+    tree = toHast.runSync(mdast) as Root
   } catch (error) {
+    if (error instanceof BlockError) {
+      throw new RenderError(file, `line ${error.line}: ${error.message}`)
+    }
     throw new RenderError(file, `cannot be parsed: ${(error as Error).message}`)
   }
   const slugger = new GithubSlugger()
@@ -225,6 +233,8 @@ export const CODE_LANGUAGES = [
   'toml',
   'dockerfile',
   'http',
+  'markdown',
+  'md',
 ] as const
 
 /** The two themes a code block carries; CSS picks one by the page's theme. */
@@ -274,6 +284,125 @@ function element(
   return { type: 'element', tagName, properties, children }
 }
 
+/** Whether an element carries a class. */
+function hasClass(node: Element, name: string): boolean {
+  const classes = node.properties?.className
+  return Array.isArray(classes) && classes.includes(name)
+}
+
+function icon(name: string): Element {
+  return element('span', { className: ['icon', `icon-${name}`], ariaHidden: 'true' }, [])
+}
+
+/** Marks the lines of a `diff` block that add or remove, so that they are tinted like the notation's. */
+const DIFF_LANGUAGE: ShikiTransformer = {
+  name: 'docs-diff-language',
+  line(node) {
+    const first = hastText(node as unknown as Element)[0]
+    if (first === '+' || first === '-') {
+      this.addClassToHast(node, ['diff', first === '+' ? 'add' : 'remove'])
+    }
+  },
+}
+
+/**
+ * Highlight and frame one fenced code block.
+ *
+ * The block's title (`title="app/layout.tsx"`), highlighted lines (`{1,3-5}`) and the notation
+ * comments (`// [!code ++]`, `// [!code --]`, `// [!code highlight]`) are read here; the copy
+ * button is written into the page and the stylesheet shows it only where the head's script has
+ * set `data-js`, because without script it does nothing. A `tree` fence is drawn as a file tree instead.
+ *
+ * @throws RenderError for a language that is not in {@link CODE_LANGUAGES}, a malformed info
+ *   string, a highlighted line past the end of the block or a tree that cannot be read.
+ */
+function codeBlock(file: string, code: Element, highlighter: Highlighter): Element {
+  const line = Number(code.properties?.dataLine ?? 0)
+  const fail = (reason: string) => new RenderError(file, `line ${line}: ${reason}`)
+  const language = languageOf(code)
+  let meta: CodeMeta
+  try {
+    meta = parseCodeMeta(String(code.properties?.dataMeta ?? ''))
+  } catch (error) {
+    throw fail((error as Error).message)
+  }
+  const source = hastText(code).replace(/\n$/, '')
+  if (language === 'tree') {
+    if (meta.title !== undefined || meta.highlight.length > 0) {
+      throw fail('a tree block takes no title or line ranges')
+    }
+    try {
+      return renderTree(source)
+    } catch (error) {
+      throw fail((error as Error).message)
+    }
+  }
+  if (language !== 'text' && !(CODE_LANGUAGES as readonly string[]).includes(language)) {
+    throw new RenderError(
+      file,
+      `has a code block in an unknown language "${language}" (line ${line})`
+    )
+  }
+  const count = source.split('\n').length
+  const last = meta.highlight.at(-1)
+  if (last !== undefined && last > count) {
+    throw fail(`the line range {${last}} is past the end of a block of ${count} lines`)
+  }
+  const marked = new Set(meta.highlight)
+  const transformers: ShikiTransformer[] = [
+    transformerNotationDiff(),
+    transformerNotationHighlight(),
+    {
+      name: 'docs-line-ranges',
+      line(node, number) {
+        if (marked.has(number)) {
+          this.addClassToHast(node, 'highlighted')
+        }
+      },
+    },
+  ]
+  if (language === 'diff') {
+    transformers.push(DIFF_LANGUAGE)
+  }
+  const highlighted = highlighter.codeToHast(source, {
+    lang: language,
+    themes: CODE_THEMES,
+    colorReplacements: CODE_COLOR_REPLACEMENTS,
+    defaultColor: false,
+    transformers,
+  })
+  const block = highlighted.children[0] as Element
+  block.properties = { ...block.properties, 'data-language': language }
+  const label = meta.title === undefined ? 'Copy code' : `Copy ${meta.title}`
+  const children: ElementContent[] = []
+  if (meta.title !== undefined) {
+    children.push(
+      element('div', { className: ['code-title'] }, [
+        element('span', { className: ['code-title-text'] }, [{ type: 'text', value: meta.title }]),
+      ])
+    )
+  }
+  children.push(
+    element('div', { className: ['code-frame'] }, [
+      block,
+      element('button', { className: ['copy'], type: 'button', ariaLabel: label, dataCopy: '' }, [
+        icon('copy'),
+        element('span', { className: ['copy-label'] }, [{ type: 'text', value: 'Copy' }]),
+      ]),
+      element('span', { className: ['sr-only'], role: 'status', ariaLive: 'polite' }, []),
+    ])
+  )
+  return element(
+    'div',
+    {
+      className: ['code-block'],
+      dataLanguage: language,
+      dataTitled: meta.title !== undefined ? '' : undefined,
+    },
+    children
+  )
+}
+
 /**
  * Render a parsed document to the HTML of a page body.
  *
@@ -296,6 +425,7 @@ export function renderMarkdown(
   const files: string[] = []
   let tables = 0
   let lastDepth = 0
+  const groups: { parent: Element | Root; index: number }[] = []
 
   visit(tree, 'element', (node, index, parent) => {
     if (parent === undefined || index === undefined) {
@@ -314,19 +444,7 @@ export function renderMarkdown(
       if (code === undefined) {
         return
       }
-      const language = languageOf(code)
-      if (language !== 'text' && !(CODE_LANGUAGES as readonly string[]).includes(language)) {
-        throw new RenderError(doc.file, `has a code block in an unknown language "${language}"`)
-      }
-      const highlighted = highlighter.codeToHast(hastText(code).replace(/\n$/, ''), {
-        lang: language,
-        themes: CODE_THEMES,
-        colorReplacements: CODE_COLOR_REPLACEMENTS,
-        defaultColor: false,
-      })
-      const pre = highlighted.children[0] as Element
-      pre.properties = { ...pre.properties, 'data-language': language }
-      ;(parent as Element).children[index] = pre
+      ;(parent as Element).children[index] = codeBlock(doc.file, code, highlighter)
       return 'skip'
     }
     if (node.tagName === 'table') {
@@ -341,9 +459,22 @@ export function renderMarkdown(
       )
       return
     }
+    if (hasClass(node, 'docs-tabs')) {
+      groups.push({ parent: parent as Element, index })
+    }
     rewriteLink(node, doc, environment, assets, files)
     return
   })
+
+  // A set of tabs is enhanced by a script written right after it, so that it is tabs before it is
+  // first painted (`client/tabs.ts`); the first of a page carries the runtime, the rest call it.
+  for (const [position, { parent, index }] of [...groups.entries()].reverse()) {
+    parent.children.splice(
+      index + 1,
+      0,
+      element('script', {}, [{ type: 'text', value: position === 0 ? TABS_SCRIPT : TABS_CALL }])
+    )
+  }
 
   // A permalink after each heading, so that a reader can copy the address of a section.
   visit(tree, 'element', (node) => {

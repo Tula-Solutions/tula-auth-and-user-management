@@ -395,7 +395,8 @@ export function pageStats(html: string): PageStats {
   return {
     bytes: html.length,
     sections: parts.map((part) => part.length),
-    lines: parts.map((part) => part.split('class="line"').length - 1),
+    // A line that is highlighted or changed has more classes (`line highlighted`).
+    lines: parts.map((part) => part.split(/class="line[" ]/).length - 1),
   }
 }
 

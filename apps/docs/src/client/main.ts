@@ -291,7 +291,95 @@ function initSearch(): void {
   })
 }
 
+/** What the clipboard gets from a code block: the lines it shows, less those a change removes. */
+function codeText(pre: Element): string {
+  const lines = [...pre.querySelectorAll('.line')]
+  if (lines.length === 0) {
+    return pre.textContent ?? ''
+  }
+  return (
+    lines
+      .filter((line) => !line.classList.contains('remove'))
+      // Removing a `// [!code ++]` comment leaves the space before it.
+      .map((line) => (line.textContent ?? '').trimEnd())
+      .join('\n')
+  )
+}
+
+/** Put text on the clipboard: the async API where the page is secure, a selection where it is not. */
+async function writeClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    const area = document.createElement('textarea')
+    area.value = text
+    area.setAttribute('readonly', '')
+    area.style.position = 'fixed'
+    area.style.opacity = '0'
+    document.body.appendChild(area)
+    area.select()
+    try {
+      return document.execCommand('copy')
+    } catch {
+      return false
+    } finally {
+      area.remove()
+    }
+  }
+}
+
+/** How long "Copied" stays on a copy button. */
+const COPIED_FOR_MS = 2000
+
+/**
+ * The copy button of every code block. The button is drawn only where the page has script
+ * (`data-js` on the root); pressing it copies the code and says so twice, in the button and in
+ * the block's polite live region, which a screen reader announces.
+ */
+function initCopy(): void {
+  const timers = new WeakMap<Element, number>()
+  document.addEventListener('click', async (event) => {
+    const button = (event.target as Element).closest<HTMLButtonElement>('.copy[data-copy]')
+    const pre = button?.closest('.code-block')?.querySelector('pre')
+    if (button === null || button === undefined || pre === null || pre === undefined) {
+      return
+    }
+    const copied = await writeClipboard(codeText(pre))
+    const label = button.querySelector('.copy-label')
+    const status = button.parentElement?.querySelector('[role="status"]')
+    // The text is cleared first, so that a second press is announced again.
+    if (status !== null && status !== undefined) {
+      status.textContent = ''
+      window.setTimeout(() => {
+        status.textContent = copied ? 'Copied' : 'Copy failed'
+      }, 50)
+    }
+    if (!copied) {
+      return
+    }
+    button.setAttribute('data-copied', '')
+    if (label !== null) {
+      label.textContent = 'Copied'
+    }
+    window.clearTimeout(timers.get(button))
+    timers.set(
+      button,
+      window.setTimeout(() => {
+        button.removeAttribute('data-copied')
+        if (label !== null) {
+          label.textContent = 'Copy'
+        }
+        if (status !== null && status !== undefined) {
+          status.textContent = ''
+        }
+      }, COPIED_FOR_MS)
+    )
+  })
+}
+
 initTheme()
+initCopy()
 initMenu()
 initSearchToggle()
 initShortcutHint()
