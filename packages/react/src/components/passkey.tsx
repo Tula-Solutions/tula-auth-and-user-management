@@ -2,6 +2,7 @@ import { isStepUpRequired, type Passkey, type SignInFlow, type TulaError } from 
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { useTulaContext } from '../context'
 import { toTulaError } from '../errors'
+import { usePasskeySupport } from '../hooks/use-passkey-support'
 import { useClientConfig } from '../hooks/use-password-checklist'
 import { useStepUp } from '../hooks/use-step-up'
 import { formatText } from '../localization'
@@ -10,21 +11,6 @@ import { Button, Form, FormError, Heading, Status, TextField, useUi } from './ui
 
 /** Longest name a passkey may be given, as the API has it. */
 const PASSKEY_NAME_MAX_LENGTH = 64
-
-/**
- * Whether this browser can run a passkey ceremony. A fact about the browser, read after mount:
- * nothing during render touches `navigator`.
- *
- * @returns `null` until the component has mounted, then whether WebAuthn is there.
- */
-export function usePasskeySupport(): boolean | null {
-  const { client } = useTulaContext()
-  const [supported, setSupported] = useState<boolean | null>(null)
-  useEffect(() => {
-    setSupported(client.signIn.canUsePasskey())
-  }, [client])
-  return supported
-}
 
 /**
  * Whether the environment has passkeys switched on, from the public configuration

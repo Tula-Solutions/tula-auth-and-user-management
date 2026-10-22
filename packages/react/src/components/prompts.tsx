@@ -3,6 +3,7 @@ import { type ReactNode, type SyntheticEvent, useEffect, useId, useRef, useState
 import { useTulaContext } from '../context'
 import { toTulaError } from '../errors'
 import { useAuthState } from '../hooks/use-auth-state'
+import { usePasskeySupport } from '../hooks/use-passkey-support'
 import { formatText } from '../localization'
 import { CODE_LENGTH, CodeField, ResendButton, useRetryAfter } from './flow-screens'
 import { attemptsLeft, formatDuration } from './form-errors'
@@ -13,7 +14,7 @@ import {
   SecondFactorForm,
   TextedCodeForm,
 } from './mfa'
-import { PasskeyPanel, usePasskeySupport } from './passkey'
+import { PasskeyPanel } from './passkey'
 import { Button, Form, FormError, Heading, PasswordField, Root, Status, useUi } from './ui'
 
 /**
