@@ -5,15 +5,24 @@ on:
     branches: [develop, main]
   push:
     branches: [develop, main]
+  # The release pull request and the back-merge pull request are opened with the run's own
+  # token, and GitHub starts no `pull_request` or `push` run for what that token does. Their
+  # workflows (`release-pr.yml`, `back-merge.yml`) start this one by hand on the branch with
+  # `gh workflow run`, which the token may do: a `workflow_dispatch` event always creates a
+  # run. The run's jobs report on the branch's head commit under the names `verify` and `e2e`,
+  # which is what the ruleset requires. Nobody needs to run it by hand.
+  workflow_dispatch:
 
 permissions:
   contents: read
 
-# A newer push to a pull request replaces the run in progress. On `develop` and `main` a run
-# in progress is never cancelled by a later push: it finishes, and the newest push runs next.
+# A newer push to a pull request, or a newer dispatch for a release or back-merge branch,
+# replaces the run in progress (the older head is obsolete). On `develop` and `main` a run
+# in progress is never cancelled, not by a push and not by a dispatch: it finishes, and the
+# newest push runs next.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop') }}
 
 # Actions are referenced by tag on purpose: Dependabot follows them (.github/dependabot.yml).
 

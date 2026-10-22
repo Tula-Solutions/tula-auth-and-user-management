@@ -61,8 +61,8 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   and no trusted publishing (its one other use is the copy to GitHub Packages, above). The workflow holds no long-lived token and never gets one
   (`NPM_TOKEN`, `NODE_AUTH_TOKEN`, any `secrets.`); its `publish` job alone has
   `id-token: write`, runs only when the repository variable `NPM_PUBLISH` is `true`, and
-  runs in the GitHub environment `npm-publish` (deployment branch `main` only, required
-  reviewers; npm's trusted publisher names it). Never remove the `environment:` line:
+  runs in the GitHub environment `npm-publish` (deployment branch `main` only, no required
+  reviewer: a merge to `main` publishes with no further approval; npm's trusted publisher names it). Never remove the `environment:` line:
   without it npm trusts `release.yml` on any ref.
 - **A sample never runs a bare `tula` where the CLI may not be installed.** An unrelated
   npm package named `tula` exists, so `bunx tula` / `npx tula` is shown only after the
@@ -76,7 +76,14 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   stages a package for packing. Add an entry point to **both**.
 - Build with `bunup` (ESM, `.d.ts`, dependencies external). Use relative imports inside a
   publishable package, not `~/`: other packages typecheck its sources under their own paths.
-- A change to a publishable package comes with a changeset (`bunx changeset`).
+- A change to a publishable package comes with a changeset (`bunx changeset`). A pull request
+  into `develop` that changes what a package ships and adds none fails the changeset check
+  (`scripts/changeset-check.ts`, `changeset-check.yml`; the label `no-changeset` waives it;
+  not a required check). Nobody runs `changeset version` by hand: `release-pr.yml` opens the
+  release pull request from `develop` and `back-merge.yml` brings the release back. Both start
+  `ci.yml` with `workflow_dispatch` because a run's own token starts no `pull_request` run;
+  they hold no secret, and `release.yml`'s safety layers are unchanged
+  ([docs/releasing.md](../../docs/releasing.md), "The release flow").
 - **`@tula-tech/core` must not pull Zod into an application's bundle.** Import run-time values from
   the contract's Zod-free entry points (`@tula-tech/contract/error-codes`, `/event-types`,
   `/headers`, `/password-rules`, `/theme`, `/issuer`, `/webhook-signature`, `/custom-claims`, `/device-binding`) and types from

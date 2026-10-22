@@ -1,0 +1,44 @@
+name: Changeset check
+
+# A pull request into `develop` that changes what a published package ships (the rule, and
+# what it leaves out, are in `scripts/changeset-check.ts`) carries a changeset, or the label
+# `no-changeset`. Without one the change would reach `develop` and no release pull request
+# would ever name it (docs/releasing.md, "The release flow").
+#
+# It is a workflow of its own and NOT one of the repository's required checks: a person
+# decides whether it should be. It reads the pull request's diff and files and nothing else
+# (`contents: read`, no install, no secret), and reruns when a label is added or removed.
+# The release pull request and the back-merge pull request are exempt by branch name, when
+# the branch is in this repository (a fork can name a branch anything).
+
+on:
+  pull_request:
+    branches: [develop]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: changeset-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  changeset:
+    name: changeset
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with: { fetch-depth: 0 }
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version-file: package.json }
+      - name: Does a change to a published package carry a changeset?
+        # Branch and label names are the pull request author's text: they reach the script
+        # through the environment, never through the shell command.
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          FORK: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: bun run scripts/changeset-check.ts --base "origin/$BASE_REF" --head-ref "$HEAD_REF" --labels "$LABELS" --fork "$FORK"
