@@ -1,10 +1,13 @@
 import { ChevronDown } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { SITE_NAME, SITE_ORIGIN } from '~/lib/config'
+import { SITE_ORIGIN } from '~/lib/ai/urls'
+import { SITE_NAME } from '~/lib/config'
 import type { Heading } from '~/lib/markdown'
 import type { NavGroup, NavItem } from '~/lib/nav'
+import { canonicalOf, type ReleaseInfo } from '~/lib/release'
 import { buildSections, type Section, sectionHome, sectionOf } from '~/lib/sections'
 import { Header } from './header'
+import { VersionBanner, VersionMarker } from './version'
 
 /** What a page needs from the build to be drawn. */
 export interface Frame {
@@ -13,6 +16,8 @@ export interface Frame {
   /** The site's stylesheet and script, as the bundler named them, and the fonts to preload. */
   assets: { css: string[]; js: string; fonts?: string[] }
   nav: NavGroup[]
+  /** Which docs this build is; `null` or absent for a site with one version (a local build). */
+  release?: ReleaseInfo | null
 }
 
 /** The page-specific part of a document. */
@@ -167,6 +172,9 @@ export function Document({
   children?: ReactNode
 }) {
   const { base } = frame
+  const release = frame.release ?? null
+  const versionProps = release === null ? null : { release, base, route: page.route }
+  const canonical = canonicalOf(release, base, page.route)
   const sections = buildSections(frame.nav)
   // The documentation index belongs to the first tab; the landing and 404 pages to none.
   const active =
@@ -182,6 +190,8 @@ export function Document({
         <meta name='color-scheme' content='light dark' />
         <title>{title}</title>
         <meta name='description' content={page.description} />
+        {release?.channel === 'next' ? <meta name='robots' content='noindex' /> : null}
+        {canonical === null ? null : <link rel='canonical' href={canonical} />}
         <SiteIdentity base={base} title={title} description={page.description} />
         {/* biome-ignore lint/security/noDangerouslySetInnerHtml: a constant script, no input */}
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
@@ -198,7 +208,16 @@ export function Document({
         <a href='#content' className='skip-link'>
           Skip to content
         </a>
-        <Header base={base} sections={sections} active={active?.id} />
+        {/* Slot: a notice above the header (it scrolls away; the header stays). */}
+        <div data-slot='banner'>
+          {versionProps === null ? null : <VersionBanner {...versionProps} />}
+        </div>
+        <Header
+          base={base}
+          sections={sections}
+          active={active?.id}
+          version={versionProps === null ? null : <VersionMarker {...versionProps} />}
+        />
         <div id='scrim' className='scrim' data-open='false' aria-hidden='true' />
         {children === undefined ? (
           <div className='shell layout' data-toc={hasToc ? '' : undefined}>

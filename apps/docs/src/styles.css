@@ -258,6 +258,66 @@
 .header-slot:empty {
   display: none;
 }
+/* The version marker: the docs being read, and the way to the other. */
+.version-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.version-chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.version-chip-current {
+  color: var(--ink);
+}
+.version-link {
+  color: var(--accent);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.version-link:hover {
+  text-decoration: underline;
+}
+/* On a phone the marker would crowd the menu, search and theme buttons; the banner says it. */
+@media (max-width: 639px) {
+  .version-link {
+    display: none;
+  }
+}
+/* A notice above the header. It scrolls away, so the sticky bar keeps its height. */
+.version-banner {
+  padding: 8px var(--gutter);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--body);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  text-align: center;
+  text-wrap: balance;
+}
+.version-banner code {
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  background: var(--raised);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+}
+.version-banner a {
+  color: var(--accent);
+  text-underline-offset: 2px;
+}
 .tabs {
   display: none;
   align-items: stretch;

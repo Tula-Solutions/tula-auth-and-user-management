@@ -95,7 +95,18 @@ describe('the site built from docs/', () => {
   test('links between pages are routes, with their anchors', () => {
     const html = site.documents.get('/methods/password/') as string
     expect(html).toContain('href="/dashboard/#screens"')
-    expect(html).not.toMatch(/href="[^"#:]*\.md/)
+    // The one address of a Markdown file in the page is the alternate pointing at its twin.
+    expect(html.replace(/<link rel="alternate"[^>]*>/, '')).not.toMatch(/href="[^"#:]*\.md/)
+  })
+
+  test('every page, the landing page included, points at its Markdown twin in its head', () => {
+    const head = (route: string) =>
+      (site.documents.get(route) as string).split('</head>')[0] as string
+    expect(head('/methods/password/')).toContain(
+      '<link rel="alternate" type="text/markdown" href="/methods/password.md"/>'
+    )
+    expect(head(LANDING_ROUTE)).toContain('type="text/markdown" href="/index.md"')
+    expect(head(ERROR_CODES_ROUTE)).toContain('href="/reference/error-codes.md"')
   })
 
   test('a link to an ADR leaves for GitHub', () => {

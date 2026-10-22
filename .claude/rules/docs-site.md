@@ -23,18 +23,35 @@ static HTML. Its commands are in its README.
 - **Private, never published to npm, never served by the API, never in an image.** The API
   does not host it. The API image's Dockerfile copies nothing of it and `.dockerignore` leaves
   it out (`.claude/hooks/compose.test.ts` holds both): never add it to an image stage.
-- **GitHub Pages publishes it, from `develop`, under `/tula-auth-and-user-management/`**
-  (`.github/workflows/docs-pages.yml`, held by `.claude/hooks/docs-pages.test.ts`): a `build`
-  job with `contents: read` only, then a `deploy` job with `pages: write` and `id-token: write`
-  that runs nothing but `actions/deploy-pages`. Never give the build job a permission to write
-  or the deploy job a step of the repository's code. The base comes from `DOCS_BASE`, read only
-  through `resolveBase()` in `src/lib/paths.ts` (`config.ts`, `vite.config.ts`, `serve.ts`, the
-  Playwright config): `/` or a path that starts and ends with `/` and holds only unreserved
-  characters, refused otherwise. Every address the site writes is built from the base; an
-  address from the host's root outside it (or `//host`) fails the build in `checkPage`, and
-  `build --check` renders under a placeholder sub-path when no base is set so that `verify`
-  sees one. A link written as `/x` in a component is a 404 on Pages: build it from `base`.
-  CI's `e2e-docs` job builds and serves the site under the Pages base.
+- **GitHub Pages publishes it, in two versions, under `/tula-auth-and-user-management/`**
+  (`.github/workflows/docs-pages.yml`, held by `.claude/hooks/docs-pages.test.ts`): the docs of
+  the latest release at the root (built from the tip of `main`, by that tree's own copy of the
+  site) and `develop`'s under `/next/` (a banner says they are unreleased, `noindex`). A release
+  is a push to `main` (no tag and no GitHub Release is made; `release.yml` starts on the same
+  event), `develop` pushes refresh `/next/`, and both versions are built on every run from the
+  tips of both branches, because Pages holds one artifact: never make a run build only one. While
+  `main` has no `apps/docs` the root is built from `develop` as channel `unreleased`; keep that
+  fallback and its test. A `build` job with `contents: read` only, then a `deploy` job with
+  `pages: write` and `id-token: write` that runs nothing but `actions/deploy-pages`. Never give
+  the build job a permission to write or the deploy job a step of the repository's code; never
+  cancel a deployment in flight (`cancel-in-progress: false`). The `github-pages` environment
+  must allow `main` and `develop`. What a build is comes from `DOCS_CHANNEL` (`release`, `next`,
+  `unreleased`), `DOCS_VERSION` and `DOCS_ORIGIN`, read only through `resolveRelease()` in
+  `src/lib/release.ts` (the same style as `resolveBase()`: refused, not tidied; `release.test.ts`
+  holds the table); the marker, the banner, `noindex` and the canonical address come from it
+  (`layout.tsx`, which this rule does not otherwise describe). The base comes from `DOCS_BASE`,
+  read only through `resolveBase()` in `src/lib/paths.ts` (`config.ts`, `vite.config.ts`,
+  `serve.ts`, the Playwright config): `/` or a path that starts and ends with `/` and holds only
+  unreserved characters, refused otherwise; the `next` channel's must end with `/next/`. Every
+  address the site writes is built from the base; an address from the host's root outside it (or
+  `//host`) fails the build in `checkPage`, and `build --check` renders under a placeholder
+  sub-path when no base is set so that `verify` sees one. The one exception is a link marked
+  `data-docs-version` (the header's marker, the banner), which `checkPage` requires to lead into
+  the other version's base (`siblingBase`) and nowhere else: a new link to the other version
+  carries that attribute, and any other link from `/next/` into the released docs fails the
+  build. A link written as `/x` in a component is a 404 on Pages: build it from `base`.
+  CI's `e2e-docs` job builds and serves both versions under the Pages base (`build:versions`:
+  the root as the release, `next/` as the development docs; `e2e/tests/docs/versions.spec.ts`).
 - **Prerendered by our own script, not by a router's prerender.** The pages are documents: each
   is a React 19 component tree rendered with `react-dom/server` to a complete `index.html`
   (`src/lib/site.tsx`, started by `scripts/build.ts`), and the browser gets one small script
@@ -123,6 +140,39 @@ static HTML. Its commands are in its README.
   (`markdown.ts`): fix a failing page in the renderer, never by disabling a rule or by
   editing the Markdown to suit the site. The project runs on its own, with no API behind it:
   `--project=docs` (or `E2E_DOCS_ONLY=1`) starts only the docs server, on port 4321.
+- **Every page has a Markdown twin, and the build writes the files an AI agent reads**
+  (`src/lib/ai/`, built by `buildSite` for a build of every page and written by `writeSite`;
+  none of it for a sample). `<route>.md` for every route (`/methods/password/` is
+  `/methods/password.md`, `/docs/` is `/docs.md`, `/` is `/index.md`: `twinPath`): the source
+  Markdown with front matter (title, description, url, source, section, `updated` where git can
+  say it), a pointer to `llms.txt`, relative links rewritten to the absolute `.md` address of
+  the page they name (a repository file to its address on GitHub, an image to its copy under
+  `files/`) and the HTML-only parts dropped. The links are rewritten in the source text by
+  position (`twin.ts`), never by re-printing the tree, so the Markdown stays the author's.
+  Beside them: `llms.txt` (llmstxt.org: a title, a summary, a section per sidebar group, one
+  `- [Title](url.md): first sentence` line per page, an `Optional` section), `llms-full.txt`
+  (every hand-written page, the generated `reference/**` left out, under `LLMS_FULL_CAP`),
+  `skill.md`, `sitemap.xml`, `robots.txt`, and a
+  `<link rel="alternate" type="text/markdown">` in each page's head (`withAlternate`; Pages
+  cannot send a `Link:` header). **Every address in them is built from `resolveBase()`'s base
+  and `SITE_ORIGIN` (`src/lib/ai/urls.ts`)**, never written out, and a published file names the
+  origin because an agent reads it away from the site.
+- **`checkAiFiles` (`src/lib/ai/check.ts`) is part of `generate:check`**: it fails for a page
+  with no twin, a page `llms.txt` leaves out, a link to this site in a twin, `llms.txt` or
+  `skill.md` that finds no file or an anchor its page does not have, `llms.txt` over
+  `LLMS_TXT_CAP` and `llms-full.txt` over `LLMS_FULL_CAP`. A cap is raised only by measuring
+  what an agent can load, never to make a build pass.
+- **`skill.md` is written from `apps/docs/content/skill.md`**, the one hand-written file of the
+  site that is not in `docs/`. It holds no address: `{{page:docs/quickstart.md#anchor}}` and
+  `{{file:llms.txt}}` are resolved by `buildSkill`, and a placeholder that names no page stops
+  the build. It says only what the documentation says: a step or a claim is added there in the
+  same change as the page that supports it, and what the docs say was not run is said not run.
+  Without the file in the repository (a throwaway one) no skill is written.
+- **No file of the site starts with a dot.** `actions/upload-pages-artifact` leaves hidden
+  files out, so a `/.well-known/skills/index.json` would never be served; discovery is
+  `llms.txt` and `skill.md` at the root. `updated` and `lastmod` come from the repository's
+  history and only in a clone that has it (`src/lib/ai/git.ts`): the Pages workflow checks out
+  one commit, where every file would get that commit's date, so there they are left out.
 - **shadcn primitives** in `src/components/ui/` are written by `bunx shadcn@latest add` and
   not edited (as in the dashboard). They import `cn` from the bare specifier, mapped by
   `tsconfig.json` and `vite.config.ts`. The primitives used are rendered on the server only.

@@ -1,4 +1,5 @@
 import { Menu, Moon, Search, Sun } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { Button } from '~/components/ui/button'
 import { REPO_URL } from '~/lib/config'
 import { type Section, sectionHome } from '~/lib/sections'
@@ -8,27 +9,28 @@ import { LogoLockup, LogoMark } from './logo'
 /**
  * The site's header: the logo, the section tabs, the search, the repository and the theme.
  *
- * The header is where other changes add to the page, so each has a slot of its own, an empty
- * element that takes no room until something fills it: `data-slot="banner"` is a full-width row
- * above the bar (a notice about the docs' version), `data-slot="version"` sits beside the logo
- * (the version marker). Add to a slot; do not restructure the bar.
+ * `data-slot="version"` sits beside the logo and holds the version marker (the `version` prop).
+ * The notice about the docs' version is a row above the bar, `data-slot="banner"`, drawn by the
+ * layout: it scrolls away so that this sticky bar keeps the height `--header-h` names. Add to a
+ * slot; do not restructure the bar.
  *
- * @param props - The base path, the tabs and the id of the current one.
+ * @param props - The base path, the tabs, the id of the current one and the version marker.
  * @returns The sticky `header` element.
  */
 export function Header({
   base,
   sections,
   active,
+  version,
 }: {
   base: string
   sections: readonly Section[]
   active: string | undefined
+  version?: ReactNode
 }) {
   const prefix = base.replace(/\/$/, '')
   return (
     <header className='site-header' id='site-header' data-search='closed'>
-      <div data-slot='banner' />
       <div className='shell site-header__inner'>
         <Button
           type='button'
@@ -48,7 +50,9 @@ export function Header({
           <span className='docs-chip'>Docs</span>
         </a>
         {/* Slot: the version marker (the versioned deploy fills it). */}
-        <div data-slot='version' className='header-slot' />
+        <div data-slot='version' className='header-slot'>
+          {version}
+        </div>
         <nav aria-label='Sections' className='tabs'>
           {sections.map((section) => (
             <a

@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { BASE } from '../src/lib/config'
+import { lastUpdated, runGit } from '../src/lib/ai/git'
+import { BASE, REPO_ROOT } from '../src/lib/config'
 import { LinkError } from '../src/lib/links'
 import { RenderError } from '../src/lib/markdown'
 import { resolveOutDir } from '../src/lib/paths'
@@ -66,13 +67,15 @@ try {
   const checked = await buildSite({ css: [], js: '' }, CHECK_BASE)
   if (check) {
     console.log(
-      `docs site: ${checked.pages.length} pages render under ${CHECK_BASE}, every link and anchor resolves`
+      `docs site: ${checked.pages.length} pages render under ${CHECK_BASE}, every link and anchor resolves; ${checked.ai.size} files for agents (${[...checked.ai.keys()].filter((path) => path.endsWith('.md')).length} Markdown twins, llms.txt ${checked.ai.get('llms.txt')?.length} and llms-full.txt ${checked.ai.get('llms-full.txt')?.length} characters) pass their checks`
     )
   } else {
-    const site = await buildSite(await bundle(), BASE)
+    const site = await buildSite(await bundle(), BASE, undefined, {
+      updated: lastUpdated(runGit(REPO_ROOT)),
+    })
     await writeSite(site, outDir)
     console.log(
-      `docs site: wrote ${site.documents.size} pages and ${site.index.length} search entries to apps/docs/dist, served under ${BASE}`
+      `docs site: wrote ${site.documents.size} pages, ${site.ai.size} files for agents and ${site.index.length} search entries to apps/docs/dist, served under ${BASE}`
     )
   }
 } catch (error) {
