@@ -41,10 +41,12 @@ class SessionTest {
         val setup = Bench(storage = storage)
         setup.signIn()
         setup.tula.close()
-        val bench = Bench(engine = setup.engine, storage = storage, clock = setup.clock, timeoutMs = 200)
+        // The load below is a step that must answer, under this bench's real deadline: long enough
+        // for a busy runner, still well inside STALL_LIMIT_MS for the stalled write the tests time.
+        val bench = Bench(engine = setup.engine, storage = storage, clock = setup.clock, timeoutMs = 1_500)
         // Loading takes the stored session in with one refresh; the test counts from its own.
         bench.rotating()
-        bench.tula.load()
+        assertIs<AuthState.SignedIn>(bench.tula.load())
         bench.engine.requests.clear()
         bench.rotating()
         return bench
