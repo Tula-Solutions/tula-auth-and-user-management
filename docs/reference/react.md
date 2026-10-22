@@ -232,8 +232,12 @@ What the browser and the identifier rule out; see {@link firstFactorStrategies}.
 export interface FirstFactorCapabilities {
   /** Whether an emailed link can be honoured here (storage is usable and a link URL is set). */
   link: boolean
-  /** Whether a passkey is not ruled out (`usePasskeySupport() !== false`). */
-  passkey: boolean
+  /**
+   * What the browser said about WebAuthn: `usePasskeySupport()` as it is, `undefined` while it
+   * has not been asked yet. Hidden until known: how `undefined` counts depends on the list
+   * (see {@link firstFactorStrategies}).
+   */
+  passkey: boolean | undefined
   /** Whether what was typed is a phone number rather than an address. */
   phone: boolean
 }
@@ -816,9 +820,11 @@ Draw the screen of a flow step: the one place a step becomes a screen.
 
 Anything with no screen in the map (a status a newer server added, a status the map leaves
 out, a screen that returns `null`) draws the package's "not supported" screen with a way to
-start again. There is no prop to change or remove that fallback: a step is never drawn as a
-blank card, and no action is ever guessed. Each screen is remounted when the screen's name
-changes, so one step's half-typed state never carries over to the next.
+start again. There is no prop to change or remove that fallback: every status maps to an
+element or to the fallback, and no action is ever guessed. (A screen that is an element
+which itself renders nothing is its author's responsibility.) Each screen is its own
+component, remounted when the screen's name or status changes, so one step's half-typed
+state never carries over to the next, and a screen may call hooks.
 
 Draw it where the other `@tula-tech/react` screens are drawn, inside a `<TulaProvider>`.
 
@@ -832,7 +838,7 @@ export function StepRenderer(props: StepRendererProps)
 
 **Returns** The step's screen, or the "not supported" screen.
 
-**Throws** Error outside a `<TulaProvider>`.
+**Throws** Error when the fallback is drawn outside a `<TulaProvider>`.
 
 **Example**
 
@@ -866,7 +872,7 @@ export interface StepRendererProps {
    * The screen before the flow has a step. Without one, `null` draws the "not supported"
    * screen like any other step with no screen.
    */
-  start?: ReactNode
+  start?: ReactElement | null
   /**
    * A name for the current screen, for a flow that has more than one view with the same
    * statuses (a sign-in and a reset). A new name draws the screen afresh. Defaults to the
@@ -891,13 +897,13 @@ const props: StepRendererProps = { step: null, screens: {}, start: <p>Start</p>,
 _type_, defined in `packages/react/src/components/step-renderer.tsx`
 
 A screen per step status. A key that is not a step status is a type error, and each screen
-is given its step narrowed to that status. A screen may return `null` to say it cannot draw
-the step it was given (an option this version does not know): the "not supported" screen is
-drawn instead.
+is given its step narrowed to that status. A screen returns an element, or `null` to say it
+cannot draw the step it was given (an option this version does not know): the "not
+supported" screen is drawn instead. A screen is a component's render, so it may call hooks.
 
 ```ts
 export type StepScreens = {
-  [S in StepStatus]?: (step: StepOf<S>) => ReactNode
+  [S in StepStatus]?: (step: StepOf<S>) => ReactElement | null
 }
 ```
 
@@ -2907,11 +2913,20 @@ A strategy the table has no form for, or one the browser or the identifier rules
 skipped, never guessed at (a newer server may offer more). For a phone number a texted code is
 the only form: a password or an emailed code for a number signs nobody in.
 
+A passkey is where "hidden until known" is decided, for both lists, so that a copy cannot
+drift from the prebuilt screens. For the **active** list (the form the screen itself opens
+on) a passkey whose support is not known yet (`undefined`) is not ruled out: a screen whose
+only way is a passkey must not open on "not supported" and then change its mind. For the
+**alternatives** list (the other ways, drawn as links under the form) it is hidden until the
+browser has said `true`: a link that is then taken away is a broken control for as long as
+it shows. `false` rules a passkey out of both.
+
 ```ts
 export function firstFactorStrategies(
   offered: readonly string[],
   forms: FirstFactorForms,
-  can: FirstFactorCapabilities
+  can: FirstFactorCapabilities,
+  list: 'active' | 'alternatives' = 'active'
 ): FirstFactorStrategy[]
 ```
 
@@ -2920,6 +2935,7 @@ export function firstFactorStrategies(
 - `offered`: The strategies the server offers (`step.strategies`).
 - `forms`: The table of forms.
 - `can`: What the browser and the identifier allow.
+- `list`: Which list is wanted: `'active'` (default) or `'alternatives'`.
 
 **Returns** The strategies to draw; empty when there is none (draw the "not supported" screen).
 
@@ -2931,6 +2947,8 @@ const known = firstFactorStrategies(step.strategies, forms, {
   passkey: true,
   phone: false,
 })
+// the links under the form, once the browser has been asked:
+const others = firstFactorStrategies(step.strategies, forms, can, 'alternatives')
 ```
 
 ### `useAuth`
@@ -2988,6 +3006,10 @@ return <h1>Sign in to {config?.app.name ?? 'your account'}</h1>
 _function_, defined in `packages/react/src/hooks/use-countdown.ts`
 
 Count down to a moment, one tick a second.
+
+Keep it pure: never compute `until` from `Date.now()` in render (a render must not read the
+clock, and the value would change on every render and restart the timer). Take it from an
+effect or an event handler, or use {@link useRetryCountdown}.
 
 ```ts
 export function useCountdown(until: number | null): number
@@ -3230,6 +3252,10 @@ Count down a rate limit: the seconds until a failed action may be tried again.
 The moment is read from the clock in an effect when the error arrives, never during render.
 It restarts for each new `rate_limited` error and is `0` for any other error, or none.
 
+It lags the error by one commit: the render that first sees a new error returns `0`, because
+the moment is read from the clock in an effect; the next render returns the wait. Draw the
+wait from this value, not from a render-time subtraction.
+
 ```ts
 export function useRetryCountdown(error: TulaError | null): number
 ```
@@ -3264,6 +3290,13 @@ export function useScreenChanged(screen: string): boolean
 - `screen`: A key naming the current screen.
 
 **Returns** `true` once the component has moved on from its first screen.
+
+**Example**
+
+```tsx
+const focusTitle = useScreenChanged(`${view}:${step?.status ?? 'start'}`)
+// <StepRenderer step={step} screen={view} focusTitle={focusTitle} ... />
+```
 
 ### `useSession`
 

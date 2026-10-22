@@ -28,7 +28,10 @@ rules (`react.md`) apply to the headless files above as they do to the rest of
 - **The step renderer's contract.** `StepScreens` is keyed by `FlowStep['status']`, each
   screen takes its step narrowed to that status, and a key that is not a status is a type
   error. A status with no screen, one this version does not know and a screen that returns
-  nothing all draw `UnsupportedScreen`. **There is no fallback prop and there never is one**:
+  nothing all draw `UnsupportedScreen`. A screen returns a `ReactElement` or `null` (never
+  `ReactNode`: `''` and `[]` must not compile) and runs as a component of its own, so it
+  may call hooks. The guarantee is "every status maps to an element or to the fallback"; an
+  element that renders nothing is its author's. **There is no fallback prop and there never is one**:
   the "not supported" screen cannot be replaced, hidden or set to `null`. `step-renderer.test.tsx`
   holds the type tests (`@ts-expect-error`) and the unknown-status render; keep both.
 - **The headless exports are semver'd.** `StepRenderer`, `FirstFactorForms`,
@@ -37,8 +40,10 @@ rules (`react.md`) apply to the headless files above as they do to the rest of
   JSDoc `@example`, appear in `docs/reference/react.md` and are rendered without a DOM by
   `testing/ssr-render.tsx`. A prebuilt component and a copy use the same one: never a second
   implementation of a rule for the registry's sake.
-- **Hidden until known.** A copy draws a passkey control only for `usePasskeySupport() ===
-  true`; `undefined` is "not asked yet", not "no" (`react.md`).
+- **Hidden until known, decided in one place.** `firstFactorStrategies(offered, forms, can,
+  list)` takes the tri-state `usePasskeySupport()` (`undefined` is "not asked yet", not
+  "no") and decides both lists: `'active'` keeps a passkey for `undefined`, `'alternatives'`
+  only for `true` (`react.md`). A copy uses the helper and never re-states the rule.
 - **Provenance and the lock file.** Every copied file starts with a header (item, registry
   version, hash as copied) and `tula ui add` writes `tula-ui.lock.json`; `tula ui diff` and
   `tula ui update` (a three-way merge) depend on both. A change to either format is a change

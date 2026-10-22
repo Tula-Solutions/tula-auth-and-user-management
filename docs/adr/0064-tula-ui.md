@@ -63,11 +63,15 @@ needs and the prebuilt components already use:
   The keys are `FlowStep['status']` from the contract, so a key that is not a status is a
   type error, and a screen is handed `step.destination` only for the statuses that have one.
   A status the map leaves out, a status no version of the package knows (a newer server's)
-  and a screen that returns `null`, `undefined` or `false` all draw the package's
-  `UnsupportedScreen`, with a way to start again. **There is no fallback prop**: the
-  "not supported" screen cannot be replaced, hidden or set to nothing, because the rule
-  "never a blank card, never a guessed action" is the one a copy is most likely to break by
-  accident. `start` is the screen before the first step (`step === null`), kept apart from
+  and a screen that returns `null` (or, from untyped code, `undefined` or `false`) all draw
+  the package's `UnsupportedScreen`, with a way to start again. A screen is typed to return
+  a `ReactElement` or `null`, so `''`, `[]` and other non-elements do not compile. **There is
+  no fallback prop**: the "not supported" screen cannot be replaced, hidden or set to
+  nothing, because the rule "never a blank card, never a guessed action" is the one a copy
+  is most likely to break by accident. The guarantee is that every status maps to an element
+  or to the fallback; an element that itself renders nothing is its author's responsibility.
+  Each screen is rendered as a component of its own (keyed by screen name and status), so a
+  screen may call hooks (`useLocalization()`) without upsetting the order of the renderer's. `start` is the screen before the first step (`step === null`), kept apart from
   `screens` so that the keys are exactly the contract's statuses. The prebuilt `<SignIn>`
   and `<SignUp>` are drawn through it, with no change to their markup or behaviour.
   `useScreenChanged` is exported with it, for the focus that moves to a new screen's title.
@@ -75,14 +79,23 @@ needs and the prebuilt components already use:
   `FirstFactorFormProps` (what a form is given) and `firstFactorStrategies(offered, forms,
   can)`, the function that chooses which strategies a table can draw: unknown strategies
   skipped, a link, a passkey or a texted code ruled out by the browser or the identifier, a
-  phone number given the texted code alone. The prebuilt table (`FIRST_FACTOR_FORMS`)
+  phone number given the texted code alone. It takes which list is wanted, and that is where
+  "hidden until known" for a passkey is decided, so that a copy cannot drift: the capability
+  is tri-state (`passkey: boolean | undefined`, `usePasskeySupport()` as it is), and the
+  `'active'` list (the form the screen opens on) keeps a passkey while support is `undefined`
+  (a passkey-only step must not open on "not supported"), while the `'alternatives'` list
+  (the links under the form) shows one only for `true`. The prebuilt table (`FIRST_FACTOR_FORMS`)
   stays internal; a copy brings its own and gets the same selection rules.
 - **`usePasskeySupport()`**: `undefined` until the browser has been asked after mount,
   then a boolean. Hidden until known: a copy draws a passkey control only for `=== true`.
-  It returned `null` for "not asked" while internal; the public value is `undefined`, and
-  every internal use compares with `=== true` / `=== false`, so nothing changed.
+  It returned `null` for "not asked" while internal; the public value is `undefined`. Every
+  internal use compares it with `=== true`, `=== false` or `!== false`, none with `null`, so
+  nothing changed. The first-factor screen goes through `firstFactorStrategies`; the
+  step-up dialog (`prompts.tsx`) keeps its own `!== false` for the active view and `=== true`
+  for its other ways, and the second-factor screen (`mfa.tsx`) `=== true` for its other ways.
 - **`useCountdown(until)`** and **`useRetryCountdown(error)`**: the second reads the clock in
-  an effect when a `rate_limited` error arrives, so a copy never calls `Date.now()` in render.
+  an effect when a `rate_limited` error arrives, so a copy never calls `Date.now()` in render
+  (and so lags the error by one commit: the first render returns `0`).
 - **`useFieldErrors(error, fields, credentialsField?)`**: which field a `TulaError`'s
   messages belong to (`errors[].field`, else the code's area), as `placeErrors` already
   decided for the prebuilt forms.
