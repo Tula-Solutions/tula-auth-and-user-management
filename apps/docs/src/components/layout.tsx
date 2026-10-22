@@ -4,6 +4,7 @@ import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import type { Heading } from '~/lib/markdown'
 import type { NavGroup, NavItem } from '~/lib/nav'
+import { addressOf, canonicalOf, type ReleaseInfo, versionBases } from '~/lib/release'
 
 /** What a page needs from the build to be drawn. */
 export interface Frame {
@@ -12,6 +13,8 @@ export interface Frame {
   /** The site's stylesheet and script, as the bundler named them. */
   assets: { css: string[]; js: string }
   nav: NavGroup[]
+  /** Which docs this build is; `null` or absent for a site with one version (a local build). */
+  release?: ReleaseInfo | null
 }
 
 /** The page-specific part of a document. */
@@ -82,7 +85,93 @@ export function Sidebar({ nav, route, base }: { nav: NavGroup[]; route: string; 
   )
 }
 
-function Header({ base }: { base: string }) {
+/**
+ * Says which docs a reader is on, and the way to the other: the version in the header, and for
+ * the development docs a banner above it. A site with one version draws neither.
+ */
+interface VersionProps {
+  release: ReleaseInfo
+  base: string
+  route: string
+}
+
+/** The address of the same page in the other docs (their start page for the 404 page). */
+function siblingOf({ release, base, route }: VersionProps): string {
+  return addressOf(versionBases(release, base).siblingBase, route === '/404' ? '/' : route)
+}
+
+function VersionMarker(props: VersionProps) {
+  const { release } = props
+  if (release.channel === 'unreleased') {
+    return (
+      <span className='shrink-0 rounded-md border px-2 py-0.5 text-xs text-muted-foreground'>
+        unreleased
+      </span>
+    )
+  }
+  const label = release.version === null ? 'released' : `v${release.version}`
+  // Before any release carries the site the root is not released docs: nothing to switch to.
+  if (release.channel === 'next' && release.version === null) {
+    return (
+      <span className='shrink-0 rounded-md border bg-muted px-2 py-0.5 text-xs font-medium'>
+        next
+      </span>
+    )
+  }
+  const [current, other] = release.channel === 'next' ? ['next', label] : [label, 'next']
+  return (
+    <span className='flex shrink-0 items-center gap-1 text-xs'>
+      <span className='rounded-md border bg-muted px-2 py-0.5 font-medium'>{current}</span>
+      <a
+        data-docs-version=''
+        href={siblingOf(props)}
+        className='rounded-md px-2 py-0.5'
+        aria-label={`Read the ${other === 'next' ? 'unreleased' : 'released'} docs (${other})`}
+      >
+        {other}
+      </a>
+    </span>
+  )
+}
+
+function VersionBanner(props: VersionProps) {
+  const { release } = props
+  if (release.channel === 'release') {
+    return null
+  }
+  const label = `v${release.version}`
+  return (
+    <section
+      aria-label='Version notice'
+      data-docs-banner={release.channel}
+      className='border-b bg-muted px-4 py-2 text-center text-sm text-foreground'
+    >
+      {release.channel === 'next' ? (
+        <>
+          These are the unreleased docs, written for the <code>develop</code> branch. They can
+          describe things no release has.{' '}
+          {release.version === null ? (
+            'No release carries them yet.'
+          ) : (
+            <>
+              <a data-docs-version='' href={siblingOf(props)} className='underline'>
+                Read the docs of {label}
+              </a>
+              .
+            </>
+          )}
+        </>
+      ) : (
+        <>
+          No release carries these docs yet, so this is the development version, from the{' '}
+          <code>develop</code> branch. It can change before a release.
+        </>
+      )}
+    </section>
+  )
+}
+
+function Header({ base, version }: { base: string; version: ReactNode }) {
   return (
     <header className='sticky top-0 z-40 border-b bg-background'>
       <div className='mx-auto flex h-14 max-w-[88rem] items-center gap-2 px-4'>
@@ -104,6 +193,7 @@ function Header({ base }: { base: string }) {
         >
           Tula Auth <span className='hidden font-normal text-muted-foreground sm:inline'>docs</span>
         </a>
+        {version}
         <search className='relative ml-auto block w-full min-w-0 max-w-sm'>
           <label htmlFor='search-input' className='sr-only'>
             Search the documentation
@@ -166,6 +256,9 @@ export function Document({
   children?: ReactNode
 }) {
   const { base } = frame
+  const release = frame.release ?? null
+  const versionProps = release === null ? null : { release, base, route: page.route }
+  const canonical = canonicalOf(release, base, page.route)
   const toc = page.headings.filter((heading) => heading.depth === 2)
   return (
     <html lang='en'>
@@ -175,6 +268,8 @@ export function Document({
         <meta name='color-scheme' content='light dark' />
         <title>{page.route === '/' ? page.title : `${page.title} · Tula Auth docs`}</title>
         <meta name='description' content={page.description} />
+        {release?.channel === 'next' ? <meta name='robots' content='noindex' /> : null}
+        {canonical === null ? null : <link rel='canonical' href={canonical} />}
         {/* biome-ignore lint/security/noDangerouslySetInnerHtml: a constant script, no input */}
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         {frame.assets.css.map((href) => (
@@ -187,7 +282,11 @@ export function Document({
         <a href='#content' className='skip-link'>
           Skip to content
         </a>
-        <Header base={base} />
+        {versionProps === null ? null : <VersionBanner {...versionProps} />}
+        <Header
+          base={base}
+          version={versionProps === null ? null : <VersionMarker {...versionProps} />}
+        />
         <div className='mx-auto flex max-w-[88rem] gap-8 px-4'>
           <div
             id='sidebar'

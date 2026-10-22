@@ -72,9 +72,13 @@ function listOf(value: unknown): string[] {
  * @param label - Names the page in the failure (its route).
  * @param html - The page's document.
  * @param base - The path the site is served under (`/` by default).
+ * @param siblingBase - The base of the other docs of a versioned site (the released docs from
+ *   `next/`, and back). Only a link marked `data-docs-version` (a link to the other docs) may lead there, and
+ *   it must: every other address stays under `base`, so that the development docs cannot link
+ *   into the released docs by a path that ignores `next/`.
  * @throws RenderError naming the page and the problem.
  */
-export function checkPage(label: string, html: string, base = '/'): void {
+export function checkPage(label: string, html: string, base = '/', siblingBase?: string): void {
   checkSectionSizes(label, html)
   const tree = parser.parse(html) as Root
   const ids = new Set<string>()
@@ -105,8 +109,21 @@ export function checkPage(label: string, html: string, base = '/'): void {
       }
       level = next
     }
+    const versionLink = node.properties?.dataDocsVersion !== undefined
+    if (versionLink && siblingBase === undefined) {
+      throw new RenderError(label, 'has a version link on a site that has only one version')
+    }
     for (const property of ADDRESS_PROPERTIES) {
       for (const address of addressesOf(property, node.properties?.[property])) {
+        if (versionLink && siblingBase !== undefined) {
+          if (!address.startsWith(siblingBase)) {
+            throw new RenderError(
+              label,
+              `has a version link whose address "${address}" is outside ${siblingBase}`
+            )
+          }
+          continue
+        }
         if (outsideBase(address, base)) {
           throw new RenderError(
             label,

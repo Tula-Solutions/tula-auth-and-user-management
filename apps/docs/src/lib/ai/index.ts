@@ -25,6 +25,13 @@ export interface AiSourcePage extends AiPage {
 /** Everything {@link buildAiFiles} reads. */
 export interface AiInput {
   urls: Urls
+  /**
+   * Whether search engines may index the site. False for the development docs (`noindex`):
+   * they get no `sitemap.xml` and no `robots.txt`, so that nothing in them presents `/next/` as
+   * a place to crawl. The Markdown twins and `llms.txt` stay, for an agent that asks for them.
+   * Defaults to true.
+   */
+  indexed?: boolean
   environment: LinkEnvironment
   /** One sentence about the product. */
   summary: string
@@ -124,7 +131,6 @@ export function buildAiFiles(input: AiInput): Map<string, string> {
     'llms-full.txt',
     buildLlmsFull({ urls, summary: input.summary, routes: ordered, twins })
   )
-  files.set('robots.txt', buildRobots(urls))
   const routes = [home.route, ...described.map((page) => page.route)]
   const dateOf = new Map(
     described.flatMap((page) => {
@@ -132,10 +138,13 @@ export function buildAiFiles(input: AiInput): Map<string, string> {
       return date === undefined ? [] : [[page.route, date] as const]
     })
   )
-  files.set(
-    'sitemap.xml',
-    buildSitemap(urls, routes, (route) => dateOf.get(route))
-  )
+  if (input.indexed !== false) {
+    files.set('robots.txt', buildRobots(urls))
+    files.set(
+      'sitemap.xml',
+      buildSitemap(urls, routes, (route) => dateOf.get(route))
+    )
+  }
   if (input.skillSource !== null) {
     // A page is named by its file, or by its route for one that has no file (the error codes).
     const fileRoutes = new Map<string, string>(

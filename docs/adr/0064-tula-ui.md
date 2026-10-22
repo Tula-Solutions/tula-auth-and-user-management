@@ -165,6 +165,9 @@ hosted is undecided** and decided in its own ticket: nothing here depends on it,
 `bunx shadcn add` and `tula ui add` take a URL. *Amended 2026-10-22:* it is hosted on GitHub
 Pages, built from `develop` under the base path `/tula-auth-and-user-management/` by
 `.github/workflows/docs-pages.yml` (`apps/docs/README.md`, "Where it is published").
+*Amended 2026-10-22, again:* the site is versioned. The root serves the docs of the latest release (built from `main`, whose push is the release) and
+`/next/` serves `develop`'s, marked unreleased and `noindex`; every run builds both, and the root is
+built from `develop` while no release has the site (`.github/workflows/docs-pages.yml`).
 
 ### The prebuilt components stay
 

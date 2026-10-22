@@ -38,9 +38,10 @@ const entries: ErrorCodeEntry[] = [
   { code: 'password.too_short', status: 422, message: 'Too short.', area: 'password' },
 ]
 
-function build(skillSource: string | null = null) {
+function build(skillSource: string | null = null, indexed = true) {
   return buildAiFiles({
     urls,
+    indexed,
     environment,
     summary: 'A summary.',
     nav,
@@ -85,6 +86,19 @@ function build(skillSource: string | null = null) {
 }
 
 describe('buildAiFiles', () => {
+  test('the development docs get no sitemap and no robots.txt, and keep the rest', () => {
+    const files = build(null, false)
+    expect(files.has('sitemap.xml')).toBe(false)
+    expect(files.has('robots.txt')).toBe(false)
+    for (const path of ['llms.txt', 'llms-full.txt', 'quickstart.md', 'index.md']) {
+      expect(files.has(path), path).toBe(true)
+    }
+    // Every address stays under their own base, and passes the same checks.
+    expect(files.get('llms.txt')).toContain('https://docs.example/sub/quickstart.md')
+    expect(build().has('sitemap.xml')).toBe(true)
+    expect(build().has('robots.txt')).toBe(true)
+  })
+
   test('writes a twin for every page, the landing page and the error codes included', () => {
     const files = build()
     expect([...files.keys()].filter((path) => path.endsWith('.md')).sort()).toEqual([
