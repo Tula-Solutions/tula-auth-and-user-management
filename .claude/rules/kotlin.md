@@ -42,6 +42,10 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   **A sign-out waits for a refresh in flight for the refresh's timeout at most**, then goes
   on with the newest token it has. A call left behind is not stopped and may still land;
   never word the deadline as ending it. Keep the three tests on `StallingStorage`.
+- **A test of a deadline of the client's own runs in virtual time** (`virtualTest` and
+  `workScope` in `Fakes.kt`), never on a real 150 ms: the work a deadline bounds runs on a
+  real thread, and a loaded runner made the first step of a test time out before the step
+  meant to (TULA-95). Only a step that never answers may reach its deadline.
 - **`TulaError` keeps nothing of what the platform threw**: no `cause`, no suppressed
   exception, none of its text; `clientError` takes a code and no exception. This differs
   from `@tula-tech/core` and `@tula-tech/expo`, whose errors keep a `cause`, on purpose: Android writes

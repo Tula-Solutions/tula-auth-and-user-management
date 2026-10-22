@@ -29,6 +29,8 @@ dependencies {
     api(libs.coroutines.core)
 
     testImplementation(libs.kotlin.test.junit)
+    // Virtual time for the tests that hold a deadline of the client's own (TULA-95).
+    testImplementation(libs.coroutines.test)
 }
 
 tasks.test {
