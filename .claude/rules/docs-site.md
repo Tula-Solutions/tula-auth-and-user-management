@@ -121,5 +121,6 @@ static HTML. Its commands are in its README.
   is checked as the block without its lines plus ranges of its `.line`s
   (`e2e/chunks.ts`, `page-stats.json` holds the line counts). Because axe sees only the piece it
   is given, `page-check.ts` checks each whole rendered page at build (so in `generate:check`):
-  no `h1`, a heading level skipped from the `h1` on, a duplicate id, a dangling
+  no `h1`, a section over `SECTION_CAP` that is more than one block, a heading level skipped from
+  the `h1` on, a duplicate id, a dangling
   `aria-labelledby` / `aria-describedby` / `for`. Never replace it with an axe `runOnly`.
