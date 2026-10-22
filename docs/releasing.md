@@ -130,8 +130,9 @@ bunx changeset status --verbose    # what the next release would contain, and it
   is off, and a guardrail test fails if one comes back: the release script uploads plain
   versions only.
 - `bunx changeset version` applies the pending changesets: it rewrites the versions and writes
-  each package's `CHANGELOG.md`. It is run on the release branch by whoever cuts the release
-  and is committed like any other change.
+  each package's `CHANGELOG.md`. Nobody runs it by hand: `release-pr.yml` runs it on the branch
+  `release/next` and opens the release pull request ([The release flow](#the-release-flow)).
+  Locally, `bunx changeset status --verbose` shows what the next release would contain.
 - `@tula-tech/api`, `@tula-tech/db` and `@tula-tech/conformance` are ignored by Changesets: they are never
   published and have no version to speak of.
 
@@ -237,6 +238,93 @@ authentication (default is 'web')". So without `--otp` Bun's default is npm's we
 address to approve in a browser; whether it needs a terminal to show it, and whether one
 code is accepted for several uploads in a row, is not known.
 
+## The release flow
+
+A release is a pull request that nobody has to build. From a change to a published package:
+
+1. **A feature pull request carries a changeset** (`bunx changeset`) and goes into `develop`.
+   The **changeset check** (`changeset-check.yml`, below) fails the pull request when it
+   changes what a published package ships and adds none.
+2. **A push to `develop`** runs `.github/workflows/release-pr.yml`. With changesets pending it
+   rebuilds the branch `release/next` from `develop` (`bunx changeset version`, then the four
+   places that hold the version by hand and the lockfile, all in `scripts/release-pr.ts`),
+   force-pushes it, and opens or updates **one** pull request into `main`, titled
+   `release: vX.Y.Z`, whose body lists the changelog entries. The next push to `develop`
+   rebuilds it, so the version and the list always match `develop`. With no changeset pending
+   an open release pull request is closed and its branch deleted. Only a changeset that
+   names a package of the fixed group counts as pending: an empty one (`changeset --empty`)
+   or one for a private package releases nothing, and a run that did not move the version
+   fails instead of opening a pull request for the version already out. Do not commit to
+   `release/next`: the next run replaces it.
+3. **The release pull request's checks run** on `release/next` (see
+   [How the required checks run](#how-the-required-checks-run-on-a-bot-pull-request)).
+   A person reads the pull request and merges it. Any merge method works.
+4. **The push to `main` starts four workflows**, independently:
+   - `docs-pages.yml` rebuilds the documentation site: the released docs at the root;
+   - `release.yml` builds and checks the packages, then its `publish` job (environment
+     `npm-publish`) **publishes to npm with no further approval**;
+   - `github-packages.yml` copies the released packages to GitHub Packages;
+   - `back-merge.yml` opens a pull request from `main` back into `develop`.
+5. **The back-merge** brings the version bumps and CHANGELOGs into `develop`. Merge it with a
+   **merge commit**, not a squash, so that `main`'s commits are in `develop`'s history. Until it
+   is merged, `release-pr.yml` waits: the changesets the release consumed are still on
+   `develop`, and building a second release from them would propose the same version again.
+   The back-merge's own push to `develop` runs `release-pr.yml` again, which then carries on
+   (it asks `main`'s history whether a pending changeset was already consumed, so a squashed
+   back-merge cannot stall it either).
+
+What stays a person's: reading and merging the release pull request, and merging the
+back-merge. **Merging the release pull request into `main` publishes to npm with no further
+approval**: the `npm-publish` environment has no required reviewer. The remaining safety
+layers are `main` being reachable only by pull request with CI required, the environment
+allowing `main` only, npm trusted publishing (OIDC, no token anywhere), the refusals in
+`scripts/packages.ts` and `"private": true` on every unreleased package. `release.yml` is
+unchanged: it still publishes only when `NPM_PUBLISH` is `true`. Adding a required reviewer
+to the environment (Settings, Environments, `npm-publish`) reinstates a manual gate without
+changing any file.
+
+### How the required checks run on a bot pull request
+
+`main` and `develop` require the checks `verify` and `e2e` (the ruleset "Protect main and
+develop"). A branch pushed, and a pull request opened, with a workflow's own `GITHUB_TOKEN`
+start no `push` or `pull_request` workflow: GitHub does this so that workflows cannot start
+each other in a loop. GitHub's documentation names the exception: `workflow_dispatch` (and
+`repository_dispatch`) events created with the `GITHUB_TOKEN` do start a run
+([Triggering a workflow](https://docs.github.com/en/actions/using-workflows/triggering-a-workflow#triggering-a-workflow-from-a-workflow)).
+So `ci.yml` accepts `workflow_dispatch`, and `release-pr.yml` and `back-merge.yml` run
+`gh workflow run ci.yml --ref <branch>` after they push (they hold `actions: write` for it). The
+run's jobs are the same `verify` and `e2e`; their check runs attach to the branch's head
+commit, and the ruleset's required checks are matched by name on that commit, so the pull
+request can be merged. No personal access token, GitHub App or other credential is involved.
+A newer dispatch for the same branch replaces the older run, and the push to `main` that a
+merge makes always runs in full.
+
+**Settings a person makes, once:** Settings, Actions, General, "Allow GitHub Actions to create
+and approve pull requests" must be on, or the two workflows can push their branches but not
+open the pull requests (the job fails with a message that says so; the pull request can then be
+opened by hand from the pushed branch).
+
+### The changeset check
+
+`.github/workflows/changeset-check.yml` runs for a pull request into `develop` (and again when
+a label changes). A change **needs a changeset** when it touches a file that a published
+package ships, defined in `scripts/changeset-check.ts`:
+
+- under `src/`, `templates/`, `ios/` or `android/` of one of the eleven packages of the fixed
+  group, or `expo-module.config.json` or the contract's `openapi.json`;
+- and not a test (`*.test.*`, `*.spec.*`, `*.integration.ts`, `*Tests.swift`, a `test`,
+  `tests`, `testing`, `__tests__`, `__mocks__` or `fixtures` folder) and not prose (`*.md`,
+  `*.mdx`).
+
+A package's `package.json`, build configuration, scripts, `README.md` and `CHANGELOG.md`, and
+everything outside the eleven packages (the API, the dashboard, the examples, the docs), need
+none. The check passes when the pull request **adds** a `.changeset/*.md` that names a package
+of the fixed group, or carries the label **`no-changeset`**; the release pull request
+(`release/next`) and the back-merge (`back-merge/main`) are exempt by branch name, when the
+branch is in this repository (a fork can name a branch anything). A dependency bump
+in a `package.json` is waived with the label. **The check is not one of the ruleset's required
+checks**: making it required is a decision of the repository's owner.
+
 ## The release workflow
 
 `.github/workflows/release.yml` runs on every push to `main` (git-flow: `main` is
@@ -255,7 +343,7 @@ repository, the workflow file and, when one is given, the environment. With no e
 the claim is "`release.yml` of this repository" on **any ref**: someone who can push a
 branch can push it with a copy of the workflow that triggers on that branch and publishes
 what they like, once `NPM_PUBLISH` is on. The environment closes that: GitHub lets only
-`main` deploy to `npm-publish` and asks a reviewer first, and npm accepts only a run that
+`main` deploy to `npm-publish`, and npm accepts only a run that
 carries the environment's name. The workflow file can only name the environment; its rules
 are a setting of the repository, made by a person ([First release](#first-release), step
 8), and no test here can see them.
@@ -386,7 +474,7 @@ test being changed too:
    publish command of its own, `id-token: write` on the one job that publishes, and that job
    is off until `vars.NPM_PUBLISH` is `true` and runs in the environment `npm-publish`.
    **One part of this is a setting and not a file**: the branch restriction of the
-   `npm-publish` environment (`main` only) and its required reviewers. Check them by hand
+   `npm-publish` environment (`main` only; it has no required reviewer, so a merge to `main` publishes). Check it by hand
    whenever the repository's settings change.
 4. The script refuses to upload from a GitHub Actions job that holds a token.
 
@@ -430,6 +518,9 @@ For the owner, once. Everything before step 6 changes nothing on npm.
    ```
 
    The second run is this first release's only (step 1); a later release is one run.
+
+   (This step was the first release's. A later release is cut by `release-pr.yml`
+   ([The release flow](#the-release-flow)), which moves the places below itself.)
 
    Four places hold the version by hand. Three constants: `VERSION` in
    `packages/create-tula/src/scaffold.ts` (also the version a scaffolded project pins its
@@ -540,8 +631,8 @@ For the owner, once. Everything before step 6 changes nothing on npm.
 
    **The environment.** In the GitHub repository, Settings → Environments, create an
    environment named `npm-publish`. Set its deployment branches to "Selected branches" with `main` only,
-   and add yourself under required reviewers. The `publish` job runs in it: a run waits
-   for your approval, and GitHub refuses one from any other branch.
+   and add no required reviewer (the owner chose hands-off publishing; a reviewer added later
+   is a manual gate). The `publish` job runs in it, and GitHub refuses a run from any other branch.
 
    **npm.** For **each** of the nine packages, on npmjs.com → the package → Settings →
    Trusted Publisher, add GitHub Actions with the organisation `Tula-Solutions`, the
@@ -552,10 +643,10 @@ For the owner, once. Everything before step 6 changes nothing on npm.
 
    **The switch.** Only then, Settings → Secrets and variables → Actions → Variables, add
    `NPM_PUBLISH` = `true`. From the next push to `main` the `publish` job uploads whatever
-   the registry does not have, with provenance, after you approve the run.
+   the registry does not have, with provenance, with no further approval.
 
    Check by hand, because no file of the repository holds it: the branch restriction of the
-   `npm-publish` environment says `main` and nothing else, the reviewer is you, and each of
+   `npm-publish` environment says `main` and nothing else, and each of
    the nine trusted publishers names the environment.
 9. **Merge `main` back into `develop`**, so the versions and changelogs are there too.
 

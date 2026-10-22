@@ -1,0 +1,125 @@
+name: Release PR
+
+# On every push to `develop` this keeps ONE pull request open into `main`, titled
+# `release: vX.Y.Z`, that applies the pending changesets. Merging it is the release: a push to
+# `main` deploys the docs (`docs-pages.yml`), publishes to npm after the `npm-publish`
+# environment (`release.yml`; no reviewer: the merge is the approval), copies the packages to GitHub Packages
+# (`github-packages.yml`) and opens the back-merge (`back-merge.yml`). This file only prepares
+# the pull request; it publishes nothing and cannot (docs/releasing.md, "The release flow").
+#
+#   changesets pending     the branch `release/next` is rebuilt from `develop`:
+#                          `changeset version`, the hand-kept version places and the lockfile
+#                          (scripts/release-pr.ts), force-pushed; the pull request is opened
+#                          or its title and body updated; `ci.yml` is dispatched on the branch
+#   none pending           an open release pull request is closed and its branch deleted
+#   a release not back on  waits: the changesets a release consumed are still on `develop`
+#   `develop` yet          until the back-merge lands, and a second release built from them
+#                          would propose the same version twice. The back-merge's own push to
+#                          `develop` runs this file again.
+#
+# Why `ci.yml` is dispatched. A branch pushed, and a pull request opened, with the run's own
+# token start no `push` or `pull_request` workflow: GitHub does that so that a workflow cannot
+# start itself in a loop. The exception it documents is `workflow_dispatch` (and
+# `repository_dispatch`): "events triggered by the GITHUB_TOKEN will not create a new workflow
+# run", other than those two (docs.github.com, "Triggering a workflow", "Triggering a
+# workflow from a workflow"). `ci.yml` accepts `workflow_dispatch`; its jobs `verify` and
+# `e2e` then report on `release/next`'s head commit, and the ruleset's required checks are
+# matched by name on that commit, so the release pull request can be merged. No personal
+# access token and no app is involved.
+#
+# What keeps it to that:
+#   1. no secret and no long-lived token: every call uses `github.token`;
+#   2. `contents: write` (the branch), `pull-requests: write` (the pull request) and
+#      `actions: write` (the dispatch), on the one job, and nothing else;
+#   3. it never touches `main` or `develop`, and it checks out `develop` only: the branch it
+#      force-pushes is `release/next`, which no person commits to;
+#   4. one run at a time, none cancelled half-way (a push of a branch is not atomic).
+# A setting in the repository must allow it: Settings, Actions, General, "Allow GitHub Actions
+# to create and approve pull requests". `.claude/hooks/release-pr.test.ts` holds this file to
+# these rules.
+
+on:
+  push:
+    branches: [develop]
+
+permissions: {}
+
+concurrency:
+  group: release-pr
+  cancel-in-progress: false
+
+jobs:
+  release-pr:
+    name: Keep the release pull request up to date
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: develop
+          fetch-depth: 0
+          # The token is not left in the checkout's config while `bun install` and
+          # `changeset version` run; the push step passes it for that one command.
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version-file: package.json }
+      # No lifecycle scripts: the root's `prepare` installs the Husky hooks, which would run
+      # the type checker on the automation's commit. The pull request's `verify` runs it all.
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Is a release due?
+        id: plan
+        run: bun run scripts/release-pr.ts plan
+
+      - name: Build the version commit on release/next
+        id: prepare
+        if: steps.plan.outputs.action == 'release'
+        run: |
+          git switch -C release/next
+          bun run scripts/release-pr.ts prepare "$RUNNER_TEMP/release-body.md"
+
+      - name: Push the branch
+        if: steps.plan.outputs.action == 'release'
+        # Forced on purpose: the branch is rebuilt from `develop` on every push, and nothing
+        # on it is anyone's work.
+        run: |
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push --force origin release/next
+
+      - name: Open or update the pull request
+        if: steps.plan.outputs.action == 'release'
+        env:
+          TITLE: ${{ steps.prepare.outputs.title }}
+        run: |
+          number=$(gh pr list --head release/next --base main --state open --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh pr edit "$number" --title "$TITLE" --body-file "$RUNNER_TEMP/release-body.md"
+          elif ! gh pr create --base main --head release/next --title "$TITLE" --body-file "$RUNNER_TEMP/release-body.md"; then
+            echo "::error::The pull request could not be opened. If the message above says Actions may not create pull requests, a person turns on Settings, Actions, General, 'Allow GitHub Actions to create and approve pull requests'. The branch release/next is pushed: open the pull request into main by hand."
+            exit 1
+          fi
+
+      - name: Run the required checks on the branch
+        if: steps.plan.outputs.action == 'release'
+        # `workflow_dispatch` is the one event the run's token may start (see the top of this
+        # file). The dispatch resolves `release/next` to the commit just pushed.
+        run: gh workflow run ci.yml --ref release/next
+
+      - name: Close a release pull request nothing needs
+        if: steps.plan.outputs.action == 'none'
+        run: |
+          number=$(gh pr list --head release/next --base main --state open --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh pr close "$number" --delete-branch --comment "No changeset is pending on develop any more, so there is nothing to release. This pull request is closed; the next changeset opens a new one."
+          fi
+
+      - name: Wait for the back-merge
+        if: steps.plan.outputs.action == 'wait'
+        run: |
+          echo "A release is on main and not yet back on develop: its changesets are still here. Merge the back-merge pull request (main into develop, with a merge commit); the push to develop runs this workflow again." | tee -a "$GITHUB_STEP_SUMMARY"
