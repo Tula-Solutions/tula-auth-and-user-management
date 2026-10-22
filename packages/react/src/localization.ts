@@ -25,6 +25,8 @@ export interface TulaLocalization {
     required: string
     /** `{time}` is a duration from `seconds` or `minutesSeconds`. */
     retryIn: string
+    /** The whole message of a rate limit whose wait is known; `{time}` as in `retryIn`. */
+    rateLimitedIn: string
     /** `{seconds}`. */
     seconds: string
     /** `{minutes}`, `{seconds}`. */
@@ -531,6 +533,7 @@ export const EN_LOCALIZATION: TulaLocalization = {
     loading: 'Loading…',
     required: 'This field is required.',
     retryIn: 'Try again in {time}.',
+    rateLimitedIn: 'Too many requests. Try again in {time}.',
     seconds: '{seconds}s',
     minutesSeconds: '{minutes}m {seconds}s',
     back: 'Back',

@@ -1763,6 +1763,8 @@ export interface TulaLocalization {
     required: string
     /** `{time}` is a duration from `seconds` or `minutesSeconds`. */
     retryIn: string
+    /** The whole message of a rate limit whose wait is known; `{time}` as in `retryIn`. */
+    rateLimitedIn: string
     /** `{seconds}`. */
     seconds: string
     /** `{minutes}`, `{seconds}`. */
@@ -3008,6 +3010,39 @@ export function formatText(
 
 ```ts
 formatText('to continue to {appName}', { appName: 'Northline' }) // 'to continue to Northline'
+```
+
+### `rateLimitedAlert`
+
+_function_, defined in `packages/react/src/components/form-errors.ts`
+
+The alert of a form that may be rate limited: while a wait is known, one sentence that holds it.
+
+Saying "Try again shortly." and then "Try again in 41s." asks twice, so the known wait
+replaces the generic request. Without a wait the message is returned as it is.
+
+```ts
+export function rateLimitedAlert(
+  message: string | null,
+  wait: number,
+  t: TulaLocalization
+): { message: string | null; detail: null }
+```
+
+**Parameters**
+
+- `message`: The form's message (`placed.form`).
+- `wait`: Seconds left of a rate limit (`useRetryCountdown`), `0` for none.
+- `t`: The strings (`useLocalization()`).
+
+**Returns** Props for `FormError`.
+
+**Example**
+
+```tsx
+const wait = useRetryCountdown(error)
+// 'Too many requests. Try again in 41s.' while a wait runs
+<FormAlert {...rateLimitedAlert(placed.form, wait, t)} />
 ```
 
 ### `useAuth`

@@ -134,3 +134,35 @@ export function formatDuration(totalSeconds: number, t: TulaLocalization): strin
     ? formatText(t.common.minutesSeconds, { minutes, seconds })
     : formatText(t.common.seconds, { seconds })
 }
+
+/**
+ * The alert of a form that may be rate limited: while a wait is known, one sentence that holds it.
+ *
+ * Saying "Try again shortly." and then "Try again in 41s." asks twice, so the known wait
+ * replaces the generic request. Without a wait the message is returned as it is.
+ *
+ * @param message - The form's message (`placed.form`).
+ * @param wait - Seconds left of a rate limit (`useRetryCountdown`), `0` for none.
+ * @param t - The strings (`useLocalization()`).
+ * @returns Props for `FormError`.
+ *
+ * @example
+ * ```tsx
+ * const wait = useRetryCountdown(error)
+ * // 'Too many requests. Try again in 41s.' while a wait runs
+ * <FormAlert {...rateLimitedAlert(placed.form, wait, t)} />
+ * ```
+ */
+export function rateLimitedAlert(
+  message: string | null,
+  wait: number,
+  t: TulaLocalization
+): { message: string | null; detail: null } {
+  if (message && wait > 0) {
+    return {
+      message: formatText(t.common.rateLimitedIn, { time: formatDuration(wait, t) }),
+      detail: null,
+    }
+  }
+  return { message, detail: null }
+}

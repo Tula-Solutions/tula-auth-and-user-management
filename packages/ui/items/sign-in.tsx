@@ -6,8 +6,8 @@ import {
   type FlowResult,
   type FlowStep,
   firstFactorStrategies,
-  formatDuration,
   formatText,
+  rateLimitedAlert,
   StepRenderer,
   type StepScreens,
   type UseSignInResult,
@@ -220,7 +220,7 @@ function EmailScreen(props: {
         className='grid gap-5'
         onSubmit={(event) => onSubmit(event, signIn.isPending || wait > 0, submit)}
       >
-        <FormAlert message={placed.form} detail={retryDetail(wait, t)} />
+        <FormAlert {...rateLimitedAlert(placed.form, wait, t)} />
         <Field
           label={t.signIn.emailLabel}
           name='email'
@@ -280,7 +280,7 @@ function PasswordScreen(props: FirstFactorFormProps) {
         className='grid gap-5'
         onSubmit={(event) => onSubmit(event, signIn.isPending || wait > 0, submit)}
       >
-        <FormAlert message={placed.form} detail={retryDetail(wait, t)} />
+        <FormAlert {...rateLimitedAlert(placed.form, wait, t)} />
         {/* For password managers: the account this password belongs to. Not shown, not focusable. */}
         <input
           className='sr-only'
@@ -340,11 +340,6 @@ function SignedInScreen(props: { focusTitle: boolean }) {
       className={className}
     />
   )
-}
-
-/** What a form says under its alert while a rate limit runs; `null` when none does. */
-function retryDetail(seconds: number, t: ReturnType<typeof useLocalization>): string | null {
-  return seconds > 0 ? formatText(t.common.retryIn, { time: formatDuration(seconds, t) }) : null
 }
 
 /** A form that sends nothing by itself: while an action is pending or refused, Enter does nothing. */

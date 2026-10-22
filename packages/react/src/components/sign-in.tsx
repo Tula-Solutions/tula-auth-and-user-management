@@ -33,7 +33,13 @@ import {
   useRetryAfter,
   VerificationScreen,
 } from './flow-screens'
-import { attemptsLeft, fieldResolver, formatDuration, placeErrors } from './form-errors'
+import {
+  attemptsLeft,
+  fieldResolver,
+  formatDuration,
+  placeErrors,
+  rateLimitedAlert,
+} from './form-errors'
 import {
   canEnrolTotp,
   drawableFactors,
@@ -225,10 +231,7 @@ function IdentifierScreen(props: {
         failure={missing ?? signIn.error}
         blocked={signIn.isPending || wait > 0}
       >
-        <FormError
-          message={placed.form}
-          detail={wait > 0 ? formatText(t.common.retryIn, { time: formatDuration(wait, t) }) : null}
-        />
+        <FormError {...rateLimitedAlert(placed.form, wait, t)} />
         {byPhone ? (
           // One field for both: a text field, since a browser's own check of an email field
           // would refuse a number. `username`, not `tel`: it is what a password manager fills.
@@ -306,10 +309,7 @@ function PasswordScreen(props: FirstFactorFormProps) {
         failure={missing ?? signIn.error}
         blocked={signIn.isPending || wait > 0}
       >
-        <FormError
-          message={placed.form}
-          detail={wait > 0 ? formatText(t.common.retryIn, { time: formatDuration(wait, t) }) : null}
-        />
+        <FormError {...rateLimitedAlert(placed.form, wait, t)} />
         {/* For password managers: the account this password belongs to. Not shown, not focusable. */}
         <input
           className='tula-visually-hidden'
@@ -822,10 +822,7 @@ function ResetStartScreen(props: {
         failure={missing ?? reset.error}
         blocked={reset.isPending || wait > 0}
       >
-        <FormError
-          message={placed.form}
-          detail={wait > 0 ? formatText(t.common.retryIn, { time: formatDuration(wait, t) }) : null}
-        />
+        <FormError {...rateLimitedAlert(placed.form, wait, t)} />
         <EmailField
           label={t.resetPassword.emailLabel}
           name='email'
@@ -907,10 +904,7 @@ function NewPasswordScreen(props: {
       }
     >
       <Form onSubmit={submit} failure={local ?? reset.error} blocked={reset.isPending || wait > 0}>
-        <FormError
-          message={placed.form}
-          detail={wait > 0 ? formatText(t.common.retryIn, { time: formatDuration(wait, t) }) : null}
-        />
+        <FormError {...rateLimitedAlert(placed.form, wait, t)} />
         <input
           className='tula-visually-hidden'
           type='text'
@@ -1016,10 +1010,7 @@ function ExpiredPasswordScreen(props: {
         failure={missing ?? signIn.error}
         blocked={signIn.isPending || wait > 0}
       >
-        <FormError
-          message={placed.form}
-          detail={wait > 0 ? formatText(t.common.retryIn, { time: formatDuration(wait, t) }) : null}
-        />
+        <FormError {...rateLimitedAlert(placed.form, wait, t)} />
         <input
           className='tula-visually-hidden'
           type='text'

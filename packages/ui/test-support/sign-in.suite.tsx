@@ -121,9 +121,11 @@ export function passwordSignInSuite(name: string, sign: (props: SuiteProps) => R
       await w.user.type(await screen.findByLabelText('Password'), 'wrong-password')
       await w.user.click(screen.getByRole('button', { name: 'Sign in' }))
       const alert = await screen.findByRole('alert')
-      expect(alert.textContent).toContain('Too many requests. Try again shortly.')
       // The countdown is drawn one render after the alert (it is read from the clock in an effect).
       await waitFor(() => expect(alert.textContent).toMatch(/Try again in [12]s\./))
+      // One request to try again, not two: the wait replaces "shortly", it does not follow it.
+      expect(alert.textContent).toMatch(/^Too many requests\. Try again in [12]s\.$/)
+      expect(alert.textContent?.match(/try again/gi)).toHaveLength(1)
       const submit = screen.getByRole('button', { name: 'Sign in' })
       expect(submit.getAttribute('aria-disabled')).toBe('true')
 
@@ -136,6 +138,18 @@ export function passwordSignInSuite(name: string, sign: (props: SuiteProps) => R
         timeout: 4_000,
       })
       expect(screen.getByRole('alert').textContent).not.toContain('Try again in')
+    })
+
+    test('a lockout with no known wait says "Try again shortly." once, with no countdown', async () => {
+      const w = world()
+      w.mount(sign({ forgotPassword: true }))
+      await toPassword(w)
+      w.api.on(ROUTE.signInPassword, () => failure(429, 'rate_limited'))
+      await w.user.type(await screen.findByLabelText('Password'), 'wrong-password')
+      await w.user.click(screen.getByRole('button', { name: 'Sign in' }))
+      const alert = await screen.findByRole('alert')
+      expect(alert.textContent).toBe('Too many requests. Try again shortly.')
+      expect(alert.textContent?.match(/try again/gi)).toHaveLength(1)
     })
 
     test('a pending button keeps its name, is busy, and a second submit sends nothing', async () => {

@@ -21,7 +21,7 @@ export {
   firstFactorStrategies,
 } from './components/first-factor-forms'
 export type { FlowResult } from './components/flow-screens'
-export { formatDuration, type PlacedErrors } from './components/form-errors'
+export { formatDuration, type PlacedErrors, rateLimitedAlert } from './components/form-errors'
 export { OAuthCallback, type OAuthCallbackProps } from './components/oauth'
 export { SignIn, type SignInProps } from './components/sign-in'
 export { SignUp, type SignUpProps } from './components/sign-up'
