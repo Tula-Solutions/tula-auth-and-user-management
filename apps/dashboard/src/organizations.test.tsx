@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, test } from 'bun:test'
-import { screen, waitFor, within } from '@testing-library/react'
+import { afterEach, describe, expect, jest, test } from 'bun:test'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { ORGANIZATIONS_SEARCH_DEBOUNCE_MS } from '~/features/organizations/organizations-screen'
 import {
   FAKE_DOMAIN_CODE,
   type FakeApi,
@@ -176,17 +177,25 @@ describe('the list of organizations', () => {
     expect(location()).toBe(`${DEV_PATH}/organizations`)
   })
 
-  test('keys typed after a search was sent stay in the box', async () => {
-    const { user, location } = start(`${DEV_PATH}/organizations`, {
+  test('a key typed while the search is being sent stays in the box', async () => {
+    const { location } = start(`${DEV_PATH}/organizations`, {
       api: arranged({ organizations: [acme, globex] }),
     })
     await screen.findByRole('table', { name: 'Organizations' })
     const box = screen.getByLabelText('Search organizations') as HTMLInputElement
-    await user.type(box, 'gl')
+    // The clock is the test's, and nothing is awaited between the pause ending and the next
+    // key: the navigation the pause started has not landed when "o" is typed.
+    jest.useFakeTimers()
+    try {
+      fireEvent.change(box, { target: { value: 'gl' } })
+      act(() => {
+        jest.advanceTimersByTime(ORGANIZATIONS_SEARCH_DEBOUNCE_MS)
+      })
+      fireEvent.change(box, { target: { value: 'glo' } })
+    } finally {
+      jest.useRealTimers()
+    }
     await waitFor(() => expect(location()).toBe(`${DEV_PATH}/organizations?q=gl`))
-    await user.type(box, 'o')
-    expect(box.value).toBe('glo')
-    await waitFor(() => expect(location()).toBe(`${DEV_PATH}/organizations?q=glo`))
     expect(box.value).toBe('glo')
   })
 
