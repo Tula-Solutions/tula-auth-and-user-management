@@ -66,6 +66,17 @@ const projects: NonNullable<PlaywrightTestConfig['projects']> = [
   },
 ]
 
+/**
+ * Whether a fixture already listening on the ports is used instead of started (an opt-in:
+ * `E2E_REUSE_SERVER=1`). The fixture is **one in-memory world**: its settings, clock, users and
+ * organizations belong to whoever started it, and a run that attaches to another run's (another
+ * checkout, another agent) has its state changed under it (a sign-in method switched off, an
+ * organization cleared, the servers stopped) and fails in ways no test can explain (TULA-129).
+ * So a busy port stops the run with Playwright's own "already used" message. The docs server
+ * serves static files and keeps `reuseExistingServer`.
+ */
+const reuseFixture = process.env.E2E_REUSE_SERVER === '1'
+
 const servers = serversFor(
   process.argv,
   process.env,
@@ -123,7 +134,7 @@ function apiServers(): WebServer[] {
       command: `VITE_TULA_API_URL=${API_URL} VITE_TULA_PUBLISHABLE_KEY=${PUBLISHABLE_KEY} bun run --filter @tula-tech/example-react-vite build && VITE_TULA_API_URL=${API_URL} VITE_TULA_PUBLISHABLE_KEY=${PUBLISHABLE_KEY} bun run --filter @tula-tech/ui browser:build && bun run --filter @tula-tech/dashboard build && E2E=1 bun run server.ts`,
       cwd: import.meta.dirname,
       url: `${API_URL}/v1/status`,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: reuseFixture,
       timeout: 120_000,
       // The API logs every request to stdout; only its errors are worth the test output.
       stdout: 'ignore',
@@ -145,7 +156,7 @@ function apiServers(): WebServer[] {
         NEXT_TELEMETRY_DISABLED: '1',
       },
       url: NEXT_URL,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: reuseFixture,
       timeout: 180_000,
       stdout: 'ignore',
       stderr: 'pipe',
