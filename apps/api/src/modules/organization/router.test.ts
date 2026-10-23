@@ -452,6 +452,39 @@ describe('memberships', () => {
     expect(await code(last)).toBe('organization.last_manager')
   })
 
+  test('deleting the only manager of an organization is refused, and changes nothing', async () => {
+    const created = await organization()
+    const maya = await user('maya@northline.app')
+    const zoe = await user('zoe@northline.app')
+    await join(created, maya.id, 'admin')
+    await join(created, zoe.id, 'member')
+    const before = deps.activityLog.entries.length
+
+    const refused = await call('/v1/admin/users', 'DELETE', `/${maya.id}`)
+    expect(refused.status).toBe(409)
+    expect(await json<{ code: string; params: Record<string, unknown> }>(refused)).toMatchObject({
+      status: 409,
+      code: 'user.last_organization_manager',
+      params: { organizationIds: created.id, count: 1 },
+    })
+    expect(deps.activityLog.entries.length).toBe(before)
+    expect((await call('/v1/admin/users', 'GET', `/${maya.id}`)).status).toBe(200)
+    expect(
+      (await json<OrganizationMembershipList>(await orgs('GET', `/${created.id}/memberships`))).data
+        .length
+    ).toBe(2)
+
+    // A user who manages nothing is deleted as before, and so is the manager once there is another.
+    expect((await call('/v1/admin/users', 'DELETE', `/${zoe.id}`)).status).toBe(204)
+    const second = await user('lee@northline.app')
+    await join(created, second.id, 'admin')
+    expect((await call('/v1/admin/users', 'DELETE', `/${maya.id}`)).status).toBe(204)
+    const last = await call('/v1/admin/users', 'DELETE', `/${second.id}`)
+    expect(await code(last)).toBe('user.last_organization_manager')
+    expect((await orgs('DELETE', `/${created.id}`)).status).toBe(204)
+    expect((await call('/v1/admin/users', 'DELETE', `/${second.id}`)).status).toBe(204)
+  })
+
   test('removes a member, keeps the user, and records it', async () => {
     const created = await organization()
     const maya = await user('maya@northline.app')

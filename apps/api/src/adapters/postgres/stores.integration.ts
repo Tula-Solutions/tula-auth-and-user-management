@@ -1,10 +1,12 @@
 import { afterAll, expect, test } from 'bun:test'
+import { BUILT_IN_ROLES, testAddress } from '@tula-tech/contract'
 import {
   environmentSettings,
   events,
   flowAttempts,
+  organizationMemberships,
+  organizations,
   proposals,
-  users,
   withTenant,
 } from '@tula-tech/db'
 import { eq, sql } from 'drizzle-orm'
@@ -15,7 +17,7 @@ import { describeFlowAttemptStore } from '~/adapters/flow-attempt-store.suite'
 import { describeHookStore } from '~/adapters/hook-store.suite'
 import { describeNativeAppStore } from '~/adapters/native-app-store.suite'
 import { describeOAuthProviderStore } from '~/adapters/oauth-provider-store.suite'
-import { describeOrganizationStore } from '~/adapters/organization-store.suite'
+import { describeOrganizationStore, userDeletion } from '~/adapters/organization-store.suite'
 import { describePasskeyStore } from '~/adapters/passkey-store.suite'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
 import { PostgresApiKeyRepository } from '~/adapters/postgres/api-keys'
@@ -195,11 +197,37 @@ describeOrganizationStore('Postgres on a real server', async () => {
         .map((entry) => entry.type)
         .reverse(),
     user: async (tenant) => (tenant.environmentId === a.environmentId ? a : b).user(),
-    deleteUser: async (tenant, userId) => {
-      await withTenant(db, tenant.environmentId, (tx) =>
-        tx.delete(users).where(eq(users.id, userId))
+    deleteUser: (tenant, userId) =>
+      new PostgresUserRepository(db).delete(tenant.environmentId, userId, Audit.none('fixture')),
+    testUser: async (tenant) => {
+      const id = Bun.randomUUIDv7()
+      const address = testAddress(id.replaceAll('-', ''))
+      await new PostgresUserRepository(db).create(
+        {
+          id,
+          projectId: tenant.projectId,
+          environmentId: tenant.environmentId,
+          email: address,
+          emailNormalized: address,
+          emailVerifiedAt: null,
+          firstName: null,
+          lastName: null,
+          createdAt: new Date(0),
+          identityId: Bun.randomUUIDv7(),
+          credentialId: Bun.randomUUIDv7(),
+          passwordHash: null,
+        },
+        Audit.none('fixture')
       )
+      return id
     },
+    purgeTestUsers: (tenant, limit = 100) =>
+      new PostgresUserRepository(db).deleteTestUsersBefore(
+        tenant.environmentId,
+        new Date(Date.now() + 60_000),
+        limit,
+        (userId) => userDeletion(tenant, userId)
+      ),
     a: { projectId: a.projectId, environmentId: a.environmentId },
     b: { projectId: b.projectId, environmentId: b.environmentId },
   }
@@ -469,4 +497,100 @@ test('a real server refuses metadata the import pre-check should have caught, as
   }
   const ok = make(`ok-${Bun.randomUUIDv7()}@northline.app`, { plan: 'team' })
   expect(await users.create(ok, Audit.none('fixture'))).toBe(true)
+})
+
+// The race of the suite ("at once exactly one") is too narrow a window to catch a missing lock
+// reliably, so this holds the organization's lock the way a demotion in flight does and shows
+// that a user's deletion waits for it and then sees the demotion (TULA-124).
+test('deleting a manager waits for a demotion of the other manager that holds the organization, then is refused', async () => {
+  const tenant = await database.tenant()
+  const store = new PostgresOrganizationStore(db)
+  const repository = new PostgresUserRepository(db)
+  const now = new Date('2026-01-01T00:00:00.000Z')
+  await store.ensureBuiltInRoles(
+    BUILT_IN_ROLES.map((role) => ({
+      id: Bun.randomUUIDv7(),
+      projectId: tenant.projectId,
+      environmentId: tenant.environmentId,
+      key: role.key,
+      name: role.name,
+      permissions: [...role.permissions],
+      builtIn: true,
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    }))
+  )
+  const admin = await store.findRole(tenant.environmentId, 'admin')
+  const member = await store.findRole(tenant.environmentId, 'member')
+  const organization = await store.insert(
+    {
+      id: Bun.randomUUIDv7(),
+      projectId: tenant.projectId,
+      environmentId: tenant.environmentId,
+      name: 'Acme',
+      slug: 'acme',
+      createdBy: null,
+      createdAt: now,
+      updatedAt: now,
+    },
+    Audit.none('fixture')
+  )
+  if (!admin || !member || !organization) {
+    throw new Error('fixture')
+  }
+  const [first, second] = [await tenant.user(), await tenant.user()]
+  for (const userId of [first, second]) {
+    await store.addMembership(
+      {
+        id: Bun.randomUUIDv7(),
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        organizationId: organization.id,
+        userId,
+        roleId: admin.id,
+        roleKey: admin.key,
+        createdAt: now,
+        updatedAt: now,
+      },
+      Audit.none('fixture')
+    )
+  }
+
+  let release: () => void = () => undefined
+  const released = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let locked: () => void = () => undefined
+  const holding = new Promise<void>((resolve) => {
+    locked = resolve
+  })
+  // A demotion of the second manager, in flight: it holds the organization's row.
+  const demotion = withTenant(db, tenant.environmentId, async (tx) => {
+    await tx
+      .select({ id: organizations.id })
+      .from(organizations)
+      .where(eq(organizations.id, organization.id))
+      .for('update')
+    locked()
+    await released
+    await tx
+      .update(organizationMemberships)
+      .set({ roleId: member.id })
+      .where(eq(organizationMemberships.userId, second))
+  })
+  await holding
+
+  let settled = false
+  const deletion = repository
+    .delete(tenant.environmentId, first, Audit.none('fixture'))
+    .finally(() => {
+      settled = true
+    })
+  await Bun.sleep(300)
+  expect(settled).toBe(false)
+  release()
+  await demotion
+  expect(await deletion).toEqual({ outcome: 'last_manager', organizationIds: [organization.id] })
+  expect(await repository.findById(tenant.environmentId, first)).not.toBeNull()
 })
