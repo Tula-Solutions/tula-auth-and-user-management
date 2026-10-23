@@ -1,6 +1,16 @@
 import type { OAuthProvider, UserSort } from '@tula-tech/contract'
 import type { Activity, Recorded } from '~/ports/activity-log'
 
+/** What deleting a user came to. */
+export type DeleteUserOutcome =
+  | { outcome: 'deleted' }
+  | { outcome: 'not_found' }
+  /**
+   * The user is the only member who can manage members of these organizations (ids in
+   * ascending order). Nothing was deleted or recorded.
+   */
+  | { outcome: 'last_manager'; organizationIds: string[] }
+
 /** An end user of a customer's app, scoped to one environment. */
 export interface UserRecord {
   id: string
@@ -695,14 +705,33 @@ export interface UserRepository {
 
   /**
    * Delete a user and, by cascade, their identities, credentials (with every previous
-   * password kept for them), sessions and attempts.
+   * password kept for them), sessions, attempts and organization memberships.
+   *
+   * **Refused while the user is the only member of an organization who holds
+   * `org:sys:memberships:manage`** (ADR 0065, TULA-124): the cascade would leave that
+   * organization nobody can manage. The check and the delete are one transaction that first
+   * locks the rows of the organizations the user belongs to, in id order, as removing and
+   * demoting a member do, so a deletion and a demotion of the other manager take turns.
    *
    * @param environmentId - The user's environment.
    * @param userId - The user.
    * @param activity - Recorded in the same transaction, only if the user was deleted.
-   * @returns `false` when they do not exist.
+   * @returns `deleted`; `not_found` when they do not exist; `last_manager` with the ids of the
+   *   organizations they alone manage, when nothing was deleted or recorded.
    */
-  delete(environmentId: string, userId: string, activity: Recorded): Promise<boolean>
+  delete(environmentId: string, userId: string, activity: Recorded): Promise<DeleteUserOutcome>
+
+  /**
+   * The organizations whose only manager the user is, read without locks (ADR 0065,
+   * TULA-124). It lets a caller refuse a deletion before it does anything else; it never
+   * decides one, because the answer can be stale by the time it is used: `delete` checks
+   * again under the organizations' locks.
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @returns The organization ids, ascending; empty when there are none or the user is unknown.
+   */
+  soleManagerOf(environmentId: string, userId: string): Promise<string[]>
 
   /**
    * Record that a sign-in test started or finished (ADR 0058), and nothing else: the entry

@@ -1,7 +1,7 @@
 {
   "$schema": "../scenario.schema.json",
   "name": "admin organizations and memberships",
-  "description": "An administrator switches organizations on for the environment (they are off by default, and while they are off every organization route answers organization.disabled, a read as well as a write), creates an organization with a slug of the documented grammar and adds two existing users with the built-in roles admin and member. A slug another organization has, a user who is a member already and a role that does not exist are refused with their codes, and a publishable key cannot reach the routes. The only member who holds org:sys:memberships:manage cannot be demoted or removed (organization.last_manager); with a second admin the first can be demoted and removed, and the users keep their accounts. A rename is recorded by the name of the field, and the audit log holds no organization name and no address. Deleting the organization takes its memberships with it. The original settings are put back afterwards, even when a step fails.",
+  "description": "An administrator switches organizations on for the environment (they are off by default, and while they are off every organization route answers organization.disabled, a read as well as a write), creates an organization with a slug of the documented grammar and adds two existing users with the built-in roles admin and member. A slug another organization has, a user who is a member already and a role that does not exist are refused with their codes, and a publishable key cannot reach the routes. The only member who holds org:sys:memberships:manage cannot be demoted or removed (organization.last_manager), and the user who is that member cannot be deleted (user.last_organization_manager, naming the organization); with a second admin the first can be demoted and removed, and the users keep their accounts. A rename is recorded by the name of the field, and the audit log holds no organization name and no address. Deleting the organization takes its memberships with it. The original settings are put back afterwards, even when a step fails.",
   "needsSecretKey": true,
   "variables": {
     "ownerEmail": {
@@ -385,6 +385,24 @@
         "status": 409,
         "body": {
           "code": "organization.last_manager"
+        }
+      }
+    },
+    {
+      "name": "the user who is the only admin cannot be deleted either",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/users/{{ownerId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "user.last_organization_manager",
+          "params": {
+            "organizationIds": "{{orgId}}",
+            "count": 1
+          }
         }
       }
     },

@@ -5738,6 +5738,7 @@
           "device.nonce_required",
           "device.binding_not_supported",
           "device.binding_required",
+          "user.last_organization_manager",
           "organization.disabled",
           "organization.slug_taken",
           "organization.member_exists",
@@ -21585,7 +21586,7 @@
           "Users"
         ],
         "summary": "Delete a user",
-        "description": "Ends the user’s sessions and deletes them with everything they own.",
+        "description": "Ends the user’s sessions and deletes them with everything they own. Refused with `user.last_organization_manager` (409, `params.organizationIds`) while they are the only member who holds `org:sys:memberships:manage` of an organization: add another manager or delete the organization first. No user data is deleted then.",
         "security": [
           {
             "secretKey": []
@@ -21630,6 +21631,16 @@
           },
           "404": {
             "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The change conflicts with existing data.",
             "content": {
               "application/json": {
                 "schema": {

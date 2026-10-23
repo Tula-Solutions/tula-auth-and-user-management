@@ -123,8 +123,12 @@ import { join } from 'node:path'
  * `state.organizationId`, and `setActiveOrganization` with its stale-generation handling
  * (shaped like `stepUp`, which it shares `send` and `commit` with). The budget moved by
  * exactly those 462 bytes, from 17,306 to 17,768: the room is the 4 bytes it was.
+ * The contract code of deleting a user who alone manages an organization (ADR 0065, TULA-124:
+ * `user.last_organization_manager`) added 37 bytes, from 17,764 to 17,801, the name and its
+ * message. The budget moved by exactly those 37 bytes, from 17,768 to 17,805: the room is the
+ * 4 bytes it was.
  */
-const GZIP_BUDGET_BYTES = 17_768
+const GZIP_BUDGET_BYTES = 17_805
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({
