@@ -232,10 +232,14 @@ export type AcceptInvitationOutcome =
 export interface OrganizationStore {
   /**
    * @param environmentId - The environment to look in.
-   * @param page - Which page.
-   * @returns The environment's organizations, newest first, and how many there are.
+   * @param page - Which page, and optionally `q`: keeps the organizations whose name or slug
+   *   starts with it, ignoring case. `%`, `_` and `\` in it match themselves.
+   * @returns The environment's organizations that match, newest first, and how many match.
    */
-  list(environmentId: string, page: PageCriteria): Promise<Page<OrganizationRecord>>
+  list(
+    environmentId: string,
+    page: PageCriteria & { q?: string }
+  ): Promise<Page<OrganizationRecord>>
 
   /**
    * @param environmentId - The environment to look in.

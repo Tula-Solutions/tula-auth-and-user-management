@@ -6251,6 +6251,19 @@ An organization, as the admin API returns it.
 const OrganizationSchema
 ```
 
+### `OrganizationSearchQuerySchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+The query of the administrator's list of organizations: a page, and an optional search.
+
+`q` is matched against the start of the name (ignoring case) and of the slug; a blank one
+is no search. It is bounded to the longest name an organization can have.
+
+```ts
+const OrganizationSearchQuerySchema
+```
+
 ### `OrganizationSlugSchema`
 
 _constant_, defined in `packages/contract/src/organization.ts`

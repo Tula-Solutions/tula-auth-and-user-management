@@ -1,0 +1,2 @@
+CREATE INDEX "organizations_environment_lower_name_idx" ON "tula"."organizations" USING btree ("environment_id",lower("name") text_pattern_ops);--> statement-breakpoint
+CREATE INDEX "organizations_environment_slug_prefix_idx" ON "tula"."organizations" USING btree ("environment_id","slug" text_pattern_ops);

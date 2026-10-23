@@ -2366,7 +2366,7 @@ export interface Operations {
   /** List organization roles (`GET /v1/admin/organization-roles`). */
   listOrganizationRoles: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['OrganizationRoleList'] }
   /** List organizations (`GET /v1/admin/organizations`). */
-  listOrganizations: { params: Record<string, never>; query: { page?: number; size?: number }; headers: Record<string, never>; body: undefined; response: Schemas['OrganizationList'] }
+  listOrganizations: { params: Record<string, never>; query: { page?: number; size?: number; q?: string }; headers: Record<string, never>; body: undefined; response: Schemas['OrganizationList'] }
   /** List proposals (`GET /v1/admin/proposals`). */
   listProposals: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['ProposalList'] }
   /** List signing keys (`GET /v1/admin/signing-keys`). */

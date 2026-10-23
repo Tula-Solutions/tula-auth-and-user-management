@@ -167,9 +167,17 @@ export class MemoryOrganizationStore implements OrganizationStore {
   }
 
   /** @inheritdoc */
-  async list(environmentId: string, page: PageCriteria): Promise<Page<OrganizationRecord>> {
+  async list(
+    environmentId: string,
+    page: PageCriteria & { q?: string }
+  ): Promise<Page<OrganizationRecord>> {
+    const q = page.q?.toLowerCase()
     const rows = [...this.#organizations.values()]
       .filter((record) => record.environmentId === environmentId)
+      .filter(
+        (record) =>
+          q === undefined || record.name.toLowerCase().startsWith(q) || record.slug.startsWith(q)
+      )
       // Newest first; the id breaks ties between organizations of the same instant.
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || (a.id < b.id ? 1 : -1))
     return paged(rows, page)

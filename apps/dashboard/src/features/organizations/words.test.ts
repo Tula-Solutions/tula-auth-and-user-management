@@ -3,7 +3,6 @@ import { join } from 'node:path'
 import { ERROR_CODES } from '@tula-tech/contract'
 import { ApiError } from '~/api/errors'
 import { entryImports } from '~/testing/entry-imports'
-import { matchesSearch } from './organizations-screen'
 import { permissionProblem } from './role-dialogs'
 import {
   autoJoinSentences,
@@ -192,15 +191,6 @@ describe('slugs and the search', () => {
     [`${'a'.repeat(47)} b`, 'a'.repeat(47)],
   ])('the slug of %j is %j', (name, slug) => {
     expect(slugFromName(name)).toBe(slug)
-  })
-
-  test('the search looks at the name and the slug, ignoring case and spaces at the ends', () => {
-    const organization = { name: 'Acme Corp', slug: 'acme-co' }
-    expect(matchesSearch(organization, '')).toBe(true)
-    expect(matchesSearch(organization, '  ACME ')).toBe(true)
-    expect(matchesSearch(organization, 'corp')).toBe(true)
-    expect(matchesSearch(organization, 'acme-co')).toBe(true)
-    expect(matchesSearch(organization, 'globex')).toBe(false)
   })
 })
 

@@ -2258,6 +2258,22 @@ describe('the active organization (ADR 0065)', () => {
     expect(tula.state).toMatchObject({ organizationId: null })
   })
 
+  test('list sends the paging query and returns the meta of the page it asked for', async () => {
+    const w = world()
+    const { tula } = await signedIn(w)
+    const second = {
+      activeOrganizationId: null,
+      meta: { totalCount: 3, totalPages: 3, page: 2, perPage: 1 },
+      data: [],
+    }
+    w.api.on(`${LIST}?page=2&size=1`, () => json(200, second))
+    expect(await tula.organizations.list({ page: 2, size: 1 })).toEqual(second)
+    // Without a query the API's defaults apply: the address carries none.
+    w.api.on(LIST, () => json(200, { ...second, meta: { ...second.meta, page: 1 } }))
+    expect((await tula.organizations.list()).meta.page).toBe(1)
+    expect(w.api.calls(LIST)).toHaveLength(1)
+  })
+
   test('another tab learns the organization from the announced session', async () => {
     const w = world()
     const locks = fakeLocks()

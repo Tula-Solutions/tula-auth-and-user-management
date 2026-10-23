@@ -250,6 +250,19 @@ describe('reading, renaming and deleting', () => {
     expect((await orgs('GET', '?size=101')).status).toBe(422)
   })
 
+  test('q searches a name or slug prefix on the server, whatever the page', async () => {
+    await organization('acme')
+    await orgs('POST', '', { name: 'Zeta Labs', slug: 'zeta' })
+    await orgs('POST', '', { name: 'Acorn', slug: 'acorn' })
+    const found = await json<OrganizationList>(await orgs('GET', '?q=AC&size=1'))
+    expect(found.meta).toEqual({ totalCount: 2, totalPages: 2, page: 1, perPage: 1 })
+    expect((await json<OrganizationList>(await orgs('GET', '?q=zeta%20l'))).data).toHaveLength(1)
+    expect((await json<OrganizationList>(await orgs('GET', '?q=%25'))).data).toHaveLength(0)
+    // Blank means no search.
+    expect((await json<OrganizationList>(await orgs('GET', '?q=%20'))).meta.totalCount).toBe(3)
+    expect((await orgs('GET', `?q=${'a'.repeat(101)}`)).status).toBe(422)
+  })
+
   test('renames, changes a slug, and records the names of the fields only', async () => {
     const created = await organization()
     deps.clock.advance('1m')

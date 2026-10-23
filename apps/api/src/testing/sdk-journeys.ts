@@ -2438,6 +2438,24 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
         expect(tula.state).toMatchObject({ status: 'signed-in', organizationId: null })
         expect(decodeJwt((await tula.session.getToken()) ?? '').org_id).toBeUndefined()
 
+        // More organizations than one page: the client asks for each page by number.
+        const extraId = await created('Second Membership', `second-${userId}`)
+        expect(
+          (
+            await s.admin('POST', `/v1/admin/organizations/${extraId}/memberships`, {
+              userId,
+              role: 'member',
+            })
+          ).status
+        ).toBe(201)
+        const first = await tula.organizations.list({ page: 1, size: 1 })
+        const second = await tula.organizations.list({ page: 2, size: 1 })
+        expect(first.meta).toEqual({ totalCount: 2, totalPages: 2, page: 1, perPage: 1 })
+        expect(second.meta).toMatchObject({ totalCount: 2, page: 2 })
+        expect([...first.data, ...second.data].map((org) => org.id).sort()).toEqual(
+          [orgId, extraId].sort()
+        )
+
         // One that is not theirs, and one that does not exist, are refused alike.
         const refused = await caught(tula.organizations.setActive(otherId))
         expect(refused).toMatchObject({ code: 'organization.not_a_member', status: 403 })
