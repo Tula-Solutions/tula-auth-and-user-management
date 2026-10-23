@@ -107,7 +107,11 @@ export type ClientKind = Schemas['SessionClient']
  * - `loading`: not known yet. Call `load()` (or `session.getToken()`) to find out.
  * - `signed-out`: nobody is signed in.
  * - `signed-in`: a session exists. `user` is `null` only until it has been fetched, or if
- *   fetching it failed; `user.get()` fetches it again.
+ *   fetching it failed; `user.get()` fetches it again. `organizationId` is the organization
+ *   the session acts in (ADR 0065), `null` for the personal account. For a session with an
+ *   access token it is read from the token's `org_id` claim (unverified: for showing, never
+ *   for authorizing) and so follows every refresh; a browser's `stateful` session has no
+ *   token, so it is known after `organizations.list()` or `organizations.setActive()`.
  *
  * @example
  * ```ts
@@ -121,7 +125,12 @@ export type ClientKind = Schemas['SessionClient']
 export type AuthState =
   | { readonly status: 'loading' }
   | { readonly status: 'signed-out' }
-  | { readonly status: 'signed-in'; readonly sessionId: string; readonly user: User | null }
+  | {
+      readonly status: 'signed-in'
+      readonly sessionId: string
+      readonly user: User | null
+      readonly organizationId: string | null
+    }
 
 /**
  * A `fetch` the client sends every request through. The global `fetch` fits; so does a
@@ -287,3 +296,24 @@ export type EmailCodeSent = Schemas['EmailCodeSent']
  * ```
  */
 export type StepUpMethod = StepUpProof['method']
+
+/**
+ * An organization the signed-in user belongs to, with their role in it and its permission
+ * keys (ADR 0065).
+ *
+ * @example
+ * ```ts
+ * const { data } = await tula.organizations.list()
+ * const admin = data.find((org) => org.role === 'admin')
+ * ```
+ */
+export type UserOrganization = Schemas['UserOrganization']
+
+/** A page of the user's organizations, with the session's active organization's id. */
+export type UserOrganizationList = Schemas['UserOrganizationList']
+
+/** What `organizations.setActive()` answers: the session's active organization now. */
+export type ActiveOrganization = Schemas['ActiveOrganization']
+
+/** The body of `organizations.create()`: a name and a slug (lower-case letters, digits, hyphens). */
+export type CreateOrganizationInput = Schemas['CreateOrganizationRequest']

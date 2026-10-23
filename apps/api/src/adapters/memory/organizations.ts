@@ -1,21 +1,24 @@
 import { BUILT_IN_ROLES, MEMBERSHIPS_MANAGE_PERMISSION } from '@tula-tech/contract'
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import type { MemoryUserRepository } from '~/adapters/memory/users'
-import { activityOf, type Recorded } from '~/ports/activity-log'
+import { activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import type {
   AddMembershipOutcome,
   ChangeMembershipOutcome,
+  CreateOwnedOutcome,
   DeleteRoleOutcome,
   MembershipRecord,
   OrganizationChanges,
   OrganizationRecord,
   OrganizationRoleRecord,
   OrganizationStore,
+  OwnedOrganization,
   Page,
   PageCriteria,
   RoleChanges,
   UpdateOrganizationOutcome,
   UpdateRoleOutcome,
+  UserMembershipRecord,
 } from '~/ports/organization-store'
 
 /** A page of `rows`, which the caller has already put in order. */
@@ -274,6 +277,80 @@ export class MemoryOrganizationStore implements OrganizationStore {
     this.#memberships.delete(current.id)
     this.#activityLog.record(activity ? [activity] : [])
     return { outcome: 'done', record: structuredClone(current) }
+  }
+
+  /** The membership with its organization and the permissions of its role. */
+  #joined(membership: MembershipRecord): UserMembershipRecord | null {
+    const organization = this.#own(membership.environmentId, membership.organizationId)
+    const role = this.#roles.get(membership.roleId)
+    if (!organization || !role) {
+      return null
+    }
+    return structuredClone({ organization, membership, permissions: role.permissions })
+  }
+
+  /** @inheritdoc */
+  async listUserMemberships(
+    environmentId: string,
+    userId: string,
+    page: PageCriteria
+  ): Promise<Page<UserMembershipRecord>> {
+    const rows = [...this.#memberships.values()]
+      .filter((one) => one.environmentId === environmentId && one.userId === userId)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || (a.id < b.id ? -1 : 1))
+      .flatMap((one) => this.#joined(one) ?? [])
+    return paged(rows, page)
+  }
+
+  /** @inheritdoc */
+  async findUserMembership(
+    environmentId: string,
+    organizationId: string,
+    userId: string
+  ): Promise<UserMembershipRecord | null> {
+    const found = this.#membership(environmentId, organizationId, userId)
+    return found ? this.#joined(found) : null
+  }
+
+  /** @inheritdoc */
+  async insertOwned(
+    input: OwnedOrganization,
+    activities: { organization: Recorded; membership: Recorded }
+  ): Promise<CreateOwnedOutcome> {
+    const { organization, membership, limit } = input
+    // No await between the checks and the writes: one turn of the event loop, which is what
+    // makes the limit hold against simultaneous creations here.
+    if (
+      this.#users &&
+      (await this.#users.findById(organization.environmentId, membership.userId)) === null
+    ) {
+      return { outcome: 'gone' }
+    }
+    if (this.#roles.get(membership.roleId)?.environmentId !== membership.environmentId) {
+      return { outcome: 'gone' }
+    }
+    const created = [...this.#organizations.values()].filter(
+      (one) =>
+        one.environmentId === organization.environmentId && one.createdBy === organization.createdBy
+    ).length
+    if (limit !== null && created >= limit) {
+      return { outcome: 'limit_reached' }
+    }
+    const taken = [...this.#organizations.values()].some(
+      (one) =>
+        one.id === organization.id ||
+        (one.environmentId === organization.environmentId && one.slug === organization.slug)
+    )
+    if (taken) {
+      return { outcome: 'slug_taken' }
+    }
+    this.#organizations.set(organization.id, structuredClone(organization))
+    this.#memberships.set(membership.id, structuredClone(membership))
+    this.#activityLog.record(recordedOf([activities.organization, activities.membership]))
+    return {
+      outcome: 'created',
+      record: structuredClone({ organization, membership, permissions: input.permissions }),
+    }
   }
 
   /** @inheritdoc */

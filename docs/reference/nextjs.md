@@ -1144,6 +1144,55 @@ export interface TulaClient {
      */
     prepareStepUp(request: { method: 'email_code' | 'sms_code' }): Promise<StepUpPrepared>
   }
+  /**
+   * The signed-in user's organizations and the one the session acts in (ADR 0065). While the
+   * environment's `organizations.enabled` setting is off, each call answers
+   * `organization.disabled`.
+   */
+  readonly organizations: {
+    /**
+     * The organizations the user belongs to, with their role and its permission keys in each,
+     * and the session's active organization. Only the first page the API answers: the client
+     * sends no paging query yet.
+     *
+     * @returns The page; `activeOrganizationId` is `null` for the personal account.
+     * @throws TulaError `auth.unauthenticated` when signed out, `organization.disabled`.
+     * @example
+     * ```ts
+     * const { data, activeOrganizationId } = await tula.organizations.list()
+     * ```
+     */
+    list(): Promise<UserOrganizationList>
+    /**
+     * Create an organization the user owns (it holds the environment's `creatorRole`). The
+     * session does not switch to it: call `setActive`.
+     *
+     * @param input - The name and the slug.
+     * @returns The organization.
+     * @throws TulaError `organization.creation_disabled`, `organization.limit_reached`,
+     *   `organization.slug_taken`.
+     * @example
+     * ```ts
+     * const org = await tula.organizations.create({ name: 'Acme', slug: 'acme' })
+     * await tula.organizations.setActive(org.id)
+     * ```
+     */
+    create(input: CreateOrganizationInput): Promise<UserOrganization>
+    /**
+     * Make an organization the one the session acts in (or `null`, the personal account). The
+     * access token is replaced with one that carries `org_id`, `org_role` and `org_perms`;
+     * `state.organizationId` follows.
+     *
+     * @param organizationId - The organization, or `null`.
+     * @returns The API's answer.
+     * @throws TulaError `organization.not_a_member`, `organization.personal_account_disabled`.
+     * @example
+     * ```ts
+     * await tula.organizations.setActive(org.id)
+     * ```
+     */
+    setActive(organizationId: string | null): Promise<ActiveOrganization>
+  }
   /** The signed-in user. */
   readonly user: {
     /**

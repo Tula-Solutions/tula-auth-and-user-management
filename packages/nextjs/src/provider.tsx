@@ -190,6 +190,9 @@ export function TulaProvider(props: TulaProviderProps) {
               status: 'signed-in',
               sessionId: initialState.sessionId,
               user: initialState.user ?? null,
+              // The server's hint carries no organization yet (the Next.js SDK reads the
+              // organization claims in a later ticket); the client's own state fills it in.
+              organizationId: null,
             })
     created.current = {
       key,

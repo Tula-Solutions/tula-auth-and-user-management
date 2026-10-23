@@ -65,12 +65,23 @@ export const UNSUPPORTED: Partial<Record<OperationId, string>> = {
   getSignInSecondFactorPasskeyOptions: 'a passkey as a second factor is not simulated',
   getPasswordResetSecondFactorPasskeyOptions: 'a passkey as a second factor is not simulated',
   submitSignInNewPassword: 'password expiry needs days to pass',
+  listMyOrganizations: 'the sandbox has no organizations',
+  createMyOrganization: 'the sandbox has no organizations',
+  setActiveOrganization: 'the sandbox has no organizations',
 }
 
 /** The refusal an operation in {@link UNSUPPORTED} answers with. */
 function unsupported(id: OperationId): never {
   if (id === 'requestPhoneCode' || id === 'verifyPhoneNumber' || id === 'removePhoneNumber') {
     throw new SandboxError('sms.disabled')
+  }
+  if (
+    id === 'listMyOrganizations' ||
+    id === 'createMyOrganization' ||
+    id === 'setActiveOrganization'
+  ) {
+    // Organizations are an environment setting the sandbox leaves off.
+    throw new SandboxError('organization.disabled')
   }
   throw new SandboxError('auth.method_disabled')
 }
@@ -914,6 +925,11 @@ export const HANDLERS: Handlers = {
   requestPhoneCode: () => unsupported('requestPhoneCode'),
   verifyPhoneNumber: () => unsupported('verifyPhoneNumber'),
   removePhoneNumber: () => unsupported('removePhoneNumber'),
+
+  // Organizations (ADR 0065) are switched off in the sandbox -----------------------------------
+  listMyOrganizations: () => unsupported('listMyOrganizations'),
+  createMyOrganization: () => unsupported('createMyOrganization'),
+  setActiveOrganization: () => unsupported('setActiveOrganization'),
 
   // Two-step verification ---------------------------------------------------------------------
   getMyFactors: (ctx) => {

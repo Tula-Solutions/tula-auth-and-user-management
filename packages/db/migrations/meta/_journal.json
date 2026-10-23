@@ -274,6 +274,13 @@
       "when": 1792723428178,
       "tag": "0038_organization_custom_roles",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1792726732330,
+      "tag": "0039_session_active_organization",
+      "breakpoints": true
     }
   ]
 }

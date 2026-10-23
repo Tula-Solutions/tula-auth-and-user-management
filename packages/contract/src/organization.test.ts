@@ -5,8 +5,10 @@ import {
   CreateOrganizationRequestSchema,
   CreateOrganizationRoleRequestSchema,
   ORGANIZATION_SLUG_PATTERN,
+  SetActiveOrganizationRequestSchema,
   UpdateOrganizationRequestSchema,
   UpdateOrganizationRoleRequestSchema,
+  UserOrganizationListSchema,
 } from './organization'
 import {
   BUILT_IN_ROLES,
@@ -172,6 +174,52 @@ describe('the organizations settings', () => {
     expect(settingsWeakenings(capped(5), capped(4))).toEqual([])
     expect(settingsWeakenings(capped(null), capped(5))).toEqual([])
     expect(settingsWeakenings(capped(5), capped(5))).toEqual([])
+  })
+})
+
+describe('setting the active organization', () => {
+  const ID = '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b'
+
+  test('takes an organization id or null, nothing else', () => {
+    expect(SetActiveOrganizationRequestSchema.safeParse({ organizationId: ID }).success).toBe(true)
+    expect(SetActiveOrganizationRequestSchema.safeParse({ organizationId: null }).success).toBe(
+      true
+    )
+    for (const body of [
+      {},
+      { organizationId: 'acme' },
+      { organizationId: '' },
+      { organizationId: ID, role: 'admin' },
+      { organizationId: undefined },
+    ]) {
+      expect(SetActiveOrganizationRequestSchema.safeParse(body).success).toBe(false)
+    }
+  })
+
+  test('a list of the user’s organizations names no creator and no other member', () => {
+    const list = UserOrganizationListSchema.parse({
+      activeOrganizationId: null,
+      meta: { totalCount: 1, totalPages: 1, page: 1, perPage: 20 },
+      data: [
+        {
+          id: ID,
+          name: 'Acme',
+          slug: 'acme',
+          role: 'admin',
+          permissions: [],
+          createdAt: '2026-01-01T00:00:00.000Z',
+          createdBy: 'someone',
+        },
+      ],
+    })
+    expect(Object.keys(list.data[0] ?? {}).sort()).toEqual([
+      'createdAt',
+      'id',
+      'name',
+      'permissions',
+      'role',
+      'slug',
+    ])
   })
 })
 

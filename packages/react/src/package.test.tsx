@@ -249,8 +249,13 @@ describe('what @tula-tech/react costs a browser bundle', () => {
    * copy-in components (ADR 0064: the step renderer, the first-factor table's helper, five
    * hooks) took it to 54,436 bytes, 439 more. The budget moved by exactly those bytes, to
    * 54,872, so the 436 bytes of room are still what is left.
+   * The client side of organizations (ADR 0065, Orgs 02) is `@tula-tech/core`'s: the three
+   * calls, the `org_id` read and `setActiveOrganization`, with the four error messages; the
+   * four messages of custom roles (Orgs 03) arrive with them. The bundle then measured 55,248
+   * bytes, 812 more. The budget moved by exactly the measurement, to 55,684, so the 436 bytes
+   * of room are still what is left.
    */
-  const GZIP_BUDGET_BYTES = 54_872
+  const GZIP_BUDGET_BYTES = 55_684
   /**
    * The QR encoder, in a chunk of its own: loaded when an enrolment is first drawn, so an app
    * that never shows one does not pay for it.

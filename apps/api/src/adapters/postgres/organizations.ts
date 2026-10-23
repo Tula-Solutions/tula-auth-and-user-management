@@ -5,6 +5,7 @@ import {
   organizationRoles,
   organizations,
   type Transaction,
+  users,
   withTenant,
 } from '@tula-tech/db'
 import { and, arrayContains, asc, count, desc, eq, inArray, ne, sql } from 'drizzle-orm'
@@ -14,21 +15,24 @@ import {
   isForeignKeyViolation,
   isUniqueViolation,
 } from '~/adapters/postgres/errors'
-import { activityOf, type Recorded } from '~/ports/activity-log'
+import { activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import type {
   AddMembershipOutcome,
   ChangeMembershipOutcome,
+  CreateOwnedOutcome,
   DeleteRoleOutcome,
   MembershipRecord,
   OrganizationChanges,
   OrganizationRecord,
   OrganizationRoleRecord,
   OrganizationStore,
+  OwnedOrganization,
   Page,
   PageCriteria,
   RoleChanges,
   UpdateOrganizationOutcome,
   UpdateRoleOutcome,
+  UserMembershipRecord,
 } from '~/ports/organization-store'
 
 const organizationColumns = {
@@ -71,6 +75,12 @@ const membershipColumns = {
 const joinedToRole = and(
   eq(organizationMemberships.environmentId, organizationRoles.environmentId),
   eq(organizationMemberships.roleId, organizationRoles.id)
+)
+
+/** A membership joined to its organization, in the one environment. */
+const joinedToOrganization = and(
+  eq(organizationMemberships.environmentId, organizations.environmentId),
+  eq(organizationMemberships.organizationId, organizations.id)
 )
 
 /** The membership of one user in one organization, with its role's key. */
@@ -489,6 +499,124 @@ export class PostgresOrganizationStore implements OrganizationStore {
       await recordActivity(tx, activity ? [activity] : [])
       return { outcome: 'done', record: current } as const
     })
+  }
+
+  /** @inheritdoc */
+  async listUserMemberships(
+    environmentId: string,
+    userId: string,
+    { page, size }: PageCriteria
+  ): Promise<Page<UserMembershipRecord>> {
+    return withTenant(this.db, environmentId, async (tx) => {
+      const where = and(
+        eq(organizationMemberships.environmentId, environmentId),
+        eq(organizationMemberships.userId, userId)
+      )
+      const [total] = await tx.select({ value: count() }).from(organizationMemberships).where(where)
+      const rows = await tx
+        .select({
+          organization: organizationColumns,
+          membership: membershipColumns,
+          permissions: organizationRoles.permissions,
+        })
+        .from(organizationMemberships)
+        .innerJoin(organizationRoles, joinedToRole)
+        .innerJoin(organizations, joinedToOrganization)
+        .where(where)
+        .orderBy(asc(organizationMemberships.createdAt), asc(organizationMemberships.id))
+        .limit(size)
+        .offset((page - 1) * size)
+      return { records: rows, total: total?.value ?? 0 }
+    })
+  }
+
+  /** @inheritdoc */
+  async findUserMembership(
+    environmentId: string,
+    organizationId: string,
+    userId: string
+  ): Promise<UserMembershipRecord | null> {
+    const [row] = await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .select({
+          organization: organizationColumns,
+          membership: membershipColumns,
+          permissions: organizationRoles.permissions,
+        })
+        .from(organizationMemberships)
+        .innerJoin(organizationRoles, joinedToRole)
+        .innerJoin(organizations, joinedToOrganization)
+        .where(
+          and(
+            eq(organizationMemberships.environmentId, environmentId),
+            eq(organizationMemberships.organizationId, organizationId),
+            eq(organizationMemberships.userId, userId)
+          )
+        )
+        .limit(1)
+    )
+    return row ?? null
+  }
+
+  /** @inheritdoc */
+  async insertOwned(
+    input: OwnedOrganization,
+    activities: { organization: Recorded; membership: Recorded }
+  ): Promise<CreateOwnedOutcome> {
+    const { organization, membership, limit } = input
+    const { roleKey: _roleKey, ...membershipRow } = membership
+    try {
+      return await withTenant(this.db, organization.environmentId, async (tx) => {
+        // The user's row is the lock this user's creations take turns on (as a sign-in's
+        // session limit does): the second waits here until the first commits, then counts the
+        // organization the first one made.
+        const locked = await tx
+          .select({ id: users.id })
+          .from(users)
+          .where(
+            and(
+              eq(users.id, membership.userId),
+              eq(users.environmentId, organization.environmentId)
+            )
+          )
+          .for('update')
+        if (locked.length === 0) {
+          return { outcome: 'gone' } as const
+        }
+        if (limit !== null && organization.createdBy !== null) {
+          const [made] = await tx
+            .select({ value: count() })
+            .from(organizations)
+            .where(
+              and(
+                eq(organizations.environmentId, organization.environmentId),
+                eq(organizations.createdBy, organization.createdBy)
+              )
+            )
+          if ((made?.value ?? 0) >= limit) {
+            return { outcome: 'limit_reached' } as const
+          }
+        }
+        await tx.insert(organizations).values(organization)
+        await tx.insert(organizationMemberships).values(membershipRow)
+        await recordActivity(tx, recordedOf([activities.organization, activities.membership]))
+        return {
+          outcome: 'created',
+          record: { organization, membership, permissions: input.permissions },
+        } as const
+      })
+    } catch (error) {
+      // The slug is taken: the unique key decided, and the transaction is rolled back with
+      // both entries.
+      if (isUniqueViolation(error)) {
+        return { outcome: 'slug_taken' }
+      }
+      // The role was removed since the caller read it.
+      if (isForeignKeyViolation(error)) {
+        return { outcome: 'gone' }
+      }
+      throw error
+    }
   }
 
   /** @inheritdoc */

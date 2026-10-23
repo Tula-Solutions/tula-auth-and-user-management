@@ -1,5 +1,10 @@
 import { z } from 'zod'
-import { CUSTOM_CLAIMS_CLAIM } from './custom-claims'
+import {
+  CUSTOM_CLAIMS_CLAIM,
+  ORGANIZATION_ID_CLAIM,
+  ORGANIZATION_PERMISSIONS_CLAIM,
+  ORGANIZATION_ROLE_CLAIM,
+} from './custom-claims'
 
 /** Version of the access-token claim layout. Bump only with a migration plan for SDKs. */
 export const ACCESS_TOKEN_VERSION = 1
@@ -131,6 +136,22 @@ export const AccessTokenClaimsSchema = z
      * itself.
      */
     cnf: z.object({ jkt: z.string() }).optional(),
+    /**
+     * The organization the session is acting in (ADR 0065): its id. **Absent** while no
+     * organization is active (the user's personal account), when the environment has
+     * organizations off, and from the first refresh after the user stopped being a member.
+     * Present only together with `org_role` and `org_perms`; read the three with
+     * `readOrganizationClaims`, which treats any other combination as no organization.
+     */
+    [ORGANIZATION_ID_CLAIM]: z.string().optional(),
+    /** The key of the user's role in the active organization (`admin`, `member`, …). */
+    [ORGANIZATION_ROLE_CLAIM]: z.string().optional(),
+    /**
+     * The permission keys of that role (`org:sys:memberships:read`, `org:billing:read`), at
+     * most 32. They are as of the last refresh: a role changed since is seen at the next one.
+     * A missing list is no permission.
+     */
+    [ORGANIZATION_PERMISSIONS_CLAIM]: z.array(z.string()).optional(),
     /**
      * The session's custom claims: what the JWT template of its profile defines (ADR 0036),
      * each key holding one string, number or boolean. **Absent** when the profile uses no

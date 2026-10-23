@@ -466,6 +466,7 @@ type ConfirmDeps = Pick<
   | 'config'
   | 'mailer'
   | 'rateLimiter'
+  | 'organizations'
 >
 
 /**
@@ -1535,6 +1536,7 @@ type StepUpDeps = ChangeDeps &
     | 'nativeApps'
     | 'sms'
     | 'smsUsage'
+    | 'organizations'
   >
 
 /**

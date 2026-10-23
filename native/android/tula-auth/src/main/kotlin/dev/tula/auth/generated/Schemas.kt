@@ -25,6 +25,15 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
 @Serializable
+data class ActiveOrganization(
+    val sessionId: String,
+    val organizationId: String?,
+    val accessToken: String? = null,
+    /** Format: `date-time`. */
+    val accessTokenExpiresAt: String? = null,
+)
+
+@Serializable
 data class BackupCodes(
     val codes: List<String>,
 )
@@ -71,6 +80,12 @@ data class ClientConfigSignIn(
 @Serializable
 data class ClientConfigSignUp(
     val password: SignUpPasswordMode,
+)
+
+@Serializable
+data class CreateOrganizationRequest(
+    val name: String,
+    val slug: OrganizationSlug,
 )
 
 @Serializable
@@ -897,6 +912,16 @@ data class OAuthStartRequest(
     val redirectUrl: String,
 )
 
+typealias OrganizationSlug = String
+
+@Serializable
+data class PaginationMeta(
+    val totalCount: Long,
+    val totalPages: Long,
+    val page: Long,
+    val perPage: Long,
+)
+
 @Serializable
 data class Passkey(
     val id: String,
@@ -1587,6 +1612,11 @@ data class SessionTokens(
 )
 
 @Serializable
+data class SetActiveOrganizationRequest(
+    val organizationId: String?,
+)
+
+@Serializable
 data class SignInStartRequest(
     val identifier: String,
 )
@@ -1801,6 +1831,24 @@ data class TotpConfirmRequest(
 data class TotpEnrolment(
     val secret: String,
     val uri: String,
+)
+
+@Serializable
+data class UserOrganization(
+    val id: String,
+    val name: String,
+    val slug: String,
+    val role: String,
+    val permissions: List<String>,
+    /** Format: `date-time`. */
+    val createdAt: String,
+)
+
+@Serializable
+data class UserOrganizationList(
+    val activeOrganizationId: String?,
+    val meta: PaginationMeta,
+    val data: List<UserOrganization>,
 )
 
 @Serializable

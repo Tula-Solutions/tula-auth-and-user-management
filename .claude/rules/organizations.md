@@ -9,6 +9,7 @@ paths:
   - "packages/db/src/schema/organization*"
   - "packages/db/migrations/0036_*"
   - "packages/db/migrations/0038_*"
+  - "packages/db/migrations/0039_*"
   - "packages/contract/src/organization*"
 ---
 
@@ -41,6 +42,14 @@ this file under "Area rules" and does not repeat it.
   field names and counts. Never a name, a slug or an address; `organization.updated` says
   that `name` changed, not what it is now. A new field needs the schema, the fixture and the
   event canary's blessing (`audit-and-events.md`).
+- **A user's own organization routes** (`me-router.ts`, `me-service.ts`, Orgs 02) answer
+  `organization.not_a_member` for an organization that does not exist, one the user is not in
+  and one of another environment alike: never a second code for "no such organization".
+  Permissions are read from `OrganizationStore.findUserMembership` (`UserMembershipRecord`)
+  and nowhere else; the claims are built in `claims.ts`. `sessions.active_organization_id`
+  has no foreign key and is never trusted: every token re-reads the membership, and a stored
+  id that no longer matches yields no claims, not an error. Over the claims cap (ADR 0065)
+  the token carries none of them. Creating counts `created_by` under a lock on the user row.
 - Every tenant table here has forced row-level security, and the runtime role has only the
   grants the migration gives it (column-level `UPDATE`, on roles only `name`, `permissions`,
   `version` and `updated_at`, and `DELETE`, both held to custom rows by restrictive policies).
@@ -76,4 +85,7 @@ this file under "Area rules" and does not repeat it.
   `member`), a role in use, the cap, a built-in role, and an agent key on every write.
 - An agent key is refused on every write and may read.
 - Event payloads parse against their schemas and contain no name, slug or address.
+- Own routes: a non-member, a nonexistent id and another environment's organization answer the
+  same; a removed or demoted member's next refresh drops or changes the claims and the session
+  lives; an over-cap role issues no organization claims; two creates at the limit make one.
 - Adapter parity: a new store behaviour is a case of the shared suite, not of one adapter.

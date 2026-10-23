@@ -384,6 +384,29 @@ export const ERROR_DEFINITIONS = {
     status: 422,
     message: 'That role does not exist in this environment.',
   },
+  // A signed-in user's own organization routes (ADR 0065, Orgs 02). `not_a_member`: the
+  // organization is not one the user belongs to, which is also what an organization that does
+  // not exist, or is another environment's, answers: it says nothing about what exists.
+  // `creation_disabled`: users may not create organizations here (`allowUserCreated` is off).
+  // `limit_reached`: the user has created as many as `maxCreatedPerUser` allows.
+  // `personal_account_disabled`: the environment has no personal account
+  // (`personalAccount: false`), so the active organization cannot be cleared.
+  'organization.not_a_member': {
+    status: 403,
+    message: 'You are not a member of that organization.',
+  },
+  'organization.creation_disabled': {
+    status: 403,
+    message: 'Creating an organization is not allowed in this environment.',
+  },
+  'organization.limit_reached': {
+    status: 403,
+    message: 'You have reached the number of organizations you can create.',
+  },
+  'organization.personal_account_disabled': {
+    status: 409,
+    message: 'An organization must be active in this environment.',
+  },
   // Custom roles (ADR 0065). `role_exists`: the key is taken, by a custom role or by a built-in
   // one (`admin`, `member`). `role_in_use`: members still hold the role, so it cannot be deleted.
   // `role_built_in`: `admin` and `member` cannot be changed or deleted. `role_limit`: the

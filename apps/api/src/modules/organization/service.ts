@@ -127,7 +127,7 @@ export async function ensureBuiltInRoles(
  * A missing `admin` or `member` is created by {@link ensureBuiltInRoles} and read again. Any
  * other key that is missing is an unknown role.
  */
-async function requireRole(
+export async function requireRole(
   deps: Pick<Deps, 'organizations' | 'ids' | 'clock'>,
   tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
   key: string

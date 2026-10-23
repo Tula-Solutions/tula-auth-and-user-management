@@ -31,6 +31,16 @@ const ACCESS_TOKEN_EXPIRY_SKEW_MS: 10000
 ACCESS_TOKEN_EXPIRY_SKEW_MS // 10_000
 ```
 
+### `ActiveOrganization`
+
+_type_, defined in `packages/core/src/types.ts`
+
+What `organizations.setActive()` answers: the session's active organization now.
+
+```ts
+export type ActiveOrganization = Schemas['ActiveOrganization']
+```
+
 ### `AuthState`
 
 _type_, defined in `packages/core/src/types.ts`
@@ -40,13 +50,22 @@ The client's authentication state: small, immutable and serialisable.
 - `loading`: not known yet. Call `load()` (or `session.getToken()`) to find out.
 - `signed-out`: nobody is signed in.
 - `signed-in`: a session exists. `user` is `null` only until it has been fetched, or if
-  fetching it failed; `user.get()` fetches it again.
+  fetching it failed; `user.get()` fetches it again. `organizationId` is the organization
+  the session acts in (ADR 0065), `null` for the personal account. For a session with an
+  access token it is read from the token's `org_id` claim (unverified: for showing, never
+  for authorizing) and so follows every refresh; a browser's `stateful` session has no
+  token, so it is known after `organizations.list()` or `organizations.setActive()`.
 
 ```ts
 export type AuthState =
 | { readonly status: 'loading' }
 | { readonly status: 'signed-out' }
-| { readonly status: 'signed-in'; readonly sessionId: string; readonly user: User | null }
+| {
+    readonly status: 'signed-in'
+    readonly sessionId: string
+    readonly user: User | null
+    readonly organizationId: string | null
+  }
 ```
 
 **Example**
@@ -149,6 +168,16 @@ export type ClientKind = Schemas['SessionClient']
 
 ```ts
 createTulaClient({ publishableKey, baseUrl, client: 'server' })
+```
+
+### `CreateOrganizationInput`
+
+_type_, defined in `packages/core/src/types.ts`
+
+The body of `organizations.create()`: a name and a slug (lower-case letters, digits, hyphens).
+
+```ts
+export type CreateOrganizationInput = Schemas['CreateOrganizationRequest']
 ```
 
 ### `DEFAULT_TIMEOUT_MS`
@@ -1980,6 +2009,55 @@ export interface TulaClient {
      */
     prepareStepUp(request: { method: 'email_code' | 'sms_code' }): Promise<StepUpPrepared>
   }
+  /**
+   * The signed-in user's organizations and the one the session acts in (ADR 0065). While the
+   * environment's `organizations.enabled` setting is off, each call answers
+   * `organization.disabled`.
+   */
+  readonly organizations: {
+    /**
+     * The organizations the user belongs to, with their role and its permission keys in each,
+     * and the session's active organization. Only the first page the API answers: the client
+     * sends no paging query yet.
+     *
+     * @returns The page; `activeOrganizationId` is `null` for the personal account.
+     * @throws TulaError `auth.unauthenticated` when signed out, `organization.disabled`.
+     * @example
+     * ```ts
+     * const { data, activeOrganizationId } = await tula.organizations.list()
+     * ```
+     */
+    list(): Promise<UserOrganizationList>
+    /**
+     * Create an organization the user owns (it holds the environment's `creatorRole`). The
+     * session does not switch to it: call `setActive`.
+     *
+     * @param input - The name and the slug.
+     * @returns The organization.
+     * @throws TulaError `organization.creation_disabled`, `organization.limit_reached`,
+     *   `organization.slug_taken`.
+     * @example
+     * ```ts
+     * const org = await tula.organizations.create({ name: 'Acme', slug: 'acme' })
+     * await tula.organizations.setActive(org.id)
+     * ```
+     */
+    create(input: CreateOrganizationInput): Promise<UserOrganization>
+    /**
+     * Make an organization the one the session acts in (or `null`, the personal account). The
+     * access token is replaced with one that carries `org_id`, `org_role` and `org_perms`;
+     * `state.organizationId` follows.
+     *
+     * @param organizationId - The organization, or `null`.
+     * @returns The API's answer.
+     * @throws TulaError `organization.not_a_member`, `organization.personal_account_disabled`.
+     * @example
+     * ```ts
+     * await tula.organizations.setActive(org.id)
+     * ```
+     */
+    setActive(organizationId: string | null): Promise<ActiveOrganization>
+  }
   /** The signed-in user. */
   readonly user: {
     /**
@@ -2519,6 +2597,34 @@ export type User = Schemas['CurrentUser']
 
 ```ts
 const user: User = await tula.user.get()
+```
+
+### `UserOrganization`
+
+_type_, defined in `packages/core/src/types.ts`
+
+An organization the signed-in user belongs to, with their role in it and its permission
+keys (ADR 0065).
+
+```ts
+export type UserOrganization = Schemas['UserOrganization']
+```
+
+**Example**
+
+```ts
+const { data } = await tula.organizations.list()
+const admin = data.find((org) => org.role === 'admin')
+```
+
+### `UserOrganizationList`
+
+_type_, defined in `packages/core/src/types.ts`
+
+A page of the user's organizations, with the session's active organization's id.
+
+```ts
+export type UserOrganizationList = Schemas['UserOrganizationList']
 ```
 
 ### `createTulaClient`
