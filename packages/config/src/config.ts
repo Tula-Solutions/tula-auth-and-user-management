@@ -12,6 +12,8 @@ import {
   type HookFailureMode,
   type HookPoint,
   IosAppIdentitySchema,
+  isBuiltInRoleKey,
+  MAX_CUSTOM_ROLES,
   MAX_NATIVE_APPS,
   MAX_WEBHOOK_ENDPOINTS,
   type MicrosoftTenant,
@@ -19,9 +21,13 @@ import {
   nativeAppIdentifier,
   normalizeAppLinkPaths,
   normalizeCertFingerprints,
+  normalizePermissions,
   OAUTH_PROVIDERS,
   type OAuthProvider,
   ownClientIdAmong,
+  RoleKeySchema,
+  RoleNameSchema,
+  RolePermissionsSchema,
   UpdateWebhookEndpointRequestSchema,
 } from '@tula-tech/contract'
 import { z } from 'zod'
@@ -313,6 +319,48 @@ const NativeApps = z
     })
   })
 
+// A custom organization role (ADR 0065): its key is its identity, the name and the permissions
+// are what the file manages. The permissions are a set: each is checked where it was written
+// (the contract's grammar and its reserved `sys` feature), then repeats are dropped and the
+// order fixed, as the server stores them.
+const OrganizationRoleEntry = z.strictObject({
+  key: RoleKeySchema,
+  name: RoleNameSchema,
+  permissions: z
+    .array(z.string())
+    .transform((permissions) => normalizePermissions(permissions))
+    .pipe(RolePermissionsSchema),
+})
+
+const OrganizationRoles = z.array(OrganizationRoleEntry).superRefine((roles, context) => {
+  if (roles.length > MAX_CUSTOM_ROLES) {
+    context.addIssue({
+      code: 'custom',
+      message: `an environment has at most ${MAX_CUSTOM_ROLES} custom roles`,
+    })
+  }
+  const firstAt = new Map<string, number>()
+  roles.forEach((role, index) => {
+    if (isBuiltInRoleKey(role.key)) {
+      context.addIssue({
+        code: 'custom',
+        path: [index, 'key'],
+        message: 'the built-in roles admin and member are not managed by the file',
+      })
+    }
+    const first = firstAt.get(role.key)
+    if (first === undefined) {
+      firstAt.set(role.key, index)
+      return
+    }
+    context.addIssue({
+      code: 'custom',
+      path: [index, 'key'],
+      message: `the same role as organizationRoles.${first}: a role is identified by its key, so each is listed once`,
+    })
+  })
+})
+
 const Environment = z.strictObject({
   kind: z.enum(['development', 'production']).optional(),
   settings: EnvironmentSettingsInputSchema.prefault({}),
@@ -320,6 +368,7 @@ const Environment = z.strictObject({
   webhooks: Webhooks.optional(),
   hooks: Hooks.optional(),
   nativeApps: NativeApps.optional(),
+  organizationRoles: OrganizationRoles.optional(),
 })
 
 const Config = z.strictObject({
@@ -632,6 +681,33 @@ export interface AndroidAppConfig {
 export type NativeAppConfig = IosAppConfig | AndroidAppConfig
 
 /**
+ * One custom organization role of an environment, as a config file writes it.
+ *
+ * A role is its **key**, which cannot change: another key is another role. The built-in roles
+ * `admin` and `member` are not written here.
+ *
+ * @example
+ * ```ts
+ * const role: OrganizationRoleConfig = {
+ *   key: 'billing_manager',
+ *   name: 'Billing manager',
+ *   permissions: ['org:billing:read', 'org:billing:write'],
+ * }
+ * ```
+ */
+export interface OrganizationRoleConfig {
+  /** The role's key: lower-case letters, digits and underscores, at most 32 characters. */
+  key: string
+  /** The name people read, e.g. `Billing manager`. */
+  name: string
+  /**
+   * The permissions the role holds, `org:<feature>:<action>`: a set, so order and repeats mean
+   * nothing. At most 32. Adding one to a role that exists is a weakening.
+   */
+  permissions: string[]
+}
+
+/**
  * The settings document of one environment, as it is written in a config file: every field
  * optional. It is the body of `PUT /v1/admin/settings` (`EnvironmentSettingsInput`).
  *
@@ -689,6 +765,14 @@ export interface EnvironmentConfigInput {
    * list does not is left alone and shown as unmanaged, and `tula apply --prune` removes it.
    */
   nativeApps?: NativeAppConfig[]
+  /**
+   * The custom organization roles. Left out, roles are **not managed** by the file: `tula`
+   * neither reads nor changes them. Written (an empty list included), the list is what the
+   * environment should have; a custom role the server has and the list does not is left alone
+   * and shown as unmanaged, and `tula apply --prune` removes it (only if no member holds it).
+   * The built-in roles are never managed.
+   */
+  organizationRoles?: OrganizationRoleConfig[]
 }
 
 /**
@@ -749,6 +833,11 @@ export interface EnvironmentConfig {
    * does not mention native apps.
    */
   nativeApps?: NativeAppConfig[]
+  /**
+   * The custom organization roles, when the file manages them: each key once, the permissions
+   * sorted and without repeats. Absent when the file does not mention roles.
+   */
+  organizationRoles?: OrganizationRoleConfig[]
 }
 
 /**
@@ -1072,12 +1161,13 @@ function withoutUnusedDefaults(environment: EnvironmentConfig): unknown {
  * writes, so the dashboard and a later `tula diff` can say which version of the file is in
  * force.
  *
- * It covers the settings, the providers, the webhook endpoints, the hooks and the native apps
+ * It covers the settings, the providers, the webhook endpoints, the hooks, the native apps and
+ * the custom organization roles
  * as written, with each secret as the **name** of its variable: no secret value is hashed, so
  * the fingerprint reveals nothing about one. An endpoint's event types and an Android app's
  * fingerprints count as sets, and an environment that does not mention webhooks, hooks or
- * native apps hashes as it did before they could be written (a hook's defaults count as
- * written). So does one
+ * native apps or custom organization roles hashes as it did before they could be written (a
+ * hook's defaults count as written). So does one
  * that defines no JWT template and whose profiles name none, and one that leaves text messages
  * (`sms`), their daily limit, the texted sign-in code (`signIn.methods.smsCode`) or a texted
  * code as the second step (`mfa.smsCode`) at the default, one whose profiles leave

@@ -50,8 +50,9 @@ that those tickets build on one document.
 All five are tenant tables: `project_id` and `environment_id`, the composite foreign key and
 fail-closed row-level security, forced (`FORCE ROW LEVEL SECURITY`). The runtime role is
 granted what it needs and no more: `organizations` and memberships may be updated in the
-columns that change (`name`, `slug`, `role_id`, `updated_at`), and roles may only be read
-and inserted in this version (Orgs 03 adds the grants that custom roles need).
+columns that change (`name`, `slug`, `role_id`, `updated_at`). Roles were read and inserted
+only in Orgs 01; Orgs 03 (below) grants the update and delete that custom roles need, to
+custom rows only.
 
 ### Built-in roles exist per environment
 
@@ -75,8 +76,9 @@ two keys).
 A permission key is `org:<feature>:<action>`, lower-case, for the operator's own features
 (`org:billing:read`). The system's own are `org:sys:<feature>:<action>`: `organization:manage`,
 `organization:delete`, `memberships:read`, `memberships:manage`, `invitations:manage` and
-`domains:manage`. **`sys` is reserved**: a custom permission cannot use it. A role holds at
-most 32 permissions and an environment at most 50 custom roles; both are bounds in the
+`domains:manage`. **`sys` is reserved**: a custom permission cannot invent a `sys` key. A
+custom role may hold any of those six (that is how an operator makes a second manager role),
+and no other `org:sys:*` key (Orgs 03, below). A role holds at most 32 permissions and an environment at most 50 custom roles; both are bounds in the
 contract, enforced in the schema and in the database.
 
 **An organization always has someone who can manage its members.** The last member who holds
@@ -184,6 +186,56 @@ one entry per user with source `import`; webhooks send `user.imported`, **not**
 `tula import --from clerk|auth0|firebase|supabase|better-auth <file>` has a dry run, a report
 and resume.
 
+### Custom roles (Orgs 03)
+
+An environment defines roles of its own beside the two built-in ones.
+
+- **Grammar.** A role key is `^[a-z][a-z0-9_]{0,31}$`; `admin` and `member` are taken (a
+  database check holds a custom row off both keys). A permission key is the grammar above, at
+  most 100 characters, none twice. A custom role may hold the six system permissions; any
+  other `org:sys:*` key is refused with `validation.failed`, so that a typo of
+  `org:sys:memberships:manage` can never be a permission nobody checks. Permissions are a set:
+  stored and returned sorted.
+- **Routes.** `/v1/admin/organization-roles` (list, define) and `/:key` (read, change,
+  remove), addressed by key. Behind `secretKey()`, so the dashboard's session works too; an
+  agent key reads and nothing else. While organizations are off every route answers
+  `organization.disabled`. Listing creates the built-in roles if they are missing.
+- **Versions.** A role has a `version` (from 1, plus one for each change); it is the `ETag`.
+  A change needs `If-Match` (`precondition.required` 428 without it, `precondition.failed` 412
+  with `params.version` when stale); a removal may send it. This is what lets `tula apply`
+  write over exactly the role it planned from, as it does for settings.
+- **Rules.** The built-in roles cannot be changed or removed (`organization.role_built_in`);
+  a key that is taken (also `admin` and `member`) is `organization.role_exists`; a role a
+  member holds cannot be removed (`organization.role_in_use`, and the foreign key is the last
+  word); more than 50 custom roles is `organization.role_limit`, counted under the
+  environment lock `organization_roles` so that two definitions cannot both pass. **A change
+  that takes `org:sys:memberships:manage` away from a role leaves no organization without a
+  manager**: it is `organization.last_manager` when some organization's only manager would be
+  demoted by it, checked in the same transaction under the lock of the organizations that use
+  the role (the order is by id, as the membership routes lock, so the two cannot deadlock).
+  The check does not lock the role row first: the membership foreign key's share lock on it
+  would then deadlock with a role change.
+- **Weakening.** Giving a role a permission it did not have is a weakening (members who hold
+  it gain access): the event carries `weakened: true`, `tula apply --yes` needs
+  `--allow-weaker`, and the dashboard asks first (`organizationRoleWeakenings` in the
+  contract, one function for all three). Defining a role (nobody holds it), taking a
+  permission away and removing an unused role are not weakenings.
+- **Effect.** A membership holds a role id and the permissions are read through the role at
+  refresh time, so a change reaches a signed-in member's token at their next refresh, within
+  the access token's life, as a demotion does. No permission is copied into a membership.
+- **Events.** `organization_role.created`, `.updated` and `.deleted`, target type
+  `organization_role`. The data holds the role's key (an operator identifier of the grammar
+  above, which the event canary allows in this field and no other), the number of
+  permissions and, for an update, the names of the fields that changed (`name`,
+  `permissions`); never a name and never a permission key.
+- **Database (migration 0038).** `organization_roles.version` with a check that it is at
+  least 1; a check that a custom row does not take a built-in key; the runtime role is
+  granted `UPDATE ("name", "permissions", "version", "updated_at")` and `DELETE`, and two
+  restrictive policies hold both to rows that are not built in, whatever a statement asks.
+- **Config.** `organizationRoles` in `tula.config.ts`: a list keyed by role key, which
+  `tula diff` and `tula apply` plan like native apps (`docs/config.md`). Left out, roles are
+  not managed.
+
 ### Out of scope
 
 SAML and SCIM, billing, per-organization branding and settings overrides, nested
@@ -200,3 +252,5 @@ native organization screens.
 - A removal does not end the session, so a removed member's token carries the old claims for
   up to its life (about a minute). Anything that must be immediate checks the membership.
 - The last-manager rule has the gap described above until TULA-124.
+- A custom role is shared by all organizations of the environment, like the built-in ones.
+  Changing one changes what every member who holds it may do, at their next refresh.

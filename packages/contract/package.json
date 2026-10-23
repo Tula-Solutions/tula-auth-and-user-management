@@ -31,6 +31,7 @@
     "./event-types": "./src/event-types.ts",
     "./headers": "./src/headers.ts",
     "./issuer": "./src/issuer.ts",
+    "./organization-permissions": "./src/organization-permissions.ts",
     "./password-rules": "./src/password-rules.ts",
     "./redirect-url": "./src/redirect-url.ts",
     "./theme": "./src/theme.ts",
@@ -66,6 +67,10 @@
       "./issuer": {
         "types": "./dist/issuer.d.ts",
         "default": "./dist/issuer.js"
+      },
+      "./organization-permissions": {
+        "types": "./dist/organization-permissions.d.ts",
+        "default": "./dist/organization-permissions.js"
       },
       "./password-rules": {
         "types": "./dist/password-rules.d.ts",

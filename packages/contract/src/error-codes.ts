@@ -384,6 +384,26 @@ export const ERROR_DEFINITIONS = {
     status: 422,
     message: 'That role does not exist in this environment.',
   },
+  // Custom roles (ADR 0065). `role_exists`: the key is taken, by a custom role or by a built-in
+  // one (`admin`, `member`). `role_in_use`: members still hold the role, so it cannot be deleted.
+  // `role_built_in`: `admin` and `member` cannot be changed or deleted. `role_limit`: the
+  // environment has `params.max` custom roles already.
+  'organization.role_exists': {
+    status: 409,
+    message: 'A role with that key already exists in this environment.',
+  },
+  'organization.role_in_use': {
+    status: 409,
+    message: 'Members still hold this role. Give them another role first.',
+  },
+  'organization.role_built_in': {
+    status: 409,
+    message: 'A built-in role cannot be changed or deleted.',
+  },
+  'organization.role_limit': {
+    status: 409,
+    message: 'This environment has the most custom roles it can have.',
+  },
 
   rate_limited: { status: 429, message: 'Too many requests. Try again shortly.' },
   'request.malformed': { status: 400, message: 'The request could not be read.' },
