@@ -267,10 +267,10 @@
       }
     },
     {
-      "name": "a search by the start of the name finds it, ignoring case",
+      "name": "a search by the start of the slug finds it, ignoring case",
       "request": {
         "method": "GET",
-        "path": "/v1/admin/organizations?q=CONFORMANCE%20o",
+        "path": "/v1/admin/organizations?q=CONFORMANCE-{{suffix}}",
         "auth": "secret"
       },
       "expect": {

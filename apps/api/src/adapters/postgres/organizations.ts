@@ -345,17 +345,17 @@ export class PostgresOrganizationStore implements OrganizationStore {
     environmentId: string,
     { page, size, q }: PageCriteria & { q?: string }
   ): Promise<Page<OrganizationRecord>> {
-    // Escaped so that `%`, `_` and `\` in the term match themselves. Both sides are lower-cased:
-    // the slug is lower-case already, and `lower(name) LIKE 'x%'` is what the prefix index
+    // Escaped so that `%`, `_` and `\` in the term match themselves. Both sides are lower-cased
+    // by the database, so folding is one function's on both sides, and `lower(name) LIKE 'x%'` is what the prefix index
     // (`organizations_environment_lower_name_idx`) serves, which `ILIKE` could not use.
-    const pattern = q ? `${q.toLowerCase().replace(/[\\%_]/g, (char) => `\\${char}`)}%` : null
+    const pattern = q ? `${q.replace(/[\\%_]/g, (char) => `\\${char}`)}%` : null
     return withTenant(this.db, environmentId, async (tx) => {
       const where = and(
         eq(organizations.environmentId, environmentId),
         pattern
           ? or(
-              sql`lower(${organizations.name}) like ${pattern}`,
-              sql`${organizations.slug} like ${pattern}`
+              sql`lower(${organizations.name}) like lower(${pattern})`,
+              sql`${organizations.slug} like lower(${pattern})`
             )
           : undefined
       )

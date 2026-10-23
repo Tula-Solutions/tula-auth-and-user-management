@@ -176,6 +176,20 @@ describe('the list of organizations', () => {
     expect(location()).toBe(`${DEV_PATH}/organizations`)
   })
 
+  test('keys typed after a search was sent stay in the box', async () => {
+    const { user, location } = start(`${DEV_PATH}/organizations`, {
+      api: arranged({ organizations: [acme, globex] }),
+    })
+    await screen.findByRole('table', { name: 'Organizations' })
+    const box = screen.getByLabelText('Search organizations') as HTMLInputElement
+    await user.type(box, 'gl')
+    await waitFor(() => expect(location()).toBe(`${DEV_PATH}/organizations?q=gl`))
+    await user.type(box, 'o')
+    expect(box.value).toBe('glo')
+    await waitFor(() => expect(location()).toBe(`${DEV_PATH}/organizations?q=glo`))
+    expect(box.value).toBe('glo')
+  })
+
   test('a search that matches nothing says so', async () => {
     const { user } = start(`${DEV_PATH}/organizations?q=zzz`, {
       api: arranged({ organizations: [acme] }),

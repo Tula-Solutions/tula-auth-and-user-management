@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { CreateOrganizationRequestSchema } from '@tula-tech/contract'
-import { type FormEvent, useEffect, useState } from 'react'
+import { type FormEvent, useEffect, useRef, useState } from 'react'
 import { fieldErrorMap } from '~/api/errors'
 import {
   type Organization,
@@ -208,8 +208,14 @@ export function OrganizationsScreen({ scope, q, page, onSearch }: OrganizationsS
     { request: useEnvironmentRequest() }
   )
 
+  // The last search this box sent: the address coming back with it is not news, and copying it
+  // over the box would drop a key typed while the navigation was under way.
+  const sent = useRef(q)
   useEffect(() => {
-    setText(q)
+    if (q !== sent.current) {
+      sent.current = q
+      setText(q)
+    }
   }, [q])
 
   // What was typed becomes the address's search once the typing pauses. Skipped when it is
@@ -220,15 +226,16 @@ export function OrganizationsScreen({ scope, q, page, onSearch }: OrganizationsS
     if (wanted === q) {
       return
     }
-    const timer = setTimeout(
-      () => onSearch({ q: wanted, page: 1, replace: true }),
-      ORGANIZATIONS_SEARCH_DEBOUNCE_MS
-    )
+    const timer = setTimeout(() => {
+      sent.current = wanted
+      onSearch({ q: wanted, page: 1, replace: true })
+    }, ORGANIZATIONS_SEARCH_DEBOUNCE_MS)
     return () => clearTimeout(timer)
   }, [text, q, onSearch])
 
   function submit(event: FormEvent) {
     event.preventDefault()
+    sent.current = text.trim()
     onSearch({ q: text.trim(), page: 1 })
   }
 

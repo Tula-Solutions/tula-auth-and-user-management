@@ -425,6 +425,17 @@ export function describeOrganizationStore(
       })
     })
 
+    test('a non-ASCII name is found by a prefix in either case', async () => {
+      const unal = await stored(organization(ctx.a, { name: 'Ünal Works', slug: 'unal' }))
+      const env = ctx.a.environmentId
+      for (const q of ['ÜN', 'ün']) {
+        expect(await ctx.store.list(env, { page: 1, size: 10, q })).toEqual({
+          records: [unal],
+          total: 1,
+        })
+      }
+    })
+
     test('LIKE wildcards in a search term match themselves only', async () => {
       await stored(organization(ctx.a, { name: 'Acme', slug: 'acme' }))
       await stored(organization(ctx.a, { name: '100% Real', slug: 'real' }))
