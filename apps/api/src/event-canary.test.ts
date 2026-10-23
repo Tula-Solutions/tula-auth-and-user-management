@@ -164,13 +164,39 @@ const MAY_APPEAR: Record<string, { type: string; field: string }> = {
   'x-tula-session-profile': { type: 'environment.settings_updated', field: 'changed' },
 }
 
+/**
+ * The fields where the **key of a custom role** may be found (ADR 0065): the key is the
+ * operator's own identifier, chosen in a request body and validated against `ROLE_KEY_PATTERN`,
+ * and a role's and a membership's events name the role by it. Like {@link MAY_APPEAR} it is
+ * allowed in these fields and in no other.
+ */
+const ROLE_KEY_FIELDS: readonly { type: string; field: string }[] = [
+  { type: 'organization_role.created', field: 'role' },
+  { type: 'organization_role.updated', field: 'role' },
+  { type: 'organization_role.deleted', field: 'role' },
+  { type: 'organization_membership.added', field: 'role' },
+  { type: 'organization_membership.role_changed', field: 'role' },
+  { type: 'organization_membership.role_changed', field: 'previousRole' },
+  { type: 'organization_membership.removed', field: 'role' },
+]
+
+/** Whether a request body names a role by key: a role's definition, or a member's role. */
+function namesRole(request: Request): boolean {
+  const { pathname } = new URL(request.url)
+  return (
+    (request.method === 'POST' && /\/v1\/admin\/organization-roles\/?$/.test(pathname)) ||
+    (['POST', 'PATCH'].includes(request.method) &&
+      /\/v1\/admin\/organizations\/[^/]+\/memberships(\/[^/]+)?$/.test(pathname))
+  )
+}
+
 /** The recorded events without the fields {@link MAY_APPEAR} allows a client's value in. */
 function withoutAllowed(
   events: readonly { type: string; data: Record<string, unknown> }[]
 ): unknown[] {
   return events.map((event) => {
     const data = { ...event.data }
-    for (const { type, field } of Object.values(MAY_APPEAR)) {
+    for (const { type, field } of [...Object.values(MAY_APPEAR), ...ROLE_KEY_FIELDS]) {
       if (event.type === type) {
         delete data[field]
       }
@@ -219,8 +245,20 @@ class Tap {
     }
     const body = await request.clone().text()
     const json = parseJson(body)
+    const role = namesRole(request) && json && typeof json === 'object' ? json : undefined
     for (const value of json === undefined ? parameters(body) : strings(json)) {
-      this.add(value)
+      // A role's key may be in the fields of ROLE_KEY_FIELDS, so it is held to that rule
+      // there; everything else in the same body is an ordinary input.
+      const key = (role as { key?: unknown; role?: unknown } | undefined)?.key
+      const named = (role as { role?: unknown } | undefined)?.role
+      if (value === key || value === named) {
+        // A built-in role's key is contract vocabulary and stays out of the set.
+        if (!VOCABULARY.has(value as string)) {
+          this.mayAppear.add(value)
+        }
+      } else {
+        this.add(value)
+      }
     }
   }
 
@@ -235,7 +273,13 @@ class Tap {
         this.add(value)
       }
     }
-    this.addAll(secrets(parseJson(await response.clone().text())))
+    // A role's response names it by `key`, which the field list above reads as a credential:
+    // a key the request already put in `mayAppear` is the operator's own identifier.
+    this.addAll(
+      secrets(parseJson(await response.clone().text())).filter(
+        (value) => !this.mayAppear.has(value)
+      )
+    )
   }
 
   email(message: { to: string; subject: string; text: string }): void {
@@ -299,7 +343,13 @@ async function record(scenario: Scenario) {
     tap.sms(message)
   }
   const { events, entries } = target.deps.activityLog
-  return { tap, result, events, details: entries.map((entry) => entry.data) }
+  return {
+    tap,
+    result,
+    events,
+    details: entries.map((entry) => entry.data),
+    typed: entries.map((entry) => ({ type: entry.type, data: entry.data })),
+  }
 }
 
 const scenarios = await loadScenarios()
@@ -308,19 +358,29 @@ describe('event payloads hold nothing a client or admin supplied, and no secret'
   test.each(scenarios.map(({ file, scenario }) => [file, scenario] as const))(
     '%s',
     async (_file, scenario) => {
-      const { tap, result, events, details } = await record(scenario)
+      const { tap, result, events, typed } = await record(scenario)
       // The canaries are valid input: the scenario still passes with them.
       expect(result.status).toBe('passed')
       expect(tap.inputs.size).toBeGreaterThan(0)
 
-      expect(JSON.stringify(events)).not.toMatch(MARKERS)
+      // The fields a custom role's key may be in are left out of the marker search: an
+      // operator's key is free text of its grammar, and a generated one can hold a marker.
+      expect(JSON.stringify(withoutAllowed(events))).not.toMatch(MARKERS)
       expect(leaks(events, tap.inputs)).toEqual([])
       // What a client supplied and a payload is meant to carry is in its own field only.
       expect(leaks(withoutAllowed(events), tap.mayAppear)).toEqual([])
       // The audit entry's details are held to the same rule (its origin columns are not: the
       // IP address and user agent belong to the audit log, and only there).
-      expect(JSON.stringify(details)).not.toMatch(MARKERS)
-      expect(leaks(details, tap.inputs)).toEqual([])
+      expect(
+        JSON.stringify(withoutAllowed(typed).map((one) => (one as { data: unknown }).data))
+      ).not.toMatch(MARKERS)
+      expect(
+        leaks(
+          typed.map((one) => one.data),
+          tap.inputs
+        )
+      ).toEqual([])
+      expect(leaks(withoutAllowed(typed), tap.mayAppear)).toEqual([])
     }
   )
 

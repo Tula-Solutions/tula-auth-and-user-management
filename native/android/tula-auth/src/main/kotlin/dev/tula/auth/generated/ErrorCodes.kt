@@ -364,6 +364,22 @@ sealed class ErrorCode {
         override val rawValue: String = "organization.personal_account_disabled"
     }
 
+    object OrganizationRoleExists : ErrorCode() {
+        override val rawValue: String = "organization.role_exists"
+    }
+
+    object OrganizationRoleInUse : ErrorCode() {
+        override val rawValue: String = "organization.role_in_use"
+    }
+
+    object OrganizationRoleBuiltIn : ErrorCode() {
+        override val rawValue: String = "organization.role_built_in"
+    }
+
+    object OrganizationRoleLimit : ErrorCode() {
+        override val rawValue: String = "organization.role_limit"
+    }
+
     object RateLimited : ErrorCode() {
         override val rawValue: String = "rate_limited"
     }
@@ -513,6 +529,10 @@ sealed class ErrorCode {
                 OrganizationCreationDisabled,
                 OrganizationLimitReached,
                 OrganizationPersonalAccountDisabled,
+                OrganizationRoleExists,
+                OrganizationRoleInUse,
+                OrganizationRoleBuiltIn,
+                OrganizationRoleLimit,
                 RateLimited,
                 RequestMalformed,
                 RequestTooLarge,
@@ -617,6 +637,10 @@ sealed class ErrorCode {
             "organization.creation_disabled" -> OrganizationCreationDisabled
             "organization.limit_reached" -> OrganizationLimitReached
             "organization.personal_account_disabled" -> OrganizationPersonalAccountDisabled
+            "organization.role_exists" -> OrganizationRoleExists
+            "organization.role_in_use" -> OrganizationRoleInUse
+            "organization.role_built_in" -> OrganizationRoleBuiltIn
+            "organization.role_limit" -> OrganizationRoleLimit
             "rate_limited" -> RateLimited
             "request.malformed" -> RequestMalformed
             "request.too_large" -> RequestTooLarge
@@ -917,6 +941,18 @@ object TulaErrorDefinitions {
     /** `organization.personal_account_disabled` */
     val organizationPersonalAccountDisabled: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationPersonalAccountDisabled, 409, "An organization must be active in this environment.")
 
+    /** `organization.role_exists` */
+    val organizationRoleExists: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationRoleExists, 409, "A role with that key already exists in this environment.")
+
+    /** `organization.role_in_use` */
+    val organizationRoleInUse: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationRoleInUse, 409, "Members still hold this role. Give them another role first.")
+
+    /** `organization.role_built_in` */
+    val organizationRoleBuiltIn: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationRoleBuiltIn, 409, "A built-in role cannot be changed or deleted.")
+
+    /** `organization.role_limit` */
+    val organizationRoleLimit: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationRoleLimit, 409, "This environment has the most custom roles it can have.")
+
     /** `rate_limited` */
     val rateLimited: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.RateLimited, 429, "Too many requests. Try again shortly.")
 
@@ -1044,6 +1080,10 @@ object TulaErrorDefinitions {
         organizationCreationDisabled,
         organizationLimitReached,
         organizationPersonalAccountDisabled,
+        organizationRoleExists,
+        organizationRoleInUse,
+        organizationRoleBuiltIn,
+        organizationRoleLimit,
         rateLimited,
         requestMalformed,
         requestTooLarge,

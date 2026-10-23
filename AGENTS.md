@@ -490,7 +490,7 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   digits. Tests wait for them with `Notices.settled()` and read a code from the newest email
   whose subject leads with one, not from the newest email.
 - Treat every change under
-  `modules/{flow,session,password,jwks,verification,mfa,factor,oauth,passkey,instance,control-plane,webhook,hook,phone,sms,native-app,organization,proposal,sign-in-test}`,
+  `modules/{flow,session,password,jwks,verification,mfa,factor,oauth,passkey,instance,control-plane,webhook,hook,phone,sms,native-app,organization,organization-role,proposal,sign-in-test}`,
   `modules/email/templates.ts`, `modules/message-preview`, `packages/contract/src/{email-template,sms-template}.ts`,
   `adapters/oauth/`, `adapters/sms/`, `middleware/{cors,recent-auth,instance-admin,secret-key,agent-key,dashboard-session}.ts`,
   `lib/crypto.ts`, `lib/totp.ts`, `lib/webauthn.ts`, `lib/dpop.ts`, `lib/outbound.ts`, `lib/signing-secret.ts`, `lib/dashboard-session.ts` or `lib/dashboard-files.ts` as
@@ -629,6 +629,7 @@ apps/api/src/
                       # native-app (an environment's iOS and Android apps, and the two
                       # association files built from them),
                       # organization (organizations, roles and memberships: the admin routes),
+                      # organization-role (an environment's custom roles: the admin routes),
                       # message-preview (what the server would send for a draft wording),
                       # proposal (what an agent asked for, a human's approval of it and
                       # the carrying out; the agent's route and the admin routes),

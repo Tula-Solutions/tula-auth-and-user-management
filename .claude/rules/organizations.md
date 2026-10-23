@@ -1,12 +1,15 @@
 ---
 paths:
   - "apps/api/src/modules/organization/**"
+  - "apps/api/src/modules/organization-role/**"
   - "apps/api/src/ports/organization-store.ts"
   - "apps/api/src/adapters/memory/organizations*"
   - "apps/api/src/adapters/postgres/organizations*"
   - "apps/api/src/adapters/organization-store.suite.ts"
   - "packages/db/src/schema/organization*"
   - "packages/db/migrations/0036_*"
+  - "packages/db/migrations/0038_*"
+  - "packages/db/migrations/0039_*"
   - "packages/contract/src/organization*"
 ---
 
@@ -48,9 +51,27 @@ this file under "Area rules" and does not repeat it.
   id that no longer matches yields no claims, not an error. Over the claims cap (ADR 0065)
   the token carries none of them. Creating counts `created_by` under a lock on the user row.
 - Every tenant table here has forced row-level security, and the runtime role has only the
-  grants the migration gives it (column-level `UPDATE`; no `UPDATE` on roles). A new column
-  that a statement writes needs its grant in a migration.
-- `sys` is a reserved permission feature: a custom permission never uses it.
+  grants the migration gives it (column-level `UPDATE`, on roles only `name`, `permissions`,
+  `version` and `updated_at`, and `DELETE`, both held to custom rows by restrictive policies).
+  A new column that a statement writes needs its grant in a migration. Never loosen
+  `organization_roles_custom_update_only` or `organization_roles_custom_delete_only`, and add no
+  policy on the table that is not restrictive.
+- `sys` is a reserved permission feature: a custom role holds only the system permissions
+  Tula defines (`SYSTEM_PERMISSIONS`) and no other `org:sys:*` key. `rolePermissionRefusal`
+  in `@tula-tech/contract/organization-permissions` is the one place that says so; never
+  re-implement the grammar in a service or an adapter.
+- **Custom roles** (`modules/organization-role`, ADR 0065, "Custom roles"). A change needs
+  the version it read (`If-Match`; `Settings.expectedRevision` and `Settings.etag` parse and
+  write it): 428 without, 412 when stale. Giving a role a permission is the weakening
+  (`organizationRoleWeakenings`); the event says `weakened: true` and nothing else about it.
+  The cap of 50 is checked under `deps.environmentLock.runExclusive(env, 'organization_roles',
+  …)`, never outside it. A role update that drops `org:sys:memberships:manage` takes the
+  locks of the organizations that use the role (ordered by id, as the membership routes do) and
+  answers `last_manager`; it never locks the role row first (the membership foreign key's
+  share lock on it would deadlock with `changeRole`). A removal is refused while a membership
+  uses the role, by a count and by the foreign key. A role's events hold its key, a count and
+  field names: never a name and never a permission key. Permissions are never copied into a
+  membership: they are read through the role at refresh time.
 
 ## What to test
 
@@ -58,7 +79,10 @@ this file under "Area rules" and does not repeat it.
 - Isolation: an organization, membership or role of another environment is not found, and a
   key of one environment cannot add its users to another's.
 - Last manager: demote and remove both refuse, with a second manager they succeed, and the
-  store suite proves it on the real database (`stores.integration.ts`).
+  store suite proves it on the real database (`stores.integration.ts`). A role update that
+  strips the permission refuses alike.
+- Custom roles: a stale version, a missing `If-Match`, a taken key (also `admin` and
+  `member`), a role in use, the cap, a built-in role, and an agent key on every write.
 - An agent key is refused on every write and may read.
 - Event payloads parse against their schemas and contain no name, slug or address.
 - Own routes: a non-member, a nonexistent id and another environment's organization answer the

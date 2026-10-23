@@ -18,10 +18,12 @@ import {
 } from './custom-claims'
 import {
   BUILT_IN_ROLES,
+  MAX_PERMISSION_KEY_LENGTH,
   MAX_PERMISSIONS_PER_ROLE,
   PERMISSION_KEY_PATTERN,
   ROLE_KEY_PATTERN,
-} from './organization'
+  rolePermissionRefusal,
+} from './organization-permissions'
 import { AccessTokenClaimsSchema } from './tokens'
 
 describe('the namespace claim', () => {
@@ -265,6 +267,37 @@ describe('the organization claims (ADR 0065)', () => {
     expect(bytes).toBeLessThanOrEqual(MAX_ORGANIZATION_CLAIMS_BYTES)
     expect(MAX_ORGANIZATION_CLAIMS_BYTES - bytes).toBeLessThan(64)
     expect(MAX_PERMISSIONS_PER_ROLE).toBe(MAX_ORGANIZATION_PERMISSIONS_CLAIM)
+  })
+
+  test('a custom role at its limits fits the cap: 32 keys of 69 characters at most', () => {
+    // `MAX_PERMISSION_KEY_LENGTH` (100) is only an outer bound: the grammar ends a key at
+    // `org:` + 32 + `:` + 32 = 69 for a custom role, because an `org:sys:` key (73 at most) is
+    // refused as reserved unless it is one of Tula's own, which are short
+    // (`rolePermissionRefusal`). The cap was sized for the 73 anyway, so the largest custom
+    // role fits with room to spare and its claims are never dropped (ADR 0065).
+    const widest = `org:${'f'.repeat(32)}:${'a'.repeat(32)}`
+    expect(widest).toHaveLength(69)
+    expect(rolePermissionRefusal(widest)).toBeNull()
+    expect(MAX_PERMISSION_KEY_LENGTH).toBeGreaterThan(69)
+    expect(rolePermissionRefusal(longest.orgPermissions[0] ?? '')).toBe('reserved')
+    for (const longer of [
+      `${widest}x`,
+      `org:${'a'.repeat(33)}:read`,
+      `org:${'a'.repeat(MAX_PERMISSION_KEY_LENGTH)}:read`,
+    ]) {
+      expect(rolePermissionRefusal(longer)).not.toBeNull()
+    }
+    const permissions = Array.from(
+      { length: MAX_PERMISSIONS_PER_ROLE },
+      (_, index) => `org:${'f'.repeat(31)}${index % 10}:${'a'.repeat(31)}${index % 10}`
+    )
+    expect(
+      organizationClaimsBytes({
+        orgId: ID,
+        orgRole: `r${'x'.repeat(31)}`,
+        orgPermissions: permissions,
+      })
+    ).toBeLessThan(MAX_ORGANIZATION_CLAIMS_BYTES)
   })
 
   test('the cap is its own: the custom claims keep their 1,024 bytes', () => {

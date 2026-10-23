@@ -8,14 +8,19 @@ import {
   users,
   withTenant,
 } from '@tula-tech/db'
-import { and, arrayContains, asc, count, desc, eq, ne } from 'drizzle-orm'
+import { and, arrayContains, asc, count, desc, eq, inArray, ne, sql } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
-import { isForeignKeyViolation, isUniqueViolation } from '~/adapters/postgres/errors'
+import {
+  isCheckViolation,
+  isForeignKeyViolation,
+  isUniqueViolation,
+} from '~/adapters/postgres/errors'
 import { activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import type {
   AddMembershipOutcome,
   ChangeMembershipOutcome,
   CreateOwnedOutcome,
+  DeleteRoleOutcome,
   MembershipRecord,
   OrganizationChanges,
   OrganizationRecord,
@@ -24,7 +29,9 @@ import type {
   OwnedOrganization,
   Page,
   PageCriteria,
+  RoleChanges,
   UpdateOrganizationOutcome,
+  UpdateRoleOutcome,
   UserMembershipRecord,
 } from '~/ports/organization-store'
 
@@ -47,6 +54,7 @@ const roleColumns = {
   name: organizationRoles.name,
   permissions: organizationRoles.permissions,
   builtIn: organizationRoles.builtIn,
+  version: organizationRoles.version,
   createdAt: organizationRoles.createdAt,
   updatedAt: organizationRoles.updatedAt,
 }
@@ -137,6 +145,90 @@ async function hasAnotherManager(
       )
     )
   return (row?.value ?? 0) > 0
+}
+
+/** The role with this id. */
+async function readRole(
+  tx: Transaction,
+  environmentId: string,
+  id: string
+): Promise<OrganizationRoleRecord | null> {
+  const [row] = await tx
+    .select(roleColumns)
+    .from(organizationRoles)
+    .where(and(eq(organizationRoles.environmentId, environmentId), eq(organizationRoles.id, id)))
+    .limit(1)
+  return row ?? null
+}
+
+/** The organizations that have a member holding the role. */
+function organizationsUsing(tx: Transaction, environmentId: string, roleId: string) {
+  return tx
+    .select({ id: organizationMemberships.organizationId })
+    .from(organizationMemberships)
+    .where(
+      and(
+        eq(organizationMemberships.environmentId, environmentId),
+        eq(organizationMemberships.roleId, roleId)
+      )
+    )
+}
+
+/**
+ * Lock the rows of every organization that has a member holding the role, in id order, so that
+ * the removals and demotions of those members (which each lock their organization) take turns
+ * with a change to the role. The order is the same for every writer that locks several, so two
+ * of them cannot wait for each other. The role's own row is not locked first: a membership
+ * change takes a shared lock on it for its foreign key, and the two would wait for each other.
+ */
+async function lockOrganizationsUsing(
+  tx: Transaction,
+  environmentId: string,
+  roleId: string
+): Promise<void> {
+  await tx
+    .select({ id: organizations.id })
+    .from(organizations)
+    .where(
+      and(
+        eq(organizations.environmentId, environmentId),
+        inArray(organizations.id, organizationsUsing(tx, environmentId, roleId))
+      )
+    )
+    .orderBy(asc(organizations.id))
+    .for('update')
+}
+
+/**
+ * Whether some organization has a member holding the role and no member holding another role
+ * that can manage members: the organizations the role is the only source of managers for.
+ */
+async function isOnlySourceOfManagers(
+  tx: Transaction,
+  environmentId: string,
+  roleId: string
+): Promise<boolean> {
+  const using = await organizationsUsing(tx, environmentId, roleId)
+  if (using.length === 0) {
+    return false
+  }
+  const covered = await tx
+    .select({ id: organizationMemberships.organizationId })
+    .from(organizationMemberships)
+    .innerJoin(organizationRoles, joinedToRole)
+    .where(
+      and(
+        eq(organizationMemberships.environmentId, environmentId),
+        ne(organizationMemberships.roleId, roleId),
+        arrayContains(organizationRoles.permissions, [MEMBERSHIPS_MANAGE_PERMISSION]),
+        inArray(
+          organizationMemberships.organizationId,
+          organizationsUsing(tx, environmentId, roleId)
+        )
+      )
+    )
+  const withManager = new Set(covered.map((row) => row.id))
+  return using.some((row) => !withManager.has(row.id))
 }
 
 /** Organizations, roles and memberships in Postgres, behind row-level security. */
@@ -550,6 +642,157 @@ export class PostgresOrganizationStore implements OrganizationStore {
         .limit(1)
     )
     return row ?? null
+  }
+
+  /** @inheritdoc */
+  async findRoleById(environmentId: string, id: string): Promise<OrganizationRoleRecord | null> {
+    return withTenant(this.db, environmentId, (tx) => readRole(tx, environmentId, id))
+  }
+
+  /** @inheritdoc */
+  async insertRole(
+    record: OrganizationRoleRecord,
+    recorded: Recorded
+  ): Promise<OrganizationRoleRecord | null> {
+    const activity = activityOf(recorded)
+    try {
+      return await withTenant(this.db, record.environmentId, async (tx) => {
+        const [row] = await tx.insert(organizationRoles).values(record).returning(roleColumns)
+        await recordActivity(tx, activity ? [activity] : [])
+        // An insert that did not throw returns its row.
+        return row as OrganizationRoleRecord
+      })
+    } catch (error) {
+      // The key is taken (the unique key decided), or it is a built-in role's key
+      // (`organization_roles_reserved_keys`); the transaction, with its audit entry, is rolled
+      // back either way.
+      if (isUniqueViolation(error) || isCheckViolation(error)) {
+        return null
+      }
+      throw error
+    }
+  }
+
+  /** @inheritdoc */
+  async updateRole(
+    environmentId: string,
+    id: string,
+    expectedVersion: number,
+    changes: RoleChanges,
+    updatedAt: Date,
+    recorded: Recorded
+  ): Promise<UpdateRoleOutcome> {
+    const activity = activityOf(recorded)
+    return withTenant(this.db, environmentId, async (tx) => {
+      const current = await readRole(tx, environmentId, id)
+      if (!current) {
+        return { outcome: 'not_found' } as const
+      }
+      if (current.builtIn) {
+        return { outcome: 'built_in' } as const
+      }
+      if (current.version !== expectedVersion) {
+        return { outcome: 'stale', version: current.version } as const
+      }
+      const dropsManage =
+        current.permissions.includes(MEMBERSHIPS_MANAGE_PERMISSION) &&
+        changes.permissions !== undefined &&
+        !changes.permissions.includes(MEMBERSHIPS_MANAGE_PERMISSION)
+      if (dropsManage) {
+        await lockOrganizationsUsing(tx, environmentId, id)
+        if (await isOnlySourceOfManagers(tx, environmentId, id)) {
+          return { outcome: 'last_manager' } as const
+        }
+      }
+      const [row] = await tx
+        .update(organizationRoles)
+        .set({
+          // A field left out is `undefined`, which Drizzle leaves out of the statement.
+          name: changes.name,
+          permissions: changes.permissions,
+          version: sql`${organizationRoles.version} + 1`,
+          updatedAt,
+        })
+        .where(
+          and(
+            eq(organizationRoles.environmentId, environmentId),
+            eq(organizationRoles.id, id),
+            eq(organizationRoles.version, expectedVersion)
+          )
+        )
+        .returning(roleColumns)
+      if (!row) {
+        // Another change got in between the read and the write.
+        const now = await readRole(tx, environmentId, id)
+        return now
+          ? ({ outcome: 'stale', version: now.version } as const)
+          : ({ outcome: 'not_found' } as const)
+      }
+      await recordActivity(tx, activity ? [activity] : [])
+      return { outcome: 'updated', record: row } as const
+    })
+  }
+
+  /** @inheritdoc */
+  async deleteRole(
+    environmentId: string,
+    id: string,
+    expectedVersion: number | null,
+    recorded: Recorded
+  ): Promise<DeleteRoleOutcome> {
+    const activity = activityOf(recorded)
+    try {
+      return await withTenant(this.db, environmentId, async (tx) => {
+        const current = await readRole(tx, environmentId, id)
+        if (!current) {
+          return { outcome: 'not_found' } as const
+        }
+        if (current.builtIn) {
+          return { outcome: 'built_in' } as const
+        }
+        if (expectedVersion !== null && current.version !== expectedVersion) {
+          return { outcome: 'stale', version: current.version } as const
+        }
+        const [held] = await tx
+          .select({ value: count() })
+          .from(organizationMemberships)
+          .where(
+            and(
+              eq(organizationMemberships.environmentId, environmentId),
+              eq(organizationMemberships.roleId, id)
+            )
+          )
+        if ((held?.value ?? 0) > 0) {
+          return { outcome: 'in_use' } as const
+        }
+        const rows = await tx
+          .delete(organizationRoles)
+          .where(
+            and(
+              eq(organizationRoles.environmentId, environmentId),
+              eq(organizationRoles.id, id),
+              eq(organizationRoles.version, current.version)
+            )
+          )
+          .returning({ id: organizationRoles.id })
+        if (rows.length === 0) {
+          // Changed (or deleted) between the read and the delete.
+          const now = await readRole(tx, environmentId, id)
+          return now
+            ? ({ outcome: 'stale', version: now.version } as const)
+            : ({ outcome: 'not_found' } as const)
+        }
+        await recordActivity(tx, activity ? [activity] : [])
+        return { outcome: 'deleted', record: current } as const
+      })
+    } catch (error) {
+      // A member was given the role between the count and the delete: the membership's foreign
+      // key refuses the deletion, and the transaction, with its audit entry, is rolled back.
+      if (isForeignKeyViolation(error)) {
+        return { outcome: 'in_use' }
+      }
+      throw error
+    }
   }
 
   /** @inheritdoc */

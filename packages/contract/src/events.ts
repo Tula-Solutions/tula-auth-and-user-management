@@ -20,7 +20,8 @@ import {
   MAX_ADDITIONAL_CLIENT_IDS,
   OAuthProviderSchema,
 } from './oauth'
-import { ORGANIZATION_FIELDS, RoleKeySchema } from './organization'
+import { ORGANIZATION_FIELDS, ORGANIZATION_ROLE_FIELDS, RoleKeySchema } from './organization'
+import { MAX_PERMISSIONS_PER_ROLE } from './organization-permissions'
 import {
   PROPOSAL_FAILURE_REASONS,
   PROPOSAL_OPERATIONS,
@@ -218,7 +219,9 @@ export const EVENT_DATA_SCHEMAS = {
      * The algorithm of the password hash the account arrived with, which its first sign-in
      * replaces with argon2id; absent for an account imported with no password.
      */
-    passwordAlgorithm: z.enum(['bcrypt', 'argon2id', 'argon2i']).optional(),
+    passwordAlgorithm: z
+      .enum(['bcrypt', 'argon2id', 'argon2i', 'pbkdf2_sha256', 'firebase_scrypt'])
+      .optional(),
   }),
   'user.email_verified': data('UserEmailVerified', 'A user proved their email address.', {}),
   // Two shapes: an administrator's own ban (no field) and one that carried out an agent's
@@ -719,6 +722,32 @@ export const EVENT_DATA_SCHEMAS = {
     'OrganizationMembershipRemoved',
     'A member was removed from an organization. The session of that user leaves the organization at its next refresh; the account stays.',
     { organizationId: id(), userId: id(), role: RoleKeySchema }
+  ),
+  // Custom roles (ADR 0065). The role's key, a count and field names: never its name or a
+  // permission key, which are the operator's own text.
+  'organization_role.created': data(
+    'OrganizationRoleCreated',
+    'A custom role was defined. No member holds it yet. Read the role by its key for its name and permissions.',
+    { role: RoleKeySchema, permissions: z.number().int().min(0).max(MAX_PERMISSIONS_PER_ROLE) }
+  ),
+  'organization_role.updated': data(
+    'OrganizationRoleUpdated',
+    'A custom role was renamed or its permissions were replaced. Members who hold it carry the new permissions from their next refresh. `weakened` is present, and true, when the role gained a permission.',
+    {
+      role: RoleKeySchema,
+      /** Which fields changed. Names only, never a value. */
+      changed: z
+        .array(z.enum(ORGANIZATION_ROLE_FIELDS))
+        .min(1)
+        .max(ORGANIZATION_ROLE_FIELDS.length),
+      permissions: z.number().int().min(0).max(MAX_PERMISSIONS_PER_ROLE),
+      weakened: z.literal(true).optional(),
+    }
+  ),
+  'organization_role.deleted': data(
+    'OrganizationRoleDeleted',
+    'A custom role was deleted. No member held it.',
+    { role: RoleKeySchema }
   ),
   // Proposals (ADR 0053). The actor of `created`, `executed` and `failed` is the agent; the
   // actor of `approved` is the human, and the agent is named in its `data`.

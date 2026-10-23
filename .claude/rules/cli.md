@@ -98,6 +98,21 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   a plan that would end over `MAX_NATIVE_APPS` is a `planBlocker`. Text from the server (an
   identifier, a team, a fingerprint, a platform) is printed through `printable()`. A new
   rule gets a row in `packages/cli/src/diff.test.ts` and a line in `docs/config.md`.
+- **Organization roles in the config file** ([ADR 0065](../../docs/adr/0065-organizations.md),
+  "Custom roles"). `organizationRoles` is a list, and **a role is its key**
+  (`planOrganizationRoles`). No key means not read and not touched, even with `--prune`; with
+  a list, what it leaves out is *unmanaged* and removed only with `--prune`. The built-in
+  roles are never planned and a file that names one is refused by position. Permissions are a
+  set, normalised when the file is loaded. **What weakens is the contract's
+  `organizationRoleWeakenings` and nothing else** (`organizationRoles.<key>.permissions`), in
+  `plan.weakened`. **Every update and removal sends the version the plan read as `If-Match`**
+  (there is no second read, as for native apps: the server refuses a stale version with 412,
+  which `apply` says as a changed role and not as a failed operation). With organizations off
+  the server answers `organization.disabled` to the read; the roles are then none, and the
+  write that follows reports the refusal. Role writes come last, after the native apps:
+  removals, changes that give a role nothing, changes that give it a permission, definitions.
+  Text from the server (a key, a name, a permission) is printed through `printable()`. A new
+  rule gets a row in `packages/cli/src/diff.test.ts` and a line in `docs/config.md`.
 - **The CLI reaches the database only through `tula dev`, and only by running what the API
   image ships** ([ADR 0031](../../docs/adr/0031-instance-admin-and-cli.md)): `docker compose run
   migrate`, the seed and `create-api-key.ts`. Everything it spawns goes through the injectable
@@ -212,7 +227,8 @@ What the section above does not say (moved from `sdk.md`).
   fields from the contract's request schemas by `shape`; an address with a user name or a
   password is refused here and not in the contract (the API answers it with
   `webhook.url_not_allowed`). Event types are normalised on load (sorted, each once), and an
-  environment without the list must keep hashing as it did (a test pins the value).
+  environment without the list must keep hashing as it did (a test pins the value); the
+  same holds for `organizationRoles`.
 - **Output:** commands take a `CommandContext` and write through `output`; no `console`, and
   no `process.stdout` outside `process-io.ts` (built by `createProcessIo` from injectable
   parts, unit-tested with fake streams and file modes).

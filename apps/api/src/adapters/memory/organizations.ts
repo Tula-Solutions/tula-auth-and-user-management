@@ -1,4 +1,4 @@
-import { MEMBERSHIPS_MANAGE_PERMISSION } from '@tula-tech/contract'
+import { BUILT_IN_ROLES, MEMBERSHIPS_MANAGE_PERMISSION } from '@tula-tech/contract'
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import type { MemoryUserRepository } from '~/adapters/memory/users'
 import { activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
@@ -6,6 +6,7 @@ import type {
   AddMembershipOutcome,
   ChangeMembershipOutcome,
   CreateOwnedOutcome,
+  DeleteRoleOutcome,
   MembershipRecord,
   OrganizationChanges,
   OrganizationRecord,
@@ -14,7 +15,9 @@ import type {
   OwnedOrganization,
   Page,
   PageCriteria,
+  RoleChanges,
   UpdateOrganizationOutcome,
+  UpdateRoleOutcome,
   UserMembershipRecord,
 } from '~/ports/organization-store'
 
@@ -364,6 +367,121 @@ export class MemoryOrganizationStore implements OrganizationStore {
       (role) => role.environmentId === environmentId && role.key === key
     )
     return found ? structuredClone(found) : null
+  }
+
+  /** @inheritdoc */
+  async findRoleById(environmentId: string, id: string): Promise<OrganizationRoleRecord | null> {
+    const found = this.#roles.get(id)
+    return found && found.environmentId === environmentId ? structuredClone(found) : null
+  }
+
+  /** @inheritdoc */
+  async insertRole(
+    record: OrganizationRoleRecord,
+    recorded: Recorded
+  ): Promise<OrganizationRoleRecord | null> {
+    const activity = activityOf(recorded)
+    // The primary key and the key's unique key, as Postgres would decide them; and the check
+    // that only a built-in role has a built-in key.
+    const taken = [...this.#roles.values()].some(
+      (one) =>
+        one.id === record.id ||
+        (one.environmentId === record.environmentId && one.key === record.key)
+    )
+    if (taken || (!record.builtIn && BUILT_IN_ROLES.some((role) => role.key === record.key))) {
+      return null
+    }
+    this.#roles.set(record.id, structuredClone(record))
+    this.#activityLog.record(activity ? [activity] : [])
+    return structuredClone(record)
+  }
+
+  /** @inheritdoc */
+  async updateRole(
+    environmentId: string,
+    id: string,
+    expectedVersion: number,
+    changes: RoleChanges,
+    updatedAt: Date,
+    recorded: Recorded
+  ): Promise<UpdateRoleOutcome> {
+    const activity = activityOf(recorded)
+    const role = this.#roles.get(id)
+    if (!role || role.environmentId !== environmentId) {
+      return { outcome: 'not_found' }
+    }
+    if (role.builtIn) {
+      return { outcome: 'built_in' }
+    }
+    if (role.version !== expectedVersion) {
+      return { outcome: 'stale', version: role.version }
+    }
+    const next: OrganizationRoleRecord = {
+      ...role,
+      name: changes.name ?? role.name,
+      permissions: changes.permissions ? [...changes.permissions] : role.permissions,
+      version: role.version + 1,
+      updatedAt,
+    }
+    if (
+      role.permissions.includes(MEMBERSHIPS_MANAGE_PERMISSION) &&
+      !next.permissions.includes(MEMBERSHIPS_MANAGE_PERMISSION) &&
+      this.#leavesWithoutManager(environmentId, id)
+    ) {
+      return { outcome: 'last_manager' }
+    }
+    this.#roles.set(id, next)
+    this.#activityLog.record(activity ? [activity] : [])
+    return { outcome: 'updated', record: structuredClone(next) }
+  }
+
+  /** @inheritdoc */
+  async deleteRole(
+    environmentId: string,
+    id: string,
+    expectedVersion: number | null,
+    recorded: Recorded
+  ): Promise<DeleteRoleOutcome> {
+    const activity = activityOf(recorded)
+    const role = this.#roles.get(id)
+    if (!role || role.environmentId !== environmentId) {
+      return { outcome: 'not_found' }
+    }
+    if (role.builtIn) {
+      return { outcome: 'built_in' }
+    }
+    if (expectedVersion !== null && role.version !== expectedVersion) {
+      return { outcome: 'stale', version: role.version }
+    }
+    // A membership refers to its role without a cascade, as the foreign key says.
+    if ([...this.#memberships.values()].some((one) => one.roleId === id)) {
+      return { outcome: 'in_use' }
+    }
+    this.#roles.delete(id)
+    this.#activityLog.record(activity ? [activity] : [])
+    return { outcome: 'deleted', record: structuredClone(role) }
+  }
+
+  /**
+   * Whether some organization has members who hold this role and no member whose role is
+   * another that can manage members: taking the permission away from the role would leave it
+   * with no manager.
+   */
+  #leavesWithoutManager(environmentId: string, roleId: string): boolean {
+    const members = [...this.#memberships.values()].filter(
+      (one) => one.environmentId === environmentId
+    )
+    return members
+      .filter((one) => one.roleId === roleId)
+      .some(
+        (held) =>
+          !members.some(
+            (other) =>
+              other.organizationId === held.organizationId &&
+              other.roleId !== roleId &&
+              this.#manages(other)
+          )
+      )
   }
 
   /** @inheritdoc */

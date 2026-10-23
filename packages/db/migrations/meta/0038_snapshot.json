@@ -1,5 +1,5 @@
 {
-  "id": "f90d6844-d552-40ac-8ab4-170c91c06925",
+  "id": "12125a79-103f-46cc-97b6-b989db2a92db",
   "prevId": "87f1a0cc-4571-4430-8131-4d6393f1bd65",
   "version": "7",
   "dialect": "postgresql",
@@ -2658,6 +2658,13 @@
           "notNull": true,
           "default": false
         },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -2765,6 +2772,25 @@
           ],
           "using": "environment_id = nullif(current_setting('tula.environment_id', true), '')::uuid",
           "withCheck": "environment_id = nullif(current_setting('tula.environment_id', true), '')::uuid"
+        },
+        "organization_roles_custom_update_only": {
+          "name": "organization_roles_custom_update_only",
+          "as": "RESTRICTIVE",
+          "for": "UPDATE",
+          "to": [
+            "public"
+          ],
+          "using": "not built_in",
+          "withCheck": "not built_in"
+        },
+        "organization_roles_custom_delete_only": {
+          "name": "organization_roles_custom_delete_only",
+          "as": "RESTRICTIVE",
+          "for": "DELETE",
+          "to": [
+            "public"
+          ],
+          "using": "not built_in"
         }
       },
       "checkConstraints": {
@@ -2779,6 +2805,14 @@
         "organization_roles_built_in_known": {
           "name": "organization_roles_built_in_known",
           "value": "not \"tula\".\"organization_roles\".\"built_in\" or \"tula\".\"organization_roles\".\"key\" in ('admin', 'member')"
+        },
+        "organization_roles_reserved_keys": {
+          "name": "organization_roles_reserved_keys",
+          "value": "\"tula\".\"organization_roles\".\"built_in\" or \"tula\".\"organization_roles\".\"key\" not in ('admin', 'member')"
+        },
+        "organization_roles_version_positive": {
+          "name": "organization_roles_version_positive",
+          "value": "\"tula\".\"organization_roles\".\"version\" >= 1"
         },
         "organization_roles_permissions_shape": {
           "name": "organization_roles_permissions_shape",
@@ -4174,12 +4208,6 @@
         "device_thumbprint": {
           "name": "device_thumbprint",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "active_organization_id": {
-          "name": "active_organization_id",
-          "type": "uuid",
           "primaryKey": false,
           "notNull": false
         },

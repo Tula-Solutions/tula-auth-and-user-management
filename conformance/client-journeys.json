@@ -544,6 +544,24 @@
         "decision": "journey"
       }
     },
+    "admin organization roles": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a role is defined and changed on the admin API with a secret key (or the dashboard's session), and an administrator, not a user, makes every change here: a client SDK holds a publishable key and a user's session and reaches none of these routes, and must never. What a client does with a role's permissions (`has()`, the claims of the token) is a later ticket's scenarios."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "a role is defined and changed on the admin API with a secret key (or the dashboard's session), and an administrator, not a user, makes every change here: a client SDK holds a publishable key and a user's session and reaches none of these routes, and must never. What a client does with a role's permissions (`has()`, the claims of the token) is a later ticket's scenarios."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "a role is defined and changed on the admin API with a secret key (or the dashboard's session), and an administrator, not a user, makes every change here: a client SDK holds a publishable key and a user's session and reaches none of these routes, and must never. What a client does with a role's permissions (`has()`, the claims of the token) is a later ticket's scenarios."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a role is defined and changed on the admin API with a secret key (or the dashboard's session), and an administrator, not a user, makes every change here: a client SDK holds a publishable key and a user's session and reaches none of these routes, and must never. What a client does with a role's permissions (`has()`, the claims of the token) is a later ticket's scenarios."
+      }
+    },
     "admin organizations and memberships": {
       "core": {
         "decision": "not_applicable",
@@ -1745,6 +1763,24 @@
       },
       "kotlin": {
         "decision": "journey"
+      }
+    },
+    "user import with Firebase scrypt and PBKDF2-SHA256 hashes": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a bulk import is a call of the admin API with a secret key, which a client SDK never holds. Signing in with an old Firebase or PBKDF2 password is the ordinary password sign-in of the \"sign-in\" journey: a client cannot tell an imported hash from one the server made."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "a bulk import is a call of the admin API with a secret key, which an app never holds. Signing in with an old Firebase or PBKDF2 password is the ordinary password sign-in of the \"sign-in\" journey: a client cannot tell an imported hash from one the server made."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "a bulk import is a call of the admin API with a secret key; the Swift client talks to `/v1/client/*` only. Signing in with an old Firebase or PBKDF2 password is the ordinary password sign-in of the \"sign-in\" journey: a client cannot tell an imported hash from one the server made."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a bulk import is a call of the admin API with a secret key; the Kotlin client talks to `/v1/client/*` only. Signing in with an old Firebase or PBKDF2 password is the ordinary password sign-in of the \"sign-in\" journey: a client cannot tell an imported hash from one the server made."
       }
     },
     "user import with a bcrypt hash": {

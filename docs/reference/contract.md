@@ -565,7 +565,7 @@ const BACKUP_CODE_COUNT: 10
 
 ### `BUILT_IN_ROLES`
 
-_constant_, defined in `packages/contract/src/organization.ts`
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
 
 The two roles every environment has (ADR 0065): `admin` holds every system permission,
 `member` may read the member list. They cannot be deleted, renamed or given other
@@ -627,7 +627,7 @@ const BackupCodesSchema: z.ZodObject<{ codes: z.ZodArray<z.ZodString>; }, z.core
 
 ### `BuiltInRole`
 
-_interface_, defined in `packages/contract/src/organization.ts`
+_interface_, defined in `packages/contract/src/organization-permissions.ts`
 
 A built-in role: its key, its name and the permissions it holds.
 
@@ -1000,6 +1000,27 @@ Create an organization from a server or the dashboard.
 
 ```ts
 const CreateOrganizationRequestSchema: z.ZodObject<{ name: z.ZodString; slug: z.ZodString; }, z.core.$strict>
+```
+
+### `CreateOrganizationRoleRequest`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+The body that defines a custom role.
+
+```ts
+export type CreateOrganizationRoleRequest = z.infer<typeof CreateOrganizationRoleRequestSchema>
+```
+
+### `CreateOrganizationRoleRequestSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+Define a custom role. The key is the role's identity and cannot be changed later; the keys
+of the built-in roles are taken.
+
+```ts
+const CreateOrganizationRoleRequestSchema
 ```
 
 ### `CreateProposalRequest`
@@ -2615,6 +2636,29 @@ One field-level problem inside a `validation.failed` (or password) error.
 const FieldErrorSchema
 ```
 
+### `FirebaseScryptParams`
+
+_type_, defined in `packages/contract/src/user.ts`
+
+A Firebase project's password hash parameters.
+
+```ts
+export type FirebaseScryptParams = z.infer<typeof FirebaseScryptParamsSchema>
+```
+
+### `FirebaseScryptParamsSchema`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+A Firebase project's password hash parameters, from `firebase auth:export` or the console's
+"password hash parameters" (ADR 0066). Given once per call and used by every row whose
+algorithm is `firebase_scrypt`. All four are secrets of the source project: the signer key
+above all. They are sealed where stored, and never returned, logged or recorded.
+
+```ts
+const FirebaseScryptParamsSchema
+```
+
 ### `FirstFactorAttemptRequest`
 
 _type_, defined in `packages/contract/src/flow.ts`
@@ -3648,10 +3692,15 @@ A password hash made by another system, in a tagged form.
 `algorithm` names the format and decides how `hash` is read and checked. It is a plain
 string on the wire so that a name this server does not know is refused for that row
 (`import.unsupported_algorithm`) and not for the whole call, and so that a later algorithm
-(`firebase_scrypt`, `pbkdf2_sha256`) is an addition, not a break. Today: `bcrypt`
+is an addition, not a break. Today: `bcrypt`
 (`$2a$`, `$2b$`, `$2y$`; cost 10 to 14), `argon2id` and `argon2i` (PHC strings; at least
-19 MiB and 2 passes). `params` is for algorithms whose hash does not carry its own
-parameters; those three do, so it is ignored for them.
+19 MiB and 2 passes), `pbkdf2_sha256` (Django's `pbkdf2_sha256$iterations$salt$hash`, a PHC
+or passlib `$pbkdf2-sha256$…` string, or a base64 derived key with `params`
+`{ iterations, salt }`, the salt base64; 100,000 to 2,000,000 iterations) and
+`firebase_scrypt` (Firebase's `passwordHash`, base64, with `params` `{ salt }`, the user's
+`salt` from the export, base64; the project's own parameters come once in the request's
+`firebaseScrypt`). `params` is for algorithms whose hash does not carry its own parameters;
+bcrypt and argon2 do, so it is ignored for them.
 
 The hash is never returned by any route.
 
@@ -3734,6 +3783,8 @@ _constant_, defined in `packages/contract/src/user.ts`
 
 A call of `POST /v1/admin/users/import`: up to {@link MAX_IMPORT_ROWS} users. A row that is
 wrong is refused alone; a request that is not this shape at all is refused whole.
+`firebaseScrypt` carries the Firebase project's parameters for the rows that use them; a
+`firebase_scrypt` row of a call without it is refused alone.
 
 ```ts
 const ImportUsersRequestSchema
@@ -4163,7 +4214,7 @@ const MAX_CUSTOM_CLAIM_KEY_LENGTH: 32
 
 ### `MAX_CUSTOM_ROLES`
 
-_constant_, defined in `packages/contract/src/organization.ts`
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
 
 How many custom roles an environment can define, beside the built-in ones.
 
@@ -4467,13 +4518,23 @@ policy.history <= MAX_PASSWORD_HISTORY // true for every policy the schema accep
 
 ### `MAX_PERMISSIONS_PER_ROLE`
 
-_constant_, defined in `packages/contract/src/organization.ts`
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
 
 How many permissions one role can hold. The permissions of the active organization's role are
 a claim of every access token (ADR 0065, "Token claims"), so the number is capped.
 
 ```ts
 const MAX_PERMISSIONS_PER_ROLE: 32
+```
+
+### `MAX_PERMISSION_KEY_LENGTH`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The longest a permission key can be, in characters.
+
+```ts
+const MAX_PERMISSION_KEY_LENGTH: 100
 ```
 
 ### `MAX_PHONE_NUMBER_DIGITS`
@@ -4631,11 +4692,12 @@ url.length <= MAX_WEBHOOK_URL_LENGTH
 
 ### `MEMBERSHIPS_MANAGE_PERMISSION`
 
-_constant_, defined in `packages/contract/src/organization.ts`
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
 
 The permission that makes a member a manager of the organization's members. **Every
 organization keeps at least one member who holds it**: the last such member cannot be
-removed or moved to a role without it (`organization.last_manager`).
+removed or moved to a role without it (`organization.last_manager`), and a role's
+permissions cannot be changed so that an organization would be left with none.
 
 ```ts
 const MEMBERSHIPS_MANAGE_PERMISSION: SystemPermission
@@ -5317,6 +5379,17 @@ The access token's claim holding the key of the member's role in the active orga
 const ORGANIZATION_ROLE_CLAIM: "org_role"
 ```
 
+### `ORGANIZATION_ROLE_FIELDS`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+The fields of a role an update can change, as `organization_role.updated` names them.
+Names only: a value is never in an event.
+
+```ts
+const ORGANIZATION_ROLE_FIELDS: readonly ["name", "permissions"]
+```
+
 ### `ORGANIZATION_SLUG_PATTERN`
 
 _constant_, defined in `packages/contract/src/organization.ts`
@@ -5445,6 +5518,57 @@ The query of a list of organizations or of an organization's members.
 const OrganizationPageQuerySchema
 ```
 
+### `OrganizationRole`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+A role.
+
+```ts
+export type OrganizationRole = z.infer<typeof OrganizationRoleSchema>
+```
+
+### `OrganizationRoleField`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+One of {@link ORGANIZATION_ROLE_FIELDS}.
+
+```ts
+export type OrganizationRoleField = (typeof ORGANIZATION_ROLE_FIELDS)[number]
+```
+
+### `OrganizationRoleList`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+The list of roles.
+
+```ts
+export type OrganizationRoleList = z.infer<typeof OrganizationRoleListSchema>
+```
+
+### `OrganizationRoleListSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+The environment's roles: the two built-in ones first, then the custom ones by key.
+
+```ts
+const OrganizationRoleListSchema
+```
+
+### `OrganizationRoleSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+A role as the admin API returns it. `version` counts the changes made to the role, from 1;
+it is also the `ETag` of the role, and the value `If-Match` carries to change or delete it.
+
+```ts
+const OrganizationRoleSchema
+```
+
 ### `OrganizationSchema`
 
 _constant_, defined in `packages/contract/src/organization.ts`
@@ -5519,7 +5643,7 @@ const PASSWORD_POLICY_PRESETS: Readonly<
 
 ### `PERMISSION_KEY_PATTERN`
 
-_constant_, defined in `packages/contract/src/organization.ts`
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
 
 The grammar of a permission key (ADR 0065): `org:<feature>:<action>`, each of the last two
 a lower-case letter followed by lower-case letters, digits and underscores (at most 32
@@ -5527,6 +5651,9 @@ characters); or, for the permissions Tula's own routes check, `org:sys:<feature>
 No dot, no other separator: a key is safe in a token and in a URL. The feature `sys` is
 reserved: a custom key never has it, and a system key is one of
 {@link SYSTEM_PERMISSIONS}.
+
+The pattern is the grammar alone. Whether a role may hold a key is
+{@link rolePermissionRefusal}.
 
 ```ts
 const PERMISSION_KEY_PATTERN: {}
@@ -6552,7 +6679,7 @@ RESERVED_CLAIM_NAMES.includes('sub') // true
 
 ### `ROLE_KEY_PATTERN`
 
-_constant_, defined in `packages/contract/src/organization.ts`
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
 
 The grammar of a role's key: a lower-case letter, then lower-case letters, digits and
 underscores, up to 32 characters (`admin`, `billing_manager`). Unique in its environment.
@@ -6648,6 +6775,38 @@ The key of a role: see {@link ROLE_KEY_PATTERN}.
 
 ```ts
 const RoleKeySchema: z.ZodString
+```
+
+### `RoleNameSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+The name of a role, as people read it (`Billing manager`).
+
+```ts
+const RoleNameSchema: z.ZodString
+```
+
+### `RolePermissionRefusal`
+
+_type_, defined in `packages/contract/src/organization-permissions.ts`
+
+Why a custom role may not hold a permission key.
+
+```ts
+export type RolePermissionRefusal = 'grammar' | 'reserved'
+```
+
+### `RolePermissionsSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+The permissions a **custom** role holds: at most {@link MAX_PERMISSIONS_PER_ROLE} keys, each
+of the grammar, none twice, and none of the reserved `sys` feature that Tula does not define
+(`rolePermissionRefusal`, ADR 0065). A role may hold any of Tula's own system permissions.
+
+```ts
+const RolePermissionsSchema: z.ZodArray<z.ZodString>
 ```
 
 ### `RotatedWebhookSecret`
@@ -6987,7 +7146,7 @@ const STEP_UP_MAX_AGE_SECONDS: 600
 
 ### `SYSTEM_PERMISSIONS`
 
-_constant_, defined in `packages/contract/src/organization.ts`
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
 
 The permissions Tula's own organization routes check (ADR 0065). The same keys an app's
 server checks with `has({ permission })`, so Tula's routes hold no privilege an app cannot
@@ -8035,7 +8194,7 @@ export interface StoredSmsTemplatesRead {
 
 ### `SystemPermission`
 
-_type_, defined in `packages/contract/src/organization.ts`
+_type_, defined in `packages/contract/src/organization-permissions.ts`
 
 One of {@link SYSTEM_PERMISSIONS}.
 
@@ -8425,6 +8584,27 @@ Rename an organization, or change its slug. At least one field.
 
 ```ts
 const UpdateOrganizationRequestSchema: z.ZodObject<{ name: z.ZodOptional<z.ZodString>; slug: z.ZodOptional<z.ZodString>; }, z.core.$strict>
+```
+
+### `UpdateOrganizationRoleRequest`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+The body that changes a custom role.
+
+```ts
+export type UpdateOrganizationRoleRequest = z.infer<typeof UpdateOrganizationRoleRequestSchema>
+```
+
+### `UpdateOrganizationRoleRequestSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+Rename a custom role or replace its permissions (the set given is the whole set). At least
+one field.
+
+```ts
+const UpdateOrganizationRoleRequestSchema
 ```
 
 ### `UpdateWebhookEndpointRequest`
@@ -9861,6 +10041,30 @@ isAppLinkPath('/oauth/callback') // true
 isAppLinkPath('/') // false: that is the domain's front page, not a callback
 ```
 
+### `isBuiltInRoleKey`
+
+_function_, defined in `packages/contract/src/organization-permissions.ts`
+
+Whether a string is the key of a built-in role (`admin`, `member`). A custom role never
+takes one of these keys.
+
+```ts
+export function isBuiltInRoleKey(key: string): boolean
+```
+
+**Parameters**
+
+- `key`: A role key.
+
+**Returns** `true` for a built-in role's key.
+
+**Example**
+
+```ts
+isBuiltInRoleKey('admin') // true
+isBuiltInRoleKey('billing_manager') // false
+```
+
 ### `isCustomClaimKey`
 
 _function_, defined in `packages/contract/src/custom-claims.ts`
@@ -10212,6 +10416,29 @@ isSmsTemplateKind('sign_in') // true
 isSmsTemplateKind('constructor') // false
 ```
 
+### `isSystemPermission`
+
+_function_, defined in `packages/contract/src/organization-permissions.ts`
+
+Whether a string is one of {@link SYSTEM_PERMISSIONS}.
+
+```ts
+export function isSystemPermission(key: string): key is SystemPermission
+```
+
+**Parameters**
+
+- `key`: A permission key.
+
+**Returns** `true` for one of Tula's own permissions.
+
+**Example**
+
+```ts
+isSystemPermission('org:sys:memberships:read') // true
+isSystemPermission('org:billing:read') // false
+```
+
 ### `isTestAddress`
 
 _function_, defined in `packages/contract/src/test-address.ts`
@@ -10560,6 +10787,29 @@ export function normalizePassword(password: string): string
 
 **Returns** The NFC-normalized password.
 
+### `normalizePermissions`
+
+_function_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permissions of a role as a set: each key once, sorted. How a role is stored, compared
+and returned, so that the order a caller listed them in is never a difference.
+
+```ts
+export function normalizePermissions(permissions: readonly string[]): string[]
+```
+
+**Parameters**
+
+- `permissions`: Permission keys, in any order, possibly with repeats.
+
+**Returns** The distinct keys, sorted.
+
+**Example**
+
+```ts
+normalizePermissions(['org:b:read', 'org:a:read', 'org:b:read']) // ['org:a:read', 'org:b:read']
+```
+
 ### `oauthProviderWeakenings`
 
 _function_, defined in `packages/contract/src/oauth.ts`
@@ -10625,6 +10875,41 @@ export function organizationClaimsBytes(claims: OrganizationClaims): number
 
 ```ts
 organizationClaimsBytes({ orgId: 'o1', orgRole: 'member', orgPermissions: [] }) // 52
+```
+
+### `organizationRoleWeakenings`
+
+_function_, defined in `packages/contract/src/organization-permissions.ts`
+
+What a change to a custom role's permissions widens, the one rule the server records
+`weakened` with, `tula apply` asks `--allow-weaker` with and the dashboard asks first with.
+
+**Adding a permission to a role is a weakening** (members who hold the role gain access at
+their next refresh); taking one away is not. **Creating a role is not one**: no member holds
+it until someone assigns it, and that assignment is a membership change of its own. Deleting
+a role is not one: only a role no member holds can be deleted.
+
+```ts
+export function organizationRoleWeakenings(
+  before: readonly string[] | null,
+  after: readonly string[]
+): 'permissions'[]
+```
+
+**Parameters**
+
+- `before`: The permissions the role has, or `null` for a role that does not exist yet.
+- `after`: The permissions it would have.
+
+**Returns** `['permissions']` when `after` holds a key `before` does not, otherwise `[]`.
+
+**Example**
+
+```ts
+organizationRoleWeakenings(['org:billing:read'], ['org:billing:read', 'org:billing:write'])
+// ['permissions']
+organizationRoleWeakenings(['org:billing:read'], []) // []
+organizationRoleWeakenings(null, ['org:billing:read']) // []
 ```
 
 ### `originMatchesRelyingParty`
@@ -11230,6 +11515,40 @@ export function resolveSessionProfile(
 ```ts
 resolveSessionProfile(settings.sessions, { client: 'web', requested: 'admin' }).name
 // 'admin' when profiles.admin.clientSelectable, otherwise 'web'
+```
+
+### `rolePermissionRefusal`
+
+_function_, defined in `packages/contract/src/organization-permissions.ts`
+
+Whether a **custom** role may hold a permission key (ADR 0065, "Permissions").
+
+A custom role holds the operator's own permissions (`org:billing:read`) and may also hold
+any of Tula's {@link SYSTEM_PERMISSIONS}, so that a role such as `owner` can manage members.
+It can never hold a key of the reserved `sys` feature that is not on that list: a key Tula
+does not check would mean nothing today and silently grant a privilege tomorrow, when a
+later version gives that key a meaning.
+
+```ts
+export function rolePermissionRefusal(key: string): RolePermissionRefusal | null
+```
+
+**Parameters**
+
+- `key`: A permission key.
+
+**Returns**
+
+`null` when the role may hold it, `'grammar'` when it is not a permission key at
+all, `'reserved'` when it is a `sys` key Tula does not define.
+
+**Example**
+
+```ts
+rolePermissionRefusal('org:billing:read') // null
+rolePermissionRefusal('org:sys:memberships:manage') // null
+rolePermissionRefusal('org:sys:billing:read') // 'reserved'
+rolePermissionRefusal('billing.read') // 'grammar'
 ```
 
 ### `settingsWeakenings`
@@ -13041,6 +13360,295 @@ export function jwksUrl(issuer: string): string
 ```ts
 jwksUrl('https://auth.example.com/v1/environments/env_1')
 // 'https://auth.example.com/v1/environments/env_1/.well-known/jwks.json'
+```
+
+## `@tula-tech/contract/organization-permissions`
+
+Source: `packages/contract/src/organization-permissions.ts`
+
+### `BUILT_IN_ROLES`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The two roles every environment has (ADR 0065): `admin` holds every system permission,
+`member` may read the member list. They cannot be deleted, renamed or given other
+permissions. They exist as rows of every environment (`ensureBuiltInRoles`) so that a
+membership refers to a role the way it does to a custom one.
+
+```ts
+const BUILT_IN_ROLES: readonly BuiltInRole[]
+```
+
+### `BuiltInRole`
+
+_interface_, defined in `packages/contract/src/organization-permissions.ts`
+
+A built-in role: its key, its name and the permissions it holds.
+
+```ts
+export interface BuiltInRole {
+  readonly key: string
+  readonly name: string
+  readonly permissions: readonly SystemPermission[]
+}
+```
+
+### `MAX_CUSTOM_ROLES`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+How many custom roles an environment can define, beside the built-in ones.
+
+```ts
+const MAX_CUSTOM_ROLES: 50
+```
+
+### `MAX_PERMISSIONS_PER_ROLE`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+How many permissions one role can hold. The permissions of the active organization's role are
+a claim of every access token (ADR 0065, "Token claims"), so the number is capped.
+
+```ts
+const MAX_PERMISSIONS_PER_ROLE: 32
+```
+
+### `MAX_PERMISSION_KEY_LENGTH`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The longest a permission key can be, in characters.
+
+```ts
+const MAX_PERMISSION_KEY_LENGTH: 100
+```
+
+### `MEMBERSHIPS_MANAGE_PERMISSION`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permission that makes a member a manager of the organization's members. **Every
+organization keeps at least one member who holds it**: the last such member cannot be
+removed or moved to a role without it (`organization.last_manager`), and a role's
+permissions cannot be changed so that an organization would be left with none.
+
+```ts
+const MEMBERSHIPS_MANAGE_PERMISSION: SystemPermission
+```
+
+### `PERMISSION_KEY_PATTERN`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The grammar of a permission key (ADR 0065): `org:<feature>:<action>`, each of the last two
+a lower-case letter followed by lower-case letters, digits and underscores (at most 32
+characters); or, for the permissions Tula's own routes check, `org:sys:<feature>:<action>`.
+No dot, no other separator: a key is safe in a token and in a URL. The feature `sys` is
+reserved: a custom key never has it, and a system key is one of
+{@link SYSTEM_PERMISSIONS}.
+
+The pattern is the grammar alone. Whether a role may hold a key is
+{@link rolePermissionRefusal}.
+
+```ts
+const PERMISSION_KEY_PATTERN: {}
+```
+
+**Example**
+
+```ts
+PERMISSION_KEY_PATTERN.test('org:billing:read') // true
+PERMISSION_KEY_PATTERN.test('org:sys:memberships:manage') // true
+PERMISSION_KEY_PATTERN.test('billing.read') // false
+```
+
+### `ROLE_KEY_PATTERN`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The grammar of a role's key: a lower-case letter, then lower-case letters, digits and
+underscores, up to 32 characters (`admin`, `billing_manager`). Unique in its environment.
+
+```ts
+const ROLE_KEY_PATTERN: {}
+```
+
+**Example**
+
+```ts
+ROLE_KEY_PATTERN.test('billing_manager') // true
+```
+
+### `RolePermissionRefusal`
+
+_type_, defined in `packages/contract/src/organization-permissions.ts`
+
+Why a custom role may not hold a permission key.
+
+```ts
+export type RolePermissionRefusal = 'grammar' | 'reserved'
+```
+
+### `SYSTEM_PERMISSIONS`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permissions Tula's own organization routes check (ADR 0065). The same keys an app's
+server checks with `has({ permission })`, so Tula's routes hold no privilege an app cannot
+also give a role.
+
+```ts
+const SYSTEM_PERMISSIONS
+```
+
+### `SystemPermission`
+
+_type_, defined in `packages/contract/src/organization-permissions.ts`
+
+One of {@link SYSTEM_PERMISSIONS}.
+
+```ts
+export type SystemPermission = (typeof SYSTEM_PERMISSIONS)[number]
+```
+
+### `isBuiltInRoleKey`
+
+_function_, defined in `packages/contract/src/organization-permissions.ts`
+
+Whether a string is the key of a built-in role (`admin`, `member`). A custom role never
+takes one of these keys.
+
+```ts
+export function isBuiltInRoleKey(key: string): boolean
+```
+
+**Parameters**
+
+- `key`: A role key.
+
+**Returns** `true` for a built-in role's key.
+
+**Example**
+
+```ts
+isBuiltInRoleKey('admin') // true
+isBuiltInRoleKey('billing_manager') // false
+```
+
+### `isSystemPermission`
+
+_function_, defined in `packages/contract/src/organization-permissions.ts`
+
+Whether a string is one of {@link SYSTEM_PERMISSIONS}.
+
+```ts
+export function isSystemPermission(key: string): key is SystemPermission
+```
+
+**Parameters**
+
+- `key`: A permission key.
+
+**Returns** `true` for one of Tula's own permissions.
+
+**Example**
+
+```ts
+isSystemPermission('org:sys:memberships:read') // true
+isSystemPermission('org:billing:read') // false
+```
+
+### `normalizePermissions`
+
+_function_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permissions of a role as a set: each key once, sorted. How a role is stored, compared
+and returned, so that the order a caller listed them in is never a difference.
+
+```ts
+export function normalizePermissions(permissions: readonly string[]): string[]
+```
+
+**Parameters**
+
+- `permissions`: Permission keys, in any order, possibly with repeats.
+
+**Returns** The distinct keys, sorted.
+
+**Example**
+
+```ts
+normalizePermissions(['org:b:read', 'org:a:read', 'org:b:read']) // ['org:a:read', 'org:b:read']
+```
+
+### `organizationRoleWeakenings`
+
+_function_, defined in `packages/contract/src/organization-permissions.ts`
+
+What a change to a custom role's permissions widens, the one rule the server records
+`weakened` with, `tula apply` asks `--allow-weaker` with and the dashboard asks first with.
+
+**Adding a permission to a role is a weakening** (members who hold the role gain access at
+their next refresh); taking one away is not. **Creating a role is not one**: no member holds
+it until someone assigns it, and that assignment is a membership change of its own. Deleting
+a role is not one: only a role no member holds can be deleted.
+
+```ts
+export function organizationRoleWeakenings(
+  before: readonly string[] | null,
+  after: readonly string[]
+): 'permissions'[]
+```
+
+**Parameters**
+
+- `before`: The permissions the role has, or `null` for a role that does not exist yet.
+- `after`: The permissions it would have.
+
+**Returns** `['permissions']` when `after` holds a key `before` does not, otherwise `[]`.
+
+**Example**
+
+```ts
+organizationRoleWeakenings(['org:billing:read'], ['org:billing:read', 'org:billing:write'])
+// ['permissions']
+organizationRoleWeakenings(['org:billing:read'], []) // []
+organizationRoleWeakenings(null, ['org:billing:read']) // []
+```
+
+### `rolePermissionRefusal`
+
+_function_, defined in `packages/contract/src/organization-permissions.ts`
+
+Whether a **custom** role may hold a permission key (ADR 0065, "Permissions").
+
+A custom role holds the operator's own permissions (`org:billing:read`) and may also hold
+any of Tula's {@link SYSTEM_PERMISSIONS}, so that a role such as `owner` can manage members.
+It can never hold a key of the reserved `sys` feature that is not on that list: a key Tula
+does not check would mean nothing today and silently grant a privilege tomorrow, when a
+later version gives that key a meaning.
+
+```ts
+export function rolePermissionRefusal(key: string): RolePermissionRefusal | null
+```
+
+**Parameters**
+
+- `key`: A permission key.
+
+**Returns**
+
+`null` when the role may hold it, `'grammar'` when it is not a permission key at
+all, `'reserved'` when it is a `sys` key Tula does not define.
+
+**Example**
+
+```ts
+rolePermissionRefusal('org:billing:read') // null
+rolePermissionRefusal('org:sys:memberships:manage') // null
+rolePermissionRefusal('org:sys:billing:read') // 'reserved'
+rolePermissionRefusal('billing.read') // 'grammar'
 ```
 
 ## `@tula-tech/contract/password-rules`

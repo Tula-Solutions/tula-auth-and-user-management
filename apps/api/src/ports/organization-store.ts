@@ -25,6 +25,11 @@ export interface OrganizationRoleRecord {
   permissions: string[]
   /** `true` for the two roles every environment has, `admin` and `member`. */
   builtIn: boolean
+  /**
+   * How many changes the role has had, from 1. A change is made only over the version the
+   * caller read, so two administrators cannot overwrite each other's change.
+   */
+  version: number
   createdAt: Date
   updatedAt: Date
 }
@@ -86,6 +91,38 @@ export type ChangeMembershipOutcome =
    * `org:sys:memberships:manage`. Nothing was written.
    */
   | { outcome: 'last_manager' }
+
+/** The fields of a custom role an update may change. The key is not among them. */
+export interface RoleChanges {
+  name?: string
+  /** The whole set: sorted, each key once. */
+  permissions?: string[]
+}
+
+/** What an update of a custom role came to. */
+export type UpdateRoleOutcome =
+  | { outcome: 'updated'; record: OrganizationRoleRecord }
+  | { outcome: 'not_found' }
+  /** The role is built in. Nothing was written. */
+  | { outcome: 'built_in' }
+  /** The role is no longer at the version the caller read (`version` is the current one). */
+  | { outcome: 'stale'; version: number }
+  /**
+   * The change takes `org:sys:memberships:manage` away from the role, and some organization
+   * has no manager but the members who hold it. Nothing was written.
+   */
+  | { outcome: 'last_manager' }
+
+/** What the deletion of a custom role came to. */
+export type DeleteRoleOutcome =
+  | { outcome: 'deleted'; record: OrganizationRoleRecord }
+  | { outcome: 'not_found' }
+  /** The role is built in. Nothing was deleted. */
+  | { outcome: 'built_in' }
+  /** The role is no longer at the version the caller read (`version` is the current one). */
+  | { outcome: 'stale'; version: number }
+  /** A member still holds the role. Nothing was deleted. */
+  | { outcome: 'in_use' }
 
 /**
  * An organization a user belongs to, with their membership and the permissions of their role
@@ -311,6 +348,68 @@ export interface OrganizationStore {
    * @returns The role, or `null` when the environment has none with that key.
    */
   findRole(environmentId: string, key: string): Promise<OrganizationRoleRecord | null>
+
+  /**
+   * @param environmentId - The environment to look in.
+   * @param id - The role's id.
+   * @returns The role, or `null` when the environment has none with that id.
+   */
+  findRoleById(environmentId: string, id: string): Promise<OrganizationRoleRecord | null>
+
+  /**
+   * Store a new custom role at version 1.
+   *
+   * @param record - The role. Never built in, and never with a built-in key.
+   * @param activity - Recorded in the same transaction, only if the role was stored.
+   * @returns The row as stored, or `null` when the environment already has a role with that
+   *   key: the unique key decides, so of two definitions at once one is stored.
+   */
+  insertRole(
+    record: OrganizationRoleRecord,
+    activity: Recorded
+  ): Promise<OrganizationRoleRecord | null>
+
+  /**
+   * Rename a custom role or replace its permissions, **only if it is still at the version the
+   * caller read**, and never so that an organization is left with no member holding
+   * `org:sys:memberships:manage`. The version goes up by one. The check of the managers is made
+   * while holding the rows of the organizations the role is used in, so it takes turns with
+   * the removal and demotion of their members. Members' tokens carry the new permissions from
+   * their next refresh: nothing is copied into a membership.
+   *
+   * @param environmentId - The environment. A role of another is not touched.
+   * @param id - The role.
+   * @param expectedVersion - The version the caller read.
+   * @param changes - The fields to set; one left out keeps its value.
+   * @param updatedAt - When the change is made.
+   * @param activity - Recorded in the same transaction, only if the role was written.
+   * @returns What came of it.
+   */
+  updateRole(
+    environmentId: string,
+    id: string,
+    expectedVersion: number,
+    changes: RoleChanges,
+    updatedAt: Date,
+    activity: Recorded
+  ): Promise<UpdateRoleOutcome>
+
+  /**
+   * Delete a custom role, **only if it is still at `expectedVersion`** (when one is given) and
+   * no member holds it.
+   *
+   * @param environmentId - The environment. A role of another is not touched.
+   * @param id - The role.
+   * @param expectedVersion - The version the caller read, or `null` to delete whatever it is.
+   * @param activity - Recorded in the same transaction, only if the role was deleted.
+   * @returns What came of it.
+   */
+  deleteRole(
+    environmentId: string,
+    id: string,
+    expectedVersion: number | null,
+    activity: Recorded
+  ): Promise<DeleteRoleOutcome>
 
   /**
    * Store the built-in roles of an environment that does not have them yet. A role the

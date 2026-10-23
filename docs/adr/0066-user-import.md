@@ -170,8 +170,8 @@ current and is kept.
   entry names the algorithm and nothing of the hash).
 - Two new columns on `users` hold data nothing reads yet.
 - TULA-118 adds `firebase_scrypt` and `pbkdf2_sha256` as new values of `algorithm` with
-  `params`, a branch in `Foreign.parse`, and a verifier in front of `Bun.password.verify`
-  for formats it does not read. The wire format does not change.
+  `params`, and a verifier in front of `Bun.password.verify` for formats it does not read
+  (amendment below). The row's wire format does not change.
 
 ## Not done
 
@@ -180,3 +180,82 @@ current and is kept.
 - Returning `externalId` and `metadata` on `User`.
 - A way to mark an import's rows as webhook-visible (`user.created` too). The ticket
   asks for deliberate subscription; a flag on the call is a later decision.
+
+## Amendment: Firebase scrypt and PBKDF2-SHA256 (TULA-118)
+
+Two more values of `algorithm`. Neither is read by `Bun.password.verify`; both are verified in
+`modules/password/foreign-hash.ts`, which `Passwords.verify` asks first (`null` means "another
+format", and the call goes on to Bun). The first sign-in replaces the hash exactly as for bcrypt
+(`needsRehash` is true for anything that is not argon2id with the current parameters).
+
+### PBKDF2-HMAC-SHA256 (`pbkdf2_sha256`)
+
+Accepted as Django's `pbkdf2_sha256$iterations$salt$hash` (the salt is the text itself), PHC
+`$pbkdf2-sha256$i=N[,l=L]$salt$hash`, passlib's `$pbkdf2-sha256$N$salt$hash` (its `.`-for-`+`
+base64), or a base64 derived key with `params` `{ iterations, salt }` (salt base64). Whatever the
+form, it is **stored in one**: `$pbkdf2-sha256$i=N$<salt>$<hash>` (PHC, unpadded base64), so
+verification reads one format. Base64 is read strictly: only the canonical encoding of its bytes.
+
+| | Floor | Ceiling | Why |
+| --- | --- | --- | --- |
+| iterations | 100,000 | 2,000,000 | OWASP asks 600,000 today, but Django before 4.2 shipped 260,000 and older exports are lower still; refusing all of them would defeat the import, and the first sign-in replaces the hash. 100,000 is where storing a hash becomes the mistake. 2,000,000 is about 135 ms (measured on a developer laptop) paid on every sign-in of that account until it is replaced. |
+| salt | 8 bytes | 64 bytes | |
+| derived key | 16 bytes | 64 bytes | |
+
+A count that is not a whole number, a salt or digest outside those sizes and base64 that is not
+base64 are `import.hash_malformed`. The derivation runs on the thread pool (`crypto.pbkdf2`), not
+on the event loop, and the stored count is judged again at verification (a row edited behind the
+server's back matches nothing).
+
+### Firebase's modified scrypt (`firebase_scrypt`)
+
+Firebase hashes with scrypt (`N = 2^mem_cost`, `r = rounds`, `p = 1`) of the password with the
+user's `salt` followed by the project's `salt_separator`, takes the 32-byte key, and uses it as an
+AES-256-CTR key (zero IV) to encrypt the project's `signer_key`; the result is `passwordHash`. It is
+checked against the vector in the `firebase/scrypt` README (`user1password`).
+
+**Where the project's parameters live.** The project's four values are given **once per call**
+(`firebaseScrypt` beside `users`; the row has `hash` = `passwordHash` and `params: { salt }`), and
+are sealed **per user, inside the user's stored hash**:
+`$tula-firebase-scrypt$v1$<sealed>$<salt>$<hash>`. `<sealed>` is `SecretBox.seal` of the four values,
+purpose `import-hash-parameters`, bound (AAD) to `import-hash:<environmentId>:<userId>`, so a block
+copied into another user's row, another environment or a restore under another master key does not
+open. Alternatives considered:
+
+- *A per-environment record referenced by id.* It needs a table, RLS, an admin route or an import
+  step that creates it, a lifecycle (when is it deleted? when the last user has signed in?) and a
+  retention rule, and `Passwords.verify` would need a database read on every sign-in. Rejected: the
+  value of a shared record is one copy of a key that is worth the same sealed 100,000 times.
+- *Per user, inline* (chosen). No migration, no new table, no new read on the sign-in path (the
+  hash is already loaded), and the key leaves the database as users sign in: the replacement hash
+  has no trace of it. The cost is about 250 bytes more per Firebase user and one AES-GCM per row.
+
+Because nothing but `Passwords.verify`'s `Foreign.Opener` (the secret box, the environment and the
+user) can open the block, `Passwords.verify`, `assertNotReused` and the three callers pass it; a
+Firebase hash verified without one matches nothing.
+
+| | Floor | Ceiling | Why |
+| --- | --- | --- | --- |
+| `mem_cost` (log2 N) | 12 | 16 | Firebase's own is 14 (with `rounds` 8: 16 MiB). 12 is 4 MiB at 8 rounds, below which a hash is not a scrypt anyone chose. |
+| `rounds` (r) | 4 | 16 | Firebase's own is 8. |
+| memory, 128 x N x r | | 64 MiB | The product, not just the two ceilings: 16 and 16 would be 128 MiB in one sign-in. 64 MiB is the memory this server itself uses for an argon2id hash. `p` is always 1, as Firebase has it. |
+| signer key | 1 byte | 128 bytes | Firebase's is 64 bytes; the row's hash must be as long as the key (CTR keeps the length), else it can never match and is malformed. |
+| salt separator | 0 bytes | 64 bytes | |
+| row salt | 8 bytes | 64 bytes | |
+
+The parameters are secrets of the source project. They are in the request body (a body is never
+logged) and in nothing else: not in an answer, a log line, an audit entry or an event (`user.imported`
+names `firebase_scrypt` and nothing more; the closed `passwordAlgorithm` set grew by the two names).
+A `firebase_scrypt` row in a call without `firebaseScrypt`, or with parameters outside the limits,
+is refused on its own: `import.hash_malformed`, `import.hash_parameters_too_weak` or
+`import.hash_parameters_too_costly`. No new error code was needed. The limits are judged again after
+the block is opened at verification, so a block sealed with out-of-range values (a row written by
+hand under the real key) matches nothing instead of starting an unbounded derivation.
+
+### Timing
+
+The unknown-user dummy verify is unchanged. As the verification section says, an imported account
+takes a different time from the dummy until its first sign-in: (measured on a developer laptop) a PBKDF2 hash at its floor is about
+7 ms and one at its ceiling about 135 ms, against about 65 ms for argon2id at 64 MiB; Firebase
+scrypt at its own parameters is about 18 ms and at its ceiling about 135 ms. Both are comparisons with `~/lib/crypto.timingSafeEqual`
+of equal-length buffers, and the same candidate pair (as typed and NFC) is tried as for the others.

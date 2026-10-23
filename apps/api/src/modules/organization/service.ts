@@ -91,12 +91,41 @@ async function requireOrganization(
 }
 
 /**
- * The role with this key, creating the environment's built-in roles first if it has none yet.
+ * Store the built-in roles of an environment that does not have them yet.
  *
  * An environment created after migration 0036 has no role rows until something needs one
- * (ADR 0065, "Built-in roles"): the built-in keys are the contract's, so a missing `admin` or
- * `member` is created from {@link BUILT_IN_ROLES} and read again. Any other key that is
- * missing is an unknown role.
+ * (ADR 0065, "Built-in roles"): the built-in roles are the contract's {@link BUILT_IN_ROLES}.
+ * Idempotent, and safe from several instances at once.
+ *
+ * @param deps - The organization store, ids and clock.
+ * @param tenant - The environment.
+ */
+export async function ensureBuiltInRoles(
+  deps: Pick<Deps, 'organizations' | 'ids' | 'clock'>,
+  tenant: Pick<Tenant, 'projectId' | 'environmentId'>
+): Promise<void> {
+  const now = deps.clock.now()
+  await deps.organizations.ensureBuiltInRoles(
+    BUILT_IN_ROLES.map((role) => ({
+      id: deps.ids.next(),
+      projectId: tenant.projectId,
+      environmentId: tenant.environmentId,
+      key: role.key,
+      name: role.name,
+      permissions: [...role.permissions],
+      builtIn: true,
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    }))
+  )
+}
+
+/**
+ * The role with this key, creating the environment's built-in roles first if it has none yet.
+ *
+ * A missing `admin` or `member` is created by {@link ensureBuiltInRoles} and read again. Any
+ * other key that is missing is an unknown role.
  */
 export async function requireRole(
   deps: Pick<Deps, 'organizations' | 'ids' | 'clock'>,
@@ -108,20 +137,7 @@ export async function requireRole(
     return found
   }
   if (BUILT_IN_ROLES.some((role) => role.key === key)) {
-    const now = deps.clock.now()
-    await deps.organizations.ensureBuiltInRoles(
-      BUILT_IN_ROLES.map((role) => ({
-        id: deps.ids.next(),
-        projectId: tenant.projectId,
-        environmentId: tenant.environmentId,
-        key: role.key,
-        name: role.name,
-        permissions: [...role.permissions],
-        builtIn: true,
-        createdAt: now,
-        updatedAt: now,
-      }))
-    )
+    await ensureBuiltInRoles(deps, tenant)
     const created = await deps.organizations.findRole(tenant.environmentId, key)
     if (created) {
       return created

@@ -53,7 +53,7 @@ export const PLAN_OPTIONS = {
   prune: {
     type: 'boolean',
     description:
-      'Delete providers, and remove webhook endpoints, hooks and native apps, that the server has and the file does not list (default: leave them). A file with no webhooks list keeps every endpoint, one with no hooks key every hook, and one with no nativeApps list every app.',
+      'Delete providers, and remove webhook endpoints, hooks, native apps and custom organization roles, that the server has and the file does not list (default: leave them). A file with no webhooks list keeps every endpoint, one with no hooks key every hook, one with no nativeApps list every app, and one with no organizationRoles list every role.',
   },
   'rotate-secrets': {
     type: 'boolean',
@@ -79,13 +79,13 @@ export interface Prepared {
  * the config manages them, its webhook endpoints, its hooks and its native apps.
  *
  * @param admin - The admin client.
- * @param options - `webhooks`, `hooks`, `nativeApps`: whether to read the webhook endpoints,
- *   the hooks and the native apps.
+ * @param options - `webhooks`, `hooks`, `nativeApps`, `organizationRoles`: whether to read the
+ *   webhook endpoints, the hooks, the native apps and the organization roles.
  * @returns The server's state.
  */
 export async function readRemote(
   admin: AdminClient,
-  options: { webhooks: boolean; hooks: boolean; nativeApps?: boolean }
+  options: { webhooks: boolean; hooks: boolean; nativeApps?: boolean; organizationRoles?: boolean }
 ): Promise<RemoteState> {
   const settings = await admin.call('getEnvironmentSettings')
   const providers = await admin.call('listOAuthProviders')
@@ -98,6 +98,23 @@ export async function readRemote(
   const hooks = options.hooks ? (await admin.call('listHooks')).data.data : undefined
   // And for native apps: read only for a config that has a `nativeApps` list.
   const nativeApps = options.nativeApps ? (await admin.call('listNativeApps')).data.data : undefined
+  // And for organization roles: read only for a config that has an `organizationRoles` list.
+  // With organizations switched off the server answers `organization.disabled`; the roles
+  // are then none (a plan that switches them on writes the roles after the settings), and a
+  // run that does not switch them on is refused by the server when it writes the first role.
+  const unread = { roles: false }
+  const organizationRoles = options.organizationRoles
+    ? await admin
+        .call('listOrganizationRoles')
+        .then((answer) => answer.data.data)
+        .catch((error: unknown) => {
+          if (isTulaAdminError(error) && error.code === 'organization.disabled') {
+            unread.roles = true
+            return []
+          }
+          throw error
+        })
+    : undefined
   // An older server does not report a manager: the field is then absent, not null.
   const managedBy = (settings.data as { managedBy?: SettingsManagedBy | null }).managedBy
   return {
@@ -109,6 +126,8 @@ export async function readRemote(
     ...(webhooks !== undefined && { webhooks }),
     ...(hooks !== undefined && { hooks }),
     ...(nativeApps !== undefined && { nativeApps }),
+    ...(organizationRoles !== undefined && { organizationRoles }),
+    ...(unread.roles && { organizationRolesUnread: true }),
   }
 }
 
@@ -183,6 +202,7 @@ export async function prepare(context: CommandContext): Promise<Prepared> {
     webhooks: environment.webhooks !== undefined,
     hooks: environment.hooks !== undefined,
     nativeApps: environment.nativeApps !== undefined,
+    organizationRoles: environment.organizationRoles !== undefined,
   })
   const prune = flags.prune === true
   // Counted only for the providers this run takes away from sign-in, before the plan is

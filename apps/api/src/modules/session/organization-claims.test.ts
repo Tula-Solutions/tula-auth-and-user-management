@@ -17,6 +17,7 @@ import { verifyAccessToken } from '~/middleware/session-auth'
 import * as Audit from '~/modules/audit/service'
 import * as Me from '~/modules/organization/me-service'
 import * as Organizations from '~/modules/organization/service'
+import * as OrganizationRoles from '~/modules/organization-role/service'
 import * as Sessions from '~/modules/session/service'
 import { createTestDeps, TEST_ACTOR, TEST_TENANT, type TestDeps } from '~/testing'
 
@@ -493,7 +494,7 @@ describe('the most a role can put in a token', () => {
     (_, index) => `org:${FEATURE}${index % 10}:${ACTION}${index % 10}`
   )
 
-  /** Stores a custom role directly: the roles API arrives with custom roles. */
+  /** Stores a custom role directly, past what the roles API would accept. */
   async function withRole(key: string, permissions: string[]) {
     const now = deps.clock.now()
     await deps.organizations.ensureBuiltInRoles([
@@ -505,6 +506,7 @@ describe('the most a role can put in a token', () => {
         name: key,
         permissions,
         builtIn: false,
+        version: 1,
         createdAt: now,
         updatedAt: now,
       },
@@ -548,6 +550,117 @@ describe('the most a role can put in a token', () => {
     expect(JSON.stringify(error.mock.calls)).not.toContain('org:billing')
     expect(JSON.stringify(error.mock.calls)).not.toContain(FEATURE)
     error.mockRestore()
+  })
+})
+
+describe('a custom role (ADR 0065, "Custom roles")', () => {
+  const BILLING = ['org:billing:read', 'org:billing:write']
+
+  async function billingManager() {
+    return OrganizationRoles.create(
+      deps,
+      tenant,
+      { key: 'billing_manager', name: 'Billing manager', permissions: BILLING },
+      TEST_ACTOR
+    )
+  }
+
+  test('the token carries the custom role’s key and permissions, and the next refresh the new set', async () => {
+    const role = await billingManager()
+    const acme = await organization()
+    await join(acme, SAM, 'admin')
+    await join(acme, MAYA, 'billing_manager')
+    const tokens = await create()
+    const active = await setActive(tokens, acme.id)
+    expect(claimsOf(active)).toMatchObject({
+      org_id: acme.id,
+      org_role: 'billing_manager',
+      org_perms: BILLING,
+    })
+
+    // An administrator changes what the role holds. The role is read at every issue, never
+    // kept in the session or in a cache, so the very next refresh says so.
+    const changed = ['org:billing:read', 'org:invoices:read', 'org:sys:memberships:read']
+    await OrganizationRoles.update(
+      deps,
+      tenant,
+      'billing_manager',
+      role.version,
+      { permissions: changed },
+      TEST_ACTOR
+    )
+    const refreshed = await Sessions.refresh(deps, tenant, refreshTokenOf(tokens))
+    expect(claimsOf(refreshed)).toMatchObject({
+      org_id: acme.id,
+      org_role: 'billing_manager',
+      org_perms: changed,
+    })
+    const again = await Sessions.refresh(deps, tenant, refreshTokenOf(refreshed))
+    expect(claimsOf(again).org_perms).toEqual(changed)
+  })
+
+  test('a role taking a permission away takes it from the next token, not the same one', async () => {
+    const role = await billingManager()
+    const acme = await organization()
+    await join(acme, SAM, 'admin')
+    await join(acme, MAYA, 'billing_manager')
+    const tokens = await create()
+    const active = await setActive(tokens, acme.id)
+    await OrganizationRoles.update(
+      deps,
+      tenant,
+      'billing_manager',
+      role.version,
+      { permissions: [] },
+      TEST_ACTOR
+    )
+    // The token already issued is a signed statement and lives out its minute; the refresh
+    // after the change is the first that cannot say the permission.
+    expect(claimsOf(active).org_perms).toEqual(BILLING)
+    const refreshed = await Sessions.refresh(deps, tenant, refreshTokenOf(tokens))
+    expect(claimsOf(refreshed)).toMatchObject({ org_role: 'billing_manager', org_perms: [] })
+  })
+
+  test('a member moved to another role carries the other role at the next refresh', async () => {
+    await billingManager()
+    const acme = await organization()
+    await join(acme, SAM, 'admin')
+    await join(acme, MAYA, 'billing_manager')
+    const tokens = await create()
+    await setActive(tokens, acme.id)
+    await Organizations.changeMemberRole(
+      deps,
+      tenant,
+      acme.id,
+      MAYA,
+      { role: 'member' },
+      TEST_ACTOR
+    )
+    const refreshed = await Sessions.refresh(deps, tenant, refreshTokenOf(tokens))
+    expect(claimsOf(refreshed)).toMatchObject({
+      org_role: 'member',
+      org_perms: MEMBER_PERMISSIONS,
+    })
+  })
+
+  test('a stateful session reads the changed role at its next request', async () => {
+    configure({}, tenant, { profiles: { web: { type: 'stateful' } } })
+    const role = await billingManager()
+    const acme = await organization()
+    await join(acme, SAM, 'admin')
+    await join(acme, MAYA, 'billing_manager')
+    const tokens = await create(MAYA, { client: 'web' })
+    await setActive(tokens, acme.id)
+    await OrganizationRoles.update(
+      deps,
+      tenant,
+      'billing_manager',
+      role.version,
+      { permissions: ['org:reports:read'] },
+      TEST_ACTOR
+    )
+    const claims = await Sessions.authenticate(deps, tenant, tokens.sessionToken ?? '')
+    expect(claims).toMatchObject({ org_role: 'billing_manager', org_perms: ['org:reports:read'] })
   })
 })
 

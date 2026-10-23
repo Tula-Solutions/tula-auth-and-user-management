@@ -97,6 +97,8 @@ export const UserImportedEventDataPasswordAlgorithm = {
   bcrypt: 'bcrypt',
   argon2id: 'argon2id',
   argon2i: 'argon2i',
+  pbkdf2_sha256: 'pbkdf2_sha256',
+  firebase_scrypt: 'firebase_scrypt',
 } as const;
 
 /**
@@ -1255,7 +1257,7 @@ export interface OAuthProviderDeletedEvent {
 export interface WebhookEndpointCreatedEventData {
   /**
      * @minimum 1
-     * @maximum 57
+     * @maximum 60
      */
   eventTypes: number;
   enabled: boolean;
@@ -1941,6 +1943,117 @@ export interface OrganizationMembershipRemovedEvent {
   test?: true;
 }
 
+/**
+ * A custom role was defined. No member holds it yet. Read the role by its key for its name and permissions.
+ */
+export interface OrganizationRoleCreatedEventData {
+  role: OrganizationRoleKey;
+  /**
+     * @minimum 0
+     * @maximum 32
+     */
+  permissions: number;
+}
+
+export type OrganizationRoleCreatedEventTarget = {
+  type: 'organization_role';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A custom role was defined. No member holds it yet. Read the role by its key for its name and permissions.
+ */
+export interface OrganizationRoleCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_role.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationRoleCreatedEventTarget;
+  data: OrganizationRoleCreatedEventData;
+  test?: true;
+}
+
+export type OrganizationRoleUpdatedEventDataChangedItem = typeof OrganizationRoleUpdatedEventDataChangedItem[keyof typeof OrganizationRoleUpdatedEventDataChangedItem];
+
+
+export const OrganizationRoleUpdatedEventDataChangedItem = {
+  name: 'name',
+  permissions: 'permissions',
+} as const;
+
+/**
+ * A custom role was renamed or its permissions were replaced. Members who hold it carry the new permissions from their next refresh. `weakened` is present, and true, when the role gained a permission.
+ */
+export interface OrganizationRoleUpdatedEventData {
+  role: OrganizationRoleKey;
+  /**
+     * @minItems 1
+     * @maxItems 2
+     */
+  changed: OrganizationRoleUpdatedEventDataChangedItem[];
+  /**
+     * @minimum 0
+     * @maximum 32
+     */
+  permissions: number;
+  weakened?: true;
+}
+
+export type OrganizationRoleUpdatedEventTarget = {
+  type: 'organization_role';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A custom role was renamed or its permissions were replaced. Members who hold it carry the new permissions from their next refresh. `weakened` is present, and true, when the role gained a permission.
+ */
+export interface OrganizationRoleUpdatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_role.updated';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationRoleUpdatedEventTarget;
+  data: OrganizationRoleUpdatedEventData;
+  test?: true;
+}
+
+/**
+ * A custom role was deleted. No member held it.
+ */
+export interface OrganizationRoleDeletedEventData {
+  role: OrganizationRoleKey;
+}
+
+export type OrganizationRoleDeletedEventTarget = {
+  type: 'organization_role';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A custom role was deleted. No member held it.
+ */
+export interface OrganizationRoleDeletedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_role.deleted';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationRoleDeletedEventTarget;
+  data: OrganizationRoleDeletedEventData;
+  test?: true;
+}
+
 export type ProposalCreatedEventDataOperation = typeof ProposalCreatedEventDataOperation[keyof typeof ProposalCreatedEventDataOperation];
 
 
@@ -2234,7 +2347,7 @@ export interface SignInTestFinishedEvent {
   test?: true;
 }
 
-export type TulaEvent = UserCreatedEvent | UserImportedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserEmailAddedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | OrganizationCreatedEvent | OrganizationUpdatedEvent | OrganizationDeletedEvent | OrganizationMembershipAddedEvent | OrganizationMembershipRoleChangedEvent | OrganizationMembershipRemovedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
+export type TulaEvent = UserCreatedEvent | UserImportedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserEmailAddedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | OrganizationCreatedEvent | OrganizationUpdatedEvent | OrganizationDeletedEvent | OrganizationMembershipAddedEvent | OrganizationMembershipRoleChangedEvent | OrganizationMembershipRemovedEvent | OrganizationRoleCreatedEvent | OrganizationRoleUpdatedEvent | OrganizationRoleDeletedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
 
 export type HookBeforeSignUpDataMethod = typeof HookBeforeSignUpDataMethod[keyof typeof HookBeforeSignUpDataMethod];
 
@@ -2454,6 +2567,10 @@ export const ErrorCode = {
   organizationcreation_disabled: 'organization.creation_disabled',
   organizationlimit_reached: 'organization.limit_reached',
   organizationpersonal_account_disabled: 'organization.personal_account_disabled',
+  organizationrole_exists: 'organization.role_exists',
+  organizationrole_in_use: 'organization.role_in_use',
+  organizationrole_built_in: 'organization.role_built_in',
+  organizationrole_limit: 'organization.role_limit',
   rate_limited: 'rate_limited',
   requestmalformed: 'request.malformed',
   requesttoo_large: 'request.too_large',
@@ -3364,12 +3481,30 @@ export interface ImportUserRow {
   password?: ImportPassword;
 }
 
+export interface FirebaseScryptParams {
+  /** @maxLength 512 */
+  signerKey: string;
+  /** @maxLength 256 */
+  saltSeparator: string;
+  /**
+     * @minimum -9007199254740991
+     * @maximum 9007199254740991
+     */
+  rounds: number;
+  /**
+     * @minimum -9007199254740991
+     * @maximum 9007199254740991
+     */
+  memCost: number;
+}
+
 export interface ImportUsersRequest {
   /**
      * @minItems 1
      * @maxItems 500
      */
   users: ImportUserRow[];
+  firebaseScrypt?: FirebaseScryptParams;
 }
 
 export interface Passkey {
@@ -3565,6 +3700,9 @@ export const ActivityType = {
   organization_membershipadded: 'organization_membership.added',
   organization_membershiprole_changed: 'organization_membership.role_changed',
   organization_membershipremoved: 'organization_membership.removed',
+  organization_rolecreated: 'organization_role.created',
+  organization_roleupdated: 'organization_role.updated',
+  organization_roledeleted: 'organization_role.deleted',
   proposalcreated: 'proposal.created',
   proposalapproved: 'proposal.approved',
   proposalexecuted: 'proposal.executed',
@@ -4408,6 +4546,9 @@ export const CreateWebhookEndpointRequestEventTypesItem = {
   organization_membershipadded: 'organization_membership.added',
   organization_membershiprole_changed: 'organization_membership.role_changed',
   organization_membershipremoved: 'organization_membership.removed',
+  organization_rolecreated: 'organization_role.created',
+  organization_roleupdated: 'organization_role.updated',
+  organization_roledeleted: 'organization_role.deleted',
   proposalcreated: 'proposal.created',
   proposalapproved: 'proposal.approved',
   proposalexecuted: 'proposal.executed',
@@ -4425,7 +4566,7 @@ export interface CreateWebhookEndpointRequest {
   url: string;
   /**
      * @minItems 1
-     * @maxItems 57
+     * @maxItems 60
      */
   eventTypes: CreateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -4486,6 +4627,9 @@ export const UpdateWebhookEndpointRequestEventTypesItem = {
   organization_membershipadded: 'organization_membership.added',
   organization_membershiprole_changed: 'organization_membership.role_changed',
   organization_membershipremoved: 'organization_membership.removed',
+  organization_rolecreated: 'organization_role.created',
+  organization_roleupdated: 'organization_role.updated',
+  organization_roledeleted: 'organization_role.deleted',
   proposalcreated: 'proposal.created',
   proposalapproved: 'proposal.approved',
   proposalexecuted: 'proposal.executed',
@@ -4503,7 +4647,7 @@ export interface UpdateWebhookEndpointRequest {
   url?: string;
   /**
      * @minItems 1
-     * @maxItems 57
+     * @maxItems 60
      */
   eventTypes?: UpdateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -4682,6 +4826,9 @@ export const SendTestWebhookRequestEventType = {
   organization_membershipadded: 'organization_membership.added',
   organization_membershiprole_changed: 'organization_membership.role_changed',
   organization_membershipremoved: 'organization_membership.removed',
+  organization_rolecreated: 'organization_role.created',
+  organization_roleupdated: 'organization_role.updated',
+  organization_roledeleted: 'organization_role.deleted',
   proposalcreated: 'proposal.created',
   proposalapproved: 'proposal.approved',
   proposalexecuted: 'proposal.executed',
@@ -4932,6 +5079,51 @@ export interface AddOrganizationMemberRequest {
 
 export interface UpdateOrganizationMemberRequest {
   role: OrganizationRoleKey;
+}
+
+export interface OrganizationRole {
+  id: string;
+  key: string;
+  name: string;
+  permissions: string[];
+  builtIn: boolean;
+  /**
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  version: number;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  updatedAt: string;
+}
+
+export interface OrganizationRoleList {
+  data: OrganizationRole[];
+}
+
+/**
+ * @maxItems 32
+ */
+export type OrganizationRolePermissions = string[];
+
+export interface CreateOrganizationRoleRequest {
+  key: OrganizationRoleKey;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+  permissions: OrganizationRolePermissions;
+}
+
+export interface UpdateOrganizationRoleRequest {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name?: string;
+  permissions?: OrganizationRolePermissions;
 }
 
 export interface UserOrganization {
@@ -10750,6 +10942,464 @@ export const useRemoveOrganizationMember = <TError = ErrorEnvelope,
         TContext
       > => {
       return useMutation(getRemoveOrganizationMemberMutationOptions(options), queryClient);
+    }
+
+export const getListOrganizationRolesUrl = () => {
+
+
+
+
+  return `/v1/admin/organization-roles`
+}
+
+/**
+ * The environment’s roles: the built-in `admin` and `member` first, then the custom roles by key. Roles are shared by all the environment’s organizations. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary List organization roles
+ */
+export const listOrganizationRoles = async ( options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationRoleList> => {
+
+  return dashboardFetch<OrganizationRoleList>(getListOrganizationRolesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListOrganizationRolesQueryKey = () => {
+    return [
+    `/v1/admin/organization-roles`
+    ] as const;
+    }
+
+
+export const getListOrganizationRolesQueryOptions = <TData = Awaited<ReturnType<typeof listOrganizationRoles>>, TError = ErrorEnvelope>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationRoles>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListOrganizationRolesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listOrganizationRoles>>> = ({ signal }) => listOrganizationRoles({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listOrganizationRoles>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListOrganizationRolesQueryResult = NonNullable<Awaited<ReturnType<typeof listOrganizationRoles>>>
+export type ListOrganizationRolesQueryError = ErrorEnvelope
+
+
+export function useListOrganizationRoles<TData = Awaited<ReturnType<typeof listOrganizationRoles>>, TError = ErrorEnvelope>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationRoles>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizationRoles>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizationRoles>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizationRoles<TData = Awaited<ReturnType<typeof listOrganizationRoles>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationRoles>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizationRoles>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizationRoles>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizationRoles<TData = Awaited<ReturnType<typeof listOrganizationRoles>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationRoles>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List organization roles
+ */
+
+export function useListOrganizationRoles<TData = Awaited<ReturnType<typeof listOrganizationRoles>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationRoles>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListOrganizationRolesQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateOrganizationRoleUrl = () => {
+
+
+
+
+  return `/v1/admin/organization-roles`
+}
+
+/**
+ * Defines a role of the environment: a key (`^[a-z][a-z0-9_]{0,31}$`, unique, and never `admin` or `member`), a name and a set of permissions. A permission is `org:<feature>:<action>` in lower case (`org:billing:read`) and a role holds at most 32, each once. A role may also hold any of Tula’s own system permissions (`org:sys:memberships:manage`, …); any other key of the reserved `sys` feature is refused (`validation.failed`, 422). An environment has at most 50 custom roles (`organization.role_limit`, 409). A key that is taken, by a custom role or a built-in one, is `organization.role_exists` (409). A role carries a `version`, which is also its `ETag`: it counts the changes made to the role, from 1. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Define a custom role
+ */
+export const createOrganizationRole = async (createOrganizationRoleRequest: CreateOrganizationRoleRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationRole> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<OrganizationRole>(getCreateOrganizationRoleUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createOrganizationRoleRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateOrganizationRoleMutationKey = () => ['createOrganizationRole'] as const;
+
+export const getCreateOrganizationRoleMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createOrganizationRole>>, TError,CreateOrganizationRoleMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createOrganizationRole>>, TError,CreateOrganizationRoleMutationVariables, TContext> => {
+
+const mutationKey = getCreateOrganizationRoleMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createOrganizationRole>>, CreateOrganizationRoleMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createOrganizationRole(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateOrganizationRoleMutationResult = NonNullable<Awaited<ReturnType<typeof createOrganizationRole>>>
+    export type CreateOrganizationRoleMutationBody = CreateOrganizationRoleRequest
+    export type CreateOrganizationRoleMutationError = ErrorEnvelope
+    export type CreateOrganizationRoleMutationVariables = {data: CreateOrganizationRoleRequest}
+
+    /**
+ * @summary Define a custom role
+ */
+export const useCreateOrganizationRole = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createOrganizationRole>>, TError,CreateOrganizationRoleMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createOrganizationRole>>,
+        TError,
+        CreateOrganizationRoleMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateOrganizationRoleMutationOptions(options), queryClient);
+    }
+
+export const getGetOrganizationRoleUrl = (key: OrganizationRoleKey,) => {
+
+
+
+
+  return `/v1/admin/organization-roles/${key}`
+}
+
+/**
+ * One role of the environment, by its key. A role carries a `version`, which is also its `ETag`: it counts the changes made to the role, from 1. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Get an organization role
+ */
+export const getOrganizationRole = async (key: OrganizationRoleKey, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationRole> => {
+
+  return dashboardFetch<OrganizationRole>(getGetOrganizationRoleUrl(key),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetOrganizationRoleQueryKey = (key: OrganizationRoleKey,) => {
+    return [
+    `/v1/admin/organization-roles/${key}`
+    ] as const;
+    }
+
+
+export const getGetOrganizationRoleQueryOptions = <TData = Awaited<ReturnType<typeof getOrganizationRole>>, TError = ErrorEnvelope>(key: OrganizationRoleKey, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRole>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetOrganizationRoleQueryKey(key);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOrganizationRole>>> = ({ signal }) => getOrganizationRole(key, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: key !== null && key !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRole>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetOrganizationRoleQueryResult = NonNullable<Awaited<ReturnType<typeof getOrganizationRole>>>
+export type GetOrganizationRoleQueryError = ErrorEnvelope
+
+
+export function useGetOrganizationRole<TData = Awaited<ReturnType<typeof getOrganizationRole>>, TError = ErrorEnvelope>(
+ key: OrganizationRoleKey, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRole>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getOrganizationRole>>,
+          TError,
+          Awaited<ReturnType<typeof getOrganizationRole>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOrganizationRole<TData = Awaited<ReturnType<typeof getOrganizationRole>>, TError = ErrorEnvelope>(
+ key: OrganizationRoleKey, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRole>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getOrganizationRole>>,
+          TError,
+          Awaited<ReturnType<typeof getOrganizationRole>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOrganizationRole<TData = Awaited<ReturnType<typeof getOrganizationRole>>, TError = ErrorEnvelope>(
+ key: OrganizationRoleKey, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRole>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get an organization role
+ */
+
+export function useGetOrganizationRole<TData = Awaited<ReturnType<typeof getOrganizationRole>>, TError = ErrorEnvelope>(
+ key: OrganizationRoleKey, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRole>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetOrganizationRoleQueryOptions(key,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateOrganizationRoleUrl = (key: OrganizationRoleKey,) => {
+
+
+
+
+  return `/v1/admin/organization-roles/${key}`
+}
+
+/**
+ * Renames a custom role or replaces its permissions: the set sent is the whole set. The key cannot be changed. `admin` and `member` cannot be changed (`organization.role_built_in`, 409). `If-Match` must carry the version that was read. A permission is `org:<feature>:<action>` in lower case (`org:billing:read`) and a role holds at most 32, each once. A role may also hold any of Tula’s own system permissions (`org:sys:memberships:manage`, …); any other key of the reserved `sys` feature is refused (`validation.failed`, 422). Members who hold the role carry the new permissions from their next refresh, within the access token’s lifetime; nothing is copied into a membership. A change that takes `org:sys:memberships:manage` from a role is refused (`organization.last_manager`, 409) while some organization has no other member who holds it. The audit entry names the fields that changed and a count of permissions, and carries `weakened: true` when the role gained a permission. A role carries a `version`, which is also its `ETag`: it counts the changes made to the role, from 1. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Change a custom role
+ */
+export const updateOrganizationRole = async (key: OrganizationRoleKey,
+    updateOrganizationRoleRequest: UpdateOrganizationRoleRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationRole> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<OrganizationRole>(getUpdateOrganizationRoleUrl(key),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateOrganizationRoleRequest)
+  }
+);}
+
+
+
+
+
+export const getUpdateOrganizationRoleMutationKey = () => ['updateOrganizationRole'] as const;
+
+export const getUpdateOrganizationRoleMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrganizationRole>>, TError,UpdateOrganizationRoleMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateOrganizationRole>>, TError,UpdateOrganizationRoleMutationVariables, TContext> => {
+
+const mutationKey = getUpdateOrganizationRoleMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateOrganizationRole>>, UpdateOrganizationRoleMutationVariables> = (props) => {
+          const {key,data} = props ?? {};
+
+          return  updateOrganizationRole(key,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateOrganizationRoleMutationResult = NonNullable<Awaited<ReturnType<typeof updateOrganizationRole>>>
+    export type UpdateOrganizationRoleMutationBody = UpdateOrganizationRoleRequest
+    export type UpdateOrganizationRoleMutationError = ErrorEnvelope
+    export type UpdateOrganizationRoleMutationVariables = {key: OrganizationRoleKey;data: UpdateOrganizationRoleRequest}
+
+    /**
+ * @summary Change a custom role
+ */
+export const useUpdateOrganizationRole = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrganizationRole>>, TError,UpdateOrganizationRoleMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateOrganizationRole>>,
+        TError,
+        UpdateOrganizationRoleMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateOrganizationRoleMutationOptions(options), queryClient);
+    }
+
+export const getDeleteOrganizationRoleUrl = (key: OrganizationRoleKey,) => {
+
+
+
+
+  return `/v1/admin/organization-roles/${key}`
+}
+
+/**
+ * Deletes a custom role that no member holds, in any organization of the environment: one that is still assigned is refused (`organization.role_in_use`, 409) and nothing is changed. `admin` and `member` cannot be deleted (`organization.role_built_in`, 409). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Delete a custom role
+ */
+export const deleteOrganizationRole = async (key: OrganizationRoleKey, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
+
+  return dashboardFetch<void>(getDeleteOrganizationRoleUrl(key),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteOrganizationRoleMutationKey = () => ['deleteOrganizationRole'] as const;
+
+export const getDeleteOrganizationRoleMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteOrganizationRole>>, TError,DeleteOrganizationRoleMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteOrganizationRole>>, TError,DeleteOrganizationRoleMutationVariables, TContext> => {
+
+const mutationKey = getDeleteOrganizationRoleMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteOrganizationRole>>, DeleteOrganizationRoleMutationVariables> = (props) => {
+          const {key} = props ?? {};
+
+          return  deleteOrganizationRole(key,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteOrganizationRoleMutationResult = NonNullable<Awaited<ReturnType<typeof deleteOrganizationRole>>>
+
+    export type DeleteOrganizationRoleMutationError = ErrorEnvelope
+    export type DeleteOrganizationRoleMutationVariables = {key: OrganizationRoleKey}
+
+    /**
+ * @summary Delete a custom role
+ */
+export const useDeleteOrganizationRole = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteOrganizationRole>>, TError,DeleteOrganizationRoleMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteOrganizationRole>>,
+        TError,
+        DeleteOrganizationRoleMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteOrganizationRoleMutationOptions(options), queryClient);
     }
 
 export const getListNativeAppsUrl = () => {

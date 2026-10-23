@@ -92,6 +92,10 @@ public enum ErrorCode: Codable, Hashable, Sendable {
     case organizationCreationDisabled
     case organizationLimitReached
     case organizationPersonalAccountDisabled
+    case organizationRoleExists
+    case organizationRoleInUse
+    case organizationRoleBuiltIn
+    case organizationRoleLimit
     case rateLimited
     case requestMalformed
     case requestTooLarge
@@ -196,6 +200,10 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         .organizationCreationDisabled,
         .organizationLimitReached,
         .organizationPersonalAccountDisabled,
+        .organizationRoleExists,
+        .organizationRoleInUse,
+        .organizationRoleBuiltIn,
+        .organizationRoleLimit,
         .rateLimited,
         .requestMalformed,
         .requestTooLarge,
@@ -300,6 +308,10 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case "organization.creation_disabled": self = .organizationCreationDisabled
         case "organization.limit_reached": self = .organizationLimitReached
         case "organization.personal_account_disabled": self = .organizationPersonalAccountDisabled
+        case "organization.role_exists": self = .organizationRoleExists
+        case "organization.role_in_use": self = .organizationRoleInUse
+        case "organization.role_built_in": self = .organizationRoleBuiltIn
+        case "organization.role_limit": self = .organizationRoleLimit
         case "rate_limited": self = .rateLimited
         case "request.malformed": self = .requestMalformed
         case "request.too_large": self = .requestTooLarge
@@ -406,6 +418,10 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case .organizationCreationDisabled: return "organization.creation_disabled"
         case .organizationLimitReached: return "organization.limit_reached"
         case .organizationPersonalAccountDisabled: return "organization.personal_account_disabled"
+        case .organizationRoleExists: return "organization.role_exists"
+        case .organizationRoleInUse: return "organization.role_in_use"
+        case .organizationRoleBuiltIn: return "organization.role_built_in"
+        case .organizationRoleLimit: return "organization.role_limit"
         case .rateLimited: return "rate_limited"
         case .requestMalformed: return "request.malformed"
         case .requestTooLarge: return "request.too_large"
@@ -711,6 +727,18 @@ public enum TulaErrorDefinitions {
     /// `organization.personal_account_disabled`
     public static let organizationPersonalAccountDisabled = TulaErrorDefinition(code: .organizationPersonalAccountDisabled, status: 409, message: "An organization must be active in this environment.")
 
+    /// `organization.role_exists`
+    public static let organizationRoleExists = TulaErrorDefinition(code: .organizationRoleExists, status: 409, message: "A role with that key already exists in this environment.")
+
+    /// `organization.role_in_use`
+    public static let organizationRoleInUse = TulaErrorDefinition(code: .organizationRoleInUse, status: 409, message: "Members still hold this role. Give them another role first.")
+
+    /// `organization.role_built_in`
+    public static let organizationRoleBuiltIn = TulaErrorDefinition(code: .organizationRoleBuiltIn, status: 409, message: "A built-in role cannot be changed or deleted.")
+
+    /// `organization.role_limit`
+    public static let organizationRoleLimit = TulaErrorDefinition(code: .organizationRoleLimit, status: 409, message: "This environment has the most custom roles it can have.")
+
     /// `rate_limited`
     public static let rateLimited = TulaErrorDefinition(code: .rateLimited, status: 429, message: "Too many requests. Try again shortly.")
 
@@ -838,6 +866,10 @@ public enum TulaErrorDefinitions {
         organizationCreationDisabled,
         organizationLimitReached,
         organizationPersonalAccountDisabled,
+        organizationRoleExists,
+        organizationRoleInUse,
+        organizationRoleBuiltIn,
+        organizationRoleLimit,
         rateLimited,
         requestMalformed,
         requestTooLarge,
