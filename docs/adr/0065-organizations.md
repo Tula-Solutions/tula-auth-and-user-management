@@ -155,10 +155,12 @@ who they were.
   in no organization) and an error line names the environment, the organization and the
   count, never a value. A reader (`readOrganizationClaims`) treats any partial or malformed
   combination of the three as absent, whole.
-- **A maximal role does not fit a browser cookie.** `@tula-tech/nextjs` keeps the access token
+- **A maximal role does not fit a browser cookie.** `@tula-tech/nextjs` kept the access token
   in `tula_at`; with the maximal organization claims (about 3.4 KB once base64url-encoded)
-  that cookie can pass a browser's per-cookie budget. Nobody has such a role yet (the
-  built-in ones are small); the SDK's cookie handling for it is Orgs 06 (TULA-117).
+  that cookie can pass a browser's per-cookie budget. Orgs 06 (TULA-117) measured it and
+  decided: the token is stored in up to two cookies. The measurement, the limits and the
+  decision are in [ADR 0029](0029-nextjs-sdk.md), "Amendment: the organization claims and the
+  access token's cookies".
 - **The session records its active organization** in `sessions.active_organization_id`
   (migration 0039), deliberately **without a foreign key**: deleting an organization or a
   membership must not touch a session row, and the id is trusted for nothing, since every

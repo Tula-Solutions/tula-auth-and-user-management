@@ -3,6 +3,12 @@
 // that verifies tokens (`@tula-tech/nextjs`) can use it without a schema library in its bundle:
 // `@tula-tech/contract/custom-claims`.
 
+import {
+  MAX_PERMISSION_KEY_LENGTH,
+  PERMISSION_KEY_PATTERN,
+  ROLE_KEY_PATTERN,
+} from './organization-permissions'
+
 /**
  * The one top-level claim every custom claim is nested under (ADR 0036).
  *
@@ -127,14 +133,22 @@ export function organizationClaimsBytes(claims: OrganizationClaims): number {
 }
 
 /**
+ * What an organization's id may look like in a token: URL-safe characters, at most 64. Tula's
+ * ids are UUIDs (36 characters); the bound is what keeps a malformed claim from being read as
+ * an organization, not a statement of what the server issues.
+ */
+const ORGANIZATION_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/
+
+/**
  * Read the organization claims out of a session's claims, for an SDK or an application.
  *
  * Call it only with claims that were **verified**: this checks a shape, not where the claims
  * came from. The three are returned together or not at all. A token that carries one without
- * the others, a value of another type, more than {@link MAX_ORGANIZATION_PERMISSIONS_CLAIM}
- * permissions, a permission that is not a string or claims over
- * {@link MAX_ORGANIZATION_CLAIMS_BYTES} has **no** active organization, whole: never repaired
- * and never partly believed. Treat `null` as "no organization, no permission".
+ * the others, a value of another type, an id or a role key outside their grammar, more than
+ * {@link MAX_ORGANIZATION_PERMISSIONS_CLAIM} permissions, a permission outside the permission
+ * grammar (`PERMISSION_KEY_PATTERN`) or claims over {@link MAX_ORGANIZATION_CLAIMS_BYTES} has
+ * **no** active organization, whole: never repaired and never partly believed. Treat `null`
+ * as "no organization, no permission".
  *
  * @param claims - A session's verified claims.
  * @returns A frozen copy, or `null` when no organization is active (or the claims are not
@@ -159,12 +173,17 @@ export function readOrganizationClaims(claims: unknown): OrganizationClaims | nu
   ]
   if (
     typeof id !== 'string' ||
-    id === '' ||
+    !ORGANIZATION_ID_PATTERN.test(id) ||
     typeof role !== 'string' ||
-    role === '' ||
+    !ROLE_KEY_PATTERN.test(role) ||
     !Array.isArray(permissions) ||
     permissions.length > MAX_ORGANIZATION_PERMISSIONS_CLAIM ||
-    !permissions.every((permission) => typeof permission === 'string')
+    !permissions.every(
+      (permission) =>
+        typeof permission === 'string' &&
+        permission.length <= MAX_PERMISSION_KEY_LENGTH &&
+        PERMISSION_KEY_PATTERN.test(permission)
+    )
   ) {
     return null
   }
@@ -174,6 +193,66 @@ export function readOrganizationClaims(claims: unknown): OrganizationClaims | nu
     orgPermissions: Object.freeze([...(permissions as string[])]),
   })
   return organizationClaimsBytes(read) > MAX_ORGANIZATION_CLAIMS_BYTES ? null : read
+}
+
+/**
+ * What {@link hasOrganizationAccess} asks: one permission key, or one role key. Exactly one
+ * of the two.
+ *
+ * @example
+ * ```ts
+ * const byPermission: OrganizationCheck = { permission: 'org:billing:read' }
+ * const byRole: OrganizationCheck = { role: 'admin' }
+ * ```
+ */
+export type OrganizationCheck =
+  | { readonly permission: string; readonly role?: never }
+  | { readonly role: string; readonly permission?: never }
+
+/**
+ * Whether the active organization grants a permission or a role: the one rule behind
+ * `has()` in `@tula-tech/nextjs` and `@tula-tech/react`.
+ *
+ * It is exact. A permission is held when the claims list that very key; there is no wildcard
+ * (`org:billing:*` matches nothing) and no implication between keys (`manage` does not
+ * include `read`). A role is held when it is the member's role key. It is **false** with no
+ * active organization, for a check that names neither or both, and for anything that is not a
+ * non-empty string: a check that cannot be understood never grants.
+ *
+ * This reads claims, so it is as old as the access token (the server decides afresh at every
+ * refresh, within the token's life). Use it to decide what to show and what to let through
+ * quickly; a request that changes data is authorized by the server that changes it.
+ *
+ * @param claims - What {@link readOrganizationClaims} returned, or `null`.
+ * @param check - The permission or the role asked for.
+ * @returns Whether the organization grants it.
+ *
+ * @example
+ * ```ts
+ * const claims = readOrganizationClaims(payload)
+ * hasOrganizationAccess(claims, { permission: 'org:billing:read' })
+ * hasOrganizationAccess(claims, { role: 'admin' })
+ * hasOrganizationAccess(null, { role: 'admin' }) // false: no organization is active
+ * ```
+ */
+export function hasOrganizationAccess(
+  claims: OrganizationClaims | null | undefined,
+  check: OrganizationCheck
+): boolean {
+  if (!claims || typeof check !== 'object' || check === null) {
+    return false
+  }
+  const { permission, role } = check as { permission?: unknown; role?: unknown }
+  if (permission !== undefined && role !== undefined) {
+    return false
+  }
+  if (typeof permission === 'string' && permission !== '') {
+    return claims.orgPermissions.includes(permission)
+  }
+  if (typeof role === 'string' && role !== '') {
+    return claims.orgRole === role
+  }
+  return false
 }
 
 /** Most JWT templates an environment may define. */

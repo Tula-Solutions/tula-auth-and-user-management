@@ -8,6 +8,16 @@ Tula's Next.js SDK: a same-origin proxy route handler, middleware that verifies 
 
 Source: `packages/nextjs/src/index.ts`
 
+### `ActiveOrganization`
+
+_type_, defined in `packages/core/src/types.ts`
+
+What `organizations.setActive()` answers: the session's active organization now.
+
+```ts
+export type ActiveOrganization = Schemas['ActiveOrganization']
+```
+
 ### `Appearance`
 
 _interface_, defined in `packages/react/src/appearance.ts`
@@ -47,6 +57,16 @@ export interface Appearance {
     elements: { card: 'shadow-none', primaryButton: 'uppercase' },
   }}
 />
+```
+
+### `CreateOrganizationInput`
+
+_type_, defined in `packages/core/src/types.ts`
+
+The body of `organizations.create()`: a name and a slug (lower-case letters, digits, hyphens).
+
+```ts
+export type CreateOrganizationInput = Schemas['CreateOrganizationRequest']
 ```
 
 ### `DEFAULT_HANDLER_PATH`
@@ -331,14 +351,21 @@ export interface InitialAuthState {
   sessionId: string
   /** The user, from `currentUser()`, when the layout fetched it. */
   user?: User | null
+  /**
+   * The active organization's id, from `auth().orgId` (ADR 0065), so that the first paint
+   * already knows it. Left out or `null` for none.
+   */
+  organizationId?: string | null
 }
 ```
 
 **Example**
 
 ```tsx
-const { sessionId } = await auth()
-const initialState = sessionId ? { sessionId, user: await currentUser() } : null
+const { sessionId, orgId } = await auth()
+const initialState = sessionId
+  ? { sessionId, user: await currentUser(), organizationId: orgId }
+  : null
 ```
 
 ### `LocalizationOverrides`
@@ -498,6 +525,26 @@ export type OAuthCallbackStatus =
 | 'different_browser'
 | 'refused'
 | 'error'
+```
+
+### `OrganizationCheck`
+
+_type_, defined in `packages/contract/src/custom-claims.ts`
+
+What {@link hasOrganizationAccess} asks: one permission key, or one role key. Exactly one
+of the two.
+
+```ts
+export type OrganizationCheck =
+| { readonly permission: string; readonly role?: never }
+| { readonly role: string; readonly permission?: never }
+```
+
+**Example**
+
+```ts
+const byPermission: OrganizationCheck = { permission: 'org:billing:read' }
+const byRole: OrganizationCheck = { role: 'admin' }
 ```
 
 ### `PasswordChecklist`
@@ -2286,6 +2333,109 @@ export interface UseOAuthCallbackResult {
 }
 ```
 
+### `UseOrganizationListResult`
+
+_interface_, defined in `packages/react/src/hooks/use-organization.ts`
+
+What {@link useOrganizationList} returns.
+
+```ts
+export interface UseOrganizationListResult {
+  /** Whether the list has arrived for this session. */
+  isLoaded: boolean
+  /**
+   * The organizations the user belongs to, with their role and its permissions in each (the
+   * first page the API answers); `null` until loaded.
+   */
+  organizations: UserOrganization[] | null
+  /** The id of the organization the session acts in, or `null`. */
+  activeOrganizationId: string | null
+  /** Whether the list is being fetched. */
+  isLoading: boolean
+  /** Why the last fetch failed, or `null`. */
+  error: TulaError | null
+  /** Fetch the list again. */
+  reload(): Promise<void>
+  /**
+   * Make an organization the session's active one, or clear it with `null`. The access token
+   * is replaced with one that carries the new organization.
+   *
+   * @param organizationId - The organization, or `null` for the personal account.
+   * @returns The API's answer.
+   * @throws TulaError `organization.not_a_member`, `organization.personal_account_disabled`.
+   */
+  setActive(organizationId: string | null): Promise<ActiveOrganization>
+  /**
+   * Create an organization the user owns, then refresh the list. The session does not switch
+   * to it: call `setActive`.
+   *
+   * @param input - The name and the slug.
+   * @returns The organization.
+   * @throws TulaError `organization.creation_disabled`, `organization.limit_reached`,
+   *   `organization.slug_taken`.
+   */
+  create(input: CreateOrganizationInput): Promise<UserOrganization>
+}
+```
+
+**Example**
+
+```ts
+const { organizations, setActive }: UseOrganizationListResult = useOrganizationList()
+```
+
+### `UseOrganizationResult`
+
+_interface_, defined in `packages/react/src/hooks/use-organization.ts`
+
+What {@link useOrganization} returns.
+
+```ts
+export interface UseOrganizationResult {
+  /**
+   * Whether the active organization is known: someone is signed in and either no organization
+   * is active or its role has arrived. `false` while loading and when the fetch failed (see
+   * `error`).
+   */
+  isLoaded: boolean
+  /** The active organization's id, or `null` (the personal account, or organizations are off). */
+  organizationId: string | null
+  /**
+   * The active organization with the user's role and its permissions, once loaded; `null`
+   * with none active, while loading, and when the user is no longer a member of it.
+   */
+  organization: UserOrganization | null
+  /** The key of the user's role in it, or `null`. */
+  role: string | null
+  /** The permission keys of that role, as of the last load; empty with none. */
+  permissions: readonly string[]
+  /**
+   * Whether the active organization grants a permission or a role. **False** with no active
+   * organization, before it has loaded, and for any answer that belongs to another session.
+   * A permission is matched exactly: no wildcard, and `manage` does not imply `read`.
+   *
+   * This decides what to show. Your server decides what to allow: it checks the same keys
+   * from the access token's claims (`auth().has()` in `@tula-tech/nextjs`).
+   *
+   * @param check - `{ permission: 'org:billing:read' }` or `{ role: 'admin' }`.
+   * @returns Whether it is granted.
+   */
+  has(check: OrganizationCheck): boolean
+  /** Whether the list is being fetched. */
+  isLoading: boolean
+  /** Why the last fetch failed (`organization.disabled`, a network error), or `null`. */
+  error: TulaError | null
+  /** Fetch the organizations again (after a role changed, say). */
+  reload(): Promise<void>
+}
+```
+
+**Example**
+
+```ts
+const { organization, has }: UseOrganizationResult = useOrganization()
+```
+
 ### `UseResetPasswordResult`
 
 _interface_, defined in `packages/react/src/hooks/use-reset-password.ts`
@@ -2683,6 +2833,24 @@ export interface UserButtonProps {
 <UserButton afterSignOutUrl='/' />
 ```
 
+### `UserOrganization`
+
+_type_, defined in `packages/core/src/types.ts`
+
+An organization the signed-in user belongs to, with their role in it and its permission
+keys (ADR 0065).
+
+```ts
+export type UserOrganization = Schemas['UserOrganization']
+```
+
+**Example**
+
+```ts
+const { data } = await tula.organizations.list()
+const admin = data.find((org) => org.role === 'admin')
+```
+
 ### `UserProfile`
 
 _function_, defined in `packages/react/src/components/user-profile.tsx`
@@ -2871,6 +3039,74 @@ function Landing() {
   const { status, message } = useOAuthCallback()
   if (status === 'loading') return <p>Signing you in…</p>
   return <p>{status === 'refused' ? message : status}</p>
+}
+```
+
+### `useOrganization`
+
+_function_, defined in `packages/react/src/hooks/use-organization.ts`
+
+The organization the session acts in, with the user's role and permissions in it, and a
+`has()` to check them. Keyed to the session: nothing fetched for another session is ever
+shown, and `has()` answers false for a session that has ended.
+
+The id comes from the client's state (the access token's `org_id`); the role and the
+permissions from the user's organization list, which is fetched once however many
+components use this hook or {@link useOrganizationList}, and only while an organization is
+active.
+
+```ts
+export function useOrganization(): UseOrganizationResult
+```
+
+**Returns** The active organization and `has()`.
+
+**Throws** Error outside a `<TulaProvider>`.
+
+**Example**
+
+```tsx
+function BillingLink() {
+  const { organization, has } = useOrganization()
+  if (!organization || !has({ permission: 'org:billing:read' })) {
+    return null
+  }
+  return <a href='/billing'>Billing for {organization.name}</a>
+}
+```
+
+### `useOrganizationList`
+
+_function_, defined in `packages/react/src/hooks/use-organization.ts`
+
+The organizations the signed-in user belongs to, the active one, and the actions that
+switch or add one. The list is fetched when the hook mounts with a signed-in user, once
+however many components use it, and it is dropped the moment the session changes.
+
+```ts
+export function useOrganizationList(): UseOrganizationListResult
+```
+
+**Returns** The list and its actions.
+
+**Throws** Error outside a `<TulaProvider>`.
+
+**Example**
+
+```tsx
+function Switcher() {
+  const { organizations, activeOrganizationId, setActive } = useOrganizationList()
+  return (
+    <select
+      value={activeOrganizationId ?? ''}
+      onChange={(event) => setActive(event.target.value || null)}
+    >
+      <option value=''>Personal account</option>
+      {organizations?.map((org) => (
+        <option key={org.id} value={org.id}>{org.name}</option>
+      ))}
+    </select>
+  )
 }
 ```
 
@@ -3161,6 +3397,42 @@ export type Auth =
      */
     customClaims: CustomClaims
     /**
+     * The active organization's id (ADR 0065), or `null` while the session acts in none
+     * (the personal account, or the environment has organizations off). Read from the
+     * verified claims, for a token session and a `stateful` one alike; a token whose
+     * organization claims are incomplete or malformed reads as no organization, never as
+     * a partial one.
+     */
+    orgId: string | null
+    /** The key of the member's role in the active organization, or `null`. */
+    orgRole: string | null
+    /**
+     * The permission keys of that role (`org:billing:read`), frozen; empty with no active
+     * organization. As of the session's last refresh: a role changed since is seen at the
+     * next one, within an access token's life.
+     */
+    orgPermissions: readonly string[]
+    /**
+     * Whether the active organization grants a permission or a role, checked offline on the
+     * verified claims. **False** with no active organization. A permission is matched
+     * exactly: there is no wildcard and `manage` does not imply `read`.
+     *
+     * Use it to decide what a page shows and what a route lets through; the server that
+     * changes data still authorizes the change itself.
+     *
+     * @param check - `{ permission: 'org:billing:read' }` or `{ role: 'admin' }`.
+     * @returns Whether it is granted.
+     *
+     * @example
+     * ```ts
+     * const { has } = await auth()
+     * if (!has({ permission: 'org:billing:read' })) {
+     *   notFound()
+     * }
+     * ```
+     */
+    has(check: OrganizationCheck): boolean
+    /**
      * The access token, for calling your own backend. `null` for a `stateful` session,
      * which has none.
      */
@@ -3172,6 +3444,11 @@ export type Auth =
     sessionId: null
     claims: null
     customClaims: null
+    orgId: null
+    orgRole: null
+    orgPermissions: readonly string[]
+    /** Nobody is signed in, so nothing is granted. */
+    has(check: OrganizationCheck): false
     getToken(): Promise<null>
   }
 ```
@@ -3204,6 +3481,26 @@ export type CustomClaims = Readonly<Record<string, unknown>>
 ```ts
 const { customClaims } = await auth()
 const isAdmin = customClaims.role === 'admin' // a missing claim is `undefined`: "no"
+```
+
+### `OrganizationCheck`
+
+_type_, defined in `packages/contract/src/custom-claims.ts`
+
+What {@link hasOrganizationAccess} asks: one permission key, or one role key. Exactly one
+of the two.
+
+```ts
+export type OrganizationCheck =
+| { readonly permission: string; readonly role?: never }
+| { readonly role: string; readonly permission?: never }
+```
+
+**Example**
+
+```ts
+const byPermission: OrganizationCheck = { permission: 'org:billing:read' }
+const byRole: OrganizationCheck = { role: 'admin' }
 ```
 
 ### `REDIRECT_PARAM`
@@ -3252,6 +3549,16 @@ export interface SessionClaims {
    * else under this name was left out. The same record as `auth().customClaims`.
    */
   ext?: CustomClaims
+  /**
+   * The active organization's id (ADR 0065). Present only together with `org_role` and
+   * `org_perms`, and only in the shape a Tula server issues; any other combination was left
+   * out, all three. Read the three through `auth()`, which also answers `has()`.
+   */
+  org_id?: string
+  /** The key of the member's role in the active organization. */
+  org_role?: string
+  /** The permission keys of that role: each a well-formed key, at most 32. */
+  org_perms?: string[]
   [claim: string]: unknown
 }
 ```
@@ -3297,10 +3604,13 @@ const auth: () => Promise<Auth>
 
 **Returns**
 
-`{ isSignedIn: true, userId, sessionId, claims, customClaims, getToken }`, or the
-signed-out shape with `null`s. `customClaims` holds what the JWT template of the
-session's profile defines (empty without one), for a token session and a `stateful` one
-alike.
+`{ isSignedIn: true, userId, sessionId, claims, customClaims, orgId, orgRole,
+orgPermissions, has, getToken }`, or the signed-out shape with `null`s. `customClaims`
+holds what the JWT template of the session's profile defines (empty without one), for a
+token session and a `stateful` one alike. `orgId`, `orgRole` and `orgPermissions` are the
+active organization's (ADR 0065; `null`, `null` and empty with none), and
+`has({ permission } | { role })` checks them offline: false with no active organization,
+exact for a permission.
 
 **Throws** TypeError when the configuration is incomplete.
 
@@ -3431,6 +3741,30 @@ const REDIRECT_PARAM: "redirect_url"
 new URL(request.url).searchParams.get(REDIRECT_PARAM)
 ```
 
+### `RouteAccessRule`
+
+_type_, defined in `packages/nextjs/src/middleware.ts`
+
+A group of routes and what the active organization must grant to open them: one permission
+key or one role key, checked offline on the verified claims (the rule of `auth().has()`).
+
+A route a rule matches needs a session, whatever `publicRoutes` / `protectedRoutes` say.
+When several rules match a path, **all** of them must grant. The check is exact: no
+wildcard, and no permission implies another.
+
+```ts
+export type RouteAccessRule = { routes: RouteMatcher } & OrganizationCheck
+```
+
+**Example**
+
+```ts
+const rules: RouteAccessRule[] = [
+  { routes: '/billing(.*)', permission: 'org:billing:read' },
+  { routes: ['/admin(.*)', '/api/admin(.*)'], role: 'admin' },
+]
+```
+
 ### `RouteMatcher`
 
 _type_, defined in `packages/nextjs/src/middleware.ts`
@@ -3456,8 +3790,9 @@ const routes: RouteMatcher = ['/', '/pricing', '/docs(.*)', /^\/blog\/\d+$/]
 
 _interface_, defined in `packages/nextjs/src/middleware.ts`
 
-Options of {@link tulaMiddleware}: which routes need a session, where sign-in lives, and
-the server configuration (read from the environment when left out).
+Options of {@link tulaMiddleware}: which routes need a session, which need a permission or
+a role of the active organization, where sign-in lives, and the server configuration (read
+from the environment when left out).
 
 ```ts
 export interface TulaMiddlewareOptions extends TulaServerOptions {
@@ -3478,6 +3813,20 @@ export interface TulaMiddlewareOptions extends TulaServerOptions {
   signInUrl?: string
   /** The sign-up page, so that it is never protected. Defaults to `/sign-up`. */
   signUpUrl?: string
+  /**
+   * Routes that need a permission or a role of the session's active organization (ADR 0065),
+   * checked on the verified claims with no call to the API. Without a session the visitor is
+   * sent to sign in, as for any protected route. **With** a session that does not grant the
+   * rule (no active organization, another role, a missing permission) the answer is a `403`:
+   * JSON for `apiRoutes` and for anything but a `GET`, and for a page a redirect to
+   * `forbiddenUrl` or, when there is none, a plain `403` page.
+   */
+  access?: ReadonlyArray<RouteAccessRule>
+  /**
+   * Where a signed-in visitor who lacks what a rule in `access` asks for is sent: a path on
+   * this origin. Leave it out for a bare `403` response. Never matched by `access` itself.
+   */
+  forbiddenUrl?: string
 }
 ```
 
@@ -3487,6 +3836,8 @@ export interface TulaMiddlewareOptions extends TulaServerOptions {
 const options: TulaMiddlewareOptions = {
   publicRoutes: ['/', '/sign-up'],
   signInUrl: '/sign-in',
+  access: [{ routes: '/billing(.*)', permission: 'org:billing:read' }],
+  forbiddenUrl: '/no-access',
 }
 ```
 
@@ -3644,6 +3995,15 @@ session counts as signed out on the server.
 In Next.js 16 the file is `proxy.ts` and the export `proxy`; in Next.js 15 it is
 `middleware.ts` and `middleware`.
 
+Routes in `access` also need the active organization to grant a permission or a role
+(`{ routes: '/billing(.*)', permission: 'org:billing:read' }`). That is decided from the
+verified claims, offline, by the rule of `auth().has()`: false with no active organization,
+and exact (no wildcard). A visitor without a session is sent to sign in; one with a session
+that does not grant it gets a `403` (JSON for API routes and non-`GET` requests; for a page
+a redirect to `forbiddenUrl`, or a bare `403` page). The claims are as old as the access
+token, so a role changed a moment ago is seen at the next refresh; the code that changes
+data still authorizes the change itself.
+
 ```ts
 export function tulaMiddleware(
   options: TulaMiddlewareOptions = {}
@@ -3658,8 +4018,11 @@ export function tulaMiddleware(
 
 **Throws**
 
-TypeError when `signInUrl` or `signUpUrl` is not a path on this origin. The
-returned function rejects with a `TypeError` when the configuration is incomplete.
+TypeError when `signInUrl`, `signUpUrl` or `forbiddenUrl` is not a path on this
+origin, or a rule of `access` names neither or both of `permission` and `role`, a
+permission that is not an exact key (`org:<feature>:<action>`) or a role key that is not
+one. The returned function rejects with a `TypeError` when the configuration is
+incomplete.
 
 **Example**
 
@@ -3667,7 +4030,11 @@ returned function rejects with a `TypeError` when the configuration is incomplet
 // proxy.ts (Next.js 16)
 import { tulaMiddleware } from '@tula-tech/nextjs/middleware'
 
-export const proxy = tulaMiddleware({ publicRoutes: ['/', '/sign-up'] })
+export const proxy = tulaMiddleware({
+  publicRoutes: ['/', '/sign-up'],
+  access: [{ routes: '/billing(.*)', permission: 'org:billing:read' }],
+  forbiddenUrl: '/no-access',
+})
 
 export const config = {
   matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
