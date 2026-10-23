@@ -56,7 +56,7 @@ function field(frame: Locator, name: string | RegExp): Locator {
 /** Type an address into the sign-in screen and go on. */
 async function startSignIn(frame: Locator, email: string): Promise<void> {
   await field(frame, 'Email address').fill(email)
-  await frame.getByRole('button', { name: 'Continue' }).click()
+  await frame.getByRole('button', { name: 'Continue', exact: true }).click()
 }
 
 /** Open a tab of the sandbox tools under the frame. */
