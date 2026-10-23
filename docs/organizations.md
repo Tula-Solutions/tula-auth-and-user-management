@@ -15,7 +15,7 @@ turning them on is something you do on purpose.
 > What is built today: organizations, memberships, built-in and custom roles, the active
 > organization and its token claims, `has()` in Next.js, React and any backend, the admin API,
 > and the [MCP server](mcp.md#read-tools-need-an-agent-key-or-a-secret-key)'s tools that read them.
-> The dashboard has no organization screens yet. Invitations and verified domains are
+> The dashboard has no organization screens yet. A guide to invitations and verified domains is
 > [coming](#coming-invitations-and-verified-domains).
 
 ## Turn organizations on
@@ -410,18 +410,20 @@ import { OrganizationSwitcher } from '@/components/tula/organization-switcher'
 
 ## Coming: invitations and verified domains
 
-Two ways to join an organization are designed ([ADR 0065](adr/0065-organizations.md)) and are
-not on this page because they are not finished:
+Two ways to join an organization have a page of their own coming, and are only outlined here
+([ADR 0065](adr/0065-organizations.md)):
 
 - **Invitations.** A member who may manage invitations invites an email address with a role.
   The invitee gets a single-use link that works for seven days, and joins only with an account
-  whose address is verified and matches.
+  whose address is verified and matches. The server routes and `client.organizations.invitations`
+  in `@tula-tech/core` exist; this guide does not document them yet, so read their JSDoc in the
+  [`@tula-tech/core` reference](reference/core.md).
 - **Verified domains.** An organization proves it owns an email domain with a code sent to an
   address at it. Users with a verified address there are then offered the organization
-  (`suggest`) or join it at once (`auto_join`) with the `defaultRole`.
+  (`suggest`) or join it at once (`auto_join`) with the `defaultRole`. Not built yet.
 
-Until they land, add members from your server with `addOrganizationMember`, or let users create
-organizations of their own.
+Until a page covers them, add members from your server with `addOrganizationMember`, or let
+users create organizations of their own.
 
 ## Not built
 

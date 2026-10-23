@@ -264,8 +264,12 @@ describe('what @tula-tech/react costs a browser bundle', () => {
    * `user.last_organization_manager` that arrived with it from `develop`. The bundle then
    * measured 57,090 bytes, 436 more. The budget moved by exactly those bytes, to 57,526, so
    * the 436 bytes of room are still what is left.
+   * The words of the Tula UI organization items (ADR 0064, ADR 0065, Orgs 10: the
+   * `organizations` group of the localization, 29 strings) took it to 57,504 bytes, 414 more.
+   * The budget moved by exactly those bytes, to 57,940, so the 436 bytes of room are still
+   * what is left.
    */
-  const GZIP_BUDGET_BYTES = 57_526
+  const GZIP_BUDGET_BYTES = 57_940
   /**
    * The QR encoder, in a chunk of its own: loaded when an enrolment is first drawn, so an app
    * that never shows one does not pay for it.
