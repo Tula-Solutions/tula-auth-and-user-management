@@ -1,8 +1,10 @@
 # A test fixture, laid over the repository's Compose file by the worker check only
-# (scripts/worker-check/check.ts, the `self-host-worker` CI job):
+# (scripts/worker-check/check.ts, run on the worker stack of CI's `self-host` job):
 #
 #   docker compose -f docker-compose.yml -f docker/worker-check/compose.yml \
 #     --profile app --profile worker ...
+#
+# (CI adds `-p self-host-worker --env-file docker/self-host/worker.env`: that stack's ports.)
 #
 # It adds one container: a webhook receiver in the WORKER's network namespace. The server's
 # outbound guard refuses every private address, in every tier, so a receiver in a container

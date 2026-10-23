@@ -251,8 +251,8 @@ it ("Signing in with a texted code", at the end of this section).
   raises `sms.dailyMessageLimit` while it does (and restores it), so that repeated runs
   against one server are not stopped by a destination's hour.
 - The `smsCode` conformance step reads the development inbox; a scenario with one sets
-  `needsSmsInbox`. CI's `self-host` jobs run with `SMS_PROVIDER=dev` and name both instances
-  in `CONFORMANCE_SMS_INBOX_URLS`, and check that each such scenario **passed**, by name,
+  `needsSmsInbox`. CI's `self-host` job runs both conformance runs with `SMS_PROVIDER=dev`,
+  names both instances in `CONFORMANCE_SMS_INBOX_URLS`, and checks that each such scenario **passed**, by name,
   not only that it was not skipped: a new one is added to those lines of
   `.github/workflows/ci.yml`. A message a sign-in asked for is sent after the request was
   answered: a step that reads its code names the number's earlier code in `not`, and waits

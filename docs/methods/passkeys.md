@@ -68,6 +68,16 @@ More in [self-host.md](../self-host.md#passkeys).
 
 ## What the user sees
 
+### Try it in the sandbox
+
+:::playground{preset="passkey"}
+
+A sandbox of the sign-in component with passkeys on, answered by a simulated authenticator (the
+sandbox never calls your browser's passkey API). It needs a browser with script; the screens are
+described below.
+
+:::
+
 - **Sign in with a passkey** on the sign-in page, and their passkeys offered in the address
   field's autofill. No address is typed and there is no second step.
 - After a password, where a second step is in force anyway (they have an authenticator app, or

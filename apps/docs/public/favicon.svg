@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-86 -46 172 114">
+  <title>Tula</title>
+  <style>
+    .m { stroke: #1A1A18; fill: none; stroke-width: 7; stroke-linecap: round }
+    .s { fill: #1A1A18; stroke: none }
+    @media (prefers-color-scheme: dark) {
+      .m { stroke: #F1EFE8 }
+      .s { fill: #F1EFE8 }
+    }
+  </style>
+  <path class="m" d="M0 -52V56M-60 -34H60M-26 56H26M-60 -34V-10M60 -34V-10"/>
+  <circle class="s" cx="-60" cy="4" r="14"/>
+  <circle class="m" cx="60" cy="4" r="14"/>
+</svg>

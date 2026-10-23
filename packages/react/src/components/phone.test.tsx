@@ -3,6 +3,7 @@ import { act, screen, waitFor, within } from '@testing-library/react'
 import {
   expectAbsent,
   expectFocus,
+  expectRateLimited,
   failure,
   json,
   openDialogs,
@@ -195,6 +196,7 @@ describe('<UserProfile> phone number', () => {
     const send = within(phone).getByRole('button', { name: 'Send code' })
     await w.user.click(send)
     expect((await within(phone).findByRole('alert')).textContent).toMatch(/Try again in 4\ds\./)
+    expectRateLimited(within(phone).getByRole('alert'))
     expect(send.getAttribute('aria-disabled')).toBe('true')
     await w.user.click(send)
     expect(w.api.calls(ROUTE.phone)).toHaveLength(1)

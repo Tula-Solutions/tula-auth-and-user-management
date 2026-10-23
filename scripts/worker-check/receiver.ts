@@ -1,5 +1,5 @@
 /**
- * The webhook receiver of the worker check (`check.ts`, the `self-host-worker` CI job).
+ * The webhook receiver of the worker check (`check.ts`, run by the `self-host` CI job).
  *
  * It listens on the loopback of whatever network namespace it runs in, and nowhere else. The
  * check starts it in the **worker's** namespace (`network_mode: service:worker` in

@@ -1,5 +1,11 @@
 # create-tula
 
+## 0.2.0
+
+### Patch Changes
+
+- 9267647: The SwiftUI template's UI tests can take screenshots of every screen (`CaptureUITests`, skipped unless asked for), the same captures the documentation's native screen gallery shows.
+
 ## 0.1.1
 
 ### Patch Changes

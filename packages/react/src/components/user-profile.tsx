@@ -18,7 +18,7 @@ import { useUser } from '../hooks/use-user'
 import { formatText } from '../localization'
 import { EmailAddressSection } from './email-address'
 import { useRetryAfter } from './flow-screens'
-import { fieldResolver, formatDuration, placeErrors } from './form-errors'
+import { fieldResolver, placeErrors, rateLimitedAlert } from './form-errors'
 import { BackupCodesPanel, EnrolmentConfirmForm, TextedCodeForm } from './mfa'
 import { ConnectedAccountsSection } from './oauth'
 import { PasskeysSection, type SecondStepRead } from './passkey'
@@ -213,10 +213,7 @@ function PasswordSection(props: { user: User; email: string; onChanged(): void }
         {t.userProfile.passwordTitle}
       </Heading>
       <Form onSubmit={submit} failure={local ?? error} blocked={pending || wait > 0}>
-        <FormError
-          message={placed.form}
-          detail={wait > 0 ? formatText(t.common.retryIn, { time: formatDuration(wait, t) }) : null}
-        />
+        <FormError {...rateLimitedAlert(placed.form, wait, t)} />
         <input
           className='tula-visually-hidden'
           type='text'

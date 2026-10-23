@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
-import { DEFAULT_THEME, THEME_TOKENS } from '@tula-tech/contract/theme'
+import {
+  contrastRatio,
+  DEFAULT_THEME,
+  THEME_TOKENS,
+  themeToCssVariables,
+} from '@tula-tech/contract/theme'
 import { tokenBlockIsCurrent } from '../scripts/generate-tokens'
 import { ELEMENT_NAMES } from './appearance'
 
@@ -54,6 +59,28 @@ describe('the stylesheet', () => {
     expect(stylesheet.includes('@media (prefers-reduced-motion: reduce)')).toBe(true)
   })
 
+  test('no entrance animation is declared after the reduced-motion block, which must name [open]', () => {
+    // Same specificity (:where), so a later `animation: tula-in` would beat the reset: the
+    // modal kept sliding in under prefers-reduced-motion.
+    const start = stylesheet.indexOf('@media (prefers-reduced-motion: reduce)')
+    const end = stylesheet.indexOf('\n}\n', start)
+    const after = stylesheet.slice(end)
+    expect(after.match(/animation:\s*tula-/g) ?? []).toEqual([])
+    expect(stylesheet.slice(start, end)).toContain(':where(.tula-modal)[open]')
+  })
+
+  test('a card’s header and footer are centred, like the native screens', () => {
+    const rule = (selector: string) => {
+      const start = stylesheet.indexOf(`:where(${selector}) {`)
+      return stylesheet.slice(start, stylesheet.indexOf('}', start))
+    }
+    for (const selector of ['.tula-header', '.tula-footer']) {
+      expect(rule(selector)).toContain('align-items: center')
+      expect(rule(selector)).toContain('text-align: center')
+    }
+    expect(rule('.tula-branding')).toContain('justify-content: center')
+  })
+
   test('every element name’s class is styled or deliberately bare', () => {
     const kebab = (name: string) => name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)
     const bare = ELEMENT_NAMES.filter((name) => !stylesheet.includes(`.tula-${kebab(name)}`))
@@ -80,6 +107,38 @@ describe('what the sources must never do', () => {
   })
 })
 
+describe('what the step renderer teaches a copy about hooks', () => {
+  const source = sources.find((entry) => entry.path === 'components/step-renderer.tsx')?.text ?? ''
+  // The `@example` blocks of the JSDoc of `StepScreens` and `StepRenderer`.
+  const examples = [
+    ...source
+      .split('/**')
+      .filter((block) => /@example/.test(block) && /\bStep(Screens|Renderer)\b/.test(block))
+      .flatMap((block) =>
+        [...block.matchAll(/```tsx([\s\S]*?)```/g)].map((match) => match[1] ?? '')
+      ),
+  ]
+
+  test('the examples are found', () => {
+    expect(examples.length).toBeGreaterThanOrEqual(2)
+  })
+
+  test('no example calls a hook inside a screen: the pattern is a component that holds them', () => {
+    for (const example of examples) {
+      // What follows `screens`: a hook above it (`useSignUp()` for the flow) is the app's own.
+      const inScreens = example.slice(example.indexOf('screens'))
+      expect(inScreens).not.toMatch(/\buse[A-Z]\w*\(/)
+    }
+  })
+
+  test('the screens example shows a component screen', () => {
+    const screens = examples.find((text) => /StepScreens/.test(text)) ?? ''
+    // Any arrow that returns a component element: renaming the parameter or adding a prop to
+    // the example must not fail this.
+    expect(screens).toMatch(/=> <[A-Z]\w*\b/)
+  })
+})
+
 describe('server rendering', () => {
   test('the provider and every component render without a DOM, in the loading state', () => {
     // A process of its own, without this suite's DOM preload: see `testing/ssr-render.tsx`.
@@ -102,6 +161,15 @@ describe('server rendering', () => {
     expect(has('Signing you in…')).toBe(true)
     expect(has('href="/sign-up"')).toBe(true)
     expect(has('--tula-color-primary:#0f766e')).toBe(true)
+    // The headless layer a copied component uses renders without a DOM too: the hooks ask the
+    // browser nothing during render (support is not known yet), the step renderer draws a
+    // screen from the map and the "not supported" screen for a status it has none for.
+    expect(has('passkey:undefined')).toBe(true)
+    expect(has('wait:0')).toBe(true)
+    expect(has('changed:false|strategies:password')).toBe(true)
+    expect(has('retry:Try again in 1m 5s.')).toBe(true)
+    expect(has('<p>copied password screen</p>')).toBe(true)
+    expect(has('data-tula-unsupported')).toBe(true)
   })
 })
 
@@ -177,9 +245,12 @@ describe('what @tula-tech/react costs a browser bundle', () => {
    * bytes of room left. The profile's section (a form, the code step, "sign in again" for a
    * user with nothing to step up with, ten strings) is this package's: with it the bundle
    * measures 53,997 bytes, 822 more. The budget was set from that measurement, to 54,433,
-   * so the 436 bytes of room are what is left again.
+   * so the 436 bytes of room are what is left again. The headless layer made public for the
+   * copy-in components (ADR 0064: the step renderer, the first-factor table's helper, five
+   * hooks) took it to 54,436 bytes, 439 more. The budget moved by exactly those bytes, to
+   * 54,872, so the 436 bytes of room are still what is left.
    */
-  const GZIP_BUDGET_BYTES = 54_433
+  const GZIP_BUDGET_BYTES = 54_872
   /**
    * The QR encoder, in a chunk of its own: loaded when an enrolment is first drawn, so an app
    * that never shows one does not pay for it.
@@ -213,6 +284,75 @@ describe('what @tula-tech/react costs a browser bundle', () => {
   })
 
   test('the stylesheet is small', () => {
-    expect(Bun.gzipSync(Buffer.from(stylesheet)).byteLength).toBeLessThan(6_000)
+    // 8 KB: the premium polish (focus halo, entrances, press feedback, narrow and coarse-pointer
+    // rules) cost about 0.9 KB over the first 6 KB budget; still no CSS framework.
+    expect(Bun.gzipSync(Buffer.from(stylesheet)).byteLength).toBeLessThan(8_000)
   })
+})
+
+describe('the default theme as shipped in the stylesheet', () => {
+  /** Each scheme's colour defaults, read out of the generated block's own text. */
+  function shipped(scheme: 'light' | 'dark'): Record<string, string> {
+    const prefix = scheme === 'dark' ? '--tula-dark-color-' : '--tula-color-'
+    const out: Record<string, string> = {}
+    for (const match of stylesheet.matchAll(
+      new RegExp(`var\\(${prefix}([a-z-]+), (#[0-9a-f]{6})\\)`, 'g')
+    )) {
+      // The dark block appears twice (media query and attribute); both must agree.
+      const [, name, value] = match as unknown as [string, string, string]
+      expect(out[name] ?? value).toBe(value)
+      out[name] = value
+    }
+    return out
+  }
+
+  test('resolves with nothing refused: every token of the default theme passes its grammar', () => {
+    const variables = themeToCssVariables(DEFAULT_THEME)
+    const schemeTokens = THEME_TOKENS.filter((token) => token.scope === 'scheme')
+    expect(Object.keys(variables)).toHaveLength(THEME_TOKENS.length + schemeTokens.length)
+  })
+
+  // Text on each background it is drawn on; the 4.5:1 of WCAG 1.4.3 in both schemes.
+  const PAIRS: [string, string][] = [
+    ['text', 'background'],
+    ['text', 'surface'],
+    ['text', 'input'],
+    ['text-muted', 'background'],
+    ['text-muted', 'surface'],
+    ['text-muted', 'input'],
+    ['primary-text', 'primary'],
+    ['primary-text', 'primary-hover'],
+    ['link', 'background'],
+    ['link', 'surface'],
+    ['danger', 'background'],
+    ['danger', 'danger-surface'],
+    ['danger', 'surface'],
+    ['success', 'background'],
+    ['success', 'surface'],
+    ['text', 'danger-surface'],
+  ]
+  for (const scheme of ['light', 'dark'] as const) {
+    test.each(PAIRS)(`${scheme}: %s on %s is at least 4.5:1`, (foreground, background) => {
+      const colours = shipped(scheme)
+      expect(colours[foreground]).toBeDefined()
+      expect(colours[background]).toBeDefined()
+      expect(
+        contrastRatio(colours[foreground] as string, colours[background] as string)
+      ).toBeGreaterThanOrEqual(4.5)
+    })
+
+    test(`${scheme}: control edges and the focus ring are at least 3:1`, () => {
+      const colours = shipped(scheme) as Record<string, string>
+      for (const [edge, ground] of [
+        ['border-strong', 'background'],
+        ['border-strong', 'input'],
+        ['focus', 'background'],
+        ['focus', 'surface'],
+      ] as const) {
+        expect(
+          contrastRatio(colours[edge] as string, colours[ground] as string)
+        ).toBeGreaterThanOrEqual(3)
+      }
+    })
+  }
 })

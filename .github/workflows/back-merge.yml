@@ -1,0 +1,99 @@
+name: Back-merge
+
+# On every push to `main` (git-flow: `main` is release-only; the push is the merge of a release
+# pull request) this opens, or updates, ONE pull request from `main` back into `develop`, so
+# that `develop` gets the release's version bumps and CHANGELOGs and the two branches do not
+# drift apart. Merge it with a MERGE COMMIT, not a squash: that keeps `main`'s commits in
+# `develop`'s history (docs/releasing.md, "The release flow").
+#
+# The pull request's head is the branch `back-merge/main`, a copy of `main`'s tip, and not
+# `main` itself: the repository deletes a pull request's head branch when it is merged, and
+# that must never be `main`. The branch is moved to `main` on every push.
+#
+# `ci.yml` is dispatched on the branch for the reason `release-pr.yml` explains: what the
+# run's own token pushes and opens starts no `push` or `pull_request` workflow, and
+# `workflow_dispatch` is the one event it may start. The branch has the tree `main` has just
+# passed, so `ci.yml`'s duplicate-run marker usually lets its jobs finish at once, and they
+# report `verify` and `e2e` on the commit the pull request needs.
+#
+# What keeps it to that:
+#   1. no secret and no long-lived token: every call uses `github.token`;
+#   2. `contents: write` (the branch), `pull-requests: write` (the pull request) and
+#      `actions: write` (the dispatch), on the one job, and nothing else;
+#   3. it writes `back-merge/main` only, never `main` or `develop`;
+#   4. one run at a time, none cancelled half-way.
+# `.claude/hooks/release-pr.test.ts` holds this file to these rules.
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: back-merge
+  cancel-in-progress: false
+
+jobs:
+  back-merge:
+    name: Open the pull request from main into develop
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          # The token is passed to the one push command that needs it, not left in the config.
+          persist-credentials: false
+      - name: Is there anything to bring back?
+        id: due
+        run: |
+          # Nothing to bring back when develop has main's commits (a merge commit made them
+          # ancestors) or already has main's content (a squash did not): merging main into
+          # develop would then change develop's tree not at all.
+          merged=$(git merge-tree --write-tree origin/develop origin/main | head -n 1)
+          if git merge-base --is-ancestor origin/main origin/develop || [ "$merged" = "$(git rev-parse 'origin/develop^{tree}')" ]; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "develop already contains main: nothing to bring back." | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Move back-merge/main to main
+        if: steps.due.outputs.needed == 'true'
+        # Forced: the branch is a copy of `main`'s tip and holds nothing else.
+        run: |
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push --force origin origin/main:refs/heads/back-merge/main
+
+      - name: Open or update the pull request
+        if: steps.due.outputs.needed == 'true'
+        run: |
+          title='chore(release): merge main back into develop'
+          body='The release is on `main`. This brings its version bumps, CHANGELOGs and anything else only `main` has back into `develop`, so that the next release pull request starts from the right versions. Merge it with a **merge commit**, not a squash. Opened by `.github/workflows/back-merge.yml`.'
+          number=$(gh pr list --head back-merge/main --base develop --state open --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh pr edit "$number" --title "$title" --body "$body"
+          elif ! gh pr create --base develop --head back-merge/main --title "$title" --body "$body"; then
+            echo "::error::The pull request could not be opened. If the message above says Actions may not create pull requests, a person turns on Settings, Actions, General, 'Allow GitHub Actions to create and approve pull requests'. The branch back-merge/main is pushed: open the pull request into develop by hand."
+            exit 1
+          fi
+
+      - name: Run the required checks on the branch
+        if: steps.due.outputs.needed == 'true'
+        run: gh workflow run ci.yml --ref back-merge/main
+
+      - name: Close a back-merge that is no longer needed
+        if: steps.due.outputs.needed == 'false'
+        run: |
+          number=$(gh pr list --head back-merge/main --base develop --state open --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh pr close "$number" --delete-branch --comment "develop contains main, so there is nothing to bring back."
+          fi

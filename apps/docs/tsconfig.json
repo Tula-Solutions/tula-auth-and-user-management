@@ -1,0 +1,12 @@
+{
+  "extends": "@tula-tech/tsconfig/react.json",
+  "compilerOptions": {
+    "types": ["vite/client", "bun-types"],
+    "paths": {
+      "~/*": ["./src/*"],
+      "cn": ["./src/lib/utils.ts"],
+      "~core-api": ["../../packages/core/src/generated/api.gen.ts"]
+    }
+  },
+  "include": ["src/**/*", "scripts/**/*", "vite.config.ts"]
+}

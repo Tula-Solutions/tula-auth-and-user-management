@@ -22,8 +22,20 @@ import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
-/** A wait short enough for a test and long enough for a busy runner to start a coroutine. */
+/**
+ * A deadline for a step that is meant to time out. Virtual milliseconds in every test but the
+ * one that goes through `TulaClient` (a real-thread scope), which gives its own generous one.
+ */
 private const val SHORT_MS = 150L
+
+/**
+ * The deadline of a step that must answer. The make step's budget is taken from the real
+ * clock even in virtual time (DeviceKey.kt), so a pause must not be able to use it up.
+ */
+private const val MUST_ANSWER_MS = 30_000L
+
+/** The real deadline of the one client that must time out; generous, so its look is asked first. */
+private const val IMPATIENT_MS = 1_500L
 
 /** What a returned address said, as a list a test can compare (the type itself prints nothing). */
 private fun ProviderRoundTrip.Answer.parts(): List<String?> = listOf(ticket, attemptId, error)
@@ -77,9 +89,11 @@ private class BentKeyStore : DeviceKeyStore {
 class NativeWaysTest {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    private fun gate(ceilingMs: Long = SHEET_CEILING_MS) = CeremonyGate(scope, ceilingMs) { emptyMap() }
+    private fun gate(ceilingMs: Long = SHEET_CEILING_MS, within: CoroutineScope = scope) =
+        CeremonyGate(within, ceilingMs) { emptyMap() }
 
-    private fun proofs(store: DeviceKeyStore) = DeviceProofs(store, scope) { emptyMap() }
+    private fun proofs(store: DeviceKeyStore, within: CoroutineScope = scope) =
+        DeviceProofs(store, within) { emptyMap() }
 
     @Test
     fun `one sheet at a time - a second ceremony is refused as busy while the first is up, and the place is given back when it ends or throws`() =
@@ -138,8 +152,8 @@ class NativeWaysTest {
 
     @Test
     fun `a sheet that never answers gives its place back at the ceiling, as a dismissal, and what it says later is used by nobody`() =
-        runTest {
-            val gate = gate(ceilingMs = SHORT_MS)
+        virtualTest {
+            val gate = gate(ceilingMs = SHORT_MS, within = workScope)
             val cancelled = CompletableDeferred<Unit>()
             val outcome = gate.ceremony {
                 gate.sheet<String>(CeremonyGate.Kind.PASSKEY) {
@@ -154,7 +168,7 @@ class NativeWaysTest {
             cancelled.await()
             assertEquals("next", gate.ceremony { "next" })
             // No time at all is no sheet at all.
-            assertNull(bounded(scope, 0) { "never run" })
+            assertNull(bounded(workScope, 0) { "never run" })
         }
 
     @Test
@@ -474,12 +488,12 @@ class NativeWaysTest {
 
     @Test
     fun `the key for a start is found or made, for a refresh only found, and a store that throws is the client's code with nothing of the cause`() =
-        runTest {
+        virtualTest {
             val store = BentKeyStore()
-            val proofs = proofs(store)
+            val proofs = proofs(store, workScope)
             assertNull(proofs.key(DeviceProofs.Use.REFRESH, SHORT_MS))
             assertEquals(0, store.makes.get())
-            val made = assertIs<DeviceKey>(proofs.key(DeviceProofs.Use.START, SHORT_MS))
+            val made = assertIs<DeviceKey>(proofs.key(DeviceProofs.Use.START, MUST_ANSWER_MS))
             assertEquals(1, store.makes.get())
             assertTrue(made.publicKey.x.contentEquals(proofs.key(DeviceProofs.Use.REFRESH, SHORT_MS)?.publicKey?.x))
             assertEquals(1, store.makes.get())
@@ -493,7 +507,7 @@ class NativeWaysTest {
 
             store.inner.remove()
             store.failMake = IllegalStateException(canary)
-            val making = caught { proofs.key(DeviceProofs.Use.START, SHORT_MS) }
+            val making = caught { proofs.key(DeviceProofs.Use.START, MUST_ANSWER_MS) }
             assertEquals("device.key_failed", making.code)
             assertNull(making.cause)
             // A store that cancels its own call is a failure, not a cancelled caller.
@@ -503,9 +517,9 @@ class NativeWaysTest {
 
     @Test
     fun `a key store that never answers is a timeout inside the call's deadline, is asked once however many callers wait, and no time is no look`() =
-        runTest {
+        virtualTest {
             val store = BentKeyStore()
-            val proofs = proofs(store)
+            val proofs = proofs(store, workScope)
             val release = CompletableDeferred<DeviceKey?>()
             repeat(1) { store.script.add { release.await() } }
             val first = async { caught { proofs.key(DeviceProofs.Use.REFRESH, SHORT_MS) } }
@@ -524,7 +538,7 @@ class NativeWaysTest {
 
     @Test
     fun `a key is gone only when two looks both say so - a look that finds it, throws or contradicts the first keeps the session`() =
-        runTest {
+        virtualTest {
             val none: suspend () -> DeviceKey? = { null }
             val throws: suspend () -> DeviceKey? = { throw IllegalStateException("locked") }
             val key = SoftwareDeviceKeyStore().create()
@@ -539,20 +553,20 @@ class NativeWaysTest {
             for ((looks, verdict) in rows) {
                 val store = BentKeyStore()
                 looks.forEach { store.script.add(it) }
-                assertEquals(verdict, proofs(store).verdict(2 * SHORT_MS))
+                assertEquals(verdict, proofs(store, workScope).verdict(2 * SHORT_MS))
                 assertEquals(looks.size, store.looks.get())
             }
             // A look that never answers is not "gone".
             val stalled = BentKeyStore()
             stalled.script.add { awaitCancellation() }
-            assertEquals(DeviceProofs.Verdict.UNSURE, proofs(stalled).verdict(2 * SHORT_MS))
+            assertEquals(DeviceProofs.Verdict.UNSURE, proofs(stalled, workScope).verdict(2 * SHORT_MS))
         }
 
     @Test
     fun `removing the key - a refusal and a store that never answers are errors, and a key that can never be had again is removed only for the store's own word`() =
-        runTest {
+        virtualTest {
             val store = BentKeyStore()
-            val proofs = proofs(store)
+            val proofs = proofs(store, workScope)
             proofs.key(DeviceProofs.Use.START, SHORT_MS)
             proofs.remove(SHORT_MS)
             assertNull(store.inner.existing())
@@ -588,8 +602,8 @@ class NativeWaysTest {
 
     @Test
     fun `a proof names the method, the address and the nonce, has an id of its own, and a key that fails to sign is the client's code`() =
-        runTest {
-            val proofs = proofs(SoftwareDeviceKeyStore())
+        virtualTest {
+            val proofs = proofs(SoftwareDeviceKeyStore(), workScope)
             val key = SoftwareDeviceKeyStore().create()
             fun part(proof: String, index: Int) = String(Base64.getUrlDecoder().decode(proof.split('.')[index]))
 
@@ -632,12 +646,14 @@ class NativeWaysTest {
         runTest {
             val store = BentKeyStore()
             val engine = ScriptedEngine()
+            // The steps that must answer run under the default deadline, so that a loaded
+            // runner cannot time them out (TULA-95); only the step that must time out
+            // runs under a short one, on a client of its own.
             val tula = TulaClient(
                 publishableKey = TEST_KEY,
                 baseUrl = TEST_BASE,
                 storage = MemoryTokenStorage(),
                 http = engine,
-                timeoutMs = 2 * SHORT_MS,
                 deviceKeys = store,
             )
             store.script.add { throw IllegalStateException("locked") }
@@ -651,12 +667,25 @@ class NativeWaysTest {
 
             // A look that never answers is the call's timeout, and the next call joins that
             // look instead of asking the store a second time.
+            val impatient = TulaClient(
+                publishableKey = TEST_KEY,
+                baseUrl = TEST_BASE,
+                storage = MemoryTokenStorage(),
+                http = engine,
+                timeoutMs = IMPATIENT_MS,
+                deviceKeys = store,
+            )
             val looks = store.looks.get()
             store.script.add { awaitCancellation() }
-            assertEquals("network.timeout", caught { tula.signIn("maya@example.com") }.code)
-            assertEquals("network.timeout", caught { tula.signIn("maya@example.com") }.code)
+            assertEquals("network.timeout", caught { impatient.signIn("maya@example.com") }.code)
+            assertEquals("network.timeout", caught { impatient.signIn("maya@example.com") }.code)
+            // The call's budget is real time: say the look was asked before counting it.
+            while (store.looks.get() == looks) {
+                yield()
+            }
             assertEquals(looks + 1, store.looks.get())
             assertEquals(1, engine.requests.size)
+            impatient.close()
             tula.close()
         }
 

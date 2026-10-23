@@ -49,6 +49,15 @@ export function useUi(): Ui {
 }
 
 /**
+ * Whether the caller is drawn inside a {@link Root}.
+ *
+ * @returns `true` inside a component's root.
+ */
+export function useIsInRoot(): boolean {
+  return useContext(UiContext) !== null
+}
+
+/**
  * The outermost element of every component: carries the `tula-root` class the stylesheet
  * hangs its tokens on, the theme as inline custom properties, and a forced colour scheme.
  */
@@ -512,6 +521,12 @@ export function Status(props: { message: string | null; tone?: 'success' | 'neut
  *
  * @param screen - A key naming the current screen.
  * @returns `true` once the component has moved on from its first screen.
+ *
+ * @example
+ * ```tsx
+ * const focusTitle = useScreenChanged(`${view}:${step?.status ?? 'start'}`)
+ * // <StepRenderer step={step} screen={view} focusTitle={focusTitle} ... />
+ * ```
  */
 export function useScreenChanged(screen: string): boolean {
   const first = useRef(screen)

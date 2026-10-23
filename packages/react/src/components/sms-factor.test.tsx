@@ -5,6 +5,7 @@ import {
   completed,
   expectAbsent,
   expectFocus,
+  expectRateLimited,
   failure,
   json,
   NEW_PASSWORD_STEP,
@@ -127,6 +128,7 @@ describe('<SignIn> at needs_second_factor with a texted code', () => {
     w.api.on(SMS.signInPrepare, () => failure(429, 'rate_limited', {}, { 'retry-after': '42' }))
     await w.user.click(screen.getByRole('button', { name: 'Text me a code' }))
     expect(await screen.findByText(/Try again in /)).toBeTruthy()
+    expectRateLimited(await screen.findByRole('alert'))
     const sends = w.api.calls(SMS.signInPrepare).length
     // While the wait runs the button sends nothing.
     await w.user.click(screen.getByRole('button', { name: 'Text me a code' }))

@@ -2,11 +2,15 @@
  * The worker check: a webhook delivered by the worker running as a service of its own.
  *
  * Run against the packaged stack started with `WEBHOOK_WORKER=separate` and **no worker yet**
- * (the `self-host-worker` CI job; docs/self-host.md, "The webhook worker as its own service"):
+ * (docs/self-host.md, "The webhook worker as its own service"):
  *
  *   WORKER_CHECK_SECRET_KEY=tula_sk_… WORKER_CHECK_ADMIN_TOKEN=… \
  *     bun run scripts/worker-check/check.ts -- docker compose \
  *       -f docker-compose.yml -f docker/worker-check/compose.yml --profile app --profile worker
+ *
+ * CI's `self-host` job runs it on the worker stack of its three: the same command with
+ * `-p self-host-worker --env-file docker/self-host/worker.env` after `docker compose`, and
+ * `WORKER_CHECK_API_URLS` naming that stack's two instances (default: ports 3003 and 3004).
  *
  * What follows `--` is the Compose command of the stack; the check adds `up -d worker receiver`
  * and `logs` to it. It shows, in this order:

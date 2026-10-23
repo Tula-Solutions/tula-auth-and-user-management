@@ -3,20 +3,19 @@ import type { Appearance } from '../appearance'
 import { useTulaContext } from '../context'
 import { useClientConfig, usePasswordChecklist } from '../hooks/use-password-checklist'
 import { type UseSignUpResult, useSignUp } from '../hooks/use-sign-up'
-import { formatText } from '../localization'
 import {
   type FlowResult,
   SignedInNotice,
-  UnsupportedScreen,
   useCompletion,
   useEnrolmentCompletion,
   useRetryAfter,
   VerificationScreen,
 } from './flow-screens'
-import { fieldResolver, formatDuration, placeErrors } from './form-errors'
+import { fieldResolver, placeErrors, rateLimitedAlert } from './form-errors'
 import { canEnrolTotp, FactorEnrolmentScreen } from './mfa'
 import { OAuthButtons } from './oauth'
 import { SwitchLink } from './sign-in'
+import { StepRenderer } from './step-renderer'
 import {
   Button,
   Card,
@@ -128,10 +127,7 @@ function AccountScreen(props: SignUpProps & { signUp: UseSignUpResult; focusTitl
         failure={local ?? signUp.error}
         blocked={signUp.isPending || wait > 0}
       >
-        <FormError
-          message={placed.form}
-          detail={wait > 0 ? formatText(t.common.retryIn, { time: formatDuration(wait, t) }) : null}
-        />
+        <FormError {...rateLimitedAlert(placed.form, wait, t)} />
         {collectName ? (
           <div className='tula-field-row'>
             <TextField
@@ -207,40 +203,40 @@ function SignUpScreens(props: SignUpProps) {
   if (signedIn) {
     return <SignedInNotice key={screen} focusTitle={focusTitle} />
   }
-  switch (step?.status) {
-    case undefined:
-      return <AccountScreen key={screen} {...props} signUp={signUp} focusTitle={focusTitle} />
-    case 'needs_email_verification':
-      return (
-        <VerificationScreen
-          key={screen}
-          destination={step.destination}
-          focusTitle={focusTitle}
-          isPending={signUp.isPending}
-          error={signUp.error}
-          verify={(code) => signUp.verifyEmail({ code })}
-          resend={signUp.resendCode}
-        />
-      )
-    case 'needs_factor_enrolment':
-      if (!canEnrolTotp(step.methods)) {
-        return <UnsupportedScreen key={screen} focusTitle={focusTitle} onRestart={signUp.reset} />
-      }
-      return (
-        <FactorEnrolmentScreen
-          key={screen}
-          focusTitle={focusTitle}
-          isPending={signUp.isPending}
-          error={signUp.error}
-          start={signUp.startTotpEnrolment}
-          confirm={confirmEnrolment}
-          onRestart={signUp.reset}
-        />
-      )
-    default:
-      // A step a newer server added to sign-up.
-      return <UnsupportedScreen key={screen} focusTitle={focusTitle} onRestart={signUp.reset} />
-  }
+  return (
+    <StepRenderer
+      step={step}
+      screen={screen}
+      focusTitle={focusTitle}
+      onRestart={signUp.reset}
+      start={<AccountScreen {...props} signUp={signUp} focusTitle={focusTitle} />}
+      screens={{
+        needs_email_verification: (step) => (
+          <VerificationScreen
+            destination={step.destination}
+            focusTitle={focusTitle}
+            isPending={signUp.isPending}
+            error={signUp.error}
+            verify={(code) => signUp.verifyEmail({ code })}
+            resend={signUp.resendCode}
+          />
+        ),
+        // A method this version cannot enrol, or a status a newer server added to sign-up,
+        // is the renderer's "not supported" screen.
+        needs_factor_enrolment: (step) =>
+          canEnrolTotp(step.methods) ? (
+            <FactorEnrolmentScreen
+              focusTitle={focusTitle}
+              isPending={signUp.isPending}
+              error={signUp.error}
+              start={signUp.startTotpEnrolment}
+              confirm={confirmEnrolment}
+              onRestart={signUp.reset}
+            />
+          ) : null,
+      }}
+    />
+  )
 }
 
 /**

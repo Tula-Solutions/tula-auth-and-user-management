@@ -1,0 +1,76 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "transit": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/docs/**",
+        "$TURBO_ROOT$/*.md",
+        "$TURBO_ROOT$/LICENSE",
+        "$TURBO_ROOT$/conformance/README.md",
+        "$TURBO_ROOT$/apps/*/README.md",
+        "$TURBO_ROOT$/packages/*/README.md",
+        "$TURBO_ROOT$/examples/*/README.md",
+        "$TURBO_ROOT$/native/*/README.md",
+        "$TURBO_ROOT$/examples/tula-config/tula.config.ts"
+      ]
+    },
+    "build": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/docs/**",
+        "$TURBO_ROOT$/*.md",
+        "$TURBO_ROOT$/LICENSE",
+        "$TURBO_ROOT$/conformance/README.md",
+        "$TURBO_ROOT$/apps/*/README.md",
+        "$TURBO_ROOT$/packages/*/README.md",
+        "$TURBO_ROOT$/examples/*/README.md",
+        "$TURBO_ROOT$/native/*/README.md",
+        "$TURBO_ROOT$/examples/tula-config/tula.config.ts"
+      ]
+    },
+    "test": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/docs/**",
+        "$TURBO_ROOT$/*.md",
+        "$TURBO_ROOT$/LICENSE",
+        "$TURBO_ROOT$/conformance/README.md",
+        "$TURBO_ROOT$/apps/*/README.md",
+        "$TURBO_ROOT$/packages/*/README.md",
+        "$TURBO_ROOT$/examples/*/README.md",
+        "$TURBO_ROOT$/native/*/README.md",
+        "$TURBO_ROOT$/examples/tula-config/tula.config.ts"
+      ]
+    },
+    "test:coverage": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/docs/**",
+        "$TURBO_ROOT$/*.md",
+        "$TURBO_ROOT$/LICENSE",
+        "$TURBO_ROOT$/conformance/README.md",
+        "$TURBO_ROOT$/apps/*/README.md",
+        "$TURBO_ROOT$/packages/*/README.md",
+        "$TURBO_ROOT$/examples/*/README.md",
+        "$TURBO_ROOT$/native/*/README.md",
+        "$TURBO_ROOT$/examples/tula-config/tula.config.ts"
+      ]
+    },
+    "generate:check": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/docs/**",
+        "$TURBO_ROOT$/*.md",
+        "$TURBO_ROOT$/LICENSE",
+        "$TURBO_ROOT$/conformance/README.md",
+        "$TURBO_ROOT$/apps/*/README.md",
+        "$TURBO_ROOT$/packages/*/README.md",
+        "$TURBO_ROOT$/examples/*/README.md",
+        "$TURBO_ROOT$/native/*/README.md",
+        "$TURBO_ROOT$/examples/tula-config/tula.config.ts"
+      ]
+    }
+  }
+}

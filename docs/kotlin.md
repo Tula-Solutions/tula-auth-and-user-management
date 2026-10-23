@@ -512,6 +512,18 @@ that was shown while nobody was signed in: there was no session to end.
 An app that starts with a stored session reads `client.state` once, after `client.load()`,
 to choose which of the two to open on ([the example](../examples/compose/README.md) does).
 
+### What the screens look like
+
+:::native-screens{platform="android"}
+
+These are `TulaAuth` and `TulaAccount` as [the example app](#the-example-and-its-ui-tests)
+draws them on an Android emulator against the real API: pick a screen and a step, the scheme
+and whether to show a device frame. Each picture is a screenshot taken by the example's UI
+tests, not a mock-up, and the line under the gallery says what made it.
+[Refreshing the captures](#refreshing-the-captures) says how to take them again.
+
+:::
+
 ### Passkeys, Google and providers on the screens
 
 A way to sign in is drawn only where the environment has it on **and the client was given
@@ -730,6 +742,25 @@ The script refuses a device that is not an emulator unless it is given `--allow-
 `adb reverse` puts the API's port on the device's own loopback address, where every app
 installed on a phone can reach it. They are run by hand: no workflow starts an emulator. CI compiles and lints the screens,
 the example and the tests.
+
+### Refreshing the captures
+
+The pictures of [what the screens look like](#what-the-screens-look-like) come from the same
+UI tests, in a mode that photographs instead of asserting:
+
+```bash
+bun run native/android/fixture/ui-tests.ts --avd <name of an emulator> --screenshots apps/docs/public/native/android
+```
+
+`CaptureTest` (in `examples/compose/src/androidTest`) walks the sign-in, the sign-up, the
+password reset, the second step and the account, once in the light scheme and once in the
+dark (`cmd uimode night`), and captures the app's window of every step (Compose's `captureToImage`, written out by the
+shell, so without the system bars: the example is not edge to edge and an emulator without a
+window draws its status bar empty). The script pulls them, scales each to 560 pixels wide, writes it as WebP (it needs `cwebp`:
+`brew install webp`; a picture over 80 KB stops it) and writes `manifest.json` beside them
+with the device, the Android API level, the commit and the date. The captures and the manifest
+are committed; no workflow takes them, because none runs an emulator. Without the flag the
+capture tests skip themselves, so an ordinary run is unchanged.
 
 What the UI tests cover of these screens, and what they do not (no passkey sheet, Google
 chooser or browser was opened; no text message was received; TalkBack was never on), is in

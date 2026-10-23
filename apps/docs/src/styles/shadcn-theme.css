@@ -1,0 +1,34 @@
+/*
+ * The shadcn primitives (src/components/ui) read these names; they map onto the site's tokens.
+ * Imported by `styles.css` (the pages) and by `playground/playground.css` (the island), so
+ * that one primitive looks the same wherever it is drawn.
+ */
+@theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--body);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--body);
+  --color-popover: var(--raised);
+  --color-popover-foreground: var(--body);
+  --color-primary: var(--btn-bg);
+  --color-primary-foreground: var(--btn-fg);
+  --color-secondary: var(--surface);
+  --color-secondary-foreground: var(--ink);
+  --color-muted: var(--surface);
+  --color-muted-foreground: var(--muted);
+  --color-accent: var(--accent-soft);
+  --color-accent-foreground: var(--ink);
+  --color-destructive: var(--danger);
+  --color-link: var(--accent);
+  --color-border: var(--border);
+  --color-input: var(--border-strong);
+  --color-ring: var(--accent);
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+  --font-sans: var(--font-sans-stack);
+  --font-mono: var(--font-mono-stack);
+}
+
+/* The dark variant follows the site's theme switch, not the system preference. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));

@@ -90,11 +90,13 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | --- | --- |
 | `apps/api` | `@tula-tech/api` — the Bun + Hono auth server (data plane). |
 | `apps/dashboard` | `@tula-tech/dashboard` — the operator's dashboard: a Vite + React single-page app the API serves at `/dashboard` ([ADR 0032](docs/adr/0032-dashboard.md), [docs/dashboard.md](docs/dashboard.md), `apps/dashboard/README.md`). Private, never published. |
+| `apps/docs` | `@tula-tech/docs` — the documentation site: `docs/**/*.md` prerendered to static HTML, search and an error-code reference included. Private; the API does not serve it and no image holds it; `.github/workflows/docs-pages.yml` publishes it to GitHub Pages, the latest release's docs at the root (built on a push to `main`, a release) and `develop`'s under `/next/` (`apps/docs/README.md`). |
 | `packages/contract` | `@tula-tech/contract` — Zod schemas, flow protocol, error codes, token claims, password policy, OpenAPI snapshot. Imported by the API and every TS SDK. |
 | `packages/db` | `@tula-tech/db` — Drizzle schema, committed migrations, RLS policies, tenant helpers, seed. |
 | `packages/tsconfig` | Shared tsconfig bases. |
 | `packages/core` | `@tula-tech/core` — the headless TypeScript client: flows, session, single-flight refresh. Runs in browsers, Node, Bun and edge runtimes ([ADR 0021](docs/adr/0021-core-sdk.md)). |
 | `packages/react` | `@tula-tech/react` — provider, hooks and prebuilt components (sign-up, sign-in, reset, account) with one themeable stylesheet ([ADR 0022](docs/adr/0022-react-sdk.md)). |
+| `packages/ui` | `@tula-tech/ui` — the Tula UI registry in shadcn's format: the sources of the items a developer copies (`items/`), the build that refuses an unsafe one and writes `r/*.json` (`registry:generate`, `registry:check`), and the theme bridge. Private, never published ([ADR 0064](docs/adr/0064-tula-ui.md)). |
 | `packages/nextjs` | `@tula-tech/nextjs` — the Next.js App Router SDK: a same-origin route handler, a request interceptor that verifies sessions offline, server helpers and the React components ([ADR 0029](docs/adr/0029-nextjs-sdk.md)). |
 | `packages/admin` | `@tula-tech/admin` — the typed client for `/v1/admin/*`, generated from `openapi.json`. Holds a secret key: server-side only ([ADR 0030](docs/adr/0030-config-and-apply.md)). |
 | `packages/config` | `@tula-tech/config` — `defineConfig()` for `tula.config.ts`: an environment's settings, OAuth providers and webhook endpoints as code, validated with the contract's schemas; secrets only as `env('NAME')`, and none at all for a webhook endpoint. |
@@ -106,8 +108,8 @@ architecture decisions in [`docs/adr/`](docs/adr/).
 | `native/{swift,android}` | Native SDKs (Phase 2). `native/swift` is the Swift package `TulaAuth`: the generated types ([ADR 0050](docs/adr/0050-native-type-generation.md)) and, beside them, the hand-written client with no screen (flows, the session, the refresh token in the Keychain, passkeys, providers and a device key behind protocols; [ADR 0051](docs/adr/0051-swift-client.md), [docs/swift.md](docs/swift.md)), with XCTest unit tests, journey tests against the real API and the fixture they start (`native/swift/fixture`); and a second library, `TulaAuthUI`, the SwiftUI screens of a sign-in, a sign-up and a password reset on that client ([ADR 0057](docs/adr/0057-swiftui-screens.md)), with tests of what they decide. `native/android` is the Kotlin SDK's Gradle build ([ADR 0054](docs/adr/0054-kotlin-client.md), [docs/kotlin.md](docs/kotlin.md), `native/android/README.md`): `tula-auth`, the client with no UI (flows, the session, the second step and step-up, passkeys, Google's ID token, providers and a device key behind interfaces, the storage interface) beside the generated types, plain Kotlin on the JVM; `tula-auth-android`, the Keystore-backed storage and the adapters over Credential Manager, a Custom Tab and the Keystore, built only where an Android SDK is known; and the Compose screens of a sign-in, a sign-up, a password reset and the signed-in user's account ([ADR 0061](docs/adr/0061-compose-screens.md), [ADR 0062](docs/adr/0062-compose-second-step-and-account.md)) in two modules: `tula-auth-ui`, what they decide (plain Kotlin on the JVM, no Compose), and `tula-auth-compose`, what draws them (an Android library). `native/android/fixture/ui-tests.ts` runs the example's UI tests on an emulator, by hand. Not workspace packages. No job of `ci.yml` compiles Swift: the `Swift` workflow (`.github/workflows/swift.yml`, a macOS runner) runs `swift test`. CI's `kotlin` job tests `tula-auth` and `tula-auth-ui`, and `kotlin-android` compiles and lints `tula-auth-android`, `tula-auth-compose` and the Compose example with its UI tests; no job runs anything on a device or an emulator. |
 | `packages/conformance` | `@tula-tech/conformance` — runs the scenarios in `conformance/` over HTTP, in process or against a live server, and holds the format and the checks of the client-journey list. |
 | `conformance/` | Language-neutral JSON scenarios every server and SDK must pass, and their JSON Schema; `client-journeys.json`, the one list of what each client's test suite does about every scenario and every named client behaviour, and its JSON Schema. |
-| `scripts/` | Release tooling: builds, packs and checks the publishable packages ([docs/releasing.md](docs/releasing.md)). `scripts/docs.ts` writes the SDK reference and fills the docs' snippet blocks (`docs:generate`, `docs:check`); it uses the compiler bundled in `ts-morph`, pinned to an exact version, because the repository's TypeScript 7 has no stable compiler API; `scripts/native-reference.ts` is the scan that writes the Swift and Kotlin pages. `scripts/worker-check/` is the check CI's `self-host-worker` job runs against the packaged stack (a webhook delivered by the worker as its own service) and the receiver it delivers to; its helpers are tested in `.claude/hooks/worker-check.test.ts`. |
-| `docker/` | `postgres/init.sql` (the roles of a fresh local database), `lb/` (the nginx proxy that puts the two packaged API instances behind one address in the Compose `app` profile; a development and CI fixture) and `worker-check/compose.yml` (the worker check's receiver, in the worker's network namespace; laid over the Compose file by that check only). |
+| `scripts/` | Release tooling: builds, packs and checks the publishable packages ([docs/releasing.md](docs/releasing.md)). `scripts/docs.ts` writes the SDK reference and fills the docs' snippet blocks (`docs:generate`, `docs:check`); it uses the compiler bundled in `ts-morph`, pinned to an exact version, because the repository's TypeScript 7 has no stable compiler API; `scripts/native-reference.ts` is the scan that writes the Swift and Kotlin pages. `scripts/worker-check/` is the check CI's `self-host` job runs against its worker stack (a webhook delivered by the worker as its own service) and the receiver it delivers to; its helpers are tested in `.claude/hooks/worker-check.test.ts`. |
+| `docker/` | `postgres/init.sql` (the roles of a fresh local database), `lb/` (the nginx proxy that puts the two packaged API instances behind one address in the Compose `app` profile; a development and CI fixture), `self-host/*.env` (the ports and settings of each of the three stacks CI's `self-host` job runs side by side) and `worker-check/compose.yml` (the worker check's receiver, in the worker's network namespace; laid over the Compose file by that check only). |
 | `examples/docs-snippets` | The `@tula-tech/core` and `@tula-tech/admin` calls shown in `docs/methods/*.md`, as compiled TypeScript (`typecheck:scripts`). Not a workspace package; nothing runs it. A sample in the docs is a `#region` here or a file of an example app. |
 | `examples/core-playground` | A static page for trying `@tula-tech/core` by hand in a browser (`bun run playground`). Not a workspace package. |
 | `examples/tula-config` | `@tula-tech/example-config` — an example `tula.config.ts` (two environments), typechecked and loaded by `@tula-tech/config`'s tests. |
@@ -156,8 +158,10 @@ above or below and the file it is in has none of that name, the section is in th
 | Compose screens (`native/android/tula-auth-ui`, `tula-auth-compose`, see ADR 0061 and ADR 0062) | `.claude/rules/kotlin.md` |
 | React SDK (see ADR 0022) | `.claude/rules/react.md` |
 | Dashboard app (`apps/dashboard`, see ADR 0032) | `.claude/rules/dashboard.md` |
+| Documentation site (`apps/docs`) | `.claude/rules/docs-site.md` |
 | Expo SDK (`packages/expo`, see ADR 0046, ADR 0048, ADR 0052 and ADR 0055) | `.claude/rules/expo.md` |
 | Expo native screens (`packages/expo-screens`, see ADR 0063) | `.claude/rules/expo-screens.md` |
+| Tula UI: the copy-in registry and the headless layer it calls (`packages/ui`, see ADR 0064) | `.claude/rules/tula-ui.md` |
 | Next.js SDK (see ADR 0029) | `.claude/rules/nextjs.md` |
 | The dashboard's session and the control plane (see ADR 0032) | `.claude/rules/control-plane.md` |
 | Per-environment settings | `.claude/rules/settings.md` |
@@ -646,12 +650,15 @@ WEBHOOK_WORKER=separate docker compose --profile app --profile worker up -d --bu
                             # no delivery made by the two API instances; stop with both profiles
 bun run scripts/worker-check/check.ts -- docker compose -f docker-compose.yml \
   -f docker/worker-check/compose.yml --profile app --profile worker
-                            # what CI's self-host-worker job runs: against that stack started
+                            # what CI's self-host job runs (on its worker stack): against it started
                             # WITHOUT the worker (--profile app only), with WORKER_CHECK_SECRET_KEY
                             # and WORKER_CHECK_ADMIN_TOKEN; it starts the worker itself
 bun run dev                 # API on http://localhost:3003, docs at /v1/docs
 bun run verify              # full quality gate (what CI runs)
 bun run verify:changed      # affected packages only (what the Stop hook runs)
+bun run verify:static       # verify without the unit tests (CI's `verify-static` job); the tests are
+                            # `test:coverage:{api,dashboard,rest}`, one job each in CI; `verify`'s commands
+                            # are exactly these (.claude/hooks/ci-split.test.ts)
 bun run check               # Biome lint + format check
 bun run format              # Biome format --write
 bun run typecheck
@@ -688,6 +695,7 @@ bun run --filter create-tula templates:sync
 bun run dashboard:generate  # regenerate the dashboard's hooks, route tree and theme tokens
 bun run dashboard:dev       # the dashboard on http://localhost:5175/dashboard/, proxying /v1 to the API
 bun run dashboard:build     # apps/dashboard/dist, which `bun run dev` then serves at /dashboard
+bun run docs-site:dev       # build the documentation site and serve it on http://127.0.0.1:4321/ (docs-site:build only builds)
 bun run docs:generate       # rewrite docs/reference/ from the JSDoc and fill the docs' snippet blocks
 bun run docs:check          # fail if either is out of date (part of verify)
 bun run packages:check      # build, pack, publint + attw every publishable package (part of verify)

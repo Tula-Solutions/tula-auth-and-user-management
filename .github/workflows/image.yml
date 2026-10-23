@@ -20,7 +20,7 @@ name: API image
 #      (`scripts/api-image.ts`), and a registry that cannot be asked fails the run;
 #   3. only the two jobs that push have `packages: write`;
 #   4. the image is built for amd64 and arm64 on runners of those architectures, from this
-#      commit, with nothing but the Dockerfile CI's `self-host` jobs already build and run.
+#      commit, with nothing but the Dockerfile CI's `self-host` job already builds and runs.
 # `.claude/hooks/api-image.test.ts` holds this file to those rules.
 #
 # The last job pulls the image as a stranger would. A package is PRIVATE when GitHub first

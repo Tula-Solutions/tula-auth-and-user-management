@@ -320,8 +320,8 @@ describe('only the released packages can be published', () => {
     const publish = job(workflow, 'publish')
     // Merging to `main` publishes nothing by itself: a person sets the variable.
     expect(publish).toContain("\n    if: vars.NPM_PUBLISH == 'true'\n")
-    // The OIDC identity npm trusts names this environment, and GitHub lets only `main` (and
-    // a reviewer) deploy to it. Without it the identity is the workflow FILE's, on any ref:
+    // The OIDC identity npm trusts names this environment, and GitHub lets only `main`
+    // deploy to it (no reviewer approves a run). Without it the identity is the workflow FILE's, on any ref:
     // a branch with its own copy of release.yml could publish.
     expect(publish).toContain('\n    environment: npm-publish\n')
     expect(dryRun).not.toMatch(/\n {4}environment:/)
@@ -343,10 +343,11 @@ describe('only the released packages can be published', () => {
       .replace(/[ \t]*\n[ \t]*(?!\d+\. )/g, ' ')
     expect(handOver.length).toBeGreaterThan(200)
     const step = handOver.slice(0, handOver.search(/\n\d+\. \*\*Merge/))
-    // The environment exists, is restricted to main with a reviewer, and npm is given its name.
+    // The environment exists, is restricted to main, and npm is given its name.
     expect(step).toContain('environment named `npm-publish`')
     expect(step).toMatch(/deployment branches[^.]*`main` only/)
-    expect(step).toContain('required reviewers')
+    // No required reviewer: a merge to `main` publishes (the owner's decision, TULA-108).
+    expect(step).not.toContain('required reviewers')
     expect(step).toMatch(/Trusted Publisher[\s\S]*the environment `npm-publish`/)
     expect(step).not.toMatch(/\(no environment\)|no environment\b/)
     expect(doc.replace(/\s+/g, ' ')).toContain(

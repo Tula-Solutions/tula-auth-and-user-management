@@ -1564,6 +1564,8 @@ export interface TulaLocalization {
     required: string
     /** `{time}` is a duration from `seconds` or `minutesSeconds`. */
     retryIn: string
+    /** The whole message of a rate limit whose wait is known; `{time}` as in `retryIn`. */
+    rateLimitedIn: string
     /** `{seconds}`. */
     seconds: string
     /** `{minutes}`, `{seconds}`. */

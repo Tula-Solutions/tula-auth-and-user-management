@@ -1,7 +1,8 @@
 import { devIdTokens } from './id-token'
+import { laneTargets, parseEnvironments, runScenarios } from './lanes'
 import { loadScenarios } from './load'
 import { mailpitCodes, mailpitLinks, mailpitMessages } from './mailpit'
-import { exitCode, formatResult, runScenario, type Target } from './runner'
+import { exitCode, formatResult, type Target } from './runner'
 import { devSmsCodes, devSmsTexts } from './sms-inbox'
 
 /**
@@ -25,6 +26,11 @@ import { devSmsCodes, devSmsTexts } from './sms-inbox'
  *   Each instance has its own inbox, so name the instances themselves, never a proxy in
  *   front of them. The server must run with `SMS_PROVIDER=dev`. Without it the scenarios
  *   marked `needsSmsInbox` are skipped.
+ *
+ * - `CONFORMANCE_ENVIRONMENTS` (optional): more environments of the same server, as
+ *   `publishableKey:secretKey` pairs separated by commas. The scenarios then run at the same
+ *   time, one at a time in each environment (the primary one and these), so that their waits
+ *   overlap. Without it they run one after another in the primary environment.
  *
  * The server must run with `TRUST_PROXY=true` and deliver mail to that Mailpit.
  */
@@ -95,12 +101,33 @@ const target: Target = {
   webhooks: receiverHost ? { hostname: receiverHost } : undefined,
 }
 
-const counts = { passed: 0, failed: 0, skipped: 0 }
-for (const { scenario } of await loadScenarios()) {
-  const result = await runScenario(scenario, target)
-  counts[result.status] += 1
-  process.stdout.write(`${formatResult(result)}\n`)
+let environments: ReturnType<typeof parseEnvironments>
+try {
+  environments = parseEnvironments(process.env.CONFORMANCE_ENVIRONMENTS)
+} catch (error) {
+  process.stderr.write(`conformance: ${error instanceof Error ? error.message : String(error)}\n`)
+  process.exit(2)
 }
+const counts = { passed: 0, failed: 0, skipped: 0 }
+const scenarios = (await loadScenarios()).map(({ scenario }) => scenario)
+let lanes: Target[]
+try {
+  lanes = laneTargets(target, environments)
+} catch (error) {
+  process.stderr.write(`conformance: ${error instanceof Error ? error.message : String(error)}\n`)
+  process.exit(2)
+}
+if (lanes.length > 1) {
+  process.stdout.write(
+    `running ${scenarios.length} scenarios in ${lanes.length} environments at once\n`
+  )
+}
+await runScenarios(scenarios, lanes, {
+  onResult: (result) => {
+    counts[result.status] += 1
+    process.stdout.write(`${formatResult(result)}\n`)
+  },
+})
 process.stdout.write(
   `\n${counts.passed} passed, ${counts.failed} failed, ${counts.skipped} skipped against ${target.baseUrl}${
     // Said explicitly, so a run that was meant to cover two instances can be checked for it.

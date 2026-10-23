@@ -1,0 +1,14 @@
+[test]
+coverageSkipTestFiles = true
+coverageThreshold = { lines = 0.8, functions = 0.8 }
+# The browser script is exercised by the `docs` Playwright project, not by `bun test`; the
+# shadcn primitives are not this package's to test; scripts are thin launchers; the
+# playground's React screens are driven in a browser by the same project.
+coveragePathIgnorePatterns = [
+  "../../packages/**",
+  "src/client/**",
+  "src/playground/ui/**",
+  "src/components/ui/**",
+  "src/testing/**",
+  "scripts/**",
+]

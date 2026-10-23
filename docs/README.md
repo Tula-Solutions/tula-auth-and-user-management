@@ -12,6 +12,7 @@ published: those are still used from a checkout of the repository
 | | |
 | --- | --- |
 | [Quickstart](quickstart.md) | From nothing to a signed-in user: build the image, pack the packages, `create-tula`, `tula dev`. |
+| [Playground](playground.md) | The sign-in, sign-up and account components in your browser, against a sandbox: configure the methods, providers and look, break things on purpose, copy the code. |
 | [Self-hosting](self-host.md) | The server's settings, an environment's settings, Redis and several instances, proxies, upgrades. |
 | [What was not verified](plans/phase-1-unverified.md) | Everything in Phase 1 that was tested against a stand-in rather than the real thing. [Phase 2's list](plans/phase-2-unverified.md) is kept step by step. |
 
@@ -81,6 +82,7 @@ by error code. Their code samples are copied from files of this repository by
 | [Settings as code](config.md) | `tula.config.ts`, what `diff` and `apply` do, using them in CI. |
 | [Dashboard](dashboard.md) | The operator's screens at `/dashboard`. |
 | [MCP server](mcp.md) | Tools for an AI assistant: reads, drafts, proposals and a sign-in test. |
+| [Proposals](proposals.md) | Letting an AI agent ask for a change that a person approves: the agent key, what a proposal holds and how it is carried out. |
 | [Conformance suite](../conformance/README.md) | The scenarios every server and SDK must pass, and how to run them against yours. |
 
 ## SDK reference
@@ -88,8 +90,9 @@ by error code. Their code samples are copied from files of this repository by
 Generated from the JSDoc of every public entry point ([how](reference/README.md)):
 [`@tula-tech/core`](reference/core.md), [`@tula-tech/react`](reference/react.md),
 [`@tula-tech/nextjs`](reference/nextjs.md), [`@tula-tech/expo`](reference/expo.md),
-[`@tula-tech/admin`](reference/admin.md),
-[`@tula-tech/config`](reference/config.md), [`@tula-tech/contract`](reference/contract.md).
+[`@tula-tech/expo-screens`](reference/expo-screens.md), [`@tula-tech/admin`](reference/admin.md),
+[`@tula-tech/config`](reference/config.md), [`@tula-tech/contract`](reference/contract.md), and, from
+their doc comments, the native SDKs: [Swift](reference/swift.md) and [Kotlin](reference/kotlin.md).
 
 The packages' own READMEs are the guides: [`@tula-tech/core`](../packages/core/README.md),
 [`@tula-tech/react`](../packages/react/README.md), [`@tula-tech/nextjs`](../packages/nextjs/README.md),
@@ -105,5 +108,7 @@ The example apps: [Next.js](../examples/nextjs-app-router/README.md),
 | [Architecture decisions](adr/) | One record per decision, with the reasoning the pages above link to. |
 | [Phase 1 plan](plans/phase-1.md) | What was built, in what order, and the exit criteria with their evidence. |
 | [Phase 2 plan](plans/phase-2.md) | Approved: webhooks, hooks, SMS, more providers, the Expo, Swift and Kotlin SDKs; the decisions it was started on. |
+| [Documentation site](../apps/docs/README.md) | These pages as a static site, published from `develop` at https://tula-solutions.github.io/tula-auth-and-user-management/; `bun run docs-site:dev` builds it and serves it on this machine. |
+| [Writing docs](writing-docs.md) | Every component the documentation site adds to Markdown (callouts, steps, tabs and code groups, code blocks, file trees, parameter tables), with its source and its result, and what the build refuses. |
 | [Releasing](releasing.md) | How the packages are built, packed and checked. |
 | [Business plan](business-plan.md) | Product context. |

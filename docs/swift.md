@@ -535,6 +535,18 @@ handed to the account's other devices by Universal Clipboard and do not stay on 
 pasteboard. The rule (`TulaCopyRule`) is tested; the call that writes the pasteboard is view
 code and no test or simulator run exercised it.
 
+### What the screens look like
+
+:::native-screens{platform="ios"}
+
+These are `TulaAuthView` and `TulaAccountView` as [the example app](#the-example) draws them in
+an iOS simulator against the real API: pick a screen and a step, the scheme and whether to
+show a device frame. Each picture is a screenshot taken by the example's UI tests, not a
+mock-up, and the line under the gallery says what made it.
+[Refreshing the captures](#refreshing-the-captures) says how to take them again.
+
+:::
+
 ### The account screen
 
 <!-- snippet: native/swift/Tests/TulaAuthUITests/DocsSnippets.swift#account -->
@@ -828,6 +840,24 @@ the example app against the real API, with the system's accessibility audit on t
 it reaches. It needs Xcode with an iOS simulator runtime, and is in no workflow: nobody has
 run it on a GitHub runner. The audit is a set of checks on the accessibility tree, **not
 VoiceOver**.
+
+### Refreshing the captures
+
+The pictures of [what the screens look like](#what-the-screens-look-like) come from the same
+UI tests, in a mode that photographs instead of asserting:
+
+```bash
+bun run native/swift/fixture/ui-tests.ts --screenshots apps/docs/public/native/ios
+```
+
+`CaptureUITests` (in `examples/swiftui/TulaExampleUITests`) walks the sign-in, the sign-up,
+the password reset, the second step and the account, once in the light scheme and once in
+the dark, and takes the simulator's own screenshot of every step. The script puts the status
+bar at 9:41, scales each picture to 560 pixels wide, writes it as WebP (it needs `cwebp`:
+`brew install webp`; a picture over 80 KB stops it) and writes `manifest.json` beside them
+with the device, Xcode's version, the commit and the date. The captures and the manifest are
+committed; no workflow takes them, because none runs a simulator. Without the flag the
+capture tests skip themselves, so an ordinary run is unchanged.
 
 What the script ends, and what it leaves. The fixture and `xcodebuild` are ended when the
 run finishes, when it fails, and when the script is sent `SIGHUP`, `SIGINT` or `SIGTERM`.
