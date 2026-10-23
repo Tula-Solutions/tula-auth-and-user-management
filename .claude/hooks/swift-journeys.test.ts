@@ -39,7 +39,7 @@ describe('the Swift journeys and the client-journey list', () => {
     const owed = notBuilt(await loadClientJourneys(), 'swift')
     const total = Object.values(SWIFT_NOT_BUILT).reduce((sum, count) => sum + count, 0)
     expect(owed).toHaveLength(total)
-    expect(total).toBe(2)
+    expect(total).toBe(1)
   })
 })
 

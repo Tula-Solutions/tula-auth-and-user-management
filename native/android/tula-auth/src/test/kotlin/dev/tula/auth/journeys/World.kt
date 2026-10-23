@@ -13,7 +13,6 @@ import dev.tula.auth.MemoryTokenStorage
 import dev.tula.auth.PasskeySheet
 import dev.tula.auth.TokenStorage
 import dev.tula.auth.TulaClient
-import dev.tula.auth.UrlConnectionEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -140,7 +139,7 @@ class World private constructor(
     /** Every request the world's clients made, oldest first. */
     val exchanges = CopyOnWriteArrayList<Exchange>()
 
-    private val real = UrlConnectionEngine()
+    private val real = PatchEngine()
     private val watching = CoroutineScope(Dispatchers.Unconfined + Job())
     private val clients = CopyOnWriteArrayList<TulaClient>()
     private val hooks = CopyOnWriteArrayList<Hook>()

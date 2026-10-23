@@ -197,7 +197,10 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   OkHttp, Google's sign-in SDK or any other library without a line in ADR 0054.
 - **Not built, and said so in the list and the docs**: an emailed link (no call asks for
   one; `not_built` under TULA-76, the native clients' emailed link), a passkey's rename
-  (`HttpURLConnection` has no `PATCH`; TULA-76 too). **An account with no address gets one through `client.emailAddress`**
+  (`HttpURLConnection` has no `PATCH`; TULA-76 too). **The same holds for three organization
+  calls** (`update`, `members.changeRole`, `domains.update`, TULA-130): they work with an
+  `HttpEngine` that sends `PATCH`, the journeys' `PatchEngine` (the JDK's client, tests only),
+  and fail with `network.failed` on the default one. Say so wherever they are documented. **An account with no address gets one through `client.emailAddress`**
   (`request`, `verify`: ADR 0059's two routes and nothing more; no call changes an
   address).
 - **Organizations (`Organizations.kt`, TULA-121, ADR 0065) are the Swift client's rules on

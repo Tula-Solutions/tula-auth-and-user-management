@@ -77,7 +77,10 @@ fun interface HttpEngine {
  * closed) when the calling coroutine is cancelled, which is how the client's timeout ends it.
  * Redirects are not followed, nothing is cached and no cookie is kept.
  *
- * `HttpURLConnection` has no `PATCH`; the client's calls do not need one today.
+ * `HttpURLConnection` has no `PATCH`, so a `PATCH` call fails with `network.failed` on this
+ * engine: renaming an organization, giving a member another role and changing a domain's mode
+ * are `PATCH` routes, and an app that calls them passes an [HttpEngine] that can send one
+ * (over OkHttp, say). Nothing else of the client needs one.
  *
  * **It was tested on a desktop JVM only.** Android's `HttpURLConnection` is another
  * implementation, and the API refuses a sign-in and ends a session with a `401` that has no

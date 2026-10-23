@@ -198,6 +198,125 @@ final class OrganizationTests: XCTestCase {
         XCTAssertEqual(invalid, "response.invalid")
     }
 
+    func testManagingAnOrganizationGoesToItsRoutesWithItsBodies() async throws {
+        let world = try await World.signedIn()
+        let org = "/v1/client/me/organizations/org_1"
+        let member =
+            #"{"userId":"usr_2","name":null,"email":"b@example.com","role":"admin","createdAt":"2026-01-01T00:00:00.000Z"}"#
+
+        world.api.on("PATCH \(org)", Reply(json: organization))
+        let renamed = try await world.client.organizations.update(organizationId: "org_1", name: "Acme Inc")
+        XCTAssertEqual(renamed.id, "org_1")
+        let patch = Fixture.body(world.api.requests("PATCH \(org)")[0])
+        XCTAssertEqual(patch["name"] as? String, "Acme Inc")
+        XCTAssertNil(patch["slug"], "a field left out is not sent")
+
+        world.api.on("PATCH \(org)", Reply(json: organization.replacingOccurrences(of: #""id":"org_1""#, with: #""id":"""#)))
+        let invalid = await thrownCode { _ = try await world.client.organizations.update(organizationId: "org_1", name: "x") }
+        XCTAssertEqual(invalid, "response.invalid", "an answer that names no organization is not one")
+
+        world.api.on("DELETE \(org)", Reply(status: 204, json: ""))
+        try await world.client.organizations.remove(organizationId: "org_1")
+        XCTAssertEqual(world.api.requests("DELETE \(org)").count, 1)
+
+        world.api.on("GET \(org)/roles", Reply(json: #"{"data":[{"key":"admin","name":"Admin"}]}"#))
+        let roles = try await world.client.organizations.roles(organizationId: "org_1")
+        XCTAssertEqual(roles.data.map(\.key), ["admin"])
+
+        world.api.on(
+            "GET \(org)/members",
+            Reply(json: #"{"meta":{"totalCount":1,"totalPages":1,"page":1,"perPage":20},"data":[\#(member)]}"#))
+        let members = try await world.client.organizations.members.list(organizationId: "org_1")
+        XCTAssertEqual(members.data.map(\.userId), ["usr_2"])
+
+        world.api.on("PATCH \(org)/members/usr_2", Reply(json: member))
+        let changed = try await world.client.organizations.members.changeRole(
+            organizationId: "org_1", userId: "usr_2", role: "admin")
+        XCTAssertEqual(changed.role, "admin")
+        XCTAssertEqual(Fixture.body(world.api.requests("PATCH \(org)/members/usr_2")[0])["role"] as? String, "admin")
+
+        world.api.on("DELETE \(org)/members/usr_2", Reply(status: 204, json: ""))
+        try await world.client.organizations.members.remove(organizationId: "org_1", userId: "usr_2")
+        XCTAssertEqual(world.api.requests("DELETE \(org)/members/usr_2").count, 1)
+    }
+
+    func testLeavingRemovesTheSignedInUsersOwnMembership() async throws {
+        let world = try await World.signedIn()
+        world.api.on(Fixture.me, Reply(json: Fixture.user))
+        _ = try await world.client.user()
+        let own = "DELETE /v1/client/me/organizations/org_1/members/usr_1"
+        world.api.on(own, Reply(status: 204, json: ""))
+        try await world.client.organizations.leave(organizationId: "org_1")
+        XCTAssertEqual(world.api.requests(own).count, 1, "the user's own id is the member removed")
+    }
+
+    func testLeavingAsksForTheUserWhenTheProfileIsNotHeldYet() async throws {
+        let world = try await World.signedIn()
+        world.api.on(Fixture.me, Reply(json: Fixture.user))
+        let own = "DELETE /v1/client/me/organizations/org_1/members/usr_1"
+        world.api.on(own, Reply(status: 204, json: ""))
+        try await world.client.organizations.leave(organizationId: "org_1")
+        XCTAssertEqual(world.api.requests(own).count, 1)
+    }
+
+    func testDomainsGoToTheirRoutesWithTheirBodies() async throws {
+        let world = try await World.signedIn()
+        let base = "/v1/client/me/organizations/org_1/domains"
+        let row =
+            #"{"id":"dom_1","domain":"acme.com","mode":"suggest","status":"pending","verifiedAt":null,"expiresAt":null,"codeExpiresAt":"2026-01-01T01:00:00.000Z","createdAt":"2026-01-01T00:00:00.000Z","updatedAt":"2026-01-01T00:00:00.000Z"}"#
+
+        world.api.on("GET \(base)", Reply(json: #"{"data":[\#(row)]}"#))
+        let listed = try await world.client.organizations.domains.list(organizationId: "org_1")
+        XCTAssertEqual(listed.data.map(\.status), [.pending])
+
+        world.api.on("POST \(base)", Reply(status: 201, json: row))
+        let started = try await world.client.organizations.domains.start(
+            organizationId: "org_1", domain: "acme.com", email: "ada@acme.com", mode: .suggest)
+        XCTAssertEqual(started.id, "dom_1")
+        let startBody = Fixture.body(world.api.requests("POST \(base)")[0])
+        XCTAssertEqual(startBody["domain"] as? String, "acme.com")
+        XCTAssertEqual(startBody["email"] as? String, "ada@acme.com")
+        XCTAssertEqual(startBody["mode"] as? String, "suggest")
+
+        let verifiedRow = row.replacingOccurrences(of: #""status":"pending""#, with: #""status":"verified""#)
+        world.api.on("POST \(base)/dom_1/verify", Reply(json: verifiedRow))
+        let verified = try await world.client.organizations.domains.verify(
+            organizationId: "org_1", domainId: "dom_1", code: "123456")
+        XCTAssertEqual(verified.status, .verified)
+        XCTAssertEqual(Fixture.body(world.api.requests("POST \(base)/dom_1/verify")[0])["code"] as? String, "123456")
+
+        world.api.on("PATCH \(base)/dom_1", Reply(json: verifiedRow))
+        _ = try await world.client.organizations.domains.update(
+            organizationId: "org_1", domainId: "dom_1", mode: .autoJoin)
+        XCTAssertEqual(Fixture.body(world.api.requests("PATCH \(base)/dom_1")[0])["mode"] as? String, "auto_join")
+
+        world.api.on("DELETE \(base)/dom_1", Reply(status: 204, json: ""))
+        try await world.client.organizations.domains.remove(organizationId: "org_1", domainId: "dom_1")
+        XCTAssertEqual(world.api.requests("DELETE \(base)/dom_1").count, 1)
+
+        // A status this version does not know is kept as the API wrote it, not refused.
+        world.api.on(
+            "GET \(base)",
+            Reply(json: #"{"data":[\#(row.replacingOccurrences(of: #""status":"pending""#, with: #""status":"needs_reverification""#))]}"#))
+        let again = try await world.client.organizations.domains.list(organizationId: "org_1")
+        XCTAssertEqual(again.data.map(\.status), [.needsReverification])
+    }
+
+    func testAnIdThatIsNotOneSegmentCannotChangeTheRouteOfAManagementCall() async throws {
+        let world = try await World.signedIn()
+        for refused in ["", ".", ".."] {
+            let members = await thrownCode { _ = try await world.client.organizations.members.list(organizationId: refused) }
+            XCTAssertNotNil(members, "`\(refused)` was sent")
+            let domains = await thrownCode { _ = try await world.client.organizations.domains.list(organizationId: refused) }
+            XCTAssertNotNil(domains, "`\(refused)` was sent")
+        }
+        XCTAssertEqual(world.api.routes.filter { $0.contains("organizations") }, [], "nothing was sent")
+        // A slash is part of the one segment, escaped: it is never another route.
+        _ = await thrownCode { _ = try await world.client.organizations.domains.remove(organizationId: "a/b", domainId: "d") }
+        let sent = try XCTUnwrap(world.api.requests.last?.url?.absoluteString)
+        XCTAssertTrue(sent.hasSuffix("/organizations/a%2Fb/domains/d"), sent)
+    }
+
     func testInvitationsGoToTheirRoutesAndThePreviewNeedsNoSession() async throws {
         // Signed out: only a preview works.
         let visitor = try World()
