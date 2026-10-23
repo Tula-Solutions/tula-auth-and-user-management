@@ -99,17 +99,21 @@ import { join } from 'node:path'
  * what gzip already sees twice costs nothing to say twice; the phone call's own lines
  * repeated, 23) and the cheapest kept. No saving elsewhere was found that is not a worse
  * message or a renamed public operation. The budget moved by exactly those 57 bytes, to
- * 16,976: the room is the 4 bytes it was.
+ * 16,976: the room is the 4 bytes it was. The five codes of organizations (ADR 0065:
+ * `organization.disabled`, `.slug_taken`, `.member_exists`, `.last_manager`, `.role_unknown`)
+ * added 135 bytes, from 16,972 to 17,107, all of it their messages: the client calls no
+ * organization route yet. The budget moved by exactly those 135 bytes, to 17,111: the room
+ * is the 4 bytes it was.
  * The four contract codes of a user import (ADR 0066: `import.unsupported_algorithm`,
  * `import.hash_malformed`, `import.hash_parameters_too_weak`,
- * `import.hash_parameters_too_costly`) added 88 bytes, from 16,972 to 17,060: the code
+ * `import.hash_parameters_too_costly`) added 88 bytes, from 17,107 to 17,195: the code
  * names and their messages, which every client carries because the table of messages is
  * the contract's. A fifth code, for metadata over its size, cost 19 more and was dropped for
  * `validation.failed`, and the messages were cut to one short line each (the first wording
  * cost 179 bytes for five codes, 107 after shortening them). The budget moved by exactly
- * those 88 bytes, to 17,064: the room is the 4 bytes it was.
+ * those 88 bytes, from 17,111 to 17,199: the room is the 4 bytes it was.
  */
-const GZIP_BUDGET_BYTES = 17_064
+const GZIP_BUDGET_BYTES = 17_199
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

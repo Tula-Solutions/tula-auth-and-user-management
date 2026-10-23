@@ -1255,7 +1255,7 @@ export interface OAuthProviderDeletedEvent {
 export interface WebhookEndpointCreatedEventData {
   /**
      * @minimum 1
-     * @maximum 51
+     * @maximum 57
      */
   eventTypes: number;
   enabled: boolean;
@@ -1735,6 +1735,212 @@ export interface NativeAppDeletedEvent {
   test?: true;
 }
 
+/**
+ * An organization was created. Its name and slug are not in the event: read the organization by its id.
+ */
+export interface OrganizationCreatedEventData { [key: string]: unknown }
+
+export type OrganizationCreatedEventTarget = {
+  type: 'organization';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An organization was created. Its name and slug are not in the event: read the organization by its id.
+ */
+export interface OrganizationCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationCreatedEventTarget;
+  data: OrganizationCreatedEventData;
+  test?: true;
+}
+
+export type OrganizationUpdatedEventDataChangedItem = typeof OrganizationUpdatedEventDataChangedItem[keyof typeof OrganizationUpdatedEventDataChangedItem];
+
+
+export const OrganizationUpdatedEventDataChangedItem = {
+  name: 'name',
+  slug: 'slug',
+} as const;
+
+/**
+ * An organization was renamed or its slug changed.
+ */
+export interface OrganizationUpdatedEventData {
+  /**
+     * @minItems 1
+     * @maxItems 2
+     */
+  changed: OrganizationUpdatedEventDataChangedItem[];
+}
+
+export type OrganizationUpdatedEventTarget = {
+  type: 'organization';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An organization was renamed or its slug changed.
+ */
+export interface OrganizationUpdatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization.updated';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationUpdatedEventTarget;
+  data: OrganizationUpdatedEventData;
+  test?: true;
+}
+
+/**
+ * An organization was deleted, and its memberships with it. No `organization_membership.removed` event is recorded for them.
+ */
+export interface OrganizationDeletedEventData {
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  memberships: number;
+}
+
+export type OrganizationDeletedEventTarget = {
+  type: 'organization';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An organization was deleted, and its memberships with it. No `organization_membership.removed` event is recorded for them.
+ */
+export interface OrganizationDeletedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization.deleted';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationDeletedEventTarget;
+  data: OrganizationDeletedEventData;
+  test?: true;
+}
+
+/**
+ * @pattern ^[a-z][a-z0-9_]{0,31}$
+ */
+export type OrganizationRoleKey = string;
+
+/**
+ * A user became a member of an organization. The target is the membership.
+ */
+export interface OrganizationMembershipAddedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  userId: string;
+  role: OrganizationRoleKey;
+}
+
+export type OrganizationMembershipAddedEventTarget = {
+  type: 'organization_membership';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A user became a member of an organization. The target is the membership.
+ */
+export interface OrganizationMembershipAddedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_membership.added';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationMembershipAddedEventTarget;
+  data: OrganizationMembershipAddedEventData;
+  test?: true;
+}
+
+/**
+ * A member was given another role. The session of that member carries the new role from its next refresh.
+ */
+export interface OrganizationMembershipRoleChangedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  userId: string;
+  role: OrganizationRoleKey;
+  previousRole: OrganizationRoleKey;
+}
+
+export type OrganizationMembershipRoleChangedEventTarget = {
+  type: 'organization_membership';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A member was given another role. The session of that member carries the new role from its next refresh.
+ */
+export interface OrganizationMembershipRoleChangedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_membership.role_changed';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationMembershipRoleChangedEventTarget;
+  data: OrganizationMembershipRoleChangedEventData;
+  test?: true;
+}
+
+/**
+ * A member was removed from an organization. The session of that user leaves the organization at its next refresh; the account stays.
+ */
+export interface OrganizationMembershipRemovedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  userId: string;
+  role: OrganizationRoleKey;
+}
+
+export type OrganizationMembershipRemovedEventTarget = {
+  type: 'organization_membership';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A member was removed from an organization. The session of that user leaves the organization at its next refresh; the account stays.
+ */
+export interface OrganizationMembershipRemovedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_membership.removed';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationMembershipRemovedEventTarget;
+  data: OrganizationMembershipRemovedEventData;
+  test?: true;
+}
+
 export type ProposalCreatedEventDataOperation = typeof ProposalCreatedEventDataOperation[keyof typeof ProposalCreatedEventDataOperation];
 
 
@@ -2028,7 +2234,7 @@ export interface SignInTestFinishedEvent {
   test?: true;
 }
 
-export type TulaEvent = UserCreatedEvent | UserImportedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserEmailAddedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
+export type TulaEvent = UserCreatedEvent | UserImportedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserEmailAddedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | OrganizationCreatedEvent | OrganizationUpdatedEvent | OrganizationDeletedEvent | OrganizationMembershipAddedEvent | OrganizationMembershipRoleChangedEvent | OrganizationMembershipRemovedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
 
 export type HookBeforeSignUpDataMethod = typeof HookBeforeSignUpDataMethod[keyof typeof HookBeforeSignUpDataMethod];
 
@@ -2239,6 +2445,11 @@ export const ErrorCode = {
   devicenonce_required: 'device.nonce_required',
   devicebinding_not_supported: 'device.binding_not_supported',
   devicebinding_required: 'device.binding_required',
+  organizationdisabled: 'organization.disabled',
+  organizationslug_taken: 'organization.slug_taken',
+  organizationmember_exists: 'organization.member_exists',
+  organizationlast_manager: 'organization.last_manager',
+  organizationrole_unknown: 'organization.role_unknown',
   rate_limited: 'rate_limited',
   requestmalformed: 'request.malformed',
   requesttoo_large: 'request.too_large',
@@ -3341,6 +3552,12 @@ export const ActivityType = {
   native_appcreated: 'native_app.created',
   native_appupdated: 'native_app.updated',
   native_appdeleted: 'native_app.deleted',
+  organizationcreated: 'organization.created',
+  organizationupdated: 'organization.updated',
+  organizationdeleted: 'organization.deleted',
+  organization_membershipadded: 'organization_membership.added',
+  organization_membershiprole_changed: 'organization_membership.role_changed',
+  organization_membershipremoved: 'organization_membership.removed',
   proposalcreated: 'proposal.created',
   proposalapproved: 'proposal.approved',
   proposalexecuted: 'proposal.executed',
@@ -3627,6 +3844,15 @@ export type EnvironmentSettingsStateSettingsAgents = {
   testSignIn?: boolean | null;
 };
 
+export type EnvironmentSettingsStateSettingsOrganizations = {
+  enabled?: boolean;
+  allowUserCreated?: boolean;
+  maxCreatedPerUser?: number | null;
+  creatorRole?: OrganizationRoleKey;
+  defaultRole?: OrganizationRoleKey;
+  personalAccount?: boolean;
+};
+
 export type EnvironmentSettingsStateSettingsNotifications = {
   passwordChanged?: boolean;
   newSignIn?: boolean;
@@ -3669,6 +3895,7 @@ export type EnvironmentSettingsStateSettings = {
   urls: EnvironmentSettingsStateSettingsUrls;
   audit?: EnvironmentSettingsStateSettingsAudit;
   agents?: EnvironmentSettingsStateSettingsAgents;
+  organizations?: EnvironmentSettingsStateSettingsOrganizations;
   notifications?: EnvironmentSettingsStateSettingsNotifications;
   mfa?: EnvironmentSettingsStateSettingsMfa;
   passkeys?: EnvironmentSettingsStateSettingsPasskeys;
@@ -3759,6 +3986,15 @@ export type EnvironmentSettingsInputAgents = {
   testSignIn?: boolean | null;
 };
 
+export type EnvironmentSettingsInputOrganizations = {
+  enabled?: boolean;
+  allowUserCreated?: boolean;
+  maxCreatedPerUser?: number | null;
+  creatorRole?: OrganizationRoleKey;
+  defaultRole?: OrganizationRoleKey;
+  personalAccount?: boolean;
+};
+
 export type EnvironmentSettingsInputNotifications = {
   passwordChanged?: boolean;
   newSignIn?: boolean;
@@ -3801,6 +4037,7 @@ export interface EnvironmentSettingsInput {
   urls?: EnvironmentSettingsInputUrls;
   audit?: EnvironmentSettingsInputAudit;
   agents?: EnvironmentSettingsInputAgents;
+  organizations?: EnvironmentSettingsInputOrganizations;
   notifications?: EnvironmentSettingsInputNotifications;
   mfa?: EnvironmentSettingsInputMfa;
   passkeys?: EnvironmentSettingsInputPasskeys;
@@ -4158,6 +4395,12 @@ export const CreateWebhookEndpointRequestEventTypesItem = {
   native_appcreated: 'native_app.created',
   native_appupdated: 'native_app.updated',
   native_appdeleted: 'native_app.deleted',
+  organizationcreated: 'organization.created',
+  organizationupdated: 'organization.updated',
+  organizationdeleted: 'organization.deleted',
+  organization_membershipadded: 'organization_membership.added',
+  organization_membershiprole_changed: 'organization_membership.role_changed',
+  organization_membershipremoved: 'organization_membership.removed',
   proposalcreated: 'proposal.created',
   proposalapproved: 'proposal.approved',
   proposalexecuted: 'proposal.executed',
@@ -4175,7 +4418,7 @@ export interface CreateWebhookEndpointRequest {
   url: string;
   /**
      * @minItems 1
-     * @maxItems 51
+     * @maxItems 57
      */
   eventTypes: CreateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -4230,6 +4473,12 @@ export const UpdateWebhookEndpointRequestEventTypesItem = {
   native_appcreated: 'native_app.created',
   native_appupdated: 'native_app.updated',
   native_appdeleted: 'native_app.deleted',
+  organizationcreated: 'organization.created',
+  organizationupdated: 'organization.updated',
+  organizationdeleted: 'organization.deleted',
+  organization_membershipadded: 'organization_membership.added',
+  organization_membershiprole_changed: 'organization_membership.role_changed',
+  organization_membershipremoved: 'organization_membership.removed',
   proposalcreated: 'proposal.created',
   proposalapproved: 'proposal.approved',
   proposalexecuted: 'proposal.executed',
@@ -4247,7 +4496,7 @@ export interface UpdateWebhookEndpointRequest {
   url?: string;
   /**
      * @minItems 1
-     * @maxItems 51
+     * @maxItems 57
      */
   eventTypes?: UpdateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -4420,6 +4669,12 @@ export const SendTestWebhookRequestEventType = {
   native_appcreated: 'native_app.created',
   native_appupdated: 'native_app.updated',
   native_appdeleted: 'native_app.deleted',
+  organizationcreated: 'organization.created',
+  organizationupdated: 'organization.updated',
+  organizationdeleted: 'organization.deleted',
+  organization_membershipadded: 'organization_membership.added',
+  organization_membershiprole_changed: 'organization_membership.role_changed',
+  organization_membershipremoved: 'organization_membership.removed',
   proposalcreated: 'proposal.created',
   proposalapproved: 'proposal.approved',
   proposalexecuted: 'proposal.executed',
@@ -4589,6 +4844,87 @@ export interface UpdateHookRequest {
      */
   deadlineMs?: number;
   failureMode?: UpdateHookRequestFailureMode;
+}
+
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  /** @nullable */
+  createdBy: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  updatedAt: string;
+}
+
+export interface OrganizationList {
+  meta: PaginationMeta;
+  data: Organization[];
+}
+
+export interface OrganizationPageQuery {
+  /**
+     * @minimum 1
+     * @maximum 1000000
+     */
+  page?: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  size?: number;
+}
+
+/**
+ * @minLength 2
+ * @maxLength 48
+ * @pattern ^[a-z0-9]+(?:-[a-z0-9]+)*$
+ */
+export type OrganizationSlug = string;
+
+export interface CreateOrganizationRequest {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+  slug: OrganizationSlug;
+}
+
+export interface UpdateOrganizationRequest {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name?: string;
+  slug?: OrganizationSlug;
+}
+
+export interface OrganizationMembership {
+  id: string;
+  organizationId: string;
+  userId: string;
+  role: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  updatedAt: string;
+}
+
+export interface OrganizationMembershipList {
+  meta: PaginationMeta;
+  data: OrganizationMembership[];
+}
+
+export interface AddOrganizationMemberRequest {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  userId: string;
+  role: OrganizationRoleKey;
+}
+
+export interface UpdateOrganizationMemberRequest {
+  role: OrganizationRoleKey;
 }
 
 export type AppleAppSiteAssociationWebcredentials = {
@@ -5309,6 +5645,32 @@ export const ListWebhookDeliveriesState = {
   delivered: 'delivered',
   failed: 'failed',
 } as const;
+
+export type ListOrganizationsParams = {
+/**
+ * @minimum 1
+ * @maximum 1000000
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+size?: number;
+};
+
+export type ListOrganizationMembershipsParams = {
+/**
+ * @minimum 1
+ * @maximum 1000000
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+size?: number;
+};
 
 export type GetSmsUsageParams = {
 /**
@@ -9510,6 +9872,847 @@ export const useDeleteHook = <TError = ErrorEnvelope,
         TContext
       > => {
       return useMutation(getDeleteHookMutationOptions(options), queryClient);
+    }
+
+export const getListOrganizationsUrl = (params?: ListOrganizationsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/organizations?${stringifiedParams}` : `/v1/admin/organizations`
+}
+
+/**
+ * Organizations of the secret key’s environment, newest first, one page at a time. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary List organizations
+ */
+export const listOrganizations = async (params?: ListOrganizationsParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationList> => {
+
+  return dashboardFetch<OrganizationList>(getListOrganizationsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListOrganizationsQueryKey = (params?: ListOrganizationsParams,) => {
+    return [
+    `/v1/admin/organizations`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListOrganizationsQueryOptions = <TData = Awaited<ReturnType<typeof listOrganizations>>, TError = ErrorEnvelope>(params?: ListOrganizationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizations>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListOrganizationsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listOrganizations>>> = ({ signal }) => listOrganizations(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listOrganizations>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListOrganizationsQueryResult = NonNullable<Awaited<ReturnType<typeof listOrganizations>>>
+export type ListOrganizationsQueryError = ErrorEnvelope
+
+
+export function useListOrganizations<TData = Awaited<ReturnType<typeof listOrganizations>>, TError = ErrorEnvelope>(
+ params: undefined |  ListOrganizationsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizations>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizations>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizations>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizations<TData = Awaited<ReturnType<typeof listOrganizations>>, TError = ErrorEnvelope>(
+ params?: ListOrganizationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizations>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizations>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizations>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizations<TData = Awaited<ReturnType<typeof listOrganizations>>, TError = ErrorEnvelope>(
+ params?: ListOrganizationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizations>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List organizations
+ */
+
+export function useListOrganizations<TData = Awaited<ReturnType<typeof listOrganizations>>, TError = ErrorEnvelope>(
+ params?: ListOrganizationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizations>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListOrganizationsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateOrganizationUrl = () => {
+
+
+
+
+  return `/v1/admin/organizations`
+}
+
+/**
+ * Creates an organization with no member. The `slug` is lower-case letters and digits joined by single hyphens, 2 to 48 characters, and unique in the environment (a taken one answers `organization.slug_taken`, 409). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Create an organization
+ */
+export const createOrganization = async (createOrganizationRequest: CreateOrganizationRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<Organization> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<Organization>(getCreateOrganizationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createOrganizationRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateOrganizationMutationKey = () => ['createOrganization'] as const;
+
+export const getCreateOrganizationMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createOrganization>>, TError,CreateOrganizationMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createOrganization>>, TError,CreateOrganizationMutationVariables, TContext> => {
+
+const mutationKey = getCreateOrganizationMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createOrganization>>, CreateOrganizationMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createOrganization(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateOrganizationMutationResult = NonNullable<Awaited<ReturnType<typeof createOrganization>>>
+    export type CreateOrganizationMutationBody = CreateOrganizationRequest
+    export type CreateOrganizationMutationError = ErrorEnvelope
+    export type CreateOrganizationMutationVariables = {data: CreateOrganizationRequest}
+
+    /**
+ * @summary Create an organization
+ */
+export const useCreateOrganization = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createOrganization>>, TError,CreateOrganizationMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createOrganization>>,
+        TError,
+        CreateOrganizationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateOrganizationMutationOptions(options), queryClient);
+    }
+
+export const getGetOrganizationUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}`
+}
+
+/**
+ * One organization of the environment. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Get an organization
+ */
+export const getOrganization = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<Organization> => {
+
+  return dashboardFetch<Organization>(getGetOrganizationUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetOrganizationQueryKey = (id: string,) => {
+    return [
+    `/v1/admin/organizations/${id}`
+    ] as const;
+    }
+
+
+export const getGetOrganizationQueryOptions = <TData = Awaited<ReturnType<typeof getOrganization>>, TError = ErrorEnvelope>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganization>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetOrganizationQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOrganization>>> = ({ signal }) => getOrganization(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getOrganization>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetOrganizationQueryResult = NonNullable<Awaited<ReturnType<typeof getOrganization>>>
+export type GetOrganizationQueryError = ErrorEnvelope
+
+
+export function useGetOrganization<TData = Awaited<ReturnType<typeof getOrganization>>, TError = ErrorEnvelope>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganization>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getOrganization>>,
+          TError,
+          Awaited<ReturnType<typeof getOrganization>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOrganization<TData = Awaited<ReturnType<typeof getOrganization>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganization>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getOrganization>>,
+          TError,
+          Awaited<ReturnType<typeof getOrganization>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOrganization<TData = Awaited<ReturnType<typeof getOrganization>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganization>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get an organization
+ */
+
+export function useGetOrganization<TData = Awaited<ReturnType<typeof getOrganization>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganization>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetOrganizationQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateOrganizationUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}`
+}
+
+/**
+ * Changes the organization’s `name`, its `slug` or both. A request that changes nothing writes nothing. Recorded in the audit log by the names of the fields that changed, never their values. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Rename an organization
+ */
+export const updateOrganization = async (id: string,
+    updateOrganizationRequest: UpdateOrganizationRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<Organization> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<Organization>(getUpdateOrganizationUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateOrganizationRequest)
+  }
+);}
+
+
+
+
+
+export const getUpdateOrganizationMutationKey = () => ['updateOrganization'] as const;
+
+export const getUpdateOrganizationMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrganization>>, TError,UpdateOrganizationMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateOrganization>>, TError,UpdateOrganizationMutationVariables, TContext> => {
+
+const mutationKey = getUpdateOrganizationMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateOrganization>>, UpdateOrganizationMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateOrganization(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateOrganizationMutationResult = NonNullable<Awaited<ReturnType<typeof updateOrganization>>>
+    export type UpdateOrganizationMutationBody = UpdateOrganizationRequest
+    export type UpdateOrganizationMutationError = ErrorEnvelope
+    export type UpdateOrganizationMutationVariables = {id: string;data: UpdateOrganizationRequest}
+
+    /**
+ * @summary Rename an organization
+ */
+export const useUpdateOrganization = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrganization>>, TError,UpdateOrganizationMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateOrganization>>,
+        TError,
+        UpdateOrganizationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateOrganizationMutationOptions(options), queryClient);
+    }
+
+export const getDeleteOrganizationUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}`
+}
+
+/**
+ * Deletes the organization and its memberships. The users keep their accounts; a session that had the organization active leaves it at its next refresh. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Delete an organization
+ */
+export const deleteOrganization = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
+
+  return dashboardFetch<void>(getDeleteOrganizationUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteOrganizationMutationKey = () => ['deleteOrganization'] as const;
+
+export const getDeleteOrganizationMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteOrganization>>, TError,DeleteOrganizationMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteOrganization>>, TError,DeleteOrganizationMutationVariables, TContext> => {
+
+const mutationKey = getDeleteOrganizationMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteOrganization>>, DeleteOrganizationMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteOrganization(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteOrganizationMutationResult = NonNullable<Awaited<ReturnType<typeof deleteOrganization>>>
+
+    export type DeleteOrganizationMutationError = ErrorEnvelope
+    export type DeleteOrganizationMutationVariables = {id: string}
+
+    /**
+ * @summary Delete an organization
+ */
+export const useDeleteOrganization = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteOrganization>>, TError,DeleteOrganizationMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteOrganization>>,
+        TError,
+        DeleteOrganizationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteOrganizationMutationOptions(options), queryClient);
+    }
+
+export const getListOrganizationMembershipsUrl = (id: string,
+    params?: ListOrganizationMembershipsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/organizations/${id}/memberships?${stringifiedParams}` : `/v1/admin/organizations/${id}/memberships`
+}
+
+/**
+ * The organization’s memberships, oldest first, one page at a time. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary List an organization’s members
+ */
+export const listOrganizationMemberships = async (id: string,
+    params?: ListOrganizationMembershipsParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationMembershipList> => {
+
+  return dashboardFetch<OrganizationMembershipList>(getListOrganizationMembershipsUrl(id,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListOrganizationMembershipsQueryKey = (id: string,
+    params?: ListOrganizationMembershipsParams,) => {
+    return [
+    `/v1/admin/organizations/${id}/memberships`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListOrganizationMembershipsQueryOptions = <TData = Awaited<ReturnType<typeof listOrganizationMemberships>>, TError = ErrorEnvelope>(id: string,
+    params?: ListOrganizationMembershipsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationMemberships>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListOrganizationMembershipsQueryKey(id,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listOrganizationMemberships>>> = ({ signal }) => listOrganizationMemberships(id,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listOrganizationMemberships>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListOrganizationMembershipsQueryResult = NonNullable<Awaited<ReturnType<typeof listOrganizationMemberships>>>
+export type ListOrganizationMembershipsQueryError = ErrorEnvelope
+
+
+export function useListOrganizationMemberships<TData = Awaited<ReturnType<typeof listOrganizationMemberships>>, TError = ErrorEnvelope>(
+ id: string,
+    params: undefined |  ListOrganizationMembershipsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationMemberships>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizationMemberships>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizationMemberships>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizationMemberships<TData = Awaited<ReturnType<typeof listOrganizationMemberships>>, TError = ErrorEnvelope>(
+ id: string,
+    params?: ListOrganizationMembershipsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationMemberships>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizationMemberships>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizationMemberships>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizationMemberships<TData = Awaited<ReturnType<typeof listOrganizationMemberships>>, TError = ErrorEnvelope>(
+ id: string,
+    params?: ListOrganizationMembershipsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationMemberships>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List an organization’s members
+ */
+
+export function useListOrganizationMemberships<TData = Awaited<ReturnType<typeof listOrganizationMemberships>>, TError = ErrorEnvelope>(
+ id: string,
+    params?: ListOrganizationMembershipsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationMemberships>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListOrganizationMembershipsQueryOptions(id,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAddOrganizationMemberUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}/memberships`
+}
+
+/**
+ * Adds an existing user with the role of the given key (`admin` and `member` are built in). A user who is a member already answers `organization.member_exists` (409), and a key that names no role `organization.role_unknown` (422). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Add a member to an organization
+ */
+export const addOrganizationMember = async (id: string,
+    addOrganizationMemberRequest: AddOrganizationMemberRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationMembership> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<OrganizationMembership>(getAddOrganizationMemberUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(addOrganizationMemberRequest)
+  }
+);}
+
+
+
+
+
+export const getAddOrganizationMemberMutationKey = () => ['addOrganizationMember'] as const;
+
+export const getAddOrganizationMemberMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addOrganizationMember>>, TError,AddOrganizationMemberMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof addOrganizationMember>>, TError,AddOrganizationMemberMutationVariables, TContext> => {
+
+const mutationKey = getAddOrganizationMemberMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof addOrganizationMember>>, AddOrganizationMemberMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  addOrganizationMember(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AddOrganizationMemberMutationResult = NonNullable<Awaited<ReturnType<typeof addOrganizationMember>>>
+    export type AddOrganizationMemberMutationBody = AddOrganizationMemberRequest
+    export type AddOrganizationMemberMutationError = ErrorEnvelope
+    export type AddOrganizationMemberMutationVariables = {id: string;data: AddOrganizationMemberRequest}
+
+    /**
+ * @summary Add a member to an organization
+ */
+export const useAddOrganizationMember = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addOrganizationMember>>, TError,AddOrganizationMemberMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof addOrganizationMember>>,
+        TError,
+        AddOrganizationMemberMutationVariables,
+        TContext
+      > => {
+      return useMutation(getAddOrganizationMemberMutationOptions(options), queryClient);
+    }
+
+export const getUpdateOrganizationMemberUrl = (id: string,
+    userId: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}/memberships/${userId}`
+}
+
+/**
+ * Gives the member another role. The member’s sessions carry it from their next refresh. The last member who holds `org:sys:memberships:manage` cannot be moved to a role without it (`organization.last_manager`, 409). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Change a member’s role
+ */
+export const updateOrganizationMember = async (id: string,
+    userId: string,
+    updateOrganizationMemberRequest: UpdateOrganizationMemberRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationMembership> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<OrganizationMembership>(getUpdateOrganizationMemberUrl(id,userId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateOrganizationMemberRequest)
+  }
+);}
+
+
+
+
+
+export const getUpdateOrganizationMemberMutationKey = () => ['updateOrganizationMember'] as const;
+
+export const getUpdateOrganizationMemberMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrganizationMember>>, TError,UpdateOrganizationMemberMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateOrganizationMember>>, TError,UpdateOrganizationMemberMutationVariables, TContext> => {
+
+const mutationKey = getUpdateOrganizationMemberMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateOrganizationMember>>, UpdateOrganizationMemberMutationVariables> = (props) => {
+          const {id,userId,data} = props ?? {};
+
+          return  updateOrganizationMember(id,userId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateOrganizationMemberMutationResult = NonNullable<Awaited<ReturnType<typeof updateOrganizationMember>>>
+    export type UpdateOrganizationMemberMutationBody = UpdateOrganizationMemberRequest
+    export type UpdateOrganizationMemberMutationError = ErrorEnvelope
+    export type UpdateOrganizationMemberMutationVariables = {id: string;userId: string;data: UpdateOrganizationMemberRequest}
+
+    /**
+ * @summary Change a member’s role
+ */
+export const useUpdateOrganizationMember = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrganizationMember>>, TError,UpdateOrganizationMemberMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateOrganizationMember>>,
+        TError,
+        UpdateOrganizationMemberMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateOrganizationMemberMutationOptions(options), queryClient);
+    }
+
+export const getRemoveOrganizationMemberUrl = (id: string,
+    userId: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}/memberships/${userId}`
+}
+
+/**
+ * Removes the membership. The user keeps their account; a session that had the organization active leaves it at its next refresh. The last member who holds `org:sys:memberships:manage` cannot be removed (`organization.last_manager`, 409). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Remove a member from an organization
+ */
+export const removeOrganizationMember = async (id: string,
+    userId: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
+
+  return dashboardFetch<void>(getRemoveOrganizationMemberUrl(id,userId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRemoveOrganizationMemberMutationKey = () => ['removeOrganizationMember'] as const;
+
+export const getRemoveOrganizationMemberMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeOrganizationMember>>, TError,RemoveOrganizationMemberMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof removeOrganizationMember>>, TError,RemoveOrganizationMemberMutationVariables, TContext> => {
+
+const mutationKey = getRemoveOrganizationMemberMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof removeOrganizationMember>>, RemoveOrganizationMemberMutationVariables> = (props) => {
+          const {id,userId} = props ?? {};
+
+          return  removeOrganizationMember(id,userId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RemoveOrganizationMemberMutationResult = NonNullable<Awaited<ReturnType<typeof removeOrganizationMember>>>
+
+    export type RemoveOrganizationMemberMutationError = ErrorEnvelope
+    export type RemoveOrganizationMemberMutationVariables = {id: string;userId: string}
+
+    /**
+ * @summary Remove a member from an organization
+ */
+export const useRemoveOrganizationMember = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeOrganizationMember>>, TError,RemoveOrganizationMemberMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof removeOrganizationMember>>,
+        TError,
+        RemoveOrganizationMemberMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRemoveOrganizationMemberMutationOptions(options), queryClient);
     }
 
 export const getListNativeAppsUrl = () => {

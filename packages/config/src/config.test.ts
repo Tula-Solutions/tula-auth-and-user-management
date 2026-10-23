@@ -869,6 +869,16 @@ describe('JWT templates', () => {
     expect(new Set([before, on, off]).size).toBe(3)
   })
 
+  test('the organizations section is in the fingerprint only when it is not the default', async () => {
+    const before = 'sha256:06efab455d94f577b0fd2648dfd07f2fd51743799595001ee73bc0b0bf3918ad'
+    expect(await hash({})).toBe(before)
+    expect(await hash({ organizations: {} })).toBe(before)
+    expect(await hash({ organizations: { enabled: false } })).toBe(before)
+    const on = await hash({ organizations: { enabled: true } })
+    const roles = await hash({ organizations: { defaultRole: 'viewer' } })
+    expect(new Set([before, on, roles]).size).toBe(3)
+  })
+
   test('the sign-in test setting is validated by the contract: a word is refused, by its path', () => {
     const config = (value: unknown) =>
       defineConfig({

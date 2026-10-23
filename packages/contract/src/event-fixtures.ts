@@ -14,6 +14,8 @@ const WEBHOOK_ENDPOINT = '0199c2f4-7a18-7abb-99ca-cd7e8b4a5f09'
 const HOOK = '0199c2f4-7a19-7bcc-8adb-de8f9c5b6a10'
 const NATIVE_APP = '0199c2f4-7a1a-7cdd-9bec-ef9a0d6c7b11'
 const PROPOSAL = '0199c2f4-7a1b-7dee-8cfd-f0ab1e7d8c12'
+const ORGANIZATION = '0199c2f4-7a1d-7f00-8e1f-12cd3a9f0e14'
+const MEMBERSHIP = '0199c2f4-7a1e-7011-9f2a-23de4b0a1f15'
 const AGENT = '0199c2f4-7a1c-7eff-9d0e-01bc2f8e9d13'
 
 const schemaVersion = EVENT_SCHEMA_VERSION
@@ -34,6 +36,8 @@ const aboutEnvironment = { type: 'environment', id: ENVIRONMENT } as const
 const aboutWebhookEndpoint = { type: 'webhook_endpoint', id: WEBHOOK_ENDPOINT } as const
 const aboutHook = { type: 'hook', id: HOOK } as const
 const aboutNativeApp = { type: 'native_app', id: NATIVE_APP } as const
+const aboutOrganization = { type: 'organization', id: ORGANIZATION } as const
+const aboutMembership = { type: 'organization_membership', id: MEMBERSHIP } as const
 const aboutProposal = { type: 'proposal', id: PROPOSAL } as const
 const proposed = { operation: 'ban_user', targetType: 'user', targetId: USER } as const
 
@@ -495,6 +499,60 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     actor: admin,
     target: aboutNativeApp,
     data: { platform: 'android' },
+  },
+  'organization.created': {
+    id: eventId(46),
+    type: 'organization.created',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutOrganization,
+    data: {},
+  },
+  'organization.updated': {
+    id: eventId(47),
+    type: 'organization.updated',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutOrganization,
+    data: { changed: ['name', 'slug'] },
+  },
+  'organization.deleted': {
+    id: eventId(48),
+    type: 'organization.deleted',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutOrganization,
+    data: { memberships: 3 },
+  },
+  'organization_membership.added': {
+    id: eventId(49),
+    type: 'organization_membership.added',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutMembership,
+    data: { organizationId: ORGANIZATION, userId: USER, role: 'member' },
+  },
+  'organization_membership.role_changed': {
+    id: eventId(50),
+    type: 'organization_membership.role_changed',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutMembership,
+    data: { organizationId: ORGANIZATION, userId: USER, role: 'admin', previousRole: 'member' },
+  },
+  'organization_membership.removed': {
+    id: eventId(51),
+    type: 'organization_membership.removed',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutMembership,
+    data: { organizationId: ORGANIZATION, userId: USER, role: 'member' },
   },
   'session.refresh_proof_refused': {
     id: eventId(39),

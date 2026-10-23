@@ -1,5 +1,5 @@
 {
-  "id": "4949f6f7-a768-4fc7-ae12-bea6bb23604c",
+  "id": "5afc3309-acfd-47e3-8366-fec56a89d68f",
   "prevId": "2dba693b-51e0-4ddc-abb4-27a027d91130",
   "version": "7",
   "dialect": "postgresql",
@@ -2376,6 +2376,578 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "tula.organization_memberships": {
+      "name": "organization_memberships",
+      "schema": "tula",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "environment_id": {
+          "name": "environment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role_id": {
+          "name": "role_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "organization_memberships_user_idx": {
+          "name": "organization_memberships_user_idx",
+          "columns": [
+            {
+              "expression": "environment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "organization_memberships_role_idx": {
+          "name": "organization_memberships_role_idx",
+          "columns": [
+            {
+              "expression": "environment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "role_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "organization_memberships_environment_id_idx": {
+          "name": "organization_memberships_environment_id_idx",
+          "columns": [
+            {
+              "expression": "environment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "organization_memberships_project_id_projects_id_fk": {
+          "name": "organization_memberships_project_id_projects_id_fk",
+          "tableFrom": "organization_memberships",
+          "tableTo": "projects",
+          "schemaTo": "tula",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "organization_memberships_environment_id_environments_id_fk": {
+          "name": "organization_memberships_environment_id_environments_id_fk",
+          "tableFrom": "organization_memberships",
+          "tableTo": "environments",
+          "schemaTo": "tula",
+          "columnsFrom": [
+            "environment_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "organization_memberships_organization_fk": {
+          "name": "organization_memberships_organization_fk",
+          "tableFrom": "organization_memberships",
+          "tableTo": "organizations",
+          "schemaTo": "tula",
+          "columnsFrom": [
+            "environment_id",
+            "organization_id"
+          ],
+          "columnsTo": [
+            "environment_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "organization_memberships_user_fk": {
+          "name": "organization_memberships_user_fk",
+          "tableFrom": "organization_memberships",
+          "tableTo": "users",
+          "schemaTo": "tula",
+          "columnsFrom": [
+            "environment_id",
+            "user_id"
+          ],
+          "columnsTo": [
+            "environment_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "organization_memberships_role_fk": {
+          "name": "organization_memberships_role_fk",
+          "tableFrom": "organization_memberships",
+          "tableTo": "organization_roles",
+          "schemaTo": "tula",
+          "columnsFrom": [
+            "environment_id",
+            "role_id"
+          ],
+          "columnsTo": [
+            "environment_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "organization_memberships_environment_project_fk": {
+          "name": "organization_memberships_environment_project_fk",
+          "tableFrom": "organization_memberships",
+          "tableTo": "environments",
+          "schemaTo": "tula",
+          "columnsFrom": [
+            "environment_id",
+            "project_id"
+          ],
+          "columnsTo": [
+            "id",
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "organization_memberships_organization_user_key": {
+          "name": "organization_memberships_organization_user_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "organization_id",
+            "user_id"
+          ]
+        }
+      },
+      "policies": {
+        "organization_memberships_tenant_isolation": {
+          "name": "organization_memberships_tenant_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "environment_id = nullif(current_setting('tula.environment_id', true), '')::uuid",
+          "withCheck": "environment_id = nullif(current_setting('tula.environment_id', true), '')::uuid"
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "tula.organization_roles": {
+      "name": "organization_roles",
+      "schema": "tula",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "environment_id": {
+          "name": "environment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "permissions": {
+          "name": "permissions",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::text[]"
+        },
+        "built_in": {
+          "name": "built_in",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "organization_roles_environment_id_idx": {
+          "name": "organization_roles_environment_id_idx",
+          "columns": [
+            {
+              "expression": "environment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "organization_roles_project_id_projects_id_fk": {
+          "name": "organization_roles_project_id_projects_id_fk",
+          "tableFrom": "organization_roles",
+          "tableTo": "projects",
+          "schemaTo": "tula",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "organization_roles_environment_id_environments_id_fk": {
+          "name": "organization_roles_environment_id_environments_id_fk",
+          "tableFrom": "organization_roles",
+          "tableTo": "environments",
+          "schemaTo": "tula",
+          "columnsFrom": [
+            "environment_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "organization_roles_environment_project_fk": {
+          "name": "organization_roles_environment_project_fk",
+          "tableFrom": "organization_roles",
+          "tableTo": "environments",
+          "schemaTo": "tula",
+          "columnsFrom": [
+            "environment_id",
+            "project_id"
+          ],
+          "columnsTo": [
+            "id",
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "organization_roles_environment_key_key": {
+          "name": "organization_roles_environment_key_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "environment_id",
+            "key"
+          ]
+        },
+        "organization_roles_environment_id_id_key": {
+          "name": "organization_roles_environment_id_id_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "environment_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {
+        "organization_roles_tenant_isolation": {
+          "name": "organization_roles_tenant_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "environment_id = nullif(current_setting('tula.environment_id', true), '')::uuid",
+          "withCheck": "environment_id = nullif(current_setting('tula.environment_id', true), '')::uuid"
+        }
+      },
+      "checkConstraints": {
+        "organization_roles_key_shape": {
+          "name": "organization_roles_key_shape",
+          "value": "\"tula\".\"organization_roles\".\"key\" ~ '^[a-z][a-z0-9_]{0,31}$'"
+        },
+        "organization_roles_name_length": {
+          "name": "organization_roles_name_length",
+          "value": "char_length(\"tula\".\"organization_roles\".\"name\") between 1 and 100"
+        },
+        "organization_roles_built_in_known": {
+          "name": "organization_roles_built_in_known",
+          "value": "not \"tula\".\"organization_roles\".\"built_in\" or \"tula\".\"organization_roles\".\"key\" in ('admin', 'member')"
+        },
+        "organization_roles_permissions_shape": {
+          "name": "organization_roles_permissions_shape",
+          "value": "cardinality(\"tula\".\"organization_roles\".\"permissions\") <= 32 and array_position(\"tula\".\"organization_roles\".\"permissions\", null) is null and array_to_string(\"tula\".\"organization_roles\".\"permissions\", ',') ~ '^((org:(sys:[a-z][a-z0-9_]{0,31}|(?!sys:)[a-z][a-z0-9_]{0,31}):[a-z][a-z0-9_]{0,31})(,org:(sys:[a-z][a-z0-9_]{0,31}|(?!sys:)[a-z][a-z0-9_]{0,31}):[a-z][a-z0-9_]{0,31})*)?$' and char_length(array_to_string(\"tula\".\"organization_roles\".\"permissions\", ',')) - char_length(replace(array_to_string(\"tula\".\"organization_roles\".\"permissions\", ','), ',', '')) = greatest(cardinality(\"tula\".\"organization_roles\".\"permissions\") - 1, 0)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "tula.organizations": {
+      "name": "organizations",
+      "schema": "tula",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "environment_id": {
+          "name": "environment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "organizations_environment_id_idx": {
+          "name": "organizations_environment_id_idx",
+          "columns": [
+            {
+              "expression": "environment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "organizations_project_id_projects_id_fk": {
+          "name": "organizations_project_id_projects_id_fk",
+          "tableFrom": "organizations",
+          "tableTo": "projects",
+          "schemaTo": "tula",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "organizations_environment_id_environments_id_fk": {
+          "name": "organizations_environment_id_environments_id_fk",
+          "tableFrom": "organizations",
+          "tableTo": "environments",
+          "schemaTo": "tula",
+          "columnsFrom": [
+            "environment_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "organizations_environment_project_fk": {
+          "name": "organizations_environment_project_fk",
+          "tableFrom": "organizations",
+          "tableTo": "environments",
+          "schemaTo": "tula",
+          "columnsFrom": [
+            "environment_id",
+            "project_id"
+          ],
+          "columnsTo": [
+            "id",
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "organizations_environment_slug_key": {
+          "name": "organizations_environment_slug_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "environment_id",
+            "slug"
+          ]
+        },
+        "organizations_environment_id_id_key": {
+          "name": "organizations_environment_id_id_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "environment_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {
+        "organizations_tenant_isolation": {
+          "name": "organizations_tenant_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "environment_id = nullif(current_setting('tula.environment_id', true), '')::uuid",
+          "withCheck": "environment_id = nullif(current_setting('tula.environment_id', true), '')::uuid"
+        }
+      },
+      "checkConstraints": {
+        "organizations_slug_shape": {
+          "name": "organizations_slug_shape",
+          "value": "char_length(\"tula\".\"organizations\".\"slug\") between 2 and 48 and \"tula\".\"organizations\".\"slug\" ~ '^[a-z0-9]+(-[a-z0-9]+)*$'"
+        },
+        "organizations_name_length": {
+          "name": "organizations_name_length",
+          "value": "char_length(\"tula\".\"organizations\".\"name\") between 1 and 100"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "tula.passkey_challenges": {
       "name": "passkey_challenges",
       "schema": "tula",
@@ -4420,19 +4992,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "external_id": {
-          "name": "external_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "metadata": {
-          "name": "metadata",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -4568,10 +5127,6 @@
         "users_email_whole": {
           "name": "users_email_whole",
           "value": "(\"tula\".\"users\".\"email\" IS NULL) = (\"tula\".\"users\".\"email_normalized\" IS NULL) AND (\"tula\".\"users\".\"email\" IS NOT NULL OR \"tula\".\"users\".\"email_verified_at\" IS NULL)"
-        },
-        "users_metadata_bounds": {
-          "name": "users_metadata_bounds",
-          "value": "jsonb_typeof(\"tula\".\"users\".\"metadata\") = 'object' AND octet_length(\"tula\".\"users\".\"metadata\"::text) <= 4096"
         },
         "users_phone_number_whole": {
           "name": "users_phone_number_whole",

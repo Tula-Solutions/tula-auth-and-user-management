@@ -276,6 +276,26 @@ One of {@link ACTIVITY_TYPES}.
 const ActivityTypeSchema: z.ZodEnum<{}>
 ```
 
+### `AddOrganizationMemberRequest`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+The body that adds a member.
+
+```ts
+export type AddOrganizationMemberRequest = z.infer<typeof AddOrganizationMemberRequestSchema>
+```
+
+### `AddOrganizationMemberRequestSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+Add an existing user to an organization with a role.
+
+```ts
+const AddOrganizationMemberRequestSchema: z.ZodObject<{ userId: z.ZodUUID; role: z.ZodString; }, z.core.$strict>
+```
+
 ### `AdditionalClientIdsSchema`
 
 _constant_, defined in `packages/contract/src/oauth.ts`
@@ -520,6 +540,19 @@ How many backup codes a user holds after turning two-step verification on or reg
 const BACKUP_CODE_COUNT: 10
 ```
 
+### `BUILT_IN_ROLES`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+The two roles every environment has (ADR 0065): `admin` holds every system permission,
+`member` may read the member list. They cannot be deleted, renamed or given other
+permissions. They exist as rows of every environment (`ensureBuiltInRoles`) so that a
+membership refers to a role the way it does to a custom one.
+
+```ts
+const BUILT_IN_ROLES: readonly BuiltInRole[]
+```
+
 ### `BUILT_IN_SESSION_PROFILES`
 
 _constant_, defined in `packages/contract/src/session-profile.ts`
@@ -567,6 +600,20 @@ server keeps only keyed hashes; they can be replaced but never shown again.
 
 ```ts
 const BackupCodesSchema: z.ZodObject<{ codes: z.ZodArray<z.ZodString>; }, z.core.$strip>
+```
+
+### `BuiltInRole`
+
+_interface_, defined in `packages/contract/src/organization.ts`
+
+A built-in role: its key, its name and the permissions it holds.
+
+```ts
+export interface BuiltInRole {
+  readonly key: string
+  readonly name: string
+  readonly permissions: readonly SystemPermission[]
+}
 ```
 
 ### `BuiltInSessionProfile`
@@ -912,6 +959,26 @@ bundle id or package name.
 const CreateNativeAppRequestSchema
 ```
 
+### `CreateOrganizationRequest`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+The body that creates an organization.
+
+```ts
+export type CreateOrganizationRequest = z.infer<typeof CreateOrganizationRequestSchema>
+```
+
+### `CreateOrganizationRequestSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+Create an organization from a server or the dashboard.
+
+```ts
+const CreateOrganizationRequestSchema: z.ZodObject<{ name: z.ZodString; slug: z.ZodString; }, z.core.$strict>
+```
+
 ### `CreateProposalRequest`
 
 _type_, defined in `packages/contract/src/proposal.ts`
@@ -1176,6 +1243,16 @@ The settings of an environment that has never saved any.
 
 ```ts
 const DEFAULT_ENVIRONMENT_SETTINGS: EnvironmentSettings
+```
+
+### `DEFAULT_MAX_ORGANIZATIONS_CREATED_PER_USER`
+
+_constant_, defined in `packages/contract/src/environment-settings.ts`
+
+Most organizations one user may create unless the environment sets another cap.
+
+```ts
+const DEFAULT_MAX_ORGANIZATIONS_CREATED_PER_USER: 5
 ```
 
 ### `DEFAULT_MOBILE_SESSION_PROFILE`
@@ -2248,6 +2325,11 @@ otherwise silently reset the password policy to its default.
   them for good; `null` (the default) keeps them for ever.
 - `agents.proposalsInProduction`: whether a production environment accepts proposals from
   an AI agent (`false` by default; ADR 0053). Switching it on is a weakening.
+- `organizations`: whether the environment has organizations (`enabled`, off by default;
+  ADR 0065), whether users may create them (`allowUserCreated`), how many each may
+  (`maxCreatedPerUser`), the role a creator and a new member get (`creatorRole`,
+  `defaultRole`) and whether a session may have no active organization (`personalAccount`).
+  Switching it off, or letting users create organizations, is a weakening.
 - `notifications`: which security notices are emailed to an account's owner
   (`passwordChanged`, `newSignIn`, `mfaChanged`, `identityChanged`). All are on unless switched off.
 - `mfa.policy`: whether two-step verification is `off`, `optional` (the default) or
@@ -4056,6 +4138,16 @@ Longest custom claim key, in characters.
 const MAX_CUSTOM_CLAIM_KEY_LENGTH: 32
 ```
 
+### `MAX_CUSTOM_ROLES`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+How many custom roles an environment can define, beside the built-in ones.
+
+```ts
+const MAX_CUSTOM_ROLES: 50
+```
+
 ### `MAX_CUSTOM_SESSION_PROFILES`
 
 _constant_, defined in `packages/contract/src/session-profile.ts`
@@ -4225,6 +4317,36 @@ const MAX_NATIVE_APPS: 20
 apps.length <= MAX_NATIVE_APPS
 ```
 
+### `MAX_ORGANIZATIONS_CREATED_PER_USER`
+
+_constant_, defined in `packages/contract/src/environment-settings.ts`
+
+Highest `organizations.maxCreatedPerUser` that can be set.
+
+```ts
+const MAX_ORGANIZATIONS_CREATED_PER_USER: 1000
+```
+
+### `MAX_ORGANIZATION_NAME_LENGTH`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+Longest organization name, in characters.
+
+```ts
+const MAX_ORGANIZATION_NAME_LENGTH: 100
+```
+
+### `MAX_ORGANIZATION_SLUG_LENGTH`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+Longest organization slug.
+
+```ts
+const MAX_ORGANIZATION_SLUG_LENGTH: 48
+```
+
 ### `MAX_PACKAGE_NAME_LENGTH`
 
 _constant_, defined in `packages/contract/src/native-app.ts`
@@ -4290,6 +4412,17 @@ const MAX_PASSWORD_HISTORY: 24
 
 ```ts
 policy.history <= MAX_PASSWORD_HISTORY // true for every policy the schema accepts
+```
+
+### `MAX_PERMISSIONS_PER_ROLE`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+How many permissions one role can hold. The permissions of the active organization's role are
+a claim of every access token (ADR 0065, "Token claims"), so the number is capped.
+
+```ts
+const MAX_PERMISSIONS_PER_ROLE: 32
 ```
 
 ### `MAX_PHONE_NUMBER_DIGITS`
@@ -4445,6 +4578,18 @@ const MAX_WEBHOOK_URL_LENGTH: 2048
 url.length <= MAX_WEBHOOK_URL_LENGTH
 ```
 
+### `MEMBERSHIPS_MANAGE_PERMISSION`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+The permission that makes a member a manager of the organization's members. **Every
+organization keeps at least one member who holds it**: the last such member cannot be
+removed or moved to a role without it (`organization.last_manager`).
+
+```ts
+const MEMBERSHIPS_MANAGE_PERMISSION: SystemPermission
+```
+
 ### `MICROSOFT_TENANT_ALIASES`
 
 _constant_, defined in `packages/contract/src/oauth.ts`
@@ -4475,6 +4620,16 @@ Shortest idle timeout a profile may set.
 
 ```ts
 const MIN_IDLE_TIMEOUT: Duration
+```
+
+### `MIN_ORGANIZATION_SLUG_LENGTH`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+Shortest organization slug.
+
+```ts
+const MIN_ORGANIZATION_SLUG_LENGTH: 2
 ```
 
 ### `MIN_PASSWORD_MIN_LENGTH`
@@ -5069,6 +5224,148 @@ The answer to starting an OAuth sign-in.
 const OAuthStartSchema
 ```
 
+### `ORGANIZATION_FIELDS`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+The fields of an organization an update can change, as `organization.updated` names them.
+Names only: a value is never in an event.
+
+```ts
+const ORGANIZATION_FIELDS: readonly ["name", "slug"]
+```
+
+### `ORGANIZATION_SLUG_PATTERN`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+The grammar of an organization's slug: lower-case letters and digits in groups joined by
+single hyphens (`acme`, `acme-corp-2`), at least {@link MIN_ORGANIZATION_SLUG_LENGTH} and at
+most {@link MAX_ORGANIZATION_SLUG_LENGTH} characters. No leading, trailing or doubled hyphen,
+no other character: a slug goes into URLs and is compared exactly. A slug is unique in its
+environment.
+
+```ts
+const ORGANIZATION_SLUG_PATTERN: {}
+```
+
+**Example**
+
+```ts
+ORGANIZATION_SLUG_PATTERN.test('acme-corp') // true
+ORGANIZATION_SLUG_PATTERN.test('Acme Corp') // false
+```
+
+### `Organization`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+An organization.
+
+```ts
+export type Organization = z.infer<typeof OrganizationSchema>
+```
+
+### `OrganizationField`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+One of {@link ORGANIZATION_FIELDS}.
+
+```ts
+export type OrganizationField = (typeof ORGANIZATION_FIELDS)[number]
+```
+
+### `OrganizationList`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+A page of organizations.
+
+```ts
+export type OrganizationList = z.infer<typeof OrganizationListSchema>
+```
+
+### `OrganizationListSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+One page of organizations, newest first.
+
+```ts
+const OrganizationListSchema
+```
+
+### `OrganizationMembership`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+A membership.
+
+```ts
+export type OrganizationMembership = z.infer<typeof OrganizationMembershipSchema>
+```
+
+### `OrganizationMembershipList`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+A page of memberships.
+
+```ts
+export type OrganizationMembershipList = z.infer<typeof OrganizationMembershipListSchema>
+```
+
+### `OrganizationMembershipListSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+One page of an organization's members, oldest first.
+
+```ts
+const OrganizationMembershipListSchema
+```
+
+### `OrganizationMembershipSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+A user's membership of an organization.
+
+```ts
+const OrganizationMembershipSchema
+```
+
+### `OrganizationPageQuerySchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+The query of a list of organizations or of an organization's members.
+
+```ts
+const OrganizationPageQuerySchema
+```
+
+### `OrganizationSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+An organization, as the admin API returns it.
+
+```ts
+const OrganizationSchema
+```
+
+### `OrganizationSlugSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+An organization's slug: see {@link ORGANIZATION_SLUG_PATTERN}.
+
+```ts
+const OrganizationSlugSchema: z.ZodString
+```
+
 ### `PACKAGE_NAME_PATTERN`
 
 _constant_, defined in `packages/contract/src/native-app.ts`
@@ -5119,6 +5416,29 @@ composition rules.
 const PASSWORD_POLICY_PRESETS: Readonly<
   Record<Exclude<PasswordPolicy['preset'], 'custom'>, PasswordPolicy>
 >
+```
+
+### `PERMISSION_KEY_PATTERN`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+The grammar of a permission key (ADR 0065): `org:<feature>:<action>`, each of the last two
+a lower-case letter followed by lower-case letters, digits and underscores (at most 32
+characters); or, for the permissions Tula's own routes check, `org:sys:<feature>:<action>`.
+No dot, no other separator: a key is safe in a token and in a URL. The feature `sys` is
+reserved: a custom key never has it, and a system key is one of
+{@link SYSTEM_PERMISSIONS}.
+
+```ts
+const PERMISSION_KEY_PATTERN: {}
+```
+
+**Example**
+
+```ts
+PERMISSION_KEY_PATTERN.test('org:billing:read') // true
+PERMISSION_KEY_PATTERN.test('org:sys:memberships:manage') // true
+PERMISSION_KEY_PATTERN.test('billing.read') // false
 ```
 
 ### `PROPOSAL_APPROVAL_REFUSALS`
@@ -5748,6 +6068,16 @@ export interface PasswordUserInfo {
 }
 ```
 
+### `PermissionKeySchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+A permission key: see {@link PERMISSION_KEY_PATTERN}.
+
+```ts
+const PermissionKeySchema: z.ZodString
+```
+
 ### `PhoneCodeSent`
 
 _type_, defined in `packages/contract/src/user.ts`
@@ -6121,6 +6451,23 @@ const RESERVED_CLAIM_NAMES
 RESERVED_CLAIM_NAMES.includes('sub') // true
 ```
 
+### `ROLE_KEY_PATTERN`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+The grammar of a role's key: a lower-case letter, then lower-case letters, digits and
+underscores, up to 32 characters (`admin`, `billing_manager`). Unique in its environment.
+
+```ts
+const ROLE_KEY_PATTERN: {}
+```
+
+**Example**
+
+```ts
+ROLE_KEY_PATTERN.test('billing_manager') // true
+```
+
 ### `RedirectUrlKind`
 
 _type_, defined in `packages/contract/src/redirect-url.ts`
@@ -6192,6 +6539,16 @@ Result of revoking the user's other sessions.
 
 ```ts
 const RevokedSessionsSchema: z.ZodObject<{ revoked: z.ZodNumber; }, z.core.$strip>
+```
+
+### `RoleKeySchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+The key of a role: see {@link ROLE_KEY_PATTERN}.
+
+```ts
+const RoleKeySchema: z.ZodString
 ```
 
 ### `RotatedWebhookSecret`
@@ -6527,6 +6884,18 @@ ten minutes. Past it they answer `auth.step_up_required`.
 
 ```ts
 const STEP_UP_MAX_AGE_SECONDS: 600
+```
+
+### `SYSTEM_PERMISSIONS`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+The permissions Tula's own organization routes check (ADR 0065). The same keys an app's
+server checks with `has({ permission })`, so Tula's routes hold no privilege an app cannot
+also give a role.
+
+```ts
+const SYSTEM_PERMISSIONS
 ```
 
 ### `SecondFactorMethod`
@@ -7544,6 +7913,16 @@ export interface StoredSmsTemplatesRead {
 }
 ```
 
+### `SystemPermission`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+One of {@link SYSTEM_PERMISSIONS}.
+
+```ts
+export type SystemPermission = (typeof SYSTEM_PERMISSIONS)[number]
+```
+
 ### `TEST_ADDRESS_DOMAIN`
 
 _constant_, defined in `packages/contract/src/test-address.ts`
@@ -7886,6 +8265,46 @@ field of the app's own platform; the other is refused.
 
 ```ts
 const UpdateNativeAppRequestSchema
+```
+
+### `UpdateOrganizationMemberRequest`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+The body that changes a member's role.
+
+```ts
+export type UpdateOrganizationMemberRequest = z.infer<typeof UpdateOrganizationMemberRequestSchema>
+```
+
+### `UpdateOrganizationMemberRequestSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+Change a member's role.
+
+```ts
+const UpdateOrganizationMemberRequestSchema: z.ZodObject<{ role: z.ZodString; }, z.core.$strict>
+```
+
+### `UpdateOrganizationRequest`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+The body that changes an organization.
+
+```ts
+export type UpdateOrganizationRequest = z.infer<typeof UpdateOrganizationRequestSchema>
+```
+
+### `UpdateOrganizationRequestSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+Rename an organization, or change its slug. At least one field.
+
+```ts
+const UpdateOrganizationRequestSchema: z.ZodObject<{ name: z.ZodOptional<z.ZodString>; slug: z.ZodOptional<z.ZodString>; }, z.core.$strict>
 ```
 
 ### `UpdateWebhookEndpointRequest`
@@ -10652,6 +11071,10 @@ A path is listed when:
   Each is listed in the other kind too, where it changes nothing: the documents do not
   say which kind of environment they are for, so the rule errs towards asking. `false`,
   and `null` where a run was allowed outright (`true`) or by default, are never listed.
+
+- `organizations.enabled`, `organizations.allowUserCreated`, `organizations.maxCreatedPerUser`:
+  organizations are switched off, user-created organizations are switched on, or the cap
+  on them is raised or removed (ADR 0065). Switching organizations on is not listed.
 
 One of these is enough, whatever else became stricter. Not counted: `maxLength`,
 `specialChars`, the `preset` label and `expiryDays` (forced rotation is not a strength

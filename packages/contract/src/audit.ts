@@ -52,6 +52,8 @@ export const AUDIT_TARGET_TYPES = [
   'webhook_endpoint',
   'hook',
   'native_app',
+  'organization',
+  'organization_membership',
   'proposal',
 ] as const
 

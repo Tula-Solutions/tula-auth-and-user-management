@@ -328,6 +328,26 @@ sealed class ErrorCode {
         override val rawValue: String = "device.binding_required"
     }
 
+    object OrganizationDisabled : ErrorCode() {
+        override val rawValue: String = "organization.disabled"
+    }
+
+    object OrganizationSlugTaken : ErrorCode() {
+        override val rawValue: String = "organization.slug_taken"
+    }
+
+    object OrganizationMemberExists : ErrorCode() {
+        override val rawValue: String = "organization.member_exists"
+    }
+
+    object OrganizationLastManager : ErrorCode() {
+        override val rawValue: String = "organization.last_manager"
+    }
+
+    object OrganizationRoleUnknown : ErrorCode() {
+        override val rawValue: String = "organization.role_unknown"
+    }
+
     object RateLimited : ErrorCode() {
         override val rawValue: String = "rate_limited"
     }
@@ -468,6 +488,11 @@ sealed class ErrorCode {
                 DeviceNonceRequired,
                 DeviceBindingNotSupported,
                 DeviceBindingRequired,
+                OrganizationDisabled,
+                OrganizationSlugTaken,
+                OrganizationMemberExists,
+                OrganizationLastManager,
+                OrganizationRoleUnknown,
                 RateLimited,
                 RequestMalformed,
                 RequestTooLarge,
@@ -563,6 +588,11 @@ sealed class ErrorCode {
             "device.nonce_required" -> DeviceNonceRequired
             "device.binding_not_supported" -> DeviceBindingNotSupported
             "device.binding_required" -> DeviceBindingRequired
+            "organization.disabled" -> OrganizationDisabled
+            "organization.slug_taken" -> OrganizationSlugTaken
+            "organization.member_exists" -> OrganizationMemberExists
+            "organization.last_manager" -> OrganizationLastManager
+            "organization.role_unknown" -> OrganizationRoleUnknown
             "rate_limited" -> RateLimited
             "request.malformed" -> RequestMalformed
             "request.too_large" -> RequestTooLarge
@@ -836,6 +866,21 @@ object TulaErrorDefinitions {
     /** `device.binding_required` */
     val deviceBindingRequired: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.DeviceBindingRequired, 400, "Signing in here needs a device key.")
 
+    /** `organization.disabled` */
+    val organizationDisabled: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationDisabled, 403, "Organizations are not enabled for this environment.")
+
+    /** `organization.slug_taken` */
+    val organizationSlugTaken: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationSlugTaken, 409, "An organization with that slug already exists.")
+
+    /** `organization.member_exists` */
+    val organizationMemberExists: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationMemberExists, 409, "That user is already a member of this organization.")
+
+    /** `organization.last_manager` */
+    val organizationLastManager: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationLastManager, 409, "An organization must keep at least one member who can manage its members.")
+
+    /** `organization.role_unknown` */
+    val organizationRoleUnknown: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationRoleUnknown, 422, "That role does not exist in this environment.")
+
     /** `rate_limited` */
     val rateLimited: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.RateLimited, 429, "Too many requests. Try again shortly.")
 
@@ -954,6 +999,11 @@ object TulaErrorDefinitions {
         deviceNonceRequired,
         deviceBindingNotSupported,
         deviceBindingRequired,
+        organizationDisabled,
+        organizationSlugTaken,
+        organizationMemberExists,
+        organizationLastManager,
+        organizationRoleUnknown,
         rateLimited,
         requestMalformed,
         requestTooLarge,

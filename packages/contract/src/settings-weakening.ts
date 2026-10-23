@@ -326,6 +326,39 @@ function redirectWeakenings(
 }
 
 /**
+ * Where the `organizations` section got weaker (ADR 0065):
+ *
+ * - `organizations.enabled`: switched **off** where it was on. The access tokens of the
+ *   environment stop carrying `org_id`, `org_role` and `org_perms`, and an application that
+ *   authorizes on them and reads a missing claim as permission would open up (the same
+ *   argument as a lost custom claim, ADR 0036). Switching it on is not listed.
+ * - `organizations.allowUserCreated`: switched on. Any signed-in user can then make an
+ *   organization and be its administrator.
+ * - `organizations.maxCreatedPerUser`: raised, or removed (`null`): one user can then make
+ *   more organizations.
+ *
+ * Changing the role keys, or `personalAccount`, is not listed: how much a role may do is not
+ * known here (roles are rows of the environment, not part of this document).
+ */
+function organizationWeakenings(
+  before: EnvironmentSettings['organizations'],
+  after: EnvironmentSettings['organizations']
+): string[] {
+  const paths: string[] = []
+  if (before.enabled && !after.enabled) {
+    paths.push('organizations.enabled')
+  }
+  if (!before.allowUserCreated && after.allowUserCreated) {
+    paths.push('organizations.allowUserCreated')
+  }
+  const cap = (value: number | null) => value ?? Number.POSITIVE_INFINITY
+  if (cap(after.maxCreatedPerUser) > cap(before.maxCreatedPerUser)) {
+    paths.push('organizations.maxCreatedPerUser')
+  }
+  return paths
+}
+
+/**
  * Where replacing `before` with `after` makes an account easier to take over, a takeover
  * harder to notice or to look into afterwards, or an attack on the environment dearer for
  * its operator. It is the one definition of "weakened": the server's audit entry carries
@@ -383,6 +416,10 @@ function redirectWeakenings(
  *   say which kind of environment they are for, so the rule errs towards asking. `false`,
  *   and `null` where a run was allowed outright (`true`) or by default, are never listed.
  *
+ * - `organizations.enabled`, `organizations.allowUserCreated`, `organizations.maxCreatedPerUser`:
+ *   organizations are switched off, user-created organizations are switched on, or the cap
+ *   on them is raised or removed (ADR 0065). Switching organizations on is not listed.
+ *
  * One of these is enough, whatever else became stricter. Not counted: `maxLength`,
  * `specialChars`, the `preset` label and `expiryDays` (forced rotation is not a strength
  * measure), and every other setting. Disabling a sign-in method removes a way in; it is not a
@@ -438,5 +475,6 @@ export function settingsWeakenings(
   if ((isAllowed === true && wasAllowed !== true) || (isAllowed === null && wasAllowed === false)) {
     paths.push('agents.testSignIn')
   }
+  paths.push(...organizationWeakenings(before.organizations, after.organizations))
   return paths
 }

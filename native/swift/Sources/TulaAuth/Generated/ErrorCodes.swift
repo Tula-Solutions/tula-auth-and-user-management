@@ -83,6 +83,11 @@ public enum ErrorCode: Codable, Hashable, Sendable {
     case deviceNonceRequired
     case deviceBindingNotSupported
     case deviceBindingRequired
+    case organizationDisabled
+    case organizationSlugTaken
+    case organizationMemberExists
+    case organizationLastManager
+    case organizationRoleUnknown
     case rateLimited
     case requestMalformed
     case requestTooLarge
@@ -178,6 +183,11 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         .deviceNonceRequired,
         .deviceBindingNotSupported,
         .deviceBindingRequired,
+        .organizationDisabled,
+        .organizationSlugTaken,
+        .organizationMemberExists,
+        .organizationLastManager,
+        .organizationRoleUnknown,
         .rateLimited,
         .requestMalformed,
         .requestTooLarge,
@@ -273,6 +283,11 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case "device.nonce_required": self = .deviceNonceRequired
         case "device.binding_not_supported": self = .deviceBindingNotSupported
         case "device.binding_required": self = .deviceBindingRequired
+        case "organization.disabled": self = .organizationDisabled
+        case "organization.slug_taken": self = .organizationSlugTaken
+        case "organization.member_exists": self = .organizationMemberExists
+        case "organization.last_manager": self = .organizationLastManager
+        case "organization.role_unknown": self = .organizationRoleUnknown
         case "rate_limited": self = .rateLimited
         case "request.malformed": self = .requestMalformed
         case "request.too_large": self = .requestTooLarge
@@ -370,6 +385,11 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case .deviceNonceRequired: return "device.nonce_required"
         case .deviceBindingNotSupported: return "device.binding_not_supported"
         case .deviceBindingRequired: return "device.binding_required"
+        case .organizationDisabled: return "organization.disabled"
+        case .organizationSlugTaken: return "organization.slug_taken"
+        case .organizationMemberExists: return "organization.member_exists"
+        case .organizationLastManager: return "organization.last_manager"
+        case .organizationRoleUnknown: return "organization.role_unknown"
         case .rateLimited: return "rate_limited"
         case .requestMalformed: return "request.malformed"
         case .requestTooLarge: return "request.too_large"
@@ -648,6 +668,21 @@ public enum TulaErrorDefinitions {
     /// `device.binding_required`
     public static let deviceBindingRequired = TulaErrorDefinition(code: .deviceBindingRequired, status: 400, message: "Signing in here needs a device key.")
 
+    /// `organization.disabled`
+    public static let organizationDisabled = TulaErrorDefinition(code: .organizationDisabled, status: 403, message: "Organizations are not enabled for this environment.")
+
+    /// `organization.slug_taken`
+    public static let organizationSlugTaken = TulaErrorDefinition(code: .organizationSlugTaken, status: 409, message: "An organization with that slug already exists.")
+
+    /// `organization.member_exists`
+    public static let organizationMemberExists = TulaErrorDefinition(code: .organizationMemberExists, status: 409, message: "That user is already a member of this organization.")
+
+    /// `organization.last_manager`
+    public static let organizationLastManager = TulaErrorDefinition(code: .organizationLastManager, status: 409, message: "An organization must keep at least one member who can manage its members.")
+
+    /// `organization.role_unknown`
+    public static let organizationRoleUnknown = TulaErrorDefinition(code: .organizationRoleUnknown, status: 422, message: "That role does not exist in this environment.")
+
     /// `rate_limited`
     public static let rateLimited = TulaErrorDefinition(code: .rateLimited, status: 429, message: "Too many requests. Try again shortly.")
 
@@ -766,6 +801,11 @@ public enum TulaErrorDefinitions {
         deviceNonceRequired,
         deviceBindingNotSupported,
         deviceBindingRequired,
+        organizationDisabled,
+        organizationSlugTaken,
+        organizationMemberExists,
+        organizationLastManager,
+        organizationRoleUnknown,
         rateLimited,
         requestMalformed,
         requestTooLarge,

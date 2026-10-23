@@ -544,6 +544,24 @@
         "decision": "journey"
       }
     },
+    "admin organizations and memberships": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "organizations and their memberships are managed on the admin API with a secret key (or the dashboard's session), and an administrator, not a user, makes every change here: a client SDK holds a publishable key and a user's session and reaches none of these routes, and must never. What a signed-in user does with an organization (list, create, switch, accept an invitation) is `/v1/client/me/organizations`, a later ticket's scenarios."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "organizations and their memberships are managed on the admin API with a secret key (or the dashboard's session), and an administrator, not a user, makes every change here: a client SDK holds a publishable key and a user's session and reaches none of these routes, and must never. What a signed-in user does with an organization (list, create, switch, accept an invitation) is `/v1/client/me/organizations`, a later ticket's scenarios."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "organizations and their memberships are managed on the admin API with a secret key (or the dashboard's session), and an administrator, not a user, makes every change here: a client SDK holds a publishable key and a user's session and reaches none of these routes, and must never. What a signed-in user does with an organization (list, create, switch, accept an invitation) is `/v1/client/me/organizations`, a later ticket's scenarios."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "organizations and their memberships are managed on the admin API with a secret key (or the dashboard's session), and an administrator, not a user, makes every change here: a client SDK holds a publishable key and a user's session and reaches none of these routes, and must never. What a signed-in user does with an organization (list, create, switch, accept an invitation) is `/v1/client/me/organizations`, a later ticket's scenarios."
+      }
+    },
     "admin second factor reset": {
       "core": {
         "decision": "journey"
@@ -1284,7 +1302,9 @@
       "swift": {
         "decision": "journey"
       },
-      "kotlin": { "decision": "journey" }
+      "kotlin": {
+        "decision": "journey"
+      }
     },
     "provider sign-in returned to a custom scheme": {
       "core": {
@@ -1599,7 +1619,9 @@
       "swift": {
         "decision": "journey"
       },
-      "kotlin": { "decision": "journey" }
+      "kotlin": {
+        "decision": "journey"
+      }
     },
     "text messages past the daily limit": {
       "core": {
@@ -1611,7 +1633,9 @@
       "swift": {
         "decision": "journey"
       },
-      "kotlin": { "decision": "journey" }
+      "kotlin": {
+        "decision": "journey"
+      }
     },
     "text messages to a blocked destination": {
       "core": {
@@ -1623,7 +1647,9 @@
       "swift": {
         "decision": "journey"
       },
-      "kotlin": { "decision": "journey" }
+      "kotlin": {
+        "decision": "journey"
+      }
     },
     "the admin reset removes passkeys and says whether the user can still sign in": {
       "core": {

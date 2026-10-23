@@ -1,0 +1,566 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "admin organizations and memberships",
+  "description": "An administrator switches organizations on for the environment (they are off by default, and while they are off every organization route answers organization.disabled, a read as well as a write), creates an organization with a slug of the documented grammar and adds two existing users with the built-in roles admin and member. A slug another organization has, a user who is a member already and a role that does not exist are refused with their codes, and a publishable key cannot reach the routes. The only member who holds org:sys:memberships:manage cannot be demoted or removed (organization.last_manager); with a second admin the first can be demoted and removed, and the users keep their accounts. A rename is recorded by the name of the field, and the audit log holds no organization name and no address. Deleting the organization takes its memberships with it. The original settings are put back afterwards, even when a step fails.",
+  "needsSecretKey": true,
+  "variables": {
+    "ownerEmail": {
+      "generate": "email"
+    },
+    "memberEmail": {
+      "generate": "email"
+    },
+    "suffix": {
+      "generate": "snowflake"
+    }
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "appSettings": "settings.app",
+        "passwordSettings": "settings.password",
+        "signInSettings": "settings.signIn",
+        "signUpSettings": "settings.signUp",
+        "urlsSettings": "settings.urls",
+        "auditSettings": "settings.audit",
+        "notificationsSettings": "settings.notifications",
+        "mfaSettings": "settings.mfa",
+        "passkeysSettings": "settings.passkeys",
+        "smsSettings": "settings.sms",
+        "emailsSettings": "settings.emails"
+      }
+    },
+    {
+      "name": "with organizations off, a write answers a code and creates nothing",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations",
+        "auth": "secret",
+        "body": {
+          "name": "Conformance Org",
+          "slug": "conformance-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.disabled"
+        }
+      }
+    },
+    {
+      "name": "and a read answers it too",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/organizations",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.disabled"
+        }
+      }
+    },
+    {
+      "name": "an administrator switches organizations on",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{appSettings}}"
+          },
+          "password": {
+            "$json": "{{passwordSettings}}"
+          },
+          "signIn": {
+            "$json": "{{signInSettings}}"
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "$json": "{{urlsSettings}}"
+          },
+          "audit": {
+            "$json": "{{auditSettings}}"
+          },
+          "notifications": {
+            "$json": "{{notificationsSettings}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "$json": "{{passkeysSettings}}"
+          },
+          "sms": {
+            "$json": "{{smsSettings}}"
+          },
+          "emails": {
+            "$json": "{{emailsSettings}}"
+          },
+          "organizations": {
+            "enabled": true,
+            "allowUserCreated": false,
+            "maxCreatedPerUser": 5,
+            "creatorRole": "admin",
+            "defaultRole": "member",
+            "personalAccount": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "organizations": {
+              "enabled": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "a publishable key cannot create an organization",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations",
+        "body": {
+          "name": "Conformance Org",
+          "slug": "conformance-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
+      "name": "an administrator creates a user",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users",
+        "auth": "secret",
+        "body": {
+          "email": "{{ownerEmail}}",
+          "emailVerified": true
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "ownerId": "id"
+      }
+    },
+    {
+      "name": "and a second",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users",
+        "auth": "secret",
+        "body": {
+          "email": "{{memberEmail}}",
+          "emailVerified": true
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "memberId": "id"
+      }
+    },
+    {
+      "name": "an administrator creates an organization",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations",
+        "auth": "secret",
+        "body": {
+          "name": "Conformance Org",
+          "slug": "conformance-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "name": "Conformance Org",
+          "slug": "conformance-{{suffix}}"
+        }
+      },
+      "capture": {
+        "orgId": "id"
+      }
+    },
+    {
+      "name": "a second organization with that slug is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations",
+        "auth": "secret",
+        "body": {
+          "name": "Another",
+          "slug": "conformance-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "organization.slug_taken"
+        }
+      }
+    },
+    {
+      "name": "a slug outside the grammar is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations",
+        "auth": "secret",
+        "body": {
+          "name": "Another",
+          "slug": "Not A Slug"
+        }
+      },
+      "expect": {
+        "status": 422
+      }
+    },
+    {
+      "name": "the organization is read back",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/organizations/{{orgId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{orgId}}",
+          "slug": "conformance-{{suffix}}"
+        }
+      }
+    },
+    {
+      "name": "the first user is added as an admin",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/memberships",
+        "auth": "secret",
+        "body": {
+          "userId": "{{ownerId}}",
+          "role": "admin"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "organizationId": "{{orgId}}",
+          "userId": "{{ownerId}}",
+          "role": "admin"
+        }
+      }
+    },
+    {
+      "name": "the second as a member",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/memberships",
+        "auth": "secret",
+        "body": {
+          "userId": "{{memberId}}",
+          "role": "member"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "userId": "{{memberId}}",
+          "role": "member"
+        }
+      }
+    },
+    {
+      "name": "a user who is a member already is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/memberships",
+        "auth": "secret",
+        "body": {
+          "userId": "{{memberId}}",
+          "role": "admin"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "organization.member_exists"
+        }
+      }
+    },
+    {
+      "name": "a role that does not exist is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/memberships",
+        "auth": "secret",
+        "body": {
+          "userId": "{{ownerId}}",
+          "role": "nobody"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "organization.role_unknown"
+        }
+      }
+    },
+    {
+      "name": "the members are listed",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/organizations/{{orgId}}/memberships",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 2
+          }
+        }
+      }
+    },
+    {
+      "name": "the only admin cannot be demoted",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/organizations/{{orgId}}/memberships/{{ownerId}}",
+        "auth": "secret",
+        "body": {
+          "role": "member"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "organization.last_manager"
+        }
+      }
+    },
+    {
+      "name": "nor removed",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/organizations/{{orgId}}/memberships/{{ownerId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "organization.last_manager"
+        }
+      }
+    },
+    {
+      "name": "the member is given the admin role",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/organizations/{{orgId}}/memberships/{{memberId}}",
+        "auth": "secret",
+        "body": {
+          "role": "admin"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "userId": "{{memberId}}",
+          "role": "admin"
+        }
+      }
+    },
+    {
+      "name": "with a second admin the first can be demoted",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/organizations/{{orgId}}/memberships/{{ownerId}}",
+        "auth": "secret",
+        "body": {
+          "role": "member"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "userId": "{{ownerId}}",
+          "role": "member"
+        }
+      }
+    },
+    {
+      "name": "and removed",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/organizations/{{orgId}}/memberships/{{ownerId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "the removed user is still an account",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users/{{ownerId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{ownerId}}"
+        }
+      }
+    },
+    {
+      "name": "the organization is renamed",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/organizations/{{orgId}}",
+        "auth": "secret",
+        "body": {
+          "name": "Conformance Renamed"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{orgId}}",
+          "name": "Conformance Renamed"
+        }
+      }
+    },
+    {
+      "name": "the audit log records the rename and holds no name and no address",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?targetId={{orgId}}&action=organization.updated",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1
+          },
+          "data": [
+            {
+              "action": "organization.updated",
+              "target": {
+                "type": "organization",
+                "id": "{{orgId}}"
+              }
+            }
+          ]
+        },
+        "bodyExcludes": ["Conformance Renamed", "{{ownerEmail}}", "{{memberEmail}}"]
+      }
+    },
+    {
+      "name": "an administrator deletes the organization",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/organizations/{{orgId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "it is gone",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/organizations/{{orgId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 404
+      }
+    },
+    {
+      "name": "the other user is still an account",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users/{{memberId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{memberId}}"
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

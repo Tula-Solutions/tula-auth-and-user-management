@@ -14,7 +14,7 @@ import * as Audit from '~/modules/audit/service'
 import { InvalidUserDataError, type NewUser } from '~/ports/user-repository'
 
 // What an import keeps with a user (ADR 0066): the external id and the metadata, in the
-// columns migration 0036 added, held to 4 KiB by the database itself.
+// columns migration 0037 added, held to 4 KiB by the database itself.
 
 let testDb: TestDatabase
 let tenant: TestTenant
