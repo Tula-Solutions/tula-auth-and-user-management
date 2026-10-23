@@ -507,7 +507,7 @@ organizationRoles: [
   switch organizations on: removals, then changes that give a role nothing, then changes that
   give it a permission, then new roles. While organizations are off the server refuses every
   role write with `organization.disabled`; `tula diff` then treats the roles as
-  none, so a file that switches organizations on and defines roles applies in one run.
+  none (and says so in the plan, `organizationRoles.unread` in `--json`), so a file that switches organizations on and defines roles applies in one run; a role the server already has then fails its definition with `organization.role_exists`, written over nothing.
 - **Someone else's change.** A role has a version, and every update and removal sends the one
   the plan read (`If-Match`). A role changed since is refused by the server and `apply` says
   so, writing nothing to it; run `tula diff` again. A role defined by someone else in the

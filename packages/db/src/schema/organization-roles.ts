@@ -23,7 +23,7 @@ import { tula } from './pg-schema'
  * (`ensureBuiltInRoles`, ADR 0065, "Built-in roles").
  *
  * The runtime role may change a custom role's name and permissions and delete a custom role
- * (migration 0037, ADR 0065, "Custom roles"), and **no statement of its can touch a built-in
+ * (migration 0038, ADR 0065, "Custom roles"), and **no statement of its can touch a built-in
  * row**: two restrictive policies take them out of every UPDATE and DELETE, whatever the API
  * asks. `version` counts the changes made to a role, from 1; the API's `If-Match` carries it.
  *

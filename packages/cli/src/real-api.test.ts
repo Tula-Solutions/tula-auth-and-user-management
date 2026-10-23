@@ -2717,6 +2717,36 @@ describe('organization roles in the config file', () => {
     expect(await customRoles()).toHaveLength(1)
   })
 
+  test('roles that exist while organizations are off are not read: the plan says so, and a definition never writes over one', async () => {
+    const role = await defineRole()
+    const current = await state()
+    await admin('/v1/admin/settings', {
+      method: 'PUT',
+      headers: { 'if-match': `"${current.revision}"` },
+      body: JSON.stringify({ ...current.settings, organizations: { enabled: false } }),
+    })
+    const config = await rolesDev({
+      organizationRoles: [
+        { ...BILLING_ROLE, permissions: [...BILLING_ROLE.permissions, 'org:x:y'] },
+      ],
+    })
+    const plan = await tula(['diff', '--config', config])
+    expect(plan.stdout).toContain(
+      'organizations are off on the server, so its custom roles were not read'
+    )
+    const json = JSON.parse((await tula(['diff', '--config', config, '--json'])).stdout) as {
+      organizationRoles: { unread: boolean }
+    }
+    expect(json.organizationRoles.unread).toBe(true)
+    const run = await tula(['apply', '--config', config, '--yes'])
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain('organization.role_exists')
+    // Nothing was written over the role that was there.
+    expect(await customRoles()).toMatchObject([
+      { id: role.id, permissions: BILLING_ROLE.permissions },
+    ])
+  })
+
   test('a file that leaves organizations off reports the server’s refusal, not a guess', async () => {
     const current = await state()
     await admin('/v1/admin/settings', {

@@ -299,6 +299,11 @@ export interface RemoteState {
    * roles: they are then not even read.
    */
   organizationRoles?: readonly RemoteOrganizationRole[]
+  /**
+   * Set when the roles could not be read because organizations are off on the server: custom
+   * roles may exist that the plan does not know of.
+   */
+  organizationRolesUnread?: boolean
 }
 
 /**
@@ -706,6 +711,12 @@ export interface OrganizationRolePlan {
    * more than it may have (`MAX_CUSTOM_ROLES`); `null` otherwise.
    */
   overLimit: number | null
+  /**
+   * The server's roles could not be read (organizations are off there), so every listed role
+   * is planned as a definition. A role that exists makes that definition fail with
+   * `organization.role_exists`, writing nothing over it; `tula diff` again then shows it.
+   */
+  unread: boolean
 }
 
 /** A role's name and permissions, the file's, against the server's role of the same key. */
@@ -765,10 +776,11 @@ function organizationRoleFields(
 export function planOrganizationRoles(
   remote: readonly RemoteOrganizationRole[] | undefined,
   desired: EnvironmentConfig['organizationRoles'],
-  options: Pick<PlanOptions, 'prune'>
+  options: Pick<PlanOptions, 'prune'>,
+  unread = false
 ): OrganizationRolePlan {
   if (desired === undefined) {
-    return { managed: false, roles: [], overLimit: null }
+    return { managed: false, roles: [], overLimit: null, unread: false }
   }
   const existing = (remote ?? []).filter((role) => !role.builtIn)
   const byKey = new Map(existing.map((role) => [role.key, role]))
@@ -813,6 +825,7 @@ export function planOrganizationRoles(
     managed: true,
     roles,
     overLimit: count('create') > 0 && after > MAX_CUSTOM_ROLES ? after : null,
+    unread,
   }
 }
 
@@ -1837,7 +1850,8 @@ export function buildPlan(
   const organizationRoles = planOrganizationRoles(
     remote.organizationRoles,
     environment.organizationRoles,
-    options
+    options,
+    remote.organizationRolesUnread === true
   )
   const marker = planMarker(remote, options.configHash)
   return {

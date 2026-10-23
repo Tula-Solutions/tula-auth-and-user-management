@@ -102,12 +102,14 @@ export async function readRemote(
   // With organizations switched off the server answers `organization.disabled`; the roles
   // are then none (a plan that switches them on writes the roles after the settings), and a
   // run that does not switch them on is refused by the server when it writes the first role.
+  const unread = { roles: false }
   const organizationRoles = options.organizationRoles
     ? await admin
         .call('listOrganizationRoles')
         .then((answer) => answer.data.data)
         .catch((error: unknown) => {
           if (isTulaAdminError(error) && error.code === 'organization.disabled') {
+            unread.roles = true
             return []
           }
           throw error
@@ -125,6 +127,7 @@ export async function readRemote(
     ...(hooks !== undefined && { hooks }),
     ...(nativeApps !== undefined && { nativeApps }),
     ...(organizationRoles !== undefined && { organizationRoles }),
+    ...(unread.roles && { organizationRolesUnread: true }),
   }
 }
 

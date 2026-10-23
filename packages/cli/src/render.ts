@@ -832,6 +832,13 @@ export function renderPlan(
     if (plan.organizationRoles.roles.length === 0) {
       output.line(style.dim('  none in the file, none on the server'))
     }
+    if (plan.organizationRoles.unread) {
+      output.line(
+        style.dim(
+          '  organizations are off on the server, so its custom roles were not read: a role it already has fails its definition (nothing is written over it); run tula diff again once organizations are on'
+        )
+      )
+    }
     for (const change of plan.organizationRoles.roles) {
       output.line(organizationRoleLine(output, change))
     }
@@ -892,6 +899,7 @@ export function planToJson(
       // Without the file's entry: every part of it is in the change already.
       roles: plan.organizationRoles.roles.map(({ entry: _entry, ...change }) => change),
       overLimit: plan.organizationRoles.overLimit,
+      unread: plan.organizationRoles.unread,
     },
     blockers: planBlockers(plan),
     managedBy: {

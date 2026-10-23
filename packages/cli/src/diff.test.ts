@@ -2838,7 +2838,7 @@ describe('planOrganizationRoles', () => {
 
   test('without the key the roles are not managed, --prune included', () => {
     const result = planOrganizationRoles([...builtIns, role('a')], undefined, { prune: true })
-    expect(result).toEqual({ managed: false, roles: [], overLimit: null })
+    expect(result).toEqual({ managed: false, roles: [], overLimit: null, unread: false })
     const planned = plan(
       {},
       remote({ managedBy: undefined, organizationRoles: [...builtIns, role('a')] }),
