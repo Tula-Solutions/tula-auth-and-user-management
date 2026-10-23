@@ -78,13 +78,12 @@ async function makeOrganization(
 
 const created: string[] = []
 
-test.beforeEach(async ({ page }) => {
-  await useSettings(page.request, ON)
-  await signIn(page)
-})
-
-// Whatever a test (or its failure half-way) left, in the order the rules allow.
-test.afterEach(async ({ page }) => {
+/**
+ * No organization and no custom role in the environment. Other specs of the run (the Next.js
+ * project's organizations spec runs first) leave theirs behind, and the one environment is
+ * shared, so a test that says "none yet" starts by making it true. Organizations must be on.
+ */
+async function clearOrganizations(page: Page): Promise<void> {
   const organizations = await read<{ data: Row[] }>(page, '/v1/admin/organizations?size=100')
   for (const organization of organizations.data) {
     await send(page, 'DELETE', `/v1/admin/organizations/${organization.id}`)
@@ -98,6 +97,19 @@ test.afterEach(async ({ page }) => {
       'if-match': `"${role.version}"`,
     })
   }
+}
+
+test.beforeEach(async ({ page }) => {
+  await useSettings(page.request, ON)
+  await signIn(page)
+  await clearOrganizations(page)
+})
+
+// Whatever a test (or its failure half-way) left, in the order the rules allow.
+test.afterEach(async ({ page }) => {
+  // A test that failed while organizations were off still gets cleaned up after.
+  await useSettings(page.request, ON)
+  await clearOrganizations(page)
   for (const id of created.splice(0)) {
     await send(page, 'DELETE', `/v1/admin/users/${id}`)
   }
