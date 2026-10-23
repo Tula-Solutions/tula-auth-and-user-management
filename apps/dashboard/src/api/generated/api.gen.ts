@@ -90,6 +90,46 @@ export interface UserCreatedEvent {
   test?: true;
 }
 
+export type UserImportedEventDataPasswordAlgorithm = typeof UserImportedEventDataPasswordAlgorithm[keyof typeof UserImportedEventDataPasswordAlgorithm];
+
+
+export const UserImportedEventDataPasswordAlgorithm = {
+  bcrypt: 'bcrypt',
+  argon2id: 'argon2id',
+  argon2i: 'argon2i',
+} as const;
+
+/**
+ * A user account was created by an import.
+ */
+export interface UserImportedEventData {
+  emailVerified: boolean;
+  passwordless?: boolean;
+  passwordAlgorithm?: UserImportedEventDataPasswordAlgorithm;
+}
+
+export type UserImportedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A user account was created by an import.
+ */
+export interface UserImportedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.imported';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserImportedEventTarget;
+  data: UserImportedEventData;
+  test?: true;
+}
+
 /**
  * A user proved their email address.
  */
@@ -1215,7 +1255,7 @@ export interface OAuthProviderDeletedEvent {
 export interface WebhookEndpointCreatedEventData {
   /**
      * @minimum 1
-     * @maximum 59
+     * @maximum 60
      */
   eventTypes: number;
   enabled: boolean;
@@ -2305,7 +2345,7 @@ export interface SignInTestFinishedEvent {
   test?: true;
 }
 
-export type TulaEvent = UserCreatedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserEmailAddedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | OrganizationCreatedEvent | OrganizationUpdatedEvent | OrganizationDeletedEvent | OrganizationMembershipAddedEvent | OrganizationMembershipRoleChangedEvent | OrganizationMembershipRemovedEvent | OrganizationRoleCreatedEvent | OrganizationRoleUpdatedEvent | OrganizationRoleDeletedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
+export type TulaEvent = UserCreatedEvent | UserImportedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserEmailAddedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | OrganizationCreatedEvent | OrganizationUpdatedEvent | OrganizationDeletedEvent | OrganizationMembershipAddedEvent | OrganizationMembershipRoleChangedEvent | OrganizationMembershipRemovedEvent | OrganizationRoleCreatedEvent | OrganizationRoleUpdatedEvent | OrganizationRoleDeletedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
 
 export type HookBeforeSignUpDataMethod = typeof HookBeforeSignUpDataMethod[keyof typeof HookBeforeSignUpDataMethod];
 
@@ -2464,6 +2504,10 @@ export const ErrorCode = {
   passwordsequence: 'password.sequence',
   passwordreused: 'password.reused',
   passwordnot_set: 'password.not_set',
+  importunsupported_algorithm: 'import.unsupported_algorithm',
+  importhash_malformed: 'import.hash_malformed',
+  importhash_parameters_too_weak: 'import.hash_parameters_too_weak',
+  importhash_parameters_too_costly: 'import.hash_parameters_too_costly',
   verificationinvalid_code: 'verification.invalid_code',
   verificationexpired: 'verification.expired',
   verificationtoo_many_attempts: 'verification.too_many_attempts',
@@ -3346,6 +3390,96 @@ export interface CreateUserRequest {
   emailVerified?: boolean;
 }
 
+export type ImportSkipReason = typeof ImportSkipReason[keyof typeof ImportSkipReason];
+
+
+export const ImportSkipReason = {
+  email_exists: 'email_exists',
+  repeated_in_batch: 'repeated_in_batch',
+} as const;
+
+export type ImportRowResult = {
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  index: number;
+  status: 'created';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+} | {
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  index: number;
+  status: 'skipped';
+  reason: ImportSkipReason;
+} | {
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  index: number;
+  status: 'refused';
+  code: string;
+  message: string;
+};
+
+export interface ImportUsersResult {
+  results: ImportRowResult[];
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  created: number;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  skipped: number;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  refused: number;
+}
+
+export type ImportPasswordParams = {[key: string]: string | number};
+
+export interface ImportPassword {
+  /** @maxLength 64 */
+  algorithm: string;
+  /** @maxLength 1024 */
+  hash: string;
+  params?: ImportPasswordParams;
+}
+
+export type ImportUserRowMetadata = {[key: string]: unknown};
+
+export interface ImportUserRow {
+  /** @maxLength 320 */
+  email: string;
+  emailVerified: boolean;
+  /** @maxLength 200 */
+  name?: string;
+  metadata?: ImportUserRowMetadata;
+  /**
+     * @minLength 1
+     * @maxLength 256
+     */
+  externalId?: string;
+  password?: ImportPassword;
+}
+
+export interface ImportUsersRequest {
+  /**
+     * @minItems 1
+     * @maxItems 500
+     */
+  users: ImportUserRow[];
+}
+
 export interface Passkey {
   id: string;
   name: string;
@@ -3489,6 +3623,7 @@ export type ActivityType = typeof ActivityType[keyof typeof ActivityType];
 
 export const ActivityType = {
   usercreated: 'user.created',
+  userimported: 'user.imported',
   useremail_verified: 'user.email_verified',
   userbanned: 'user.banned',
   userunbanned: 'user.unbanned',
@@ -4334,6 +4469,7 @@ export type CreateWebhookEndpointRequestEventTypesItem = typeof CreateWebhookEnd
 
 export const CreateWebhookEndpointRequestEventTypesItem = {
   usercreated: 'user.created',
+  userimported: 'user.imported',
   useremail_verified: 'user.email_verified',
   userbanned: 'user.banned',
   userunbanned: 'user.unbanned',
@@ -4403,7 +4539,7 @@ export interface CreateWebhookEndpointRequest {
   url: string;
   /**
      * @minItems 1
-     * @maxItems 59
+     * @maxItems 60
      */
   eventTypes: CreateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -4414,6 +4550,7 @@ export type UpdateWebhookEndpointRequestEventTypesItem = typeof UpdateWebhookEnd
 
 export const UpdateWebhookEndpointRequestEventTypesItem = {
   usercreated: 'user.created',
+  userimported: 'user.imported',
   useremail_verified: 'user.email_verified',
   userbanned: 'user.banned',
   userunbanned: 'user.unbanned',
@@ -4483,7 +4620,7 @@ export interface UpdateWebhookEndpointRequest {
   url?: string;
   /**
      * @minItems 1
-     * @maxItems 59
+     * @maxItems 60
      */
   eventTypes?: UpdateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -4612,6 +4749,7 @@ export type SendTestWebhookRequestEventType = typeof SendTestWebhookRequestEvent
 
 export const SendTestWebhookRequestEventType = {
   usercreated: 'user.created',
+  userimported: 'user.imported',
   useremail_verified: 'user.email_verified',
   userbanned: 'user.banned',
   userunbanned: 'user.unbanned',
@@ -7001,6 +7139,95 @@ export const useCreateUser = <TError = ErrorEnvelope,
         TContext
       > => {
       return useMutation(getCreateUserMutationOptions(options), queryClient);
+    }
+
+export const getImportUsersUrl = () => {
+
+
+
+
+  return `/v1/admin/users/import`
+}
+
+/**
+ * Creates up to 500 users in one call, with the password hash they have in the system they come from (`bcrypt`, `argon2id` or `argon2i`). The call is not all-or-nothing: every row is created or not on its own, and the answer says what became of each: `created` (with the user’s id), `skipped` (the normalized email exists already, or an earlier row of the call has it) or `refused` (with a contract error code: an invalid email, a malformed hash, an algorithm that is not supported, parameters below the minimum or above the maximum). Importing the same file again creates nobody twice. An imported user signs in with their old password; the first successful sign-in replaces the hash with an argon2id one. Each user is recorded as `user.imported`, not `user.created`, so a migration does not fire a `user.created` delivery per user. A hash is never returned.
+ * @summary Import users
+ */
+export const importUsers = async (importUsersRequest: ImportUsersRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<ImportUsersResult> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<ImportUsersResult>(getImportUsersUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(importUsersRequest)
+  }
+);}
+
+
+
+
+
+export const getImportUsersMutationKey = () => ['importUsers'] as const;
+
+export const getImportUsersMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof importUsers>>, TError,ImportUsersMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof importUsers>>, TError,ImportUsersMutationVariables, TContext> => {
+
+const mutationKey = getImportUsersMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof importUsers>>, ImportUsersMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  importUsers(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ImportUsersMutationResult = NonNullable<Awaited<ReturnType<typeof importUsers>>>
+    export type ImportUsersMutationBody = ImportUsersRequest
+    export type ImportUsersMutationError = ErrorEnvelope
+    export type ImportUsersMutationVariables = {data: ImportUsersRequest}
+
+    /**
+ * @summary Import users
+ */
+export const useImportUsers = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof importUsers>>, TError,ImportUsersMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof importUsers>>,
+        TError,
+        ImportUsersMutationVariables,
+        TContext
+      > => {
+      return useMutation(getImportUsersMutationOptions(options), queryClient);
     }
 
 export const getGetUserUrl = (userId: string,) => {

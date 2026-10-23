@@ -1747,6 +1747,24 @@
         "decision": "journey"
       }
     },
+    "user import with a bcrypt hash": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a bulk import is a call of the admin API with a secret key, which a client SDK never holds. What a client observes of an imported user, signing in with the old password, is the ordinary password sign-in of the \"sign-in\" journey: a client cannot tell an imported hash from one the server made."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "a bulk import is a call of the admin API with a secret key, which an app never holds. What an app observes of an imported user, signing in with the old password, is the ordinary password sign-in of the \"sign-in\" journey: it cannot tell an imported hash from one the server made."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "a bulk import is a call of the admin API with a secret key; the Swift client talks to `/v1/client/*` only. Signing in with an old password is the ordinary password sign-in of the \"sign-in\" journey."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a bulk import is a call of the admin API with a secret key; the Kotlin client talks to `/v1/client/*` only. Signing in with an old password is the ordinary password sign-in of the \"sign-in\" journey."
+      }
+    },
     "verification code attempts": {
       "core": {
         "decision": "journey"

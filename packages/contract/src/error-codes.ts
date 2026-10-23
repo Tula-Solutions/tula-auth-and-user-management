@@ -90,6 +90,25 @@ export const ERROR_DEFINITIONS = {
     message: 'This account has no password yet. Use "forgot password" to set one.',
   },
 
+  // The reasons one row of a user import (`POST /v1/admin/users/import`, ADR 0066) is refused.
+  // They are reported per row, in the body of a 200, never as the request's own error.
+  'import.unsupported_algorithm': {
+    status: 422,
+    message: 'That password hash algorithm is not supported.',
+  },
+  'import.hash_malformed': {
+    status: 422,
+    message: 'That password hash is malformed.',
+  },
+  'import.hash_parameters_too_weak': {
+    status: 422,
+    message: 'That password hash is too weak to import.',
+  },
+  'import.hash_parameters_too_costly': {
+    status: 422,
+    message: 'That password hash is too costly to verify.',
+  },
+
   'verification.invalid_code': { status: 422, message: 'That code is incorrect.' },
   'verification.expired': { status: 410, message: 'That code has expired. Request a new one.' },
   'verification.too_many_attempts': {

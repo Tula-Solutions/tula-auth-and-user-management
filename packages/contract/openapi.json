@@ -233,6 +233,90 @@
         ],
         "description": "A user account was created."
       },
+      "UserImportedEventData": {
+        "type": "object",
+        "properties": {
+          "emailVerified": {
+            "type": "boolean"
+          },
+          "passwordless": {
+            "type": "boolean"
+          },
+          "passwordAlgorithm": {
+            "type": "string",
+            "enum": [
+              "bcrypt",
+              "argon2id",
+              "argon2i"
+            ]
+          }
+        },
+        "required": [
+          "emailVerified"
+        ],
+        "description": "A user account was created by an import."
+      },
+      "UserImportedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "user.imported"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "user"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/UserImportedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "actor",
+          "target",
+          "data"
+        ],
+        "description": "A user account was created by an import."
+      },
       "UserEmailVerifiedEventData": {
         "type": "object",
         "properties": {},
@@ -2748,7 +2832,7 @@
           "eventTypes": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 59
+            "maximum": 60
           },
           "enabled": {
             "type": "boolean"
@@ -5060,6 +5144,9 @@
             "$ref": "#/components/schemas/UserCreatedEvent"
           },
           {
+            "$ref": "#/components/schemas/UserImportedEvent"
+          },
+          {
             "$ref": "#/components/schemas/UserEmailVerifiedEvent"
           },
           {
@@ -5597,6 +5684,10 @@
           "password.sequence",
           "password.reused",
           "password.not_set",
+          "import.unsupported_algorithm",
+          "import.hash_malformed",
+          "import.hash_parameters_too_weak",
+          "import.hash_parameters_too_costly",
           "verification.invalid_code",
           "verification.expired",
           "verification.too_many_attempts",
@@ -7717,6 +7808,208 @@
           "email"
         ]
       },
+      "ImportSkipReason": {
+        "type": "string",
+        "enum": [
+          "email_exists",
+          "repeated_in_batch"
+        ]
+      },
+      "ImportRowResult": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "index": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "status": {
+                "type": "string",
+                "const": "created"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "index",
+              "status",
+              "id"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "index": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "status": {
+                "type": "string",
+                "const": "skipped"
+              },
+              "reason": {
+                "$ref": "#/components/schemas/ImportSkipReason"
+              }
+            },
+            "required": [
+              "index",
+              "status",
+              "reason"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "index": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "status": {
+                "type": "string",
+                "const": "refused"
+              },
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "index",
+              "status",
+              "code",
+              "message"
+            ]
+          }
+        ]
+      },
+      "ImportUsersResult": {
+        "type": "object",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportRowResult"
+            }
+          },
+          "created": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "skipped": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "refused": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "results",
+          "created",
+          "skipped",
+          "refused"
+        ]
+      },
+      "ImportPassword": {
+        "type": "object",
+        "properties": {
+          "algorithm": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "hash": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "params": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 1024
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "algorithm",
+          "hash"
+        ]
+      },
+      "ImportUserRow": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 320
+          },
+          "emailVerified": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "metadata": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "additionalProperties": {}
+          },
+          "externalId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "password": {
+            "$ref": "#/components/schemas/ImportPassword"
+          }
+        },
+        "required": [
+          "email",
+          "emailVerified"
+        ]
+      },
+      "ImportUsersRequest": {
+        "type": "object",
+        "properties": {
+          "users": {
+            "minItems": 1,
+            "maxItems": 500,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportUserRow"
+            }
+          }
+        },
+        "required": [
+          "users"
+        ]
+      },
       "Passkey": {
         "type": "object",
         "properties": {
@@ -8181,6 +8474,7 @@
         "type": "string",
         "enum": [
           "user.created",
+          "user.imported",
           "user.email_verified",
           "user.banned",
           "user.unbanned",
@@ -10253,12 +10547,13 @@
           },
           "eventTypes": {
             "minItems": 1,
-            "maxItems": 59,
+            "maxItems": 60,
             "type": "array",
             "items": {
               "type": "string",
               "enum": [
                 "user.created",
+                "user.imported",
                 "user.email_verified",
                 "user.banned",
                 "user.unbanned",
@@ -10342,12 +10637,13 @@
           },
           "eventTypes": {
             "minItems": 1,
-            "maxItems": 59,
+            "maxItems": 60,
             "type": "array",
             "items": {
               "type": "string",
               "enum": [
                 "user.created",
+                "user.imported",
                 "user.email_verified",
                 "user.banned",
                 "user.unbanned",
@@ -10797,6 +11093,7 @@
             "type": "string",
             "enum": [
               "user.created",
+              "user.imported",
               "user.email_verified",
               "user.banned",
               "user.unbanned",
@@ -20865,6 +21162,136 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CreateUserRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/users/import": {
+      "post": {
+        "operationId": "importUsers",
+        "tags": [
+          "Users"
+        ],
+        "summary": "Import users",
+        "description": "Creates up to 500 users in one call, with the password hash they have in the system they come from (`bcrypt`, `argon2id` or `argon2i`). The call is not all-or-nothing: every row is created or not on its own, and the answer says what became of each: `created` (with the user’s id), `skipped` (the normalized email exists already, or an earlier row of the call has it) or `refused` (with a contract error code: an invalid email, a malformed hash, an algorithm that is not supported, parameters below the minimum or above the maximum). Importing the same file again creates nobody twice. An imported user signs in with their old password; the first successful sign-in replaces the hash with an argon2id one. Each user is recorded as `user.imported`, not `user.created`, so a migration does not fire a `user.created` delivery per user. A hash is never returned.",
+        "security": [
+          {
+            "secretKey": []
+          },
+          {
+            "dashboardSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What became of each row.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportUsersResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportUsersRequest"
               }
             }
           }

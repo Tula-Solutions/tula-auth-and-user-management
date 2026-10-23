@@ -79,6 +79,15 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
       test: true,
     },
   },
+  'user.imported': {
+    id: eventId(114),
+    type: 'user.imported',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutUser,
+    data: { emailVerified: true, passwordless: false, passwordAlgorithm: 'bcrypt' },
+  },
   'user.email_verified': {
     id: eventId(2),
     type: 'user.email_verified',

@@ -2,7 +2,7 @@ import { join, normalize } from 'node:path'
 import { FixedClock } from '../apps/api/src/adapters/memory/clock'
 import { MemoryRateLimiter } from '../apps/api/src/adapters/memory/rate-limiter'
 import { mockOAuthProviders } from '../apps/api/src/adapters/oauth/mock'
-import { createApp, MAX_BODY_BYTES } from '../apps/api/src/index'
+import { createApp, MAX_IMPORT_BODY_BYTES } from '../apps/api/src/index'
 import { sha256Hex } from '../apps/api/src/lib/crypto'
 import { findDashboardDir } from '../apps/api/src/lib/dashboard-files'
 import * as Audit from '../apps/api/src/modules/audit/service'
@@ -420,7 +420,7 @@ function testRoute(request: Request): Response | Promise<Response> | null {
 const api = Bun.serve({
   port: API_PORT,
   hostname: 'localhost',
-  maxRequestBodySize: MAX_BODY_BYTES,
+  maxRequestBodySize: MAX_IMPORT_BODY_BYTES,
   fetch: (request, server) => testRoute(request) ?? app.fetch(request, server),
 })
 
