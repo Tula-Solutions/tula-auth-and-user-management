@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { API_URL, latestCode, uniqueEmail, useSettings } from '../support'
+import { API_URL, advanceClock, latestCode, resetClock, uniqueEmail, useSettings } from '../support'
 import {
   dialog,
   ENVIRONMENT_ID,
@@ -107,6 +107,10 @@ test.beforeEach(async ({ page }) => {
 
 // Whatever a test (or its failure half-way) left, in the order the rules allow.
 test.afterEach(async ({ page }) => {
+  // A test may have moved the clock a year on; a session made then is dated in the future
+  // once it is back, so the clean-up signs in again.
+  await resetClock(page.request)
+  await signIn(page)
   // A test that failed while organizations were off still gets cleaned up after.
   await useSettings(page.request, ON)
   await clearOrganizations(page)
@@ -437,4 +441,54 @@ test('domains: claimed with an emailed code, switched to joining automatically a
   await expect(dialog(page).getByRole('heading')).toHaveText(`Remove the domain ${domain}?`)
   await dialog(page).getByRole('button', { name: 'Remove domain' }).click()
   await expect(page.getByText('No domains claimed')).toBeVisible()
+})
+
+test('domains: a verification that has lapsed says so, and a new code makes it hold again', async ({
+  page,
+}) => {
+  const domain = `lapse${Date.now()}.example.org`
+  const address = `admin@${domain}`
+  await makeOrganization(page, 'Northline Labs', 'northline-labs')
+  const [organization] = (await read<{ data: Row[] }>(page, '/v1/admin/organizations')).data
+  const path = `${ENVIRONMENT_PATH}/organizations/${organization?.id}`
+  const table = page.getByRole('table', { name: 'Domains of Northline Labs' })
+
+  async function claimAndVerify(heading: string) {
+    await dialog(page).getByLabel('Address on that domain').fill(address)
+    await dialog(page).getByRole('button', { name: 'Send code' }).click()
+    await expect(dialog(page).getByRole('heading')).toHaveText(`Verify ${domain}`)
+    await dialog(page)
+      .getByLabel('Code')
+      .fill(await latestCode(page.request, address))
+    await dialog(page).getByRole('button', { name: 'Verify domain' }).click()
+    await expect(page.getByText(heading)).toBeVisible()
+  }
+
+  await open(page, path, 'Northline Labs')
+  await page.getByRole('button', { name: 'Claim a domain' }).click()
+  await dialog(page).getByLabel('Domain', { exact: true }).fill(domain)
+  await claimAndVerify('Domain verified')
+  await expect(table).toContainText('Valid until')
+  await expect(table).not.toContainText('Needs re-verification')
+  await expectScreenAccessible(page, 'a verified domain with its date')
+
+  // A year and a day later the verification has lapsed (the fixture moves a day per call).
+  for (let day = 0; day < 366; day += 1) {
+    await advanceClock(page.request, 86_400_000)
+  }
+  await signIn(page)
+  await open(page, path, 'Northline Labs')
+  await expect(table).toContainText('Needs re-verification')
+  await expect(table).toContainText('joins nobody until you enter a new code')
+  await expectScreenAccessible(page, 'a domain that needs re-verification')
+
+  // A new code goes through the claim path; the mode is not asked, and entering it restores
+  // the domain.
+  await page.getByRole('button', { name: `Send a new code for ${domain}` }).click()
+  await expect(dialog(page).getByLabel('When someone verified signs up on it')).toHaveCount(0)
+  await expectScreenAccessible(page, 'send a new code for a lapsed domain')
+  await claimAndVerify('Domain verified')
+  await expect(table).not.toContainText('Needs re-verification')
+  await expect(table).toContainText('Valid until')
+  await expectScreenAccessible(page, 'a domain verified again')
 })

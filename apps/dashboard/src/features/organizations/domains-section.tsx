@@ -1,5 +1,8 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { ORGANIZATION_DOMAIN_MODES } from '@tula-tech/contract/organization-domain-rules'
+import {
+  DOMAIN_REMINDER_DAYS,
+  ORGANIZATION_DOMAIN_MODES,
+} from '@tula-tech/contract/organization-domain-rules'
 import { type FormEvent, useEffect, useState } from 'react'
 import { fieldErrorMap } from '~/api/errors'
 import {
@@ -18,6 +21,7 @@ import { Modal } from '~/components/modal'
 import { Section } from '~/components/page'
 import { EmptyState, QueryState } from '~/components/states'
 import { notify } from '~/components/toaster'
+import { Badge } from '~/components/ui/badge'
 import { WeakeningQuestion } from '~/features/hooks/hook-form'
 import { useEnvironment, useEnvironmentRequest } from '~/features/shell/environment-context'
 import { formatDateTime } from '~/lib/format'
@@ -37,7 +41,11 @@ function ClaimDialog({
 }: {
   organizationId: string
   organizationName: string
-  /** A pending claim to send a new code for; its domain and mode are the starting point. */
+  /**
+   * A claim to send a new code for; its domain and mode are the starting point. When it is
+   * verified already (current or lapsed) this proves it again: its mode and standing stay as
+   * they are until the code is entered, so the mode is not asked.
+   */
   claim: OrganizationDomain | null
   open: boolean
   onClose: () => void
@@ -55,6 +63,7 @@ function ClaimDialog({
   // pending by then and a second click would send a second code.
   const [saving, setSaving] = useState(false)
   const { reset } = start
+  const reverifying = claim?.verifiedAt != null
 
   useEffect(() => {
     if (open) {
@@ -105,8 +114,9 @@ function ClaimDialog({
     if (Object.keys(found).length > 0) {
       return
     }
-    // Joining automatically is a weakening: it is asked about before the code is sent.
-    if (mode === 'auto_join' && claim?.mode !== 'auto_join') {
+    // Joining automatically is a weakening: it is asked about before the code is sent. A
+    // re-verification changes no mode, so there is nothing to ask.
+    if (mode === 'auto_join' && !reverifying && claim?.mode !== 'auto_join') {
       setAsking(true)
       return
     }
@@ -140,7 +150,11 @@ function ClaimDialog({
       open={open}
       onClose={onClose}
       title={claim ? 'Send a new code' : 'Claim a domain'}
-      description='We email a six-digit code to an address on the domain. Until you enter it the claim grants nothing.'
+      description={
+        reverifying
+          ? 'We email a six-digit code to an address on the domain. Enter it to keep the domain verified for another year.'
+          : 'We email a six-digit code to an address on the domain. Until you enter it the claim grants nothing.'
+      }
     >
       <form onSubmit={submit} className='flex flex-col gap-4' noValidate>
         <TextField
@@ -165,18 +179,20 @@ function ClaimDialog({
           error={errors.email}
           hint='It must be on exactly that domain. The address is not kept.'
         />
-        <SelectField
-          label='When someone verified signs up on it'
-          value={mode}
-          onChange={(event) => setMode(event.target.value as Mode)}
-          error={errors.mode}
-        >
-          {ORGANIZATION_DOMAIN_MODES.map((entry) => (
-            <option key={entry} value={entry}>
-              {domainModeLabel(entry)}
-            </option>
-          ))}
-        </SelectField>
+        {reverifying ? null : (
+          <SelectField
+            label='When someone verified signs up on it'
+            value={mode}
+            onChange={(event) => setMode(event.target.value as Mode)}
+            error={errors.mode}
+          >
+            {ORGANIZATION_DOMAIN_MODES.map((entry) => (
+              <option key={entry} value={entry}>
+                {domainModeLabel(entry)}
+              </option>
+            ))}
+          </SelectField>
+        )}
         {general ? (
           <p role='alert' className='text-sm text-destructive'>
             {organizationMessageFor(start.error)}
@@ -290,6 +306,56 @@ function VerifyDialog({
   )
 }
 
+/** Days before its date at which a verified domain is said to need a new code soon. */
+const EXPIRING_SOON_DAYS = Math.max(...DOMAIN_REMINDER_DAYS)
+
+/**
+ * What a domain's standing is, in words: verified (and until when), needing re-verification
+ * (lapsed: it suggests and joins nobody), or waiting for its first code.
+ *
+ * @param props - The claim.
+ * @returns The status cell.
+ */
+function DomainStatus({ claim }: { claim: OrganizationDomain }) {
+  if (claim.status === 'needs_reverification') {
+    return (
+      <div className='flex flex-col gap-1'>
+        <Badge variant='outline' className='border-destructive text-destructive'>
+          Needs re-verification
+        </Badge>
+        <span>
+          {claim.expiresAt ? `Lapsed ${formatDateTime(claim.expiresAt)}. ` : ''}It suggests the
+          organization to nobody and joins nobody until you enter a new code.
+        </span>
+      </div>
+    )
+  }
+  if (claim.status === 'verified') {
+    const soon =
+      claim.expiresAt !== null &&
+      Date.parse(claim.expiresAt) - Date.now() <= EXPIRING_SOON_DAYS * 86_400_000
+    return (
+      <div className='flex flex-col gap-1'>
+        <Badge variant='outline'>Verified</Badge>
+        <span>
+          Verified {claim.verifiedAt ? formatDateTime(claim.verifiedAt) : ''}
+          {claim.expiresAt ? `. Valid until ${formatDateTime(claim.expiresAt)}` : ''}.
+          {soon ? ' Send a new code before then to keep it.' : ''}
+        </span>
+      </div>
+    )
+  }
+  return (
+    <div className='flex flex-col gap-1'>
+      <Badge variant='outline'>Waiting for the code</Badge>
+      <span>
+        {claim.codeExpiresAt ? `The code works until ${formatDateTime(claim.codeExpiresAt)}. ` : ''}
+        It grants nothing yet.
+      </span>
+    </div>
+  )
+}
+
 /** Props of {@link DomainsSection}. */
 export interface DomainsSectionProps {
   organizationId: string
@@ -397,25 +463,34 @@ export function DomainsSection({ organizationId, organizationName: typed }: Doma
                 },
                 {
                   header: 'Status',
-                  cell: (claim) =>
-                    claim.verifiedAt ? (
-                      <span>Verified {formatDateTime(claim.verifiedAt)}</span>
-                    ) : (
-                      <span>
-                        Waiting for the code
-                        {claim.codeExpiresAt
-                          ? `, which works until ${formatDateTime(claim.codeExpiresAt)}`
-                          : ''}
-                        . It grants nothing yet.
-                      </span>
-                    ),
+                  cell: (claim) => <DomainStatus claim={claim} />,
                 },
                 { header: 'Verified sign-ups', cell: (claim) => domainModeLabel(claim.mode) },
                 {
                   header: 'Actions',
                   cell: (claim) => (
                     <div className='flex flex-wrap gap-2'>
+                      {claim.verifiedAt && claim.codeExpiresAt ? (
+                        <ActionButton
+                          variant='outline'
+                          size='sm'
+                          aria-label={`Enter the code for ${printable(claim.domain)}`}
+                          onClick={() => setVerifying(claim)}
+                        >
+                          Enter code
+                        </ActionButton>
+                      ) : null}
                       {claim.verifiedAt ? (
+                        <ActionButton
+                          variant='outline'
+                          size='sm'
+                          aria-label={`Send a new code for ${printable(claim.domain)}`}
+                          onClick={() => setClaiming({ claim })}
+                        >
+                          Send a new code
+                        </ActionButton>
+                      ) : null}
+                      {claim.status === 'verified' ? (
                         <ActionButton
                           variant='outline'
                           size='sm'
@@ -432,7 +507,8 @@ export function DomainsSection({ organizationId, organizationName: typed }: Doma
                         >
                           {claim.mode === 'auto_join' ? 'Only suggest' : 'Join automatically'}
                         </ActionButton>
-                      ) : (
+                      ) : null}
+                      {claim.verifiedAt ? null : (
                         <ActionButton
                           variant='outline'
                           size='sm'

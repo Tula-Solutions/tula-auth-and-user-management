@@ -1095,6 +1095,73 @@ describe('domains', () => {
     expect(rows[1]?.textContent).toContain('grants nothing yet')
   })
 
+  test('a lapsed domain says it needs re-verification and that it matches nobody; a current one says until when', async () => {
+    start(`${DEV_PATH}/organizations/${ACME}`, {
+      api: arranged({
+        organizations: [acme],
+        domains: [
+          claim({ domain: 'acme.com' }),
+          claim({
+            domain: 'old.acme.com',
+            mode: 'auto_join',
+            verifiedAt: '2025-09-01T12:00:00.000Z',
+            expiresAt: '2026-09-01T12:00:00.000Z',
+          }),
+        ],
+      }),
+    })
+    const table = await screen.findByRole('table', { name: 'Domains of Acme Corp' })
+    const rows = within(table).getAllByRole('row').slice(1)
+    expect(rows[0]?.textContent).toContain('Valid until')
+    expect(rows[0]?.textContent).not.toContain('Needs re-verification')
+    expect(rows[1]?.textContent).toContain('Needs re-verification')
+    expect(rows[1]?.textContent).toContain('joins nobody until you enter a new code')
+    // A lapsed domain's mode cannot be switched; a new code is the way back.
+    expect(within(rows[1] as HTMLElement).queryByText('Only suggest')).toBeNull()
+    expect(
+      within(rows[1] as HTMLElement).getByRole('button', {
+        name: 'Send a new code for old.acme.com',
+      })
+    ).toBeTruthy()
+  })
+
+  test('a new code re-verifies a lapsed domain through the claim path, keeping its mode', async () => {
+    const { user, api } = start(`${DEV_PATH}/organizations/${ACME}`, {
+      api: arranged({
+        organizations: [acme],
+        domains: [
+          claim({
+            domain: 'acme.com',
+            mode: 'auto_join',
+            verifiedAt: '2025-09-01T12:00:00.000Z',
+            expiresAt: '2026-09-01T12:00:00.000Z',
+          }),
+        ],
+      }),
+    })
+    await user.click(await screen.findByRole('button', { name: 'Send a new code for acme.com' }))
+    // No mode is asked and no weakening is confirmed: nothing about the mode changes.
+    expect(within(dialog()).queryByLabelText('When someone verified signs up on it')).toBeNull()
+    await user.type(within(dialog()).getByLabelText('Address on that domain'), 'admin@acme.com')
+    await user.click(button('Send code'))
+    await screen.findByRole('heading', { name: 'Verify acme.com' })
+    expect(sent(api, 'POST', `/v1/admin/organizations/${ACME}/domains`)[0]?.body).toEqual({
+      domain: 'acme.com',
+      email: 'admin@acme.com',
+      mode: 'auto_join',
+    })
+    // Still lapsed until the code is entered.
+    expect(domainsOf(api)[0]?.expiresAt).toBe('2026-09-01T12:00:00.000Z')
+    await user.type(within(dialog()).getByLabelText('Code'), FAKE_DOMAIN_CODE)
+    await user.click(button('Verify domain'))
+    await screen.findByText('Domain verified')
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    const table = screen.getByRole('table', { name: 'Domains of Acme Corp' })
+    await waitFor(() => expect(table.textContent).not.toContain('Needs re-verification'))
+    expect(table.textContent).toContain('Valid until')
+    expect(domainsOf(api)[0]?.mode).toBe('auto_join')
+  })
+
   test('with none it says so', async () => {
     start(`${DEV_PATH}/organizations/${ACME}`, { api: arranged({ organizations: [acme] }) })
     await screen.findByText('No domains claimed')
