@@ -165,6 +165,10 @@ export function importable(parsed: ParsedExport): number {
 /**
  * Send the users, batch by batch, saving the progress file after every answer.
  *
+ * A batch that had to be sent again reports the users its first attempt made as duplicates; a
+ * duplicate that carries the row's own external id is counted as created then, and never
+ * otherwise (a user who was there before stays skipped).
+ *
  * @param context - The run.
  * @param parsed - The parsed export.
  * @param progress - The progress so far; changed in place.
@@ -190,11 +194,17 @@ export async function importUsers(
     const needsFirebase =
       parsed.firebaseScrypt !== undefined &&
       users.some((user) => user.password?.algorithm === 'firebase_scrypt')
-    const { data } = await withRetry(context, 'importing', () =>
-      context.admin.call('importUsers', {
+    let sends = 0
+    const { data } = await withRetry(context, 'importing', () => {
+      sends += 1
+      return context.admin.call('importUsers', {
         body: needsFirebase ? { users, firebaseScrypt: parsed.firebaseScrypt } : { users },
       })
-    )
+    })
+    // A batch sent again got no answer the first time, and the server may have made its users
+    // before the answer was lost. Its duplicates that carry this row's own external id are then
+    // the first attempt's work (ADR 0066, "A retried batch").
+    const retried = sends > 1
     if (data.results.length !== batch.length) {
       throw new UsageError(
         'The server answered a batch with a different number of results than rows sent. Nothing more was sent; the progress file is unchanged.'
@@ -211,7 +221,16 @@ export async function importUsers(
           setOwn(progress.userIds, entry.sourceId, result.id)
         }
       } else if (result.status === 'skipped') {
-        progress.counts.skipped += 1
+        // The existing user's id pairs a provider id with a Tula id without a lookup by
+        // address, whoever made the user. Rows repeated inside the batch carry none.
+        if (keepIds && entry.sourceId !== undefined && result.id !== undefined) {
+          setOwn(progress.userIds, entry.sourceId, result.id)
+        }
+        if (retried && result.sameExternalId === true) {
+          progress.counts.created += 1
+        } else {
+          progress.counts.skipped += 1
+        }
       } else {
         progress.counts.refused += 1
         progress.refused.push({

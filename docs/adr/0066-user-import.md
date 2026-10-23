@@ -43,7 +43,7 @@ externalId?, password? }`, and `password` is a tagged form `{ algorithm, hash, p
   hash) does not mark its address as seen, so a later corrected row for the same address in
   the same call is not called a repeat.
 - A failure of the store (not a refused row) answers 5xx for the call; the rows before it are
-  created and the retry reports them as skipped.
+  created and the retry reports them as skipped (with their ids: see "A retried batch").
 - **Name, metadata and external id.** A row's `name` is split at the first whitespace into
   `firstName` and `lastName` (each cut to the 100 characters the columns allow); users have
   no single name field. `metadata` (an object, at most 4 KiB as stored, which is the compact JSON plus about one byte per `:` and `,`, and at most 32 levels deep, judged iteratively before any stringify; `validation.failed`
@@ -287,3 +287,37 @@ machine and calls `importUsers` and, for Clerk's organizations, `createOrganizat
   is sent again, as is a request with no answer or a `5xx`, six tries in all.
 - **Organizations** are identified by slug (an existing one is used) and members by user id, found
   from the id created in this run or by the user's address.
+
+## Amendment: a retried batch (TULA-126)
+
+A batch whose answer is lost may have been committed. The retry then finds every address taken
+and reported them all as `skipped`, so `tula import` counted created users as skipped, and a
+Clerk member whose user was made by the lost attempt had no recorded id and fell back to a
+lookup by address.
+
+- **Decision: the duplicate answers with the existing user** (option a). A `skipped` result with
+  `reason: 'email_exists'` gains two optional fields: `id` (the existing user's id) and
+  `sameExternalId` (whether that user's stored `externalId` equals the row's; `false` when either
+  side has none). `repeated_in_batch` carries neither. The change is additive.
+- **Why not an idempotency key per batch** (option b). It needs a new short-lived table with a
+  retention purge (or Redis), a key to generate and persist in the progress file, a policy for a
+  key reused with another body, and it still would not cover a run killed between the commit
+  and the saved progress. Reading the outcome from the data itself needs none of that, and the
+  rows are idempotent by address already.
+- **Security.** The administrator sent the address and can already list users by it, so an id is
+  nothing new. `sameExternalId` is one bit about a value the administrator also sent. Nothing
+  else of the user is returned (no email, name, metadata, or the stored `externalId` itself),
+  the read is one store method (`findImportMatch`) scoped to the environment, and the route stays
+  behind `secretKey()`. A user who vanishes between the failed insert and the read is skipped
+  without an id.
+- **The client's rule** (`packages/cli/src/import/run.ts`). Every duplicate with an `id` records
+  the pairing of a provider id to a Tula id (no lookup by address later). Only in a batch that
+  was **sent again after a failed attempt in this run**, a duplicate with `sameExternalId: true`
+  counts as created; anywhere else it stays skipped, because outside a retry the user was
+  there before this run. Every parser sets `externalId` to the provider's user id.
+- **Residual.** A run killed after the server committed a batch and before the progress file was
+  saved resumes by sending that batch as a first attempt, so its users count as skipped. Their
+  ids are still recorded. A retried duplicate with the same external id may also have been
+  imported by an earlier run, not the lost attempt; either way the row's user is already
+  imported, and the count says created. A server that predates this amendment sends no ids and
+  the client behaves as before.

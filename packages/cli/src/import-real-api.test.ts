@@ -87,6 +87,8 @@ async function tula(
   args: string[],
   options: {
     intercept?: (method: string, path: string, call: number) => Response | undefined
+    /** Let the API handle the request, commit it, and lose the answer (the call that fails). */
+    lose?: (method: string, path: string, call: number) => boolean
     env?: Record<string, string>
   } = {}
 ): Promise<Run> {
@@ -101,7 +103,15 @@ async function tula(
     requests.push(`${method} ${path}`)
     const call = (counts.get(`${method} ${path}`) ?? 0) + 1
     counts.set(`${method} ${path}`, call)
-    return options.intercept?.(method, path, call) ?? app.request(url, init)
+    const replaced = options.intercept?.(method, path, call)
+    if (replaced) {
+      return replaced
+    }
+    const answer = await app.request(url, init)
+    if (options.lose?.(method, path, call)) {
+      throw new Error('socket hang up')
+    }
+    return answer
   }
   // The real host, with waiting replaced by moving the API's own clock: the rate limiter's
   // window passes without the test sleeping for a minute.
@@ -338,6 +348,65 @@ describe('tula import against the real API', () => {
     expect(second.requests).toEqual(['POST /v1/admin/users/import'])
     expect(await users()).toHaveLength(6)
     expect(second.stdout).toContain('Users created:            6')
+  })
+
+  test('a lost answer after the server committed the batch: the retry counts those users as created', async () => {
+    await put(
+      'many.json',
+      JSON.stringify([
+        { id: 'u0', email: 'u0@example.test' },
+        { id: 'u1', email: 'u1@example.test' },
+        { id: 'u2', email: 'u2@example.test' },
+      ])
+    )
+    const run = await tula(['import', '--from', 'supabase', 'many.json', '--yes'], {
+      lose: (method, path, call) =>
+        method === 'POST' && path === '/v1/admin/users/import' && call === 1,
+    })
+    expect(run.code).toBe(0)
+    expect(
+      run.requests.filter((request) => request === 'POST /v1/admin/users/import')
+    ).toHaveLength(2)
+    expect(run.stderr).toContain('The server did not answer (no response)')
+    expect(run.stdout).toContain('Users created:            3')
+    expect(run.stdout).toContain('Users skipped:            0')
+    expect(await progress('many.json')).toMatchObject({ counts: { created: 3, skipped: 0 } })
+    expect(await users()).toHaveLength(3)
+  })
+
+  test('Clerk after a lost answer: members are paired by the recorded ids, not by address', async () => {
+    deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+      revision: 1,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        organizations: { ...DEFAULT_ENVIRONMENT_SETTINGS.organizations, enabled: true },
+      },
+    })
+    await put('users.csv', fixture('clerk-users.csv'))
+    await put('orgs.json', fixture('clerk-organizations.json'))
+    await put('members.json', fixture('clerk-memberships.json'))
+    const run = await tula(
+      [
+        'import',
+        '--from',
+        'clerk',
+        'users.csv',
+        '--yes',
+        '--organizations',
+        'orgs.json',
+        '--memberships',
+        'members.json',
+      ],
+      {
+        lose: (method, path, call) =>
+          method === 'POST' && path === '/v1/admin/users/import' && call === 1,
+      }
+    )
+    // The file repeats one address: that row is skipped by the server, the other three are new.
+    expect(run.stdout).toContain('Users created:            3')
+    expect(run.stdout).toContain('Users skipped:            1')
+    expect(run.stdout).toContain('Memberships:              3 added, 0 already members, 1 failed')
+    expect(run.requests.filter((request) => request.startsWith('GET /v1/admin/users'))).toEqual([])
   })
 
   test('Clerk: users, organizations and memberships through the admin routes', async () => {

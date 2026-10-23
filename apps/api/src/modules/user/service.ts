@@ -377,7 +377,8 @@ function refusal(index: number, code: ErrorCode): ImportRowResult {
  * stop the rest, and the answer says what became of every row. A row is atomic: the user, their
  * identity, their credential and their `user.imported` audit entry are written together or
  * not at all. Running the same call again is safe: rows already imported are reported as
- * skipped, which makes a resumed import idempotent by normalized email.
+ * skipped (with the existing user's id), which makes a resumed import idempotent by normalized
+ * email.
  *
  * A row's password hash is parsed and judged ({@link Foreign.prepare}) and then stored, as
  * given or in the normal form of its algorithm (a Firebase hash with its sealed parameters).
@@ -493,9 +494,23 @@ async function importRow(
   }
   // Taken in either case from here on, whether this row made the user or found them there.
   seen.add(parsed.normalized)
-  return created
-    ? { index, status: 'created', id }
-    : { index, status: 'skipped', reason: 'email_exists' }
+  if (created) {
+    return { index, status: 'created', id }
+  }
+  // The address is taken: say whose it is, so a retried batch can tell its own users from
+  // ones that were there before (ADR 0066, "A retried batch"). An id and a yes or no, nothing
+  // else of the user; the administrator named the address and can list users anyway.
+  const existing = await deps.users.findImportMatch(scope.environmentId, parsed.normalized)
+  if (existing === null) {
+    return { index, status: 'skipped', reason: 'email_exists' }
+  }
+  return {
+    index,
+    status: 'skipped',
+    reason: 'email_exists',
+    id: existing.id,
+    sameExternalId: row.externalId !== undefined && existing.externalId === row.externalId,
+  }
 }
 
 type RevocationDeps = Pick<Deps, 'users' | 'sessions' | 'revokedSessions' | 'clock' | 'ids'>

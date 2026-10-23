@@ -163,6 +163,23 @@ export class PostgresUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
+  async findImportMatch(
+    environmentId: string,
+    emailNormalized: string
+  ): Promise<{ id: string; externalId: string | null } | null> {
+    const [row] = await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .select({ id: users.id, externalId: users.externalId })
+        .from(users)
+        .where(
+          and(eq(users.emailNormalized, emailNormalized), eq(users.environmentId, environmentId))
+        )
+        .limit(1)
+    )
+    return row ?? null
+  }
+
+  /** @inheritdoc */
   async create(user: NewUser, recorded: Recorded): Promise<boolean> {
     const activity = activityOf(recorded)
     const { identityId, credentialId, passwordHash, oauthIdentity, ...record } = user

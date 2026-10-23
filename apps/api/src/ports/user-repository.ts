@@ -276,6 +276,20 @@ export interface UserRepository {
   findByEmail(environmentId: string, emailNormalized: string): Promise<UserRecord | null>
 
   /**
+   * The id and import `externalId` of the user with this address, for an import that found
+   * the address taken (ADR 0066, "A retried batch"). Nothing else of the user is read.
+   *
+   * @param environmentId - The environment to look in.
+   * @param emailNormalized - Normalized email.
+   * @returns The user's id and external id (`null` when none was stored), or `null` when no
+   *   user has the address.
+   */
+  findImportMatch(
+    environmentId: string,
+    emailNormalized: string
+  ): Promise<{ id: string; externalId: string | null } | null>
+
+  /**
    * Look a user up for sign-in, with their password hash, in a single query, so known and
    * unknown emails cost the same round trip.
    *
