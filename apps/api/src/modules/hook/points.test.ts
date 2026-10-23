@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from 'bun:test'
 import {
+  HOOK_MAX_DEADLINE_MS,
   HOOK_QUESTION_SCHEMAS,
   RESERVED_CLAIM_NAMES,
   signWebhook,
@@ -20,7 +21,16 @@ import { createTestDeps, TEST_ACTOR, TEST_TENANT, type TestDeps } from '~/testin
 // The two later points (ADR 0035, "Hooks before a session and before a token"), asked directly:
 // what is sent, what an answer may be, and what a failure does. Where the flow and the session
 // service ask them is `session.test.ts`. The receiver is a listener in this process, reached
-// through the real outbound guard; every hook has the shortest deadline there is.
+// through the real outbound guard. A deadline is real time, so a hook has the longest one there
+// is and is never what a test waits on: a request to a listener in this process took more than
+// 100 ms on a machine under load (TULA-133). Only a hook meant to run out of time
+// (`SHORT_DEADLINE_MS`) gets a short one, and it fails the same way at any speed: its answer
+// never comes.
+
+/** The longest deadline a hook may have. */
+const ANSWER_DEADLINE_MS = HOOK_MAX_DEADLINE_MS
+/** The shortest deadline a hook may have, for the tests that need one to run out. */
+const SHORT_DEADLINE_MS = 100
 
 const tenant: Tenant = {
   projectId: TEST_TENANT.projectId,
@@ -65,6 +75,10 @@ const raw =
   () =>
     new Response(text, { status, headers: { 'content-type': 'application/json' } })
 const hang = () => new Promise<Response>(() => undefined)
+
+/** Only a hook that is meant to run out of time gets a short deadline. */
+const deadlineFor = (reason: string) =>
+  reason === 'timeout' ? SHORT_DEADLINE_MS : ANSWER_DEADLINE_MS
 
 let deps: TestDeps
 let spies: Mock<(...args: never[]) => unknown>[] = []
@@ -111,7 +125,7 @@ function register(
       point,
       url: `http://127.0.0.1:${listener.port}/tula/${point}`,
       enabled: true,
-      deadlineMs: 100,
+      deadlineMs: ANSWER_DEADLINE_MS,
       failureMode: 'deny',
       ...input,
     },
@@ -274,7 +288,7 @@ describe('asking before a session', () => {
 
   describe.each(bad)('%s', (_name, responder, reason) => {
     test('refuses the sign-in by default, as unavailable and not as denied', async () => {
-      const { id } = await register('before_session')
+      const { id } = await register('before_session', { deadlineMs: deadlineFor(reason) })
       respond = responder
       const error = await failure(askSession())
       expect(error.code).toBe('hook.unavailable')
@@ -287,7 +301,10 @@ describe('asking before a session', () => {
     })
 
     test('lets it through, and says so, when the hook allows on failure', async () => {
-      const { id } = await register('before_session', { failureMode: 'allow' })
+      const { id } = await register('before_session', {
+        failureMode: 'allow',
+        deadlineMs: deadlineFor(reason),
+      })
       respond = responder
       expect(await askSession()).toBe('bypassed')
       expect((await stored(id)).lastFailureReason).toBe(reason as HookRecord['lastFailureReason'])
@@ -295,12 +312,13 @@ describe('asking before a session', () => {
   })
 
   test('a hook that hangs refuses in bounded time', async () => {
-    await register('before_session')
+    await register('before_session', { deadlineMs: SHORT_DEADLINE_MS })
     respond = hang
     const started = performance.now()
     expect((await failure(askSession())).code).toBe('hook.unavailable')
-    // A deadline of 100 ms: well inside a second and a half even on a slow runner.
-    expect(performance.now() - started).toBeLessThan(1500)
+    // The one wall-clock assertion, with a wide margin on purpose: the call must end at the
+    // hook's 100 ms deadline and not at the 5 s cap. 4 s is far past any load and short of 5.
+    expect(performance.now() - started).toBeLessThan(ANSWER_DEADLINE_MS - 1000)
   })
 
   test('calls are counted in the point’s own bucket, and one over the cap is refused without a call', async () => {
@@ -496,7 +514,7 @@ describe('asking before a token', () => {
 
   describe.each(bad)('%s', (_name, responder, reason) => {
     test('fails the call by default: unavailable, and no claim of it is returned', async () => {
-      const { id } = await register('before_token')
+      const { id } = await register('before_token', { deadlineMs: deadlineFor(reason) })
       respond = responder
       const error = await failure(askToken())
       expect(error.code).toBe('hook.unavailable')
@@ -509,7 +527,10 @@ describe('asking before a token', () => {
     })
 
     test('gives no claims at all, and says so, when the hook allows on failure', async () => {
-      const { id } = await register('before_token', { failureMode: 'allow' })
+      const { id } = await register('before_token', {
+        failureMode: 'allow',
+        deadlineMs: deadlineFor(reason),
+      })
       respond = responder
       expect(await askToken()).toEqual({ claims: null, asked: true, bypassed: true })
       expect((await stored(id)).lastFailureReason).toBe(reason as HookRecord['lastFailureReason'])
@@ -544,11 +565,12 @@ describe('asking before a token', () => {
   })
 
   test('a hook that hangs fails in bounded time', async () => {
-    await register('before_token')
+    await register('before_token', { deadlineMs: SHORT_DEADLINE_MS })
     respond = hang
     const started = performance.now()
     expect((await failure(askToken())).code).toBe('hook.unavailable')
-    expect(performance.now() - started).toBeLessThan(1500)
+    // As for a session: ends at the 100 ms deadline, not the 5 s cap; 4 s is a wide margin.
+    expect(performance.now() - started).toBeLessThan(ANSWER_DEADLINE_MS - 1000)
   })
 
   test('the deadline is the hook’s, never more than five seconds, and the answer’s cap is the claims’', async () => {
