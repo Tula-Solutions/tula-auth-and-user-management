@@ -821,6 +821,47 @@ describe('time and cancellation', () => {
     ])
   })
 
+  describe('a hook that is slow to answer', () => {
+    /** A run whose `before_sign_up` hook is held until `release()`; the limits are the test's. */
+    async function runWithHeldHook() {
+      const held = gate()
+      respond = {
+        ...respond,
+        before_sign_up: async () => {
+          held.enter()
+          await held.released
+          return allow()
+        },
+      }
+      await hook('before_sign_up')
+      const timers = manualTimers()
+      const running = run({
+        limits: { stepMs: STEP_MS, hookMs: HOOK_MAX_DEADLINE_MS, cleanupMs: CLEANUP_MS },
+        after: timers.after,
+      })
+      await held.entered
+      return { held, timers, running }
+    }
+
+    test('the step waits for it: its limit has not gone off, so the run passes once it answers', async () => {
+      const { held, running } = await runWithHeldHook()
+      held.release()
+      const result = await running
+      expect(outcomes(result)).toEqual(ALL_PASSED)
+    })
+
+    test('the step is left at its limit, which covers its hooks, when that goes off', async () => {
+      const { held, timers, running } = await runWithHeldHook()
+      // The verification asks three hooks, so its limit is its own time and three waits.
+      expect(timers.fire(STEP_MS + 3 * HOOK_MAX_DEADLINE_MS)).toBe(1)
+      await timers.registered(CLEANUP_MS)
+      held.release()
+      const result = await running
+      expect(outcomes(result)).toMatchObject({ verify_email: 'timeout' })
+      expect(result.outcome).toBe('failed')
+    })
+  })
+
   test('the limits add up: every step covers its hooks with headroom, and a run answers inside the minute', () => {
     const { SIGN_IN_TEST_HOOKS_ASKED: hooks, stepLimitMs } = SignInTests
     expect(SignInTests.SIGN_IN_TEST_HOOK_MS).toBe(HOOK_MAX_DEADLINE_MS)

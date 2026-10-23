@@ -774,6 +774,9 @@ describe('recent outcomes', () => {
     await failure(ask())
     deps.clock.advance('1m')
     respond = () => new Promise(() => undefined)
+    // The one call meant to run out of time: shortened only now, so that the others, which
+    // are answered, keep the longest deadline.
+    await Hooks.update(deps, tenant, id, { deadlineMs: SHORT_DEADLINE_MS }, TEST_ACTOR)
     await failure(ask())
     expect(await outcomes(id)).toMatchObject({
       allowed: 2,
