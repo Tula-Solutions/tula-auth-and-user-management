@@ -8,11 +8,30 @@ import {
 } from '@tula-tech/contract'
 import { type FakeHookState, hookRoutes } from './fake-hooks'
 import { type FakeNativeAppState, nativeAppRoutes } from './fake-native-apps'
+import {
+  dropMembershipsOf,
+  type FakeOrganizationState,
+  lastManagerOrganizationIds,
+  organizationRoutes,
+} from './fake-organizations'
 import { type FakeProposalState, proposalRoutes } from './fake-proposals'
 import { type FakeWebhookState, webhookRoutes } from './fake-webhooks'
 
 export { type FakeHook, fakeHook } from './fake-hooks'
 export { type FakeNativeApp, fakeAndroidApp, fakeIosApp } from './fake-native-apps'
+export {
+  FAKE_DOMAIN_CODE,
+  type FakeDomain,
+  type FakeInvitation,
+  type FakeMembership,
+  type FakeOrganization,
+  type FakeRole,
+  fakeDomain,
+  fakeInvitation,
+  fakeMembership,
+  fakeOrganization,
+  fakeRole,
+} from './fake-organizations'
 export { FAKE_AGENT_KEY_ID, type FakeProposal, fakeProposal } from './fake-proposals'
 
 export {
@@ -216,6 +235,7 @@ export interface FakeState
   extends FakeWebhookState,
     FakeHookState,
     FakeNativeAppState,
+    FakeOrganizationState,
     FakeProposalState {
   /** Whether `TULA_ADMIN_TOKEN` is set (the instance routes exist). */
   adminToken: boolean
@@ -364,6 +384,11 @@ function initialState(): FakeState {
     hooks: [],
     hookNow: NOW,
     nativeApps: [],
+    organizations: [],
+    memberships: [],
+    roles: [],
+    invitations: [],
+    domains: [],
     proposals: [],
     proposalNow: NOW,
     webhookWorkerSeparate: false,
@@ -561,8 +586,24 @@ export function installFakeApi() {
     [
       'DELETE',
       /^\/v1\/admin\/users\/([^/]+)$/,
-      (_call, match) => {
+      (call, match) => {
+        // The user who is the only manager of an organization is not deleted (ADR 0065).
+        const stranded = lastManagerOrganizationIds(
+          state,
+          call.headers.get('x-tula-environment') ?? '',
+          match[1] as string
+        )
+        if (stranded.length > 0) {
+          return failure(
+            409,
+            'user.last_organization_manager',
+            'This user is the only manager of an organization.',
+            undefined,
+            { organizationIds: stranded.join(','), count: stranded.length }
+          )
+        }
         state.users = state.users.filter((user) => user.id !== match[1])
+        dropMembershipsOf(state, match[1] as string)
         return new Response(null, { status: 204 })
       },
     ],
@@ -686,6 +727,11 @@ export function installFakeApi() {
     ...webhookRoutes(state),
     ...hookRoutes(state),
     ...nativeAppRoutes(state),
+    ...organizationRoutes(state, {
+      enabled: () => state.settings.settings.organizations?.enabled ?? false,
+      redirectUrls: () => state.settings.settings.urls.allowedRedirectUrls,
+      userExists: (userId) => state.users.some((user) => user.id === userId),
+    }),
     ...proposalRoutes(state),
     ['GET', /^\/v1\/admin\/settings$/, () => structuredClone(state.settings)],
     [

@@ -11,7 +11,11 @@ export {
   OrganizationSchema,
   UpdateOrganizationMemberRequestSchema,
   UpdateOrganizationRequestSchema,
+  UserMembershipListSchema,
 } from '@tula-tech/contract'
+
+/** Path parameter naming the user whose memberships an administrator reads. */
+export const UserIdParamSchema = z.object({ userId: z.uuid() })
 
 /** Path parameter naming one organization. */
 export const OrganizationIdParamSchema = z.object({ id: z.uuid() })

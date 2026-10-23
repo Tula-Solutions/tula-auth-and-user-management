@@ -1,8 +1,10 @@
 import type { LucideIcon } from 'lucide-react'
 import {
   Bot,
+  Building2,
   FileKey2,
   KeyRound,
+  ListChecks,
   LogIn,
   Mail,
   MessageCircleQuestionMark,
@@ -10,6 +12,7 @@ import {
   ScrollText,
   Settings,
   ShieldCheck,
+  SlidersHorizontal,
   Smartphone,
   Timer,
   Users,
@@ -25,6 +28,9 @@ export interface EnvironmentSection {
   segment: string
   to:
     | '/w/$workspaceId/p/$projectId/e/$environmentId/users'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/organizations'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/roles'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/organization-settings'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/sign-in-methods'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/password-policy'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/sessions'
@@ -45,6 +51,19 @@ export interface EnvironmentSection {
 /** The screens of an environment, in navigation order. */
 export const ENVIRONMENT_SECTIONS: readonly EnvironmentSection[] = [
   { segment: 'users', to: `${ENVIRONMENT_PATH}/users`, label: 'Users', icon: Users },
+  {
+    segment: 'organizations',
+    to: `${ENVIRONMENT_PATH}/organizations`,
+    label: 'Organizations',
+    icon: Building2,
+  },
+  { segment: 'roles', to: `${ENVIRONMENT_PATH}/roles`, label: 'Roles', icon: ListChecks },
+  {
+    segment: 'organization-settings',
+    to: `${ENVIRONMENT_PATH}/organization-settings`,
+    label: 'Organization settings',
+    icon: SlidersHorizontal,
+  },
   {
     segment: 'sign-in-methods',
     to: `${ENVIRONMENT_PATH}/sign-in-methods`,
