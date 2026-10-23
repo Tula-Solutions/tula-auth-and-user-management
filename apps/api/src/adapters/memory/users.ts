@@ -732,13 +732,13 @@ export class MemoryUserRepository implements UserRepository {
           user.createdAt.getTime() < before.getTime()
       )
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || (a.id < b.id ? -1 : 1))
-      .slice(0, Math.max(0, limit))
-    // A test user who is the only manager of an organization is left for a later round.
+    // A test user who is the only manager of an organization is left for a later round, and
+    // the pick goes on past them (TULA-124).
     const blocked = this.#blockedBy(
       environmentId,
       old.map((user) => user.id)
     )
-    const deletable = old.filter((user) => !blocked.has(user.id))
+    const deletable = old.filter((user) => !blocked.has(user.id)).slice(0, Math.max(0, limit))
     for (const user of deletable) {
       await this.delete(environmentId, user.id, record(user.id))
     }

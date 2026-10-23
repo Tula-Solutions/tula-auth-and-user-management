@@ -28,6 +28,7 @@ import {
   like,
   lt,
   ne,
+  notInArray,
   or,
   type SQL,
   sql,
@@ -1124,25 +1125,35 @@ export class PostgresUserRepository implements UserRepository {
     )
     return withTenant(this.db, environmentId, async (tx) => {
       // DELETE has no LIMIT in Postgres: the batch is picked first, oldest first, and a row
-      // a test's own deletion holds is passed over rather than waited for.
-      const batch = await tx
-        .select({ id: users.id })
-        .from(users)
-        .where(marked)
-        .orderBy(asc(users.createdAt), asc(users.id))
-        .limit(Math.max(0, limit))
-        .for('update', { skipLocked: true })
-      if (batch.length === 0) {
-        return 0
+      // a test's own deletion holds is passed over rather than waited for. A test user who is
+      // the only manager of an organization is left for a later round, as a user's deletion
+      // would refuse them (TULA-124); the pick goes on past such users, so that `limit` of them
+      // at the head of the order cannot keep the rest from ever being reached.
+      const seen: string[] = []
+      const deletable: Array<{ id: string }> = []
+      while (deletable.length < limit) {
+        const want = limit - deletable.length
+        const batch = await tx
+          .select({ id: users.id })
+          .from(users)
+          .where(seen.length > 0 ? and(marked, notInArray(users.id, seen)) : marked)
+          .orderBy(asc(users.createdAt), asc(users.id))
+          .limit(want)
+          .for('update', { skipLocked: true })
+        if (batch.length === 0) {
+          break
+        }
+        const blocked = await findBlocked(
+          tx,
+          environmentId,
+          batch.map((row) => row.id)
+        )
+        seen.push(...batch.map((row) => row.id))
+        deletable.push(...batch.filter((row) => !blocked.has(row.id)))
+        if (batch.length < want) {
+          break
+        }
       }
-      // A test user who is the only manager of an organization is left for a later round, as
-      // a user's deletion would refuse them (TULA-124); nothing here empties an organization.
-      const blocked = await findBlocked(
-        tx,
-        environmentId,
-        batch.map((row) => row.id)
-      )
-      const deletable = batch.filter((row) => !blocked.has(row.id))
       if (deletable.length === 0) {
         return 0
       }

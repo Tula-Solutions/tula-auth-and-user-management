@@ -227,7 +227,7 @@ router.delete(
       'Ends the user’s sessions and deletes them with everything they own. Refused with ' +
       '`user.last_organization_manager` (409, `params.organizationIds`) while they are the ' +
       'only member who holds `org:sys:memberships:manage` of an organization: add another ' +
-      'manager or delete the organization first. Nothing is changed then.',
+      'manager or delete the organization first. No user data is deleted then.',
     security: openapi.security.admin,
     responses: {
       204: { description: 'The user was deleted.' },

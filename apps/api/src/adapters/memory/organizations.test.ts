@@ -45,8 +45,8 @@ describeOrganizationStore('Memory', async () => {
         .map((entry) => entry.type),
     user: (of) => makeUser(of),
     testUser: (of) => makeUser(of, true),
-    purgeTestUsers: (of) =>
-      users.deleteTestUsersBefore(of.environmentId, new Date(), 100, (userId) =>
+    purgeTestUsers: (of, limit = 100) =>
+      users.deleteTestUsersBefore(of.environmentId, new Date(), limit, (userId) =>
         userDeletion(of, userId)
       ),
     deleteUser: (of, userId) => users.delete(of.environmentId, userId, Audit.none('fixture')),

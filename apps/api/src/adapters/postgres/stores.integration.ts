@@ -221,11 +221,11 @@ describeOrganizationStore('Postgres on a real server', async () => {
       )
       return id
     },
-    purgeTestUsers: (tenant) =>
+    purgeTestUsers: (tenant, limit = 100) =>
       new PostgresUserRepository(db).deleteTestUsersBefore(
         tenant.environmentId,
         new Date(Date.now() + 60_000),
-        100,
+        limit,
         (userId) => userDeletion(tenant, userId)
       ),
     a: { projectId: a.projectId, environmentId: a.environmentId },

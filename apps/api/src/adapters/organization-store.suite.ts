@@ -35,7 +35,7 @@ export interface OrganizationSuiteContext {
    * Run the retention job's purge of sign-in test users over a tenant, as if every one were old
    * enough, and return how many were deleted.
    */
-  purgeTestUsers: (tenant: OrganizationSuiteTenant) => Promise<number>
+  purgeTestUsers: (tenant: OrganizationSuiteTenant, limit?: number) => Promise<number>
   a: OrganizationSuiteTenant
   b: OrganizationSuiteTenant
 }
@@ -795,6 +795,18 @@ export function describeOrganizationStore(
       await join(ctx.a, record, admin)
       expect(await ctx.purgeTestUsers(ctx.a)).toBe(1)
       expect(await ctx.deleteUser(ctx.a, loner)).toEqual({ outcome: 'not_found' })
+    })
+
+    test('the purge reaches past test users it must leave, so they cannot starve the rest', async () => {
+      const { admin } = await builtIns(ctx.a)
+      for (const slug of ['one', 'two']) {
+        const record = await stored(organization(ctx.a, { slug }))
+        await join(ctx.a, record, admin, { userId: await ctx.testUser(ctx.a) })
+      }
+      const free = await ctx.testUser(ctx.a)
+      // The batch is two: both places go to users that stay, and the free one is still reached.
+      expect(await ctx.purgeTestUsers(ctx.a, 2)).toBe(1)
+      expect(await ctx.deleteUser(ctx.a, free)).toEqual({ outcome: 'not_found' })
     })
 
     test('of the deletion of one manager and the demotion of the other at once exactly one is made', async () => {
