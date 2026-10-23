@@ -1391,17 +1391,18 @@ export interface TulaClient {
   readonly organizations: {
     /**
      * The organizations the user belongs to, with their role and its permission keys in each,
-     * and the session's active organization. Only the first page the API answers: the client
-     * sends no paging query yet.
+     * and the session's active organization, one page at a time (the first, 20 of them, without
+     * a query). `meta.totalPages` says whether there is a next page.
      *
+     * @param query - The page to read (1-based, default 1) and its `size` (1 to 100, default 20).
      * @returns The page; `activeOrganizationId` is `null` for the personal account.
      * @throws TulaError `auth.unauthenticated` when signed out, `organization.disabled`.
      * @example
      * ```ts
-     * const { data, activeOrganizationId } = await tula.organizations.list()
+     * const { data, meta, activeOrganizationId } = await tula.organizations.list({ page: 2 })
      * ```
      */
-    list(): Promise<UserOrganizationList>
+    list(query?: { page?: number; size?: number }): Promise<UserOrganizationList>
     /**
      * Create an organization the user owns (it holds the environment's `creatorRole`). The
      * session does not switch to it: call `setActive`.

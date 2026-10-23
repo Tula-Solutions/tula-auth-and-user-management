@@ -29,27 +29,12 @@ import { organizationMessageFor, slugFromName } from './words'
 /** How many organizations one page of the table holds. */
 export const ORGANIZATIONS_PAGE_SIZE = 20
 
-/** How many one page holds while a search is typed: the API's largest page. */
-export const ORGANIZATIONS_SEARCH_PAGE_SIZE = 100
-
 /**
- * Whether an organization matches what was typed in the search.
- *
- * The API lists organizations a page at a time and has no search of its own, so the screen
- * looks through the page it holds: case-insensitive, in the name and the slug.
- *
- * @param organization - An organization of the page.
- * @param q - The search text; empty matches everything.
- * @returns True when the name or slug contains the text.
+ * How long the search waits after the last key before it asks the API, in milliseconds. Each
+ * request is a count and a page over the whole environment, and a word typed is not a word
+ * until its last letter.
  */
-export function matchesSearch(organization: Pick<Organization, 'name' | 'slug'>, q: string) {
-  const needle = q.trim().toLowerCase()
-  return (
-    needle === '' ||
-    organization.name.toLowerCase().includes(needle) ||
-    organization.slug.toLowerCase().includes(needle)
-  )
-}
+export const ORGANIZATIONS_SEARCH_DEBOUNCE_MS = 300
 
 function CreateOrganizationDialog({
   open,
@@ -206,8 +191,11 @@ export interface OrganizationsScreenProps {
 /**
  * The organizations of an environment: a search, a paged table and "create organization".
  *
- * The search text and the page live in the address. The API pages the list and has no search
- * of its own, so a search looks through one page of up to 100 organizations and says so.
+ * The search text and the page live in the address. The API does the search (the start of a
+ * name or of a slug, ignoring case) over every organization of the environment, so a match is
+ * found on whatever page it would be, and the table pages the matches. Typing sends it after
+ * a short pause, replacing the address's entry rather than adding one for each pause;
+ * "Search" sends it at once.
  *
  * @param props - See {@link OrganizationsScreenProps}.
  * @returns The screen.
@@ -215,12 +203,29 @@ export interface OrganizationsScreenProps {
 export function OrganizationsScreen({ scope, q, page, onSearch }: OrganizationsScreenProps) {
   const [text, setText] = useState(q)
   const [creating, setCreating] = useState(false)
-  const size = q ? ORGANIZATIONS_SEARCH_PAGE_SIZE : ORGANIZATIONS_PAGE_SIZE
-  const organizations = useListOrganizations({ page, size }, { request: useEnvironmentRequest() })
+  const organizations = useListOrganizations(
+    { ...(q ? { q } : {}), page, size: ORGANIZATIONS_PAGE_SIZE },
+    { request: useEnvironmentRequest() }
+  )
 
   useEffect(() => {
     setText(q)
   }, [q])
+
+  // What was typed becomes the address's search once the typing pauses. Skipped when it is
+  // already the address's (the effect above copies the address into the box, and that must
+  // not send anything back).
+  useEffect(() => {
+    const wanted = text.trim()
+    if (wanted === q) {
+      return
+    }
+    const timer = setTimeout(
+      () => onSearch({ q: wanted, page: 1, replace: true }),
+      ORGANIZATIONS_SEARCH_DEBOUNCE_MS
+    )
+    return () => clearTimeout(timer)
+  }, [text, q, onSearch])
 
   function submit(event: FormEvent) {
     event.preventDefault()
@@ -259,7 +264,6 @@ export function OrganizationsScreen({ scope, q, page, onSearch }: OrganizationsS
       </search>
       <OrganizationsQueryState query={organizations} label='Loading organizations'>
         {(list) => {
-          const shown = list.data.filter((organization) => matchesSearch(organization, q))
           if (list.data.length === 0 && !q) {
             return (
               <EmptyState title='No organizations yet'>
@@ -276,16 +280,17 @@ export function OrganizationsScreen({ scope, q, page, onSearch }: OrganizationsS
             <div className='flex flex-col gap-4 rounded-xl border bg-card p-2 sm:p-4'>
               {q ? (
                 <p className='px-2 text-sm text-muted-foreground' role='status'>
-                  {shown.length === 0
-                    ? 'No organization on this page matches that search.'
-                    : `${shown.length} of the ${list.data.length} organizations on this page match.`}{' '}
-                  Search looks through one page of up to {ORGANIZATIONS_SEARCH_PAGE_SIZE}.
+                  {list.data.length === 0
+                    ? 'No organization matches that search.'
+                    : `${list.meta.totalCount} ${
+                        list.meta.totalCount === 1 ? 'organization matches' : 'organizations match'
+                      } that search.`}
                 </p>
               ) : null}
-              {shown.length > 0 ? (
+              {list.data.length > 0 ? (
                 <DataTable
                   caption='Organizations'
-                  rows={shown}
+                  rows={list.data}
                   rowKey={(organization) => organization.id}
                   columns={[
                     {

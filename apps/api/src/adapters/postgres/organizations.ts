@@ -9,7 +9,20 @@ import {
   users,
   withTenant,
 } from '@tula-tech/db'
-import { and, arrayContains, asc, count, desc, eq, gt, inArray, lte, ne, sql } from 'drizzle-orm'
+import {
+  and,
+  arrayContains,
+  asc,
+  count,
+  desc,
+  eq,
+  gt,
+  inArray,
+  lte,
+  ne,
+  or,
+  sql,
+} from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import {
   isCheckViolation,
@@ -330,10 +343,22 @@ export class PostgresOrganizationStore implements OrganizationStore {
   /** @inheritdoc */
   async list(
     environmentId: string,
-    { page, size }: PageCriteria
+    { page, size, q }: PageCriteria & { q?: string }
   ): Promise<Page<OrganizationRecord>> {
+    // Escaped so that `%`, `_` and `\` in the term match themselves. Both sides are lower-cased:
+    // the slug is lower-case already, and `lower(name) LIKE 'x%'` is what the prefix index
+    // (`organizations_environment_lower_name_idx`) serves, which `ILIKE` could not use.
+    const pattern = q ? `${q.toLowerCase().replace(/[\\%_]/g, (char) => `\\${char}`)}%` : null
     return withTenant(this.db, environmentId, async (tx) => {
-      const where = eq(organizations.environmentId, environmentId)
+      const where = and(
+        eq(organizations.environmentId, environmentId),
+        pattern
+          ? or(
+              sql`lower(${organizations.name}) like ${pattern}`,
+              sql`${organizations.slug} like ${pattern}`
+            )
+          : undefined
+      )
       const [total] = await tx.select({ value: count() }).from(organizations).where(where)
       const records = await tx
         .select(organizationColumns)

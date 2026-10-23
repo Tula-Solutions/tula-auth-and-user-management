@@ -228,14 +228,17 @@ test('an organization from creation to deletion: members, a last manager, invita
   await expect(page.getByText('No organizations yet')).toBeVisible()
 })
 
-test('the list is searched on its page, and the search is in the address', async ({ page }) => {
+test('the list is searched by the server as one types, and the search is in the address', async ({
+  page,
+}) => {
   await makeOrganization(page, 'Acme Corp', 'acme')
   await makeOrganization(page, 'Globex', 'globex')
   await open(page, `${ENVIRONMENT_PATH}/organizations`, 'Organizations')
   await expect(page.getByRole('link', { name: 'Acme Corp' })).toBeVisible()
+  // No click on Search: the pause after typing sends it.
   await page.getByLabel('Search organizations').fill('glob')
-  await page.getByRole('button', { name: 'Search' }).click()
   await expect(page).toHaveURL(/organizations\?q=glob/)
+  await expect(page.getByRole('link', { name: 'Acme Corp' })).toHaveCount(0)
   await page.reload()
   await expect(page.getByRole('link', { name: 'Globex' })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Acme Corp' })).toHaveCount(0)

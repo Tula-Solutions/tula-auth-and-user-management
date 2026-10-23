@@ -150,6 +150,16 @@ export const OrganizationPageQuerySchema = z
   })
   .meta({ ref: 'OrganizationPageQuery' })
 
+/**
+ * The query of the administrator's list of organizations: a page, and an optional search.
+ *
+ * `q` is matched against the start of the name (ignoring case) and of the slug; a blank one
+ * is no search. It is bounded to the longest name an organization can have.
+ */
+export const OrganizationSearchQuerySchema = OrganizationPageQuerySchema.extend({
+  q: z.string().trim().max(100).optional(),
+}).meta({ ref: 'OrganizationSearchQuery' })
+
 /** A user's membership of an organization. */
 export const OrganizationMembershipSchema = z
   .object({

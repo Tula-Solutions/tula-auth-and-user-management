@@ -302,6 +302,13 @@
       "when": 1792739520399,
       "tag": "0042_organization_domain_lifetime",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1792744246804,
+      "tag": "0043_organization_search_indexes",
+      "breakpoints": true
     }
   ]
 }

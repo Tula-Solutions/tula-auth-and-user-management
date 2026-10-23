@@ -536,7 +536,7 @@ export interface Schemas {
   }
 }
 
-/** Path parameters, JSON body and success response of every client operation. */
+/** Path parameters, query (where the operation has one), JSON body and success response of every client operation. */
 export interface Operations {
   /** Accept an invitation (`POST /v1/client/me/organization-invitations/accept`). */
   acceptOrganizationInvitation: { params: Record<string, never>; body: Schemas['InvitationTokenRequest']; response: Schemas['AcceptedInvitation'] }
@@ -593,9 +593,9 @@ export interface Operations {
   /** List an organization’s domains (`GET /v1/client/me/organizations/{id}/domains`). */
   listMyOrganizationDomains: { params: { id: string }; body: undefined; response: Schemas['OrganizationDomainList'] }
   /** List an organization’s invitations (`GET /v1/client/me/organizations/{organizationId}/invitations`). */
-  listMyOrganizationInvitations: { params: { organizationId: string }; body: undefined; response: Schemas['OrganizationInvitationList'] }
+  listMyOrganizationInvitations: { params: { organizationId: string }; query: { page?: number; size?: number; status?: 'pending' | 'accepted' | 'declined' | 'revoked' | 'expired' }; body: undefined; response: Schemas['OrganizationInvitationList'] }
   /** List my organizations (`GET /v1/client/me/organizations`). */
-  listMyOrganizations: { params: Record<string, never>; body: undefined; response: Schemas['UserOrganizationList'] }
+  listMyOrganizations: { params: Record<string, never>; query: { page?: number; size?: number }; body: undefined; response: Schemas['UserOrganizationList'] }
   /** List the organizations I am suggested (`GET /v1/client/me/organizations/suggestions`). */
   listMyOrganizationSuggestions: { params: Record<string, never>; body: undefined; response: Schemas['OrganizationSuggestionList'] }
   /** List my passkeys (`GET /v1/client/me/passkeys`). */

@@ -157,17 +157,20 @@ describe('the list of organizations', () => {
     expect(sent(api, 'GET', '/v1/admin/organizations')[0]?.search.get('size')).toBe('20')
   })
 
-  test('the search looks through the page, is in the address and can be cleared', async () => {
-    const { user, location } = start(`${DEV_PATH}/organizations`, {
+  test('the search is made by the server, as the operator types, and can be cleared', async () => {
+    const { user, location, api } = start(`${DEV_PATH}/organizations`, {
       api: arranged({ organizations: [acme, globex] }),
     })
     await screen.findByRole('table', { name: 'Organizations' })
+    // No click on Search: the typing itself is sent, once it pauses.
     await user.type(screen.getByLabelText('Search organizations'), 'glob')
-    await user.click(screen.getByRole('button', { name: 'Search' }))
     await waitFor(() => expect(location()).toBe(`${DEV_PATH}/organizations?q=glob`))
     await waitFor(() => expect(screen.queryByRole('link', { name: 'Acme Corp' })).toBeNull())
     expect(screen.getByRole('link', { name: 'Globex' })).toBeTruthy()
-    expect(screen.getByText(/1 of the 2 organizations on this page match/)).toBeTruthy()
+    const searches = sent(api, 'GET', '/v1/admin/organizations').map((call) => call.search.get('q'))
+    // One request for the finished word, not one for each key; and the page is a normal one.
+    expect(searches.filter((q) => q !== null)).toEqual(['glob'])
+    expect(sent(api, 'GET', '/v1/admin/organizations').at(-1)?.search.get('size')).toBe('20')
     await user.click(screen.getByRole('button', { name: 'Clear' }))
     await screen.findByRole('link', { name: 'Acme Corp' })
     expect(location()).toBe(`${DEV_PATH}/organizations`)
@@ -177,7 +180,7 @@ describe('the list of organizations', () => {
     const { user } = start(`${DEV_PATH}/organizations?q=zzz`, {
       api: arranged({ organizations: [acme] }),
     })
-    await screen.findByText(/No organization on this page matches that search/)
+    await screen.findByText(/No organization matches that search/)
     expect(screen.queryByRole('table')).toBeNull()
     await user.click(screen.getByRole('button', { name: 'Clear' }))
     await screen.findByRole('link', { name: 'Acme Corp' })

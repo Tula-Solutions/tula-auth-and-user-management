@@ -152,17 +152,23 @@ export async function requireRole(
  *
  * @param deps - The organization store and the settings.
  * @param tenant - The environment.
- * @param page - Which page, and how long.
+ * @param page - Which page, and how long; `q` keeps the organizations whose name or slug starts
+ *   with it (a blank one keeps all).
  * @returns The page and its paging details.
  * @throws AuthError `organization.disabled` while organizations are switched off.
  */
 export async function list(
   deps: ReadDeps,
   tenant: Pick<Tenant, 'environmentId'>,
-  page: PageCriteria
+  page: PageCriteria & { q?: string }
 ): Promise<OrganizationList> {
   await requireEnabled(deps, tenant)
-  const { records, total } = await deps.organizations.list(tenant.environmentId, page)
+  const q = page.q?.trim()
+  const { records, total } = await deps.organizations.list(tenant.environmentId, {
+    page: page.page,
+    size: page.size,
+    ...(q ? { q } : {}),
+  })
   return { meta: meta(total, page), data: records.map(view) }
 }
 

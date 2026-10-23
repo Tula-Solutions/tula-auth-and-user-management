@@ -5387,7 +5387,7 @@ export interface OrganizationList {
   data: Organization[];
 }
 
-export interface OrganizationPageQuery {
+export interface OrganizationSearchQuery {
   /**
      * @minimum 1
      * @maximum 1000000
@@ -5398,6 +5398,8 @@ export interface OrganizationPageQuery {
      * @maximum 100
      */
   size?: number;
+  /** @maxLength 100 */
+  q?: string;
 }
 
 /**
@@ -5439,6 +5441,19 @@ export interface OrganizationMembership {
 export interface OrganizationMembershipList {
   meta: PaginationMeta;
   data: OrganizationMembership[];
+}
+
+export interface OrganizationPageQuery {
+  /**
+     * @minimum 1
+     * @maximum 1000000
+     */
+  page?: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  size?: number;
 }
 
 export interface AddOrganizationMemberRequest {
@@ -6425,6 +6440,10 @@ page?: number;
  * @maximum 100
  */
 size?: number;
+/**
+ * @maxLength 100
+ */
+q?: string;
 };
 
 export type ListOrganizationMembershipsParams = {
@@ -10696,7 +10715,7 @@ export const getListOrganizationsUrl = (params?: ListOrganizationsParams,) => {
 }
 
 /**
- * Organizations of the secret key’s environment, newest first, one page at a time. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * Organizations of the secret key’s environment, newest first, one page at a time. `q` keeps the organizations whose name or slug starts with it (ignoring case), counted and paged as a match. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
  * @summary List organizations
  */
 export const listOrganizations = async (params?: ListOrganizationsParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationList> => {

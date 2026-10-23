@@ -9,6 +9,7 @@ export {
   OrganizationMembershipSchema,
   OrganizationPageQuerySchema,
   OrganizationSchema,
+  OrganizationSearchQuerySchema,
   UpdateOrganizationMemberRequestSchema,
   UpdateOrganizationRequestSchema,
   UserMembershipListSchema,

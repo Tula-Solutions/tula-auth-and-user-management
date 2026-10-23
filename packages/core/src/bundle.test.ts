@@ -141,8 +141,12 @@ import { join } from 'node:path'
  * an organization's domains would call, which the client does not wrap yet but the table lists
  * all the same), and the two methods. The budget moved by exactly those 239 bytes, from 18,198
  * to 18,437: the room is the 4 bytes it was.
+ * The paging query of `organizations.list({ page, size })` (TULA-125) added 59 bytes, from 18,433
+ * to 18,492: the query's part of `CallInput` costs nothing, the rest is the transport writing
+ * a search string onto the address. The budget moved by exactly those 59 bytes, from 18,437 to
+ * 18,496: the room is the 4 bytes it was.
  */
-const GZIP_BUDGET_BYTES = 18_437
+const GZIP_BUDGET_BYTES = 18_496
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({
