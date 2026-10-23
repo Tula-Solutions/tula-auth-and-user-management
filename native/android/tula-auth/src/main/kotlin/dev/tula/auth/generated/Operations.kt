@@ -90,11 +90,20 @@ object TulaOperations {
     /** Invite an address to an organization (`POST /v1/client/me/organizations/{organizationId}/invitations`). Body: [CreateOrganizationInvitationRequest]. Answers [OrganizationInvitation]. */
     val inviteToMyOrganization: TulaOperation = TulaOperation("inviteToMyOrganization", "POST", "/v1/client/me/organizations/{organizationId}/invitations", true)
 
+    /** Join a suggested organization (`POST /v1/client/me/organizations/suggestions/{organizationId}/join`). No body. Answers [UserOrganization]. */
+    val joinOrganizationSuggestion: TulaOperation = TulaOperation("joinOrganizationSuggestion", "POST", "/v1/client/me/organizations/suggestions/{organizationId}/join", true)
+
     /** List my connected accounts (`GET /v1/client/me/identities`). No body. Answers [IdentityList]. */
     val listMyIdentities: TulaOperation = TulaOperation("listMyIdentities", "GET", "/v1/client/me/identities", true)
 
+    /** List an organization's domains (`GET /v1/client/me/organizations/{id}/domains`). No body. Answers [OrganizationDomainList]. */
+    val listMyOrganizationDomains: TulaOperation = TulaOperation("listMyOrganizationDomains", "GET", "/v1/client/me/organizations/{id}/domains", true)
+
     /** List an organization's invitations (`GET /v1/client/me/organizations/{organizationId}/invitations`). No body. Answers [OrganizationInvitationList]. */
     val listMyOrganizationInvitations: TulaOperation = TulaOperation("listMyOrganizationInvitations", "GET", "/v1/client/me/organizations/{organizationId}/invitations", true)
+
+    /** List the organizations I am suggested (`GET /v1/client/me/organizations/suggestions`). No body. Answers [OrganizationSuggestionList]. */
+    val listMyOrganizationSuggestions: TulaOperation = TulaOperation("listMyOrganizationSuggestions", "GET", "/v1/client/me/organizations/suggestions", true)
 
     /** List my organizations (`GET /v1/client/me/organizations`). No body. Answers [UserOrganizationList]. */
     val listMyOrganizations: TulaOperation = TulaOperation("listMyOrganizations", "GET", "/v1/client/me/organizations", true)
@@ -122,6 +131,9 @@ object TulaOperations {
 
     /** Make new backup codes (`POST /v1/client/me/factors/backup-codes`). No body. Answers [BackupCodes]. */
     val regenerateBackupCodes: TulaOperation = TulaOperation("regenerateBackupCodes", "POST", "/v1/client/me/factors/backup-codes", true)
+
+    /** Remove a domain (`DELETE /v1/client/me/organizations/{id}/domains/{domainId}`). No body. Answers no body. */
+    val removeMyOrganizationDomain: TulaOperation = TulaOperation("removeMyOrganizationDomain", "DELETE", "/v1/client/me/organizations/{id}/domains/{domainId}", true)
 
     /** Remove a passkey (`DELETE /v1/client/me/passkeys/{passkeyId}`). No body. Answers no body. */
     val removePasskey: TulaOperation = TulaOperation("removePasskey", "DELETE", "/v1/client/me/passkeys/{passkeyId}", true)
@@ -173,6 +185,9 @@ object TulaOperations {
 
     /** Start connecting a provider account (`POST /v1/client/me/identities/oauth`). Body: [OAuthStartRequest]. Answers [IdentityLinkStart]. */
     val startIdentityLink: TulaOperation = TulaOperation("startIdentityLink", "POST", "/v1/client/me/identities/oauth", true)
+
+    /** Claim a domain for an organization (`POST /v1/client/me/organizations/{id}/domains`). Body: [StartOrganizationDomainRequest]. Answers [OrganizationDomain]. */
+    val startMyOrganizationDomain: TulaOperation = TulaOperation("startMyOrganizationDomain", "POST", "/v1/client/me/organizations/{id}/domains", true)
 
     /** Start signing in with an OAuth provider (`POST /v1/client/sign-ins/oauth`). Body: [OAuthStartRequest]. Answers [OAuthStart]. */
     val startOAuthSignIn: TulaOperation = TulaOperation("startOAuthSignIn", "POST", "/v1/client/sign-ins/oauth", false)
@@ -231,8 +246,14 @@ object TulaOperations {
     /** Submit a second factor (`POST /v1/client/sign-ins/{attemptId}/second-factor`). Body: [SecondFactorRequest]. Answers [FlowAttempt]. */
     val submitSignInSecondFactor: TulaOperation = TulaOperation("submitSignInSecondFactor", "POST", "/v1/client/sign-ins/{attemptId}/second-factor", false)
 
+    /** Change what a domain does (`PATCH /v1/client/me/organizations/{id}/domains/{domainId}`). Body: [UpdateOrganizationDomainRequest]. Answers [OrganizationDomain]. */
+    val updateMyOrganizationDomain: TulaOperation = TulaOperation("updateMyOrganizationDomain", "PATCH", "/v1/client/me/organizations/{id}/domains/{domainId}", true)
+
     /** Confirm the address with its code (`POST /v1/client/me/email/verify`). Body: [EmailAddressVerifyRequest]. Answers [CurrentUser]. */
     val verifyEmailAddress: TulaOperation = TulaOperation("verifyEmailAddress", "POST", "/v1/client/me/email/verify", true)
+
+    /** Verify a claimed domain (`POST /v1/client/me/organizations/{id}/domains/{domainId}/verify`). Body: [VerifyOrganizationDomainRequest]. Answers [OrganizationDomain]. */
+    val verifyMyOrganizationDomain: TulaOperation = TulaOperation("verifyMyOrganizationDomain", "POST", "/v1/client/me/organizations/{id}/domains/{domainId}/verify", true)
 
     /** Confirm a phone number with its code (`POST /v1/client/me/phone/verify`). Body: [PhoneNumberVerifyRequest]. Answers [CurrentUser]. */
     val verifyPhoneNumber: TulaOperation = TulaOperation("verifyPhoneNumber", "POST", "/v1/client/me/phone/verify", true)
@@ -272,8 +293,11 @@ object TulaOperations {
         getSignInSecondFactorPasskeyOptions,
         getStepUpPasskeyOptions,
         inviteToMyOrganization,
+        joinOrganizationSuggestion,
         listMyIdentities,
+        listMyOrganizationDomains,
         listMyOrganizationInvitations,
+        listMyOrganizationSuggestions,
         listMyOrganizations,
         listMyPasskeys,
         listSessions,
@@ -283,6 +307,7 @@ object TulaOperations {
         previewOrganizationInvitation,
         refreshSession,
         regenerateBackupCodes,
+        removeMyOrganizationDomain,
         removePasskey,
         removePhoneNumber,
         renamePasskey,
@@ -300,6 +325,7 @@ object TulaOperations {
         signOut,
         startIdTokenSignIn,
         startIdentityLink,
+        startMyOrganizationDomain,
         startOAuthSignIn,
         startPasskeyRegistration,
         startPasskeySignIn,
@@ -319,7 +345,9 @@ object TulaOperations {
         submitSignInPasskey,
         submitSignInPassword,
         submitSignInSecondFactor,
+        updateMyOrganizationDomain,
         verifyEmailAddress,
+        verifyMyOrganizationDomain,
         verifyPhoneNumber,
         verifySignInEmail,
         verifySignInLink,

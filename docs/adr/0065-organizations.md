@@ -266,17 +266,105 @@ environment per day; the retention job purges the expired ones.
 
 ### Verified domains
 
-*(Orgs 05.)* A domain is verified by **an emailed code sent to an address at the domain**,
-not by DNS (DNS verification is out of scope). A deny list of public mail domains lives in
-the contract and is refused. At the end of a sign-up (the flow engine's `finish`), a verified
-domain in `auto_join` mode creates a membership with the default role; in `suggest` mode the
-organization is listed among the user's suggestions and nothing is joined.
+*(Orgs 05, TULA-116; migration `0041`, scenario `122`.)* An organization **claims** a domain, and a
+user whose **verified** email address is on it is either offered the organization or joined to
+it, by the domain's `mode`.
+
+- **Verification is an emailed code, not DNS** (DNS is out of scope). `POST …/domains` takes
+  `{ domain, email, mode }`: the address must be **exactly on that domain** (a subdomain or a
+  parent is `organization.domain_address_mismatch`, 422) and receives a 6-digit code by the new
+  email kind `organization_domain_verification` (a code category). Until the code is entered the claim is **pending** and grants nothing.
+  `POST …/domains/:domainId/verify` takes `{ code }`.
+- **Where a pending claim lives.** In the table `organization_domains`, with its own code
+  columns (`code_hash`, `code_expires_at`, `code_attempts`) and not in the verification-token
+  store: that store is keyed by a user, and an administrator calling the admin API has none.
+  The code's keyed hash is `HMAC('organization-domain-codes', "<row id>:<domain>:<code>")`
+  (`~/lib/keyed-hash`), so a code is bound to the row and the name it was sent for. A row has a
+  code exactly while it is unverified (a check constraint); verifying sets `verified_at` and
+  clears the code in one statement.
+- **Guessing.** A code allows 5 guesses (`MAX_ATTEMPTS`), counted by the store **before** the code
+  is compared and atomically; `deps.lockout` with `CREDENTIAL_LOCKOUT` under the key
+  `organization_domain_code:<environment>:<row id>` counts the attempt first and clears it on
+  success, so a sixth guess meets the back-off (429) even with the right code. A code lives
+  10 minutes; a new send replaces it and resets the counter. The client route for the check
+  has a per-IP limit of its own on top (10 a minute).
+- **Sending is limited**, because the address is free text an administrator typed: one send a
+  minute, 10 an hour and 30 a day per organization (`CODES_PER_ORGANIZATION_PER_HOUR`,
+  `CODES_PER_ORGANIZATION_PER_DAY`, so that one organization cannot spend the environment's
+  allowance), 200 a day per environment, and 5 an hour per hashed address (so the code cannot be used to flood one
+  inbox). An organization has at most 10 domains (`organization.domain_limit`, 409).
+- **A domain is verified for one organization per environment** (`organization.domain_taken`,
+  409): a partial unique index over the verified rows. Any number of organizations may have a
+  pending claim on a name, and of two verifications at once the database lets one succeed;
+  the other is told `domain_taken`. A claim of an organization of another environment is a 404.
+- **Grammar and the public list** (`@tula-tech/contract/organization-domain-rules`, Zod-free):
+  lower-case ASCII labels joined by single full stops, the last label letters or punycode
+  (`xn--…`); upper case, **Unicode (refused, not converted)**, IP literals, a trailing full
+  stop, underscores, wildcards and a single label are refused (422), as are a label over 63
+  characters and a name over 253. The database holds the same shape in a check. A **public
+  mail domain** (`PUBLIC_EMAIL_DOMAINS`, an explicit list of the large mailbox providers, the
+  internet providers that hand out addresses the common national ones, forwarding aliases and relays (`duck.com`, Apple's private relay)
+  and disposable inboxes, and
+  `PUBLIC_EMAIL_BRANDS`, whose every country domain counts: `yahoo.co.uk`, `hotmail.fr`) is
+  refused with `organization.domain_public` (422). The list is documented in the contract and
+  nowhere else, and **a join never matches a public domain, even for a claim stored before the
+  list grew**.
+- **Who joins when.** `auto_join` makes a member **at sign-up only**: the flow engine's
+  `finish` calls `OrganizationDomains.joinOnSignUp` for an attempt of kind `sign_up` (or one
+  that created the account), after the session exists, and the call **never throws**: a
+  failure is logged and the sign-up completes. A sign-in does not join. The reason is that a
+  member an administrator removed would otherwise rejoin at their next sign-in, so
+  "removing a member" would mean nothing; and an existing account got its address long before
+  the domain was verified. Those users (existing accounts, removed members, and everyone in
+  `suggest` mode) are **offered the organization instead** and may join it themselves, on
+  purpose: that is what `suggest` means, and for `auto_join` it is the path for accounts that
+  existed before the domain. Both modes feed the suggestions. Only `user.emailVerifiedAt`
+  counts, the match is on exactly the address's domain (`domainOfAddress`; `a@mail.acme.com`
+  never matches `acme.com`), a banned user matches nothing, and the role is the environment's
+  `organizations.defaultRole`. While `organizations.enabled` is off nobody is joined or offered.
+- **Suggestions** (`GET /v1/client/me/organizations/suggestions`, `POST …/suggestions/:organizationId/join`):
+  the organization's id, name and slug and nothing of its members. The join **decides again on
+  the server** (the domain still verified, the address still on it, the user not banned): a
+  stale or invented suggestion is `organization.suggestion_unavailable` (403), the same code
+  for an organization that does not exist, is of another environment, or has no such domain; a
+  user who is already a member gets `organization.member_exists` (409).
+- **Managing domains** is the admin API (`/v1/admin/organizations/:id/domains…`, behind
+  `secretKey()`; an agent key reads) and, for an organization's own administrators, the client
+  routes `/v1/client/me/organizations/:id/domains…`, which need the permission
+  `org:sys:domains:manage` **read from the role now** (`findUserMembership`, never the token):
+  a member without it is `auth.forbidden`, and a non-member or an unknown organization alike
+  `organization.not_a_member`. Removing a domain stops later joins and offers and **keeps the
+  members it brought**. Deleting the organization removes its domains by cascade.
+- **Retention.** A pending claim is deleted an hour after its code expired
+  (`EXPIRED_DOMAIN_CLAIM_RETENTION`, a batched `purgeExpiredPending` in both adapters and the
+  shared suite); a verified domain is never purged.
+- **Events and audit** (target `organization_domain`): `organization_domain.claimed`,
+  `.verified`, `.updated` and `.removed` hold the organization id, **the domain** (public, and
+  allowed in its own field by the event canary), the mode and, where `auto_join` is chosen,
+  `weakened: true` (a domain that joins people without a human is a weakening, like a looser
+  setting). **Never the address the code was sent to.** `organization_membership.added` gains an
+  optional `via` (`domain_auto_join` or `domain_suggestion`); the auto-join entry's actor is the
+  system, the suggestion's the user.
+- **Numbering.** The migration is `0041` and the scenario `122`; TULA-115 (invitations) builds
+  `0040` and `121` in parallel. Whichever merges second renumbers its own file (the `0041`
+  snapshot's `prevId` is `0039`'s, so it collides with `0040`'s).
+
+- **Accepted limits (Ollie round 2).** The 200-a-day environment allowance of claim codes is an
+  availability limit: where `organizations.allowUserCreated` is on, several user-created
+  organizations can spend it (30 each) and delay other claims until the next day; the
+  per-organization caps bound one organization, not many. `organization.domain_taken` is
+  answered before a send limit is spent, so a manager can learn whether a well-formed domain is
+  claimed in the environment (bounded by the per-IP route limit and the need for an address on
+  that domain). A verified domain is **not re-verified**: the inbox was proved once, so a domain
+  that lapses and is registered by someone else still matches until the claim is removed.
+  Periodic re-verification is a later step.
 
 ### Events and the audit log
 
 Six activity types: `organization.created`, `.updated` and `.deleted` (target `organization`),
 and `organization_membership.added`, `.role_changed` and `.removed` (target
-`organization_membership`, the membership's id). Their `data` is **ids, role keys, enums and
+`organization_membership`, the membership's id); Orgs 05 adds `organization_domain.claimed`,
+`.verified`, `.updated` and `.removed` (target `organization_domain`, "Verified domains"). Their `data` is **ids, role keys, enums and
 counts, never a name, a slug or an address**: `updated` names the fields that changed
 (`name`, `slug`), `deleted` carries the number of memberships that went with it (read just
 before the delete, so approximate under concurrency), and the membership events carry the

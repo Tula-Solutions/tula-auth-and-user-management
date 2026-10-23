@@ -75,6 +75,13 @@ export const EXPIRED_PROPOSAL_RETENTION = '30d'
 export const HOOK_CALL_COUNT_RETENTION = '7d'
 
 /**
+ * How long a claimed domain's pending row is kept after its code expired (ADR 0065, "Verified
+ * domains"). The same grace as a verification token: a request in flight when the code expires
+ * still finds the row and answers `verification.expired`. A verified domain is never purged.
+ */
+export const EXPIRED_DOMAIN_CLAIM_RETENTION = '1h'
+
+/**
  * How long an organization invitation is kept after its expiry, whatever became of it
  * (accepted, declined, withdrawn or never answered; ADR 0065, Orgs 04). Not zero, so that a
  * link followed just after it lapses still finds the row and answers `invitation_expired`
@@ -131,6 +138,8 @@ export interface RetentionCounts {
   hookCallCounts: number
   /** Sign-in tests' throwaway users older than {@link TEST_USER_RETENTION}. */
   testUsers: number
+  /** Pending domain claims whose code expired more than {@link EXPIRED_DOMAIN_CLAIM_RETENTION} ago. */
+  domainClaims: number
   /** Organization invitations that expired more than {@link EXPIRED_INVITATION_RETENTION} ago. */
   invitations: number
 }
@@ -157,6 +166,7 @@ type RetentionDeps = Pick<
   | 'smsUsage'
   | 'proposals'
   | 'hooks'
+  | 'organizationDomains'
   | 'organizations'
   | 'users'
   | 'environmentSettings'
@@ -337,6 +347,7 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
   const proposalsBefore = new Date(now.getTime() - durationToMs(EXPIRED_PROPOSAL_RETENTION))
   // An hour (UTC), as the counts are kept: the first one that stays.
   const hookCountsBefore = hourOf(new Date(now.getTime() - durationToMs(HOOK_CALL_COUNT_RETENTION)))
+  const domainClaimsBefore = new Date(now.getTime() - durationToMs(EXPIRED_DOMAIN_CLAIM_RETENTION))
   const invitationsBefore = new Date(now.getTime() - durationToMs(EXPIRED_INVITATION_RETENTION))
   const report: RetentionReport = {
     environments: 0,
@@ -355,6 +366,7 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
     proposals: 0,
     hookCallCounts: 0,
     testUsers: 0,
+    domainClaims: 0,
     invitations: 0,
   }
   // The instance audit log belongs to no environment, and its period is the deployment's:
@@ -409,6 +421,9 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
       )
       report.hookCallCounts += await drain((limit) =>
         deps.hooks.deleteCallCountsBefore(id, hookCountsBefore, limit)
+      )
+      report.domainClaims += await drain((limit) =>
+        deps.organizationDomains.purgeExpiredPending(id, domainClaimsBefore, limit)
       )
       report.invitations += await drain((limit) =>
         deps.organizations.deleteExpiredInvitations(id, invitationsBefore, limit)
@@ -478,7 +493,8 @@ export async function run(
     report.passwordHistory +
     report.proposals +
     report.hookCallCounts +
-    report.testUsers
+    report.testUsers +
+    report.domainClaims
   // An idle run is routine; one that deleted something, or could not, is worth a line.
   const log = report.failed > 0 ? logger.warn : removed > 0 ? logger.info : logger.debug
   log('retention run finished', { ...report })

@@ -11,6 +11,7 @@ export default defineConfig({
     'src/event-types.ts',
     'src/headers.ts',
     'src/issuer.ts',
+    'src/organization-domain-rules.ts',
     'src/organization-permissions.ts',
     'src/password-rules.ts',
     'src/redirect-url.ts',

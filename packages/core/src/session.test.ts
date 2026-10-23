@@ -2118,6 +2118,40 @@ describe('the active organization (ADR 0065)', () => {
     expect(await storage.get(STORAGE_KEY)).toBe('rt_1')
   })
 
+  test('suggestions lists the organizations a verified address is offered, and join takes one without switching to it', async () => {
+    const w = world()
+    const { tula } = await signedIn(w)
+    const SUGGESTIONS = 'GET /v1/client/me/organizations/suggestions'
+    const JOIN = `POST /v1/client/me/organizations/suggestions/${ORG}/join`
+    w.api.on(SUGGESTIONS, () => json(200, { data: [{ id: ORG, name: 'Acme', slug: 'acme' }] }))
+    w.api.on(JOIN, () =>
+      json(201, { id: ORG, name: 'Acme', slug: 'acme', role: 'member', permissions: [] })
+    )
+    expect((await tula.organizations.suggestions()).data).toEqual([
+      { id: ORG, name: 'Acme', slug: 'acme' },
+    ])
+    expect(await tula.organizations.join(ORG)).toMatchObject({ id: ORG, role: 'member' })
+    expect(w.api.calls(JOIN)).toHaveLength(1)
+    // Joining does not make it the active organization.
+    expect(tula.state).toMatchObject({ status: 'signed-in', organizationId: null })
+  })
+
+  test('join answers the code of a suggestion the server no longer offers', async () => {
+    const w = world()
+    const { tula } = await signedIn(w)
+    w.api.on(`POST /v1/client/me/organizations/suggestions/${ORG}/join`, () =>
+      json(403, {
+        status: 403,
+        code: 'organization.suggestion_unavailable',
+        detail: 'This organization is not available to join.',
+      })
+    )
+    expect(await caught(tula.organizations.join(ORG))).toMatchObject({
+      code: 'organization.suggestion_unavailable',
+      status: 403,
+    })
+  })
+
   test('clearing the choice (null) puts the state back to the personal account', async () => {
     const w = world()
     const { tula } = await signedIn(w)

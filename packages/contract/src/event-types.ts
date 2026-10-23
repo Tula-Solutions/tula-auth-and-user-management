@@ -113,6 +113,12 @@ export const ACTIVITY_TYPES = [
   'organization_role.created',
   'organization_role.updated',
   'organization_role.deleted',
+  // A domain of an organization (ADR 0065, "Verified domains"). The organization's id, the
+  // domain (a bounded name of a fixed grammar) and the mode: never an address.
+  'organization_domain.claimed',
+  'organization_domain.verified',
+  'organization_domain.updated',
+  'organization_domain.removed',
   // An invitation to join an organization (ADR 0065, Orgs 04). Ids and the role's key only: the
   // invited address is never in an event. An invitation that lapses is not recorded.
   'organization_invitation.created',
@@ -216,6 +222,10 @@ export const EVENT_TARGET_TYPES = {
   'organization_role.created': 'organization_role',
   'organization_role.updated': 'organization_role',
   'organization_role.deleted': 'organization_role',
+  'organization_domain.claimed': 'organization_domain',
+  'organization_domain.verified': 'organization_domain',
+  'organization_domain.updated': 'organization_domain',
+  'organization_domain.removed': 'organization_domain',
   'organization_invitation.created': 'organization_invitation',
   'organization_invitation.accepted': 'organization_invitation',
   'organization_invitation.declined': 'organization_invitation',

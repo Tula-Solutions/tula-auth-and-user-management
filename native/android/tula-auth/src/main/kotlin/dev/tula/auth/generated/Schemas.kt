@@ -945,6 +945,78 @@ data class OAuthStartRequest(
 )
 
 @Serializable
+data class OrganizationDomain(
+    val id: String,
+    val domain: String,
+    val mode: OrganizationDomainMode,
+    val verifiedAt: String?,
+    val codeExpiresAt: String?,
+    /** Format: `date-time`. */
+    val createdAt: String,
+    /** Format: `date-time`. */
+    val updatedAt: String,
+)
+
+@Serializable
+data class OrganizationDomainList(
+    val data: List<OrganizationDomain>,
+)
+
+@Serializable(with = OrganizationDomainModeSerializer::class)
+sealed class OrganizationDomainMode {
+    /** The value as the API writes it. */
+    abstract val rawValue: String
+
+    override fun toString(): String = rawValue
+
+    object Suggest : OrganizationDomainMode() {
+        override val rawValue: String = "suggest"
+    }
+
+    object AutoJoin : OrganizationDomainMode() {
+        override val rawValue: String = "auto_join"
+    }
+
+    /** A value this version does not know, as the API wrote it. Made by [of] only. */
+    class Unknown internal constructor(override val rawValue: String) : OrganizationDomainMode() {
+        override fun equals(other: Any?): Boolean = other is Unknown && other.rawValue == rawValue
+
+        override fun hashCode(): Int = rawValue.hashCode()
+    }
+
+    companion object {
+        /** Every value this version knows. */
+        val known: List<OrganizationDomainMode> by lazy {
+            listOf(
+                Suggest,
+                AutoJoin,
+            )
+        }
+
+        /** The value for a string of the API: [Unknown] for one this version does not know. */
+        fun of(rawValue: String): OrganizationDomainMode = when (rawValue) {
+            "suggest" -> Suggest
+            "auto_join" -> AutoJoin
+            else -> Unknown(rawValue)
+        }
+    }
+}
+
+/** Reads and writes [OrganizationDomainMode] as its string, whatever the string is. */
+object OrganizationDomainModeSerializer : KSerializer<OrganizationDomainMode> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("dev.tula.auth.generated.OrganizationDomainMode", PrimitiveKind.STRING)
+
+    override fun deserialize(decoder: Decoder): OrganizationDomainMode = OrganizationDomainMode.of(decoder.decodeString())
+
+    override fun serialize(encoder: Encoder, value: OrganizationDomainMode) {
+        encoder.encodeString(value.rawValue)
+    }
+}
+
+typealias OrganizationDomainName = String
+
+@Serializable
 data class OrganizationInvitation(
     val id: String,
     val organizationId: String,
@@ -1037,6 +1109,18 @@ object OrganizationInvitationStatusSerializer : KSerializer<OrganizationInvitati
 typealias OrganizationRoleKey = String
 
 typealias OrganizationSlug = String
+
+@Serializable
+data class OrganizationSuggestion(
+    val id: String,
+    val name: String,
+    val slug: String,
+)
+
+@Serializable
+data class OrganizationSuggestionList(
+    val data: List<OrganizationSuggestion>,
+)
 
 @Serializable
 data class PaginationMeta(
@@ -1821,6 +1905,13 @@ data class SmsFactorConfirmRequest(
 )
 
 @Serializable
+data class StartOrganizationDomainRequest(
+    val domain: OrganizationDomainName,
+    val email: String,
+    val mode: OrganizationDomainMode,
+)
+
+@Serializable
 data class StepUpEmailCode(
     /** Always `"email_code"` today. */
     @EncodeDefault
@@ -1958,6 +2049,11 @@ data class TotpEnrolment(
 )
 
 @Serializable
+data class UpdateOrganizationDomainRequest(
+    val mode: OrganizationDomainMode,
+)
+
+@Serializable
 data class UserOrganization(
     val id: String,
     val name: String,
@@ -1977,5 +2073,10 @@ data class UserOrganizationList(
 
 @Serializable
 data class VerifyEmailRequest(
+    val code: String,
+)
+
+@Serializable
+data class VerifyOrganizationDomainRequest(
     val code: String,
 )

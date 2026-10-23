@@ -1257,7 +1257,7 @@ export interface OAuthProviderDeletedEvent {
 export interface WebhookEndpointCreatedEventData {
   /**
      * @minimum 1
-     * @maximum 64
+     * @maximum 68
      */
   eventTypes: number;
   enabled: boolean;
@@ -1843,8 +1843,16 @@ export interface OrganizationDeletedEvent {
  */
 export type OrganizationRoleKey = string;
 
+export type OrganizationMembershipAddedEventDataVia = typeof OrganizationMembershipAddedEventDataVia[keyof typeof OrganizationMembershipAddedEventDataVia];
+
+
+export const OrganizationMembershipAddedEventDataVia = {
+  domain_auto_join: 'domain_auto_join',
+  domain_suggestion: 'domain_suggestion',
+} as const;
+
 /**
- * A user became a member of an organization. The target is the membership.
+ * A user became a member of an organization. The target is the membership. `via` is present when it was not an administrator or an invitation that added them: `domain_auto_join` (they signed up with a verified address on a domain set to auto-join) or `domain_suggestion` (they joined an organization their verified address was suggested).
  */
 export interface OrganizationMembershipAddedEventData {
   /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
@@ -1852,6 +1860,7 @@ export interface OrganizationMembershipAddedEventData {
   /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
   userId: string;
   role: OrganizationRoleKey;
+  via?: OrganizationMembershipAddedEventDataVia;
 }
 
 export type OrganizationMembershipAddedEventTarget = {
@@ -1861,7 +1870,7 @@ export type OrganizationMembershipAddedEventTarget = {
 };
 
 /**
- * A user became a member of an organization. The target is the membership.
+ * A user became a member of an organization. The target is the membership. `via` is present when it was not an administrator or an invitation that added them: `domain_auto_join` (they signed up with a verified address on a domain set to auto-join) or `domain_suggestion` (they joined an organization their verified address was suggested).
  */
 export interface OrganizationMembershipAddedEvent {
   /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
@@ -2051,6 +2060,184 @@ export interface OrganizationRoleDeletedEvent {
   actor: EventActor;
   target: OrganizationRoleDeletedEventTarget;
   data: OrganizationRoleDeletedEventData;
+  test?: true;
+}
+
+export type OrganizationDomainClaimedEventDataMode = typeof OrganizationDomainClaimedEventDataMode[keyof typeof OrganizationDomainClaimedEventDataMode];
+
+
+export const OrganizationDomainClaimedEventDataMode = {
+  suggest: 'suggest',
+  auto_join: 'auto_join',
+} as const;
+
+/**
+ * A code was emailed to an address on a domain an organization wants to claim (the first time, or again). Nothing is granted until the code is entered.
+ */
+export interface OrganizationDomainClaimedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  /**
+     * @maxLength 253
+     * @pattern ^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:[a-z]{2,}|xn--[a-z0-9-]*[a-z0-9])$
+     */
+  domain: string;
+  mode: OrganizationDomainClaimedEventDataMode;
+}
+
+export type OrganizationDomainClaimedEventTarget = {
+  type: 'organization_domain';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A code was emailed to an address on a domain an organization wants to claim (the first time, or again). Nothing is granted until the code is entered.
+ */
+export interface OrganizationDomainClaimedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_domain.claimed';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationDomainClaimedEventTarget;
+  data: OrganizationDomainClaimedEventData;
+  test?: true;
+}
+
+export type OrganizationDomainVerifiedEventDataMode = typeof OrganizationDomainVerifiedEventDataMode[keyof typeof OrganizationDomainVerifiedEventDataMode];
+
+
+export const OrganizationDomainVerifiedEventDataMode = {
+  suggest: 'suggest',
+  auto_join: 'auto_join',
+} as const;
+
+/**
+ * An organization verified a domain: users who sign up with a verified address on it are suggested the organization or joined to it, by `mode`. `weakened` is present, and true, for `auto_join`.
+ */
+export interface OrganizationDomainVerifiedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  /**
+     * @maxLength 253
+     * @pattern ^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:[a-z]{2,}|xn--[a-z0-9-]*[a-z0-9])$
+     */
+  domain: string;
+  mode: OrganizationDomainVerifiedEventDataMode;
+  weakened?: true;
+}
+
+export type OrganizationDomainVerifiedEventTarget = {
+  type: 'organization_domain';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An organization verified a domain: users who sign up with a verified address on it are suggested the organization or joined to it, by `mode`. `weakened` is present, and true, for `auto_join`.
+ */
+export interface OrganizationDomainVerifiedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_domain.verified';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationDomainVerifiedEventTarget;
+  data: OrganizationDomainVerifiedEventData;
+  test?: true;
+}
+
+export type OrganizationDomainUpdatedEventDataMode = typeof OrganizationDomainUpdatedEventDataMode[keyof typeof OrganizationDomainUpdatedEventDataMode];
+
+
+export const OrganizationDomainUpdatedEventDataMode = {
+  suggest: 'suggest',
+  auto_join: 'auto_join',
+} as const;
+
+export type OrganizationDomainUpdatedEventDataPreviousMode = typeof OrganizationDomainUpdatedEventDataPreviousMode[keyof typeof OrganizationDomainUpdatedEventDataPreviousMode];
+
+
+export const OrganizationDomainUpdatedEventDataPreviousMode = {
+  suggest: 'suggest',
+  auto_join: 'auto_join',
+} as const;
+
+/**
+ * What a domain does was changed. `weakened` is present, and true, when the domain now auto-joins.
+ */
+export interface OrganizationDomainUpdatedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  /**
+     * @maxLength 253
+     * @pattern ^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:[a-z]{2,}|xn--[a-z0-9-]*[a-z0-9])$
+     */
+  domain: string;
+  mode: OrganizationDomainUpdatedEventDataMode;
+  previousMode: OrganizationDomainUpdatedEventDataPreviousMode;
+  weakened?: true;
+}
+
+export type OrganizationDomainUpdatedEventTarget = {
+  type: 'organization_domain';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * What a domain does was changed. `weakened` is present, and true, when the domain now auto-joins.
+ */
+export interface OrganizationDomainUpdatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_domain.updated';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationDomainUpdatedEventTarget;
+  data: OrganizationDomainUpdatedEventData;
+  test?: true;
+}
+
+/**
+ * A domain was removed, verified or not. No future sign-up joins or is suggested the organization because of it; members who joined stay.
+ */
+export interface OrganizationDomainRemovedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  /**
+     * @maxLength 253
+     * @pattern ^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:[a-z]{2,}|xn--[a-z0-9-]*[a-z0-9])$
+     */
+  domain: string;
+}
+
+export type OrganizationDomainRemovedEventTarget = {
+  type: 'organization_domain';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A domain was removed, verified or not. No future sign-up joins or is suggested the organization because of it; members who joined stay.
+ */
+export interface OrganizationDomainRemovedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_domain.removed';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationDomainRemovedEventTarget;
+  data: OrganizationDomainRemovedEventData;
   test?: true;
 }
 
@@ -2475,7 +2662,7 @@ export interface SignInTestFinishedEvent {
   test?: true;
 }
 
-export type TulaEvent = UserCreatedEvent | UserImportedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserEmailAddedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | OrganizationCreatedEvent | OrganizationUpdatedEvent | OrganizationDeletedEvent | OrganizationMembershipAddedEvent | OrganizationMembershipRoleChangedEvent | OrganizationMembershipRemovedEvent | OrganizationRoleCreatedEvent | OrganizationRoleUpdatedEvent | OrganizationRoleDeletedEvent | OrganizationInvitationCreatedEvent | OrganizationInvitationAcceptedEvent | OrganizationInvitationDeclinedEvent | OrganizationInvitationRevokedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
+export type TulaEvent = UserCreatedEvent | UserImportedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserEmailAddedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | OrganizationCreatedEvent | OrganizationUpdatedEvent | OrganizationDeletedEvent | OrganizationMembershipAddedEvent | OrganizationMembershipRoleChangedEvent | OrganizationMembershipRemovedEvent | OrganizationRoleCreatedEvent | OrganizationRoleUpdatedEvent | OrganizationRoleDeletedEvent | OrganizationDomainClaimedEvent | OrganizationDomainVerifiedEvent | OrganizationDomainUpdatedEvent | OrganizationDomainRemovedEvent | OrganizationInvitationCreatedEvent | OrganizationInvitationAcceptedEvent | OrganizationInvitationDeclinedEvent | OrganizationInvitationRevokedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
 
 export type HookBeforeSignUpDataMethod = typeof HookBeforeSignUpDataMethod[keyof typeof HookBeforeSignUpDataMethod];
 
@@ -2710,6 +2897,11 @@ export const ErrorCode = {
   organizationinvitation_wrong_account: 'organization.invitation_wrong_account',
   organizationinvitation_email_unverified: 'organization.invitation_email_unverified',
   organizationinvitation_role_gone: 'organization.invitation_role_gone',
+  organizationdomain_public: 'organization.domain_public',
+  organizationdomain_taken: 'organization.domain_taken',
+  organizationdomain_address_mismatch: 'organization.domain_address_mismatch',
+  organizationdomain_limit: 'organization.domain_limit',
+  organizationsuggestion_unavailable: 'organization.suggestion_unavailable',
   rate_limited: 'rate_limited',
   requestmalformed: 'request.malformed',
   requesttoo_large: 'request.too_large',
@@ -3842,6 +4034,10 @@ export const ActivityType = {
   organization_rolecreated: 'organization_role.created',
   organization_roleupdated: 'organization_role.updated',
   organization_roledeleted: 'organization_role.deleted',
+  organization_domainclaimed: 'organization_domain.claimed',
+  organization_domainverified: 'organization_domain.verified',
+  organization_domainupdated: 'organization_domain.updated',
+  organization_domainremoved: 'organization_domain.removed',
   organization_invitationcreated: 'organization_invitation.created',
   organization_invitationaccepted: 'organization_invitation.accepted',
   organization_invitationdeclined: 'organization_invitation.declined',
@@ -4051,6 +4247,7 @@ export interface EmailTemplates {
   identity_unlinked?: EmailTemplate;
   email_in_use?: EmailTemplate;
   email_added?: EmailTemplate;
+  organization_domain_verification?: EmailTemplate;
   organization_invitation?: EmailTemplate;
 }
 
@@ -4693,6 +4890,10 @@ export const CreateWebhookEndpointRequestEventTypesItem = {
   organization_rolecreated: 'organization_role.created',
   organization_roleupdated: 'organization_role.updated',
   organization_roledeleted: 'organization_role.deleted',
+  organization_domainclaimed: 'organization_domain.claimed',
+  organization_domainverified: 'organization_domain.verified',
+  organization_domainupdated: 'organization_domain.updated',
+  organization_domainremoved: 'organization_domain.removed',
   organization_invitationcreated: 'organization_invitation.created',
   organization_invitationaccepted: 'organization_invitation.accepted',
   organization_invitationdeclined: 'organization_invitation.declined',
@@ -4714,7 +4915,7 @@ export interface CreateWebhookEndpointRequest {
   url: string;
   /**
      * @minItems 1
-     * @maxItems 64
+     * @maxItems 68
      */
   eventTypes: CreateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -4778,6 +4979,10 @@ export const UpdateWebhookEndpointRequestEventTypesItem = {
   organization_rolecreated: 'organization_role.created',
   organization_roleupdated: 'organization_role.updated',
   organization_roledeleted: 'organization_role.deleted',
+  organization_domainclaimed: 'organization_domain.claimed',
+  organization_domainverified: 'organization_domain.verified',
+  organization_domainupdated: 'organization_domain.updated',
+  organization_domainremoved: 'organization_domain.removed',
   organization_invitationcreated: 'organization_invitation.created',
   organization_invitationaccepted: 'organization_invitation.accepted',
   organization_invitationdeclined: 'organization_invitation.declined',
@@ -4799,7 +5004,7 @@ export interface UpdateWebhookEndpointRequest {
   url?: string;
   /**
      * @minItems 1
-     * @maxItems 64
+     * @maxItems 68
      */
   eventTypes?: UpdateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -4981,6 +5186,10 @@ export const SendTestWebhookRequestEventType = {
   organization_rolecreated: 'organization_role.created',
   organization_roleupdated: 'organization_role.updated',
   organization_roledeleted: 'organization_role.deleted',
+  organization_domainclaimed: 'organization_domain.claimed',
+  organization_domainverified: 'organization_domain.verified',
+  organization_domainupdated: 'organization_domain.updated',
+  organization_domainremoved: 'organization_domain.removed',
   organization_invitationcreated: 'organization_invitation.created',
   organization_invitationaccepted: 'organization_invitation.accepted',
   organization_invitationdeclined: 'organization_invitation.declined',
@@ -5310,6 +5519,61 @@ export interface ActiveOrganization {
 
 export interface SetActiveOrganizationRequest {
   organizationId: string | null;
+}
+
+export type OrganizationDomainMode = typeof OrganizationDomainMode[keyof typeof OrganizationDomainMode];
+
+
+export const OrganizationDomainMode = {
+  suggest: 'suggest',
+  auto_join: 'auto_join',
+} as const;
+
+export interface OrganizationDomain {
+  id: string;
+  domain: string;
+  mode: OrganizationDomainMode;
+  verifiedAt: string | null;
+  codeExpiresAt: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  updatedAt: string;
+}
+
+export interface OrganizationDomainList {
+  data: OrganizationDomain[];
+}
+
+/**
+ * @maxLength 506
+ */
+export type OrganizationDomainName = string;
+
+export interface StartOrganizationDomainRequest {
+  domain: OrganizationDomainName;
+  /** @maxLength 320 */
+  email: string;
+  mode: OrganizationDomainMode;
+}
+
+export interface VerifyOrganizationDomainRequest {
+  /** @pattern ^\d{6}$ */
+  code: string;
+}
+
+export interface UpdateOrganizationDomainRequest {
+  mode: OrganizationDomainMode;
+}
+
+export interface OrganizationSuggestion {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+export interface OrganizationSuggestionList {
+  data: OrganizationSuggestion[];
 }
 
 export type OrganizationInvitationStatus = typeof OrganizationInvitationStatus[keyof typeof OrganizationInvitationStatus];
@@ -5649,7 +5913,7 @@ export interface MessagePreview {
 
 export type MessagePreviewRequest = {
   channel: 'email';
-  kind: 'email_verification' | 'password_reset' | 'sign_in' | 'step_up' | 'account_exists' | 'no_account' | 'no_account_sign_in' | 'password_changed' | 'password_added' | 'password_reset_completed' | 'password_added_by_reset' | 'password_set_by_admin' | 'password_added_by_admin' | 'password_removed' | 'new_sign_in' | 'mfa_enabled' | 'mfa_disabled' | 'mfa_reset_by_admin' | 'backup_codes_regenerated' | 'backup_code_used' | 'sms_factor_enabled' | 'sms_factor_removed' | 'passkey_added' | 'passkey_removed' | 'identity_linked' | 'identity_unlinked' | 'email_in_use' | 'email_added' | 'organization_invitation';
+  kind: 'email_verification' | 'password_reset' | 'sign_in' | 'step_up' | 'account_exists' | 'no_account' | 'no_account_sign_in' | 'password_changed' | 'password_added' | 'password_reset_completed' | 'password_added_by_reset' | 'password_set_by_admin' | 'password_added_by_admin' | 'password_removed' | 'new_sign_in' | 'mfa_enabled' | 'mfa_disabled' | 'mfa_reset_by_admin' | 'backup_codes_regenerated' | 'backup_code_used' | 'sms_factor_enabled' | 'sms_factor_removed' | 'passkey_added' | 'passkey_removed' | 'identity_linked' | 'identity_unlinked' | 'email_in_use' | 'email_added' | 'organization_domain_verification' | 'organization_invitation';
   template?: {
   /** @maxLength 200 */
   subject?: string;
@@ -11670,6 +11934,459 @@ export const useDeleteOrganizationRole = <TError = ErrorEnvelope,
         TContext
       > => {
       return useMutation(getDeleteOrganizationRoleMutationOptions(options), queryClient);
+    }
+
+export const getListOrganizationDomainsUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}/domains`
+}
+
+/**
+ * The domains the organization has claimed, oldest first: verified ones, and claims still waiting for their code. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary List an organization’s domains
+ */
+export const listOrganizationDomains = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationDomainList> => {
+
+  return dashboardFetch<OrganizationDomainList>(getListOrganizationDomainsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListOrganizationDomainsQueryKey = (id: string,) => {
+    return [
+    `/v1/admin/organizations/${id}/domains`
+    ] as const;
+    }
+
+
+export const getListOrganizationDomainsQueryOptions = <TData = Awaited<ReturnType<typeof listOrganizationDomains>>, TError = ErrorEnvelope>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationDomains>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListOrganizationDomainsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listOrganizationDomains>>> = ({ signal }) => listOrganizationDomains(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listOrganizationDomains>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListOrganizationDomainsQueryResult = NonNullable<Awaited<ReturnType<typeof listOrganizationDomains>>>
+export type ListOrganizationDomainsQueryError = ErrorEnvelope
+
+
+export function useListOrganizationDomains<TData = Awaited<ReturnType<typeof listOrganizationDomains>>, TError = ErrorEnvelope>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationDomains>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizationDomains>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizationDomains>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizationDomains<TData = Awaited<ReturnType<typeof listOrganizationDomains>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationDomains>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizationDomains>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizationDomains>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizationDomains<TData = Awaited<ReturnType<typeof listOrganizationDomains>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationDomains>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List an organization’s domains
+ */
+
+export function useListOrganizationDomains<TData = Awaited<ReturnType<typeof listOrganizationDomains>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationDomains>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListOrganizationDomainsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getStartOrganizationDomainUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}/domains`
+}
+
+/**
+ * Emails a 6-digit code to an address on the domain and keeps a pending claim; `POST …/{domainId}/verify` with the code verifies it. Sent again for a pending claim it emails a new code and may change the `mode`. A verified domain makes a user who signs up with a **verified** address on exactly that domain (a subdomain is another domain) a member with the environment’s default role (`auto_join`), or is offered the organization (`suggest`). Refused: a public mail domain (`organization.domain_public`, 422), an address that is not on the domain (`organization.domain_address_mismatch`, 422), a domain verified for an organization already (`organization.domain_taken`, 409) and an organization with ten domains (`organization.domain_limit`, 409). Sends are limited per organization, per environment and per address (429). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Claim a domain for an organization
+ */
+export const startOrganizationDomain = async (id: string,
+    startOrganizationDomainRequest: StartOrganizationDomainRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationDomain> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<OrganizationDomain>(getStartOrganizationDomainUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(startOrganizationDomainRequest)
+  }
+);}
+
+
+
+
+
+export const getStartOrganizationDomainMutationKey = () => ['startOrganizationDomain'] as const;
+
+export const getStartOrganizationDomainMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startOrganizationDomain>>, TError,StartOrganizationDomainMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof startOrganizationDomain>>, TError,StartOrganizationDomainMutationVariables, TContext> => {
+
+const mutationKey = getStartOrganizationDomainMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startOrganizationDomain>>, StartOrganizationDomainMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  startOrganizationDomain(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartOrganizationDomainMutationResult = NonNullable<Awaited<ReturnType<typeof startOrganizationDomain>>>
+    export type StartOrganizationDomainMutationBody = StartOrganizationDomainRequest
+    export type StartOrganizationDomainMutationError = ErrorEnvelope
+    export type StartOrganizationDomainMutationVariables = {id: string;data: StartOrganizationDomainRequest}
+
+    /**
+ * @summary Claim a domain for an organization
+ */
+export const useStartOrganizationDomain = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startOrganizationDomain>>, TError,StartOrganizationDomainMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof startOrganizationDomain>>,
+        TError,
+        StartOrganizationDomainMutationVariables,
+        TContext
+      > => {
+      return useMutation(getStartOrganizationDomainMutationOptions(options), queryClient);
+    }
+
+export const getVerifyOrganizationDomainUrl = (id: string,
+    domainId: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}/domains/${domainId}/verify`
+}
+
+/**
+ * Verifies the claim with the code emailed to an address on the domain. A wrong code is `verification.invalid_code` (422) and counts against five guesses per code and against a back-off that grows with every further wrong code (429); a code that expired or was replaced is `verification.expired` (410). A domain another organization verified first is `organization.domain_taken` (409). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Verify a claimed domain
+ */
+export const verifyOrganizationDomain = async (id: string,
+    domainId: string,
+    verifyOrganizationDomainRequest: VerifyOrganizationDomainRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationDomain> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<OrganizationDomain>(getVerifyOrganizationDomainUrl(id,domainId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(verifyOrganizationDomainRequest)
+  }
+);}
+
+
+
+
+
+export const getVerifyOrganizationDomainMutationKey = () => ['verifyOrganizationDomain'] as const;
+
+export const getVerifyOrganizationDomainMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof verifyOrganizationDomain>>, TError,VerifyOrganizationDomainMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof verifyOrganizationDomain>>, TError,VerifyOrganizationDomainMutationVariables, TContext> => {
+
+const mutationKey = getVerifyOrganizationDomainMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof verifyOrganizationDomain>>, VerifyOrganizationDomainMutationVariables> = (props) => {
+          const {id,domainId,data} = props ?? {};
+
+          return  verifyOrganizationDomain(id,domainId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type VerifyOrganizationDomainMutationResult = NonNullable<Awaited<ReturnType<typeof verifyOrganizationDomain>>>
+    export type VerifyOrganizationDomainMutationBody = VerifyOrganizationDomainRequest
+    export type VerifyOrganizationDomainMutationError = ErrorEnvelope
+    export type VerifyOrganizationDomainMutationVariables = {id: string;domainId: string;data: VerifyOrganizationDomainRequest}
+
+    /**
+ * @summary Verify a claimed domain
+ */
+export const useVerifyOrganizationDomain = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof verifyOrganizationDomain>>, TError,VerifyOrganizationDomainMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof verifyOrganizationDomain>>,
+        TError,
+        VerifyOrganizationDomainMutationVariables,
+        TContext
+      > => {
+      return useMutation(getVerifyOrganizationDomainMutationOptions(options), queryClient);
+    }
+
+export const getUpdateOrganizationDomainUrl = (id: string,
+    domainId: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}/domains/${domainId}`
+}
+
+/**
+ * Sets the domain’s `mode`: `suggest` or `auto_join`. Moving to `auto_join` is a weakening, recorded as such. It applies to sign-ups from then on; nobody is joined retroactively. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Change what a domain does
+ */
+export const updateOrganizationDomain = async (id: string,
+    domainId: string,
+    updateOrganizationDomainRequest: UpdateOrganizationDomainRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationDomain> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<OrganizationDomain>(getUpdateOrganizationDomainUrl(id,domainId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateOrganizationDomainRequest)
+  }
+);}
+
+
+
+
+
+export const getUpdateOrganizationDomainMutationKey = () => ['updateOrganizationDomain'] as const;
+
+export const getUpdateOrganizationDomainMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrganizationDomain>>, TError,UpdateOrganizationDomainMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateOrganizationDomain>>, TError,UpdateOrganizationDomainMutationVariables, TContext> => {
+
+const mutationKey = getUpdateOrganizationDomainMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateOrganizationDomain>>, UpdateOrganizationDomainMutationVariables> = (props) => {
+          const {id,domainId,data} = props ?? {};
+
+          return  updateOrganizationDomain(id,domainId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateOrganizationDomainMutationResult = NonNullable<Awaited<ReturnType<typeof updateOrganizationDomain>>>
+    export type UpdateOrganizationDomainMutationBody = UpdateOrganizationDomainRequest
+    export type UpdateOrganizationDomainMutationError = ErrorEnvelope
+    export type UpdateOrganizationDomainMutationVariables = {id: string;domainId: string;data: UpdateOrganizationDomainRequest}
+
+    /**
+ * @summary Change what a domain does
+ */
+export const useUpdateOrganizationDomain = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrganizationDomain>>, TError,UpdateOrganizationDomainMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateOrganizationDomain>>,
+        TError,
+        UpdateOrganizationDomainMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateOrganizationDomainMutationOptions(options), queryClient);
+    }
+
+export const getRemoveOrganizationDomainUrl = (id: string,
+    domainId: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}/domains/${domainId}`
+}
+
+/**
+ * Removes a claim, verified or not. Future sign-ups no longer join or are offered the organization because of it; members who joined stay members. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Remove a domain
+ */
+export const removeOrganizationDomain = async (id: string,
+    domainId: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
+
+  return dashboardFetch<void>(getRemoveOrganizationDomainUrl(id,domainId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRemoveOrganizationDomainMutationKey = () => ['removeOrganizationDomain'] as const;
+
+export const getRemoveOrganizationDomainMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeOrganizationDomain>>, TError,RemoveOrganizationDomainMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof removeOrganizationDomain>>, TError,RemoveOrganizationDomainMutationVariables, TContext> => {
+
+const mutationKey = getRemoveOrganizationDomainMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof removeOrganizationDomain>>, RemoveOrganizationDomainMutationVariables> = (props) => {
+          const {id,domainId} = props ?? {};
+
+          return  removeOrganizationDomain(id,domainId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RemoveOrganizationDomainMutationResult = NonNullable<Awaited<ReturnType<typeof removeOrganizationDomain>>>
+
+    export type RemoveOrganizationDomainMutationError = ErrorEnvelope
+    export type RemoveOrganizationDomainMutationVariables = {id: string;domainId: string}
+
+    /**
+ * @summary Remove a domain
+ */
+export const useRemoveOrganizationDomain = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeOrganizationDomain>>, TError,RemoveOrganizationDomainMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof removeOrganizationDomain>>,
+        TError,
+        RemoveOrganizationDomainMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRemoveOrganizationDomainMutationOptions(options), queryClient);
     }
 
 export const getListOrganizationInvitationsUrl = (id: string,

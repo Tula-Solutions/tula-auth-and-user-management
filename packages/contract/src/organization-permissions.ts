@@ -73,6 +73,13 @@ export type SystemPermission = (typeof SYSTEM_PERMISSIONS)[number]
 export const MEMBERSHIPS_MANAGE_PERMISSION: SystemPermission = 'org:sys:memberships:manage'
 
 /**
+ * The permission that lets a member claim, verify, change and remove the organization's
+ * domains through the client routes (ADR 0065, "Verified domains"). Read from the member's
+ * role at the time of the request, never from a token.
+ */
+export const DOMAINS_MANAGE_PERMISSION: SystemPermission = 'org:sys:domains:manage'
+
+/**
  * The permission that lets a member invite people to the organization and withdraw
  * invitations (ADR 0065, Orgs 04). Checked on the server from the membership as it is now,
  * never from a token's claims alone.

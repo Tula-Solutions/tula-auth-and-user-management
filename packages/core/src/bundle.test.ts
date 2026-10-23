@@ -133,8 +133,16 @@ import { join } from 'node:path'
  * (`list`, `invite`, `revoke`, `preview`, `accept`, `decline`). `readInvitationLink` is not in
  * the bundle of a client that does not import it. The budget moved by exactly those 393
  * bytes, from 17,805 to 18,198: the room is the 4 bytes it was.
+ * Verified domains (ADR 0065, Orgs 05) added 239 bytes, from 18,194 to 18,433 (measured on top
+ * of the invitations above): the five contract codes (`organization.domain_public`,
+ * `.domain_taken`, `.domain_address_mismatch`, `.domain_limit`, `.suggestion_unavailable`)
+ * with their messages, the seven rows of the generated table of operations (the two the
+ * client calls, `organizations.suggestions()` and `.join()`, and the five a member who manages
+ * an organization's domains would call, which the client does not wrap yet but the table lists
+ * all the same), and the two methods. The budget moved by exactly those 239 bytes, from 18,198
+ * to 18,437: the room is the 4 bytes it was.
  */
-const GZIP_BUDGET_BYTES = 18_198
+const GZIP_BUDGET_BYTES = 18_437
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

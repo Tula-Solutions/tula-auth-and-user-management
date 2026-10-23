@@ -21,6 +21,11 @@ import {
   OAuthProviderSchema,
 } from './oauth'
 import { ORGANIZATION_FIELDS, ORGANIZATION_ROLE_FIELDS, RoleKeySchema } from './organization'
+import {
+  DOMAIN_PATTERN,
+  MAX_DOMAIN_LENGTH,
+  ORGANIZATION_DOMAIN_MODES,
+} from './organization-domain-rules'
 import { MAX_PERMISSIONS_PER_ROLE } from './organization-permissions'
 import {
   PROPOSAL_FAILURE_REASONS,
@@ -55,6 +60,13 @@ import { AUTHENTICATION_METHODS } from './tokens'
  * input, and never a string that could hold anything else.
  */
 const id = () => z.uuid()
+
+/**
+ * A domain an organization claimed (ADR 0065): the operator's own identifier of the domain
+ * grammar (`acme.com`), bounded by pattern and length. It holds no address, and is the one
+ * client-supplied string of the domain events (the event canary lists the field).
+ */
+const DomainName = z.string().max(MAX_DOMAIN_LENGTH).regex(DOMAIN_PATTERN)
 
 /**
  * A `data` schema and the description its event is published with.
@@ -710,8 +722,13 @@ export const EVENT_DATA_SCHEMAS = {
   ),
   'organization_membership.added': data(
     'OrganizationMembershipAdded',
-    'A user became a member of an organization. The target is the membership.',
-    { organizationId: id(), userId: id(), role: RoleKeySchema }
+    'A user became a member of an organization. The target is the membership. `via` is present when it was not an administrator or an invitation that added them: `domain_auto_join` (they signed up with a verified address on a domain set to auto-join) or `domain_suggestion` (they joined an organization their verified address was suggested).',
+    {
+      organizationId: id(),
+      userId: id(),
+      role: RoleKeySchema,
+      via: z.enum(['domain_auto_join', 'domain_suggestion']).optional(),
+    }
   ),
   'organization_membership.role_changed': data(
     'OrganizationMembershipRoleChanged',
@@ -748,6 +765,39 @@ export const EVENT_DATA_SCHEMAS = {
     'OrganizationRoleDeleted',
     'A custom role was deleted. No member held it.',
     { role: RoleKeySchema }
+  ),
+  // Verified domains (ADR 0065). The organization's id, the domain (a name of the domain
+  // grammar, which the operator chose and which has no address in it) and the mode.
+  'organization_domain.claimed': data(
+    'OrganizationDomainClaimed',
+    'A code was emailed to an address on a domain an organization wants to claim (the first time, or again). Nothing is granted until the code is entered.',
+    { organizationId: id(), domain: DomainName, mode: z.enum(ORGANIZATION_DOMAIN_MODES) }
+  ),
+  'organization_domain.verified': data(
+    'OrganizationDomainVerified',
+    'An organization verified a domain: users who sign up with a verified address on it are suggested the organization or joined to it, by `mode`. `weakened` is present, and true, for `auto_join`.',
+    {
+      organizationId: id(),
+      domain: DomainName,
+      mode: z.enum(ORGANIZATION_DOMAIN_MODES),
+      weakened: z.literal(true).optional(),
+    }
+  ),
+  'organization_domain.updated': data(
+    'OrganizationDomainUpdated',
+    'What a domain does was changed. `weakened` is present, and true, when the domain now auto-joins.',
+    {
+      organizationId: id(),
+      domain: DomainName,
+      mode: z.enum(ORGANIZATION_DOMAIN_MODES),
+      previousMode: z.enum(ORGANIZATION_DOMAIN_MODES),
+      weakened: z.literal(true).optional(),
+    }
+  ),
+  'organization_domain.removed': data(
+    'OrganizationDomainRemoved',
+    'A domain was removed, verified or not. No future sign-up joins or is suggested the organization because of it; members who joined stay.',
+    { organizationId: id(), domain: DomainName }
   ),
   // Invitations to an organization (ADR 0065, Orgs 04). Ids and the role's key only: the invited
   // address is the inviter's text, and never in an event.
