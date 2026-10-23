@@ -305,6 +305,8 @@ public struct TulaOrganizations: Sendable, TulaRedacted {
     /// `false` with no active organization.
     ///
     /// - Parameter permission: A permission key such as `org:billing:read`.
+    /// - Returns: Whether the active organization's role holds that very key.
+    /// - Throws: As `active()`.
     public func has(permission: String) async throws -> Bool {
         try await active()?.has(permission: permission) ?? false
     }
@@ -313,6 +315,8 @@ public struct TulaOrganizations: Sendable, TulaRedacted {
     /// active organization.
     ///
     /// - Parameter role: A role key such as `admin`.
+    /// - Returns: Whether it is the member's role in the active organization.
+    /// - Throws: As `active()`.
     public func has(role: String) async throws -> Bool {
         try await active()?.has(role: role) ?? false
     }
@@ -322,6 +326,7 @@ public struct TulaOrganizations: Sendable, TulaRedacted {
     /// list is empty for an address that is not verified and for a domain that is not
     /// exactly the address's.
     ///
+    /// - Returns: The page of suggestions, empty when there are none.
     /// - Throws: `TulaError`: `auth.unauthenticated` when signed out, `organization.disabled`.
     public func suggestions() async throws -> OrganizationSuggestionList {
         try await context.session.authorized(
@@ -372,6 +377,7 @@ public struct TulaOrganizationInvitations: Sendable, TulaRedacted {
     /// the role's key and the address invited, to prefill a sign-up. Needs no session.
     ///
     /// - Parameter token: The token from the link's fragment.
+    /// - Returns: What the invitation is for.
     /// - Throws: `TulaError`: `organization.invitation_not_found`,
     ///   `organization.invitation_expired`, `organization.invitation_revoked`,
     ///   `organization.invitation_used`.
@@ -414,6 +420,7 @@ public struct TulaOrganizationInvitations: Sendable, TulaRedacted {
     /// `org:sys:invitations:manage`. Never a token. Only the first page.
     ///
     /// - Parameter organizationId: The organization.
+    /// - Returns: The first page of pending invitations.
     /// - Throws: `TulaError`: `organization.not_a_member`, `organization.permission_required`,
     ///   `organization.disabled`.
     public func list(organizationId: String) async throws -> OrganizationInvitationList {

@@ -469,7 +469,9 @@ tula.organizations.active()?.let { organization ->
     if (organization.hasPermission("org:billing:read")) {
         // show the billing tab
     }
-    check(organization.hasRole("admin") || organization.role.isNotEmpty())
+    if (organization.hasRole("admin")) {
+        // show the admin tab
+    }
 }
 tula.organizations.clearActive() // back to the personal account
 ```

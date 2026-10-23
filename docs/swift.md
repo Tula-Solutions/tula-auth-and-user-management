@@ -780,7 +780,9 @@ if let organization = try await tula.organizations.active() {
     if organization.has(permission: "org:billing:read") {
         // show the billing tab
     }
-    _ = organization.has(role: "admin")
+    if organization.has(role: "admin") {
+        // show the admin tab
+    }
 }
 try await tula.organizations.clearActive()  // back to the personal account
 ```

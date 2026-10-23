@@ -3166,6 +3166,8 @@ Whether the active organization's role holds a permission: `active()?.has(permis
 `false` with no active organization.
 
 - Parameter permission: A permission key such as `org:billing:read`.
+- Returns: Whether the active organization's role holds that very key.
+- Throws: As `active()`.
 
 ```swift
 public func has(permission: String) async throws -> Bool
@@ -3179,6 +3181,8 @@ Whether the member's role in the active organization is this one, `false` with n
 active organization.
 
 - Parameter role: A role key such as `admin`.
+- Returns: Whether it is the member's role in the active organization.
+- Throws: As `active()`.
 
 ```swift
 public func has(role: String) async throws -> Bool
@@ -3193,6 +3197,7 @@ domain the organization verified: each one's id, name and slug, and nothing else
 list is empty for an address that is not verified and for a domain that is not
 exactly the address's.
 
+- Returns: The page of suggestions, empty when there are none.
 - Throws: `TulaError`: `auth.unauthenticated` when signed out, `organization.disabled`.
 
 ```swift
@@ -3245,6 +3250,7 @@ What an invitation's token shows before anyone has signed in: the organization's
 the role's key and the address invited, to prefill a sign-up. Needs no session.
 
 - Parameter token: The token from the link's fragment.
+- Returns: What the invitation is for.
 - Throws: `TulaError`: `organization.invitation_not_found`,
   `organization.invitation_expired`, `organization.invitation_revoked`,
   `organization.invitation_used`.
@@ -3292,6 +3298,7 @@ An organization's pending invitations, newest first, for a member whose role hol
 `org:sys:invitations:manage`. Never a token. Only the first page.
 
 - Parameter organizationId: The organization.
+- Returns: The first page of pending invitations.
 - Throws: `TulaError`: `organization.not_a_member`, `organization.permission_required`,
   `organization.disabled`.
 

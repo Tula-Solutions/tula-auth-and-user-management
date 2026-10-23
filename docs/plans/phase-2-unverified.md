@@ -777,6 +777,8 @@ completes the sign-in in the app" is therefore **shown in tests only**. Not veri
 
 ## Step 2.14, the Swift client (TULA-37, [ADR 0051](../adr/0051-swift-client.md))
 
+Organizations (TULA-121) are recorded in [their own section](#organizations-in-the-swift-and-kotlin-clients-tula-121-adr-0065), at the end of this page.
+
 The client is tested in Swift, on one Mac, from the command line. **`verify` runs none of
 it**: no job of `ci.yml` has a Swift toolchain. What `verify` holds is that the journey
 tests the Swift sources declare and the `swift` column of
@@ -1188,6 +1190,8 @@ providers are the same before and after). Nothing else.
 | **Postgres, a deployed server** | Not run against either: the tool makes two `GET`s that the read tools already make. |
 
 ## Step 2.15, the Kotlin client (TULA-38, [ADR 0054](../adr/0054-kotlin-client.md))
+
+Organizations (TULA-121) are recorded in [their own section](#organizations-in-the-swift-and-kotlin-clients-tula-121-adr-0065), at the end of this page.
 
 The client (`native/android/tula-auth`) is plain Kotlin and its tests run on a JVM. The
 `kotlin` job of `.github/workflows/ci.yml` runs them on Linux (Temurin 25) on every pull

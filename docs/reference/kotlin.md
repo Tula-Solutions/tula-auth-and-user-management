@@ -2226,6 +2226,8 @@ Whether the active organization's role holds a permission: `active()?.hasPermiss
 `false` with no active organization.
 
 @param permission A permission key such as `org:billing:read`.
+@return Whether the active organization's role holds that very key.
+@throws TulaError As [active].
 
 ```kotlin
 suspend fun hasPermission(permission: String): Boolean
@@ -2239,6 +2241,8 @@ Whether the member's role in the active organization is this one, `false` with n
 active organization.
 
 @param role A role key such as `admin`.
+@return Whether it is the member's role in the active organization.
+@throws TulaError As [active].
 
 ```kotlin
 suspend fun hasRole(role: String): Boolean
@@ -2253,6 +2257,7 @@ domain the organization verified: each one's id, name and slug, and nothing else
 list is empty for an address that is not verified and for a domain that is not exactly
 the address's.
 
+@return The page of suggestions, empty when there are none.
 @throws TulaError `auth.unauthenticated` when signed out, `organization.disabled`.
 
 ```kotlin
@@ -2305,6 +2310,7 @@ What an invitation's token shows before anyone has signed in: the organization's
 the role's key and the address invited, to prefill a sign-up. Needs no session.
 
 @param token The token from the link's fragment.
+@return What the invitation is for.
 @throws TulaError `organization.invitation_not_found`, `organization.invitation_expired`,
   `organization.invitation_revoked`, `organization.invitation_used`.
 
@@ -2351,6 +2357,7 @@ An organization's pending invitations, newest first, for a member whose role hol
 `org:sys:invitations:manage`. Never a token. Only the first page.
 
 @param organizationId The organization.
+@return The first page of pending invitations.
 @throws TulaError `organization.not_a_member`, `organization.permission_required`,
   `organization.disabled`.
 
