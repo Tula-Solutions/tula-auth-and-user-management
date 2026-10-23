@@ -630,6 +630,8 @@ export interface Schemas {
     index: number
     status: 'skipped'
     reason: Schemas['ImportSkipReason']
+    id?: string
+    sameExternalId?: boolean
   } | {
     index: number
     status: 'refused'
