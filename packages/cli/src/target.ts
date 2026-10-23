@@ -9,6 +9,7 @@ import {
 import { type EnvironmentConfig, secretKeyMatchesKind } from '@tula-tech/config'
 import { UsageError } from './args'
 import type { CliIo } from './framework'
+import { targetOf } from './import/progress'
 import type { Output } from './output'
 import { VERSION } from './version'
 
@@ -25,6 +26,11 @@ export interface Target {
   apiUrl: string
   /** The admin client, holding the secret key. */
   admin: AdminClient
+  /**
+   * Tells this API and key from another without holding either: 16 hex characters of a SHA-256
+   * of the origin and the key. A progress file is bound to it (`tula import`).
+   */
+  fingerprint: string
 }
 
 /** `prod-eu` → `PROD_EU`: the suffix of an environment's own variables. */
@@ -154,7 +160,7 @@ export async function resolveTarget(input: {
         `a ${environment.kind} key. Nothing was read or changed.`
     )
   }
-  return { apiUrl: apiUrl.replace(/\/+$/, ''), admin }
+  return { apiUrl: apiUrl.replace(/\/+$/, ''), admin, fingerprint: targetOf(apiUrl, secretKey) }
 }
 
 /**
@@ -204,6 +210,7 @@ export async function resolveAgent(input: {
   try {
     return {
       apiUrl: apiUrl.replace(/\/+$/, ''),
+      fingerprint: targetOf(apiUrl, agentKey),
       admin: createAgentClient({
         baseUrl: apiUrl,
         agentKey,

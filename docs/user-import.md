@@ -6,6 +6,12 @@ password hash they have in the system they come from. The user signs in with the
 password; the first successful sign-in **replaces the foreign hash with Tula's argon2id**,
 and nobody notices. The reasoning is in [ADR 0066](adr/0066-user-import.md).
 
+To move users from Clerk, Auth0, Firebase, Supabase or better-auth, you do not call the route
+yourself: [`tula import`](cli.md#tula-import) reads the provider's export, reports what it would
+do and sends the batches. One guide each: [Clerk](migrate-from-clerk.md),
+[Auth0](migrate-from-auth0.md), [Firebase](migrate-from-firebase.md),
+[Supabase](migrate-from-supabase.md), [better-auth](migrate-from-better-auth.md).
+
 This page covers `bcrypt`, `argon2id`, `argon2i`, `pbkdf2_sha256` (Django and others) and
 `firebase_scrypt` (Firebase Authentication) hashes.
 
