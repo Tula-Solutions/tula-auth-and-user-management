@@ -85,3 +85,19 @@ describe('the Playwright projects and the CI jobs that run them', () => {
     ])
   })
 })
+
+// The fixture is one in-memory world (settings, clock, organizations). A run that attaches to
+// another run's fixture, in another checkout or another agent's, has its state changed under it
+// and fails with errors no test explains (TULA-129): a busy port stops the run, unless the
+// developer asks for the reuse on purpose.
+describe('the fixture servers of the Playwright config', () => {
+  test('the API and the Next.js server are never attached to by default', () => {
+    expect(config).toContain("const reuseFixture = process.env.E2E_REUSE_SERVER === '1'")
+    const start = config.indexOf('function apiServers()')
+    const block = config.slice(start, config.indexOf('\n}\n', start))
+    expect([...block.matchAll(/reuseExistingServer:\s*([^,\n]+)/g)].map((m) => m[1])).toEqual([
+      'reuseFixture',
+      'reuseFixture',
+    ])
+  })
+})
