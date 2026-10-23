@@ -84,12 +84,32 @@ contract, enforced in the schema and in the database.
 **An organization always has someone who can manage its members.** The last member who holds
 `org:sys:memberships:manage` cannot be demoted to a role without it or removed
 (`organization.last_manager`, 409). The check and the write are one transaction that locks
-the organization's row, so two concurrent demotions cannot both succeed. Known gap, deferred to
-[TULA-124](https://linear.app/tula/issue/TULA-124): deleting a *user* cascades their
-memberships and can leave an organization with none (the deletion bypasses the rule), and a
-user deletion takes no organization lock, so it can also race a guarded demotion of the
-*other* manager (both pass, and nobody is left). TULA-124 decides whether deleting such a
-user must be refused or must promote someone, under the same lock.
+the organization's row, so two concurrent demotions cannot both succeed.
+
+**Deleting a user is refused while they are the last manager of an organization**
+([TULA-124](https://linear.app/tula/issue/TULA-124)). The cascade that deletes a user's
+memberships used to bypass the rule above, and took no organization lock, so it could also race
+a guarded demotion of the *other* manager (both pass, and nobody is left). The decision is to
+refuse, as removal and demotion do, and not to promote or flag anyone: promoting a member picks
+a person with powers over other people on nobody's say-so, and a flag is a state that every
+reader of an organization would then have to handle. The operator has two plain ways out:
+add another manager, or delete the organization. The refusal is
+`user.last_organization_manager` (409) with `params.organizationIds`, a comma-separated list of
+the ids (at most 20, ascending) and `params.count`; it is a code of the *user* area and not
+`organization.last_manager` because the request is about a user and the client must not have
+to tell which of two meanings of one code it got. It covers every path that deletes a user
+(`UserRepository.delete`): `DELETE /v1/admin/users/{id}`, the only route that does today (there
+is no deletion of one's own account), and the retention job's purge of sign-in test users
+(`deleteTestUsersBefore`), which leaves a test user who is the only manager for a later round
+and counts only the users it deleted. The service looks first (`soleManagerOf`, unlocked) so
+that a refused deletion does not end the user's sessions, and the store decides: in one
+transaction it locks the user's row, then the rows of every organization they belong to in id
+order, `FOR NO KEY UPDATE`, and only then reads who manages, so a deletion and a demotion of the
+other manager take turns and exactly one is made. The lock order is the same as everywhere
+else (users, then organizations by id; never the role row first); `NO KEY UPDATE` conflicts
+with the `FOR UPDATE` of a removal, a demotion and a role update but not with the `KEY SHARE`
+of a membership insert, which would otherwise deadlock with the user lock. A set of users
+deleted together is judged as a whole: two managers purged together are both left.
 
 ### Settings
 
@@ -135,10 +155,12 @@ who they were.
   in no organization) and an error line names the environment, the organization and the
   count, never a value. A reader (`readOrganizationClaims`) treats any partial or malformed
   combination of the three as absent, whole.
-- **A maximal role does not fit a browser cookie.** `@tula-tech/nextjs` keeps the access token
+- **A maximal role does not fit a browser cookie.** `@tula-tech/nextjs` kept the access token
   in `tula_at`; with the maximal organization claims (about 3.4 KB once base64url-encoded)
-  that cookie can pass a browser's per-cookie budget. Nobody has such a role yet (the
-  built-in ones are small); the SDK's cookie handling for it is Orgs 06 (TULA-117).
+  that cookie can pass a browser's per-cookie budget. Orgs 06 (TULA-117) measured it and
+  decided: the token is stored in up to two cookies. The measurement, the limits and the
+  decision are in [ADR 0029](0029-nextjs-sdk.md), "Amendment: the organization claims and the
+  access token's cookies".
 - **The session records its active organization** in `sessions.active_organization_id`
   (migration 0039), deliberately **without a foreign key**: deleting an organization or a
   membership must not touch a session row, and the id is trusted for nothing, since every
@@ -378,6 +400,8 @@ native organization screens.
   the existing rows.
 - A removal does not end the session, so a removed member's token carries the old claims for
   up to its life (about a minute). Anything that must be immediate checks the membership.
-- The last-manager rule has the gap described above until TULA-124.
+- The last-manager rule covers deleting a user too (TULA-124), at the price that a user who
+  alone manages an organization cannot be deleted until someone else does or the organization
+  is deleted.
 - A custom role is shared by all organizations of the environment, like the built-in ones.
   Changing one changes what every member who holds it may do, at their next refresh.

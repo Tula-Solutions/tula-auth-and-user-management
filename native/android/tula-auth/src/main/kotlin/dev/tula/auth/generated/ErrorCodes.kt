@@ -328,6 +328,10 @@ sealed class ErrorCode {
         override val rawValue: String = "device.binding_required"
     }
 
+    object UserLastOrganizationManager : ErrorCode() {
+        override val rawValue: String = "user.last_organization_manager"
+    }
+
     object OrganizationDisabled : ErrorCode() {
         override val rawValue: String = "organization.disabled"
     }
@@ -540,6 +544,7 @@ sealed class ErrorCode {
                 DeviceNonceRequired,
                 DeviceBindingNotSupported,
                 DeviceBindingRequired,
+                UserLastOrganizationManager,
                 OrganizationDisabled,
                 OrganizationSlugTaken,
                 OrganizationMemberExists,
@@ -653,6 +658,7 @@ sealed class ErrorCode {
             "device.nonce_required" -> DeviceNonceRequired
             "device.binding_not_supported" -> DeviceBindingNotSupported
             "device.binding_required" -> DeviceBindingRequired
+            "user.last_organization_manager" -> UserLastOrganizationManager
             "organization.disabled" -> OrganizationDisabled
             "organization.slug_taken" -> OrganizationSlugTaken
             "organization.member_exists" -> OrganizationMemberExists
@@ -944,6 +950,9 @@ object TulaErrorDefinitions {
     /** `device.binding_required` */
     val deviceBindingRequired: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.DeviceBindingRequired, 400, "Signing in here needs a device key.")
 
+    /** `user.last_organization_manager` */
+    val userLastOrganizationManager: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.UserLastOrganizationManager, 409, "This user is the only manager of an organization. Add another manager or delete the organization first.")
+
     /** `organization.disabled` */
     val organizationDisabled: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationDisabled, 403, "Organizations are not enabled for this environment.")
 
@@ -1116,6 +1125,7 @@ object TulaErrorDefinitions {
         deviceNonceRequired,
         deviceBindingNotSupported,
         deviceBindingRequired,
+        userLastOrganizationManager,
         organizationDisabled,
         organizationSlugTaken,
         organizationMemberExists,

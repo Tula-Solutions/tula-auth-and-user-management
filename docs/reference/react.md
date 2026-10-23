@@ -8,6 +8,16 @@ Tula's React SDK: a provider, hooks and prebuilt, themeable, accessible componen
 
 Source: `packages/react/src/index.ts`
 
+### `ActiveOrganization`
+
+_type_, defined in `packages/core/src/types.ts`
+
+What `organizations.setActive()` answers: the session's active organization now.
+
+```ts
+export type ActiveOrganization = Schemas['ActiveOrganization']
+```
+
 ### `Appearance`
 
 _interface_, defined in `packages/react/src/appearance.ts`
@@ -47,6 +57,16 @@ export interface Appearance {
     elements: { card: 'shadow-none', primaryButton: 'uppercase' },
   }}
 />
+```
+
+### `CreateOrganizationInput`
+
+_type_, defined in `packages/core/src/types.ts`
+
+The body of `organizations.create()`: a name and a slug (lower-case letters, digits, hyphens).
+
+```ts
+export type CreateOrganizationInput = Schemas['CreateOrganizationRequest']
 ```
 
 ### `ELEMENT_NAMES`
@@ -538,6 +558,26 @@ export type OAuthCallbackStatus =
 | 'different_browser'
 | 'refused'
 | 'error'
+```
+
+### `OrganizationCheck`
+
+_type_, defined in `packages/contract/src/custom-claims.ts`
+
+What {@link hasOrganizationAccess} asks: one permission key, or one role key. Exactly one
+of the two.
+
+```ts
+export type OrganizationCheck =
+| { readonly permission: string; readonly role?: never }
+| { readonly role: string; readonly permission?: never }
+```
+
+**Example**
+
+```ts
+const byPermission: OrganizationCheck = { permission: 'org:billing:read' }
+const byRole: OrganizationCheck = { role: 'admin' }
 ```
 
 ### `PasswordChecklist`
@@ -2516,6 +2556,109 @@ export interface UseOAuthCallbackResult {
 }
 ```
 
+### `UseOrganizationListResult`
+
+_interface_, defined in `packages/react/src/hooks/use-organization.ts`
+
+What {@link useOrganizationList} returns.
+
+```ts
+export interface UseOrganizationListResult {
+  /** Whether the list has arrived for this session. */
+  isLoaded: boolean
+  /**
+   * The organizations the user belongs to, with their role and its permissions in each (the
+   * first page the API answers); `null` until loaded.
+   */
+  organizations: UserOrganization[] | null
+  /** The id of the organization the session acts in, or `null`. */
+  activeOrganizationId: string | null
+  /** Whether the list is being fetched. */
+  isLoading: boolean
+  /** Why the last fetch failed, or `null`. */
+  error: TulaError | null
+  /** Fetch the list again. */
+  reload(): Promise<void>
+  /**
+   * Make an organization the session's active one, or clear it with `null`. The access token
+   * is replaced with one that carries the new organization.
+   *
+   * @param organizationId - The organization, or `null` for the personal account.
+   * @returns The API's answer.
+   * @throws TulaError `organization.not_a_member`, `organization.personal_account_disabled`.
+   */
+  setActive(organizationId: string | null): Promise<ActiveOrganization>
+  /**
+   * Create an organization the user owns, then refresh the list. The session does not switch
+   * to it: call `setActive`.
+   *
+   * @param input - The name and the slug.
+   * @returns The organization.
+   * @throws TulaError `organization.creation_disabled`, `organization.limit_reached`,
+   *   `organization.slug_taken`.
+   */
+  create(input: CreateOrganizationInput): Promise<UserOrganization>
+}
+```
+
+**Example**
+
+```ts
+const { organizations, setActive }: UseOrganizationListResult = useOrganizationList()
+```
+
+### `UseOrganizationResult`
+
+_interface_, defined in `packages/react/src/hooks/use-organization.ts`
+
+What {@link useOrganization} returns.
+
+```ts
+export interface UseOrganizationResult {
+  /**
+   * Whether the active organization is known: someone is signed in and either no organization
+   * is active or its role has arrived. `false` while loading and when the fetch failed (see
+   * `error`).
+   */
+  isLoaded: boolean
+  /** The active organization's id, or `null` (the personal account, or organizations are off). */
+  organizationId: string | null
+  /**
+   * The active organization with the user's role and its permissions, once loaded; `null`
+   * with none active, while loading, and when the user is no longer a member of it.
+   */
+  organization: UserOrganization | null
+  /** The key of the user's role in it, or `null`. */
+  role: string | null
+  /** The permission keys of that role, as of the last load; empty with none. */
+  permissions: readonly string[]
+  /**
+   * Whether the active organization grants a permission or a role. **False** with no active
+   * organization, before it has loaded, and for any answer that belongs to another session.
+   * A permission is matched exactly: no wildcard, and `manage` does not imply `read`.
+   *
+   * This decides what to show. Your server decides what to allow: it checks the same keys
+   * from the access token's claims (`auth().has()` in `@tula-tech/nextjs`).
+   *
+   * @param check - `{ permission: 'org:billing:read' }` or `{ role: 'admin' }`.
+   * @returns Whether it is granted.
+   */
+  has(check: OrganizationCheck): boolean
+  /** Whether the list is being fetched. */
+  isLoading: boolean
+  /** Why the last fetch failed (`organization.disabled`, a network error), or `null`. */
+  error: TulaError | null
+  /** Fetch the organizations again (after a role changed, say). */
+  reload(): Promise<void>
+}
+```
+
+**Example**
+
+```ts
+const { organization, has }: UseOrganizationResult = useOrganization()
+```
+
 ### `UseResetPasswordResult`
 
 _interface_, defined in `packages/react/src/hooks/use-reset-password.ts`
@@ -2911,6 +3054,24 @@ export interface UserButtonProps {
 
 ```tsx
 <UserButton afterSignOutUrl='/' />
+```
+
+### `UserOrganization`
+
+_type_, defined in `packages/core/src/types.ts`
+
+An organization the signed-in user belongs to, with their role in it and its permission
+keys (ADR 0065).
+
+```ts
+export type UserOrganization = Schemas['UserOrganization']
+```
+
+**Example**
+
+```ts
+const { data } = await tula.organizations.list()
+const admin = data.find((org) => org.role === 'admin')
 ```
 
 ### `UserProfile`
@@ -3320,6 +3481,74 @@ function Landing() {
   const { status, message } = useOAuthCallback()
   if (status === 'loading') return <p>Signing you in…</p>
   return <p>{status === 'refused' ? message : status}</p>
+}
+```
+
+### `useOrganization`
+
+_function_, defined in `packages/react/src/hooks/use-organization.ts`
+
+The organization the session acts in, with the user's role and permissions in it, and a
+`has()` to check them. Keyed to the session: nothing fetched for another session is ever
+shown, and `has()` answers false for a session that has ended.
+
+The id comes from the client's state (the access token's `org_id`); the role and the
+permissions from the user's organization list, which is fetched once however many
+components use this hook or {@link useOrganizationList}, and only while an organization is
+active.
+
+```ts
+export function useOrganization(): UseOrganizationResult
+```
+
+**Returns** The active organization and `has()`.
+
+**Throws** Error outside a `<TulaProvider>`.
+
+**Example**
+
+```tsx
+function BillingLink() {
+  const { organization, has } = useOrganization()
+  if (!organization || !has({ permission: 'org:billing:read' })) {
+    return null
+  }
+  return <a href='/billing'>Billing for {organization.name}</a>
+}
+```
+
+### `useOrganizationList`
+
+_function_, defined in `packages/react/src/hooks/use-organization.ts`
+
+The organizations the signed-in user belongs to, the active one, and the actions that
+switch or add one. The list is fetched when the hook mounts with a signed-in user, once
+however many components use it, and it is dropped the moment the session changes.
+
+```ts
+export function useOrganizationList(): UseOrganizationListResult
+```
+
+**Returns** The list and its actions.
+
+**Throws** Error outside a `<TulaProvider>`.
+
+**Example**
+
+```tsx
+function Switcher() {
+  const { organizations, activeOrganizationId, setActive } = useOrganizationList()
+  return (
+    <select
+      value={activeOrganizationId ?? ''}
+      onChange={(event) => setActive(event.target.value || null)}
+    >
+      <option value=''>Personal account</option>
+      {organizations?.map((org) => (
+        <option key={org.id} value={org.id}>{org.name}</option>
+      ))}
+    </select>
+  )
 }
 ```
 

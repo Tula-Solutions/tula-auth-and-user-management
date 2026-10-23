@@ -83,6 +83,7 @@ public enum ErrorCode: Codable, Hashable, Sendable {
     case deviceNonceRequired
     case deviceBindingNotSupported
     case deviceBindingRequired
+    case userLastOrganizationManager
     case organizationDisabled
     case organizationSlugTaken
     case organizationMemberExists
@@ -196,6 +197,7 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         .deviceNonceRequired,
         .deviceBindingNotSupported,
         .deviceBindingRequired,
+        .userLastOrganizationManager,
         .organizationDisabled,
         .organizationSlugTaken,
         .organizationMemberExists,
@@ -309,6 +311,7 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case "device.nonce_required": self = .deviceNonceRequired
         case "device.binding_not_supported": self = .deviceBindingNotSupported
         case "device.binding_required": self = .deviceBindingRequired
+        case "user.last_organization_manager": self = .userLastOrganizationManager
         case "organization.disabled": self = .organizationDisabled
         case "organization.slug_taken": self = .organizationSlugTaken
         case "organization.member_exists": self = .organizationMemberExists
@@ -424,6 +427,7 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case .deviceNonceRequired: return "device.nonce_required"
         case .deviceBindingNotSupported: return "device.binding_not_supported"
         case .deviceBindingRequired: return "device.binding_required"
+        case .userLastOrganizationManager: return "user.last_organization_manager"
         case .organizationDisabled: return "organization.disabled"
         case .organizationSlugTaken: return "organization.slug_taken"
         case .organizationMemberExists: return "organization.member_exists"
@@ -720,6 +724,9 @@ public enum TulaErrorDefinitions {
     /// `device.binding_required`
     public static let deviceBindingRequired = TulaErrorDefinition(code: .deviceBindingRequired, status: 400, message: "Signing in here needs a device key.")
 
+    /// `user.last_organization_manager`
+    public static let userLastOrganizationManager = TulaErrorDefinition(code: .userLastOrganizationManager, status: 409, message: "This user is the only manager of an organization. Add another manager or delete the organization first.")
+
     /// `organization.disabled`
     public static let organizationDisabled = TulaErrorDefinition(code: .organizationDisabled, status: 403, message: "Organizations are not enabled for this environment.")
 
@@ -892,6 +899,7 @@ public enum TulaErrorDefinitions {
         deviceNonceRequired,
         deviceBindingNotSupported,
         deviceBindingRequired,
+        userLastOrganizationManager,
         organizationDisabled,
         organizationSlugTaken,
         organizationMemberExists,

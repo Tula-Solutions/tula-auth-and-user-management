@@ -1,7 +1,11 @@
 import {
   CUSTOM_CLAIMS_CLAIM,
   type CustomClaims,
+  ORGANIZATION_ID_CLAIM,
+  ORGANIZATION_PERMISSIONS_CLAIM,
+  ORGANIZATION_ROLE_CLAIM,
   readCustomClaims,
+  readOrganizationClaims,
 } from '@tula-tech/contract/custom-claims'
 import { createRemoteJWKSet, customFetch, decodeProtectedHeader, jwtVerify } from 'jose'
 import type { FetchLike, TulaConfig } from './config'
@@ -40,6 +44,16 @@ export interface SessionClaims {
    * else under this name was left out. The same record as `auth().customClaims`.
    */
   ext?: CustomClaims
+  /**
+   * The active organization's id (ADR 0065). Present only together with `org_role` and
+   * `org_perms`, and only in the shape a Tula server issues; any other combination was left
+   * out, all three. Read the three through `auth()`, which also answers `has()`.
+   */
+  org_id?: string
+  /** The key of the member's role in the active organization. */
+  org_role?: string
+  /** The permission keys of that role: each a well-formed key, at most 32. */
+  org_perms?: string[]
   [claim: string]: unknown
 }
 
@@ -54,6 +68,11 @@ export const NO_CUSTOM_CLAIMS: CustomClaims = Object.freeze({})
  * in the one shape a Tula server issues, or nothing. A value of any other shape under that
  * name is dropped here, for a token and for a `stateful` session's answer alike, so that it
  * never reaches an application as something to rely on.
+ *
+ * The three organization claims (`org_id`, `org_role`, `org_perms`) are treated alike: they
+ * stay only when `readOrganizationClaims` accepts all three, and are all removed otherwise.
+ * An application therefore never sees an organization without its role and permissions, nor
+ * a permission list that is not made of well-formed keys.
  *
  * @param candidate - Claims that were verified: a token's payload after `jwtVerify`, the
  *   API's answer, or the contents of this app's own sealed header.
@@ -72,9 +91,24 @@ export function sessionClaims(
   if (!isSessionOf(candidate, config)) {
     return null
   }
-  const { [CUSTOM_CLAIMS_CLAIM]: _unchecked, ...claims } = candidate
+  const {
+    [CUSTOM_CLAIMS_CLAIM]: _unchecked,
+    [ORGANIZATION_ID_CLAIM]: _id,
+    [ORGANIZATION_ROLE_CLAIM]: _role,
+    [ORGANIZATION_PERMISSIONS_CLAIM]: _permissions,
+    ...claims
+  } = candidate
   const custom = readCustomClaims(candidate)
-  return custom ? { ...claims, [CUSTOM_CLAIMS_CLAIM]: custom } : claims
+  const organization = readOrganizationClaims(candidate)
+  return {
+    ...claims,
+    ...(custom && { [CUSTOM_CLAIMS_CLAIM]: custom }),
+    ...(organization && {
+      [ORGANIZATION_ID_CLAIM]: organization.orgId,
+      [ORGANIZATION_ROLE_CLAIM]: organization.orgRole,
+      [ORGANIZATION_PERMISSIONS_CLAIM]: [...organization.orgPermissions],
+    }),
+  }
 }
 
 /** Seconds of clock difference tolerated between this server and the API. */

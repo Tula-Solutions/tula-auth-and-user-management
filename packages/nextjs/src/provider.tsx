@@ -17,8 +17,10 @@ import { DEFAULT_HANDLER_PATH } from './paths'
  *
  * @example
  * ```tsx
- * const { sessionId } = await auth()
- * const initialState = sessionId ? { sessionId, user: await currentUser() } : null
+ * const { sessionId, orgId } = await auth()
+ * const initialState = sessionId
+ *   ? { sessionId, user: await currentUser(), organizationId: orgId }
+ *   : null
  * ```
  */
 export interface InitialAuthState {
@@ -26,6 +28,11 @@ export interface InitialAuthState {
   sessionId: string
   /** The user, from `currentUser()`, when the layout fetched it. */
   user?: User | null
+  /**
+   * The active organization's id, from `auth().orgId` (ADR 0065), so that the first paint
+   * already knows it. Left out or `null` for none.
+   */
+  organizationId?: string | null
 }
 
 /**
@@ -102,8 +109,19 @@ function createView(inner: TulaClient, hint: AuthState | undefined, shared: Shar
       }
     },
   }
+  // A new active organization is a new access token (the handler has set its cookies by the
+  // time this resolves): render the Server Components again so `auth()` reads it.
+  const organizations: TulaClient['organizations'] = {
+    ...inner.organizations,
+    async setActive(organizationId) {
+      const answer = await inner.organizations.setActive(organizationId)
+      shared.refresh()
+      return answer
+    },
+  }
   return Object.create(inner, {
     session: { value: session },
+    organizations: { value: organizations },
     ...(hint && {
       state: { get: () => (inner.state.status === 'loading' ? hint : inner.state) },
       serverState: { value: hint },
@@ -190,9 +208,7 @@ export function TulaProvider(props: TulaProviderProps) {
               status: 'signed-in',
               sessionId: initialState.sessionId,
               user: initialState.user ?? null,
-              // The server's hint carries no organization yet (the Next.js SDK reads the
-              // organization claims in a later ticket); the client's own state fills it in.
-              organizationId: null,
+              organizationId: initialState.organizationId ?? null,
             })
     created.current = {
       key,
