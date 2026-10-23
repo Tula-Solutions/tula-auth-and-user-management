@@ -147,7 +147,15 @@ describe('an agent key reads what a secret key reads', () => {
       const res = await app.request(concrete(path), init('GET', AGENT_KEY))
       // Authorized: whatever the route then says (a 404 for the made-up id), it is not a
       // refusal of the key.
-      expect([400, 401, 403]).not.toContain(res.status)
+      // An environment with organizations off answers `organization.disabled` (403) from the
+      // service, which the key has reached.
+      const body = (await res
+        .clone()
+        .json()
+        .catch(() => ({}))) as { code?: string }
+      if (!(res.status === 403 && body.code === 'organization.disabled')) {
+        expect([400, 401, 403]).not.toContain(res.status)
+      }
       expect(res.status).toBeLessThan(500)
       // A read records nothing and changes nothing.
       expect(deps.activityLog.entries).toEqual([])

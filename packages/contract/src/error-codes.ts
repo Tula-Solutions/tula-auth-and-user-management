@@ -339,6 +339,33 @@ export const ERROR_DEFINITIONS = {
     message: 'Signing in here needs a device key.',
   },
 
+  // Organizations (ADR 0065). `disabled`: the environment's `organizations.enabled` setting is
+  // off, so every organization route answers this and touches nothing. It says nothing about any
+  // account. `slug_taken` and `member_exists` are conflicts on the organization's unique slug and
+  // on a user's one membership per organization. `last_manager`: the change would leave the
+  // organization with no member who holds `org:sys:memberships:manage`; nothing was changed.
+  // `role_unknown`: the role key names no role of the environment.
+  'organization.disabled': {
+    status: 403,
+    message: 'Organizations are not enabled for this environment.',
+  },
+  'organization.slug_taken': {
+    status: 409,
+    message: 'An organization with that slug already exists.',
+  },
+  'organization.member_exists': {
+    status: 409,
+    message: 'That user is already a member of this organization.',
+  },
+  'organization.last_manager': {
+    status: 409,
+    message: 'An organization must keep at least one member who can manage its members.',
+  },
+  'organization.role_unknown': {
+    status: 422,
+    message: 'That role does not exist in this environment.',
+  },
+
   rate_limited: { status: 429, message: 'Too many requests. Try again shortly.' },
   'request.malformed': { status: 400, message: 'The request could not be read.' },
   'request.too_large': { status: 413, message: 'The request body is too large.' },

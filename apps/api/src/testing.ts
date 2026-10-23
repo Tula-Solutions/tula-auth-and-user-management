@@ -18,6 +18,7 @@ import { MemoryMailer } from '~/adapters/memory/mailer'
 import { MemoryNativeAppStore } from '~/adapters/memory/native-apps'
 import { type FakeOAuthProviders, fakeOAuthProviders } from '~/adapters/memory/oauth'
 import { MemoryOAuthProviderStore } from '~/adapters/memory/oauth-providers'
+import { MemoryOrganizationStore } from '~/adapters/memory/organizations'
 import { FakeOutbound } from '~/adapters/memory/outbound'
 import { MemoryPasskeyStore } from '~/adapters/memory/passkeys'
 import { MemoryProofReplayGuard } from '~/adapters/memory/proof-replay'
@@ -72,6 +73,7 @@ export interface TestDeps extends Deps {
   webhookDeliveries: MemoryWebhookDeliveryStore
   hooks: MemoryHookStore
   nativeApps: MemoryNativeAppStore
+  organizations: MemoryOrganizationStore
   proposals: MemoryProposalStore
   outbound: FakeOutbound
 }
@@ -171,6 +173,7 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     webhookDeliveries: new MemoryWebhookDeliveryStore(activityLog, webhookEndpoints),
     hooks: new MemoryHookStore(activityLog),
     nativeApps: new MemoryNativeAppStore(activityLog),
+    organizations: new MemoryOrganizationStore(activityLog),
     proposals: new MemoryProposalStore(activityLog, apiKeys),
     // The tier of `TEST_CONFIG`, and a resolver that knows only the names a test gives it.
     outbound: new FakeOutbound((overrides.config ?? TEST_CONFIG).tier),

@@ -39,7 +39,7 @@ async function setup() {
   return { deps, app, cookie, key }
 }
 
-async function code(res: Response): Promise<string> {
+async function code(res: { json(): Promise<unknown> }): Promise<string> {
   return ((await res.json()) as { code: string }).code
 }
 
@@ -95,7 +95,11 @@ describe('every admin route takes a dashboard session with an environment', asyn
       // Authorized: whatever the route then says (a 404 for the made-up id, a 422 for the empty
       // body), it is not a refusal of the credential.
       const ok = await app.request(url, init(method, withSession))
-      expect([400, 401, 403]).not.toContain(ok.status)
+      // An environment with organizations off answers `organization.disabled` (403) from
+      // the service, which the credential has reached.
+      if (!(ok.status === 403 && (await code(ok.clone())) === 'organization.disabled')) {
+        expect([400, 401, 403]).not.toContain(ok.status)
+      }
       expect(ok.status).toBeLessThan(500)
 
       // No cookie.
@@ -150,7 +154,9 @@ describe('every admin route takes a dashboard session with an environment', asyn
         url,
         init(method, { authorization: `Bearer ${SECRET_KEY}`, 'content-type': 'application/json' })
       )
-      expect([400, 401, 403]).not.toContain(byKey.status)
+      if (!(byKey.status === 403 && (await code(byKey.clone())) === 'organization.disabled')) {
+        expect([400, 401, 403]).not.toContain(byKey.status)
+      }
     })
   }
 })

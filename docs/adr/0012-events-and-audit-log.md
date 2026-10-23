@@ -216,7 +216,10 @@ of.
   `targetId`; the target and actor filters each have an index. In the response `action`,
   `actor.type` and `target.type` are strings, not enums, so a client keeps working when a later
   server records new kinds of action or actor.
-- **What is deliberately not recorded.** Writes that change no one's access: upgrading a weak
+- **What is deliberately not recorded.** Writes that change no one's access: creating an
+  environment's two built-in organization roles when its organization routes first need
+  them (`ensureBuiltInRoles`; they make a constant of the contract visible and record no
+  decision, [ADR 0065](0065-organizations.md)); upgrading a weak
   password hash after a successful sign-in (the password did not change); creating an
   environment's first signing keys (the server does it by itself); the bookkeeping timestamps
   `last_sign_in_at` (the sign-in itself is `session.created`) and an API key's `last_used_at`,

@@ -20,6 +20,7 @@ import {
   MAX_ADDITIONAL_CLIENT_IDS,
   OAuthProviderSchema,
 } from './oauth'
+import { ORGANIZATION_FIELDS, RoleKeySchema } from './organization'
 import {
   PROPOSAL_FAILURE_REASONS,
   PROPOSAL_OPERATIONS,
@@ -669,6 +670,44 @@ export const EVENT_DATA_SCHEMAS = {
     'NativeAppDeleted',
     'A registered native app was removed: the association files no longer name it.',
     { platform: z.enum(NATIVE_APP_PLATFORMS) }
+  ),
+  // Organizations (ADR 0065). Ids and role keys only: the organization's name and slug and a
+  // member's address and name are operator or user text, and never in an event.
+  'organization.created': data(
+    'OrganizationCreated',
+    'An organization was created. Its name and slug are not in the event: read the organization by its id.',
+    {}
+  ),
+  'organization.updated': data(
+    'OrganizationUpdated',
+    'An organization was renamed or its slug changed.',
+    {
+      /** Which fields changed. Names only, never a value. */
+      changed: z.array(z.enum(ORGANIZATION_FIELDS)).min(1).max(ORGANIZATION_FIELDS.length),
+    }
+  ),
+  'organization.deleted': data(
+    'OrganizationDeleted',
+    'An organization was deleted, and its memberships with it. No `organization_membership.removed` event is recorded for them.',
+    {
+      /** How many memberships went with it. */
+      memberships: z.number().int().min(0),
+    }
+  ),
+  'organization_membership.added': data(
+    'OrganizationMembershipAdded',
+    'A user became a member of an organization. The target is the membership.',
+    { organizationId: id(), userId: id(), role: RoleKeySchema }
+  ),
+  'organization_membership.role_changed': data(
+    'OrganizationMembershipRoleChanged',
+    'A member was given another role. The session of that member carries the new role from its next refresh.',
+    { organizationId: id(), userId: id(), role: RoleKeySchema, previousRole: RoleKeySchema }
+  ),
+  'organization_membership.removed': data(
+    'OrganizationMembershipRemoved',
+    'A member was removed from an organization. The session of that user leaves the organization at its next refresh; the account stays.',
+    { organizationId: id(), userId: id(), role: RoleKeySchema }
   ),
   // Proposals (ADR 0053). The actor of `created`, `executed` and `failed` is the agent; the
   // actor of `approved` is the human, and the agent is named in its `data`.
