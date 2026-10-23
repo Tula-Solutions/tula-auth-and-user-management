@@ -1,5 +1,5 @@
 {
-  "id": "e03f2aed-d638-424f-9f21-fe8bbf5dc96c",
+  "id": "87f1a0cc-4571-4430-8131-4d6393f1bd65",
   "prevId": "5afc3309-acfd-47e3-8366-fec56a89d68f",
   "version": "7",
   "dialect": "postgresql",
@@ -4177,12 +4177,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "active_organization_id": {
-          "name": "active_organization_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "revoked_at": {
           "name": "revoked_at",
           "type": "timestamp with time zone",
@@ -4998,6 +4992,19 @@
           "primaryKey": false,
           "notNull": false
         },
+        "external_id": {
+          "name": "external_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "metadata": {
+          "name": "metadata",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -5133,6 +5140,10 @@
         "users_email_whole": {
           "name": "users_email_whole",
           "value": "(\"tula\".\"users\".\"email\" IS NULL) = (\"tula\".\"users\".\"email_normalized\" IS NULL) AND (\"tula\".\"users\".\"email\" IS NOT NULL OR \"tula\".\"users\".\"email_verified_at\" IS NULL)"
+        },
+        "users_metadata_bounds": {
+          "name": "users_metadata_bounds",
+          "value": "jsonb_typeof(\"tula\".\"users\".\"metadata\") = 'object' AND octet_length(\"tula\".\"users\".\"metadata\"::text) <= 4096"
         },
         "users_phone_number_whole": {
           "name": "users_phone_number_whole",

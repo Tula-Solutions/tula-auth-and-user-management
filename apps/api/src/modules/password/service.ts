@@ -74,7 +74,9 @@ export async function hash(password: string): Promise<string> {
  * Pass `null` when there is no account (or no password credential): a dummy hash with the same
  * parameters is verified instead, so response timing does not reveal which accounts exist.
  *
- * @param storedHash - The user's argon2id hash, or `null` for an unknown user.
+ * @param storedHash - The user's hash, in Tula's argon2id or in a format an import accepts
+ *   (`./foreign-hash`), or `null` for an unknown user. A hash that cannot be read matches
+ *   nothing.
  * @param password - The password the client sent.
  * @returns `true` only when a real hash matches.
  */
@@ -84,8 +86,33 @@ export async function verify(storedHash: string | null, password: string): Promi
   if (normalized === null) {
     return false
   }
-  const matches = await Bun.password.verify(normalized, storedHash ?? DUMMY_HASH)
-  return storedHash !== null && matches
+  // `Bun.password.verify` reads the algorithm from the stored hash itself: argon2id, argon2i
+  // and bcrypt (`$2a$`, `$2b$`, `$2y$`), so an imported hash (ADR 0066) is checked with its own
+  // algorithm and a native one with argon2id, through this one call. An unknown user gets
+  // the dummy hash, so the same call runs for every answer.
+  //
+  // The system an imported hash came from did not NFC-normalize what it hashed, so the
+  // password as typed is tried as well when it differs from its normal form. Every candidate
+  // is tried for every kind of account, the dummy included and with no early exit, so neither
+  // the match nor the account's origin decides how long this takes.
+  const candidates = password === normalized ? [normalized] : [normalized, password]
+  let matched = false
+  for (const candidate of candidates) {
+    matched = (await checks(candidate, storedHash ?? DUMMY_HASH)) || matched
+  }
+  return storedHash !== null && matched
+}
+
+/**
+ * Bun's verification, with a hash it cannot read counting as a mismatch. A stored hash is
+ * parsed when it is imported, but a row can come from before that rule or from a restore.
+ */
+async function checks(password: string, encoded: string): Promise<boolean> {
+  try {
+    return await Bun.password.verify(password, encoded)
+  } catch {
+    return false
+  }
 }
 
 /**

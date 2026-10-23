@@ -3616,6 +3616,126 @@ provider token: Tula stores none.
 const IdentitySchema: z.ZodObject<{ id: z.ZodString; provider: z.ZodString; createdAt: z.ZodISODateTime; }, z.core.$strip>
 ```
 
+### `ImportPasswordSchema`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+A password hash made by another system, in a tagged form.
+
+`algorithm` names the format and decides how `hash` is read and checked. It is a plain
+string on the wire so that a name this server does not know is refused for that row
+(`import.unsupported_algorithm`) and not for the whole call, and so that a later algorithm
+(`firebase_scrypt`, `pbkdf2_sha256`) is an addition, not a break. Today: `bcrypt`
+(`$2a$`, `$2b$`, `$2y$`; cost 10 to 14), `argon2id` and `argon2i` (PHC strings; at least
+19 MiB and 2 passes). `params` is for algorithms whose hash does not carry its own
+parameters; those three do, so it is ignored for them.
+
+The hash is never returned by any route.
+
+```ts
+const ImportPasswordSchema
+```
+
+**Example**
+
+```ts
+ImportPasswordSchema.parse({ algorithm: 'bcrypt', hash: '$2b$10$…' })
+```
+
+### `ImportRowResult`
+
+_type_, defined in `packages/contract/src/user.ts`
+
+What became of one import row.
+
+```ts
+export type ImportRowResult = z.infer<typeof ImportRowResultSchema>
+```
+
+### `ImportRowResultSchema`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+What became of one row. `index` is the row's place in the request, so the answer can be
+matched to the file it came from. A `created` row has the user's `id`, a `skipped` one a
+`reason`, a `refused` one a contract error `code` (an `import.*` code, `email.invalid`,
+…) and its default message.
+
+```ts
+const ImportRowResultSchema
+```
+
+### `ImportSkipReasonSchema`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+Why a row was skipped: the address is taken, or an earlier row of the call has it.
+
+```ts
+const ImportSkipReasonSchema: z.ZodEnum<{}>
+```
+
+### `ImportUserRow`
+
+_type_, defined in `packages/contract/src/user.ts`
+
+One user of an import.
+
+```ts
+export type ImportUserRow = z.infer<typeof ImportUserRowSchema>
+```
+
+### `ImportUserRowSchema`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+One user of an import.
+
+```ts
+const ImportUserRowSchema
+```
+
+### `ImportUsersRequest`
+
+_type_, defined in `packages/contract/src/user.ts`
+
+An import request body.
+
+```ts
+export type ImportUsersRequest = z.infer<typeof ImportUsersRequestSchema>
+```
+
+### `ImportUsersRequestSchema`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+A call of `POST /v1/admin/users/import`: up to {@link MAX_IMPORT_ROWS} users. A row that is
+wrong is refused alone; a request that is not this shape at all is refused whole.
+
+```ts
+const ImportUsersRequestSchema
+```
+
+### `ImportUsersResult`
+
+_type_, defined in `packages/contract/src/user.ts`
+
+The answer to an import.
+
+```ts
+export type ImportUsersResult = z.infer<typeof ImportUsersResultSchema>
+```
+
+### `ImportUsersResultSchema`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+The answer to an import: one result per row, in order, and the counts.
+
+```ts
+const ImportUsersResultSchema
+```
+
 ### `InstanceActivityType`
 
 _type_, defined in `packages/contract/src/audit.ts`
@@ -4134,6 +4254,30 @@ Longest given or family name an ID-token exchange may carry beside the token.
 
 ```ts
 const MAX_ID_TOKEN_NAME_LENGTH: 100
+```
+
+### `MAX_IMPORT_METADATA_BYTES`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+The most bytes a row's `metadata` may take **as stored**: the database prints a space after
+every `:` and `,`, so the count is the compact JSON plus about one byte for each of them.
+It is stored with the user, so it is bounded the way any user-sized value is. A row over
+it, nested more than 32 levels, or holding a NUL, a lone surrogate or an exponent number
+is refused alone with `validation.failed`.
+
+```ts
+const MAX_IMPORT_METADATA_BYTES: 4096
+```
+
+### `MAX_IMPORT_ROWS`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+The most rows one call of `POST /v1/admin/users/import` takes.
+
+```ts
+const MAX_IMPORT_ROWS: 500
 ```
 
 ### `MAX_JWT_TEMPLATES`

@@ -120,6 +120,22 @@ sealed class ErrorCode {
         override val rawValue: String = "password.not_set"
     }
 
+    object ImportUnsupportedAlgorithm : ErrorCode() {
+        override val rawValue: String = "import.unsupported_algorithm"
+    }
+
+    object ImportHashMalformed : ErrorCode() {
+        override val rawValue: String = "import.hash_malformed"
+    }
+
+    object ImportHashParametersTooWeak : ErrorCode() {
+        override val rawValue: String = "import.hash_parameters_too_weak"
+    }
+
+    object ImportHashParametersTooCostly : ErrorCode() {
+        override val rawValue: String = "import.hash_parameters_too_costly"
+    }
+
     object VerificationInvalidCode : ErrorCode() {
         override val rawValue: String = "verification.invalid_code"
     }
@@ -436,6 +452,10 @@ sealed class ErrorCode {
                 PasswordSequence,
                 PasswordReused,
                 PasswordNotSet,
+                ImportUnsupportedAlgorithm,
+                ImportHashMalformed,
+                ImportHashParametersTooWeak,
+                ImportHashParametersTooCostly,
                 VerificationInvalidCode,
                 VerificationExpired,
                 VerificationTooManyAttempts,
@@ -536,6 +556,10 @@ sealed class ErrorCode {
             "password.sequence" -> PasswordSequence
             "password.reused" -> PasswordReused
             "password.not_set" -> PasswordNotSet
+            "import.unsupported_algorithm" -> ImportUnsupportedAlgorithm
+            "import.hash_malformed" -> ImportHashMalformed
+            "import.hash_parameters_too_weak" -> ImportHashParametersTooWeak
+            "import.hash_parameters_too_costly" -> ImportHashParametersTooCostly
             "verification.invalid_code" -> VerificationInvalidCode
             "verification.expired" -> VerificationExpired
             "verification.too_many_attempts" -> VerificationTooManyAttempts
@@ -709,6 +733,18 @@ object TulaErrorDefinitions {
 
     /** `password.not_set` */
     val passwordNotSet: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.PasswordNotSet, 409, "This account has no password yet. Use \"forgot password\" to set one.")
+
+    /** `import.unsupported_algorithm` */
+    val importUnsupportedAlgorithm: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.ImportUnsupportedAlgorithm, 422, "That password hash algorithm is not supported.")
+
+    /** `import.hash_malformed` */
+    val importHashMalformed: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.ImportHashMalformed, 422, "That password hash is malformed.")
+
+    /** `import.hash_parameters_too_weak` */
+    val importHashParametersTooWeak: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.ImportHashParametersTooWeak, 422, "That password hash is too weak to import.")
+
+    /** `import.hash_parameters_too_costly` */
+    val importHashParametersTooCostly: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.ImportHashParametersTooCostly, 422, "That password hash is too costly to verify.")
 
     /** `verification.invalid_code` */
     val verificationInvalidCode: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.VerificationInvalidCode, 422, "That code is incorrect.")
@@ -947,6 +983,10 @@ object TulaErrorDefinitions {
         passwordSequence,
         passwordReused,
         passwordNotSet,
+        importUnsupportedAlgorithm,
+        importHashMalformed,
+        importHashParametersTooWeak,
+        importHashParametersTooCostly,
         verificationInvalidCode,
         verificationExpired,
         verificationTooManyAttempts,
