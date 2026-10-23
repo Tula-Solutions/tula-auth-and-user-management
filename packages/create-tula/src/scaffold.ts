@@ -9,10 +9,10 @@ import { fileURLToPath } from 'node:url'
  *
  * @example
  * ```ts
- * `create-tula ${VERSION}` // 'create-tula 0.1.1'
+ * `create-tula ${VERSION}` // 'create-tula 0.2.0'
  * ```
  */
-export const VERSION = '0.1.1'
+export const VERSION = '0.2.0'
 
 /**
  * The frameworks a project can be scaffolded for. Each has a template made from an example app

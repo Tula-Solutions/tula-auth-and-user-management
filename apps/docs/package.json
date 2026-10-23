@@ -1,6 +1,6 @@
 {
   "name": "@tula-tech/docs",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
   "type": "module",
   "description": "The documentation site: docs/**/*.md prerendered to static HTML. Never served by the API, never published.",
