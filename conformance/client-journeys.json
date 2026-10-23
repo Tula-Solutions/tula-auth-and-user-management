@@ -1106,13 +1106,13 @@
       },
       "swift": {
         "decision": "not_built",
-        "ticket": "TULA-121",
-        "reason": "the Swift client has no call for an organization's members, the roles a member may give, renaming, deleting or leaving an organization yet; TULA-121 built the list, the switch and the invitation answers, and these calls are the follow-up to it (member management for the native clients)."
+        "ticket": "TULA-130",
+        "reason": "the Swift client has no call for an organization's members, the roles a member may give, renaming, deleting or leaving an organization yet; they are built there by TULA-130 (member and organization management in the Swift and Kotlin clients)."
       },
       "kotlin": {
         "decision": "not_built",
-        "ticket": "TULA-121",
-        "reason": "the Kotlin client has no call for an organization's members, the roles a member may give, renaming, deleting or leaving an organization yet; TULA-121 built the list, the switch and the invitation answers, and these calls are the follow-up to it (member management for the native clients)."
+        "ticket": "TULA-130",
+        "reason": "the Kotlin client has no call for an organization's members, the roles a member may give, renaming, deleting or leaving an organization yet; they are built there by TULA-130 (member and organization management in the Swift and Kotlin clients)."
       }
     },
     "passkey assertion replay": {

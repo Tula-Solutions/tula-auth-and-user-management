@@ -473,6 +473,8 @@ An environment defines roles of its own beside the two built-in ones.
   permission and a valid session, with no fresh-authentication step (the admin route behind a
   secret key has none either); a step-up for it is a later change. The member list reads one
   user per record of a page, bounded by the page size; a batch lookup is deferred.
+  TULA-131 tracks the three deferred items: a step-up for deletion, a route listing a user's own
+  pending invitations, and the batch lookup.
 - **Destinations are props.** `organizationProfileUrl`, `createOrganizationUrl` and
   `invitationUrl` (on the provider or the component) are the only places the components
   navigate to; without them the switcher opens the form or the profile in a dialog.
