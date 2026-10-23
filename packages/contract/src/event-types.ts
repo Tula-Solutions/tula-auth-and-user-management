@@ -113,6 +113,12 @@ export const ACTIVITY_TYPES = [
   'organization_role.created',
   'organization_role.updated',
   'organization_role.deleted',
+  // An invitation to join an organization (ADR 0065, Orgs 04). Ids and the role's key only: the
+  // invited address is never in an event. An invitation that lapses is not recorded.
+  'organization_invitation.created',
+  'organization_invitation.accepted',
+  'organization_invitation.declined',
+  'organization_invitation.revoked',
   'proposal.created',
   'proposal.approved',
   'proposal.executed',
@@ -210,6 +216,10 @@ export const EVENT_TARGET_TYPES = {
   'organization_role.created': 'organization_role',
   'organization_role.updated': 'organization_role',
   'organization_role.deleted': 'organization_role',
+  'organization_invitation.created': 'organization_invitation',
+  'organization_invitation.accepted': 'organization_invitation',
+  'organization_invitation.declined': 'organization_invitation',
+  'organization_invitation.revoked': 'organization_invitation',
   'proposal.created': 'proposal',
   'proposal.approved': 'proposal',
   'proposal.executed': 'proposal',

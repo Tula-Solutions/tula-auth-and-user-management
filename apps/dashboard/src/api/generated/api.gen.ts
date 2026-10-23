@@ -1257,7 +1257,7 @@ export interface OAuthProviderDeletedEvent {
 export interface WebhookEndpointCreatedEventData {
   /**
      * @minimum 1
-     * @maximum 60
+     * @maximum 64
      */
   eventTypes: number;
   enabled: boolean;
@@ -2054,6 +2054,134 @@ export interface OrganizationRoleDeletedEvent {
   test?: true;
 }
 
+/**
+ * Someone was invited to an organization. The target is the invitation; the invited address is not in the event: read the invitation by its id.
+ */
+export interface OrganizationInvitationCreatedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  role: OrganizationRoleKey;
+}
+
+export type OrganizationInvitationCreatedEventTarget = {
+  type: 'organization_invitation';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * Someone was invited to an organization. The target is the invitation; the invited address is not in the event: read the invitation by its id.
+ */
+export interface OrganizationInvitationCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_invitation.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationInvitationCreatedEventTarget;
+  data: OrganizationInvitationCreatedEventData;
+  test?: true;
+}
+
+/**
+ * An invitation was accepted by the user it was for, who became a member in the same transaction (an `organization_membership.added` event follows it). The actor is that user.
+ */
+export interface OrganizationInvitationAcceptedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  role: OrganizationRoleKey;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  userId: string;
+}
+
+export type OrganizationInvitationAcceptedEventTarget = {
+  type: 'organization_invitation';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An invitation was accepted by the user it was for, who became a member in the same transaction (an `organization_membership.added` event follows it). The actor is that user.
+ */
+export interface OrganizationInvitationAcceptedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_invitation.accepted';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationInvitationAcceptedEventTarget;
+  data: OrganizationInvitationAcceptedEventData;
+  test?: true;
+}
+
+/**
+ * An invitation was declined by the user it was for. The actor is that user.
+ */
+export interface OrganizationInvitationDeclinedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  role: OrganizationRoleKey;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  userId: string;
+}
+
+export type OrganizationInvitationDeclinedEventTarget = {
+  type: 'organization_invitation';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An invitation was declined by the user it was for. The actor is that user.
+ */
+export interface OrganizationInvitationDeclinedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_invitation.declined';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationInvitationDeclinedEventTarget;
+  data: OrganizationInvitationDeclinedEventData;
+  test?: true;
+}
+
+/**
+ * A pending invitation was withdrawn: its link no longer works.
+ */
+export interface OrganizationInvitationRevokedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  role: OrganizationRoleKey;
+}
+
+export type OrganizationInvitationRevokedEventTarget = {
+  type: 'organization_invitation';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A pending invitation was withdrawn: its link no longer works.
+ */
+export interface OrganizationInvitationRevokedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_invitation.revoked';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationInvitationRevokedEventTarget;
+  data: OrganizationInvitationRevokedEventData;
+  test?: true;
+}
+
 export type ProposalCreatedEventDataOperation = typeof ProposalCreatedEventDataOperation[keyof typeof ProposalCreatedEventDataOperation];
 
 
@@ -2347,7 +2475,7 @@ export interface SignInTestFinishedEvent {
   test?: true;
 }
 
-export type TulaEvent = UserCreatedEvent | UserImportedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserEmailAddedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | OrganizationCreatedEvent | OrganizationUpdatedEvent | OrganizationDeletedEvent | OrganizationMembershipAddedEvent | OrganizationMembershipRoleChangedEvent | OrganizationMembershipRemovedEvent | OrganizationRoleCreatedEvent | OrganizationRoleUpdatedEvent | OrganizationRoleDeletedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
+export type TulaEvent = UserCreatedEvent | UserImportedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserEmailAddedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | OrganizationCreatedEvent | OrganizationUpdatedEvent | OrganizationDeletedEvent | OrganizationMembershipAddedEvent | OrganizationMembershipRoleChangedEvent | OrganizationMembershipRemovedEvent | OrganizationRoleCreatedEvent | OrganizationRoleUpdatedEvent | OrganizationRoleDeletedEvent | OrganizationInvitationCreatedEvent | OrganizationInvitationAcceptedEvent | OrganizationInvitationDeclinedEvent | OrganizationInvitationRevokedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
 
 export type HookBeforeSignUpDataMethod = typeof HookBeforeSignUpDataMethod[keyof typeof HookBeforeSignUpDataMethod];
 
@@ -2571,6 +2699,16 @@ export const ErrorCode = {
   organizationrole_in_use: 'organization.role_in_use',
   organizationrole_built_in: 'organization.role_built_in',
   organizationrole_limit: 'organization.role_limit',
+  organizationpermission_required: 'organization.permission_required',
+  organizationrole_not_assignable: 'organization.role_not_assignable',
+  organizationinvitation_exists: 'organization.invitation_exists',
+  organizationinvitation_not_found: 'organization.invitation_not_found',
+  organizationinvitation_expired: 'organization.invitation_expired',
+  organizationinvitation_revoked: 'organization.invitation_revoked',
+  organizationinvitation_used: 'organization.invitation_used',
+  organizationinvitation_wrong_account: 'organization.invitation_wrong_account',
+  organizationinvitation_email_unverified: 'organization.invitation_email_unverified',
+  organizationinvitation_role_gone: 'organization.invitation_role_gone',
   rate_limited: 'rate_limited',
   requestmalformed: 'request.malformed',
   requesttoo_large: 'request.too_large',
@@ -3703,6 +3841,10 @@ export const ActivityType = {
   organization_rolecreated: 'organization_role.created',
   organization_roleupdated: 'organization_role.updated',
   organization_roledeleted: 'organization_role.deleted',
+  organization_invitationcreated: 'organization_invitation.created',
+  organization_invitationaccepted: 'organization_invitation.accepted',
+  organization_invitationdeclined: 'organization_invitation.declined',
+  organization_invitationrevoked: 'organization_invitation.revoked',
   proposalcreated: 'proposal.created',
   proposalapproved: 'proposal.approved',
   proposalexecuted: 'proposal.executed',
@@ -3908,6 +4050,7 @@ export interface EmailTemplates {
   identity_unlinked?: EmailTemplate;
   email_in_use?: EmailTemplate;
   email_added?: EmailTemplate;
+  organization_invitation?: EmailTemplate;
 }
 
 export interface EmailSettings {
@@ -4549,6 +4692,10 @@ export const CreateWebhookEndpointRequestEventTypesItem = {
   organization_rolecreated: 'organization_role.created',
   organization_roleupdated: 'organization_role.updated',
   organization_roledeleted: 'organization_role.deleted',
+  organization_invitationcreated: 'organization_invitation.created',
+  organization_invitationaccepted: 'organization_invitation.accepted',
+  organization_invitationdeclined: 'organization_invitation.declined',
+  organization_invitationrevoked: 'organization_invitation.revoked',
   proposalcreated: 'proposal.created',
   proposalapproved: 'proposal.approved',
   proposalexecuted: 'proposal.executed',
@@ -4566,7 +4713,7 @@ export interface CreateWebhookEndpointRequest {
   url: string;
   /**
      * @minItems 1
-     * @maxItems 60
+     * @maxItems 64
      */
   eventTypes: CreateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -4630,6 +4777,10 @@ export const UpdateWebhookEndpointRequestEventTypesItem = {
   organization_rolecreated: 'organization_role.created',
   organization_roleupdated: 'organization_role.updated',
   organization_roledeleted: 'organization_role.deleted',
+  organization_invitationcreated: 'organization_invitation.created',
+  organization_invitationaccepted: 'organization_invitation.accepted',
+  organization_invitationdeclined: 'organization_invitation.declined',
+  organization_invitationrevoked: 'organization_invitation.revoked',
   proposalcreated: 'proposal.created',
   proposalapproved: 'proposal.approved',
   proposalexecuted: 'proposal.executed',
@@ -4647,7 +4798,7 @@ export interface UpdateWebhookEndpointRequest {
   url?: string;
   /**
      * @minItems 1
-     * @maxItems 60
+     * @maxItems 64
      */
   eventTypes?: UpdateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -4829,6 +4980,10 @@ export const SendTestWebhookRequestEventType = {
   organization_rolecreated: 'organization_role.created',
   organization_roleupdated: 'organization_role.updated',
   organization_roledeleted: 'organization_role.deleted',
+  organization_invitationcreated: 'organization_invitation.created',
+  organization_invitationaccepted: 'organization_invitation.accepted',
+  organization_invitationdeclined: 'organization_invitation.declined',
+  organization_invitationrevoked: 'organization_invitation.revoked',
   proposalcreated: 'proposal.created',
   proposalapproved: 'proposal.approved',
   proposalexecuted: 'proposal.executed',
@@ -5156,6 +5311,95 @@ export interface SetActiveOrganizationRequest {
   organizationId: string | null;
 }
 
+export type OrganizationInvitationStatus = typeof OrganizationInvitationStatus[keyof typeof OrganizationInvitationStatus];
+
+
+export const OrganizationInvitationStatus = {
+  pending: 'pending',
+  accepted: 'accepted',
+  declined: 'declined',
+  revoked: 'revoked',
+  expired: 'expired',
+} as const;
+
+export interface OrganizationInvitation {
+  id: string;
+  organizationId: string;
+  email: string;
+  role: string;
+  status: OrganizationInvitationStatus;
+  /** @nullable */
+  invitedBy: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  expiresAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+}
+
+export interface OrganizationInvitationList {
+  meta: PaginationMeta;
+  data: OrganizationInvitation[];
+}
+
+export type OrganizationInvitationQueryStatus = typeof OrganizationInvitationQueryStatus[keyof typeof OrganizationInvitationQueryStatus];
+
+
+export const OrganizationInvitationQueryStatus = {
+  pending: 'pending',
+  accepted: 'accepted',
+  declined: 'declined',
+  revoked: 'revoked',
+  expired: 'expired',
+} as const;
+
+export interface OrganizationInvitationQuery {
+  /**
+     * @minimum 1
+     * @maximum 1000000
+     */
+  page?: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  size?: number;
+  status?: OrganizationInvitationQueryStatus;
+}
+
+export interface CreateOrganizationInvitationRequest {
+  /** @maxLength 320 */
+  email: string;
+  role: OrganizationRoleKey;
+  /** @maxLength 2048 */
+  redirectUrl: string;
+}
+
+export interface InvitationPreview {
+  organizationName: string;
+  role: string;
+  email: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  expiresAt: string;
+}
+
+export interface InvitationTokenRequest {
+  /**
+     * @minLength 1
+     * @maxLength 2048
+     */
+  token: string;
+}
+
+export interface AcceptedInvitation {
+  id: string;
+  name: string;
+  slug: string;
+  role: string;
+  permissions: string[];
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+}
+
 export type AppleAppSiteAssociationWebcredentials = {
   /** @minItems 1 */
   apps: string[];
@@ -5404,7 +5648,7 @@ export interface MessagePreview {
 
 export type MessagePreviewRequest = {
   channel: 'email';
-  kind: 'email_verification' | 'password_reset' | 'sign_in' | 'step_up' | 'account_exists' | 'no_account' | 'no_account_sign_in' | 'password_changed' | 'password_added' | 'password_reset_completed' | 'password_added_by_reset' | 'password_set_by_admin' | 'password_added_by_admin' | 'password_removed' | 'new_sign_in' | 'mfa_enabled' | 'mfa_disabled' | 'mfa_reset_by_admin' | 'backup_codes_regenerated' | 'backup_code_used' | 'sms_factor_enabled' | 'sms_factor_removed' | 'passkey_added' | 'passkey_removed' | 'identity_linked' | 'identity_unlinked' | 'email_in_use' | 'email_added';
+  kind: 'email_verification' | 'password_reset' | 'sign_in' | 'step_up' | 'account_exists' | 'no_account' | 'no_account_sign_in' | 'password_changed' | 'password_added' | 'password_reset_completed' | 'password_added_by_reset' | 'password_set_by_admin' | 'password_added_by_admin' | 'password_removed' | 'new_sign_in' | 'mfa_enabled' | 'mfa_disabled' | 'mfa_reset_by_admin' | 'backup_codes_regenerated' | 'backup_code_used' | 'sms_factor_enabled' | 'sms_factor_removed' | 'passkey_added' | 'passkey_removed' | 'identity_linked' | 'identity_unlinked' | 'email_in_use' | 'email_added' | 'organization_invitation';
   template?: {
   /** @maxLength 200 */
   subject?: string;
@@ -5900,6 +6144,31 @@ page?: number;
  */
 size?: number;
 };
+
+export type ListOrganizationInvitationsParams = {
+/**
+ * @minimum 1
+ * @maximum 1000000
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+size?: number;
+status?: ListOrganizationInvitationsStatus;
+};
+
+export type ListOrganizationInvitationsStatus = typeof ListOrganizationInvitationsStatus[keyof typeof ListOrganizationInvitationsStatus];
+
+
+export const ListOrganizationInvitationsStatus = {
+  pending: 'pending',
+  accepted: 'accepted',
+  declined: 'declined',
+  revoked: 'revoked',
+  expired: 'expired',
+} as const;
 
 export type GetSmsUsageParams = {
 /**
@@ -11400,6 +11669,290 @@ export const useDeleteOrganizationRole = <TError = ErrorEnvelope,
         TContext
       > => {
       return useMutation(getDeleteOrganizationRoleMutationOptions(options), queryClient);
+    }
+
+export const getListOrganizationInvitationsUrl = (id: string,
+    params?: ListOrganizationInvitationsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/organizations/${id}/invitations?${stringifiedParams}` : `/v1/admin/organizations/${id}/invitations`
+}
+
+/**
+ * The organization’s invitations in one state (`status`, `pending` unless another is asked for; `expired` is a pending invitation past its expiry), newest first, one page at a time. The token of an invitation is never returned. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary List an organization’s invitations
+ */
+export const listOrganizationInvitations = async (id: string,
+    params?: ListOrganizationInvitationsParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationInvitationList> => {
+
+  return dashboardFetch<OrganizationInvitationList>(getListOrganizationInvitationsUrl(id,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListOrganizationInvitationsQueryKey = (id: string,
+    params?: ListOrganizationInvitationsParams,) => {
+    return [
+    `/v1/admin/organizations/${id}/invitations`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListOrganizationInvitationsQueryOptions = <TData = Awaited<ReturnType<typeof listOrganizationInvitations>>, TError = ErrorEnvelope>(id: string,
+    params?: ListOrganizationInvitationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationInvitations>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListOrganizationInvitationsQueryKey(id,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listOrganizationInvitations>>> = ({ signal }) => listOrganizationInvitations(id,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listOrganizationInvitations>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListOrganizationInvitationsQueryResult = NonNullable<Awaited<ReturnType<typeof listOrganizationInvitations>>>
+export type ListOrganizationInvitationsQueryError = ErrorEnvelope
+
+
+export function useListOrganizationInvitations<TData = Awaited<ReturnType<typeof listOrganizationInvitations>>, TError = ErrorEnvelope>(
+ id: string,
+    params: undefined |  ListOrganizationInvitationsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationInvitations>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizationInvitations>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizationInvitations>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizationInvitations<TData = Awaited<ReturnType<typeof listOrganizationInvitations>>, TError = ErrorEnvelope>(
+ id: string,
+    params?: ListOrganizationInvitationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationInvitations>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizationInvitations>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizationInvitations>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizationInvitations<TData = Awaited<ReturnType<typeof listOrganizationInvitations>>, TError = ErrorEnvelope>(
+ id: string,
+    params?: ListOrganizationInvitationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationInvitations>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List an organization’s invitations
+ */
+
+export function useListOrganizationInvitations<TData = Awaited<ReturnType<typeof listOrganizationInvitations>>, TError = ErrorEnvelope>(
+ id: string,
+    params?: ListOrganizationInvitationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationInvitations>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListOrganizationInvitationsQueryOptions(id,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getInviteToOrganizationUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}/invitations`
+}
+
+/**
+ * Emails the address a link that leads to `redirectUrl` (one of the environment’s allowed redirect URLs, matched exactly; a custom scheme is refused) with the invitation’s token in the URL fragment (`#tula_invitation=…`). The invitation lasts 7 days and can be accepted only by a signed-in user whose **verified** email is the invited address. The role must exist (`organization.role_unknown`, 422); an address that is a member already answers `organization.member_exists` and one with a pending invitation `organization.invitation_exists` (409). Limited per organization per hour and per environment per day (`rate_limited`, 429). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Invite an address to an organization
+ */
+export const inviteToOrganization = async (id: string,
+    createOrganizationInvitationRequest: CreateOrganizationInvitationRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationInvitation> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<OrganizationInvitation>(getInviteToOrganizationUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createOrganizationInvitationRequest)
+  }
+);}
+
+
+
+
+
+export const getInviteToOrganizationMutationKey = () => ['inviteToOrganization'] as const;
+
+export const getInviteToOrganizationMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof inviteToOrganization>>, TError,InviteToOrganizationMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof inviteToOrganization>>, TError,InviteToOrganizationMutationVariables, TContext> => {
+
+const mutationKey = getInviteToOrganizationMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof inviteToOrganization>>, InviteToOrganizationMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  inviteToOrganization(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type InviteToOrganizationMutationResult = NonNullable<Awaited<ReturnType<typeof inviteToOrganization>>>
+    export type InviteToOrganizationMutationBody = CreateOrganizationInvitationRequest
+    export type InviteToOrganizationMutationError = ErrorEnvelope
+    export type InviteToOrganizationMutationVariables = {id: string;data: CreateOrganizationInvitationRequest}
+
+    /**
+ * @summary Invite an address to an organization
+ */
+export const useInviteToOrganization = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof inviteToOrganization>>, TError,InviteToOrganizationMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof inviteToOrganization>>,
+        TError,
+        InviteToOrganizationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getInviteToOrganizationMutationOptions(options), queryClient);
+    }
+
+export const getRevokeOrganizationInvitationUrl = (id: string,
+    invitationId: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}/invitations/${invitationId}`
+}
+
+/**
+ * Withdraws a pending invitation: its link stops working. An invitation that was accepted or declined answers `organization.invitation_used`, a withdrawn one `organization.invitation_revoked` and an expired one `organization.invitation_expired` (410). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Revoke an invitation
+ */
+export const revokeOrganizationInvitation = async (id: string,
+    invitationId: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
+
+  return dashboardFetch<void>(getRevokeOrganizationInvitationUrl(id,invitationId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRevokeOrganizationInvitationMutationKey = () => ['revokeOrganizationInvitation'] as const;
+
+export const getRevokeOrganizationInvitationMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeOrganizationInvitation>>, TError,RevokeOrganizationInvitationMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof revokeOrganizationInvitation>>, TError,RevokeOrganizationInvitationMutationVariables, TContext> => {
+
+const mutationKey = getRevokeOrganizationInvitationMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokeOrganizationInvitation>>, RevokeOrganizationInvitationMutationVariables> = (props) => {
+          const {id,invitationId} = props ?? {};
+
+          return  revokeOrganizationInvitation(id,invitationId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevokeOrganizationInvitationMutationResult = NonNullable<Awaited<ReturnType<typeof revokeOrganizationInvitation>>>
+
+    export type RevokeOrganizationInvitationMutationError = ErrorEnvelope
+    export type RevokeOrganizationInvitationMutationVariables = {id: string;invitationId: string}
+
+    /**
+ * @summary Revoke an invitation
+ */
+export const useRevokeOrganizationInvitation = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeOrganizationInvitation>>, TError,RevokeOrganizationInvitationMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof revokeOrganizationInvitation>>,
+        TError,
+        RevokeOrganizationInvitationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRevokeOrganizationInvitationMutationOptions(options), queryClient);
     }
 
 export const getListNativeAppsUrl = () => {

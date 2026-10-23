@@ -123,8 +123,14 @@ import { join } from 'node:path'
  * `state.organizationId`, and `setActiveOrganization` with its stale-generation handling
  * (shaped like `stepUp`, which it shares `send` and `commit` with). The budget moved by
  * exactly those 462 bytes, from 17,306 to 17,768: the room is the 4 bytes it was.
+ * Invitations by email (ADR 0065, Orgs 04) added 393 bytes, from 17,764 to 18,157: the ten
+ * contract codes with their messages (cut to one short sentence each; the first wording cost
+ * 452 bytes for everything), six operation rows and `organizations.invitations`
+ * (`list`, `invite`, `revoke`, `preview`, `accept`, `decline`). `readInvitationLink` is not in
+ * the bundle of a client that does not import it. The budget moved by exactly those 393
+ * bytes, from 17,768 to 18,161: the room is the 4 bytes it was.
  */
-const GZIP_BUDGET_BYTES = 17_768
+const GZIP_BUDGET_BYTES = 18_161
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

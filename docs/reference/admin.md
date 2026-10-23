@@ -271,6 +271,8 @@ export interface Operations {
   getWebhookEndpoint: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['WebhookEndpoint'] }
   /** Import users (`POST /v1/admin/users/import`). */
   importUsers: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['ImportUsersRequest']; response: Schemas['ImportUsersResult'] }
+  /** Invite an address to an organization (`POST /v1/admin/organizations/{id}/invitations`). */
+  inviteToOrganization: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: Schemas['CreateOrganizationInvitationRequest']; response: Schemas['OrganizationInvitation'] }
   /** List API keys (`GET /v1/admin/api-keys`). */
   listApiKeys: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['ApiKeyList'] }
   /** List the audit log (`GET /v1/admin/audit-logs`). */
@@ -283,6 +285,8 @@ export interface Operations {
   listNativeApps: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['NativeAppList'] }
   /** List OAuth providers (`GET /v1/admin/oauth-providers`). */
   listOAuthProviders: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['OAuthProviderSettingsList'] }
+  /** List an organization’s invitations (`GET /v1/admin/organizations/{id}/invitations`). */
+  listOrganizationInvitations: { params: { id: string }; query: { page?: number; size?: number; status?: 'pending' | 'accepted' | 'declined' | 'revoked' | 'expired' }; headers: Record<string, never>; body: undefined; response: Schemas['OrganizationInvitationList'] }
   /** List an organization’s members (`GET /v1/admin/organizations/{id}/memberships`). */
   listOrganizationMemberships: { params: { id: string }; query: { page?: number; size?: number }; headers: Record<string, never>; body: undefined; response: Schemas['OrganizationMembershipList'] }
   /** List organization roles (`GET /v1/admin/organization-roles`). */
@@ -313,6 +317,8 @@ export interface Operations {
   resetUserFactors: { params: { userId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
   /** Revoke an API key (`DELETE /v1/admin/api-keys/{id}`). */
   revokeApiKey: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['ApiKey'] }
+  /** Revoke an invitation (`DELETE /v1/admin/organizations/{id}/invitations/{invitationId}`). */
+  revokeOrganizationInvitation: { params: { id: string; invitationId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
   /** End a secret rotation’s overlap now (`DELETE /v1/admin/webhook-endpoints/{id}/secret/previous`). */
   revokePreviousWebhookSecret: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['WebhookEndpoint'] }
   /** End one of a user’s sessions (`DELETE /v1/admin/users/{userId}/sessions/{sessionId}`). */
@@ -411,7 +417,7 @@ export interface Schemas {
       [key: string]: string | number | boolean
     }
   }
-  ActivityType: 'user.created' | 'user.imported' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.email_added' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'organization.created' | 'organization.updated' | 'organization.deleted' | 'organization_membership.added' | 'organization_membership.role_changed' | 'organization_membership.removed' | 'organization_role.created' | 'organization_role.updated' | 'organization_role.deleted' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed' | 'sign_in_test.started' | 'sign_in_test.finished'
+  ActivityType: 'user.created' | 'user.imported' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.email_added' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'organization.created' | 'organization.updated' | 'organization.deleted' | 'organization_membership.added' | 'organization_membership.role_changed' | 'organization_membership.removed' | 'organization_role.created' | 'organization_role.updated' | 'organization_role.deleted' | 'organization_invitation.created' | 'organization_invitation.accepted' | 'organization_invitation.declined' | 'organization_invitation.revoked' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed' | 'sign_in_test.started' | 'sign_in_test.finished'
   AddOrganizationMemberRequest: {
     userId: string
     role: Schemas['OrganizationRoleKey']
@@ -530,6 +536,11 @@ export interface Schemas {
     failureMode?: 'deny' | 'allow'
   }
   CreateNativeAppRequest: Schemas['IosAppIdentity'] | Schemas['AndroidAppIdentity']
+  CreateOrganizationInvitationRequest: {
+    email: string
+    role: Schemas['OrganizationRoleKey']
+    redirectUrl: string
+  }
   CreateOrganizationRequest: {
     name: string
     slug: Schemas['OrganizationSlug']
@@ -556,7 +567,7 @@ export interface Schemas {
   }
   CreateWebhookEndpointRequest: {
     url: string
-    eventTypes: ('user.created' | 'user.imported' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.email_added' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'organization.created' | 'organization.updated' | 'organization.deleted' | 'organization_membership.added' | 'organization_membership.role_changed' | 'organization_membership.removed' | 'organization_role.created' | 'organization_role.updated' | 'organization_role.deleted' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed' | 'sign_in_test.started' | 'sign_in_test.finished')[]
+    eventTypes: ('user.created' | 'user.imported' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.email_added' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'organization.created' | 'organization.updated' | 'organization.deleted' | 'organization_membership.added' | 'organization_membership.role_changed' | 'organization_membership.removed' | 'organization_role.created' | 'organization_role.updated' | 'organization_role.deleted' | 'organization_invitation.created' | 'organization_invitation.accepted' | 'organization_invitation.declined' | 'organization_invitation.revoked' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed' | 'sign_in_test.started' | 'sign_in_test.finished')[]
     enabled?: boolean
   }
   CreateWorkspaceRequest: {
@@ -653,6 +664,7 @@ export interface Schemas {
     identity_unlinked?: Schemas['EmailTemplate']
     email_in_use?: Schemas['EmailTemplate']
     email_added?: Schemas['EmailTemplate']
+    organization_invitation?: Schemas['EmailTemplate']
   }
   Environment: {
     id: string
@@ -832,7 +844,7 @@ export interface Schemas {
     managedBy?: string | null
     outsideConfig?: boolean
   }
-  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'email.already_set' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.reused' | 'password.not_set' | 'import.unsupported_algorithm' | 'import.hash_malformed' | 'import.hash_parameters_too_weak' | 'import.hash_parameters_too_costly' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.enrolment_needs_other_sign_in' | 'mfa.needs_other_sign_in' | 'mfa.sms_not_allowed' | 'mfa.phone_number_required' | 'mfa.required_by_policy' | 'oauth.access_denied' | 'oauth.provider_error' | 'oauth.state_invalid' | 'oauth.ticket_invalid' | 'oauth.different_browser' | 'oauth.email_missing' | 'oauth.email_unverified' | 'oauth.account_exists' | 'oauth.identity_in_use' | 'oauth.already_linked' | 'identity.last_sign_in_method' | 'webhook.url_not_allowed' | 'webhook.cannot_redeliver' | 'webhook.rotation_refused' | 'hook.denied' | 'hook.unavailable' | 'hook.url_not_allowed' | 'passkey.registration_failed' | 'passkey.already_registered' | 'passkey.limit_reached' | 'passkey.last_sign_in_method' | 'phone.invalid' | 'sms.disabled' | 'sms.country_not_allowed' | 'sms.unavailable' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'session.limit_reached' | 'device.proof_invalid' | 'device.nonce_required' | 'device.binding_not_supported' | 'device.binding_required' | 'organization.disabled' | 'organization.slug_taken' | 'organization.member_exists' | 'organization.last_manager' | 'organization.role_unknown' | 'organization.not_a_member' | 'organization.creation_disabled' | 'organization.limit_reached' | 'organization.personal_account_disabled' | 'organization.role_exists' | 'organization.role_in_use' | 'organization.role_built_in' | 'organization.role_limit' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
+  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'email.already_set' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.reused' | 'password.not_set' | 'import.unsupported_algorithm' | 'import.hash_malformed' | 'import.hash_parameters_too_weak' | 'import.hash_parameters_too_costly' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.enrolment_needs_other_sign_in' | 'mfa.needs_other_sign_in' | 'mfa.sms_not_allowed' | 'mfa.phone_number_required' | 'mfa.required_by_policy' | 'oauth.access_denied' | 'oauth.provider_error' | 'oauth.state_invalid' | 'oauth.ticket_invalid' | 'oauth.different_browser' | 'oauth.email_missing' | 'oauth.email_unverified' | 'oauth.account_exists' | 'oauth.identity_in_use' | 'oauth.already_linked' | 'identity.last_sign_in_method' | 'webhook.url_not_allowed' | 'webhook.cannot_redeliver' | 'webhook.rotation_refused' | 'hook.denied' | 'hook.unavailable' | 'hook.url_not_allowed' | 'passkey.registration_failed' | 'passkey.already_registered' | 'passkey.limit_reached' | 'passkey.last_sign_in_method' | 'phone.invalid' | 'sms.disabled' | 'sms.country_not_allowed' | 'sms.unavailable' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'session.limit_reached' | 'device.proof_invalid' | 'device.nonce_required' | 'device.binding_not_supported' | 'device.binding_required' | 'organization.disabled' | 'organization.slug_taken' | 'organization.member_exists' | 'organization.last_manager' | 'organization.role_unknown' | 'organization.not_a_member' | 'organization.creation_disabled' | 'organization.limit_reached' | 'organization.personal_account_disabled' | 'organization.role_exists' | 'organization.role_in_use' | 'organization.role_built_in' | 'organization.role_limit' | 'organization.permission_required' | 'organization.role_not_assignable' | 'organization.invitation_exists' | 'organization.invitation_not_found' | 'organization.invitation_expired' | 'organization.invitation_revoked' | 'organization.invitation_used' | 'organization.invitation_wrong_account' | 'organization.invitation_email_unverified' | 'organization.invitation_role_gone' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
   ErrorEnvelope: {
     status: number
     code: Schemas['ErrorCode']
@@ -1093,7 +1105,7 @@ export interface Schemas {
   }
   MessagePreviewRequest: {
     channel: 'email'
-    kind: 'email_verification' | 'password_reset' | 'sign_in' | 'step_up' | 'account_exists' | 'no_account' | 'no_account_sign_in' | 'password_changed' | 'password_added' | 'password_reset_completed' | 'password_added_by_reset' | 'password_set_by_admin' | 'password_added_by_admin' | 'password_removed' | 'new_sign_in' | 'mfa_enabled' | 'mfa_disabled' | 'mfa_reset_by_admin' | 'backup_codes_regenerated' | 'backup_code_used' | 'sms_factor_enabled' | 'sms_factor_removed' | 'passkey_added' | 'passkey_removed' | 'identity_linked' | 'identity_unlinked' | 'email_in_use' | 'email_added'
+    kind: 'email_verification' | 'password_reset' | 'sign_in' | 'step_up' | 'account_exists' | 'no_account' | 'no_account_sign_in' | 'password_changed' | 'password_added' | 'password_reset_completed' | 'password_added_by_reset' | 'password_set_by_admin' | 'password_added_by_admin' | 'password_removed' | 'new_sign_in' | 'mfa_enabled' | 'mfa_disabled' | 'mfa_reset_by_admin' | 'backup_codes_regenerated' | 'backup_code_used' | 'sms_factor_enabled' | 'sms_factor_removed' | 'passkey_added' | 'passkey_removed' | 'identity_linked' | 'identity_unlinked' | 'email_in_use' | 'email_added' | 'organization_invitation'
     template?: {
       subject?: string
       body?: string
@@ -1275,6 +1287,90 @@ export interface Schemas {
   }
   OrganizationDeletedEventData: {
     memberships: number
+  }
+  OrganizationInvitation: {
+    id: string
+    organizationId: string
+    email: string
+    role: string
+    status: 'pending' | 'accepted' | 'declined' | 'revoked' | 'expired'
+    invitedBy: string | null
+    expiresAt: string
+    createdAt: string
+  }
+  OrganizationInvitationAcceptedEvent: {
+    id: string
+    type: 'organization_invitation.accepted'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'organization_invitation'
+      id: string
+    }
+    data: Schemas['OrganizationInvitationAcceptedEventData']
+    test?: true
+  }
+  OrganizationInvitationAcceptedEventData: {
+    organizationId: string
+    role: Schemas['OrganizationRoleKey']
+    userId: string
+  }
+  OrganizationInvitationCreatedEvent: {
+    id: string
+    type: 'organization_invitation.created'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'organization_invitation'
+      id: string
+    }
+    data: Schemas['OrganizationInvitationCreatedEventData']
+    test?: true
+  }
+  OrganizationInvitationCreatedEventData: {
+    organizationId: string
+    role: Schemas['OrganizationRoleKey']
+  }
+  OrganizationInvitationDeclinedEvent: {
+    id: string
+    type: 'organization_invitation.declined'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'organization_invitation'
+      id: string
+    }
+    data: Schemas['OrganizationInvitationDeclinedEventData']
+    test?: true
+  }
+  OrganizationInvitationDeclinedEventData: {
+    organizationId: string
+    role: Schemas['OrganizationRoleKey']
+    userId: string
+  }
+  OrganizationInvitationList: {
+    meta: Schemas['PaginationMeta']
+    data: Schemas['OrganizationInvitation'][]
+  }
+  OrganizationInvitationRevokedEvent: {
+    id: string
+    type: 'organization_invitation.revoked'
+    schemaVersion: 1
+    occurredAt: string
+    actor: Schemas['EventActor']
+    target: {
+      type: 'organization_invitation'
+      id: string
+    }
+    data: Schemas['OrganizationInvitationRevokedEventData']
+    test?: true
+  }
+  OrganizationInvitationRevokedEventData: {
+    organizationId: string
+    role: Schemas['OrganizationRoleKey']
   }
   OrganizationList: {
     meta: Schemas['PaginationMeta']
@@ -1601,7 +1697,7 @@ export interface Schemas {
     secret: string
   }
   SendTestWebhookRequest: {
-    eventType: 'user.created' | 'user.imported' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.email_added' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'organization.created' | 'organization.updated' | 'organization.deleted' | 'organization_membership.added' | 'organization_membership.role_changed' | 'organization_membership.removed' | 'organization_role.created' | 'organization_role.updated' | 'organization_role.deleted' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed' | 'sign_in_test.started' | 'sign_in_test.finished'
+    eventType: 'user.created' | 'user.imported' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.email_added' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'organization.created' | 'organization.updated' | 'organization.deleted' | 'organization_membership.added' | 'organization_membership.role_changed' | 'organization_membership.removed' | 'organization_role.created' | 'organization_role.updated' | 'organization_role.deleted' | 'organization_invitation.created' | 'organization_invitation.accepted' | 'organization_invitation.declined' | 'organization_invitation.revoked' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed' | 'sign_in_test.started' | 'sign_in_test.finished'
   }
   Session: {
     id: string
@@ -1849,7 +1945,7 @@ export interface Schemas {
     prefixes: Schemas['SmsPrefixUsage'][]
     truncated: boolean
   }
-  TulaEvent: Schemas['UserCreatedEvent'] | Schemas['UserImportedEvent'] | Schemas['UserEmailVerifiedEvent'] | Schemas['UserBannedEvent'] | Schemas['UserUnbannedEvent'] | Schemas['UserDeletedEvent'] | Schemas['UserPasswordChangedEvent'] | Schemas['UserMfaEnabledEvent'] | Schemas['UserMfaDisabledEvent'] | Schemas['UserBackupCodesRegeneratedEvent'] | Schemas['UserBackupCodeUsedEvent'] | Schemas['UserIdentityLinkedEvent'] | Schemas['UserIdentityUnlinkedEvent'] | Schemas['UserEmailAddedEvent'] | Schemas['UserPasskeyAddedEvent'] | Schemas['UserPasskeyRenamedEvent'] | Schemas['UserPasskeyRemovedEvent'] | Schemas['UserPasskeyCounterRegressedEvent'] | Schemas['UserPhoneNumberAddedEvent'] | Schemas['UserPhoneNumberRemovedEvent'] | Schemas['UserSmsFactorEnabledEvent'] | Schemas['UserSmsFactorRemovedEvent'] | Schemas['SessionCreatedEvent'] | Schemas['SessionRevokedEvent'] | Schemas['SessionReuseDetectedEvent'] | Schemas['SessionSteppedUpEvent'] | Schemas['SessionRefreshProofRefusedEvent'] | Schemas['ApiKeyCreatedEvent'] | Schemas['ApiKeyRevokedEvent'] | Schemas['SigningKeyRotatedEvent'] | Schemas['EnvironmentSettingsUpdatedEvent'] | Schemas['OAuthProviderUpdatedEvent'] | Schemas['OAuthProviderDeletedEvent'] | Schemas['WebhookEndpointCreatedEvent'] | Schemas['WebhookEndpointUpdatedEvent'] | Schemas['WebhookEndpointDeletedEvent'] | Schemas['WebhookEndpointDisabledEvent'] | Schemas['WebhookEndpointSecretRotatedEvent'] | Schemas['WebhookEndpointPreviousSecretRevokedEvent'] | Schemas['HookCreatedEvent'] | Schemas['HookUpdatedEvent'] | Schemas['HookDeletedEvent'] | Schemas['NativeAppCreatedEvent'] | Schemas['NativeAppUpdatedEvent'] | Schemas['NativeAppDeletedEvent'] | Schemas['OrganizationCreatedEvent'] | Schemas['OrganizationUpdatedEvent'] | Schemas['OrganizationDeletedEvent'] | Schemas['OrganizationMembershipAddedEvent'] | Schemas['OrganizationMembershipRoleChangedEvent'] | Schemas['OrganizationMembershipRemovedEvent'] | Schemas['OrganizationRoleCreatedEvent'] | Schemas['OrganizationRoleUpdatedEvent'] | Schemas['OrganizationRoleDeletedEvent'] | Schemas['ProposalCreatedEvent'] | Schemas['ProposalApprovedEvent'] | Schemas['ProposalExecutedEvent'] | Schemas['ProposalFailedEvent'] | Schemas['SignInTestStartedEvent'] | Schemas['SignInTestFinishedEvent']
+  TulaEvent: Schemas['UserCreatedEvent'] | Schemas['UserImportedEvent'] | Schemas['UserEmailVerifiedEvent'] | Schemas['UserBannedEvent'] | Schemas['UserUnbannedEvent'] | Schemas['UserDeletedEvent'] | Schemas['UserPasswordChangedEvent'] | Schemas['UserMfaEnabledEvent'] | Schemas['UserMfaDisabledEvent'] | Schemas['UserBackupCodesRegeneratedEvent'] | Schemas['UserBackupCodeUsedEvent'] | Schemas['UserIdentityLinkedEvent'] | Schemas['UserIdentityUnlinkedEvent'] | Schemas['UserEmailAddedEvent'] | Schemas['UserPasskeyAddedEvent'] | Schemas['UserPasskeyRenamedEvent'] | Schemas['UserPasskeyRemovedEvent'] | Schemas['UserPasskeyCounterRegressedEvent'] | Schemas['UserPhoneNumberAddedEvent'] | Schemas['UserPhoneNumberRemovedEvent'] | Schemas['UserSmsFactorEnabledEvent'] | Schemas['UserSmsFactorRemovedEvent'] | Schemas['SessionCreatedEvent'] | Schemas['SessionRevokedEvent'] | Schemas['SessionReuseDetectedEvent'] | Schemas['SessionSteppedUpEvent'] | Schemas['SessionRefreshProofRefusedEvent'] | Schemas['ApiKeyCreatedEvent'] | Schemas['ApiKeyRevokedEvent'] | Schemas['SigningKeyRotatedEvent'] | Schemas['EnvironmentSettingsUpdatedEvent'] | Schemas['OAuthProviderUpdatedEvent'] | Schemas['OAuthProviderDeletedEvent'] | Schemas['WebhookEndpointCreatedEvent'] | Schemas['WebhookEndpointUpdatedEvent'] | Schemas['WebhookEndpointDeletedEvent'] | Schemas['WebhookEndpointDisabledEvent'] | Schemas['WebhookEndpointSecretRotatedEvent'] | Schemas['WebhookEndpointPreviousSecretRevokedEvent'] | Schemas['HookCreatedEvent'] | Schemas['HookUpdatedEvent'] | Schemas['HookDeletedEvent'] | Schemas['NativeAppCreatedEvent'] | Schemas['NativeAppUpdatedEvent'] | Schemas['NativeAppDeletedEvent'] | Schemas['OrganizationCreatedEvent'] | Schemas['OrganizationUpdatedEvent'] | Schemas['OrganizationDeletedEvent'] | Schemas['OrganizationMembershipAddedEvent'] | Schemas['OrganizationMembershipRoleChangedEvent'] | Schemas['OrganizationMembershipRemovedEvent'] | Schemas['OrganizationRoleCreatedEvent'] | Schemas['OrganizationRoleUpdatedEvent'] | Schemas['OrganizationRoleDeletedEvent'] | Schemas['OrganizationInvitationCreatedEvent'] | Schemas['OrganizationInvitationAcceptedEvent'] | Schemas['OrganizationInvitationDeclinedEvent'] | Schemas['OrganizationInvitationRevokedEvent'] | Schemas['ProposalCreatedEvent'] | Schemas['ProposalApprovedEvent'] | Schemas['ProposalExecutedEvent'] | Schemas['ProposalFailedEvent'] | Schemas['SignInTestStartedEvent'] | Schemas['SignInTestFinishedEvent']
   UpdateHookRequest: {
     url?: string
     enabled?: boolean
@@ -1877,7 +1973,7 @@ export interface Schemas {
   }
   UpdateWebhookEndpointRequest: {
     url?: string
-    eventTypes?: ('user.created' | 'user.imported' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.email_added' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'organization.created' | 'organization.updated' | 'organization.deleted' | 'organization_membership.added' | 'organization_membership.role_changed' | 'organization_membership.removed' | 'organization_role.created' | 'organization_role.updated' | 'organization_role.deleted' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed' | 'sign_in_test.started' | 'sign_in_test.finished')[]
+    eventTypes?: ('user.created' | 'user.imported' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.email_added' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'organization.created' | 'organization.updated' | 'organization.deleted' | 'organization_membership.added' | 'organization_membership.role_changed' | 'organization_membership.removed' | 'organization_role.created' | 'organization_role.updated' | 'organization_role.deleted' | 'organization_invitation.created' | 'organization_invitation.accepted' | 'organization_invitation.declined' | 'organization_invitation.revoked' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed' | 'sign_in_test.started' | 'sign_in_test.finished')[]
     enabled?: boolean
   }
   User: {

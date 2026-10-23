@@ -1192,6 +1192,107 @@ export interface TulaClient {
      * ```
      */
     setActive(organizationId: string | null): Promise<ActiveOrganization>
+    /**
+     * Invitations by email (ADR 0065, Orgs 04). The inviting calls need the permission
+     * `org:sys:invitations:manage`, which the API reads from the user's membership on every
+     * call. Answering needs the invited account: signed in, with the invited address, verified.
+     */
+    readonly invitations: {
+      /**
+       * An organization's pending invitations, newest first. Only the first page: the client
+       * sends no paging or state query yet.
+       *
+       * @param organizationId - The organization.
+       * @returns The page.
+       * @throws TulaError `organization.not_a_member`, `organization.permission_required`,
+       *   `organization.disabled`.
+       * @example
+       * ```ts
+       * const { data } = await tula.organizations.invitations.list(org.id)
+       * ```
+       */
+      list(organizationId: string): Promise<OrganizationInvitationList>
+      /**
+       * Email an invitation. The link leads to `input.redirectUrl` (one of the environment's
+       * allowed redirect URLs) with the token in its fragment; read it there with
+       * `readInvitationLink`. The role must be within the permissions of the inviter's own.
+       *
+       * @param organizationId - The organization.
+       * @param input - The address, the role's key and the redirect URL.
+       * @returns The invitation; the token is only in the email.
+       * @throws TulaError `organization.not_a_member`, `organization.permission_required`,
+       *   `organization.role_not_assignable`, `organization.role_unknown`,
+       *   `organization.member_exists`, `organization.invitation_exists`,
+       *   `request.redirect_not_allowed`, `rate_limited`.
+       * @example
+       * ```ts
+       * await tula.organizations.invitations.invite(org.id, {
+       *   email: 'ada@example.com',
+       *   role: 'member',
+       *   redirectUrl: 'https://app.example.com/join',
+       * })
+       * ```
+       */
+      invite(
+        organizationId: string,
+        input: CreateOrganizationInvitationInput
+      ): Promise<OrganizationInvitation>
+      /**
+       * Withdraw a pending invitation: its link stops working.
+       *
+       * @param organizationId - The organization.
+       * @param invitationId - The invitation.
+       * @throws TulaError `organization.invitation_used`, `organization.invitation_revoked`,
+       *   `organization.invitation_expired` (410) for one that is no longer pending, and the
+       *   errors of `list`.
+       * @example
+       * ```ts
+       * await tula.organizations.invitations.revoke(org.id, invitation.id)
+       * ```
+       */
+      revoke(organizationId: string, invitationId: string): Promise<void>
+      /**
+       * What an invitation's token shows before anyone has signed in: the organization's
+       * name, the role's key and the address invited, to prefill a sign-up. Needs no session.
+       *
+       * @param token - The token from the link's fragment.
+       * @returns The preview.
+       * @throws TulaError `organization.invitation_not_found`, `organization.invitation_expired`,
+       *   `organization.invitation_revoked`, `organization.invitation_used`.
+       * @example
+       * ```ts
+       * const { organizationName, email } = await tula.organizations.invitations.preview(token)
+       * ```
+       */
+      preview(token: string): Promise<InvitationPreview>
+      /**
+       * Join the organization the token invites to, with the invitation's role. Only the
+       * account the invitation was sent to may, and only with a verified address.
+       *
+       * @param token - The token from the link's fragment.
+       * @returns The organization joined, with the role and its permission keys.
+       * @throws TulaError `organization.invitation_wrong_account`,
+       *   `organization.invitation_email_unverified`, `organization.invitation_role_gone`,
+       *   `organization.member_exists`, and the errors of `preview`.
+       * @example
+       * ```ts
+       * const org = await tula.organizations.invitations.accept(token)
+       * await tula.organizations.setActive(org.id)
+       * ```
+       */
+      accept(token: string): Promise<AcceptedInvitation>
+      /**
+       * Turn an invitation down: it is used up and nobody joins.
+       *
+       * @param token - The token from the link's fragment.
+       * @throws TulaError As `accept`, but a deleted role does not matter.
+       * @example
+       * ```ts
+       * await tula.organizations.invitations.decline(token)
+       * ```
+       */
+      decline(token: string): Promise<void>
+    }
   }
   /** The signed-in user. */
   readonly user: {

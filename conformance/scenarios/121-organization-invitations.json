@@ -1,0 +1,940 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "organization invitations",
+  "description": "An administrator invites an address to an organization with a role. The email names the organization and carries a link to the allowed redirect URL with the invitation’s token in its fragment; the token is never in the invitation the API returns. The token previews the invitation with no session. Only the account the invitation was sent to can accept or decline it (another account is refused with organization.invitation_wrong_account and nothing is used up); accepting makes the user a member with the invitation’s role, and the invitation cannot be used again (organization.invitation_used). A second pending invitation to the same address, an address that is a member already, a role that does not exist and a redirect URL the environment does not allow are refused with their codes. A member whose role cannot manage invitations and a user who is not a member are refused. A declined invitation cannot be accepted, a withdrawn one answers organization.invitation_revoked, and deleting the organization removes its invitations. The audit log holds ids, no address and no token. While organizations are off every route answers organization.disabled. Not shown here, and covered by the API’s tests: an expired invitation (it lasts seven days), a role deleted after the invitation was sent (organization.invitation_role_gone), an unverified address, the limits on sending and the retention of old invitations. The original settings are put back afterwards, even when a step fails.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "strangerEmail": {
+      "generate": "email"
+    },
+    "thirdEmail": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    },
+    "suffix": {
+      "generate": "snowflake"
+    },
+    "missingId": {
+      "generate": "uuid"
+    },
+    "redirect": "https://app.conformance.example/join"
+  },
+  "steps": [
+    {
+      "name": "invitee: start a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "inviteeSignUp": "id",
+        "inviteeSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "invitee: read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "inviteeCode"
+      }
+    },
+    {
+      "name": "invitee: verify the address",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{inviteeSignUp}}/verify-email",
+        "body": {
+          "code": "{{inviteeCode}}"
+        },
+        "attempt": "{{inviteeSecret}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          },
+          "session": {
+            "accessToken": "$any"
+          }
+        }
+      },
+      "capture": {
+        "inviteeId": "step.userId",
+        "inviteeToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "stranger: start a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{strangerEmail}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "strangerSignUp": "id",
+        "strangerSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "stranger: read the emailed code",
+      "emailCode": {
+        "to": "{{strangerEmail}}",
+        "capture": "strangerCode"
+      }
+    },
+    {
+      "name": "stranger: verify the address",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{strangerSignUp}}/verify-email",
+        "body": {
+          "code": "{{strangerCode}}"
+        },
+        "attempt": "{{strangerSecret}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          },
+          "session": {
+            "accessToken": "$any"
+          }
+        }
+      },
+      "capture": {
+        "strangerId": "step.userId",
+        "strangerToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "appSettings": "settings.app",
+        "passwordSettings": "settings.password",
+        "signInSettings": "settings.signIn",
+        "signUpSettings": "settings.signUp",
+        "origins": "settings.urls.allowedOrigins",
+        "auditSettings": "settings.audit",
+        "notificationsSettings": "settings.notifications",
+        "mfaSettings": "settings.mfa",
+        "passkeysSettings": "settings.passkeys",
+        "smsSettings": "settings.sms",
+        "emailsSettings": "settings.emails"
+      }
+    },
+    {
+      "name": "with organizations off, an invitation answers a code and sends nothing",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{missingId}}/invitations",
+        "auth": "secret",
+        "body": {
+          "email": "{{email}}",
+          "role": "member",
+          "redirectUrl": "{{redirect}}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.disabled"
+        }
+      }
+    },
+    {
+      "name": "and so does answering one",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organization-invitations/accept",
+        "body": {
+          "token": "not-a-token"
+        },
+        "accessToken": "{{inviteeToken}}"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.disabled"
+        }
+      }
+    },
+    {
+      "name": "an administrator switches organizations on and allows the redirect URL",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{appSettings}}"
+          },
+          "password": {
+            "$json": "{{passwordSettings}}"
+          },
+          "signIn": {
+            "$json": "{{signInSettings}}"
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "allowedOrigins": {
+              "$json": "{{origins}}"
+            },
+            "allowedRedirectUrls": ["{{redirect}}"]
+          },
+          "audit": {
+            "$json": "{{auditSettings}}"
+          },
+          "notifications": {
+            "$json": "{{notificationsSettings}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "$json": "{{passkeysSettings}}"
+          },
+          "sms": {
+            "$json": "{{smsSettings}}"
+          },
+          "emails": {
+            "$json": "{{emailsSettings}}"
+          },
+          "organizations": {
+            "enabled": true,
+            "allowUserCreated": false,
+            "maxCreatedPerUser": 1,
+            "creatorRole": "admin",
+            "defaultRole": "member",
+            "personalAccount": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "organizations": {
+              "enabled": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "an administrator creates an organization",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations",
+        "auth": "secret",
+        "body": {
+          "name": "Conformance Org",
+          "slug": "conformance-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "orgId": "id"
+      }
+    },
+    {
+      "name": "a request without a secret key is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/invitations",
+        "body": {
+          "email": "{{email}}",
+          "role": "member",
+          "redirectUrl": "{{redirect}}"
+        }
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
+      "name": "a redirect URL the environment does not allow is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/invitations",
+        "auth": "secret",
+        "body": {
+          "email": "{{email}}",
+          "role": "member",
+          "redirectUrl": "https://evil.example/join"
+        }
+      },
+      "expect": {
+        "status": 400,
+        "body": {
+          "code": "request.redirect_not_allowed"
+        }
+      }
+    },
+    {
+      "name": "a role that does not exist is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/invitations",
+        "auth": "secret",
+        "body": {
+          "email": "{{email}}",
+          "role": "ghost",
+          "redirectUrl": "{{redirect}}"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "organization.role_unknown"
+        }
+      }
+    },
+    {
+      "name": "an address that is not one is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/invitations",
+        "auth": "secret",
+        "body": {
+          "email": "nobody",
+          "role": "member",
+          "redirectUrl": "{{redirect}}"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "email.invalid"
+        }
+      }
+    },
+    {
+      "name": "an administrator invites the first user as a member",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/invitations",
+        "auth": "secret",
+        "body": {
+          "email": "{{email}}",
+          "role": "member",
+          "redirectUrl": "{{redirect}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "organizationId": "{{orgId}}",
+          "email": "{{email}}",
+          "role": "member",
+          "status": "pending",
+          "expiresAt": "$any"
+        },
+        "bodyExcludes": ["tula_invitation"]
+      },
+      "capture": {
+        "invitationId": "id"
+      }
+    },
+    {
+      "name": "the same address again is refused while the first invitation is open",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/invitations",
+        "auth": "secret",
+        "body": {
+          "email": "{{email}}",
+          "role": "member",
+          "redirectUrl": "{{redirect}}"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "organization.invitation_exists"
+        }
+      }
+    },
+    {
+      "name": "the emailed link carries the token in its fragment, on the redirect URL",
+      "emailMessage": {
+        "to": "{{email}}",
+        "subjectContains": "invited to join",
+        "captureFragmentParam": {
+          "name": "tula_invitation",
+          "capture": "invitationToken",
+          "url": "{{redirect}}"
+        },
+        "textContains": ["Conformance Org"],
+        "textExcludes": ["{{email}}"]
+      }
+    },
+    {
+      "name": "the invitation is listed as pending, without its token",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/organizations/{{orgId}}/invitations",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1
+          },
+          "data": [
+            {
+              "id": "{{invitationId}}",
+              "status": "pending",
+              "role": "member"
+            }
+          ]
+        },
+        "bodyExcludes": ["{{invitationToken}}", "tokenHash"]
+      }
+    },
+    {
+      "name": "the token previews the invitation with no session",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/organization-invitations/preview",
+        "body": {
+          "token": "{{invitationToken}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "organizationName": "Conformance Org",
+          "role": "member",
+          "email": "{{email}}",
+          "expiresAt": "$any"
+        },
+        "headers": {
+          "cache-control": "no-store"
+        }
+      }
+    },
+    {
+      "name": "a token nothing was issued for is not found",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/organization-invitations/preview",
+        "body": {
+          "token": "not-a-token"
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "code": "organization.invitation_not_found"
+        }
+      }
+    },
+    {
+      "name": "another account cannot accept it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organization-invitations/accept",
+        "body": {
+          "token": "{{invitationToken}}"
+        },
+        "accessToken": "{{strangerToken}}"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.invitation_wrong_account"
+        }
+      }
+    },
+    {
+      "name": "nor decline it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organization-invitations/decline",
+        "body": {
+          "token": "{{invitationToken}}"
+        },
+        "accessToken": "{{strangerToken}}"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.invitation_wrong_account"
+        }
+      }
+    },
+    {
+      "name": "accepting needs a session",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organization-invitations/accept",
+        "body": {
+          "token": "{{invitationToken}}"
+        }
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
+      "name": "the invited account accepts: it joins with the invitation’s role",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organization-invitations/accept",
+        "body": {
+          "token": "{{invitationToken}}"
+        },
+        "accessToken": "{{inviteeToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{orgId}}",
+          "name": "Conformance Org",
+          "role": "member"
+        },
+        "headers": {
+          "cache-control": "no-store"
+        }
+      }
+    },
+    {
+      "name": "the invitation is used up: accepting again",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organization-invitations/accept",
+        "body": {
+          "token": "{{invitationToken}}"
+        },
+        "accessToken": "{{inviteeToken}}"
+      },
+      "expect": {
+        "status": 410,
+        "body": {
+          "code": "organization.invitation_used"
+        }
+      }
+    },
+    {
+      "name": "declining it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organization-invitations/decline",
+        "body": {
+          "token": "{{invitationToken}}"
+        },
+        "accessToken": "{{inviteeToken}}"
+      },
+      "expect": {
+        "status": 410,
+        "body": {
+          "code": "organization.invitation_used"
+        }
+      }
+    },
+    {
+      "name": "and previewing it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/organization-invitations/preview",
+        "body": {
+          "token": "{{invitationToken}}"
+        }
+      },
+      "expect": {
+        "status": 410,
+        "body": {
+          "code": "organization.invitation_used"
+        }
+      }
+    },
+    {
+      "name": "the user is a member now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/organizations/{{orgId}}/memberships",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1
+          },
+          "data": [
+            {
+              "userId": "{{inviteeId}}",
+              "role": "member"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "a member cannot be invited again",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/invitations",
+        "auth": "secret",
+        "body": {
+          "email": "{{email}}",
+          "role": "member",
+          "redirectUrl": "{{redirect}}"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "organization.member_exists"
+        }
+      }
+    },
+    {
+      "name": "a member whose role cannot manage invitations is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organizations/{{orgId}}/invitations",
+        "body": {
+          "email": "{{thirdEmail}}",
+          "role": "member",
+          "redirectUrl": "{{redirect}}"
+        },
+        "accessToken": "{{inviteeToken}}"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.permission_required"
+        }
+      }
+    },
+    {
+      "name": "and so is a user who is not a member at all",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations/{{orgId}}/invitations",
+        "body": null,
+        "accessToken": "{{strangerToken}}"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.not_a_member"
+        }
+      }
+    },
+    {
+      "name": "an administrator invites the second user as an administrator",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/invitations",
+        "auth": "secret",
+        "body": {
+          "email": "{{strangerEmail}}",
+          "role": "admin",
+          "redirectUrl": "{{redirect}}"
+        }
+      },
+      "expect": {
+        "status": 201
+      },
+      "capture": {
+        "strangerInvitationId": "id"
+      }
+    },
+    {
+      "name": "the second link",
+      "emailMessage": {
+        "to": "{{strangerEmail}}",
+        "subjectContains": "invited to join",
+        "captureFragmentParam": {
+          "name": "tula_invitation",
+          "capture": "strangerInvitationToken",
+          "url": "{{redirect}}"
+        },
+        "textContains": ["Conformance Org"],
+        "textExcludes": ["{{strangerEmail}}"]
+      }
+    },
+    {
+      "name": "the first user cannot accept the second invitation",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organization-invitations/accept",
+        "body": {
+          "token": "{{strangerInvitationToken}}"
+        },
+        "accessToken": "{{inviteeToken}}"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.invitation_wrong_account"
+        }
+      }
+    },
+    {
+      "name": "the second user declines it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organization-invitations/decline",
+        "body": {
+          "token": "{{strangerInvitationToken}}"
+        },
+        "accessToken": "{{strangerToken}}"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "a declined invitation cannot be accepted afterwards",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organization-invitations/accept",
+        "body": {
+          "token": "{{strangerInvitationToken}}"
+        },
+        "accessToken": "{{strangerToken}}"
+      },
+      "expect": {
+        "status": 410,
+        "body": {
+          "code": "organization.invitation_used"
+        }
+      }
+    },
+    {
+      "name": "an administrator invites a third address",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/invitations",
+        "auth": "secret",
+        "body": {
+          "email": "{{thirdEmail}}",
+          "role": "member",
+          "redirectUrl": "{{redirect}}"
+        }
+      },
+      "expect": {
+        "status": 201
+      },
+      "capture": {
+        "thirdInvitationId": "id"
+      }
+    },
+    {
+      "name": "the third link",
+      "emailMessage": {
+        "to": "{{thirdEmail}}",
+        "subjectContains": "invited to join",
+        "captureFragmentParam": {
+          "name": "tula_invitation",
+          "capture": "thirdInvitationToken",
+          "url": "{{redirect}}"
+        },
+        "textContains": ["Conformance Org"],
+        "textExcludes": ["{{thirdEmail}}"]
+      }
+    },
+    {
+      "name": "an administrator withdraws it",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/organizations/{{orgId}}/invitations/{{thirdInvitationId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "withdrawing it again says it was withdrawn",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/organizations/{{orgId}}/invitations/{{thirdInvitationId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 410,
+        "body": {
+          "code": "organization.invitation_revoked"
+        }
+      }
+    },
+    {
+      "name": "the withdrawn link stops working",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/organization-invitations/preview",
+        "body": {
+          "token": "{{thirdInvitationToken}}"
+        }
+      },
+      "expect": {
+        "status": 410,
+        "body": {
+          "code": "organization.invitation_revoked"
+        }
+      }
+    },
+    {
+      "name": "withdrawing one that was used says it was used",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/organizations/{{orgId}}/invitations/{{invitationId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 410,
+        "body": {
+          "code": "organization.invitation_used"
+        }
+      }
+    },
+    {
+      "name": "an invitation of nowhere is not found",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/organizations/{{orgId}}/invitations/{{missingId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 404
+      }
+    },
+    {
+      "name": "the audit log records the invitation by ids and holds no address and no token",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?targetId={{invitationId}}&action=organization_invitation.accepted",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1
+          },
+          "data": [
+            {
+              "action": "organization_invitation.accepted",
+              "target": {
+                "type": "organization_invitation",
+                "id": "{{invitationId}}"
+              }
+            }
+          ]
+        },
+        "bodyExcludes": ["{{email}}", "{{strangerEmail}}", "{{thirdEmail}}", "{{invitationToken}}"]
+      }
+    },
+    {
+      "name": "deleting the organization takes its invitations with it",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/organizations/{{orgId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "an invitation of a deleted organization is gone",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/organization-invitations/preview",
+        "body": {
+          "token": "{{thirdInvitationToken}}"
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "code": "organization.invitation_not_found"
+        }
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

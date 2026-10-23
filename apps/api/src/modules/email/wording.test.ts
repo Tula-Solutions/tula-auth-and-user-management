@@ -46,6 +46,12 @@ const EVERY_MESSAGE: EmailMessage[] = [
   { type: 'no_account_sign_in' },
   { type: 'email_in_use' },
   { type: 'email_added', at },
+  {
+    type: 'organization_invitation',
+    organizationName: 'Acme Robotics',
+    linkUrl: 'https://app.acme.test/join#tula_invitation=tok',
+    ttlDays: 7,
+  },
   newSignIn,
   ...(['self', 'reset', 'admin', 'verification'] as const).flatMap((by) =>
     [false, true].map((added): EmailMessage => ({ type: 'password_changed', by, added, at }))
@@ -125,6 +131,7 @@ describe('the built-in copy', () => {
       const email = render({ name: 'Acme', supportEmail: null }, message)
       const words = email.text
         .replaceAll(link, 'the link')
+        .replaceAll(('linkUrl' in message ? message.linkUrl : undefined) ?? link, 'the link')
         .split('\n\n')
         // The footer, and the facts: an IP address is a fact of the server's, not wording.
         .filter((paragraph) => !paragraph.startsWith('--\n') && !/^(When|Device): /.test(paragraph))

@@ -58,6 +58,7 @@ describe('the list of messages', () => {
       'Emails with a code',
       'Emails about an address',
       'Security notices',
+      'Invitations',
       'Text messages',
     ])
     expect(MESSAGE_GROUPS.every((group) => group.messages.length > 0)).toBe(true)
