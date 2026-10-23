@@ -200,6 +200,15 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   (`HttpURLConnection` has no `PATCH`; TULA-76 too). **An account with no address gets one through `client.emailAddress`**
   (`request`, `verify`: ADR 0059's two routes and nothing more; no call changes an
   address).
+- **Organizations (`Organizations.kt`, TULA-121, ADR 0065) are the Swift client's rules on
+  the JVM**: the claims are read for showing and never for deciding (signature not
+  verified, all three claims or none, the contract's grammars as hand-kept copies that
+  `.claude/hooks/native-organizations.test.ts` holds to the contract's names and caps),
+  the invitation's token is a secret (`TulaInvitationLink` prints as its name, the token is
+  sent in a request body only and is in no error), and `SessionManager.setActiveOrganization`
+  installs only the access token of the answer, as `stepUp` does. Kotlin cannot overload
+  on a parameter's name, so the checks are `hasPermission` and `hasRole`. Keep them in step
+  with `TulaOrganizations.swift` and the three journeys in `JourneysTest.kt`.
 - **Never say more of Android than was run.** What ran (a JVM; a compile and a lint of the
   Android modules; the screens, with the client and `KeystoreTokenStorage` under them, on
   one emulator by the example's UI tests) and what did not is
