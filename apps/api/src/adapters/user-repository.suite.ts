@@ -1156,9 +1156,9 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         await change(ctx.a, input.id, 1)
         await change(ctx.a, input.id, 2)
         await change(ctx.a, other.id, 1)
-        expect(await ctx.users.delete(ctx.a.environmentId, input.id, Audit.none('fixture'))).toBe(
-          true
-        )
+        expect(
+          await ctx.users.delete(ctx.a.environmentId, input.id, Audit.none('fixture'))
+        ).toEqual({ outcome: 'deleted' })
         expect(await stored(ctx.a, input.id)).toEqual({ current: null, previous: [] })
         // Only the other user's one row is left for a purge to find.
         expect(await ctx.users.deletePasswordHistoryBeyond(ctx.a.environmentId, 0, 100)).toBe(1)
@@ -1476,12 +1476,12 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
     test('deletes a user and frees their email', async () => {
       const input = user(ctx.a)
       await ctx.users.create(input, Audit.none('fixture'))
-      expect(await ctx.users.delete(ctx.a.environmentId, input.id, Audit.none('fixture'))).toBe(
-        true
-      )
-      expect(await ctx.users.delete(ctx.a.environmentId, input.id, Audit.none('fixture'))).toBe(
-        false
-      )
+      expect(await ctx.users.delete(ctx.a.environmentId, input.id, Audit.none('fixture'))).toEqual({
+        outcome: 'deleted',
+      })
+      expect(await ctx.users.delete(ctx.a.environmentId, input.id, Audit.none('fixture'))).toEqual({
+        outcome: 'not_found',
+      })
       expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toBeNull()
       expect(
         await ctx.users.findByEmailWithPassword(ctx.a.environmentId, input.emailNormalized)
@@ -1508,7 +1508,9 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
       expect(
         await ctx.users.setBanned(foreign, input.id, later(1), later(1), Audit.none('fixture'))
       ).toBeNull()
-      expect(await ctx.users.delete(foreign, input.id, Audit.none('fixture'))).toBe(false)
+      expect(await ctx.users.delete(foreign, input.id, Audit.none('fixture'))).toEqual({
+        outcome: 'not_found',
+      })
       expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toEqual(record(input))
     })
 

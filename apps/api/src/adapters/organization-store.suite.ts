@@ -8,6 +8,7 @@ import type {
   OrganizationRoleRecord,
   OrganizationStore,
 } from '~/ports/organization-store'
+import type { DeleteUserOutcome } from '~/ports/user-repository'
 
 /** A tenant for the suite. */
 export interface OrganizationSuiteTenant {
@@ -23,12 +24,33 @@ export interface OrganizationSuiteContext {
   /** Make a user in a tenant (a database needs the row a membership refers to); returns its id. */
   user: (tenant: OrganizationSuiteTenant) => Promise<string>
   /**
-   * Delete a user the way the users repository does; the store must drop their memberships
-   * (the database cascades, the memory store is told by the users repository).
+   * Delete a user through the users repository's `delete`; the store must drop their
+   * memberships (the database cascades, the memory store is told by the users repository), and
+   * the deletion is refused while the user is the only manager of an organization (TULA-124).
    */
-  deleteUser: (tenant: OrganizationSuiteTenant, userId: string) => Promise<void>
+  deleteUser: (tenant: OrganizationSuiteTenant, userId: string) => Promise<DeleteUserOutcome>
+  /** Make a throwaway user of a sign-in test (the reserved address, ADR 0058); returns its id. */
+  testUser: (tenant: OrganizationSuiteTenant) => Promise<string>
+  /**
+   * Run the retention job's purge of sign-in test users over a tenant, as if every one were old
+   * enough, and return how many were deleted.
+   */
+  purgeTestUsers: (tenant: OrganizationSuiteTenant) => Promise<number>
   a: OrganizationSuiteTenant
   b: OrganizationSuiteTenant
+}
+
+/** The audit entry of a user's deletion, for the purge of sign-in test users the suite runs. */
+export function userDeletion(tenant: OrganizationSuiteTenant, userId: string): Activity {
+  return Audit.entry(
+    { ids: { next: () => Bun.randomUUIDv7() }, clock: { now: () => new Date() } },
+    tenant,
+    {
+      type: 'user.deleted',
+      actor: { type: 'admin', id: null, ipAddress: null, userAgent: null },
+      target: { type: 'user', id: userId },
+    }
+  )
 }
 
 /**
@@ -699,6 +721,120 @@ export function describeOrganizationStore(
           )
         ).outcome
       ).toBe('done')
+    })
+
+    test('a user who is the only manager of an organization is not deleted, and keeps their membership', async () => {
+      const first = await stored(organization(ctx.a, { slug: 'first' }))
+      const second = await stored(organization(ctx.a, { slug: 'second' }))
+      const fine = await stored(organization(ctx.a, { slug: 'fine' }))
+      const { admin, member } = await builtIns(ctx.a)
+      const sole = await join(ctx.a, first, admin)
+      await join(ctx.a, first, member)
+      await join(ctx.a, second, admin, { userId: sole.userId })
+      // In a third organization another manager exists, so it does not count.
+      await join(ctx.a, fine, admin, { userId: sole.userId })
+      await join(ctx.a, fine, admin)
+      const before = await ctx.recorded()
+      expect(await ctx.deleteUser(ctx.a, sole.userId)).toEqual({
+        outcome: 'last_manager',
+        organizationIds: [first.id, second.id].sort(),
+      })
+      expect(await ctx.recorded()).toEqual(before)
+      for (const record of [first, second, fine]) {
+        expect(
+          await ctx.store.findMembership(ctx.a.environmentId, record.id, sole.userId)
+        ).not.toBeNull()
+      }
+    })
+
+    test('once another manager exists, or the organization is gone, the user is deleted', async () => {
+      const record = await stored(organization(ctx.a))
+      const { admin } = await builtIns(ctx.a)
+      const sole = await join(ctx.a, record, admin)
+      expect((await ctx.deleteUser(ctx.a, sole.userId)).outcome).toBe('last_manager')
+      const other = await join(ctx.a, record, admin)
+      expect(await ctx.deleteUser(ctx.a, sole.userId)).toEqual({ outcome: 'deleted' })
+      expect(await ctx.store.findMembership(ctx.a.environmentId, record.id, sole.userId)).toBe(null)
+      // The other is now the only manager.
+      expect((await ctx.deleteUser(ctx.a, other.userId)).outcome).toBe('last_manager')
+      expect(
+        await ctx.store.delete(
+          ctx.a.environmentId,
+          record.id,
+          activity(ctx.a, 'organization.deleted', record.id)
+        )
+      ).toBe(true)
+      expect(await ctx.deleteUser(ctx.a, other.userId)).toEqual({ outcome: 'deleted' })
+    })
+
+    test('a user who manages no organization is deleted as before', async () => {
+      const record = await stored(organization(ctx.a))
+      const { admin, member } = await builtIns(ctx.a)
+      await join(ctx.a, record, admin)
+      const plain = await join(ctx.a, record, member)
+      expect(await ctx.deleteUser(ctx.a, plain.userId)).toEqual({ outcome: 'deleted' })
+      const loner = await ctx.user(ctx.a)
+      expect(await ctx.deleteUser(ctx.a, loner)).toEqual({ outcome: 'deleted' })
+      expect(await ctx.deleteUser(ctx.a, loner)).toEqual({ outcome: 'not_found' })
+    })
+
+    test('the purge of sign-in test users leaves the only manager of an organization and deletes the rest', async () => {
+      const record = await stored(organization(ctx.a))
+      const { admin, member } = await builtIns(ctx.a)
+      const keeper = await join(ctx.a, record, admin, { userId: await ctx.testUser(ctx.a) })
+      const plain = await join(ctx.a, record, member, { userId: await ctx.testUser(ctx.a) })
+      const loner = await ctx.testUser(ctx.a)
+      expect(await ctx.purgeTestUsers(ctx.a)).toBe(2)
+      expect(await ctx.store.findMembership(ctx.a.environmentId, record.id, keeper.userId)).toEqual(
+        keeper
+      )
+      expect(await ctx.store.findMembership(ctx.a.environmentId, record.id, plain.userId)).toBe(
+        null
+      )
+      // Once the organization has another manager the next round deletes them too.
+      await join(ctx.a, record, admin)
+      expect(await ctx.purgeTestUsers(ctx.a)).toBe(1)
+      expect(await ctx.deleteUser(ctx.a, loner)).toEqual({ outcome: 'not_found' })
+    })
+
+    test('of the deletion of one manager and the demotion of the other at once exactly one is made', async () => {
+      const record = await stored(organization(ctx.a))
+      const { admin, member } = await builtIns(ctx.a)
+      const first = await join(ctx.a, record, admin)
+      const second = await join(ctx.a, record, admin)
+      const [deleted, demoted] = await Promise.all([
+        ctx.deleteUser(ctx.a, first.userId),
+        ctx.store.changeRole(
+          ctx.a.environmentId,
+          record.id,
+          second.userId,
+          admin.id,
+          member,
+          later,
+          activity(ctx.a, 'organization_membership.role_changed', second.id)
+        ),
+      ])
+      // Whichever took the organization's lock first is made; the other is refused.
+      expect(['deleted last_manager', 'last_manager done']).toContain(
+        `${deleted.outcome} ${demoted.outcome}`
+      )
+      const managers = await ctx.store.listMemberships(ctx.a.environmentId, record.id, {
+        page: 1,
+        size: 10,
+      })
+      expect(managers.records.filter((one) => one.roleKey === 'admin').length).toBe(1)
+    })
+
+    test('of the deletions of the last two managers at once exactly one is made', async () => {
+      const record = await stored(organization(ctx.a))
+      const { admin } = await builtIns(ctx.a)
+      const first = await join(ctx.a, record, admin)
+      const second = await join(ctx.a, record, admin)
+      const results = await Promise.all([
+        ctx.deleteUser(ctx.a, first.userId),
+        ctx.deleteUser(ctx.a, second.userId),
+      ])
+      expect(results.map((result) => result.outcome).sort()).toEqual(['deleted', 'last_manager'])
     })
 
     test('of two demotions of the last two managers at once exactly one is made', async () => {

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
+import { testAddress } from '@tula-tech/contract'
 import { organizations, users, withTenant } from '@tula-tech/db'
 import {
   createTestDatabase,
@@ -7,9 +8,10 @@ import {
   type TestTenant,
 } from '@tula-tech/db/testing'
 import { eq } from 'drizzle-orm'
-import { describeOrganizationStore } from '~/adapters/organization-store.suite'
+import { describeOrganizationStore, userDeletion } from '~/adapters/organization-store.suite'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
 import { PostgresOrganizationStore } from '~/adapters/postgres/organizations'
+import { PostgresUserRepository } from '~/adapters/postgres/users'
 import * as Audit from '~/modules/audit/service'
 
 // PGlite: real Postgres with every migration, connected as the runtime role (RLS applies).
@@ -47,11 +49,42 @@ describeOrganizationStore('Postgres', async () => {
       )
       return id
     },
-    deleteUser: async (tenant, userId) => {
-      await withTenant(testDb.db, tenant.environmentId, (tx) =>
-        tx.delete(users).where(eq(users.id, userId))
+    deleteUser: (tenant, userId) =>
+      new PostgresUserRepository(testDb.db).delete(
+        tenant.environmentId,
+        userId,
+        Audit.none('fixture')
+      ),
+    testUser: async (tenant) => {
+      const id = Bun.randomUUIDv7()
+      const address = testAddress(id.replaceAll('-', ''))
+      await new PostgresUserRepository(testDb.db).create(
+        {
+          id,
+          projectId: tenant.projectId,
+          environmentId: tenant.environmentId,
+          email: address,
+          emailNormalized: address,
+          emailVerifiedAt: null,
+          firstName: null,
+          lastName: null,
+          createdAt: new Date(0),
+          identityId: Bun.randomUUIDv7(),
+          credentialId: Bun.randomUUIDv7(),
+          passwordHash: null,
+        },
+        Audit.none('fixture')
       )
+      return id
     },
+    purgeTestUsers: (tenant) =>
+      new PostgresUserRepository(testDb.db).deleteTestUsersBefore(
+        tenant.environmentId,
+        new Date(Date.now() + 60_000),
+        100,
+        (userId) => userDeletion(tenant, userId)
+      ),
+
     a: { projectId: a.projectId, environmentId: a.environmentId },
     b: { projectId: b.projectId, environmentId: b.environmentId },
   }

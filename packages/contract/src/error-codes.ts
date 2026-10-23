@@ -358,6 +358,15 @@ export const ERROR_DEFINITIONS = {
     message: 'Signing in here needs a device key.',
   },
 
+  // Deleting a user who is the only member holding `org:sys:memberships:manage` of an
+  // organization (ADR 0065). `params.organizationIds` is a comma-separated list of those
+  // organizations' ids (at most 20, ascending) and `params.count` how many there are. Nothing
+  // was deleted: give the organization another manager or delete it, then try again.
+  'user.last_organization_manager': {
+    status: 409,
+    message:
+      'This user is the only manager of an organization. Add another manager or delete the organization first.',
+  },
   // Organizations (ADR 0065). `disabled`: the environment's `organizations.enabled` setting is
   // off, so every organization route answers this and touches nothing. It says nothing about any
   // account. `slug_taken` and `member_exists` are conflicts on the organization's unique slug and

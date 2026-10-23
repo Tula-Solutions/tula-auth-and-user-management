@@ -619,6 +619,13 @@ export async function liftBan(
 /**
  * Delete a user and everything that belongs to them.
  *
+ * **Refused while the user is the only member who holds `org:sys:memberships:manage` of an
+ * organization** (ADR 0065, TULA-124): the cascade would leave an organization nobody can
+ * manage, as removing or demoting that member would (`organization.last_manager`). The
+ * operator adds another manager or deletes the organization first. The refusal is checked
+ * before anything is changed (a refused deletion does not end the user's sessions), and
+ * again by the store under the organizations' locks, which is what decides it.
+ *
  * Their sessions are revoked through the session service first, so their access tokens are
  * denylisted before the rows disappear.
  *
@@ -629,6 +636,8 @@ export async function liftBan(
  * @param userId - The user.
  * @param actor - Who is deleting them, for the audit log.
  * @throws NotFoundError when they do not exist in this environment.
+ * @throws AuthError `user.last_organization_manager` (`params.organizationIds`) when they are
+ *   the only manager of an organization.
  */
 export async function remove(
   deps: RevocationDeps,
@@ -637,15 +646,35 @@ export async function remove(
   actor: Actor
 ): Promise<void> {
   await requireUser(deps, scope, userId)
+  const early = await deps.users.soleManagerOf(scope.environmentId, userId)
+  if (early.length > 0) {
+    throw lastOrganizationManager(early)
+  }
   await Sessions.revokeAllForUser(deps, scope, userId, 'revoked_by_admin', actor)
-  const deleted = await deps.users.delete(
+  const result = await deps.users.delete(
     scope.environmentId,
     userId,
     Audit.entry(deps, scope, { type: 'user.deleted', actor, target: { type: 'user', id: userId } })
   )
-  if (!deleted) {
-    throw new NotFoundError()
+  switch (result.outcome) {
+    case 'deleted':
+      return
+    case 'last_manager':
+      throw lastOrganizationManager(result.organizationIds)
+    case 'not_found':
+      throw new NotFoundError()
   }
+}
+
+/** The most organization ids an error names; `count` says how many there are. */
+const MAX_NAMED_ORGANIZATIONS = 20
+
+/** The refusal to delete a user who alone manages these organizations. */
+function lastOrganizationManager(organizationIds: readonly string[]): AuthError {
+  return new AuthError('user.last_organization_manager', {
+    organizationIds: organizationIds.slice(0, MAX_NAMED_ORGANIZATIONS).join(','),
+    count: organizationIds.length,
+  })
 }
 
 type PasswordDeps = RevocationDeps &

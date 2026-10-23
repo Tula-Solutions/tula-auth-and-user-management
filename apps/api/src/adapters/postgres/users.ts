@@ -34,6 +34,7 @@ import {
 } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { dataRefusal, isUniqueViolation } from '~/adapters/postgres/errors'
+import { findBlocked } from '~/adapters/postgres/manager-guard'
 import * as logger from '~/lib/logger'
 import { type Activity, activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import type {
@@ -57,7 +58,7 @@ import type {
   UserRepository,
   UserWithPassword,
 } from '~/ports/user-repository'
-import { InvalidUserDataError } from '~/ports/user-repository'
+import { type DeleteUserOutcome, InvalidUserDataError } from '~/ports/user-repository'
 
 const columns = {
   id: users.id,
@@ -1071,17 +1072,35 @@ export class PostgresUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
-  async delete(environmentId: string, userId: string, recorded: Recorded): Promise<boolean> {
+  async delete(
+    environmentId: string,
+    userId: string,
+    recorded: Recorded
+  ): Promise<DeleteUserOutcome> {
     const activity = activityOf(recorded)
     return withTenant(this.db, environmentId, async (tx) => {
+      // The organizations' locks come before the delete, whose cascade removes the memberships.
+      const blocked = (await findBlocked(tx, environmentId, [userId])).get(userId)
+      if (blocked) {
+        return { outcome: 'last_manager', organizationIds: blocked } as const
+      }
       const rows = await tx
         .delete(users)
         .where(and(eq(users.id, userId), eq(users.environmentId, environmentId)))
         .returning({ id: users.id })
       const deleted = rows.length === 1
       await recordActivity(tx, deleted && activity ? [activity] : [])
-      return deleted
+      return { outcome: deleted ? 'deleted' : 'not_found' } as const
     })
+  }
+
+  /** @inheritdoc */
+  async soleManagerOf(environmentId: string, userId: string): Promise<string[]> {
+    return withTenant(
+      this.db,
+      environmentId,
+      async (tx) => (await findBlocked(tx, environmentId, [userId], false)).get(userId) ?? []
+    )
   }
 
   /** @inheritdoc */
@@ -1116,6 +1135,17 @@ export class PostgresUserRepository implements UserRepository {
       if (batch.length === 0) {
         return 0
       }
+      // A test user who is the only manager of an organization is left for a later round, as
+      // a user's deletion would refuse them (TULA-124); nothing here empties an organization.
+      const blocked = await findBlocked(
+        tx,
+        environmentId,
+        batch.map((row) => row.id)
+      )
+      const deletable = batch.filter((row) => !blocked.has(row.id))
+      if (deletable.length === 0) {
+        return 0
+      }
       const rows = await tx
         .delete(users)
         .where(
@@ -1123,7 +1153,7 @@ export class PostgresUserRepository implements UserRepository {
             eq(users.environmentId, environmentId),
             inArray(
               users.id,
-              batch.map((row) => row.id)
+              deletable.map((row) => row.id)
             )
           )
         )
