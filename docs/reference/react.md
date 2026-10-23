@@ -2356,6 +2356,62 @@ export interface TulaLocalization {
     cancel: string
     added: string
   }
+  /**
+   * The organization switcher and the organization profile (ADR 0065, ADR 0064): the words of
+   * the Tula UI items `organization-switcher` and `organization-profile`. The prebuilt
+   * components do not draw them; they are here so that a copy's words are the app's
+   * translation and never a string in a copied file.
+   */
+  organizations: {
+    /** The switcher's label, over the list of organizations. */
+    switcherLabel: string
+    /** The choice that clears the active organization. */
+    personalAccount: string
+    /** While the list is being fetched. */
+    loading: string
+    /** The list could not be fetched; the reason comes from the error table. */
+    loadFailed: string
+    /** An action failed with something that is not the server's own reason. */
+    failed: string
+    retry: string
+    /** The user belongs to no organization yet. */
+    empty: string
+    /** `{name}`. Said after the active organization changed. */
+    switchedTo: string
+    /** Said after the active organization was cleared. */
+    switchedToPersonal: string
+    /** The button that opens the form for a new organization. */
+    newOrganization: string
+    nameLabel: string
+    slugLabel: string
+    /** Under the slug field: what a slug may be. */
+    slugHint: string
+    createSubmit: string
+    cancel: string
+    /** `{name}`. Said after an organization was created and made the active one. */
+    created: string
+    /** `{name}`. The organization exists, but making it the active one failed. */
+    createdNotSwitched: string
+    /** The title of the profile. */
+    profileTitle: string
+    /** Said in place of the profile while no organization is active. */
+    profileNone: string
+    /** The user is no longer a member of the organization the session acts in. */
+    profileNotAMember: string
+    slugRow: string
+    roleRow: string
+    createdRow: string
+    membersRow: string
+    /** The role holds `org:sys:memberships:manage`. */
+    membersManage: string
+    /** The role holds `org:sys:memberships:read` and not `manage`. */
+    membersRead: string
+    /** The role holds neither. */
+    membersNone: string
+    permissionsTitle: string
+    /** The role holds no permission. */
+    permissionsEmpty: string
+  }
   /** The dialog that asks a signed-in user to prove who they are before a sensitive change. */
   stepUp: {
     title: string

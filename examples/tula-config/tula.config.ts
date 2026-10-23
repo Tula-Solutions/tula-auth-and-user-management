@@ -84,8 +84,19 @@ export default defineConfig({
         },
         // #endregion
         audit: { retentionDays: 365 },
-        // Organizations (ADR 0065): the roles below only exist while they are on.
-        organizations: { enabled: true },
+        // #region organizations
+        // Organizations (ADR 0065) are off until an environment switches them on; the roles
+        // below only exist while they are on. The other fields are shown at their defaults,
+        // except `allowUserCreated`: here a signed-in user may create up to five.
+        organizations: {
+          enabled: true,
+          allowUserCreated: true,
+          maxCreatedPerUser: 5,
+          creatorRole: 'admin',
+          defaultRole: 'member',
+          personalAccount: true,
+        },
+        // #endregion
         // #region mfa
         mfa: { policy: 'required' },
         // #endregion
