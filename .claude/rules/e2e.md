@@ -67,7 +67,8 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   organizations under yours, stop its servers and serve its own build (TULA-129: a sign-in
   method switched off mid-test, "Organizations are switched off", a connection refused). A
   busy port stops the run with Playwright's "already used"; wait for the other run, never
-  stop a server you did not start.
+  stop a server you did not start. A leftover of your own aborted run: find it with the
+  `lsof` above and stop that process.
   **A spec does not assume the environment is empty or at the defaults**: the `nextjs` project
   runs before `dashboard` in the same fixture and leaves organizations behind, so a test that
   says "none yet" first makes it true (`clearOrganizations` in the dashboard's organizations

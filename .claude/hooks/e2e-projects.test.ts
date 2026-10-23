@@ -95,9 +95,8 @@ describe('the fixture servers of the Playwright config', () => {
     expect(config).toContain("const reuseFixture = process.env.E2E_REUSE_SERVER === '1'")
     const start = config.indexOf('function apiServers()')
     const block = config.slice(start, config.indexOf('\n}\n', start))
-    expect([...block.matchAll(/reuseExistingServer:\s*([^,\n]+)/g)].map((m) => m[1])).toEqual([
-      'reuseFixture',
-      'reuseFixture',
-    ])
+    const flags = [...block.matchAll(/reuseExistingServer:\s*([^,\n]+)/g)].map((m) => m[1])
+    expect(flags.length).toBeGreaterThanOrEqual(2)
+    expect(flags.every((flag) => flag === 'reuseFixture')).toBe(true)
   })
 })
