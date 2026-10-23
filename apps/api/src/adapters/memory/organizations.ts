@@ -45,6 +45,7 @@ export class MemoryOrganizationStore implements OrganizationStore {
   readonly #invitations: Map<string, InvitationRecord>
   readonly #activityLog: MemoryActivityLog
   readonly #users: MemoryUserRepository | null
+  readonly #deleteListeners: ((environmentId: string, organizationId: string) => void)[] = []
 
   /**
    * @param activityLog - Where activity is recorded; shared with the other memory stores.
@@ -73,6 +74,25 @@ export class MemoryOrganizationStore implements OrganizationStore {
         }
       }
     })
+  }
+
+  /**
+   * Call `listener` for every organization this store deletes, so that a store of rows that
+   * refer to an organization can cascade, as the foreign key does.
+   *
+   * @param listener - Given the environment and the organization.
+   */
+  onDelete(listener: (environmentId: string, organizationId: string) => void): void {
+    this.#deleteListeners.push(listener)
+  }
+
+  /**
+   * @param environmentId - The environment.
+   * @param organizationId - The organization.
+   * @returns Whether this environment has the organization (the foreign key's question).
+   */
+  has(environmentId: string, organizationId: string): boolean {
+    return this.#own(environmentId, organizationId) !== null
   }
 
   /** The stored organization, when it is this environment's. */
@@ -217,6 +237,10 @@ export class MemoryOrganizationStore implements OrganizationStore {
       return false
     }
     this.#organizations.delete(id)
+    for (const listener of this.#deleteListeners) {
+      listener(environmentId, id)
+    }
+    // The memberships go with their organization, as the foreign key cascades.
     // The memberships and invitations go with their organization, as the foreign keys cascade.
     for (const [key, membership] of this.#memberships) {
       if (membership.organizationId === id) {

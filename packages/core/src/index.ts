@@ -101,6 +101,8 @@ export type {
   MfaPolicy,
   OrganizationInvitation,
   OrganizationInvitationList,
+  OrganizationSuggestion,
+  OrganizationSuggestionList,
   Passkey,
   PasswordPolicy,
   PhoneCodeSent,

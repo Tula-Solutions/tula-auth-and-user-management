@@ -54,6 +54,11 @@ const routes: ReadonlyArray<readonly [path: string, router: Hono<AppEnv>]> = [
   ['/v1/admin/organizations', (await import('~/modules/organization/router')).default],
   ['/v1/admin/organization-roles', (await import('~/modules/organization-role/router')).default],
   ['/v1/client/me/organizations', (await import('~/modules/organization/me-router')).default],
+  ['/v1/admin/organizations', (await import('~/modules/organization-domain/router')).default],
+  [
+    '/v1/client/me/organizations',
+    (await import('~/modules/organization-domain/me-router')).default,
+  ],
   ['/v1/admin/organizations', (await import('~/modules/organization/invitation-router')).default],
   ['/v1/client', (await import('~/modules/organization/invitation-me-router')).default],
   ['/v1/admin/users', (await import('~/modules/organization/user-router')).default],

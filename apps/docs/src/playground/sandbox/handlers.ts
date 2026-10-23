@@ -68,6 +68,13 @@ export const UNSUPPORTED: Partial<Record<OperationId, string>> = {
   listMyOrganizations: 'the sandbox has no organizations',
   createMyOrganization: 'the sandbox has no organizations',
   setActiveOrganization: 'the sandbox has no organizations',
+  listMyOrganizationSuggestions: 'the sandbox has no organizations',
+  joinOrganizationSuggestion: 'the sandbox has no organizations',
+  listMyOrganizationDomains: 'the sandbox has no organizations',
+  startMyOrganizationDomain: 'the sandbox has no organizations',
+  verifyMyOrganizationDomain: 'the sandbox has no organizations',
+  updateMyOrganizationDomain: 'the sandbox has no organizations',
+  removeMyOrganizationDomain: 'the sandbox has no organizations',
   listMyOrganizationInvitations: 'the sandbox has no organizations',
   inviteToMyOrganization: 'the sandbox has no organizations',
   revokeMyOrganizationInvitation: 'the sandbox has no organizations',
@@ -85,6 +92,13 @@ function unsupported(id: OperationId): never {
     id === 'listMyOrganizations' ||
     id === 'createMyOrganization' ||
     id === 'setActiveOrganization' ||
+    id === 'listMyOrganizationSuggestions' ||
+    id === 'joinOrganizationSuggestion' ||
+    id === 'listMyOrganizationDomains' ||
+    id === 'startMyOrganizationDomain' ||
+    id === 'verifyMyOrganizationDomain' ||
+    id === 'updateMyOrganizationDomain' ||
+    id === 'removeMyOrganizationDomain' ||
     id === 'listMyOrganizationInvitations' ||
     id === 'inviteToMyOrganization' ||
     id === 'revokeMyOrganizationInvitation' ||
@@ -942,6 +956,13 @@ export const HANDLERS: Handlers = {
   listMyOrganizations: () => unsupported('listMyOrganizations'),
   createMyOrganization: () => unsupported('createMyOrganization'),
   setActiveOrganization: () => unsupported('setActiveOrganization'),
+  listMyOrganizationSuggestions: () => unsupported('listMyOrganizationSuggestions'),
+  joinOrganizationSuggestion: () => unsupported('joinOrganizationSuggestion'),
+  listMyOrganizationDomains: () => unsupported('listMyOrganizationDomains'),
+  startMyOrganizationDomain: () => unsupported('startMyOrganizationDomain'),
+  verifyMyOrganizationDomain: () => unsupported('verifyMyOrganizationDomain'),
+  updateMyOrganizationDomain: () => unsupported('updateMyOrganizationDomain'),
+  removeMyOrganizationDomain: () => unsupported('removeMyOrganizationDomain'),
   listMyOrganizationInvitations: () => unsupported('listMyOrganizationInvitations'),
   inviteToMyOrganization: () => unsupported('inviteToMyOrganization'),
   revokeMyOrganizationInvitation: () => unsupported('revokeMyOrganizationInvitation'),

@@ -62,6 +62,7 @@ import * as Hooks from '~/modules/hook/service'
 import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
 import * as OAuth from '~/modules/oauth/service'
+import * as OrganizationDomains from '~/modules/organization-domain/service'
 import * as Passkeys from '~/modules/passkey/service'
 import * as Foreign from '~/modules/password/foreign-hash'
 import * as Passwords from '~/modules/password/service'
@@ -874,6 +875,13 @@ async function finish(
       actor: systemActor(context),
     })
     throw new AuthError('flow.invalid_step')
+  }
+  if (attempt.kind === 'sign_up' || state.accountCreated === true) {
+    // A verified address on an `auto_join` domain of an organization (ADR 0065, "Verified
+    // domains"): the membership, its audit entry and its event are written here, as part of
+    // the sign-up, and never for a sign-in. Cannot throw: a sign-up that has a session is
+    // never failed by an organization.
+    await OrganizationDomains.joinOnSignUp(deps, tenant, userId, systemActor(context))
   }
   if (attempt.kind === 'sign_in') {
     // Not awaited and cannot throw: the notice must neither delay nor fail the sign-in.

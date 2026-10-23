@@ -21,6 +21,8 @@ describe('server rendering', () => {
     expect(html).toContain('status text')
     expect(html).toContain('role="alert"')
     expect(html).toContain('alert detail')
+    // organization items: nothing is known before the list arrives, so a server draws the wait.
+    expect(html).toContain('Loading your organizations')
     // sign-in: a server draws nothing it cannot know (the flow has not started).
     expect(html).toContain('<output')
   }, 60_000)

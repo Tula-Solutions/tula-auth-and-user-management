@@ -41,6 +41,7 @@ const EVERY_MESSAGE: EmailMessage[] = [
   { type: 'password_reset', code: '482913', ttlMinutes: 10 },
   signIn,
   { type: 'step_up', code: '482913', ttlMinutes: 10 },
+  { type: 'organization_domain_verification', code: '482913', ttlMinutes: 10 },
   { type: 'account_exists' },
   { type: 'no_account' },
   { type: 'no_account_sign_in' },

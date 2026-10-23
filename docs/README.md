@@ -57,11 +57,18 @@ by error code. Their code samples are copied from files of this repository by
 | --- | --- |
 | [Email templates](email-templates.md) | Your own subject and wording for each email: the kinds of message and their placeholders, what a template is refused for, the stricter rules of a security notice, what happens when a template cannot be used, and the preview. |
 
+## Organizations
+
+| | |
+| --- | --- |
+| [Organizations](organizations.md) | Groups of users who share something: turning them on (`tula.config.ts`, admin API), creating them and the active organization, the `org_id`, `org_role` and `org_perms` claims and their size, `has()` in Next.js, React and any backend, access rules in the Next.js proxy, the Tula UI switcher and profile, and what is coming (invitations, verified domains). |
+| [Roles and permissions](roles-and-permissions.md) | The built-in `admin` and `member`, custom roles, the `org:<feature>:<action>` grammar and the system permissions, why `has()` is exact, and what weakens security. |
+
 ## Claims for your backend
 
 | | |
 | --- | --- |
-| [JWT templates](jwt-templates.md) | Custom claims under `ext`: the sources a claim can have, the reserved names and the size cap, when a change takes effect, reading them with `@tula-tech/nextjs`; the organization claims beside them. |
+| [JWT templates](jwt-templates.md) | Custom claims under `ext`: the sources a claim can have, the reserved names and the size cap, when a change takes effect, reading them with `@tula-tech/nextjs`; the [organization claims](organizations.md#reading-the-organization-in-your-app) beside them. |
 
 ## Events for your backend
 
@@ -92,7 +99,7 @@ by error code. Their code samples are copied from files of this repository by
 | [CLI](cli.md) | `create-tula`, `tula dev`, `tula doctor`, `tula policy test`, `tula diff`, `tula apply`, `tula import`, `tula mcp`. |
 | [Settings as code](config.md) | `tula.config.ts`, what `diff` and `apply` do, using them in CI. |
 | [Dashboard](dashboard.md) | The operator's screens at `/dashboard`. |
-| [MCP server](mcp.md) | Tools for an AI assistant: reads, drafts, proposals and a sign-in test. |
+| [MCP server](mcp.md) | Tools for an AI assistant: reads (users, sessions, audit entries, settings, organizations), drafts, proposals and a sign-in test. |
 | [Proposals](proposals.md) | Letting an AI agent ask for a change that a person approves: the agent key, what a proposal holds and how it is carried out. |
 | [Conformance suite](../conformance/README.md) | The scenarios every server and SDK must pass, and how to run them against yours. |
 

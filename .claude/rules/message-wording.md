@@ -35,7 +35,7 @@ keyed by kind). The layout is the server's.
   `renderTemplate`. A new rule goes there and nowhere else, with a row in
   `packages/contract/src/email-template.test.ts`.
 - **The only link in any email is the server's own `{{link}}`: nothing an operator writes
-  may read as one, in the subject or the body of any of the 29 kinds** (`readsAsLink`:
+  may read as one, in the subject or the body of any of the 30 kinds** (`readsAsLink`:
   `://`, a scheme of the closed list `EMAIL_LINK_SCHEMES` directly followed by something,
   `www.`, a letter or digit, a full stop and two letters with nothing between, or four
   groups of digits with full stops; combining marks are passed over wherever a letter may

@@ -312,6 +312,11 @@ export type UserOrganization = Schemas['UserOrganization']
 /** A page of the user's organizations, with the session's active organization's id. */
 export type UserOrganizationList = Schemas['UserOrganizationList']
 
+/** An organization the user may join because of a verified address (`organizations.suggestions()`). */
+export type OrganizationSuggestion = Schemas['OrganizationSuggestion']
+
+/** What `organizations.suggestions()` answers: the organizations the user is offered. */
+export type OrganizationSuggestionList = Schemas['OrganizationSuggestionList']
 /**
  * An invitation to an organization as the inviting side sees it. The token the emailed link
  * carries is never part of it.

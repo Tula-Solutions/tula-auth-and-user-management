@@ -930,6 +930,26 @@ A page of an organization's invitations.
 export type OrganizationInvitationList = Schemas['OrganizationInvitationList']
 ```
 
+### `OrganizationSuggestion`
+
+_type_, defined in `packages/core/src/types.ts`
+
+An organization the user may join because of a verified address (`organizations.suggestions()`).
+
+```ts
+export type OrganizationSuggestion = Schemas['OrganizationSuggestion']
+```
+
+### `OrganizationSuggestionList`
+
+_type_, defined in `packages/core/src/types.ts`
+
+What `organizations.suggestions()` answers: the organizations the user is offered.
+
+```ts
+export type OrganizationSuggestionList = Schemas['OrganizationSuggestionList']
+```
+
 ### `PageLike`
 
 _interface_, defined in `packages/core/src/environment.ts`
@@ -2130,6 +2150,38 @@ export interface TulaClient {
      * ```
      */
     setActive(organizationId: string | null): Promise<ActiveOrganization>
+    /**
+     * The organizations the user may join because their **verified** email address is on a
+     * domain the organization verified (ADR 0065, "Verified domains"): its id, name and slug,
+     * nothing of its members. Empty for a user with no verified address, for one already in
+     * the organization and for a domain that is not exactly the address's.
+     *
+     * @returns The suggestions.
+     * @throws TulaError `auth.unauthenticated` when signed out, `organization.disabled`.
+     * @example
+     * ```ts
+     * const { data } = await tula.organizations.suggestions()
+     * ```
+     */
+    suggestions(): Promise<OrganizationSuggestionList>
+    /**
+     * Join a suggested organization with the environment's default role. The server decides
+     * again, so a suggestion that is gone (the domain was removed, the address changed) is
+     * refused. The session does not switch to it: call `setActive`.
+     *
+     * @param organizationId - The organization, from {@link suggestions}.
+     * @returns The organization, with the user's role and its permission keys.
+     * @throws TulaError `organization.suggestion_unavailable`, `organization.member_exists`,
+     *   `organization.disabled`.
+     * @example
+     * ```ts
+     * const [first] = (await tula.organizations.suggestions()).data
+     * if (first) {
+     *   await tula.organizations.join(first.id)
+     * }
+     * ```
+     */
+    join(organizationId: string): Promise<UserOrganization>
     /**
      * Invitations by email (ADR 0065, Orgs 04). The inviting calls need the permission
      * `org:sys:invitations:manage`, which the API reads from the user's membership on every

@@ -26,7 +26,12 @@ export interface EmailBrand {
 
 /** An emailed 6-digit code, and optionally a link that does the same. */
 export interface CodeMessage {
-  type: 'email_verification' | 'password_reset' | 'sign_in' | 'step_up'
+  type:
+    | 'email_verification'
+    | 'password_reset'
+    | 'sign_in'
+    | 'step_up'
+    | 'organization_domain_verification'
   code: string
   /** Minutes until the code and link expire. */
   ttlMinutes: number
@@ -215,6 +220,15 @@ const COPY: Record<(CodeMessage | NoticeMessage)['type'], Copy> = {
     ],
     closing: [
       "If you didn't ask for this, someone may be signed in to your account: open {app}, sign out of the devices you do not recognise and do not share this code.",
+    ],
+  },
+  organization_domain_verification: {
+    subject: 'is your {app} domain verification code',
+    lead: [
+      'Someone asked to verify the domain of this email address for an organization in {app}. Enter this code to show that you control it:',
+    ],
+    closing: [
+      "If you didn't ask for this, you can safely ignore this email. Nothing happens until the code is entered.",
     ],
   },
   account_exists: {
@@ -563,6 +577,7 @@ export function templateKind(message: EmailMessage): EmailTemplateKind {
     case 'password_reset':
     case 'sign_in':
     case 'step_up':
+    case 'organization_domain_verification':
     case 'account_exists':
     case 'no_account':
     case 'no_account_sign_in':

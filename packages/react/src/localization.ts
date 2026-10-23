@@ -396,6 +396,62 @@ export interface TulaLocalization {
     cancel: string
     added: string
   }
+  /**
+   * The organization switcher and the organization profile (ADR 0065, ADR 0064): the words of
+   * the Tula UI items `organization-switcher` and `organization-profile`. The prebuilt
+   * components do not draw them; they are here so that a copy's words are the app's
+   * translation and never a string in a copied file.
+   */
+  organizations: {
+    /** The switcher's label, over the list of organizations. */
+    switcherLabel: string
+    /** The choice that clears the active organization. */
+    personalAccount: string
+    /** While the list is being fetched. */
+    loading: string
+    /** The list could not be fetched; the reason comes from the error table. */
+    loadFailed: string
+    /** An action failed with something that is not the server's own reason. */
+    failed: string
+    retry: string
+    /** The user belongs to no organization yet. */
+    empty: string
+    /** `{name}`. Said after the active organization changed. */
+    switchedTo: string
+    /** Said after the active organization was cleared. */
+    switchedToPersonal: string
+    /** The button that opens the form for a new organization. */
+    newOrganization: string
+    nameLabel: string
+    slugLabel: string
+    /** Under the slug field: what a slug may be. */
+    slugHint: string
+    createSubmit: string
+    cancel: string
+    /** `{name}`. Said after an organization was created and made the active one. */
+    created: string
+    /** `{name}`. The organization exists, but making it the active one failed. */
+    createdNotSwitched: string
+    /** The title of the profile. */
+    profileTitle: string
+    /** Said in place of the profile while no organization is active. */
+    profileNone: string
+    /** The user is no longer a member of the organization the session acts in. */
+    profileNotAMember: string
+    slugRow: string
+    roleRow: string
+    createdRow: string
+    membersRow: string
+    /** The role holds `org:sys:memberships:manage`. */
+    membersManage: string
+    /** The role holds `org:sys:memberships:read` and not `manage`. */
+    membersRead: string
+    /** The role holds neither. */
+    membersNone: string
+    permissionsTitle: string
+    /** The role holds no permission. */
+    permissionsEmpty: string
+  }
   /** The dialog that asks a signed-in user to prove who they are before a sensitive change. */
   stepUp: {
     title: string
@@ -828,6 +884,38 @@ export const EN_LOCALIZATION: TulaLocalization = {
     differentAddress: 'Use a different address',
     cancel: 'Cancel',
     added: 'Your email address was added.',
+  },
+  organizations: {
+    switcherLabel: 'Organization',
+    personalAccount: 'Personal account',
+    loading: 'Loading your organizations…',
+    loadFailed: 'Your organizations could not be loaded.',
+    failed: 'Something went wrong. Try again.',
+    retry: 'Try again',
+    empty: 'You are not a member of any organization yet.',
+    switchedTo: 'Now working in {name}.',
+    switchedToPersonal: 'Now using your personal account.',
+    newOrganization: 'New organization',
+    nameLabel: 'Name',
+    slugLabel: 'Short name',
+    slugHint:
+      'Lower-case letters, digits and hyphens, for example acme-corp. It appears in addresses.',
+    createSubmit: 'Create organization',
+    cancel: 'Cancel',
+    created: '{name} was created and is now the active organization.',
+    createdNotSwitched: '{name} was created, but switching to it failed. Choose it from the list.',
+    profileTitle: 'Organization',
+    profileNone: 'No organization is active. You are using your personal account.',
+    profileNotAMember: 'You are no longer a member of this organization.',
+    slugRow: 'Short name',
+    roleRow: 'Your role',
+    createdRow: 'Created',
+    membersRow: 'Members',
+    membersManage: 'You can manage members.',
+    membersRead: 'You can see who the members are.',
+    membersNone: 'You cannot see the members.',
+    permissionsTitle: 'What your role allows',
+    permissionsEmpty: 'Your role has no permissions.',
   },
   stepUp: {
     title: 'Confirm it is you',

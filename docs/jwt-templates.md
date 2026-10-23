@@ -117,7 +117,8 @@ the profile your staff tool asks for); it is not a per-user role. Per-user claim
 source that knows the user: a [`before_token` hook](hooks.md), which asks your backend for
 them ([Claims from a hook](#claims-from-a-hook)). An organization's claims (`org_id`,
 `org_role`, `org_perms`) are not a template's: the server writes them at the top level of the
-token while an organization is active ([ADR 0065](adr/0065-organizations.md)), beside `ext`.
+token while an organization is active ([ADR 0065](adr/0065-organizations.md),
+[Organizations](organizations.md#reading-the-organization-in-your-app)), beside `ext`.
 Both count toward the token's size, which is why the Next.js SDK stores a large access token in
 two cookies ([ADR 0029](adr/0029-nextjs-sdk.md)).
 

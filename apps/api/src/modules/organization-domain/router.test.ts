@@ -1,0 +1,1099 @@
+import { beforeEach, describe, expect, test } from 'bun:test'
+import {
+  type CurrentUser,
+  DEFAULT_ENVIRONMENT_SETTINGS,
+  EVENT_DATA_SCHEMAS,
+  type FlowAttempt,
+  type OrganizationDomain,
+  type OrganizationSuggestionList,
+  type HybridSessionTokens as SessionTokens,
+  type UserOrganization,
+} from '@tula-tech/contract'
+import { createApp } from '~/index'
+import { systemActor } from '~/lib/actor'
+import * as Organizations from '~/modules/organization/service'
+import * as Domains from '~/modules/organization-domain/service'
+import { createTestDeps, seedApiKey, TEST_ACTOR, TEST_TENANT, type TestDeps } from '~/testing'
+
+const PK = 'tula_pk_dev_publishable0000000000000000000'
+const SK = 'tula_sk_dev_secret000000000000000000000000'
+const AK = 'tula_ak_dev_agent000000000000000000000000000000'
+const PROD_SK = 'tula_sk_live_secret00000000000000000000000'
+const PASSWORD = 'correct horse battery staple'
+const ORIGIN = 'https://app.northline.test'
+const UNKNOWN = '00000000-0000-7000-8000-00000000dead'
+const PROD = {
+  projectId: TEST_TENANT.projectId,
+  environmentId: TEST_TENANT.productionEnvironmentId,
+}
+const TENANT = { projectId: TEST_TENANT.projectId, environmentId: TEST_TENANT.environmentId }
+
+let deps: TestDeps
+let app: ReturnType<typeof createApp>
+let revision = 0
+
+function configure(organizations: Record<string, unknown> = {}) {
+  revision += 1
+  deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+    revision,
+    settings: {
+      ...DEFAULT_ENVIRONMENT_SETTINGS,
+      urls: { allowedOrigins: [ORIGIN], allowedRedirectUrls: [] },
+      organizations: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS.organizations,
+        enabled: true,
+        ...organizations,
+      },
+    } as never,
+  })
+}
+
+beforeEach(async () => {
+  deps = createTestDeps()
+  revision = 0
+  for (const [id, kind] of [
+    [TEST_TENANT.environmentId, 'development'],
+    [TEST_TENANT.productionEnvironmentId, 'production'],
+  ] as const) {
+    deps.environments.add({
+      id,
+      projectId: TEST_TENANT.projectId,
+      kind,
+      createdAt: deps.clock.now(),
+    })
+  }
+  await seedApiKey(deps, PK)
+  await seedApiKey(deps, SK)
+  await seedApiKey(deps, AK)
+  await seedApiKey(deps, PROD_SK, { environmentId: TEST_TENANT.productionEnvironmentId })
+  configure()
+  app = createApp(deps)
+})
+
+const json = async <T>(res: Response) => (await res.json()) as T
+const codeOf = async (res: Response) => (await json<{ code: string }>(res)).code
+const emailedCode = () =>
+  /^(\d{6}) /.exec(
+    deps.mailer.outbox.findLast((mail) => /^\d{6} /.test(mail.subject))?.subject ?? ''
+  )?.[1] ?? ''
+const types = () => deps.activityLog.entries.map((entry) => entry.type)
+
+function admin(method: string, path: string, body?: unknown, key = SK) {
+  return app.request(`/v1/admin/organizations${path}`, {
+    method,
+    headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+    ...(body !== undefined && { body: JSON.stringify(body) }),
+  })
+}
+
+function client(method: string, path: string, body?: unknown, token?: string) {
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+    'x-tula-client': 'ios',
+    origin: ORIGIN,
+    'x-tula-publishable-key': PK,
+  }
+  if (token) {
+    headers.authorization = `Bearer ${token}`
+  }
+  return app.request(`/v1/client${path}`, {
+    method,
+    headers,
+    ...(body !== undefined && { body: JSON.stringify(body) }),
+  })
+}
+
+/** Sign up through the real flow and return the session and the user's id. */
+async function signedUp(email: string) {
+  const started = await json<FlowAttempt>(
+    await client('POST', '/sign-ups', { email, password: PASSWORD })
+  )
+  const res = await app.request(`/v1/client/sign-ups/${started.id}/verify-email`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-tula-client': 'ios',
+      origin: ORIGIN,
+      'x-tula-publishable-key': PK,
+      'x-tula-attempt': started.attemptSecret ?? '',
+    },
+    body: JSON.stringify({ code: emailedCode() }),
+  })
+  const done = await json<FlowAttempt>(res)
+  const session = done.session as SessionTokens
+  const me = await json<CurrentUser>(await client('GET', '/me', undefined, session.accessToken))
+  return { ...session, userId: me.id }
+}
+
+async function organization(slug = 'acme') {
+  return Organizations.create(deps, TENANT, { name: 'Acme Corp', slug }, TEST_ACTOR)
+}
+
+async function claim(orgId: string, domain = 'northline.app', mode = 'suggest', local = 'ada') {
+  return admin('POST', `/${orgId}/domains`, { domain, email: `${local}@${domain}`, mode })
+}
+
+/** Claim and verify with the emailed code. */
+async function verifiedDomain(orgId: string, domain = 'northline.app', mode = 'suggest') {
+  const pending = await json<OrganizationDomain>(await claim(orgId, domain, mode))
+  const res = await admin('POST', `/${orgId}/domains/${pending.id}/verify`, {
+    code: emailedCode(),
+  })
+  expect(res.status).toBe(200)
+  return json<OrganizationDomain>(res)
+}
+
+describe('claiming a domain', () => {
+  test('emails a code to an address on the domain and keeps a pending claim that grants nothing', async () => {
+    const org = await organization()
+    const res = await claim(org.id)
+    expect(res.status).toBe(201)
+    const body = await json<OrganizationDomain>(res)
+    expect(body).toMatchObject({ domain: 'northline.app', mode: 'suggest', verifiedAt: null })
+    expect(body.codeExpiresAt).not.toBeNull()
+    expect(deps.mailer.outbox.at(-1)?.to).toBe('ada@northline.app')
+    expect(emailedCode()).toMatch(/^\d{6}$/)
+    expect(JSON.stringify(body)).not.toContain(emailedCode())
+    expect(
+      await deps.organizationDomains.findVerified(TENANT.environmentId, 'northline.app')
+    ).toBeNull()
+    expect(types()).toContain('organization_domain.claimed')
+  })
+
+  test.each([
+    'gmail.com',
+    'outlook.com',
+    'hotmail.co.uk',
+    'yahoo.fr',
+    'yahoo.co.jp',
+    'icloud.com',
+    'proton.me',
+  ])('a public domain (%s) is refused and nothing is sent', async (domain) => {
+    const org = await organization()
+    const res = await claim(org.id, domain)
+    expect(res.status).toBe(422)
+    expect(await codeOf(res)).toBe('organization.domain_public')
+    expect(deps.mailer.outbox).toHaveLength(0)
+  })
+
+  test('a provider name under another domain is not a public domain', async () => {
+    const org = await organization()
+    expect((await claim(org.id, 'yahoo.acme.example')).status).toBe(201)
+  })
+
+  test.each([
+    ['an address on a subdomain', 'northline.app', 'ada@mail.northline.app'],
+    ['an address on a parent domain', 'mail.northline.app', 'ada@northline.app'],
+    ['an address on another domain', 'northline.app', 'ada@other.example'],
+  ])('%s is refused', async (_name, domain, email) => {
+    const org = await organization()
+    const res = await admin('POST', `/${org.id}/domains`, { domain, email, mode: 'suggest' })
+    expect(res.status).toBe(422)
+    expect(await codeOf(res)).toBe('organization.domain_address_mismatch')
+    expect(deps.mailer.outbox).toHaveLength(0)
+  })
+
+  test('an address that is not an address is refused', async () => {
+    const org = await organization()
+    const res = await admin('POST', `/${org.id}/domains`, {
+      domain: 'northline.app',
+      email: 'nope',
+      mode: 'suggest',
+    })
+    expect(res.status).toBe(422)
+  })
+
+  test.each([
+    ['upper case', 'Northline.app'],
+    ['an IPv4 address', '192.168.0.1'],
+    ['an IPv6 literal', '[::1]'],
+    ['unicode', 'bücher.example'],
+    ['a trailing full stop', 'northline.app.'],
+    ['an underscore', 'north_line.app'],
+    ['a single label', 'localhost'],
+    ['a wildcard', '*.northline.app'],
+    ['a label of 64 characters', `${'a'.repeat(64)}.app`],
+    ['a name of 254 characters', `${`${'a'.repeat(60)}.`.repeat(4)}app`],
+  ])('a domain with %s is refused as invalid', async (_name, domain) => {
+    const org = await organization()
+    const res = await admin('POST', `/${org.id}/domains`, {
+      domain,
+      email: 'ada@northline.app',
+      mode: 'suggest',
+    })
+    expect(res.status).toBe(422)
+    expect(deps.mailer.outbox).toHaveLength(0)
+  })
+
+  test('punycode is accepted', async () => {
+    const org = await organization()
+    const res = await admin('POST', `/${org.id}/domains`, {
+      domain: 'xn--bcher-kva.example',
+      email: 'ada@xn--bcher-kva.example',
+      mode: 'suggest',
+    })
+    expect(res.status).toBe(201)
+  })
+
+  test('an unknown mode is refused', async () => {
+    const org = await organization()
+    const res = await admin('POST', `/${org.id}/domains`, {
+      domain: 'northline.app',
+      email: 'ada@northline.app',
+      mode: 'everyone',
+    })
+    expect(res.status).toBe(422)
+  })
+
+  test('a domain verified for an organization cannot be claimed again, by it or another', async () => {
+    const one = await organization('one')
+    const two = await organization('two')
+    await verifiedDomain(one.id)
+    deps.clock.advance('2m')
+    for (const org of [one, two]) {
+      const res = await claim(org.id)
+      expect(res.status).toBe(409)
+      expect(await codeOf(res)).toBe('organization.domain_taken')
+    }
+  })
+
+  test('two organizations may wait on a name; the second to enter its code is refused', async () => {
+    const one = await organization('one')
+    const two = await organization('two')
+    const first = await json<OrganizationDomain>(await claim(one.id))
+    const firstCode = emailedCode()
+    const second = await json<OrganizationDomain>(await claim(two.id))
+    const secondCode = emailedCode()
+    expect(
+      (await admin('POST', `/${one.id}/domains/${first.id}/verify`, { code: firstCode })).status
+    ).toBe(200)
+    const res = await admin('POST', `/${two.id}/domains/${second.id}/verify`, { code: secondCode })
+    expect(res.status).toBe(409)
+    expect(await codeOf(res)).toBe('organization.domain_taken')
+    expect(
+      (await json<{ data: OrganizationDomain[] }>(await admin('GET', `/${two.id}/domains`))).data[0]
+        ?.verifiedAt
+    ).toBeNull()
+  })
+
+  test('an organization has at most ten domains', async () => {
+    const org = await organization()
+    for (let i = 0; i < 10; i += 1) {
+      deps.clock.advance('2m')
+      expect((await claim(org.id, `d${i}.example`)).status).toBe(201)
+    }
+    deps.clock.advance('2m')
+    const res = await claim(org.id, 'eleven.example')
+    expect(res.status).toBe(409)
+    expect(await codeOf(res)).toBe('organization.domain_limit')
+    // A claim it has already may still be sent again (an hour on: ten sends an hour is the cap).
+    deps.clock.advance('1h')
+    expect((await claim(org.id, 'd0.example')).status).toBe(201)
+  })
+
+  test('sending is limited: one a minute per organization, and five an hour to one address', async () => {
+    const org = await organization()
+    expect((await claim(org.id)).status).toBe(201)
+    const again = await claim(org.id)
+    expect(again.status).toBe(429)
+    for (let i = 0; i < 4; i += 1) {
+      deps.clock.advance('61s')
+      expect((await claim(org.id)).status).toBe(201)
+    }
+    deps.clock.advance('61s')
+    const sixth = await claim(org.id)
+    expect(sixth.status).toBe(429)
+    expect(deps.mailer.outbox).toHaveLength(5)
+  })
+
+  test('the environment-wide daily cap holds', async () => {
+    for (let i = 0; i < Domains.CODES_PER_ENVIRONMENT_PER_DAY; i += 1) {
+      await deps.rateLimiter.hit(
+        `organization_domain_environment:${TENANT.environmentId}`,
+        Domains.CODES_PER_ENVIRONMENT_PER_DAY,
+        86_400_000
+      )
+    }
+    const org = await organization()
+    expect((await claim(org.id)).status).toBe(429)
+    expect(deps.mailer.outbox).toHaveLength(0)
+  })
+
+  test('one organization spends its own daily allowance, not the environment’s', async () => {
+    const busy = await organization('busy')
+    const other = await organization('other')
+    for (let i = 0; i < Domains.CODES_PER_ORGANIZATION_PER_DAY; i += 1) {
+      await deps.rateLimiter.hit(
+        `organization_domain_day:${TENANT.environmentId}:${busy.id}`,
+        Domains.CODES_PER_ORGANIZATION_PER_DAY,
+        86_400_000
+      )
+    }
+    expect((await claim(busy.id)).status).toBe(429)
+    expect((await claim(other.id, 'other.example')).status).toBe(201)
+  })
+
+  test('organizations switched off: every domain route says so and writes nothing', async () => {
+    const org = await organization()
+    configure({ enabled: false })
+    for (const [method, path, body] of [
+      ['GET', `/${org.id}/domains`, undefined],
+      [
+        'POST',
+        `/${org.id}/domains`,
+        { domain: 'northline.app', email: 'a@northline.app', mode: 'suggest' },
+      ],
+      ['POST', `/${org.id}/domains/${UNKNOWN}/verify`, { code: '123456' }],
+      ['PATCH', `/${org.id}/domains/${UNKNOWN}`, { mode: 'suggest' }],
+      ['DELETE', `/${org.id}/domains/${UNKNOWN}`, undefined],
+    ] as const) {
+      const res = await admin(method, path, body)
+      expect(res.status).toBe(403)
+      expect(await codeOf(res)).toBe('organization.disabled')
+    }
+    expect(deps.mailer.outbox).toHaveLength(0)
+  })
+
+  test('an agent key reads and is refused every write; another environment’s organization is 404', async () => {
+    const org = await organization()
+    expect((await admin('GET', `/${org.id}/domains`, undefined, AK)).status).toBe(200)
+    const res = await admin(
+      'POST',
+      `/${org.id}/domains`,
+      { domain: 'northline.app', email: 'a@northline.app', mode: 'suggest' },
+      AK
+    )
+    expect(res.status).toBe(401)
+    expect(deps.mailer.outbox).toHaveLength(0)
+    deps.environmentSettings.seed(TEST_TENANT.productionEnvironmentId, {
+      revision: 1,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        organizations: { ...DEFAULT_ENVIRONMENT_SETTINGS.organizations, enabled: true },
+      } as never,
+    })
+    expect((await admin('GET', `/${org.id}/domains`, undefined, PROD_SK)).status).toBe(404)
+    expect((await claimWith(PROD_SK, org.id)).status).toBe(404)
+  })
+})
+
+function claimWith(key: string, orgId: string) {
+  return admin(
+    'POST',
+    `/${orgId}/domains`,
+    { domain: 'northline.app', email: 'ada@northline.app', mode: 'suggest' },
+    key
+  )
+}
+
+describe('verifying a domain', () => {
+  test('the right code verifies, clears the code and records it with the domain and ids only', async () => {
+    const org = await organization()
+    const pending = await json<OrganizationDomain>(
+      await claim(org.id, 'northline.app', 'auto_join')
+    )
+    const res = await admin('POST', `/${org.id}/domains/${pending.id}/verify`, {
+      code: emailedCode(),
+    })
+    expect(res.status).toBe(200)
+    expect(await json<OrganizationDomain>(res)).toMatchObject({
+      domain: 'northline.app',
+      mode: 'auto_join',
+      codeExpiresAt: null,
+    })
+    const entry = deps.activityLog.entries.find(
+      (one) => one.type === 'organization_domain.verified'
+    )
+    expect(entry?.data).toEqual({
+      organizationId: org.id,
+      domain: 'northline.app',
+      mode: 'auto_join',
+      weakened: true,
+    })
+    expect(EVENT_DATA_SCHEMAS['organization_domain.verified'].safeParse(entry?.data).success).toBe(
+      true
+    )
+    expect(JSON.stringify(entry)).not.toContain('@')
+    // A second verify of a verified claim answers as it is, with no code needed.
+    expect(
+      (await admin('POST', `/${org.id}/domains/${pending.id}/verify`, { code: '000000' })).status
+    ).toBe(200)
+  })
+
+  test('a wrong code is invalid and counted; five wrong codes spend the code', async () => {
+    const org = await organization()
+    const pending = await json<OrganizationDomain>(await claim(org.id))
+    const right = emailedCode()
+    const wrong = right === '000000' ? '111111' : '000000'
+    const first = await admin('POST', `/${org.id}/domains/${pending.id}/verify`, { code: wrong })
+    expect(first.status).toBe(422)
+    const firstBody = await json<{ code: string; params: { attemptsRemaining: number } }>(first)
+    expect(firstBody.code).toBe('verification.invalid_code')
+    expect(firstBody.params.attemptsRemaining).toBe(4)
+    for (let i = 0; i < 4; i += 1) {
+      await admin('POST', `/${org.id}/domains/${pending.id}/verify`, { code: wrong })
+    }
+    // Five guesses are spent and the sixth hits the back-off before the code is looked at.
+    const sixth = await admin('POST', `/${org.id}/domains/${pending.id}/verify`, { code: right })
+    expect(sixth.status).toBe(429)
+    expect(
+      await deps.organizationDomains.findVerified(TENANT.environmentId, 'northline.app')
+    ).toBeNull()
+  })
+
+  test('after the back-off the spent code is still refused, and a new code works', async () => {
+    const org = await organization()
+    const pending = await json<OrganizationDomain>(await claim(org.id))
+    const old = emailedCode()
+    const wrong = old === '000000' ? '111111' : '000000'
+    for (let i = 0; i < 5; i += 1) {
+      await admin('POST', `/${org.id}/domains/${pending.id}/verify`, { code: wrong })
+    }
+    deps.clock.advance('2m')
+    const spent = await admin('POST', `/${org.id}/domains/${pending.id}/verify`, { code: old })
+    expect(spent.status).toBe(429)
+    expect(await codeOf(spent)).toBe('verification.too_many_attempts')
+    await claim(org.id)
+    const fresh = emailedCode()
+    // Past the back-off, inside the new code's ten minutes.
+    deps.clock.advance('5m')
+    expect(
+      (await admin('POST', `/${org.id}/domains/${pending.id}/verify`, { code: fresh })).status
+    ).toBe(200)
+  })
+
+  test('a new code replaces the old one', async () => {
+    const org = await organization()
+    const pending = await json<OrganizationDomain>(await claim(org.id))
+    const old = emailedCode()
+    deps.clock.advance('2m')
+    await claim(org.id)
+    const fresh = emailedCode()
+    if (fresh !== old) {
+      const res = await admin('POST', `/${org.id}/domains/${pending.id}/verify`, { code: old })
+      expect(res.status).toBe(422)
+    }
+    expect(
+      (await admin('POST', `/${org.id}/domains/${pending.id}/verify`, { code: fresh })).status
+    ).toBe(200)
+  })
+
+  test('an expired code is expired, not invalid, and counts nothing', async () => {
+    const org = await organization()
+    const pending = await json<OrganizationDomain>(await claim(org.id))
+    const code = emailedCode()
+    deps.clock.advance('11m')
+    const res = await admin('POST', `/${org.id}/domains/${pending.id}/verify`, { code })
+    expect(res.status).toBe(410)
+    expect(await codeOf(res)).toBe('verification.expired')
+  })
+
+  test('a claim of another organization or an unknown id is 404', async () => {
+    const one = await organization('one')
+    const two = await organization('two')
+    const pending = await json<OrganizationDomain>(await claim(one.id))
+    const code = emailedCode()
+    expect((await admin('POST', `/${two.id}/domains/${pending.id}/verify`, { code })).status).toBe(
+      404
+    )
+    expect((await admin('POST', `/${one.id}/domains/${UNKNOWN}/verify`, { code })).status).toBe(404)
+  })
+
+  test('a code that is not six digits is invalid input', async () => {
+    const org = await organization()
+    const pending = await json<OrganizationDomain>(await claim(org.id))
+    for (const code of ['12345', 'abcdef', '1234567', 123456]) {
+      expect(
+        (await admin('POST', `/${org.id}/domains/${pending.id}/verify`, { code })).status
+      ).toBe(422)
+    }
+  })
+
+  test('a stored claim of a domain the public list now holds is not verified', async () => {
+    const org = await organization()
+    const id = Bun.randomUUIDv7()
+    const code = '123456'
+    await deps.organizationDomains.claim(
+      {
+        id,
+        ...TENANT,
+        organizationId: org.id,
+        domain: 'gmail.com',
+        mode: 'auto_join',
+        codeHash: await Domains.hashCode(deps, id, 'gmail.com', code),
+        codeExpiresAt: new Date(deps.clock.now().getTime() + 60_000),
+        at: deps.clock.now(),
+        limit: 10,
+      },
+      (await import('~/modules/audit/service')).none('fixture')
+    )
+    const res = await admin('POST', `/${org.id}/domains/${id}/verify`, { code })
+    expect(res.status).toBe(422)
+    expect(await codeOf(res)).toBe('organization.domain_public')
+  })
+})
+
+describe('changing and removing a domain', () => {
+  test('moving to auto_join is recorded as a weakening, and the list shows it', async () => {
+    const org = await organization()
+    const done = await verifiedDomain(org.id)
+    const res = await admin('PATCH', `/${org.id}/domains/${done.id}`, { mode: 'auto_join' })
+    expect(res.status).toBe(200)
+    const entry = deps.activityLog.entries.find((one) => one.type === 'organization_domain.updated')
+    expect(entry?.data).toEqual({
+      organizationId: org.id,
+      domain: 'northline.app',
+      mode: 'auto_join',
+      previousMode: 'suggest',
+      weakened: true,
+    })
+    const back = await admin('PATCH', `/${org.id}/domains/${done.id}`, { mode: 'suggest' })
+    expect((await json<OrganizationDomain>(back)).mode).toBe('suggest')
+  })
+
+  test('removing a domain stops future joins and keeps the members it already brought', async () => {
+    const org = await organization()
+    const done = await verifiedDomain(org.id, 'northline.app', 'auto_join')
+    const maya = await signedUp('maya@northline.app')
+    expect(
+      await deps.organizations.findMembership(TENANT.environmentId, org.id, maya.userId)
+    ).not.toBeNull()
+    expect((await admin('DELETE', `/${org.id}/domains/${done.id}`)).status).toBe(204)
+    expect((await admin('DELETE', `/${org.id}/domains/${done.id}`)).status).toBe(404)
+    const kai = await signedUp('kai@northline.app')
+    expect(
+      await deps.organizations.findMembership(TENANT.environmentId, org.id, kai.userId)
+    ).toBeNull()
+    expect(
+      await deps.organizations.findMembership(TENANT.environmentId, org.id, maya.userId)
+    ).not.toBeNull()
+    const entry = deps.activityLog.entries.find((one) => one.type === 'organization_domain.removed')
+    expect(entry?.data).toEqual({ organizationId: org.id, domain: 'northline.app' })
+    // The domain can be claimed by another organization now.
+    const other = await organization('other')
+    deps.clock.advance('2m')
+    expect((await claim(other.id)).status).toBe(201)
+  })
+
+  test('deleting the organization removes its domains', async () => {
+    const org = await organization()
+    await verifiedDomain(org.id)
+    await Organizations.remove(deps, TENANT, org.id, TEST_ACTOR)
+    expect(
+      await deps.organizationDomains.findVerified(TENANT.environmentId, 'northline.app')
+    ).toBeNull()
+  })
+})
+
+describe('joining at sign-up', () => {
+  test('an auto_join domain makes a verified new user a member with the default role, recorded and evented', async () => {
+    const org = await organization()
+    await verifiedDomain(org.id, 'northline.app', 'auto_join')
+    const maya = await signedUp('maya@northline.app')
+    const membership = await deps.organizations.findMembership(
+      TENANT.environmentId,
+      org.id,
+      maya.userId
+    )
+    expect(membership?.roleKey).toBe('member')
+    const entry = deps.activityLog.entries.find(
+      (one) => one.type === 'organization_membership.added' && one.data.userId === maya.userId
+    )
+    expect(entry?.data).toEqual({
+      organizationId: org.id,
+      userId: maya.userId,
+      role: 'member',
+      via: 'domain_auto_join',
+    })
+    expect(entry?.actor.type).toBe('system')
+    expect(EVENT_DATA_SCHEMAS['organization_membership.added'].safeParse(entry?.data).success).toBe(
+      true
+    )
+  })
+
+  test('the default role setting decides the role', async () => {
+    configure({ defaultRole: 'admin' })
+    const org = await organization()
+    await verifiedDomain(org.id, 'northline.app', 'auto_join')
+    const maya = await signedUp('maya@northline.app')
+    expect(
+      (await deps.organizations.findMembership(TENANT.environmentId, org.id, maya.userId))?.roleKey
+    ).toBe('admin')
+  })
+
+  test('a suggest domain joins nobody; the organization is suggested instead', async () => {
+    const org = await organization()
+    await verifiedDomain(org.id, 'northline.app', 'suggest')
+    const maya = await signedUp('maya@northline.app')
+    expect(
+      await deps.organizations.findMembership(TENANT.environmentId, org.id, maya.userId)
+    ).toBeNull()
+    const res = await client('GET', '/me/organizations/suggestions', undefined, maya.accessToken)
+    expect(res.status).toBe(200)
+    expect((await json<OrganizationSuggestionList>(res)).data).toEqual([
+      { id: org.id, name: 'Acme Corp', slug: 'acme' },
+    ])
+  })
+
+  test('a subdomain or another domain does not match', async () => {
+    const org = await organization()
+    await verifiedDomain(org.id, 'northline.app', 'auto_join')
+    for (const email of ['a@mail.northline.app', 'a@northline.app.example', 'a@notnorthline.app']) {
+      const user = await signedUp(email)
+      expect(
+        await deps.organizations.findMembership(TENANT.environmentId, org.id, user.userId)
+      ).toBeNull()
+      const list = await json<OrganizationSuggestionList>(
+        await client('GET', '/me/organizations/suggestions', undefined, user.accessToken)
+      )
+      expect(list.data).toEqual([])
+    }
+  })
+
+  test('a sign-in does not join: only the sign-up does', async () => {
+    const maya = await signedUp('maya@northline.app')
+    const org = await organization()
+    await verifiedDomain(org.id, 'northline.app', 'auto_join')
+    const started = await json<FlowAttempt>(
+      await client('POST', '/sign-ins', { identifier: 'maya@northline.app' })
+    )
+    const res = await app.request(`/v1/client/sign-ins/${started.id}/password`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-tula-client': 'ios',
+        origin: ORIGIN,
+        'x-tula-publishable-key': PK,
+        'x-tula-attempt': started.attemptSecret ?? '',
+      },
+      body: JSON.stringify({ password: PASSWORD }),
+    })
+    expect(res.status).toBe(200)
+    expect(
+      await deps.organizations.findMembership(TENANT.environmentId, org.id, maya.userId)
+    ).toBeNull()
+    // They are offered it instead.
+    const list = await json<OrganizationSuggestionList>(
+      await client('GET', '/me/organizations/suggestions', undefined, maya.accessToken)
+    )
+    expect(list.data).toHaveLength(1)
+  })
+
+  test('organizations switched off join nobody', async () => {
+    const org = await organization()
+    await verifiedDomain(org.id, 'northline.app', 'auto_join')
+    configure({ enabled: false })
+    const maya = await signedUp('maya@northline.app')
+    expect(
+      await deps.organizations.findMembership(TENANT.environmentId, org.id, maya.userId)
+    ).toBeNull()
+  })
+
+  test('another environment’s domain joins nobody here', async () => {
+    const org = await organization()
+    await verifiedDomain(org.id, 'northline.app', 'auto_join')
+    const joined = await Domains.joinOnSignUp(
+      deps,
+      PROD,
+      (await signedUp('x@other.example')).userId,
+      systemActor()
+    )
+    expect(joined).toBe(false)
+  })
+
+  describe('joinOnSignUp itself', () => {
+    async function userWith(email: string, verified: boolean, banned = false) {
+      const id = Bun.randomUUIDv7()
+      await deps.users.create(
+        {
+          id,
+          ...TENANT,
+          email,
+          emailNormalized: email,
+          emailVerifiedAt: verified ? deps.clock.now() : null,
+          firstName: null,
+          lastName: null,
+          createdAt: deps.clock.now(),
+          identityId: Bun.randomUUIDv7(),
+          credentialId: Bun.randomUUIDv7(),
+          passwordHash: null,
+        },
+        (await import('~/modules/audit/service')).none('fixture')
+      )
+      if (banned) {
+        await deps.users.setBanned(
+          TENANT.environmentId,
+          id,
+          deps.clock.now(),
+          deps.clock.now(),
+          (await import('~/modules/audit/service')).none('fixture')
+        )
+      }
+      return id
+    }
+
+    test('a verified row of a public domain joins nobody and suggests nothing', async () => {
+      const org = await organization()
+      const rowId = Bun.randomUUIDv7()
+      const none = (await import('~/modules/audit/service')).none('fixture')
+      await deps.organizationDomains.claim(
+        {
+          id: rowId,
+          ...TENANT,
+          organizationId: org.id,
+          domain: 'gmail.com',
+          mode: 'auto_join',
+          codeHash: 'h',
+          codeExpiresAt: new Date(deps.clock.now().getTime() + 60_000),
+          at: deps.clock.now(),
+          limit: 10,
+        },
+        none
+      )
+      await deps.organizationDomains.verify(
+        TENANT.environmentId,
+        org.id,
+        rowId,
+        'h',
+        deps.clock.now(),
+        none
+      )
+      const id = await userWith('lee@gmail.com', true)
+      expect(await Domains.joinOnSignUp(deps, TENANT, id, systemActor())).toBe(false)
+      expect((await Domains.suggestions(deps, TENANT, { userId: id })).data).toEqual([])
+      await expect(
+        Domains.joinSuggestion(deps, TENANT, { userId: id }, org.id, systemActor())
+      ).rejects.toMatchObject({ code: 'organization.suggestion_unavailable' })
+      await deps.organizationDomains.setMode(
+        TENANT.environmentId,
+        org.id,
+        rowId,
+        'suggest',
+        deps.clock.now(),
+        none
+      )
+      expect((await Domains.suggestions(deps, TENANT, { userId: id })).data).toEqual([])
+    })
+
+    test('an unverified address never counts', async () => {
+      const org = await organization()
+      await verifiedDomain(org.id, 'northline.app', 'auto_join')
+      const id = await userWith('lee@northline.app', false)
+      expect(await Domains.joinOnSignUp(deps, TENANT, id, systemActor())).toBe(false)
+      expect(await deps.organizations.findMembership(TENANT.environmentId, org.id, id)).toBeNull()
+      const list = await Domains.suggestions(deps, TENANT, { userId: id })
+      expect(list.data).toEqual([])
+      await expect(
+        Domains.joinSuggestion(deps, TENANT, { userId: id }, org.id, systemActor())
+      ).rejects.toMatchObject({ code: 'organization.suggestion_unavailable' })
+    })
+
+    test('a verified address joins; a second call finds them a member and joins nobody twice', async () => {
+      const org = await organization()
+      await verifiedDomain(org.id, 'northline.app', 'auto_join')
+      const id = await userWith('lee@northline.app', true)
+      expect(await Domains.joinOnSignUp(deps, TENANT, id, systemActor())).toBe(true)
+      expect(await Domains.joinOnSignUp(deps, TENANT, id, systemActor())).toBe(false)
+    })
+
+    test('a banned user is not joined', async () => {
+      const org = await organization()
+      await verifiedDomain(org.id, 'northline.app', 'auto_join')
+      const id = await userWith('lee@northline.app', true, true)
+      expect(await Domains.joinOnSignUp(deps, TENANT, id, systemActor())).toBe(false)
+    })
+
+    test('an unknown default role never fails the sign-up and joins nobody', async () => {
+      const org = await organization()
+      await verifiedDomain(org.id, 'northline.app', 'auto_join')
+      configure({ defaultRole: 'ghost' })
+      const id = await userWith('lee@northline.app', true)
+      expect(await Domains.joinOnSignUp(deps, TENANT, id, systemActor())).toBe(false)
+    })
+
+    test('a store that throws never fails the sign-up', async () => {
+      const org = await organization()
+      await verifiedDomain(org.id, 'northline.app', 'auto_join')
+      const id = await userWith('lee@northline.app', true)
+      const broken = {
+        ...deps,
+        organizations: {
+          findRole: deps.organizations.findRole.bind(deps.organizations),
+          ensureBuiltInRoles: deps.organizations.ensureBuiltInRoles.bind(deps.organizations),
+          addMembership: async () => {
+            throw new Error('database down')
+          },
+        },
+      } as unknown as TestDeps
+      expect(await Domains.joinOnSignUp(broken, TENANT, id, systemActor())).toBe(false)
+    })
+  })
+})
+
+describe('suggestions', () => {
+  test('joining a suggestion makes the user a member with the default role and records it', async () => {
+    const org = await organization()
+    await verifiedDomain(org.id, 'northline.app', 'suggest')
+    const maya = await signedUp('maya@northline.app')
+    const res = await client(
+      'POST',
+      `/me/organizations/suggestions/${org.id}/join`,
+      undefined,
+      maya.accessToken
+    )
+    expect(res.status).toBe(201)
+    expect(await json<UserOrganization>(res)).toMatchObject({ id: org.id, role: 'member' })
+    const entry = deps.activityLog.entries.find(
+      (one) => one.type === 'organization_membership.added' && one.data.userId === maya.userId
+    )
+    expect(entry?.data.via).toBe('domain_suggestion')
+    expect(entry?.actor).toMatchObject({ type: 'user', id: maya.userId })
+    const again = await client(
+      'POST',
+      `/me/organizations/suggestions/${org.id}/join`,
+      undefined,
+      maya.accessToken
+    )
+    expect(again.status).toBe(409)
+    expect(await codeOf(again)).toBe('organization.member_exists')
+    const list = await json<OrganizationSuggestionList>(
+      await client('GET', '/me/organizations/suggestions', undefined, maya.accessToken)
+    )
+    expect(list.data).toEqual([])
+  })
+
+  test('the server decides again: a removed domain, a changed address and a stranger are all unavailable', async () => {
+    const org = await organization()
+    const other = await organization('other')
+    const done = await verifiedDomain(org.id, 'northline.app', 'suggest')
+    const maya = await signedUp('maya@northline.app')
+    const kai = await signedUp('kai@elsewhere.example')
+    const join = (orgId: string, token: string) =>
+      client('POST', `/me/organizations/suggestions/${orgId}/join`, undefined, token)
+    for (const [orgId, token] of [
+      [org.id, kai.accessToken],
+      [other.id, maya.accessToken],
+      [UNKNOWN, maya.accessToken],
+    ] as const) {
+      const res = await join(orgId, token)
+      expect(res.status).toBe(403)
+      expect(await codeOf(res)).toBe('organization.suggestion_unavailable')
+    }
+    await admin('DELETE', `/${org.id}/domains/${done.id}`)
+    const gone = await join(org.id, maya.accessToken)
+    expect(gone.status).toBe(403)
+    expect(await codeOf(gone)).toBe('organization.suggestion_unavailable')
+    expect(
+      await deps.organizations.findMembership(TENANT.environmentId, org.id, maya.userId)
+    ).toBeNull()
+  })
+
+  test('an organization deleted after the list answers unavailable', async () => {
+    const org = await organization()
+    await verifiedDomain(org.id)
+    const maya = await signedUp('maya@northline.app')
+    await Organizations.remove(deps, TENANT, org.id, TEST_ACTOR)
+    const res = await client(
+      'POST',
+      `/me/organizations/suggestions/${org.id}/join`,
+      undefined,
+      maya.accessToken
+    )
+    expect(res.status).toBe(403)
+  })
+
+  test('switched off, the routes answer organization.disabled; signed out, 401', async () => {
+    const org = await organization()
+    const maya = await signedUp('maya@northline.app')
+    configure({ enabled: false })
+    for (const [method, path] of [
+      ['GET', '/me/organizations/suggestions'],
+      ['POST', `/me/organizations/suggestions/${org.id}/join`],
+    ] as const) {
+      const res = await client(method, path, undefined, maya.accessToken)
+      expect(res.status).toBe(403)
+      expect(await codeOf(res)).toBe('organization.disabled')
+    }
+    configure()
+    expect((await client('GET', '/me/organizations/suggestions')).status).toBe(401)
+  })
+})
+
+describe('a member managing domains through the client routes', () => {
+  async function members() {
+    const org = await organization()
+    const boss = await signedUp('boss@elsewhere.example')
+    const staff = await signedUp('staff@elsewhere.example')
+    const stranger = await signedUp('stranger@elsewhere.example')
+    await Organizations.addMember(
+      deps,
+      TENANT,
+      org.id,
+      { userId: boss.userId, role: 'admin' },
+      TEST_ACTOR
+    )
+    await Organizations.addMember(
+      deps,
+      TENANT,
+      org.id,
+      { userId: staff.userId, role: 'member' },
+      TEST_ACTOR
+    )
+    return { org, boss, staff, stranger }
+  }
+
+  test('a holder of org:sys:domains:manage claims, verifies, changes and removes', async () => {
+    const { org, boss } = await members()
+    const started = await client(
+      'POST',
+      `/me/organizations/${org.id}/domains`,
+      { domain: 'northline.app', email: 'ada@northline.app', mode: 'auto_join' },
+      boss.accessToken
+    )
+    expect(started.status).toBe(201)
+    const pending = await json<OrganizationDomain>(started)
+    const verified = await client(
+      'POST',
+      `/me/organizations/${org.id}/domains/${pending.id}/verify`,
+      { code: emailedCode() },
+      boss.accessToken
+    )
+    expect(verified.status).toBe(200)
+    const listed = await client(
+      'GET',
+      `/me/organizations/${org.id}/domains`,
+      undefined,
+      boss.accessToken
+    )
+    expect((await json<{ data: OrganizationDomain[] }>(listed)).data).toHaveLength(1)
+    const patched = await client(
+      'PATCH',
+      `/me/organizations/${org.id}/domains/${pending.id}`,
+      { mode: 'suggest' },
+      boss.accessToken
+    )
+    expect((await json<OrganizationDomain>(patched)).mode).toBe('suggest')
+    const removed = await client(
+      'DELETE',
+      `/me/organizations/${org.id}/domains/${pending.id}`,
+      undefined,
+      boss.accessToken
+    )
+    expect(removed.status).toBe(204)
+    const entry = deps.activityLog.entries.find((one) => one.type === 'organization_domain.claimed')
+    expect(entry?.actor).toMatchObject({ type: 'user', id: boss.userId })
+  })
+
+  test('a member without the permission is forbidden, a non-member and an unknown organization are not members', async () => {
+    const { org, staff, stranger } = await members()
+    const body = { domain: 'northline.app', email: 'ada@northline.app', mode: 'suggest' }
+    const forbidden = await client(
+      'POST',
+      `/me/organizations/${org.id}/domains`,
+      body,
+      staff.accessToken
+    )
+    expect(forbidden.status).toBe(403)
+    expect(await codeOf(forbidden)).toBe('auth.forbidden')
+    for (const [orgId, token] of [
+      [org.id, stranger.accessToken],
+      [UNKNOWN, stranger.accessToken],
+    ] as const) {
+      const res = await client('POST', `/me/organizations/${orgId}/domains`, body, token)
+      expect(res.status).toBe(403)
+      expect(await codeOf(res)).toBe('organization.not_a_member')
+    }
+    expect(
+      (await client('GET', `/me/organizations/${org.id}/domains`, undefined, staff.accessToken))
+        .status
+    ).toBe(403)
+    expect(deps.mailer.outbox.filter((mail) => mail.to === 'ada@northline.app')).toHaveLength(0)
+  })
+
+  test('the permission is read from the role now: a demoted admin is refused at once', async () => {
+    const { org, boss } = await members()
+    const second = await signedUp('second@elsewhere.example')
+    await Organizations.addMember(
+      deps,
+      TENANT,
+      org.id,
+      { userId: second.userId, role: 'admin' },
+      TEST_ACTOR
+    )
+    await Organizations.changeMemberRole(
+      deps,
+      TENANT,
+      org.id,
+      boss.userId,
+      { role: 'member' },
+      TEST_ACTOR
+    )
+    const res = await client(
+      'GET',
+      `/me/organizations/${org.id}/domains`,
+      undefined,
+      boss.accessToken
+    )
+    expect(res.status).toBe(403)
+    expect(await codeOf(res)).toBe('auth.forbidden')
+  })
+
+  test('a custom role with the permission may manage domains', async () => {
+    const { org, staff } = await members()
+    await deps.organizations.insertRole(
+      {
+        id: Bun.randomUUIDv7(),
+        ...TENANT,
+        key: 'domain_keeper',
+        name: 'Domain keeper',
+        permissions: ['org:sys:domains:manage'],
+        builtIn: false,
+        version: 1,
+        createdAt: deps.clock.now(),
+        updatedAt: deps.clock.now(),
+      },
+      (await import('~/modules/audit/service')).none('fixture')
+    )
+    await Organizations.changeMemberRole(
+      deps,
+      TENANT,
+      org.id,
+      staff.userId,
+      { role: 'domain_keeper' },
+      TEST_ACTOR
+    )
+    expect(
+      (await client('GET', `/me/organizations/${org.id}/domains`, undefined, staff.accessToken))
+        .status
+    ).toBe(200)
+  })
+
+  test('brute-forcing the code through the client route hits the back-off', async () => {
+    const { org, boss } = await members()
+    const pending = await json<OrganizationDomain>(
+      await client(
+        'POST',
+        `/me/organizations/${org.id}/domains`,
+        { domain: 'northline.app', email: 'ada@northline.app', mode: 'suggest' },
+        boss.accessToken
+      )
+    )
+    const right = emailedCode()
+    const wrong = right === '000000' ? '111111' : '000000'
+    const statuses: number[] = []
+    for (let i = 0; i < 7; i += 1) {
+      const res = await client(
+        'POST',
+        `/me/organizations/${org.id}/domains/${pending.id}/verify`,
+        { code: i === 6 ? right : wrong },
+        boss.accessToken
+      )
+      statuses.push(res.status)
+    }
+    expect(statuses.slice(0, 5)).toEqual([422, 422, 422, 422, 422])
+    expect(statuses.slice(5)).toEqual([429, 429])
+    expect(
+      await deps.organizationDomains.findVerified(TENANT.environmentId, 'northline.app')
+    ).toBeNull()
+  })
+})
