@@ -222,8 +222,16 @@ export interface SessionManager {
    *
    * @param sessionId - The session the list was fetched with.
    * @param organizationId - The list's `activeOrganizationId`.
+   * @param epoch - What {@link organizationEpoch} said before the list was asked for; a
+   *   choice made meanwhile makes the list's answer older than the state, and it is dropped.
    */
-  noteActiveOrganization(sessionId: string, organizationId: string | null): void
+  noteActiveOrganization(sessionId: string, organizationId: string | null, epoch: number): void
+  /**
+   * A number that moves whenever this client chooses an organization.
+   *
+   * @returns The current value, to be handed back to {@link noteActiveOrganization}.
+   */
+  organizationEpoch(): number
   /**
    * Stops handing out the access token in memory without a refresh first: the next
    * `getToken()` asks for a new one (and falls back to this one while it is valid if that
@@ -1058,8 +1066,11 @@ export function createSessionManager(options: SessionOptions): SessionManager {
     }
   }
 
+  let organizationEpoch = 0
+
   async function setActiveOrganization(organizationId: string | null): Promise<ActiveOrganization> {
     openChannel()
+    organizationEpoch += 1
     // A refresh already in flight would otherwise hand the choice a token about to be replaced.
     await refreshing?.catch(ignore)
     const { answer, sent } = await send('setActiveOrganization', { body: { organizationId } })
@@ -1130,9 +1141,16 @@ export function createSessionManager(options: SessionOptions): SessionManager {
     authorized,
     stepUp,
     setActiveOrganization,
-    noteActiveOrganization(sessionId, organizationId) {
-      // Only where the token cannot say: a session with a token reads it from the token.
-      if (tokens && tokens.accessToken === null && tokens.sessionId === sessionId) {
+    organizationEpoch: () => organizationEpoch,
+    noteActiveOrganization(sessionId, organizationId, epoch) {
+      // Only where the token cannot say: a session with a token reads it from the token. And
+      // not when a choice was made while the list was on its way: the list is the older fact.
+      if (
+        epoch === organizationEpoch &&
+        tokens &&
+        tokens.accessToken === null &&
+        tokens.sessionId === sessionId
+      ) {
         tokens = { ...tokens, organizationId }
         if (state.status === 'signed-in' && state.sessionId === sessionId) {
           setState({ ...state, organizationId })

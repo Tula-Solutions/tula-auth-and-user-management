@@ -288,3 +288,46 @@ describe('asking for a session profile', () => {
     }
   )
 })
+
+describe('the active organization of a stateful session', () => {
+  const LIST = 'GET /v1/client/me/organizations'
+  const ACTIVE = 'PUT /v1/client/me/organizations/active'
+  const ORG_A = '01980000-0000-7000-8000-00000000000a'
+  const ORG_B = '01980000-0000-7000-8000-00000000000b'
+  const page = (activeOrganizationId: string | null) =>
+    json(200, { data: [], hasMore: false, nextCursor: null, activeOrganizationId })
+
+  test('the state learns it from a list and from a choice, there being no token to read it from', async () => {
+    const w = world()
+    const { tula } = tab(w)
+    await tula.load()
+    w.api.on(LIST, () => page(ORG_A))
+    await tula.organizations.list()
+    expect(tula.state).toMatchObject({ status: 'signed-in', organizationId: ORG_A })
+    w.api.on(ACTIVE, () => json(200, { sessionId: SESSION_ID, organizationId: ORG_B }))
+    await tula.organizations.setActive(ORG_B)
+    expect(tula.state).toMatchObject({ organizationId: ORG_B })
+  })
+
+  test('a list that was on its way while a choice was made does not undo the choice', async () => {
+    const w = world()
+    const { tula } = tab(w)
+    await tula.load()
+    let release: (response: Response) => void = () => undefined
+    w.api.on(
+      LIST,
+      () =>
+        new Promise<Response>((resolve) => {
+          release = resolve
+        })
+    )
+    const listing = tula.organizations.list()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    w.api.on(ACTIVE, () => json(200, { sessionId: SESSION_ID, organizationId: ORG_B }))
+    await tula.organizations.setActive(ORG_B)
+    // The list was answered before the choice and says so.
+    release(page(ORG_A))
+    await listing
+    expect(tula.state).toMatchObject({ status: 'signed-in', organizationId: ORG_B })
+  })
+})

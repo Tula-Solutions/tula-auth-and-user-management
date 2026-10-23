@@ -1239,10 +1239,11 @@ export function createClient(options: TulaClientOptions, environment: Environmen
     },
     organizations: {
       async list() {
+        const epoch = session.organizationEpoch()
         const answer = await session.authorized('listMyOrganizations', {})
         const now = session.state()
         if (now.status === 'signed-in') {
-          session.noteActiveOrganization(now.sessionId, answer.activeOrganizationId)
+          session.noteActiveOrganization(now.sessionId, answer.activeOrganizationId, epoch)
         }
         return answer
       },

@@ -471,8 +471,9 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   router built with `adminActor(c)` / `userActor(c)` (`~/lib/actor`). Never write an audit entry
   as a separate step, and never put a secret or an email address in one. A settings change
   records the **keys** that changed (`data.changed`), never their values. The only unrecorded
-  writes are a password-hash upgrade after sign-in and an environment's first signing keys
-  (ADR 0012).
+  writes are a password-hash upgrade after sign-in, an environment's first signing keys and a
+  session's choice among memberships it already holds (ADR 0012, "What is deliberately not
+  recorded").
 - Operator-supplied text that reaches an email (the app name) is untrusted input: it goes
   through `displayName` and `escapeHtml` in `~/modules/email/templates`, never straight into a
   subject or HTML. A user agent never reaches an email at all: only the family

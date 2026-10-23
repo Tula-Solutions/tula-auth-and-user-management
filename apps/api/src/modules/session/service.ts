@@ -1207,7 +1207,10 @@ export async function authenticate(
  * @param deps - Session store, signing keys, settings, clock and ids.
  * @param scope - The project and environment.
  * @param self - The signed-in user and their session, from the access token.
- * @param held - The user's membership of the organization to act in, or `null` to clear.
+ * @param held - The user's membership of the organization to act in, or `null` to clear. It
+ *   was read just before this call: a member removed in between gets a token with claims for
+ *   an organization they have left, for one access-token life at most (the window a refresh
+ *   has), and the next refresh drops them.
  * @returns The session id, the organization now active and, for a `hybrid` session, a fresh
  *   access token.
  * @throws AuthError `session.revoked` when the session has ended or is not this user's.
