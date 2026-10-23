@@ -57,6 +57,26 @@ export interface OrganizationInvitationMessage {
   ttlDays: number
 }
 
+/**
+ * Tells an organization's managers that a verified domain will stop matching in `daysLeft`
+ * days unless it is verified again (ADR 0065, "Lapse"). No code and no link: they open their
+ * organization's domain settings themselves. Sent by the reminder job only.
+ */
+export interface OrganizationDomainExpiringMessage {
+  type: 'organization_domain_expiring'
+  /** The organization's name: user text, escaped and cleaned like an invitation's. */
+  organizationName: string
+  /**
+   * How many of the organization's domains this reminder is about. The domains are not named:
+   * a name such as `acme.com` reads as a link, and no email carries one (the link rule of
+   * `.claude/rules/message-wording.md`). The manager sees them, with their dates, in the
+   * organization's domain settings.
+   */
+  domains: number
+  /** Whole days until the verification lapses (the reminder's threshold). */
+  daysLeft: number
+}
+
 /** A notice that stands in for a code, so sign-up and reset answer alike for every address. */
 export interface NoticeMessage {
   /**
@@ -169,6 +189,7 @@ export type EmailMessage =
   | NoticeMessage
   | SecurityNoticeMessage
   | OrganizationInvitationMessage
+  | OrganizationDomainExpiringMessage
 
 /** What a message says, before the layout is applied. `{app}` is replaced by the app's name. */
 interface Copy {
@@ -282,6 +303,28 @@ function invitationCopy(message: OrganizationInvitationMessage): Copy {
     linkLead: 'Open this link to accept or decline',
     closing: [
       "If you weren't expecting this invitation, you can safely ignore this email. Nobody joins an organization unless the invited address accepts while signed in.",
+    ],
+  }
+}
+
+/**
+ * The copy of the reminder that verified domains are about to lapse. `{organization}` stands
+ * for the organization's cleaned name, as in an invitation. No domain is named (see
+ * {@link OrganizationDomainExpiringMessage.domains}), and there is no link.
+ */
+function domainExpiringCopy(message: OrganizationDomainExpiringMessage): Copy {
+  const days = message.daysLeft === 1 ? '1 day' : `${message.daysLeft} days`
+  const which =
+    message.domains === 1 ? 'A verified domain of' : `${message.domains} verified domains of`
+  return {
+    subject: 'Domain verification for {organization} on {app} ends soon',
+    lead: [
+      `${which} {organization} on {app} will stop being trusted within ${days}.`,
+      'After that, people with an address on the domain are no longer offered the organization or added to it automatically. Members who are already in it stay.',
+      "To keep it, open the organization's domain settings and verify the domain again with a new code. This takes a minute and starts another year.",
+    ],
+    closing: [
+      "If it wasn't you who set the domain up, or you no longer use it, you can ignore this email and let it lapse.",
     ],
   }
 }
@@ -585,6 +628,7 @@ export function templateKind(message: EmailMessage): EmailTemplateKind {
     case 'email_added':
     case 'new_sign_in':
     case 'organization_invitation':
+    case 'organization_domain_expiring':
       return message.type
     case 'password_changed':
       if (message.by === 'verification') {
@@ -646,11 +690,13 @@ function partsOf(brand: EmailBrand, message: EmailMessage): Parts {
     ? securityCopy(message)
     : message.type === 'organization_invitation'
       ? invitationCopy(message)
-      : COPY[message.type]
+      : message.type === 'organization_domain_expiring'
+        ? domainExpiringCopy(message)
+        : COPY[message.type]
   return {
     app: displayName(brand.name),
     organization:
-      message.type === 'organization_invitation'
+      message.type === 'organization_invitation' || message.type === 'organization_domain_expiring'
         ? cleanedName(message.organizationName) || 'an organization'
         : null,
     linkUrl: message.type === 'organization_invitation' ? message.linkUrl : (code?.linkUrl ?? null),
@@ -807,6 +853,9 @@ function valuesOf(app: string, message: EmailMessage): Values {
   if (message.type === 'organization_invitation') {
     values.link = message.linkUrl
     values.expiresInDays = String(message.ttlDays)
+  }
+  if (message.type === 'organization_domain_expiring') {
+    values.expiresInDays = String(message.daysLeft)
   }
   if ('at' in message) {
     values.time = utc(message.at)

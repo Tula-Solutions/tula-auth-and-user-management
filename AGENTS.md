@@ -224,11 +224,13 @@ takes it (the day's count of text messages is a store method of its own for that
 `bootJobs(container)`, which starts the jobs their `ProcessPlan` names; neither names a job
 or sets a timer of its own (`jobs.test.ts` reads both files).
 `deps.jobLock.runExclusive(job, fn)` lets one process through and the others skip
-the round (a Postgres advisory lock; [ADR 0017](docs/adr/0017-retention.md)). There are two,
+the round (a Postgres advisory lock; [ADR 0017](docs/adr/0017-retention.md)). There are three,
 each with its own job name and lock id (`JOB_LOCK_IDS`: never renumber, only add):
 the webhook worker (`Webhooks.run` in `modules/webhook`,
-[ADR 0034](docs/adr/0034-webhooks.md)) and `modules/retention`, which has no router.
-Retention runs in every API instance and never in a worker; the delivery job runs in every
+[ADR 0034](docs/adr/0034-webhooks.md)), `modules/retention`, which has no router, and the
+daily domain reminders (`modules/organization-domain/reminders.ts`,
+`.claude/rules/organizations.md`). Retention and the reminders run in every API instance and
+never in a worker; the delivery job runs in every
 API instance, or with `WEBHOOK_WORKER=separate` only in the worker processes
 (`.claude/rules/webhooks.md`). A new job is added to `ProcessPlan.jobs` for the role that runs it. The
 retention job's deletes go through store methods that take

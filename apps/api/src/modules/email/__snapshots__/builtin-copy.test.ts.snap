@@ -245,6 +245,67 @@ Need help? Contact help@acme.test"
 }
 `;
 
+exports[`the built-in copy is what it was before wording became editable organization_domain_verification, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Someone asked to verify the domain of this email address for an organization in Acme. Enter this code to show that you control it:</p>
+<p style="font-size:28px;font-weight:600;letter-spacing:4px">482913</p>
+<p>This code expires in 10 minutes.</p>
+<p>If you didn&#39;t ask for this, you can safely ignore this email. Nothing happens until the code is entered.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "482913 is your Acme domain verification code",
+  "text": 
+"Someone asked to verify the domain of this email address for an organization in Acme. Enter this code to show that you control it:
+
+482913
+
+This code expires in 10 minutes.
+
+If you didn't ask for this, you can safely ignore this email. Nothing happens until the code is entered.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable organization_domain_verification with a link, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Someone asked to verify the domain of this email address for an organization in Acme. Enter this code to show that you control it:</p>
+<p style="font-size:28px;font-weight:600;letter-spacing:4px">482913</p>
+<p><a href="https://app.acme.test/auth/link#tula_link=tok&amp;tula_attempt=att">Open</a></p>
+<p>This code expires in 15 minutes.</p>
+<p>If you didn&#39;t ask for this, you can safely ignore this email. Nothing happens until the code is entered.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "482913 is your Acme domain verification code",
+  "text": 
+"Someone asked to verify the domain of this email address for an organization in Acme. Enter this code to show that you control it:
+
+482913
+
+Or open this link: https://app.acme.test/auth/link#tula_link=tok&tula_attempt=att
+
+This code expires in 15 minutes.
+
+If you didn't ask for this, you can safely ignore this email. Nothing happens until the code is entered.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
 exports[`the built-in copy is what it was before wording became editable account_exists, with a support address 1`] = `
 {
   "html": 
@@ -1505,6 +1566,64 @@ Need help? Contact help@acme.test"
 }
 `;
 
+exports[`the built-in copy is what it was before wording became editable organization_domain_expiring, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A verified domain of Acme &lt;Robotics&gt; &amp; Sons on Acme will stop being trusted within 30 days.</p>
+<p>After that, people with an address on the domain are no longer offered the organization or added to it automatically. Members who are already in it stay.</p>
+<p>To keep it, open the organization&#39;s domain settings and verify the domain again with a new code. This takes a minute and starts another year.</p>
+<p>If it wasn&#39;t you who set the domain up, or you no longer use it, you can ignore this email and let it lapse.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "Domain verification for Acme <Robotics> & Sons on Acme ends soon",
+  "text": 
+"A verified domain of Acme <Robotics> & Sons on Acme will stop being trusted within 30 days.
+
+After that, people with an address on the domain are no longer offered the organization or added to it automatically. Members who are already in it stay.
+
+To keep it, open the organization's domain settings and verify the domain again with a new code. This takes a minute and starts another year.
+
+If it wasn't you who set the domain up, or you no longer use it, you can ignore this email and let it lapse.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable organization_domain_expiring for several domains and one day, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>3 verified domains of Acme on Acme will stop being trusted within 1 day.</p>
+<p>After that, people with an address on the domain are no longer offered the organization or added to it automatically. Members who are already in it stay.</p>
+<p>To keep it, open the organization&#39;s domain settings and verify the domain again with a new code. This takes a minute and starts another year.</p>
+<p>If it wasn&#39;t you who set the domain up, or you no longer use it, you can ignore this email and let it lapse.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "Domain verification for Acme on Acme ends soon",
+  "text": 
+"3 verified domains of Acme on Acme will stop being trusted within 1 day.
+
+After that, people with an address on the domain are no longer offered the organization or added to it automatically. Members who are already in it stay.
+
+To keep it, open the organization's domain settings and verify the domain again with a new code. This takes a minute and starts another year.
+
+If it wasn't you who set the domain up, or you no longer use it, you can ignore this email and let it lapse.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
 exports[`the built-in copy is what it was before wording became editable organization_invitation, with a support address 1`] = `
 {
   "html": 
@@ -1795,6 +1914,65 @@ Or open this link: https://app.acme.test/auth/link#tula_link=tok&tula_attempt=at
 This code expires in 15 minutes.
 
 If you didn't ask for this, someone may be signed in to your account: open O’Neil & <Sons>, sign out of the devices you do not recognise and do not share this code.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable organization_domain_verification, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Someone asked to verify the domain of this email address for an organization in O’Neil &amp; &lt;Sons&gt;. Enter this code to show that you control it:</p>
+<p style="font-size:28px;font-weight:600;letter-spacing:4px">482913</p>
+<p>This code expires in 10 minutes.</p>
+<p>If you didn&#39;t ask for this, you can safely ignore this email. Nothing happens until the code is entered.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "482913 is your O’Neil & <Sons> domain verification code",
+  "text": 
+"Someone asked to verify the domain of this email address for an organization in O’Neil & <Sons>. Enter this code to show that you control it:
+
+482913
+
+This code expires in 10 minutes.
+
+If you didn't ask for this, you can safely ignore this email. Nothing happens until the code is entered.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable organization_domain_verification with a link, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>Someone asked to verify the domain of this email address for an organization in O’Neil &amp; &lt;Sons&gt;. Enter this code to show that you control it:</p>
+<p style="font-size:28px;font-weight:600;letter-spacing:4px">482913</p>
+<p><a href="https://app.acme.test/auth/link#tula_link=tok&amp;tula_attempt=att">Open</a></p>
+<p>This code expires in 15 minutes.</p>
+<p>If you didn&#39;t ask for this, you can safely ignore this email. Nothing happens until the code is entered.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "482913 is your O’Neil & <Sons> domain verification code",
+  "text": 
+"Someone asked to verify the domain of this email address for an organization in O’Neil & <Sons>. Enter this code to show that you control it:
+
+482913
+
+Or open this link: https://app.acme.test/auth/link#tula_link=tok&tula_attempt=att
+
+This code expires in 15 minutes.
+
+If you didn't ask for this, you can safely ignore this email. Nothing happens until the code is entered.
 
 --
 O’Neil & <Sons>"
@@ -2914,6 +3092,62 @@ O’Neil & <Sons>"
 }
 `;
 
+exports[`the built-in copy is what it was before wording became editable organization_domain_expiring, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>A verified domain of Acme &lt;Robotics&gt; &amp; Sons on O’Neil &amp; &lt;Sons&gt; will stop being trusted within 30 days.</p>
+<p>After that, people with an address on the domain are no longer offered the organization or added to it automatically. Members who are already in it stay.</p>
+<p>To keep it, open the organization&#39;s domain settings and verify the domain again with a new code. This takes a minute and starts another year.</p>
+<p>If it wasn&#39;t you who set the domain up, or you no longer use it, you can ignore this email and let it lapse.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "Domain verification for Acme <Robotics> & Sons on O’Neil & <Sons> ends soon",
+  "text": 
+"A verified domain of Acme <Robotics> & Sons on O’Neil & <Sons> will stop being trusted within 30 days.
+
+After that, people with an address on the domain are no longer offered the organization or added to it automatically. Members who are already in it stay.
+
+To keep it, open the organization's domain settings and verify the domain again with a new code. This takes a minute and starts another year.
+
+If it wasn't you who set the domain up, or you no longer use it, you can ignore this email and let it lapse.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable organization_domain_expiring for several domains and one day, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>3 verified domains of Acme on O’Neil &amp; &lt;Sons&gt; will stop being trusted within 1 day.</p>
+<p>After that, people with an address on the domain are no longer offered the organization or added to it automatically. Members who are already in it stay.</p>
+<p>To keep it, open the organization&#39;s domain settings and verify the domain again with a new code. This takes a minute and starts another year.</p>
+<p>If it wasn&#39;t you who set the domain up, or you no longer use it, you can ignore this email and let it lapse.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "Domain verification for Acme on O’Neil & <Sons> ends soon",
+  "text": 
+"3 verified domains of Acme on O’Neil & <Sons> will stop being trusted within 1 day.
+
+After that, people with an address on the domain are no longer offered the organization or added to it automatically. Members who are already in it stay.
+
+To keep it, open the organization's domain settings and verify the domain again with a new code. This takes a minute and starts another year.
+
+If it wasn't you who set the domain up, or you no longer use it, you can ignore this email and let it lapse.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
 exports[`the built-in copy is what it was before wording became editable organization_invitation, without one 1`] = `
 {
   "html": 
@@ -2965,126 +3199,6 @@ The invitation works for 1 day. Open the link to accept it or decline it.
 Open this link to accept or decline: https://app.acme.test/join#tula_invitation=tok
 
 If you weren't expecting this invitation, you can safely ignore this email. Nobody joins an organization unless the invited address accepts while signed in.
-
---
-O’Neil & <Sons>"
-,
-}
-`;
-
-exports[`the built-in copy is what it was before wording became editable organization_domain_verification, with a support address 1`] = `
-{
-  "html": 
-"<!doctype html>
-<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
-<p>Someone asked to verify the domain of this email address for an organization in Acme. Enter this code to show that you control it:</p>
-<p style="font-size:28px;font-weight:600;letter-spacing:4px">482913</p>
-<p>This code expires in 10 minutes.</p>
-<p>If you didn&#39;t ask for this, you can safely ignore this email. Nothing happens until the code is entered.</p>
-<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
-</body></html>"
-,
-  "subject": "482913 is your Acme domain verification code",
-  "text": 
-"Someone asked to verify the domain of this email address for an organization in Acme. Enter this code to show that you control it:
-
-482913
-
-This code expires in 10 minutes.
-
-If you didn't ask for this, you can safely ignore this email. Nothing happens until the code is entered.
-
---
-Acme
-Need help? Contact help@acme.test"
-,
-}
-`;
-
-exports[`the built-in copy is what it was before wording became editable organization_domain_verification with a link, with a support address 1`] = `
-{
-  "html": 
-"<!doctype html>
-<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
-<p>Someone asked to verify the domain of this email address for an organization in Acme. Enter this code to show that you control it:</p>
-<p style="font-size:28px;font-weight:600;letter-spacing:4px">482913</p>
-<p><a href="https://app.acme.test/auth/link#tula_link=tok&amp;tula_attempt=att">Open</a></p>
-<p>This code expires in 15 minutes.</p>
-<p>If you didn&#39;t ask for this, you can safely ignore this email. Nothing happens until the code is entered.</p>
-<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
-</body></html>"
-,
-  "subject": "482913 is your Acme domain verification code",
-  "text": 
-"Someone asked to verify the domain of this email address for an organization in Acme. Enter this code to show that you control it:
-
-482913
-
-Or open this link: https://app.acme.test/auth/link#tula_link=tok&tula_attempt=att
-
-This code expires in 15 minutes.
-
-If you didn't ask for this, you can safely ignore this email. Nothing happens until the code is entered.
-
---
-Acme
-Need help? Contact help@acme.test"
-,
-}
-`;
-
-exports[`the built-in copy is what it was before wording became editable organization_domain_verification, without one 1`] = `
-{
-  "html": 
-"<!doctype html>
-<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
-<p>Someone asked to verify the domain of this email address for an organization in O’Neil &amp; &lt;Sons&gt;. Enter this code to show that you control it:</p>
-<p style="font-size:28px;font-weight:600;letter-spacing:4px">482913</p>
-<p>This code expires in 10 minutes.</p>
-<p>If you didn&#39;t ask for this, you can safely ignore this email. Nothing happens until the code is entered.</p>
-<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
-</body></html>"
-,
-  "subject": "482913 is your O’Neil & <Sons> domain verification code",
-  "text": 
-"Someone asked to verify the domain of this email address for an organization in O’Neil & <Sons>. Enter this code to show that you control it:
-
-482913
-
-This code expires in 10 minutes.
-
-If you didn't ask for this, you can safely ignore this email. Nothing happens until the code is entered.
-
---
-O’Neil & <Sons>"
-,
-}
-`;
-
-exports[`the built-in copy is what it was before wording became editable organization_domain_verification with a link, without one 1`] = `
-{
-  "html": 
-"<!doctype html>
-<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
-<p>Someone asked to verify the domain of this email address for an organization in O’Neil &amp; &lt;Sons&gt;. Enter this code to show that you control it:</p>
-<p style="font-size:28px;font-weight:600;letter-spacing:4px">482913</p>
-<p><a href="https://app.acme.test/auth/link#tula_link=tok&amp;tula_attempt=att">Open</a></p>
-<p>This code expires in 15 minutes.</p>
-<p>If you didn&#39;t ask for this, you can safely ignore this email. Nothing happens until the code is entered.</p>
-<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
-</body></html>"
-,
-  "subject": "482913 is your O’Neil & <Sons> domain verification code",
-  "text": 
-"Someone asked to verify the domain of this email address for an organization in O’Neil & <Sons>. Enter this code to show that you control it:
-
-482913
-
-Or open this link: https://app.acme.test/auth/link#tula_link=tok&tula_attempt=att
-
-This code expires in 15 minutes.
-
-If you didn't ask for this, you can safely ignore this email. Nothing happens until the code is entered.
 
 --
 O’Neil & <Sons>"

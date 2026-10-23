@@ -37,7 +37,9 @@ export class WorkerNotSeparateError extends Error {
  * `WEBHOOK_WORKER` (ADR 0034, "The worker as its own service").
  *
  * The retention job stays with the API in both modes: it makes no request to anyone's
- * address, and an API instance always exists. Only webhook deliveries move.
+ * address, and an API instance always exists. So does the domain reminder job, which sends
+ * mail through the API's own mailer and calls no operator's address. Only webhook deliveries
+ * move.
  *
  * @param role - What the process was started as.
  * @param mode - `WEBHOOK_WORKER`.
@@ -54,6 +56,11 @@ export function planProcess(role: ProcessRole, mode: WebhookWorkerMode): Process
     return { role, serves: 'health', jobs: ['webhook_delivery'], deliversWebhooks: true }
   }
   return mode === 'separate'
-    ? { role, serves: 'api', jobs: ['retention'], deliversWebhooks: false }
-    : { role, serves: 'api', jobs: ['retention', 'webhook_delivery'], deliversWebhooks: true }
+    ? { role, serves: 'api', jobs: ['retention', 'domain_reminders'], deliversWebhooks: false }
+    : {
+        role,
+        serves: 'api',
+        jobs: ['retention', 'domain_reminders', 'webhook_delivery'],
+        deliversWebhooks: true,
+      }
 }

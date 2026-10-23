@@ -6,8 +6,10 @@ import type { Recorded } from '~/ports/activity-log'
  *
  * **Pending** while `verifiedAt` is `null`: the row then holds the keyed hash of the emailed
  * code, when it stops working and the guesses made at it. **Verified** once the code was
- * entered: the code columns are `null` and the domain is the organization's alone in its
- * environment.
+ * entered: the domain is the organization's alone in its environment, until `expiresAt`
+ * (ADR 0065, "Lapse"); from then on it matches nobody and only a new code restores it. A
+ * verified row holds a code only while a manager is proving it again, and keeps matching
+ * meanwhile.
  */
 export interface OrganizationDomainRecord {
   id: string
@@ -18,7 +20,11 @@ export interface OrganizationDomainRecord {
   domain: string
   mode: OrganizationDomainMode
   verifiedAt: Date | null
-  /** `HMAC(key, "<id>:<domain>:<code>")`; `null` exactly when the domain is verified. */
+  /** When the verification lapses; `null` exactly while the claim is pending. */
+  expiresAt: Date | null
+  /** The smallest reminder threshold (days) sent for this verification; `null`: none yet. */
+  remindedDays: number | null
+  /** `HMAC(key, "<id>:<domain>:<code>")`; `null` when no code is waiting. */
   codeHash: string | null
   codeExpiresAt: Date | null
   /** Guesses made at the current code. */
@@ -44,11 +50,25 @@ export interface DomainClaim {
   limit: number
 }
 
+/** A verified row due a reminder: the row and the threshold (days) it has reached. */
+export interface DueReminder {
+  record: OrganizationDomainRecord
+  /** The smallest of the reminder thresholds that `record.expiresAt` is within. */
+  days: number
+}
+
 /** What a claim came to. */
 export type ClaimOutcome =
-  /** The row is pending with this code; `record` is it as stored. */
+  /**
+   * The row holds this code; `record` is it as stored. A pending row is written pending. A
+   * **verified row of this organization** keeps its mode, its dates and its standing (it
+   * matches until it lapses) and only has a new code: the mode in the claim is ignored.
+   */
   | { outcome: 'claimed'; record: OrganizationDomainRecord }
-  /** The domain is verified for an organization of the environment, this one or another. */
+  /**
+   * The domain is verified for another organization of the environment and that verification
+   * has not lapsed. (A lapsed one does not block: see {@link OrganizationDomainStore.claim}.)
+   */
   | { outcome: 'taken' }
   /** The organization has `limit` domains already, and none is this one. */
   | { outcome: 'limit_reached' }
@@ -106,7 +126,11 @@ export interface OrganizationDomainStore {
    * one transaction that holds the organization's row**, so that the count against the limit
    * and the write take turns. A new claim is a pending row; an existing pending row keeps its
    * id and gets the new code, mode, expiry and zero guesses (the old code stops working).
-   * Writes nothing for a domain that is verified already, for this organization or another.
+   * Writes nothing for a domain that another organization has verified and that has not
+   * lapsed (`taken`). A lapsed verification of another organization does not block a claim
+   * (the pending row is written; verifying it needs the lapsed row removed first, which the
+   * service does). A domain this organization has verified gets a new code and nothing else
+   * changes (re-verification).
    *
    * @param claim - The row to write.
    * @param activity - Recorded in the same transaction, only if a row was written.
@@ -124,8 +148,9 @@ export interface OrganizationDomainStore {
    * @param id - The domain row.
    * @param now - The current time.
    * @param maxAttempts - Guesses a code allows.
-   * @returns The row with the incremented counter, or `null` when it is not pending, its code
-   *   expired or it is out of guesses (nothing is counted).
+   * @returns The row with the incremented counter, or `null` when it holds no code, its code
+   *   expired or it is out of guesses (nothing is counted). A verified row being proven again
+   *   counts like a pending one.
    */
   recordAttempt(
     environmentId: string,
@@ -136,15 +161,17 @@ export interface OrganizationDomainStore {
   ): Promise<OrganizationDomainRecord | null>
 
   /**
-   * Verify a claim whose code was entered right: set `verifiedAt` and clear the code, **only
-   * if the row still holds the code that was checked** (`expectedCodeHash`). The unique key
-   * over verified rows decides a race between two organizations.
+   * Verify a claim whose code was entered right: set `verifiedAt` and `expiresAt`, clear the
+   * code and the reminder mark, **only if the row still holds the code that was checked**
+   * (`expectedCodeHash`). The unique key over verified rows decides a race between two
+   * organizations. Also the end of a re-verification: the dates move on.
    *
    * @param environmentId - The environment.
    * @param organizationId - The organization.
    * @param id - The domain row.
    * @param expectedCodeHash - The hash the entered code matched.
    * @param at - When it is verified.
+   * @param expiresAt - When this verification lapses.
    * @param activity - Recorded in the same transaction, only if the row was verified.
    * @returns What came of it.
    */
@@ -154,6 +181,7 @@ export interface OrganizationDomainStore {
     id: string,
     expectedCodeHash: string,
     at: Date,
+    expiresAt: Date,
     activity: Recorded
   ): Promise<VerifyDomainOutcome>
 
@@ -184,14 +212,73 @@ export interface OrganizationDomainStore {
    * @param organizationId - The organization.
    * @param id - The domain row.
    * @param activity - Recorded in the same transaction, only if a row was deleted.
-   * @returns `false` when the organization had no such row.
+   * @param onlyLapsedAt - When given, the row is removed only if its verification has lapsed
+   *   at that time (`expiresAt` at or before it, or no date): taking over a lapsed name must not
+   *   delete a row its holder has proved again since the service looked.
+   * @returns `false` when the organization had no such row, or the row was not lapsed.
    */
   remove(
     environmentId: string,
     organizationId: string,
     id: string,
-    activity: Recorded
+    activity: Recorded,
+    onlyLapsedAt?: Date
   ): Promise<boolean>
+
+  /**
+   * The verified rows that have reached a reminder threshold and have not been reminded of it:
+   * `expiresAt` is after `now`, within `days` of it for one of the `thresholds`, and
+   * `remindedDays` is null or larger than that threshold. A lapsed row is not returned.
+   *
+   * @param environmentId - The environment.
+   * @param now - The current time.
+   * @param thresholds - Days before the lapse, as the contract's `DOMAIN_REMINDER_DAYS`.
+   * @param limit - The most rows to return.
+   * @returns The rows with the smallest threshold each has reached, soonest lapse first.
+   */
+  listDueReminders(
+    environmentId: string,
+    now: Date,
+    thresholds: readonly number[],
+    limit: number
+  ): Promise<DueReminder[]>
+
+  /**
+   * Take a reminder: set `remindedDays` to `days` **only if** the row is verified and has not
+   * been reminded at that threshold or a smaller one, so that two instances (or a retry)
+   * send a reminder once.
+   *
+   * @param environmentId - The environment.
+   * @param organizationId - The organization.
+   * @param id - The domain row.
+   * @param days - The threshold being sent.
+   * @returns The previous `remindedDays` (`null`: none) when taken, or `false` when not.
+   */
+  takeReminder(
+    environmentId: string,
+    organizationId: string,
+    id: string,
+    days: number
+  ): Promise<{ previous: number | null } | false>
+
+  /**
+   * Give a taken reminder back when it could not be sent, so that the next run tries again:
+   * restores `previous` **only if** the row still holds `days` (a re-verification in between
+   * has reset it, and that wins).
+   *
+   * @param environmentId - The environment.
+   * @param organizationId - The organization.
+   * @param id - The domain row.
+   * @param days - The threshold that was taken.
+   * @param previous - What {@link OrganizationDomainStore.takeReminder} returned.
+   */
+  releaseReminder(
+    environmentId: string,
+    organizationId: string,
+    id: string,
+    days: number,
+    previous: number | null
+  ): Promise<void>
 
   /**
    * Delete pending claims whose code expired before a time (the retention job, ADR 0017). A

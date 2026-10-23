@@ -240,7 +240,9 @@ export interface Schemas {
     id: string
     domain: string
     mode: Schemas['OrganizationDomainMode']
+    status: Schemas['OrganizationDomainStatus']
     verifiedAt: string | null
+    expiresAt: string | null
     codeExpiresAt: string | null
     createdAt: string
     updatedAt: string
@@ -250,6 +252,7 @@ export interface Schemas {
   }
   OrganizationDomainMode: 'suggest' | 'auto_join'
   OrganizationDomainName: string
+  OrganizationDomainStatus: 'pending' | 'verified' | 'needs_reverification'
   OrganizationInvitation: {
     id: string
     organizationId: string

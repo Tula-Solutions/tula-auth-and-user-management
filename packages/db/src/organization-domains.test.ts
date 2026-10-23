@@ -66,7 +66,13 @@ function verify(scope: TestTenant, organizationId: string, domain: string) {
   return withTenant(testDb.db, scope.environmentId, (tx) =>
     tx
       .update(organizationDomains)
-      .set({ verifiedAt: new Date(), codeHash: null, codeExpiresAt: null, codeAttempts: 0 })
+      .set({
+        verifiedAt: new Date(),
+        expiresAt: new Date(Date.now() + 365 * 86_400_000),
+        codeHash: null,
+        codeExpiresAt: null,
+        codeAttempts: 0,
+      })
       .where(
         and(
           eq(organizationDomains.organizationId, organizationId),
@@ -147,7 +153,7 @@ test('any number of organizations may wait on a name, and exactly one can verify
   await verify(other, elsewhere, 'contested.example')
 })
 
-test('a row has a code exactly while it is unverified', async () => {
+test('a pending row has a code, a verified row has a deadline, and the code columns go together', async () => {
   const org = await addOrganization(tenant)
   expect(await refused(() => pending(tenant, org, 'nocode.example', { codeHash: null }))).toContain(
     'organization_domains_state'
@@ -162,8 +168,33 @@ test('a row has a code exactly while it is unverified', async () => {
       .set({ verifiedAt: new Date() })
       .where(eq(organizationDomains.domain, 'both.example'))
   )
-  // Verified with the code left in place.
+  // Verified with no deadline.
   expect(await refused(() => stamp)).toContain('organization_domains_state')
+  // A deadline on a row that was never verified.
+  expect(
+    await refused(() => pending(tenant, org, 'early.example', { expiresAt: new Date() }))
+  ).toContain('organization_domains_state')
+  // A verified row may hold a code beside its dates (being proven again), but not half of one.
+  const proving = (values: Partial<typeof organizationDomains.$inferInsert>) =>
+    withTenant(testDb.db, tenant.environmentId, (tx) =>
+      tx
+        .update(organizationDomains)
+        .set(values)
+        .where(eq(organizationDomains.domain, 'both.example'))
+    )
+  await withTenant(testDb.db, tenant.environmentId, (tx) =>
+    tx
+      .update(organizationDomains)
+      .set({ verifiedAt: new Date(), expiresAt: new Date(Date.now() + 1000) })
+      .where(eq(organizationDomains.domain, 'both.example'))
+  )
+  expect(await refused(() => proving({ codeExpiresAt: null }))).toContain(
+    'organization_domains_state'
+  )
+  expect(await refused(() => proving({ remindedDays: 0 }))).toContain(
+    'organization_domains_reminded'
+  )
+  expect(await refused(() => proving({ remindedDays: 30 }))).toBeNull()
   expect(await refused(() => pending(tenant, org, 'neg.example', { codeAttempts: -1 }))).toContain(
     'organization_domains_attempts'
   )

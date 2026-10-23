@@ -23,8 +23,15 @@ export const ORGANIZATION_DOMAIN_MODES = ['suggest', 'auto_join'] as const
  * A row is **pending** until the code emailed to an address on the domain is entered:
  * `verified_at` is null and the row holds the code's keyed hash (`code_hash`, never the code),
  * when it stops working and how many guesses it has had. A pending row grants nothing. Entering
- * the code sets `verified_at` and clears the code in one statement (`..._state`: a row has a
- * code exactly while it is unverified).
+ * the code sets `verified_at` and `expires_at` and clears the code in one statement
+ * (`..._state`: a pending row always has a code, and `expires_at` is set exactly when
+ * `verified_at` is).
+ *
+ * **A verification lapses** (migration 0042, ADR 0065 "Lapse"): from `expires_at` on, the row
+ * matches nobody; it is not deleted, so a manager verifies it again. Re-verifying a verified
+ * row stores a new code beside `verified_at` (the row keeps matching until it lapses) and
+ * entering it moves both dates. `reminded_days` is the smallest reminder threshold the
+ * managers were emailed for since the last verification (null: none), so each is sent once.
  *
  * **A domain is verified for one organization per environment**:
  * `organization_domains_verified_domain_key` is a unique index over the verified rows only, so
@@ -37,8 +44,8 @@ export const ORGANIZATION_DOMAIN_MODES = ['suggest', 'auto_join'] as const
  * the API's: a rule that changes does not belong in a migration.
  *
  * Rows go with their organization by cascade. The retention job deletes pending rows whose
- * code expired. The runtime role may change `mode`, the code columns, `verified_at` and
- * `updated_at` only.
+ * code expired. The runtime role may change `mode`, the code columns, `verified_at`,
+ * `expires_at`, `reminded_days` and `updated_at` only.
  */
 export const organizationDomains = tula.table(
   'organization_domains',
@@ -50,7 +57,11 @@ export const organizationDomains = tula.table(
     mode: text('mode', { enum: ORGANIZATION_DOMAIN_MODES }).notNull(),
     /** When the code was entered; null while the claim is pending. */
     verifiedAt: timestamp('verified_at', { withTimezone: true }),
-    /** HMAC of the emailed code (see `~/lib/keyed-hash`); null once verified. */
+    /** When the verification lapses; null while the claim is pending. */
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    /** Days-before-lapse of the last reminder sent for this verification; null: none yet. */
+    remindedDays: integer('reminded_days'),
+    /** HMAC of the emailed code (see `~/lib/keyed-hash`); null when no code is waiting. */
     codeHash: text('code_hash'),
     codeExpiresAt: timestamp('code_expires_at', { withTimezone: true }),
     /** Guesses made at the current code; reset with the code. */
@@ -74,10 +85,15 @@ export const organizationDomains = tula.table(
       sql`char_length(${t.domain}) between 4 and 253 and ${t.domain} ~ '^([a-z0-9]([a-z0-9-]*[a-z0-9])?[.])+([a-z]{2,}|xn--[a-z0-9-]*[a-z0-9])$'`
     ),
     check('organization_domains_mode_known', sql`${t.mode} in ('suggest', 'auto_join')`),
+    // What the reminder job scans: verified rows by deadline.
+    index('organization_domains_expiry_idx')
+      .on(t.expiresAt)
+      .where(sql`${t.verifiedAt} is not null`),
     check(
       'organization_domains_state',
-      sql`(${t.verifiedAt} is null) = (${t.codeHash} is not null) and (${t.codeHash} is null) = (${t.codeExpiresAt} is null)`
+      sql`(${t.verifiedAt} is null) = (${t.expiresAt} is null) and (${t.verifiedAt} is not null or ${t.codeHash} is not null) and (${t.codeHash} is null) = (${t.codeExpiresAt} is null)`
     ),
+    check('organization_domains_reminded', sql`${t.remindedDays} is null or ${t.remindedDays} > 0`),
     check('organization_domains_attempts', sql`${t.codeAttempts} >= 0`),
     ...tenantConstraints('organization_domains', t),
   ]

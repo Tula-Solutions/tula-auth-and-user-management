@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import {
   type CurrentUser,
   DEFAULT_ENVIRONMENT_SETTINGS,
@@ -11,7 +11,9 @@ import {
 } from '@tula-tech/contract'
 import { createApp } from '~/index'
 import { systemActor } from '~/lib/actor'
+import * as MeOrganizations from '~/modules/organization/me-service'
 import * as Organizations from '~/modules/organization/service'
+import * as Reminders from '~/modules/organization-domain/reminders'
 import * as Domains from '~/modules/organization-domain/service'
 import { createTestDeps, seedApiKey, TEST_ACTOR, TEST_TENANT, type TestDeps } from '~/testing'
 
@@ -245,16 +247,14 @@ describe('claiming a domain', () => {
     expect(res.status).toBe(422)
   })
 
-  test('a domain verified for an organization cannot be claimed again, by it or another', async () => {
+  test('a domain verified for an organization cannot be claimed by another while it holds', async () => {
     const one = await organization('one')
     const two = await organization('two')
     await verifiedDomain(one.id)
     deps.clock.advance('2m')
-    for (const org of [one, two]) {
-      const res = await claim(org.id)
-      expect(res.status).toBe(409)
-      expect(await codeOf(res)).toBe('organization.domain_taken')
-    }
+    const res = await claim(two.id)
+    expect(res.status).toBe(409)
+    expect(await codeOf(res)).toBe('organization.domain_taken')
   })
 
   test('two organizations may wait on a name; the second to enter its code is refused', async () => {
@@ -756,6 +756,7 @@ describe('joining at sign-up', () => {
         rowId,
         'h',
         deps.clock.now(),
+        new Date(deps.clock.now().getTime() + 86_400_000),
         none
       )
       const id = await userWith('lee@gmail.com', true)
@@ -1095,5 +1096,537 @@ describe('a member managing domains through the client routes', () => {
     expect(
       await deps.organizationDomains.findVerified(TENANT.environmentId, 'northline.app')
     ).toBeNull()
+  })
+})
+
+// A verification has a lifetime (TULA-128, ADR 0065 "Lapse"): a domain can be lost and
+// registered again by someone else, so a claim is believed for a year and then matches nobody
+// until a manager proves it again.
+describe('a verification lapses', () => {
+  const inDays = (days: number) => deps.clock.advance(`${days}d`)
+
+  async function userNamed(email: string) {
+    const id = Bun.randomUUIDv7()
+    const none = (await import('~/modules/audit/service')).none('fixture')
+    await deps.users.create(
+      {
+        id,
+        ...TENANT,
+        email,
+        emailNormalized: email,
+        emailVerifiedAt: deps.clock.now(),
+        firstName: null,
+        lastName: null,
+        createdAt: deps.clock.now(),
+        identityId: Bun.randomUUIDv7(),
+        credentialId: Bun.randomUUIDv7(),
+        passwordHash: null,
+      },
+      none
+    )
+    return id
+  }
+
+  const listed = async (orgId: string) =>
+    (await json<{ data: OrganizationDomain[] }>(await admin('GET', `/${orgId}/domains`))).data
+
+  test('a verified domain says when it lapses, a year after the code was entered', async () => {
+    const org = await organization()
+    const verifiedAt = deps.clock.now()
+    const domain = await verifiedDomain(org.id)
+    expect(domain.status).toBe('verified')
+    expect(domain.expiresAt).toBe(new Date(verifiedAt.getTime() + 365 * 86_400_000).toISOString())
+    deps.clock.advance('2m')
+    const pending = await json<OrganizationDomain>(await claim(org.id, 'waiting.example'))
+    expect(pending).toMatchObject({ status: 'pending', expiresAt: null })
+  })
+
+  test('a lapsed domain no longer auto-joins at sign-up (and one a minute short of it still does)', async () => {
+    const org = await organization()
+    await verifiedDomain(org.id, 'northline.app', 'auto_join')
+    deps.clock.advance('364d')
+    deps.clock.advance('1438m')
+    const early = await signedUp('early@northline.app')
+    expect(
+      await deps.organizations.findMembership(TENANT.environmentId, org.id, early.userId)
+    ).not.toBeNull()
+    deps.clock.advance('3m')
+    const late = await signedUp('late@northline.app')
+    expect(
+      await deps.organizations.findMembership(TENANT.environmentId, org.id, late.userId)
+    ).toBeNull()
+    expect(
+      deps.activityLog.entries.filter(
+        (one) => one.type === 'organization_membership.added' && one.data.userId === late.userId
+      )
+    ).toEqual([])
+  })
+
+  test('a lapsed domain suggests nothing and its suggestion cannot be joined', async () => {
+    const org = await organization()
+    await verifiedDomain(org.id, 'northline.app', 'suggest')
+    const maya = await signedUp('maya@northline.app')
+    const self = { userId: maya.userId }
+    expect((await Domains.suggestions(deps, TENANT, self)).data).toHaveLength(1)
+    inDays(366)
+    expect((await Domains.suggestions(deps, TENANT, self)).data).toEqual([])
+    await expect(
+      Domains.joinSuggestion(deps, TENANT, self, org.id, systemActor())
+    ).rejects.toMatchObject({ code: 'organization.suggestion_unavailable' })
+    expect(
+      await deps.organizations.findMembership(TENANT.environmentId, org.id, maya.userId)
+    ).toBeNull()
+  })
+
+  test('joinOnSignUp of a user on a lapsed domain joins nobody', async () => {
+    const org = await organization()
+    await verifiedDomain(org.id, 'northline.app', 'auto_join')
+    const id = await userNamed('ada@northline.app')
+    inDays(366)
+    expect(await Domains.joinOnSignUp(deps, TENANT, id, systemActor())).toBe(false)
+  })
+
+  test('the list says needs_reverification once it has lapsed, and the row is kept', async () => {
+    const org = await organization()
+    await verifiedDomain(org.id)
+    inDays(366)
+    const [row] = await listed(org.id)
+    expect(row).toMatchObject({ domain: 'northline.app', status: 'needs_reverification' })
+    expect(row?.verifiedAt).not.toBeNull()
+  })
+
+  test('a lapsed domain has no code to enter: it is expired until a new code is asked for', async () => {
+    const org = await organization()
+    const domain = await verifiedDomain(org.id)
+    inDays(366)
+    const res = await admin('POST', `/${org.id}/domains/${domain.id}/verify`, { code: '123456' })
+    expect(await codeOf(res)).toBe('verification.expired')
+  })
+
+  test('proving the domain again restores it and restarts the year', async () => {
+    const org = await organization()
+    await verifiedDomain(org.id, 'northline.app', 'auto_join')
+    inDays(366)
+    const asked = await claim(org.id, 'northline.app', 'suggest')
+    expect(asked.status).toBe(201)
+    const again = await json<OrganizationDomain>(asked)
+    // Still lapsed until the code is entered, and asking does not change the mode.
+    expect(again).toMatchObject({ status: 'needs_reverification', mode: 'auto_join' })
+    expect(again.codeExpiresAt).not.toBeNull()
+    const code = emailedCode()
+    const before = await signedUp('before@northline.app')
+    expect(
+      await deps.organizations.findMembership(TENANT.environmentId, org.id, before.userId)
+    ).toBeNull()
+
+    const res = await admin('POST', `/${org.id}/domains/${again.id}/verify`, { code })
+    expect(res.status).toBe(200)
+    const restored = await json<OrganizationDomain>(res)
+    expect(restored).toMatchObject({ id: again.id, status: 'verified', codeExpiresAt: null })
+    expect(restored.expiresAt).toBe(
+      new Date(deps.clock.now().getTime() + 365 * 86_400_000).toISOString()
+    )
+    const joined = await signedUp('after@northline.app')
+    expect(
+      (await deps.organizations.findMembership(TENANT.environmentId, org.id, joined.userId))
+        ?.roleKey
+    ).toBe('member')
+    const entry = deps.activityLog.entries.findLast(
+      (one) => one.type === 'organization_domain.verified'
+    )
+    expect(entry?.data).toMatchObject({ reverified: true, weakened: true })
+    expect(EVENT_DATA_SCHEMAS['organization_domain.verified'].safeParse(entry?.data).success).toBe(
+      true
+    )
+  })
+
+  test('while a manager proves a domain that has not lapsed it keeps matching, and it still lapses on its date', async () => {
+    const org = await organization()
+    await verifiedDomain(org.id, 'northline.app', 'auto_join')
+    inDays(340)
+    expect((await claim(org.id, 'northline.app')).status).toBe(201)
+    const maya = await signedUp('maya@northline.app')
+    expect(
+      await deps.organizations.findMembership(TENANT.environmentId, org.id, maya.userId)
+    ).not.toBeNull()
+    inDays(30)
+    expect((await listed(org.id))[0]?.status).toBe('needs_reverification')
+  })
+
+  test('a wrong code for a re-verification counts and does not change the domain', async () => {
+    const org = await organization()
+    const domain = await verifiedDomain(org.id)
+    inDays(340)
+    await claim(org.id)
+    const wrong = emailedCode() === '000000' ? '111111' : '000000'
+    const res = await admin('POST', `/${org.id}/domains/${domain.id}/verify`, { code: wrong })
+    expect(res.status).toBe(422)
+    expect(await codeOf(res)).toBe('verification.invalid_code')
+    expect((await listed(org.id))[0]?.expiresAt).toBe(domain.expiresAt)
+  })
+
+  test('asking for a code for a verified domain does not change its mode (that is a weakening of its own)', async () => {
+    const org = await organization()
+    await verifiedDomain(org.id, 'northline.app', 'suggest')
+    deps.clock.advance('2m')
+    const res = await claim(org.id, 'northline.app', 'auto_join')
+    expect(res.status).toBe(201)
+    expect((await json<OrganizationDomain>(res)).mode).toBe('suggest')
+    const entry = deps.activityLog.entries.findLast(
+      (one) => one.type === 'organization_domain.claimed'
+    )
+    expect(entry?.data).toMatchObject({ mode: 'suggest' })
+  })
+
+  test('another organization cannot claim a domain until its verification has lapsed; then it takes it', async () => {
+    const one = await organization('one')
+    const two = await organization('two')
+    await verifiedDomain(one.id, 'northline.app', 'auto_join')
+    const member = await signedUp('old@northline.app')
+    inDays(300)
+    expect(await codeOf(await claim(two.id))).toBe('organization.domain_taken')
+    inDays(66)
+    const started = await claim(two.id)
+    expect(started.status).toBe(201)
+    const pending = await json<OrganizationDomain>(started)
+    const res = await admin('POST', `/${two.id}/domains/${pending.id}/verify`, {
+      code: emailedCode(),
+    })
+    expect(res.status).toBe(200)
+    // The lapsed row is gone (recorded); its members stay members.
+    expect(await listed(one.id)).toEqual([])
+    expect(
+      deps.activityLog.entries.some(
+        (entry) =>
+          entry.type === 'organization_domain.removed' && entry.data.organizationId === one.id
+      )
+    ).toBe(true)
+    expect(
+      await deps.organizations.findMembership(TENANT.environmentId, one.id, member.userId)
+    ).not.toBeNull()
+    expect(
+      (await deps.organizationDomains.findVerified(TENANT.environmentId, 'northline.app'))
+        ?.organizationId
+    ).toBe(two.id)
+  })
+
+  test('lapsed is a decision about the date alone: the instant it passes, and a missing date', async () => {
+    const org = await organization()
+    await verifiedDomain(org.id, 'northline.app', 'auto_join')
+    const row = await deps.organizationDomains.findVerified(TENANT.environmentId, 'northline.app')
+    if (!row?.expiresAt) {
+      throw new Error('a verified row has an expiry')
+    }
+    expect(Domains.lapsed(row, new Date(row.expiresAt.getTime() - 1))).toBe(false)
+    expect(Domains.lapsed(row, row.expiresAt)).toBe(true)
+    // Not a state the database allows; unknown is never trusted.
+    expect(Domains.statusOf({ ...row, expiresAt: null }, deps.clock.now())).toBe(
+      'needs_reverification'
+    )
+  })
+})
+
+describe('the fairness of the environment’s allowance of codes', () => {
+  async function userOrganization(userId: string, slug: string) {
+    configure({ allowUserCreated: true, maxCreatedPerUser: 5 })
+    return MeOrganizations.create(
+      deps,
+      TENANT,
+      { userId },
+      { name: `Org ${slug}`, slug },
+      TEST_ACTOR
+    )
+  }
+
+  test('an organization a user created sends fewer codes a day than one an administrator made', async () => {
+    const user = await signedUp('maker@elsewhere.example')
+    const mine = await userOrganization(user.userId, 'mine')
+    const theirs = await organization('theirs')
+    expect(Domains.CODES_PER_USER_ORGANIZATION_PER_DAY).toBeLessThan(
+      Domains.CODES_PER_ORGANIZATION_PER_DAY
+    )
+    for (let i = 0; i < Domains.CODES_PER_USER_ORGANIZATION_PER_DAY; i += 1) {
+      for (const [org, limit] of [
+        [mine.id, Domains.CODES_PER_USER_ORGANIZATION_PER_DAY],
+        [theirs.id, Domains.CODES_PER_ORGANIZATION_PER_DAY],
+      ] as const) {
+        await deps.rateLimiter.hit(
+          `organization_domain_day:${TENANT.environmentId}:${org}`,
+          limit,
+          86_400_000
+        )
+      }
+    }
+    expect((await claim(mine.id)).status).toBe(429)
+    expect((await claim(theirs.id, 'theirs.example')).status).toBe(201)
+  })
+
+  test('one user’s organizations share one daily allowance, so they cannot spend the environment’s', async () => {
+    const user = await signedUp('maker@elsewhere.example')
+    const orgs = [
+      await userOrganization(user.userId, 'one'),
+      await userOrganization(user.userId, 'two'),
+      await userOrganization(user.userId, 'three'),
+    ]
+    const before = deps.mailer.outbox.length
+    let sent = 0
+    for (let round = 0; round < Domains.CODES_PER_USER_ORGANIZATION_PER_DAY; round += 1) {
+      for (const [index, org] of orgs.entries()) {
+        deps.clock.advance('61s')
+        const res = await claim(org.id, 'northline.app', 'suggest', `p${round}x${index}`)
+        if (res.status === 201) {
+          sent += 1
+        } else {
+          expect(res.status).toBe(429)
+        }
+      }
+    }
+    expect(sent).toBe(Domains.CODES_PER_CREATOR_PER_DAY)
+    expect(deps.mailer.outbox).toHaveLength(before + Domains.CODES_PER_CREATOR_PER_DAY)
+    // Another creator's organization is not held up.
+    const other = await signedUp('other@elsewhere.example')
+    const theirs = await userOrganization(other.userId, 'theirs')
+    deps.clock.advance('61s')
+    expect((await claim(theirs.id, 'theirs.example')).status).toBe(201)
+  })
+
+  test('the creator’s allowance is per day: it comes back', async () => {
+    const user = await signedUp('maker@elsewhere.example')
+    const mine = await userOrganization(user.userId, 'mine')
+    for (let i = 0; i < Domains.CODES_PER_CREATOR_PER_DAY; i += 1) {
+      await deps.rateLimiter.hit(
+        `organization_domain_creator_day:${TENANT.environmentId}:${user.userId}`,
+        Domains.CODES_PER_CREATOR_PER_DAY,
+        86_400_000
+      )
+    }
+    expect((await claim(mine.id)).status).toBe(429)
+    deps.clock.advance('25h')
+    expect((await claim(mine.id)).status).toBe(201)
+  })
+
+  test('an organization an administrator made is not held to a creator’s allowance', async () => {
+    const org = await organization('admin-made')
+    for (let i = 0; i < Domains.CODES_PER_CREATOR_PER_DAY + 1; i += 1) {
+      // Seven minutes apart: past the minute's cooldown, under the hour's ten.
+      deps.clock.advance('7m')
+      expect((await claim(org.id, 'northline.app', 'suggest', `p${i}`)).status).toBe(201)
+    }
+  })
+})
+
+describe('probing for claimed domains', () => {
+  test('each answer that a name is claimed elsewhere spends the organization’s hourly allowance', async () => {
+    const holder = await organization('holder')
+    const prober = await organization('prober')
+    await verifiedDomain(holder.id)
+    const sentBefore = deps.mailer.outbox.length
+    for (let i = 0; i < Domains.CODES_PER_ORGANIZATION_PER_HOUR; i += 1) {
+      const res = await claim(prober.id)
+      expect(res.status).toBe(409)
+      expect(await codeOf(res)).toBe('organization.domain_taken')
+    }
+    expect((await claim(prober.id)).status).toBe(429)
+    // The allowance is the organization's own and an hour long: it comes back.
+    deps.clock.advance('61m')
+    expect(await codeOf(await claim(prober.id))).toBe('organization.domain_taken')
+    expect(deps.mailer.outbox).toHaveLength(sentBefore)
+  })
+
+  test('probing leaves another organization’s allowance alone', async () => {
+    const holder = await organization('holder')
+    const prober = await organization('prober')
+    const honest = await organization('honest')
+    await verifiedDomain(holder.id)
+    for (let i = 0; i < Domains.CODES_PER_ORGANIZATION_PER_HOUR; i += 1) {
+      await claim(prober.id)
+    }
+    expect((await claim(honest.id, 'honest.example')).status).toBe(201)
+  })
+
+  test('a name that is free, or the organization’s own, is not a probe', async () => {
+    const org = await organization('own')
+    await verifiedDomain(org.id)
+    for (let i = 0; i < Domains.CODES_PER_ORGANIZATION_PER_HOUR - 2; i += 1) {
+      deps.clock.advance('61s')
+      expect((await claim(org.id, 'northline.app', 'suggest', `p${i}`)).status).toBe(201)
+    }
+  })
+})
+
+describe('the reminder that a verification is about to lapse', () => {
+  async function managed() {
+    const org = await organization()
+    const boss = await signedUp('boss@elsewhere.example')
+    const staff = await signedUp('staff@elsewhere.example')
+    await Organizations.addMember(
+      deps,
+      TENANT,
+      org.id,
+      { userId: boss.userId, role: 'admin' },
+      TEST_ACTOR
+    )
+    await Organizations.addMember(
+      deps,
+      TENANT,
+      org.id,
+      { userId: staff.userId, role: 'member' },
+      TEST_ACTOR
+    )
+    return { org, boss, staff }
+  }
+  const reminders = () =>
+    deps.mailer.outbox.filter((mail) => mail.subject.startsWith('Domain verification'))
+
+  test('the managers are emailed once at 30 days and once at 7, and nobody else', async () => {
+    const { org } = await managed()
+    await verifiedDomain(org.id)
+    deps.clock.advance('334d')
+    expect((await Reminders.remind(deps)).emails).toBe(0)
+    deps.clock.advance('1d')
+    expect(await Reminders.remind(deps)).toMatchObject({ emails: 1, domains: 1, failed: 0 })
+    expect(reminders().map((mail) => mail.to)).toEqual(['boss@elsewhere.example'])
+    // Once: the same threshold is not sent again, however often the job runs.
+    await Reminders.remind(deps)
+    await Reminders.remind(deps)
+    expect(reminders()).toHaveLength(1)
+    deps.clock.advance('10d')
+    await Reminders.remind(deps)
+    expect(reminders()).toHaveLength(1)
+    deps.clock.advance('13d')
+    expect((await Reminders.remind(deps)).emails).toBe(1)
+    expect(reminders()).toHaveLength(2)
+    await Reminders.remind(deps)
+    deps.clock.advance('3d')
+    await Reminders.remind(deps)
+    expect(reminders()).toHaveLength(2)
+    // Past the lapse there is nothing to warn about.
+    deps.clock.advance('10d')
+    await Reminders.remind(deps)
+    expect(reminders()).toHaveLength(2)
+  })
+
+  test('it carries no code and no link, names no domain, and its subject does not lead with a digit', async () => {
+    const { org } = await managed()
+    await verifiedDomain(org.id)
+    deps.clock.advance('336d')
+    await Reminders.remind(deps)
+    const [mail] = reminders()
+    expect(mail).toBeDefined()
+    for (const part of [mail?.subject ?? '', mail?.text ?? '', mail?.html ?? '']) {
+      expect(part).not.toMatch(/\d{6}/)
+      expect(part).not.toMatch(/https?:|href=|www\./)
+      expect(part).not.toContain('northline.app')
+    }
+    expect(mail?.subject).toMatch(/^\D/)
+    expect(mail?.text).toContain('within 30 days')
+  })
+
+  test('one email covers several domains, and a domain first seen late gets the 7-day one alone', async () => {
+    const { org } = await managed()
+    await verifiedDomain(org.id, 'northline.app')
+    deps.clock.advance('2m')
+    await verifiedDomain(org.id, 'northline.example')
+    deps.clock.advance('359d')
+    await Reminders.remind(deps)
+    expect(reminders()).toHaveLength(1)
+    expect(reminders()[0]?.text).toContain('2 verified domains')
+    expect(reminders()[0]?.text).toContain('within 7 days')
+  })
+
+  test('verifying again starts the series over', async () => {
+    const { org } = await managed()
+    await verifiedDomain(org.id)
+    deps.clock.advance('336d')
+    await Reminders.remind(deps)
+    expect(reminders()).toHaveLength(1)
+    deps.clock.advance('2m')
+    expect((await claim(org.id)).status).toBe(201)
+    const [row] = (
+      await json<{ data: OrganizationDomain[] }>(await admin('GET', `/${org.id}/domains`))
+    ).data
+    expect(
+      (await admin('POST', `/${org.id}/domains/${row?.id}/verify`, { code: emailedCode() })).status
+    ).toBe(200)
+    deps.clock.advance('336d')
+    await Reminders.remind(deps)
+    expect(reminders()).toHaveLength(2)
+  })
+
+  test('a banned manager and a member without the permission are not emailed', async () => {
+    const { org, boss } = await managed()
+    await verifiedDomain(org.id)
+    await deps.users.setBanned(
+      TENANT.environmentId,
+      boss.userId,
+      deps.clock.now(),
+      deps.clock.now(),
+      (await import('~/modules/audit/service')).none('fixture')
+    )
+    deps.clock.advance('336d')
+    expect((await Reminders.remind(deps)).emails).toBe(0)
+    expect(reminders()).toHaveLength(0)
+  })
+
+  test('a mailer that fails gives the reminder back, and the next run sends it', async () => {
+    const { org } = await managed()
+    await verifiedDomain(org.id)
+    deps.clock.advance('336d')
+    const send = spyOn(deps.mailer, 'send').mockRejectedValueOnce(new Error('relay down'))
+    expect(await Reminders.remind(deps)).toMatchObject({ emails: 0, retried: 1 })
+    send.mockRestore()
+    expect((await Reminders.remind(deps)).emails).toBe(1)
+    expect(reminders()).toHaveLength(1)
+  })
+
+  test('an organization with nobody to tell is tried again, and a manager added later is told', async () => {
+    const org = await organization()
+    await verifiedDomain(org.id)
+    deps.clock.advance('336d')
+    expect(await Reminders.remind(deps)).toMatchObject({ emails: 0, retried: 1 })
+    const boss = await signedUp('late-boss@elsewhere.example')
+    await Organizations.addMember(
+      deps,
+      TENANT,
+      org.id,
+      { userId: boss.userId, role: 'admin' },
+      TEST_ACTOR
+    )
+    expect((await Reminders.remind(deps)).emails).toBe(1)
+  })
+
+  test('organizations switched off: no reminder is taken or sent', async () => {
+    const { org } = await managed()
+    await verifiedDomain(org.id)
+    configure({ enabled: false })
+    deps.clock.advance('336d')
+    expect(await Reminders.remind(deps)).toMatchObject({ emails: 0, domains: 0 })
+    configure()
+    expect((await Reminders.remind(deps)).emails).toBe(1)
+  })
+
+  test('the environment’s daily allowance of reminders holds, and what it refused is sent the next day', async () => {
+    const { org } = await managed()
+    await verifiedDomain(org.id)
+    deps.clock.advance('336d')
+    for (let i = 0; i < Reminders.REMINDERS_PER_ENVIRONMENT_PER_DAY; i += 1) {
+      await deps.rateLimiter.hit(
+        `organization_domain_reminders:${TENANT.environmentId}`,
+        Reminders.REMINDERS_PER_ENVIRONMENT_PER_DAY,
+        86_400_000
+      )
+    }
+    expect(await Reminders.remind(deps)).toMatchObject({ emails: 0, retried: 1 })
+    deps.clock.advance('25h')
+    expect((await Reminders.remind(deps)).emails).toBe(1)
+  })
+
+  test('run takes the job lock, and does nothing where another instance holds it', async () => {
+    const { org } = await managed()
+    await verifiedDomain(org.id)
+    deps.clock.advance('336d')
+    const outcome = await deps.jobLock.runExclusive('domain_reminders', () => Reminders.run(deps))
+    expect(outcome).toEqual({ ran: true, value: null })
+    expect(await Reminders.run(deps)).toMatchObject({ emails: 1 })
   })
 })

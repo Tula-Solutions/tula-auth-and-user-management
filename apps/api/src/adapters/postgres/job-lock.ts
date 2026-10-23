@@ -9,6 +9,7 @@ import type { ExclusiveJob, JobLock, JobOutcome } from '~/ports/job-lock'
 export const JOB_LOCK_IDS: Readonly<Record<ExclusiveJob, number>> = {
   retention: 1,
   webhook_delivery: 2,
+  domain_reminders: 3,
 }
 
 /**

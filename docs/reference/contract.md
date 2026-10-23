@@ -1485,6 +1485,45 @@ DOMAIN_PATTERN.test('Acme.com') // false
 DOMAIN_PATTERN.test('192.168.0.1') // false
 ```
 
+### `DOMAIN_REMINDER_DAYS`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+How many days before a verification lapses the organization's managers are emailed, largest
+first. Each is sent once per verification: a reminder is never repeated, and re-verifying
+starts the series again.
+
+```ts
+const DOMAIN_REMINDER_DAYS: readonly number[]
+```
+
+### `DOMAIN_REVERIFICATION_GRACE_DAYS`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+The least time, in days, that a domain verified before the lifetime existed (migration
+0042) keeps matching after the migration: its deadline is the later of the original
+`verified_at` plus the lifetime and this many days from the migration, so that nobody is
+cut off the day the change ships and every manager gets a reminder before it ends.
+
+```ts
+const DOMAIN_REVERIFICATION_GRACE_DAYS: 30
+```
+
+### `DOMAIN_VERIFICATION_LIFETIME_DAYS`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+How long a verification of a domain lasts, in days (ADR 0065, "Verified domains", "Lapse").
+A domain can be lost and registered again by someone else, and nothing tells Tula, so a
+claim is only believed for this long: past it the domain matches nobody (no auto-join, no
+suggestion) until a manager proves it again with a new emailed code. Counted from the day
+the code was entered.
+
+```ts
+const DOMAIN_VERIFICATION_LIFETIME_DAYS: 365
+```
+
 ### `DPOP_ALGORITHMS`
 
 _constant_, defined in `packages/contract/src/device-binding.ts`
@@ -1830,6 +1869,8 @@ server sends, so that a template never has to say two different things.
 - `account_exists`, `no_account`, `no_account_sign_in`, `email_in_use`: what is sent
   instead of a code, so that a sign-up, a reset, a sign-in and adding an address to an
   account (ADR 0059) answer alike for every address.
+- `organization_domain_expiring` (ADR 0065): the reminder, 30 and 7 days ahead, that a
+  verified domain of an organization will stop matching unless it is verified again.
 - `organization_invitation` (ADR 0065): an invitation to join an organization, with the
   server's link and no code.
 - the rest: security notices (ADR 0023), one per thing that can have happened.
@@ -5591,6 +5632,16 @@ How an organization treats a user who signs up with a verified address on its do
 const ORGANIZATION_DOMAIN_MODES: readonly ["suggest", "auto_join"]
 ```
 
+### `ORGANIZATION_DOMAIN_STATUSES`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+What a domain row is: waiting for its first code, verified, or past its lifetime.
+
+```ts
+const ORGANIZATION_DOMAIN_STATUSES: readonly ["pending", "verified", "needs_reverification"]
+```
+
 ### `ORGANIZATION_FIELDS`
 
 _constant_, defined in `packages/contract/src/organization.ts`
@@ -5801,12 +5852,34 @@ const OrganizationDomainNameSchema: z.ZodString
 
 _constant_, defined in `packages/contract/src/organization-domain.ts`
 
-A domain of an organization. **Pending** (`verifiedAt` is `null`): a code was emailed and
-not yet entered; it grants nothing. **Verified**: a user who signs up with a verified
-address on it is suggested the organization or joined to it, by `mode`.
+A domain of an organization. **Pending** (`status` `pending`, `verifiedAt` is `null`): a
+code was emailed and not yet entered; it grants nothing. **Verified**: a user who signs up
+with a verified address on it is suggested the organization or joined to it, by `mode`,
+until `expiresAt`. **Needs re-verification**: `expiresAt` has passed; the domain matches
+nobody until a manager claims it again and enters the new code (ADR 0065, "Lapse").
 
 ```ts
 const OrganizationDomainSchema
+```
+
+### `OrganizationDomainStatus`
+
+_type_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+One of {@link ORGANIZATION_DOMAIN_STATUSES}.
+
+```ts
+export type OrganizationDomainStatus = (typeof ORGANIZATION_DOMAIN_STATUSES)[number]
+```
+
+### `OrganizationDomainStatusSchema`
+
+_constant_, defined in `packages/contract/src/organization-domain.ts`
+
+What a domain row is now: see {@link OrganizationDomainSchema}.
+
+```ts
+const OrganizationDomainStatusSchema: z.ZodEnum<{}>
 ```
 
 ### `OrganizationField`
@@ -8554,7 +8627,9 @@ _constant_, defined in `packages/contract/src/organization-domain.ts`
 
 Claim a domain: email a code to an address **on that domain**, and say what a verified
 domain does. Sent again for a pending claim it emails a new code (the old one stops
-working) and may change `mode`.
+working) and may change `mode`. Sent for a verified domain of the same organization it
+starts a re-verification: the domain keeps working, with its mode, until the new code is
+entered (which restarts its lifetime) or it lapses.
 
 ```ts
 const StartOrganizationDomainRequestSchema: z.ZodObject<{ domain: z.ZodString; email: z.ZodString; mode: z.ZodEnum<{}>; }, z.core.$strict>
@@ -14199,6 +14274,45 @@ DOMAIN_PATTERN.test('Acme.com') // false
 DOMAIN_PATTERN.test('192.168.0.1') // false
 ```
 
+### `DOMAIN_REMINDER_DAYS`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+How many days before a verification lapses the organization's managers are emailed, largest
+first. Each is sent once per verification: a reminder is never repeated, and re-verifying
+starts the series again.
+
+```ts
+const DOMAIN_REMINDER_DAYS: readonly number[]
+```
+
+### `DOMAIN_REVERIFICATION_GRACE_DAYS`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+The least time, in days, that a domain verified before the lifetime existed (migration
+0042) keeps matching after the migration: its deadline is the later of the original
+`verified_at` plus the lifetime and this many days from the migration, so that nobody is
+cut off the day the change ships and every manager gets a reminder before it ends.
+
+```ts
+const DOMAIN_REVERIFICATION_GRACE_DAYS: 30
+```
+
+### `DOMAIN_VERIFICATION_LIFETIME_DAYS`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+How long a verification of a domain lasts, in days (ADR 0065, "Verified domains", "Lapse").
+A domain can be lost and registered again by someone else, and nothing tells Tula, so a
+claim is only believed for this long: past it the domain matches nobody (no auto-join, no
+suggestion) until a manager proves it again with a new emailed code. Counted from the day
+the code was entered.
+
+```ts
+const DOMAIN_VERIFICATION_LIFETIME_DAYS: 365
+```
+
 ### `DomainRefusal`
 
 _type_, defined in `packages/contract/src/organization-domain-rules.ts`
@@ -14260,6 +14374,16 @@ How an organization treats a user who signs up with a verified address on its do
 const ORGANIZATION_DOMAIN_MODES: readonly ["suggest", "auto_join"]
 ```
 
+### `ORGANIZATION_DOMAIN_STATUSES`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+What a domain row is: waiting for its first code, verified, or past its lifetime.
+
+```ts
+const ORGANIZATION_DOMAIN_STATUSES: readonly ["pending", "verified", "needs_reverification"]
+```
+
 ### `OrganizationDomainMode`
 
 _type_, defined in `packages/contract/src/organization-domain-rules.ts`
@@ -14268,6 +14392,16 @@ One of {@link ORGANIZATION_DOMAIN_MODES}.
 
 ```ts
 export type OrganizationDomainMode = (typeof ORGANIZATION_DOMAIN_MODES)[number]
+```
+
+### `OrganizationDomainStatus`
+
+_type_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+One of {@link ORGANIZATION_DOMAIN_STATUSES}.
+
+```ts
+export type OrganizationDomainStatus = (typeof ORGANIZATION_DOMAIN_STATUSES)[number]
 ```
 
 ### `PUBLIC_EMAIL_BRANDS`

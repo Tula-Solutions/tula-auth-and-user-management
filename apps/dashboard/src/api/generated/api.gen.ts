@@ -2116,7 +2116,7 @@ export const OrganizationDomainVerifiedEventDataMode = {
 } as const;
 
 /**
- * An organization verified a domain: users who sign up with a verified address on it are suggested the organization or joined to it, by `mode`. `weakened` is present, and true, for `auto_join`.
+ * An organization verified a domain: users who sign up with a verified address on it are suggested the organization or joined to it, by `mode`, until the verification lapses. `reverified` is present, and true, when the domain was already verified (proven again before or after it lapsed). `weakened` is present, and true, for `auto_join`.
  */
 export interface OrganizationDomainVerifiedEventData {
   /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
@@ -2127,6 +2127,7 @@ export interface OrganizationDomainVerifiedEventData {
      */
   domain: string;
   mode: OrganizationDomainVerifiedEventDataMode;
+  reverified?: true;
   weakened?: true;
 }
 
@@ -2137,7 +2138,7 @@ export type OrganizationDomainVerifiedEventTarget = {
 };
 
 /**
- * An organization verified a domain: users who sign up with a verified address on it are suggested the organization or joined to it, by `mode`. `weakened` is present, and true, for `auto_join`.
+ * An organization verified a domain: users who sign up with a verified address on it are suggested the organization or joined to it, by `mode`, until the verification lapses. `reverified` is present, and true, when the domain was already verified (proven again before or after it lapsed). `weakened` is present, and true, for `auto_join`.
  */
 export interface OrganizationDomainVerifiedEvent {
   /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
@@ -4251,6 +4252,7 @@ export interface EmailTemplates {
   email_in_use?: EmailTemplate;
   email_added?: EmailTemplate;
   organization_domain_verification?: EmailTemplate;
+  organization_domain_expiring?: EmailTemplate;
   organization_invitation?: EmailTemplate;
 }
 
@@ -5532,11 +5534,22 @@ export const OrganizationDomainMode = {
   auto_join: 'auto_join',
 } as const;
 
+export type OrganizationDomainStatus = typeof OrganizationDomainStatus[keyof typeof OrganizationDomainStatus];
+
+
+export const OrganizationDomainStatus = {
+  pending: 'pending',
+  verified: 'verified',
+  needs_reverification: 'needs_reverification',
+} as const;
+
 export interface OrganizationDomain {
   id: string;
   domain: string;
   mode: OrganizationDomainMode;
+  status: OrganizationDomainStatus;
   verifiedAt: string | null;
+  expiresAt: string | null;
   codeExpiresAt: string | null;
   /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
   createdAt: string;
@@ -5930,7 +5943,7 @@ export interface MessagePreview {
 
 export type MessagePreviewRequest = {
   channel: 'email';
-  kind: 'email_verification' | 'password_reset' | 'sign_in' | 'step_up' | 'account_exists' | 'no_account' | 'no_account_sign_in' | 'password_changed' | 'password_added' | 'password_reset_completed' | 'password_added_by_reset' | 'password_set_by_admin' | 'password_added_by_admin' | 'password_removed' | 'new_sign_in' | 'mfa_enabled' | 'mfa_disabled' | 'mfa_reset_by_admin' | 'backup_codes_regenerated' | 'backup_code_used' | 'sms_factor_enabled' | 'sms_factor_removed' | 'passkey_added' | 'passkey_removed' | 'identity_linked' | 'identity_unlinked' | 'email_in_use' | 'email_added' | 'organization_domain_verification' | 'organization_invitation';
+  kind: 'email_verification' | 'password_reset' | 'sign_in' | 'step_up' | 'account_exists' | 'no_account' | 'no_account_sign_in' | 'password_changed' | 'password_added' | 'password_reset_completed' | 'password_added_by_reset' | 'password_set_by_admin' | 'password_added_by_admin' | 'password_removed' | 'new_sign_in' | 'mfa_enabled' | 'mfa_disabled' | 'mfa_reset_by_admin' | 'backup_codes_regenerated' | 'backup_code_used' | 'sms_factor_enabled' | 'sms_factor_removed' | 'passkey_added' | 'passkey_removed' | 'identity_linked' | 'identity_unlinked' | 'email_in_use' | 'email_added' | 'organization_domain_verification' | 'organization_domain_expiring' | 'organization_invitation';
   template?: {
   /** @maxLength 200 */
   subject?: string;
