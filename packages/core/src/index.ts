@@ -101,6 +101,8 @@ export type {
   FlowStep,
   InvitationPreview,
   MfaPolicy,
+  MyOrganizationInvitation,
+  MyOrganizationInvitationList,
   OrganizationDomain,
   OrganizationDomainList,
   OrganizationInvitation,

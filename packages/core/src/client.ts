@@ -59,6 +59,7 @@ import type {
   Factors,
   FetchLike,
   InvitationPreview,
+  MyOrganizationInvitationList,
   OrganizationDomain,
   OrganizationDomainList,
   OrganizationInvitation,
@@ -951,6 +952,44 @@ export interface TulaClient {
        * ```
        */
       decline(token: string): Promise<void>
+      /**
+       * The pending invitations addressed to the signed-in user's own verified address, newest
+       * first: an `id`, the organization's name, the role's key and the expiry, never a token.
+       * Only the first page: the client sends no paging query yet. An unverified address
+       * has none.
+       *
+       * @returns The page.
+       * @throws TulaError `organization.disabled`, `auth.unauthenticated`.
+       * @example
+       * ```ts
+       * const { data } = await tula.organizations.invitations.mine()
+       * ```
+       */
+      mine(): Promise<MyOrganizationInvitationList>
+      /**
+       * Join the organization of an invitation listed by `mine()`, by its id. The same checks as
+       * `accept`: an id that is not the user's own answers `organization.invitation_not_found`.
+       *
+       * @param invitationId - The `id` from `mine()`.
+       * @returns The organization joined, with the role and its permission keys.
+       * @throws TulaError As `accept`.
+       * @example
+       * ```ts
+       * const org = await tula.organizations.invitations.acceptMine(invitation.id)
+       * ```
+       */
+      acceptMine(invitationId: string): Promise<AcceptedInvitation>
+      /**
+       * Turn down an invitation listed by `mine()`, by its id.
+       *
+       * @param invitationId - The `id` from `mine()`.
+       * @throws TulaError As `decline`.
+       * @example
+       * ```ts
+       * await tula.organizations.invitations.declineMine(invitation.id)
+       * ```
+       */
+      declineMine(invitationId: string): Promise<void>
     }
   }
   /** The signed-in user. */
@@ -1650,6 +1689,12 @@ export function createClient(options: TulaClientOptions, environment: Environmen
         accept: (token) => session.authorized('acceptOrganizationInvitation', { body: { token } }),
         async decline(token) {
           await session.authorized('declineOrganizationInvitation', { body: { token } })
+        },
+        mine: () => session.authorized('listMyPendingOrganizationInvitations', {}),
+        acceptMine: (invitationId) =>
+          session.authorized('acceptMyOrganizationInvitation', { params: { invitationId } }),
+        async declineMine(invitationId) {
+          await session.authorized('declineMyOrganizationInvitation', { params: { invitationId } })
         },
       },
     },

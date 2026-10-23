@@ -146,8 +146,12 @@ import { join } from 'node:path'
  * a member's removal, the roles) and the methods over them and over the domain rows already
  * listed (`.domains.*`). The budget
  * moved by exactly those 264 bytes, from 18,437 to 18,701: the room is the 4 bytes it was.
+ * The invitee's own list (TULA-131: `invitations.mine`, `.acceptMine`, `.declineMine`) added
+ * 61 bytes, from 18,697 to 18,758: three rows of the table of operations and the three
+ * methods. The budget moved by exactly those 61 bytes, from 18,701 to 18,762: the room is the
+ * 4 bytes it was.
  */
-const GZIP_BUDGET_BYTES = 18_701
+const GZIP_BUDGET_BYTES = 18_762
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

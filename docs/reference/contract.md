@@ -5185,6 +5185,60 @@ MicrosoftTenantSchema.parse('common') // 'common'
 MicrosoftTenantSchema.parse('72F988BF-86F1-41AF-91AB-2D7CD011DB47') // lower-cased
 ```
 
+### `MyOrganizationInvitation`
+
+_type_, defined in `packages/contract/src/organization-invitation.ts`
+
+An invitation addressed to the signed-in user.
+
+```ts
+export type MyOrganizationInvitation = z.infer<typeof MyOrganizationInvitationSchema>
+```
+
+### `MyOrganizationInvitationList`
+
+_type_, defined in `packages/contract/src/organization-invitation.ts`
+
+A page of them.
+
+```ts
+export type MyOrganizationInvitationList = z.infer<typeof MyOrganizationInvitationListSchema>
+```
+
+### `MyOrganizationInvitationListSchema`
+
+_constant_, defined in `packages/contract/src/organization-invitation.ts`
+
+One page of the signed-in user's pending invitations, newest first.
+
+```ts
+const MyOrganizationInvitationListSchema
+```
+
+### `MyOrganizationInvitationQuerySchema`
+
+_constant_, defined in `packages/contract/src/organization-invitation.ts`
+
+The query of {@link MyOrganizationInvitationListSchema}: a page.
+
+```ts
+const MyOrganizationInvitationQuerySchema
+```
+
+### `MyOrganizationInvitationSchema`
+
+_constant_, defined in `packages/contract/src/organization-invitation.ts`
+
+A pending invitation addressed to the signed-in user, as `GET /v1/client/me/organization-invitations`
+lists it: enough to show and answer it, and nothing else. No token, no invited address, no
+inviter and no other user's data. It is answered by its `id`
+(`POST …/organization-invitations/{invitationId}/accept` and `…/decline`), which the session
+authorizes exactly as the token does.
+
+```ts
+const MyOrganizationInvitationSchema
+```
+
 ### `NATIVE_APP_FIELDS`
 
 _constant_, defined in `packages/contract/src/native-app.ts`

@@ -207,18 +207,22 @@ export async function listMembers(
     organizationId,
     page
   )
-  const data = await Promise.all(
-    records.map(async (record: MembershipRecord): Promise<OrganizationMember> => {
-      const user = await deps.users.findById(tenant.environmentId, record.userId)
-      return {
-        userId: record.userId,
-        name: user ? nameOf(user.firstName, user.lastName) : null,
-        email: user?.email ?? null,
-        role: record.roleKey,
-        createdAt: record.createdAt.toISOString(),
-      }
-    })
+  // One lookup for the whole page, not one per member.
+  const found = await deps.users.findByIds(
+    tenant.environmentId,
+    records.map((record) => record.userId)
   )
+  const byId = new Map(found.map((user) => [user.id, user]))
+  const data = records.map((record: MembershipRecord): OrganizationMember => {
+    const user = byId.get(record.userId)
+    return {
+      userId: record.userId,
+      name: user ? nameOf(user.firstName, user.lastName) : null,
+      email: user?.email ?? null,
+      role: record.roleKey,
+      createdAt: record.createdAt.toISOString(),
+    }
+  })
   return {
     meta: {
       totalCount: total,

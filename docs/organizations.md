@@ -435,7 +435,10 @@ Two ways to join an organization have a page of their own coming, and are only o
   The invitee gets a single-use link that works for seven days, and joins only with an account
   whose address is verified and matches. The server routes and `client.organizations.invitations`
   in `@tula-tech/core` exist, and `<OrganizationProfile>` and `<OrganizationSwitcher>` draw
-  them; read their JSDoc in the [`@tula-tech/core` reference](reference/core.md).
+  them; read their JSDoc in the [`@tula-tech/core` reference](reference/core.md). A signed-in
+  user can also list the invitations sent to their own verified address
+  (`client.organizations.invitations.mine()`) and answer one by its `id`
+  (`acceptMine`, `declineMine`), with no token; the switcher shows that list.
 - **Verified domains.** An organization proves it owns an email domain with a code sent to an
   address at it. Users with a verified address there are then offered the organization
   (`suggest`) or join it at once (`auto_join`) with the `defaultRole`. The client routes and

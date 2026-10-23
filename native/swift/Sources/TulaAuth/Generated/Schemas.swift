@@ -2134,6 +2134,79 @@ public enum MfaPolicy: Codable, Hashable, Sendable {
     }
 }
 
+public struct MyOrganizationInvitation: Codable, Hashable, Sendable {
+    public var id: String
+    public var organizationName: String
+    public var role: String
+    /// Format: `date-time`.
+    public var expiresAt: String
+
+    public init(
+        id: String,
+        organizationName: String,
+        role: String,
+        expiresAt: String
+    ) {
+        self.id = id
+        self.organizationName = organizationName
+        self.role = role
+        self.expiresAt = expiresAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case organizationName
+        case role
+        case expiresAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.organizationName = try container.decode(String.self, forKey: .organizationName)
+        self.role = try container.decode(String.self, forKey: .role)
+        self.expiresAt = try container.decode(String.self, forKey: .expiresAt)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.id, forKey: .id)
+        try container.encode(self.organizationName, forKey: .organizationName)
+        try container.encode(self.role, forKey: .role)
+        try container.encode(self.expiresAt, forKey: .expiresAt)
+    }
+}
+
+public struct MyOrganizationInvitationList: Codable, Hashable, Sendable {
+    public var meta: PaginationMeta
+    public var data: [MyOrganizationInvitation]
+
+    public init(
+        meta: PaginationMeta,
+        data: [MyOrganizationInvitation]
+    ) {
+        self.meta = meta
+        self.data = data
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case meta
+        case data
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.meta = try container.decode(PaginationMeta.self, forKey: .meta)
+        self.data = try container.decode([MyOrganizationInvitation].self, forKey: .data)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.meta, forKey: .meta)
+        try container.encode(self.data, forKey: .data)
+    }
+}
+
 public enum NewPasswordReason: Codable, Hashable, Sendable {
     case expired
     /// A value this version does not know, as the API wrote it.

@@ -6,6 +6,7 @@ import {
   INVITATIONS_MANAGE_PERMISSION,
   type InvitationPreview,
   type InvitationStatus,
+  type MyOrganizationInvitationList,
   ORGANIZATION_INVITATION_TOKEN_PARAM,
   type OrganizationInvitation,
   type OrganizationInvitationList,
@@ -572,6 +573,17 @@ export async function accept(
   await requireEnabled(deps, tenant)
   const record = await openInvitation(deps, tenant, token)
   await requireInvitee(deps, tenant, member, record)
+  return acceptRecord(deps, tenant, member, record, actor)
+}
+
+/** Join the organization of an invitation that is open and was sent to `member`. */
+async function acceptRecord(
+  deps: WriteDeps,
+  tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
+  member: Member,
+  record: InvitationRecord,
+  actor: Actor
+): Promise<AcceptedInvitation> {
   const role = await deps.organizations.findRole(tenant.environmentId, record.roleKey)
   if (!role) {
     throw new AuthError('organization.invitation_role_gone')
@@ -640,6 +652,37 @@ export async function accept(
 }
 
 /**
+ * Accept an invitation listed by {@link listMine}, by its id instead of its token.
+ *
+ * The session authorizes this exactly as the token does: the invitation must have been sent
+ * to the signed-in user's own **verified** address. An id that is not the caller's, one that
+ * does not exist and another environment's all answer `organization.invitation_not_found`,
+ * so that the route cannot be used to find out whether someone else was invited. The rest is
+ * {@link accept}.
+ *
+ * @param deps - The stores, the settings, ids and clock.
+ * @param tenant - The environment.
+ * @param member - The signed-in user.
+ * @param invitationId - The invitation's id, from {@link listMine}.
+ * @param actor - The user, for the audit log.
+ * @returns The organization the user joined, with their role and its permissions.
+ * @throws AuthError `organization.disabled`, `organization.invitation_not_found`,
+ *   `…_email_unverified`, `…_expired`, `…_revoked`, `…_used`, `…_role_gone` and
+ *   `organization.member_exists`.
+ */
+export async function acceptById(
+  deps: WriteDeps & Pick<Deps, 'users'>,
+  tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
+  member: Member,
+  invitationId: string,
+  actor: Actor
+): Promise<AcceptedInvitation> {
+  await requireEnabled(deps, tenant)
+  const record = await ownInvitation(deps, tenant, member, invitationId)
+  return acceptRecord(deps, tenant, member, record, actor)
+}
+
+/**
  * Decline an invitation. Only the account it was sent to may: the same checks as accepting
  * (but a role that was deleted does not matter).
  *
@@ -661,6 +704,17 @@ export async function decline(
   await requireEnabled(deps, tenant)
   const record = await openInvitation(deps, tenant, token)
   await requireInvitee(deps, tenant, member, record)
+  await declineRecord(deps, tenant, member, record, actor)
+}
+
+/** Use up an invitation that is open and was sent to `member`, without a membership. */
+async function declineRecord(
+  deps: WriteDeps,
+  tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
+  member: Member,
+  record: InvitationRecord,
+  actor: Actor
+): Promise<void> {
   const now = deps.clock.now()
   const result = await deps.organizations.declineInvitation(
     tenant.environmentId,
@@ -679,5 +733,104 @@ export async function decline(
   }
   if (result.outcome === 'unavailable') {
     throw unavailable(result.record, now)
+  }
+}
+
+/**
+ * Decline an invitation listed by {@link listMine}, by its id. As {@link acceptById}.
+ *
+ * @param deps - The stores, the settings, ids and clock.
+ * @param tenant - The environment.
+ * @param member - The signed-in user.
+ * @param invitationId - The invitation's id, from {@link listMine}.
+ * @param actor - The user, for the audit log.
+ * @throws AuthError `organization.disabled`, `organization.invitation_not_found`,
+ *   `…_email_unverified`, `…_expired`, `…_revoked` and `…_used`.
+ */
+export async function declineById(
+  deps: WriteDeps & Pick<Deps, 'users'>,
+  tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
+  member: Member,
+  invitationId: string,
+  actor: Actor
+): Promise<void> {
+  await requireEnabled(deps, tenant)
+  const record = await ownInvitation(deps, tenant, member, invitationId)
+  await declineRecord(deps, tenant, member, record, actor)
+}
+
+/**
+ * The open invitation with this id, which must have been sent to the signed-in user.
+ *
+ * Whose it is is decided **before** its state, and a stranger's id looks like no id at all:
+ * the state codes (`…_used`, `…_revoked`) must not tell one user that an invitation to
+ * someone else exists.
+ */
+async function ownInvitation(
+  deps: Pick<Deps, 'organizations' | 'clock' | 'users'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  member: Member,
+  invitationId: string
+): Promise<InvitationRecord> {
+  const record = await deps.organizations.findInvitationById(tenant.environmentId, invitationId)
+  const user = await deps.users.findById(tenant.environmentId, member.userId)
+  if (!record || !user || user.emailNormalized !== record.emailNormalized) {
+    throw new AuthError('organization.invitation_not_found')
+  }
+  if (!user.emailVerifiedAt) {
+    throw new AuthError('organization.invitation_email_unverified')
+  }
+  const now = deps.clock.now()
+  if (record.status !== 'pending' || record.expiresAt.getTime() <= now.getTime()) {
+    throw unavailable(record, now)
+  }
+  return record
+}
+
+/**
+ * The pending, unexpired invitations sent to the signed-in user's own address, newest first.
+ *
+ * Only a **verified** address matches: an account whose address is unproven, or that has
+ * none, sees an empty page, because anyone can sign up with an address they do not own. Each
+ * entry is an id, the organization's name, the role's key and the expiry; no token, no
+ * address, no inviter. Answer one with {@link acceptById} or {@link declineById}.
+ *
+ * @param deps - The stores, the settings and the clock.
+ * @param tenant - The environment.
+ * @param member - The signed-in user.
+ * @param page - Which page.
+ * @returns The page and its paging details.
+ * @throws AuthError `organization.disabled` while organizations are switched off.
+ */
+export async function listMine(
+  deps: ReadDeps & Pick<Deps, 'users'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  member: Member,
+  page: PageCriteria
+): Promise<MyOrganizationInvitationList> {
+  await requireEnabled(deps, tenant)
+  const user = await deps.users.findById(tenant.environmentId, member.userId)
+  const { records, total } =
+    user?.emailNormalized && user.emailVerifiedAt
+      ? await deps.organizations.listPendingInvitationsForEmail(
+          tenant.environmentId,
+          user.emailNormalized,
+          deps.clock.now(),
+          page
+        )
+      : { records: [], total: 0 }
+  return {
+    meta: {
+      totalCount: total,
+      totalPages: Math.ceil(total / page.size),
+      page: page.page,
+      perPage: page.size,
+    },
+    data: records.map(({ record, organizationName }) => ({
+      id: record.id,
+      organizationName,
+      role: record.roleKey,
+      expiresAt: record.expiresAt.toISOString(),
+    })),
   }
 }

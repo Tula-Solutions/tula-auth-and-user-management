@@ -26,15 +26,23 @@ import type {
   SandboxRole,
   SandboxUser,
 } from './types'
-import { ACCESS_TOKEN_TTL_MS, normalizeEmail, type World } from './world'
+import {
+  ACCESS_TOKEN_TTL_MS,
+  normalizeEmail,
+  SANDBOX_CUSTOM_ROLES,
+  SANDBOX_MAX_CREATED_PER_USER,
+  type World,
+} from './world'
 
 // Organizations (ADR 0065) as the sandbox answers them: members with the two built-in roles,
 // invitations, claimed domains and the active organization of a session. The rules a visitor
 // can run into are the real server's: a role's permissions decide what a route allows, the last
 // member who can manage members cannot leave or be demoted, a domain is claimed with an emailed
 // code (six digits, five guesses, ten minutes), an invitation is answered by the account it was
-// sent to. What it does not simulate: custom roles, the number of organizations a user may
-// create, and anything a person on another device would do (the sandbox has one browser).
+// sent to. Custom roles (`SANDBOX_CUSTOM_ROLES`) and the cap on organizations a user may create
+// (`SANDBOX_MAX_CREATED_PER_USER`) are simulated; a role is offered only within the permissions
+// of the one offering it. What it does not simulate: editing the roles, and anything a person on
+// another device would do (the sandbox has one browser).
 
 /** The operations this file answers. */
 type OrganizationOperation =
@@ -56,6 +64,9 @@ type OrganizationOperation =
   | 'removeMyOrganizationDomain'
   | 'listMyOrganizationInvitations'
   | 'inviteToMyOrganization'
+  | 'listMyPendingOrganizationInvitations'
+  | 'acceptMyOrganizationInvitation'
+  | 'declineMyOrganizationInvitation'
   | 'revokeMyOrganizationInvitation'
   | 'previewOrganizationInvitation'
   | 'acceptOrganizationInvitation'
@@ -91,15 +102,33 @@ function invalid(field: string, message: string): SandboxError {
   })
 }
 
+/** Every role the sandbox's environment has: the two built-in ones and its custom ones. */
+function allRoles(): readonly { key: string; name: string; permissions: readonly string[] }[] {
+  return [...BUILT_IN_ROLES, ...SANDBOX_CUSTOM_ROLES]
+}
+
 function permissionsOf(role: SandboxRole): readonly string[] {
-  return BUILT_IN_ROLES.find((one) => one.key === role)?.permissions ?? []
+  return allRoles().find((one) => one.key === role)?.permissions ?? []
 }
 
 function role(value: unknown): SandboxRole {
-  if (value === 'admin' || value === 'member') {
+  if (typeof value === 'string' && allRoles().some((one) => one.key === value)) {
     return value
   }
   throw new SandboxError('organization.role_unknown')
+}
+
+/** Whether a role holds no permission the member lacks: the only roles they may give. */
+function assignable(member: SandboxMember, key: string): boolean {
+  const held = permissionsOf(member.role)
+  return permissionsOf(key).every((permission) => held.includes(permission))
+}
+
+/** Refuse a role the caller may not give. */
+function requireAssignable(member: SandboxMember, key: string): void {
+  if (!assignable(member, key)) {
+    throw new SandboxError('organization.role_not_assignable')
+  }
 }
 
 /** Refuse unless the environment has organizations on. */
@@ -223,6 +252,20 @@ function domainView(domain: SandboxDomain): Schemas['OrganizationDomain'] {
   }
 }
 
+/** The invitation itself, or the reason it is no use: withdrawn, used up or lapsed. */
+function openInvitation(world: World, invitation: SandboxInvitation): SandboxInvitation {
+  if (invitation.status === 'revoked') {
+    throw new SandboxError('organization.invitation_revoked')
+  }
+  if (invitation.status === 'accepted' || invitation.status === 'declined') {
+    throw new SandboxError('organization.invitation_used')
+  }
+  if (invitation.status === 'expired' || Date.parse(invitation.expiresAt) <= world.now()) {
+    throw new SandboxError('organization.invitation_expired')
+  }
+  return invitation
+}
+
 /** The pending invitation a token names, with its organization, or the reason it is no use. */
 function invitationOf(
   world: World,
@@ -232,19 +275,9 @@ function invitationOf(
   const given = text(token, 'token')
   for (const organization of world.organizations.values()) {
     const invitation = organization.invitations.find((one) => one.token === given)
-    if (!invitation) {
-      continue
+    if (invitation) {
+      return { organization, invitation: openInvitation(world, invitation) }
     }
-    if (invitation.status === 'revoked') {
-      throw new SandboxError('organization.invitation_revoked')
-    }
-    if (invitation.status === 'accepted' || invitation.status === 'declined') {
-      throw new SandboxError('organization.invitation_used')
-    }
-    if (invitation.status === 'expired' || Date.parse(invitation.expiresAt) <= world.now()) {
-      throw new SandboxError('organization.invitation_expired')
-    }
-    return { organization, invitation }
   }
   throw new SandboxError('organization.invitation_not_found')
 }
@@ -262,6 +295,67 @@ function inviteeOf(
     throw new SandboxError('organization.invitation_email_unverified')
   }
   return user
+}
+
+/**
+ * The open invitation with this id, which must have been sent to the signed-in user: whose it
+ * is is decided before its state, and another account's id looks like no id at all.
+ */
+function ownInvitation(
+  ctx: Pick<Context<keyof Operations>, 'world' | 'accessToken'>,
+  invitationId: string
+): { organization: SandboxOrganization; invitation: SandboxInvitation } {
+  requireOn(ctx.world)
+  const { user } = authenticate(ctx)
+  for (const organization of ctx.world.organizations.values()) {
+    const invitation = organization.invitations.find((one) => one.id === invitationId)
+    if (!invitation) {
+      continue
+    }
+    if (normalizeEmail(invitation.email) !== normalizeEmail(user.email)) {
+      break
+    }
+    if (user.emailVerifiedAt === null) {
+      throw new SandboxError('organization.invitation_email_unverified')
+    }
+    return { organization, invitation: openInvitation(ctx.world, invitation) }
+  }
+  throw new SandboxError('organization.invitation_not_found')
+}
+
+/** Join the organization of an invitation that is open and was sent to the signed-in user. */
+function accept(
+  ctx: Pick<Context<keyof Operations>, 'world' | 'accessToken'>,
+  organization: SandboxOrganization,
+  invitation: SandboxInvitation
+): Schemas['AcceptedInvitation'] {
+  const user = inviteeOf(ctx, invitation)
+  let member = organization.members.find((one) => one.userId === user.id)
+  if (!member) {
+    member = { userId: user.id, role: invitation.role, createdAt: iso(ctx.world.now()) }
+    organization.members.push(member)
+  }
+  invitation.status = 'accepted'
+  ctx.world.changed()
+  const { id, name: label, slug: short, createdAt } = organization
+  return {
+    id,
+    name: label,
+    slug: short,
+    role: member.role,
+    permissions: [...permissionsOf(member.role)],
+    createdAt,
+  }
+}
+
+/** Use up an invitation that is open and was sent to the signed-in user, with no membership. */
+function decline(
+  ctx: Pick<Context<keyof Operations>, 'world' | 'accessToken'>,
+  invitation: SandboxInvitation
+): void {
+  inviteeOf(ctx, invitation)
+  invitation.status = 'declined'
+  ctx.world.changed()
 }
 
 /** The organizations a verified domain of the user's own address offers them to join. */
@@ -323,6 +417,12 @@ export const ORGANIZATION_HANDLERS: {
     const { user } = authenticate(ctx)
     const given = name(ctx.body.name)
     const short = slug(ctx.world, ctx.body.slug, null)
+    const created = [...ctx.world.organizations.values()].filter(
+      (one) => one.createdBy === user.id
+    ).length
+    if (created >= SANDBOX_MAX_CREATED_PER_USER) {
+      throw new SandboxError('organization.limit_reached')
+    }
     const at = iso(ctx.world.now())
     const member: SandboxMember = { userId: user.id, role: 'admin', createdAt: at }
     const organization: SandboxOrganization = {
@@ -333,6 +433,7 @@ export const ORGANIZATION_HANDLERS: {
       members: [member],
       invitations: [],
       domains: [],
+      createdBy: user.id,
     }
     ctx.world.organizations.set(organization.id, organization)
     ctx.world.changed()
@@ -387,7 +488,11 @@ export const ORGANIZATION_HANDLERS: {
   listMyOrganizationRoles: (ctx) => {
     const { member } = membership(ctx, ctx.params.organizationId)
     requireAny(member, INVITATIONS_MANAGE_PERMISSION, MEMBERSHIPS_MANAGE_PERMISSION)
-    return { data: BUILT_IN_ROLES.map(({ key, name: label }) => ({ key, name: label })) }
+    return {
+      data: allRoles()
+        .filter((one) => assignable(member, one.key))
+        .map(({ key, name: label }) => ({ key, name: label })),
+    }
   },
   updateMyOrganizationMember: (ctx) => {
     const { organization, member } = membership(ctx, ctx.params.organizationId)
@@ -397,6 +502,7 @@ export const ORGANIZATION_HANDLERS: {
       throw new SandboxError('organization.not_a_member')
     }
     const next = role(ctx.body.role)
+    requireAssignable(member, next)
     if (
       !permissionsOf(next).includes(MEMBERSHIPS_MANAGE_PERMISSION) &&
       otherManagers(organization, target.userId) === 0
@@ -584,6 +690,7 @@ export const ORGANIZATION_HANDLERS: {
     requireAny(member, INVITATIONS_MANAGE_PERMISSION)
     const address = email(ctx.body.email)
     const given = role(ctx.body.role)
+    requireAssignable(member, given)
     redirect(world, ctx.body.redirectUrl, 'redirectUrl')
     const invitee = world.findUserByEmail(address)
     if (invitee && organization.members.some((one) => one.userId === invitee.id)) {
@@ -644,29 +751,49 @@ export const ORGANIZATION_HANDLERS: {
   },
   acceptOrganizationInvitation: (ctx) => {
     const { organization, invitation } = invitationOf(ctx.world, ctx.body.token)
-    const user = inviteeOf(ctx, invitation)
-    let member = organization.members.find((one) => one.userId === user.id)
-    if (!member) {
-      member = { userId: user.id, role: invitation.role, createdAt: iso(ctx.world.now()) }
-      organization.members.push(member)
-    }
-    invitation.status = 'accepted'
-    ctx.world.changed()
-    const { id, name: label, slug: short, createdAt } = organization
-    return {
-      id,
-      name: label,
-      slug: short,
-      role: member.role,
-      permissions: [...permissionsOf(member.role)],
-      createdAt,
-    }
+    return accept(ctx, organization, invitation)
   },
   declineOrganizationInvitation: (ctx) => {
     const { invitation } = invitationOf(ctx.world, ctx.body.token)
-    inviteeOf(ctx, invitation)
-    invitation.status = 'declined'
-    ctx.world.changed()
+    decline(ctx, invitation)
+    return undefined
+  },
+  listMyPendingOrganizationInvitations: (ctx) => {
+    requireOn(ctx.world)
+    const { user } = authenticate(ctx)
+    // Only a verified address is the invitee: an unproven one sees nothing.
+    const mine: { organization: SandboxOrganization; invitation: SandboxInvitation }[] = []
+    if (user.emailVerifiedAt !== null) {
+      for (const organization of ctx.world.organizations.values()) {
+        for (const invitation of organization.invitations) {
+          if (
+            invitation.status === 'pending' &&
+            Date.parse(invitation.expiresAt) > ctx.world.now() &&
+            normalizeEmail(invitation.email) === normalizeEmail(user.email)
+          ) {
+            mine.push({ organization, invitation })
+          }
+        }
+      }
+    }
+    mine.sort((a, b) => b.invitation.createdAt.localeCompare(a.invitation.createdAt))
+    return {
+      meta: meta(mine.length),
+      data: mine.map(({ organization, invitation }) => ({
+        id: invitation.id,
+        organizationName: organization.name,
+        role: invitation.role,
+        expiresAt: invitation.expiresAt,
+      })),
+    }
+  },
+  acceptMyOrganizationInvitation: (ctx) => {
+    const { organization, invitation } = ownInvitation(ctx, ctx.params.invitationId)
+    return accept(ctx, organization, invitation)
+  },
+  declineMyOrganizationInvitation: (ctx) => {
+    const { invitation } = ownInvitation(ctx, ctx.params.invitationId)
+    decline(ctx, invitation)
     return undefined
   },
 }
