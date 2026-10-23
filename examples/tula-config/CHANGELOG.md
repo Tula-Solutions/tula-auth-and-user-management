@@ -1,5 +1,13 @@
 # @tula-tech/example-config
 
+## 0.0.4
+
+### Patch Changes
+
+- Updated dependencies [595f5d9]
+- Updated dependencies [ef6030d]
+  - @tula-tech/config@0.3.0
+
 ## 0.0.3
 
 ### Patch Changes

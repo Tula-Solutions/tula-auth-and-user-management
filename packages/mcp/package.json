@@ -1,6 +1,6 @@
 {
   "name": "@tula-tech/mcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "license": "Apache-2.0",
   "type": "module",
   "description": "Tula's Model Context Protocol server (`tula mcp`): tools that read an environment's users, sessions, audit entries and settings, scaffolds for the provider, a protected route and a sign-in page, and one tool that runs a sign-in test where the environment allows one (a throwaway user, made and deleted). It changes nothing else and returns no secret.",
