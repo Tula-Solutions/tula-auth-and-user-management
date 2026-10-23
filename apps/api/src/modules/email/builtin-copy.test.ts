@@ -9,12 +9,18 @@ import { type EmailBrand, type EmailMessage, render } from '~/modules/email/temp
 const at = new Date('2026-10-03T14:05:59.000Z')
 const link = 'https://app.acme.test/auth/link#tula_link=tok&tula_attempt=att'
 
-const CODES = (['email_verification', 'password_reset', 'sign_in', 'step_up'] as const).flatMap(
-  (type): [string, EmailMessage][] => [
-    [type, { type, code: '482913', ttlMinutes: 10 }],
-    [`${type} with a link`, { type, code: '482913', ttlMinutes: 15, linkUrl: link }],
-  ]
-)
+const CODES = (
+  [
+    'email_verification',
+    'password_reset',
+    'sign_in',
+    'step_up',
+    'organization_domain_verification',
+  ] as const
+).flatMap((type): [string, EmailMessage][] => [
+  [type, { type, code: '482913', ttlMinutes: 10 }],
+  [`${type} with a link`, { type, code: '482913', ttlMinutes: 15, linkUrl: link }],
+])
 
 const DECOYS = (
   ['account_exists', 'no_account', 'no_account_sign_in', 'email_in_use'] as const

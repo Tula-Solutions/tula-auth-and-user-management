@@ -72,6 +72,13 @@ export type SystemPermission = (typeof SYSTEM_PERMISSIONS)[number]
  */
 export const MEMBERSHIPS_MANAGE_PERMISSION: SystemPermission = 'org:sys:memberships:manage'
 
+/**
+ * The permission that lets a member claim, verify, change and remove the organization's
+ * domains through the client routes (ADR 0065, "Verified domains"). Read from the member's
+ * role at the time of the request, never from a token.
+ */
+export const DOMAINS_MANAGE_PERMISSION: SystemPermission = 'org:sys:domains:manage'
+
 /** A built-in role: its key, its name and the permissions it holds. */
 export interface BuiltInRole {
   readonly key: string

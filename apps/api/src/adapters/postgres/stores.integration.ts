@@ -3,11 +3,12 @@ import {
   environmentSettings,
   events,
   flowAttempts,
+  organizations,
   proposals,
   users,
   withTenant,
 } from '@tula-tech/db'
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { describeActivityLog } from '~/adapters/activity-log.suite'
 import { describeEnvironmentSettingsStore } from '~/adapters/environment-settings-store.suite'
 import { describeFactorStore } from '~/adapters/factor-store.suite'
@@ -15,6 +16,7 @@ import { describeFlowAttemptStore } from '~/adapters/flow-attempt-store.suite'
 import { describeHookStore } from '~/adapters/hook-store.suite'
 import { describeNativeAppStore } from '~/adapters/native-app-store.suite'
 import { describeOAuthProviderStore } from '~/adapters/oauth-provider-store.suite'
+import { describeOrganizationDomainStore } from '~/adapters/organization-domain-store.suite'
 import { describeOrganizationStore } from '~/adapters/organization-store.suite'
 import { describePasskeyStore } from '~/adapters/passkey-store.suite'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
@@ -29,6 +31,7 @@ import {
 } from '~/adapters/postgres/integration-support'
 import { PostgresNativeAppStore } from '~/adapters/postgres/native-apps'
 import { PostgresOAuthProviderStore } from '~/adapters/postgres/oauth-providers'
+import { PostgresOrganizationDomainStore } from '~/adapters/postgres/organization-domains'
 import { PostgresOrganizationStore } from '~/adapters/postgres/organizations'
 import { PostgresPasskeyStore } from '~/adapters/postgres/passkeys'
 import { PostgresProposalStore } from '~/adapters/postgres/proposals'
@@ -198,6 +201,43 @@ describeOrganizationStore('Postgres on a real server', async () => {
     deleteUser: async (tenant, userId) => {
       await withTenant(db, tenant.environmentId, (tx) =>
         tx.delete(users).where(eq(users.id, userId))
+      )
+    },
+    a: { projectId: a.projectId, environmentId: a.environmentId },
+    b: { projectId: b.projectId, environmentId: b.environmentId },
+  }
+})
+
+// Fresh tenants per test. On a real server two verifications of one name at once meet at the
+// partial unique index, and two guesses at one code at once are counted by one statement each.
+describeOrganizationDomainStore('Postgres on a real server', async () => {
+  const [a, b] = [await database.tenant(), await database.tenant('production')]
+  return {
+    store: new PostgresOrganizationDomainStore(db),
+    recorded: async () =>
+      (await log.listAudit(a.environmentId, { page: 1, size: 50 })).entries
+        .map((entry) => entry.type)
+        .reverse(),
+    organization: async (tenant) => {
+      const id = Bun.randomUUIDv7()
+      await withTenant(db, tenant.environmentId, (tx) =>
+        tx.insert(organizations).values({
+          id,
+          projectId: tenant.projectId,
+          environmentId: tenant.environmentId,
+          name: 'Acme',
+          slug: `acme-${id.slice(-8)}`,
+        })
+      )
+      return id
+    },
+    deleteOrganization: async (tenant, id) => {
+      await withTenant(db, tenant.environmentId, (tx) =>
+        tx
+          .delete(organizations)
+          .where(
+            and(eq(organizations.id, id), eq(organizations.environmentId, tenant.environmentId))
+          )
       )
     },
     a: { projectId: a.projectId, environmentId: a.environmentId },

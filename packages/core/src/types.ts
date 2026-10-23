@@ -312,6 +312,12 @@ export type UserOrganization = Schemas['UserOrganization']
 /** A page of the user's organizations, with the session's active organization's id. */
 export type UserOrganizationList = Schemas['UserOrganizationList']
 
+/** An organization the user may join because of a verified address (`organizations.suggestions()`). */
+export type OrganizationSuggestion = Schemas['OrganizationSuggestion']
+
+/** What `organizations.suggestions()` answers: the organizations the user is offered. */
+export type OrganizationSuggestionList = Schemas['OrganizationSuggestionList']
+
 /** What `organizations.setActive()` answers: the session's active organization now. */
 export type ActiveOrganization = Schemas['ActiveOrganization']
 

@@ -180,6 +180,30 @@ const ROLE_KEY_FIELDS: readonly { type: string; field: string }[] = [
   { type: 'organization_membership.removed', field: 'role' },
 ]
 
+/**
+ * The fields where the **domain** an administrator claimed may be found (ADR 0065, "Verified
+ * domains"): a domain is public, validated against the contract's grammar and the only thing
+ * of the claim an event names. The address the code was sent to, which is on that domain, is
+ * an ordinary input: it must appear in no payload. Like {@link MAY_APPEAR} the domain is
+ * allowed in these fields and in no other.
+ */
+const DOMAIN_FIELDS: readonly { type: string; field: string }[] = [
+  { type: 'organization_domain.claimed', field: 'domain' },
+  { type: 'organization_domain.verified', field: 'domain' },
+  { type: 'organization_domain.updated', field: 'domain' },
+  { type: 'organization_domain.removed', field: 'domain' },
+]
+
+/** Whether a request claims a domain: its body's `domain` is the operator's, not a secret. */
+function claimsDomain(request: Request): boolean {
+  return (
+    request.method === 'POST' &&
+    /\/v1\/(?:admin\/organizations|client\/me\/organizations)\/[^/]+\/domains\/?$/.test(
+      new URL(request.url).pathname
+    )
+  )
+}
+
 /** Whether a request body names a role by key: a role's definition, or a member's role. */
 function namesRole(request: Request): boolean {
   const { pathname } = new URL(request.url)
@@ -196,7 +220,11 @@ function withoutAllowed(
 ): unknown[] {
   return events.map((event) => {
     const data = { ...event.data }
-    for (const { type, field } of [...Object.values(MAY_APPEAR), ...ROLE_KEY_FIELDS]) {
+    for (const { type, field } of [
+      ...Object.values(MAY_APPEAR),
+      ...ROLE_KEY_FIELDS,
+      ...DOMAIN_FIELDS,
+    ]) {
       if (event.type === type) {
         delete data[field]
       }
@@ -246,12 +274,15 @@ class Tap {
     const body = await request.clone().text()
     const json = parseJson(body)
     const role = namesRole(request) && json && typeof json === 'object' ? json : undefined
+    const domain = claimsDomain(request) ? (json as { domain?: unknown } | undefined)?.domain : null
     for (const value of json === undefined ? parameters(body) : strings(json)) {
       // A role's key may be in the fields of ROLE_KEY_FIELDS, so it is held to that rule
       // there; everything else in the same body is an ordinary input.
       const key = (role as { key?: unknown; role?: unknown } | undefined)?.key
       const named = (role as { role?: unknown } | undefined)?.role
-      if (value === key || value === named) {
+      if (typeof domain === 'string' && value === domain) {
+        this.mayAppear.add(value)
+      } else if (value === key || value === named) {
         // A built-in role's key is contract vocabulary and stays out of the set.
         if (!VOCABULARY.has(value as string)) {
           this.mayAppear.add(value)

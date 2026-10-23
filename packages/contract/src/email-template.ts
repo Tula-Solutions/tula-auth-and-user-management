@@ -6,8 +6,9 @@
  * Every email whose wording an environment can change (ADR 0039): one kind per message the
  * server sends, so that a template never has to say two different things.
  *
- * - `email_verification`, `password_reset`, `sign_in`, `step_up`: the messages that carry a
- *   6-digit code (`sign_in` can carry a link as well).
+ * - `email_verification`, `password_reset`, `sign_in`, `step_up`, `organization_domain_verification`:
+ *   the messages that carry a 6-digit code (`sign_in` can carry a link as well). The last is
+ *   the code that shows an organization controls a domain (ADR 0065).
  * - `account_exists`, `no_account`, `no_account_sign_in`, `email_in_use`: what is sent
  *   instead of a code, so that a sign-up, a reset, a sign-in and adding an address to an
  *   account (ADR 0059) answer alike for every address.
@@ -49,6 +50,7 @@ export const EMAIL_TEMPLATE_KINDS = [
   'identity_unlinked',
   'email_in_use',
   'email_added',
+  'organization_domain_verification',
 ] as const
 
 /** One of {@link EMAIL_TEMPLATE_KINDS}. */
@@ -182,6 +184,7 @@ export const EMAIL_TEMPLATE_RULES: Readonly<Record<EmailTemplateKind, EmailTempl
   identity_unlinked: { ...NOTICE, optional: ['appName', 'time', 'provider'] },
   email_in_use: DECOY,
   email_added: NOTICE,
+  organization_domain_verification: CODE,
 }
 
 /** Longest subject of a template, in characters (UTF-16 code units). */

@@ -51,8 +51,14 @@ describe('the table of kinds', () => {
     }
   })
 
-  test('the four code messages need the code, and sign-in the link too', () => {
-    expect(CODES).toEqual(['email_verification', 'password_reset', 'sign_in', 'step_up'])
+  test('the five code messages need the code, and sign-in the link too', () => {
+    expect(CODES).toEqual([
+      'email_verification',
+      'password_reset',
+      'sign_in',
+      'step_up',
+      'organization_domain_verification',
+    ])
     for (const kind of CODES) {
       expect(EMAIL_TEMPLATE_RULES[kind].required).toContain('code')
     }

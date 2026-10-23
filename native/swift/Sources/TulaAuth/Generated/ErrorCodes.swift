@@ -96,6 +96,11 @@ public enum ErrorCode: Codable, Hashable, Sendable {
     case organizationRoleInUse
     case organizationRoleBuiltIn
     case organizationRoleLimit
+    case organizationDomainPublic
+    case organizationDomainTaken
+    case organizationDomainAddressMismatch
+    case organizationDomainLimit
+    case organizationSuggestionUnavailable
     case rateLimited
     case requestMalformed
     case requestTooLarge
@@ -204,6 +209,11 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         .organizationRoleInUse,
         .organizationRoleBuiltIn,
         .organizationRoleLimit,
+        .organizationDomainPublic,
+        .organizationDomainTaken,
+        .organizationDomainAddressMismatch,
+        .organizationDomainLimit,
+        .organizationSuggestionUnavailable,
         .rateLimited,
         .requestMalformed,
         .requestTooLarge,
@@ -312,6 +322,11 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case "organization.role_in_use": self = .organizationRoleInUse
         case "organization.role_built_in": self = .organizationRoleBuiltIn
         case "organization.role_limit": self = .organizationRoleLimit
+        case "organization.domain_public": self = .organizationDomainPublic
+        case "organization.domain_taken": self = .organizationDomainTaken
+        case "organization.domain_address_mismatch": self = .organizationDomainAddressMismatch
+        case "organization.domain_limit": self = .organizationDomainLimit
+        case "organization.suggestion_unavailable": self = .organizationSuggestionUnavailable
         case "rate_limited": self = .rateLimited
         case "request.malformed": self = .requestMalformed
         case "request.too_large": self = .requestTooLarge
@@ -422,6 +437,11 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case .organizationRoleInUse: return "organization.role_in_use"
         case .organizationRoleBuiltIn: return "organization.role_built_in"
         case .organizationRoleLimit: return "organization.role_limit"
+        case .organizationDomainPublic: return "organization.domain_public"
+        case .organizationDomainTaken: return "organization.domain_taken"
+        case .organizationDomainAddressMismatch: return "organization.domain_address_mismatch"
+        case .organizationDomainLimit: return "organization.domain_limit"
+        case .organizationSuggestionUnavailable: return "organization.suggestion_unavailable"
         case .rateLimited: return "rate_limited"
         case .requestMalformed: return "request.malformed"
         case .requestTooLarge: return "request.too_large"
@@ -739,6 +759,21 @@ public enum TulaErrorDefinitions {
     /// `organization.role_limit`
     public static let organizationRoleLimit = TulaErrorDefinition(code: .organizationRoleLimit, status: 409, message: "This environment has the most custom roles it can have.")
 
+    /// `organization.domain_public`
+    public static let organizationDomainPublic = TulaErrorDefinition(code: .organizationDomainPublic, status: 422, message: "A public email domain cannot be claimed by an organization.")
+
+    /// `organization.domain_taken`
+    public static let organizationDomainTaken = TulaErrorDefinition(code: .organizationDomainTaken, status: 409, message: "That domain is verified for an organization already.")
+
+    /// `organization.domain_address_mismatch`
+    public static let organizationDomainAddressMismatch = TulaErrorDefinition(code: .organizationDomainAddressMismatch, status: 422, message: "That address is not on the domain.")
+
+    /// `organization.domain_limit`
+    public static let organizationDomainLimit = TulaErrorDefinition(code: .organizationDomainLimit, status: 409, message: "This organization has the most domains it can have.")
+
+    /// `organization.suggestion_unavailable`
+    public static let organizationSuggestionUnavailable = TulaErrorDefinition(code: .organizationSuggestionUnavailable, status: 403, message: "You cannot join that organization.")
+
     /// `rate_limited`
     public static let rateLimited = TulaErrorDefinition(code: .rateLimited, status: 429, message: "Too many requests. Try again shortly.")
 
@@ -870,6 +905,11 @@ public enum TulaErrorDefinitions {
         organizationRoleInUse,
         organizationRoleBuiltIn,
         organizationRoleLimit,
+        organizationDomainPublic,
+        organizationDomainTaken,
+        organizationDomainAddressMismatch,
+        organizationDomainLimit,
+        organizationSuggestionUnavailable,
         rateLimited,
         requestMalformed,
         requestTooLarge,

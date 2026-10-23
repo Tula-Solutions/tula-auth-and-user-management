@@ -123,8 +123,16 @@ import { join } from 'node:path'
  * `state.organizationId`, and `setActiveOrganization` with its stale-generation handling
  * (shaped like `stepUp`, which it shares `send` and `commit` with). The budget moved by
  * exactly those 462 bytes, from 17,306 to 17,768: the room is the 4 bytes it was.
+ * Verified domains (ADR 0065, Orgs 05) added 246 bytes, from 17,764 to 18,010: the five
+ * contract codes (`organization.domain_public`, `.domain_taken`, `.domain_address_mismatch`,
+ * `.domain_limit`, `.suggestion_unavailable`) with their messages, the seven rows of the
+ * generated table of operations (the two the client calls, `organizations.suggestions()` and
+ * `.join()`, and the five a member who manages an organization's domains would call, which
+ * the client does not wrap yet but the table lists all the same), and the two methods. The
+ * budget moved by exactly those 246 bytes, from 17,768 to 18,014: the room is the 4 bytes it
+ * was.
  */
-const GZIP_BUDGET_BYTES = 17_768
+const GZIP_BUDGET_BYTES = 18_014
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

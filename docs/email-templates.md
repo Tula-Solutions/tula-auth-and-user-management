@@ -97,6 +97,7 @@ template is refused when you save it.
 | `password_reset` | A password reset was asked for an address that has an account. | `code` | `appName`, `expiresInMinutes` |
 | `sign_in` | A sign-in by emailed code or link was asked for an address that has an account. | `code`, `link` | `appName`, `expiresInMinutes` |
 | `step_up` | A signed-in user without a second factor confirms it is them before a sensitive change. | `code` | `appName`, `expiresInMinutes` |
+| `organization_domain_verification` | An administrator of an organization claims a domain; the code is sent to an address on it ([ADR 0065](adr/0065-organizations.md)). | `code` | `appName`, `expiresInMinutes` |
 
 The built-in subjects lead with the code, so that it can be read from a notification. Yours
 need not.

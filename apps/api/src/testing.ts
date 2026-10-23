@@ -18,6 +18,7 @@ import { MemoryMailer } from '~/adapters/memory/mailer'
 import { MemoryNativeAppStore } from '~/adapters/memory/native-apps'
 import { type FakeOAuthProviders, fakeOAuthProviders } from '~/adapters/memory/oauth'
 import { MemoryOAuthProviderStore } from '~/adapters/memory/oauth-providers'
+import { MemoryOrganizationDomainStore } from '~/adapters/memory/organization-domains'
 import { MemoryOrganizationStore } from '~/adapters/memory/organizations'
 import { FakeOutbound } from '~/adapters/memory/outbound'
 import { MemoryPasskeyStore } from '~/adapters/memory/passkeys'
@@ -74,6 +75,7 @@ export interface TestDeps extends Deps {
   hooks: MemoryHookStore
   nativeApps: MemoryNativeAppStore
   organizations: MemoryOrganizationStore
+  organizationDomains: MemoryOrganizationDomainStore
   proposals: MemoryProposalStore
   outbound: FakeOutbound
 }
@@ -119,6 +121,7 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
   // beside memory ones) cannot report to a memory repository at all: it is taken as it is,
   // and the repository then has nobody reporting to it, so its `enableSmsFactor` throws.
   const users = overrides.users ?? new MemoryUserRepository(activityLog)
+  const organizations = overrides.organizations ?? new MemoryOrganizationStore(activityLog, users)
   const factors = overrides.factors ?? new MemoryFactorStore(activityLog, users)
   const passkeys = overrides.passkeys ?? new MemoryPasskeyStore(activityLog, users)
   if (factors instanceof MemoryFactorStore && !factors.belongsTo(users)) {
@@ -173,7 +176,8 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     webhookDeliveries: new MemoryWebhookDeliveryStore(activityLog, webhookEndpoints),
     hooks: new MemoryHookStore(activityLog),
     nativeApps: new MemoryNativeAppStore(activityLog),
-    organizations: new MemoryOrganizationStore(activityLog, users),
+    organizations,
+    organizationDomains: new MemoryOrganizationDomainStore(activityLog, organizations),
     proposals: new MemoryProposalStore(activityLog, apiKeys),
     // The tier of `TEST_CONFIG`, and a resolver that knows only the names a test gives it.
     outbound: new FakeOutbound((overrides.config ?? TEST_CONFIG).tier),

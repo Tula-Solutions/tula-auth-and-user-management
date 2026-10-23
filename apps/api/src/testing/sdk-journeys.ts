@@ -2506,6 +2506,101 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
     )
 
     journey(
+      'verified domains: suggest and auto-join',
+      'verified domains: an address on an organization\u2019s verified domain joins it at sign-up (auto-join) or is offered it to join (suggest); the server decides again, and a removed domain offers and joins nobody',
+      async () => {
+        const s = await server()
+        const read = await s.admin('GET', '/v1/admin/settings')
+        const { settings } = (await read.json()) as { settings: EnvironmentSettings }
+        const saved = await s.admin(
+          'PUT',
+          '/v1/admin/settings',
+          {
+            ...settings,
+            organizations: {
+              enabled: true,
+              allowUserCreated: false,
+              maxCreatedPerUser: 1,
+              creatorRole: 'admin',
+              defaultRole: 'member',
+              personalAccount: true,
+            },
+          },
+          { 'if-match': read.headers.get('etag') ?? '' }
+        )
+        expect(saved.status).toBe(200)
+
+        const org = (await (
+          await s.admin('POST', '/v1/admin/organizations', {
+            name: 'Domain Org',
+            slug: 'domain-org',
+          })
+        ).json()) as { id: string }
+        const domain = `corp-${org.id.slice(-8)}.example`
+        const base = `/v1/admin/organizations/${org.id}/domains`
+        const claimed = await s.admin('POST', base, {
+          domain,
+          email: `ada@${domain}`,
+          mode: 'auto_join',
+        })
+        expect(claimed.status).toBe(201)
+        const { id: domainId } = (await claimed.json()) as { id: string }
+
+        // Until the code is entered the claim grants nothing.
+        const early = await signUp(s, NATIVE, `early@${domain}`)
+        expect((await early.tula.organizations.list()).data).toEqual([])
+        expect((await early.tula.organizations.suggestions()).data).toEqual([])
+        expect(
+          (await s.admin('POST', `${base}/${domainId}/verify`, { code: '000000' })).status
+        ).toBe(422)
+        const verified = await s.admin('POST', `${base}/${domainId}/verify`, {
+          code: s.code(`ada@${domain}`),
+        })
+        expect(verified.status).toBe(200)
+
+        // Auto-join: a new account with a verified address on the domain is a member.
+        const maya = await signUp(s, NATIVE, `maya@${domain}`)
+        const mine = await maya.tula.organizations.list()
+        expect(mine.data.map((one) => [one.id, one.role])).toEqual([[org.id, 'member']])
+        expect((await maya.tula.organizations.suggestions()).data).toEqual([])
+
+        // Another domain is offered nothing and cannot join; the account from before the
+        // domain was verified was not joined.
+        const stranger = await signUp(s)
+        expect((await stranger.tula.organizations.suggestions()).data).toEqual([])
+        expect((await caught(stranger.tula.organizations.join(org.id))).code).toBe(
+          'organization.suggestion_unavailable'
+        )
+        expect((await early.tula.organizations.list()).data).toEqual([])
+
+        // Suggest: the organization is offered, by name, and the user joins it once.
+        const changed = await s.admin('PATCH', `${base}/${domainId}`, { mode: 'suggest' })
+        expect(changed.status).toBe(200)
+        const kai = await signUp(s, NATIVE, `kai@${domain}`)
+        expect((await kai.tula.organizations.list()).data).toEqual([])
+        expect((await kai.tula.organizations.suggestions()).data).toEqual([
+          { id: org.id, name: 'Domain Org', slug: 'domain-org' },
+        ])
+        const joined = await kai.tula.organizations.join(org.id)
+        expect(joined).toMatchObject({ id: org.id, role: 'member' })
+        expect(kai.tula.state).toMatchObject({ organizationId: null })
+        expect((await caught(kai.tula.organizations.join(org.id))).code).toBe(
+          'organization.member_exists'
+        )
+
+        // Removed: nobody is offered it or joined to it any more, and members stay.
+        expect((await s.admin('DELETE', `${base}/${domainId}`)).status).toBe(204)
+        expect((await caught(early.tula.organizations.join(org.id))).code).toBe(
+          'organization.suggestion_unavailable'
+        )
+        const late = await signUp(s, NATIVE, `late@${domain}`)
+        expect((await late.tula.organizations.list()).data).toEqual([])
+        expect((await late.tula.organizations.suggestions()).data).toEqual([])
+        expect((await maya.tula.organizations.list()).data).toHaveLength(1)
+      }
+    )
+
+    journey(
       'required second factor',
       'policy required: sign-in and sign-up stop at needs_factor_enrolment and complete with backup codes; the factor cannot be turned off',
       async () => {

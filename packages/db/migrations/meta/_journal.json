@@ -281,6 +281,13 @@
       "when": 1792726732330,
       "tag": "0039_session_active_organization",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1792729527909,
+      "tag": "0041_organization_domains",
+      "breakpoints": true
     }
   ]
 }

@@ -40,6 +40,7 @@ export const SAMPLE_EMAILS: Readonly<Record<EmailTemplateKind, EmailMessage>> = 
   password_reset: { type: 'password_reset', ...code },
   sign_in: { type: 'sign_in', ...code, linkUrl: SAMPLE_LINK },
   step_up: { type: 'step_up', ...code },
+  organization_domain_verification: { type: 'organization_domain_verification', ...code },
   account_exists: { type: 'account_exists' },
   no_account: { type: 'no_account' },
   no_account_sign_in: { type: 'no_account_sign_in' },

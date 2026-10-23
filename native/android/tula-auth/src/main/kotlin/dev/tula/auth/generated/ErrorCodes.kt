@@ -380,6 +380,26 @@ sealed class ErrorCode {
         override val rawValue: String = "organization.role_limit"
     }
 
+    object OrganizationDomainPublic : ErrorCode() {
+        override val rawValue: String = "organization.domain_public"
+    }
+
+    object OrganizationDomainTaken : ErrorCode() {
+        override val rawValue: String = "organization.domain_taken"
+    }
+
+    object OrganizationDomainAddressMismatch : ErrorCode() {
+        override val rawValue: String = "organization.domain_address_mismatch"
+    }
+
+    object OrganizationDomainLimit : ErrorCode() {
+        override val rawValue: String = "organization.domain_limit"
+    }
+
+    object OrganizationSuggestionUnavailable : ErrorCode() {
+        override val rawValue: String = "organization.suggestion_unavailable"
+    }
+
     object RateLimited : ErrorCode() {
         override val rawValue: String = "rate_limited"
     }
@@ -533,6 +553,11 @@ sealed class ErrorCode {
                 OrganizationRoleInUse,
                 OrganizationRoleBuiltIn,
                 OrganizationRoleLimit,
+                OrganizationDomainPublic,
+                OrganizationDomainTaken,
+                OrganizationDomainAddressMismatch,
+                OrganizationDomainLimit,
+                OrganizationSuggestionUnavailable,
                 RateLimited,
                 RequestMalformed,
                 RequestTooLarge,
@@ -641,6 +666,11 @@ sealed class ErrorCode {
             "organization.role_in_use" -> OrganizationRoleInUse
             "organization.role_built_in" -> OrganizationRoleBuiltIn
             "organization.role_limit" -> OrganizationRoleLimit
+            "organization.domain_public" -> OrganizationDomainPublic
+            "organization.domain_taken" -> OrganizationDomainTaken
+            "organization.domain_address_mismatch" -> OrganizationDomainAddressMismatch
+            "organization.domain_limit" -> OrganizationDomainLimit
+            "organization.suggestion_unavailable" -> OrganizationSuggestionUnavailable
             "rate_limited" -> RateLimited
             "request.malformed" -> RequestMalformed
             "request.too_large" -> RequestTooLarge
@@ -953,6 +983,21 @@ object TulaErrorDefinitions {
     /** `organization.role_limit` */
     val organizationRoleLimit: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationRoleLimit, 409, "This environment has the most custom roles it can have.")
 
+    /** `organization.domain_public` */
+    val organizationDomainPublic: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationDomainPublic, 422, "A public email domain cannot be claimed by an organization.")
+
+    /** `organization.domain_taken` */
+    val organizationDomainTaken: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationDomainTaken, 409, "That domain is verified for an organization already.")
+
+    /** `organization.domain_address_mismatch` */
+    val organizationDomainAddressMismatch: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationDomainAddressMismatch, 422, "That address is not on the domain.")
+
+    /** `organization.domain_limit` */
+    val organizationDomainLimit: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationDomainLimit, 409, "This organization has the most domains it can have.")
+
+    /** `organization.suggestion_unavailable` */
+    val organizationSuggestionUnavailable: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationSuggestionUnavailable, 403, "You cannot join that organization.")
+
     /** `rate_limited` */
     val rateLimited: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.RateLimited, 429, "Too many requests. Try again shortly.")
 
@@ -1084,6 +1129,11 @@ object TulaErrorDefinitions {
         organizationRoleInUse,
         organizationRoleBuiltIn,
         organizationRoleLimit,
+        organizationDomainPublic,
+        organizationDomainTaken,
+        organizationDomainAddressMismatch,
+        organizationDomainLimit,
+        organizationSuggestionUnavailable,
         rateLimited,
         requestMalformed,
         requestTooLarge,

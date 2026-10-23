@@ -151,6 +151,80 @@ describe('purge', () => {
     expect(await Retention.purge(deps)).toMatchObject({ smsCodeCounts: 1 })
   })
 
+  test('removes a pending domain claim an hour after its code expired, never a verified one, and none sooner', async () => {
+    const at = deps.clock.now()
+    const organization = async (scope: Tenant) => {
+      const id = deps.ids.next()
+      await deps.organizations.insert(
+        {
+          id,
+          projectId: scope.projectId,
+          environmentId: scope.environmentId,
+          name: 'Acme',
+          slug: `acme-${id.slice(-8)}`,
+          createdBy: null,
+          createdAt: at,
+          updatedAt: at,
+        },
+        Audit.none('fixture')
+      )
+      return id
+    }
+    const claim = async (
+      scope: Tenant,
+      organizationId: string,
+      domain: string,
+      expiresIn: number
+    ) => {
+      const id = deps.ids.next()
+      await deps.organizationDomains.claim(
+        {
+          id,
+          projectId: scope.projectId,
+          environmentId: scope.environmentId,
+          organizationId,
+          domain,
+          mode: 'suggest',
+          codeHash: 'hash',
+          codeExpiresAt: from(expiresIn),
+          at,
+          limit: 10,
+        },
+        Audit.none('fixture')
+      )
+      return id
+    }
+    const org = await organization(tenant)
+    const otherOrg = await organization(otherTenant)
+    await claim(tenant, org, 'old.example', -HOUR - 1)
+    await claim(tenant, org, 'recent.example', -HOUR + 60_000)
+    await claim(tenant, org, 'live.example', 10 * 60_000)
+    await claim(otherTenant, otherOrg, 'old.example', -5 * DAY)
+    const kept = await claim(tenant, org, 'verified.example', -5 * DAY)
+    // A verified claim has no code left to expire: it is the organization's, and stays.
+    await deps.organizationDomains.verify(
+      tenant.environmentId,
+      org,
+      kept,
+      'hash',
+      from(-6 * DAY),
+      Audit.none('fixture')
+    )
+    expect(await Retention.purge(deps)).toMatchObject({ domainClaims: 2, failed: 0 })
+    const left = await deps.organizationDomains.list(tenant.environmentId, org)
+    expect(left.map((row) => row.domain).sort()).toEqual([
+      'live.example',
+      'recent.example',
+      'verified.example',
+    ])
+    expect(await Retention.purge(deps)).toMatchObject({ domainClaims: 0 })
+    deps.clock.advance('2h')
+    expect(await Retention.purge(deps)).toMatchObject({ domainClaims: 2 })
+    expect(
+      (await deps.organizationDomains.list(tenant.environmentId, org)).map((row) => row.domain)
+    ).toEqual(['verified.example'])
+  })
+
   test('removes the counts of a hook\u2019s calls of hours more than seven days ago, and none sooner', async () => {
     const hook = async (scope: Tenant) => {
       const id = deps.ids.next()
@@ -224,6 +298,7 @@ describe('purge', () => {
       proposals: 0,
       hookCallCounts: 0,
       testUsers: 0,
+      domainClaims: 0,
     })
     expect(await deps.flowAttempts.findById(tenant.environmentId, abandoned)).toBeNull()
     expect(await deps.flowAttempts.findById(otherTenant.environmentId, other)).toBeNull()
@@ -312,6 +387,7 @@ describe('purge', () => {
       proposals: 0,
       hookCallCounts: 0,
       testUsers: 0,
+      domainClaims: 0,
     })
     expect(await has(tenant, abandoned)).toBe(false)
     expect(await has(otherTenant, foreign)).toBe(false)
@@ -364,6 +440,7 @@ describe('purge', () => {
           proposals: 0,
           hookCallCounts: 0,
           testUsers: 0,
+          domainClaims: 0,
         },
       ],
     ])
@@ -615,6 +692,7 @@ describe('purge', () => {
       proposals: 0,
       hookCallCounts: 0,
       testUsers: 0,
+      domainClaims: 0,
     })
     expect(await deps.flowAttempts.findById(otherTenant.environmentId, other)).toBeNull()
     expect(await hasSession(otherTenant, stale.id)).toBe(false)
@@ -1079,6 +1157,7 @@ describe('run', () => {
           proposals: 0,
           hookCallCounts: 0,
           testUsers: 0,
+          domainClaims: 0,
         },
       ],
     ])
@@ -1115,6 +1194,7 @@ describe('run', () => {
         proposals: 0,
         hookCallCounts: 0,
         testUsers: 0,
+        domainClaims: 0,
       },
     ])
   })

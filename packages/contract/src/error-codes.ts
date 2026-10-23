@@ -428,6 +428,35 @@ export const ERROR_DEFINITIONS = {
     message: 'This environment has the most custom roles it can have.',
   },
 
+  // Verified domains (ADR 0065). `domain_public`: a public mail domain (gmail.com, …) proves
+  // nothing about its holder and cannot be claimed. `domain_taken`: the domain is verified for
+  // an organization of this environment already (this one or another), so it cannot be
+  // claimed again. `domain_address_mismatch`: the address the code goes to is not, exactly,
+  // on the domain (a subdomain is another domain). `domain_limit`: the organization has
+  // `params.max` domains already. `suggestion_unavailable`: the organization is not one this
+  // user can join (no verified domain of it matches a verified address of theirs); it is also
+  // what an organization that does not exist answers.
+  'organization.domain_public': {
+    status: 422,
+    message: 'A public email domain cannot be claimed by an organization.',
+  },
+  'organization.domain_taken': {
+    status: 409,
+    message: 'That domain is verified for an organization already.',
+  },
+  'organization.domain_address_mismatch': {
+    status: 422,
+    message: 'That address is not on the domain.',
+  },
+  'organization.domain_limit': {
+    status: 409,
+    message: 'This organization has the most domains it can have.',
+  },
+  'organization.suggestion_unavailable': {
+    status: 403,
+    message: 'You cannot join that organization.',
+  },
+
   rate_limited: { status: 429, message: 'Too many requests. Try again shortly.' },
   'request.malformed': { status: 400, message: 'The request could not be read.' },
   'request.too_large': { status: 413, message: 'The request body is too large.' },

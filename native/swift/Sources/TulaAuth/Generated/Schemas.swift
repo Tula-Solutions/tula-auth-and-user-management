@@ -2063,7 +2063,203 @@ public struct OAuthStartRequest: Codable, Hashable, Sendable {
     }
 }
 
+public struct OrganizationDomain: Codable, Hashable, Sendable {
+    public var id: String
+    public var domain: String
+    public var mode: OrganizationDomainMode
+    public var verifiedAt: String?
+    public var codeExpiresAt: String?
+    /// Format: `date-time`.
+    public var createdAt: String
+    /// Format: `date-time`.
+    public var updatedAt: String
+
+    public init(
+        id: String,
+        domain: String,
+        mode: OrganizationDomainMode,
+        verifiedAt: String?,
+        codeExpiresAt: String?,
+        createdAt: String,
+        updatedAt: String
+    ) {
+        self.id = id
+        self.domain = domain
+        self.mode = mode
+        self.verifiedAt = verifiedAt
+        self.codeExpiresAt = codeExpiresAt
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case domain
+        case mode
+        case verifiedAt
+        case codeExpiresAt
+        case createdAt
+        case updatedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.domain = try container.decode(String.self, forKey: .domain)
+        self.mode = try container.decode(OrganizationDomainMode.self, forKey: .mode)
+        self.verifiedAt = try container.decode(String?.self, forKey: .verifiedAt)
+        self.codeExpiresAt = try container.decode(String?.self, forKey: .codeExpiresAt)
+        self.createdAt = try container.decode(String.self, forKey: .createdAt)
+        self.updatedAt = try container.decode(String.self, forKey: .updatedAt)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.id, forKey: .id)
+        try container.encode(self.domain, forKey: .domain)
+        try container.encode(self.mode, forKey: .mode)
+        try container.encode(self.verifiedAt, forKey: .verifiedAt)
+        try container.encode(self.codeExpiresAt, forKey: .codeExpiresAt)
+        try container.encode(self.createdAt, forKey: .createdAt)
+        try container.encode(self.updatedAt, forKey: .updatedAt)
+    }
+}
+
+public struct OrganizationDomainList: Codable, Hashable, Sendable {
+    public var data: [OrganizationDomain]
+
+    public init(
+        data: [OrganizationDomain]
+    ) {
+        self.data = data
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case data
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.data = try container.decode([OrganizationDomain].self, forKey: .data)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.data, forKey: .data)
+    }
+}
+
+public enum OrganizationDomainMode: Codable, Hashable, Sendable {
+    case suggest
+    case autoJoin
+    /// A value this version does not know, as the API wrote it.
+    case unknown(String)
+
+    /// Every value this version knows.
+    public static let allKnown: [OrganizationDomainMode] = [
+        .suggest,
+        .autoJoin,
+    ]
+
+    /// The value for a string of the API: `unknown` for one this version does not know.
+    public init(rawValue: String) {
+        switch rawValue {
+        case "suggest": self = .suggest
+        case "auto_join": self = .autoJoin
+        default: self = .unknown(rawValue)
+        }
+    }
+
+    /// The value as the API writes it.
+    public var rawValue: String {
+        switch self {
+        case .suggest: return "suggest"
+        case .autoJoin: return "auto_join"
+        case .unknown(let value): return value
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(self.rawValue)
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.rawValue == rhs.rawValue
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(self.rawValue)
+    }
+}
+
+public typealias OrganizationDomainName = String
+
 public typealias OrganizationSlug = String
+
+public struct OrganizationSuggestion: Codable, Hashable, Sendable {
+    public var id: String
+    public var name: String
+    public var slug: String
+
+    public init(
+        id: String,
+        name: String,
+        slug: String
+    ) {
+        self.id = id
+        self.name = name
+        self.slug = slug
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case slug
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.name = try container.decode(String.self, forKey: .name)
+        self.slug = try container.decode(String.self, forKey: .slug)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.id, forKey: .id)
+        try container.encode(self.name, forKey: .name)
+        try container.encode(self.slug, forKey: .slug)
+    }
+}
+
+public struct OrganizationSuggestionList: Codable, Hashable, Sendable {
+    public var data: [OrganizationSuggestion]
+
+    public init(
+        data: [OrganizationSuggestion]
+    ) {
+        self.data = data
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case data
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.data = try container.decode([OrganizationSuggestion].self, forKey: .data)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.data, forKey: .data)
+    }
+}
 
 public struct PaginationMeta: Codable, Hashable, Sendable {
     public var totalCount: Int
@@ -3946,6 +4142,42 @@ public struct SmsFactorConfirmRequest: Codable, Hashable, Sendable {
     }
 }
 
+public struct StartOrganizationDomainRequest: Codable, Hashable, Sendable {
+    public var domain: OrganizationDomainName
+    public var email: String
+    public var mode: OrganizationDomainMode
+
+    public init(
+        domain: OrganizationDomainName,
+        email: String,
+        mode: OrganizationDomainMode
+    ) {
+        self.domain = domain
+        self.email = email
+        self.mode = mode
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case domain
+        case email
+        case mode
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.domain = try container.decode(OrganizationDomainName.self, forKey: .domain)
+        self.email = try container.decode(String.self, forKey: .email)
+        self.mode = try container.decode(OrganizationDomainMode.self, forKey: .mode)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.domain, forKey: .domain)
+        try container.encode(self.email, forKey: .email)
+        try container.encode(self.mode, forKey: .mode)
+    }
+}
+
 public struct StepUpEmailCode: Codable, Hashable, Sendable {
     /// Always `"email_code"` today.
     public var method: String
@@ -4275,6 +4507,30 @@ public struct TotpEnrolment: Codable, Hashable, Sendable {
     }
 }
 
+public struct UpdateOrganizationDomainRequest: Codable, Hashable, Sendable {
+    public var mode: OrganizationDomainMode
+
+    public init(
+        mode: OrganizationDomainMode
+    ) {
+        self.mode = mode
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case mode
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.mode = try container.decode(OrganizationDomainMode.self, forKey: .mode)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.mode, forKey: .mode)
+    }
+}
+
 public struct UserOrganization: Codable, Hashable, Sendable {
     public var id: String
     public var name: String
@@ -4367,6 +4623,30 @@ public struct UserOrganizationList: Codable, Hashable, Sendable {
 }
 
 public struct VerifyEmailRequest: Codable, Hashable, Sendable {
+    public var code: String
+
+    public init(
+        code: String
+    ) {
+        self.code = code
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case code
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.code = try container.decode(String.self, forKey: .code)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.code, forKey: .code)
+    }
+}
+
+public struct VerifyOrganizationDomainRequest: Codable, Hashable, Sendable {
     public var code: String
 
     public init(

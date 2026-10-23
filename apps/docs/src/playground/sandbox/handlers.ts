@@ -68,6 +68,13 @@ export const UNSUPPORTED: Partial<Record<OperationId, string>> = {
   listMyOrganizations: 'the sandbox has no organizations',
   createMyOrganization: 'the sandbox has no organizations',
   setActiveOrganization: 'the sandbox has no organizations',
+  listMyOrganizationSuggestions: 'the sandbox has no organizations',
+  joinOrganizationSuggestion: 'the sandbox has no organizations',
+  listMyOrganizationDomains: 'the sandbox has no organizations',
+  startMyOrganizationDomain: 'the sandbox has no organizations',
+  verifyMyOrganizationDomain: 'the sandbox has no organizations',
+  updateMyOrganizationDomain: 'the sandbox has no organizations',
+  removeMyOrganizationDomain: 'the sandbox has no organizations',
 }
 
 /** The refusal an operation in {@link UNSUPPORTED} answers with. */
@@ -78,7 +85,14 @@ function unsupported(id: OperationId): never {
   if (
     id === 'listMyOrganizations' ||
     id === 'createMyOrganization' ||
-    id === 'setActiveOrganization'
+    id === 'setActiveOrganization' ||
+    id === 'listMyOrganizationSuggestions' ||
+    id === 'joinOrganizationSuggestion' ||
+    id === 'listMyOrganizationDomains' ||
+    id === 'startMyOrganizationDomain' ||
+    id === 'verifyMyOrganizationDomain' ||
+    id === 'updateMyOrganizationDomain' ||
+    id === 'removeMyOrganizationDomain'
   ) {
     // Organizations are an environment setting the sandbox leaves off.
     throw new SandboxError('organization.disabled')
@@ -930,6 +944,13 @@ export const HANDLERS: Handlers = {
   listMyOrganizations: () => unsupported('listMyOrganizations'),
   createMyOrganization: () => unsupported('createMyOrganization'),
   setActiveOrganization: () => unsupported('setActiveOrganization'),
+  listMyOrganizationSuggestions: () => unsupported('listMyOrganizationSuggestions'),
+  joinOrganizationSuggestion: () => unsupported('joinOrganizationSuggestion'),
+  listMyOrganizationDomains: () => unsupported('listMyOrganizationDomains'),
+  startMyOrganizationDomain: () => unsupported('startMyOrganizationDomain'),
+  verifyMyOrganizationDomain: () => unsupported('verifyMyOrganizationDomain'),
+  updateMyOrganizationDomain: () => unsupported('updateMyOrganizationDomain'),
+  removeMyOrganizationDomain: () => unsupported('removeMyOrganizationDomain'),
 
   // Two-step verification ---------------------------------------------------------------------
   getMyFactors: (ctx) => {

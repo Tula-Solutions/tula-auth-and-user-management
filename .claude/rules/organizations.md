@@ -10,6 +10,12 @@ paths:
   - "packages/db/migrations/0036_*"
   - "packages/db/migrations/0038_*"
   - "packages/db/migrations/0039_*"
+  - "packages/db/migrations/0041_*"
+  - "apps/api/src/modules/organization-domain/**"
+  - "apps/api/src/ports/organization-domain-store.ts"
+  - "apps/api/src/adapters/memory/organization-domains*"
+  - "apps/api/src/adapters/postgres/organization-domains*"
+  - "apps/api/src/adapters/organization-domain-store.suite.ts"
   - "packages/contract/src/organization*"
 ---
 
@@ -73,6 +79,25 @@ this file under "Area rules" and does not repeat it.
   field names: never a name and never a permission key. Permissions are never copied into a
   membership: they are read through the role at refresh time.
 
+- **Verified domains** (`modules/organization-domain`, ADR 0065, "Verified domains"). A pending
+  claim grants nothing: every join and every suggestion reads **verified** rows only. A code
+  is stored as a keyed hash (`hashCode`), never the code, and is checked after the store has
+  counted the guess (`recordAttempt`, atomic) and `deps.lockout` with `CREDENTIAL_LOCKOUT`
+  has counted the attempt (cleared on success); never compare first. The send limits (a
+  cooldown and an hourly cap per organization, a daily cap per environment, an hourly cap per
+  hashed address) are in `start` and a new send path goes through it. The grammar and the
+  public list are the contract's (`@tula-tech/contract/organization-domain-rules`): the
+  service, the database check and the dashboard never keep a second copy of the rule, and a
+  join re-checks the public list so that a claim stored before the list grew matches
+  nothing. **Joining at sign-up is `joinOnSignUp` and it never throws** (a failure is logged,
+  the sign-up completes); it runs for a sign-up only, never for a sign-in; and it counts only
+  `emailVerifiedAt`, only the exact domain of the address, never a banned user, and joins with
+  the environment's `defaultRole`. A client suggestion's join re-decides on the server
+  (`suggestion_unavailable`). The client routes check `org:sys:domains:manage` through
+  `requireEnabledManager` (`findUserMembership`, read now). **No event or audit entry holds
+  the address the code went to**; the domain is the one allowed string, in its own field
+  (`DOMAIN_FIELDS` in the event canary).
+
 ## What to test
 
 - Disabled: every route, reads included, answers `organization.disabled` and writes nothing.
@@ -89,3 +114,10 @@ this file under "Area rules" and does not repeat it.
   same; a removed or demoted member's next refresh drops or changes the claims and the session
   lives; an over-cap role issues no organization claims; two creates at the limit make one.
 - Adapter parity: a new store behaviour is a case of the shared suite, not of one adapter.
+- Verified domains: grammar and public-list tables (contract), a pending claim joins nothing,
+  a wrong code counts and the sixth guess is refused with the right code, an expired and a
+  replaced code, two organizations racing for one name, sign-up joins and sign-in does not,
+  an unverified, a banned, a subdomain and a stored-public-domain user match nothing, a
+  removed domain keeps its members, `joinOnSignUp` swallows a store failure, the client
+  routes' permission cases (forbidden, not a member, demoted at once), and the purge of
+  expired pending claims in both adapters.

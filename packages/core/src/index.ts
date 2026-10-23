@@ -95,6 +95,8 @@ export type {
   FlowKind,
   FlowStep,
   MfaPolicy,
+  OrganizationSuggestion,
+  OrganizationSuggestionList,
   Passkey,
   PasswordPolicy,
   PhoneCodeSent,

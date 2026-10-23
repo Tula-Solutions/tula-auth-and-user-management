@@ -50,6 +50,10 @@ const EMAIL_WORDS: Record<EmailTemplateKind, { label: string; when: string }> = 
     label: 'Confirmation code',
     when: 'A signed-in user without a second factor confirms it is them before a sensitive change.',
   },
+  organization_domain_verification: {
+    label: 'Organization domain code',
+    when: 'An organization administrator asked to verify a domain and the code is sent to an address on it.',
+  },
   account_exists: {
     label: 'Sign-up for an existing account',
     when: 'Someone tried to sign up with an address that already has an account.',

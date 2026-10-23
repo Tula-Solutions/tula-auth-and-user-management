@@ -1398,6 +1398,46 @@ waits for, so its work is bounded: past this many accounts the answer says `more
 const DEPENDENT_ACCOUNTS_SCAN_LIMIT: 1000
 ```
 
+### `DOMAINS_MANAGE_PERMISSION`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permission that lets a member claim, verify, change and remove the organization's
+domains through the client routes (ADR 0065, "Verified domains"). Read from the member's
+role at the time of the request, never from a token.
+
+```ts
+const DOMAINS_MANAGE_PERMISSION: SystemPermission
+```
+
+### `DOMAIN_PATTERN`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+The grammar of a claimable domain: two or more labels of lower-case ASCII letters, digits
+and hyphens (none at a label's end), joined by single full stops, the last label letters
+only (or punycode, `xn--…`). So: no upper case, no trailing full stop, no port or path, no
+underscore, no `@`, no wildcard, and no IP address (a numeric last label is refused, and so
+is the bracketed IPv6 form).
+
+**Internationalised domains are written in punycode** (`xn--bcher-kva.example`, never
+`bücher.example`): Unicode is refused, not converted, so a domain is stored and compared in
+the one spelling a mail server uses. The pattern is the grammar alone; the length bounds
+({@link MAX_DOMAIN_LENGTH}, {@link MAX_DOMAIN_LABEL_LENGTH}) and the public list are
+{@link domainRefusal}'s. `domainRefusal` runs it only over text of at most twice the length cap, so its work is bounded.
+
+```ts
+const DOMAIN_PATTERN: {}
+```
+
+**Example**
+
+```ts
+DOMAIN_PATTERN.test('acme.com') // true
+DOMAIN_PATTERN.test('Acme.com') // false
+DOMAIN_PATTERN.test('192.168.0.1') // false
+```
+
 ### `DPOP_ALGORITHMS`
 
 _constant_, defined in `packages/contract/src/device-binding.ts`
@@ -1571,6 +1611,16 @@ export interface DevicePublicJwk {
 const jwk: DevicePublicJwk = { kty: 'EC', crv: 'P-256', x: '…', y: '…' }
 ```
 
+### `DomainRefusal`
+
+_type_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Why a string is not a claimable domain.
+
+```ts
+export type DomainRefusal = 'grammar' | 'length' | 'public'
+```
+
 ### `DpopAlgorithm`
 
 _type_, defined in `packages/contract/src/device-binding.ts`
@@ -1727,8 +1777,9 @@ _constant_, defined in `packages/contract/src/email-template.ts`
 Every email whose wording an environment can change (ADR 0039): one kind per message the
 server sends, so that a template never has to say two different things.
 
-- `email_verification`, `password_reset`, `sign_in`, `step_up`: the messages that carry a
-  6-digit code (`sign_in` can carry a link as well).
+- `email_verification`, `password_reset`, `sign_in`, `step_up`, `organization_domain_verification`:
+  the messages that carry a 6-digit code (`sign_in` can carry a link as well). The last is
+  the code that shows an organization controls a domain (ADR 0065).
 - `account_exists`, `no_account`, `no_account_sign_in`, `email_in_use`: what is sent
   instead of a code, so that a sign-up, a reset, a sign-in and adding an address to an
   account (ADR 0059) answer alike for every address.
@@ -4232,6 +4283,37 @@ Most profiles an environment may define besides the built-in `web` and `mobile`.
 const MAX_CUSTOM_SESSION_PROFILES: 10
 ```
 
+### `MAX_DOMAINS_PER_ORGANIZATION`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+How many domains one organization can claim, verified or waiting for a code. A bound so that
+a signed-in administrator cannot fill the table.
+
+```ts
+const MAX_DOMAINS_PER_ORGANIZATION: 10
+```
+
+### `MAX_DOMAIN_LABEL_LENGTH`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Longest one label of a domain can be, in characters (RFC 1035).
+
+```ts
+const MAX_DOMAIN_LABEL_LENGTH: 63
+```
+
+### `MAX_DOMAIN_LENGTH`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Longest a whole domain can be, in characters (RFC 1035).
+
+```ts
+const MAX_DOMAIN_LENGTH: 253
+```
+
 ### `MAX_DPOP_PROOF_LENGTH`
 
 _constant_, defined in `packages/contract/src/device-binding.ts`
@@ -4723,6 +4805,16 @@ Shortest access-token lifetime a profile may set.
 
 ```ts
 const MIN_ACCESS_TOKEN_TTL: Duration
+```
+
+### `MIN_DOMAIN_LENGTH`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Shortest a domain can be: `a.bc`.
+
+```ts
+const MIN_DOMAIN_LENGTH: 4
 ```
 
 ### `MIN_IDLE_TIMEOUT`
@@ -5337,6 +5429,16 @@ The answer to starting an OAuth sign-in.
 const OAuthStartSchema
 ```
 
+### `ORGANIZATION_DOMAIN_MODES`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+How an organization treats a user who signs up with a verified address on its domain.
+
+```ts
+const ORGANIZATION_DOMAIN_MODES: readonly ["suggest", "auto_join"]
+```
+
 ### `ORGANIZATION_FIELDS`
 
 _constant_, defined in `packages/contract/src/organization.ts`
@@ -5436,6 +5538,81 @@ export interface OrganizationClaims {
   /** The permission keys of that role. */
   readonly orgPermissions: readonly string[]
 }
+```
+
+### `OrganizationDomain`
+
+_type_, defined in `packages/contract/src/organization-domain.ts`
+
+A domain of an organization.
+
+```ts
+export type OrganizationDomain = z.infer<typeof OrganizationDomainSchema>
+```
+
+### `OrganizationDomainList`
+
+_type_, defined in `packages/contract/src/organization-domain.ts`
+
+An organization's domains.
+
+```ts
+export type OrganizationDomainList = z.infer<typeof OrganizationDomainListSchema>
+```
+
+### `OrganizationDomainListSchema`
+
+_constant_, defined in `packages/contract/src/organization-domain.ts`
+
+An organization's domains, oldest first.
+
+```ts
+const OrganizationDomainListSchema
+```
+
+### `OrganizationDomainMode`
+
+_type_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+One of {@link ORGANIZATION_DOMAIN_MODES}.
+
+```ts
+export type OrganizationDomainMode = (typeof ORGANIZATION_DOMAIN_MODES)[number]
+```
+
+### `OrganizationDomainModeSchema`
+
+_constant_, defined in `packages/contract/src/organization-domain.ts`
+
+How an organization treats a user with a verified address on its domain.
+
+```ts
+const OrganizationDomainModeSchema: z.ZodEnum<{}>
+```
+
+### `OrganizationDomainNameSchema`
+
+_constant_, defined in `packages/contract/src/organization-domain.ts`
+
+A domain an organization can claim: see {@link DOMAIN_PATTERN }. The grammar and the length
+bounds are checked here; that the domain is not a **public** mail domain is a rule the
+server answers with its own code (`organization.domain_public`), because it is a refusal of
+a well-formed claim.
+
+```ts
+const OrganizationDomainNameSchema: z.ZodString
+```
+
+### `OrganizationDomainSchema`
+
+_constant_, defined in `packages/contract/src/organization-domain.ts`
+
+A domain of an organization. **Pending** (`verifiedAt` is `null`): a code was emailed and
+not yet entered; it grants nothing. **Verified**: a user who signs up with a verified
+address on it is suggested the organization or joined to it, by `mode`.
+
+```ts
+const OrganizationDomainSchema
 ```
 
 ### `OrganizationField`
@@ -5587,6 +5764,47 @@ An organization's slug: see {@link ORGANIZATION_SLUG_PATTERN}.
 
 ```ts
 const OrganizationSlugSchema: z.ZodString
+```
+
+### `OrganizationSuggestion`
+
+_type_, defined in `packages/contract/src/organization-domain.ts`
+
+An organization the user can join.
+
+```ts
+export type OrganizationSuggestion = z.infer<typeof OrganizationSuggestionSchema>
+```
+
+### `OrganizationSuggestionList`
+
+_type_, defined in `packages/contract/src/organization-domain.ts`
+
+The user's suggestions.
+
+```ts
+export type OrganizationSuggestionList = z.infer<typeof OrganizationSuggestionListSchema>
+```
+
+### `OrganizationSuggestionListSchema`
+
+_constant_, defined in `packages/contract/src/organization-domain.ts`
+
+The organizations the signed-in user is suggested, none of which they belong to.
+
+```ts
+const OrganizationSuggestionListSchema
+```
+
+### `OrganizationSuggestionSchema`
+
+_constant_, defined in `packages/contract/src/organization-domain.ts`
+
+An organization the signed-in user can join because of a verified address on its verified
+domain. Its name and slug only: the user is told nothing of its members.
+
+```ts
+const OrganizationSuggestionSchema: z.ZodObject<{ id: z.ZodString; name: z.ZodString; slug: z.ZodString; }, z.core.$strip>
 ```
 
 ### `PACKAGE_NAME_PATTERN`
@@ -5868,6 +6086,38 @@ const PROPOSAL_TARGET_TYPES: readonly ["user", "session", "oauth_provider"]
 
 ```ts
 const type: ProposalTargetType = 'user'
+```
+
+### `PUBLIC_EMAIL_BRANDS`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Provider names whose every country domain is public: `yahoo.com`, `yahoo.co.uk`, `yahoo.fr`
+and `yahoo.co.jp` are all `yahoo`. A domain matches when its **first** label is one of
+these and what follows is a top-level domain, or a short second-level one and a top-level
+one (`co.uk`, `com.br`): `yahoo.com` and `hotmail.co.uk` match, `yahoo.acme.com` and
+`notyahoo.com` do not.
+
+```ts
+const PUBLIC_EMAIL_BRANDS: readonly string[]
+```
+
+### `PUBLIC_EMAIL_DOMAINS`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Domains that anyone can get an address at, and that so prove nothing about the holder of an
+address on them. **Documented here and nowhere else**: a claim of one is refused
+(`organization.domain_public`) and a join never matches one, even a claim stored before the
+list grew. The list is the large free consumer mailbox providers, the internet providers
+that give every customer an address, and the common national ones; a company's own domain
+is never on it.
+
+Providers that sell a mailbox under many country domains (`yahoo.co.uk`, `yahoo.fr`,
+`hotmail.de`, …) are in {@link PUBLIC_EMAIL_BRANDS} instead.
+
+```ts
+const PUBLIC_EMAIL_DOMAINS: readonly string[]
 ```
 
 ### `PUBLISHABLE_KEY_HEADER`
@@ -8043,6 +8293,28 @@ Counts only. No phone number, and nothing about who asked.
 const SmsUsageSchema
 ```
 
+### `StartOrganizationDomainRequest`
+
+_type_, defined in `packages/contract/src/organization-domain.ts`
+
+The body that claims a domain.
+
+```ts
+export type StartOrganizationDomainRequest = z.infer<typeof StartOrganizationDomainRequestSchema>
+```
+
+### `StartOrganizationDomainRequestSchema`
+
+_constant_, defined in `packages/contract/src/organization-domain.ts`
+
+Claim a domain: email a code to an address **on that domain**, and say what a verified
+domain does. Sent again for a pending claim it emails a new code (the old one stops
+working) and may change `mode`.
+
+```ts
+const StartOrganizationDomainRequestSchema: z.ZodObject<{ domain: z.ZodString; email: z.ZodString; mode: z.ZodEnum<{}>; }, z.core.$strict>
+```
+
 ### `StepUpEmailCode`
 
 _type_, defined in `packages/contract/src/mfa.ts`
@@ -8546,6 +8818,26 @@ field of the app's own platform; the other is refused.
 const UpdateNativeAppRequestSchema
 ```
 
+### `UpdateOrganizationDomainRequest`
+
+_type_, defined in `packages/contract/src/organization-domain.ts`
+
+The body that changes a domain's mode.
+
+```ts
+export type UpdateOrganizationDomainRequest = z.infer<typeof UpdateOrganizationDomainRequestSchema>
+```
+
+### `UpdateOrganizationDomainRequestSchema`
+
+_constant_, defined in `packages/contract/src/organization-domain.ts`
+
+Change what a domain does.
+
+```ts
+const UpdateOrganizationDomainRequestSchema: z.ZodObject<{ mode: z.ZodEnum<{}>; }, z.core.$strict>
+```
+
 ### `UpdateOrganizationMemberRequest`
 
 _type_, defined in `packages/contract/src/organization.ts`
@@ -8787,6 +9079,26 @@ Submit an emailed verification code for an attempt waiting on `needs_email_verif
 
 ```ts
 const VerifyEmailRequestSchema: z.ZodObject<{ code: z.ZodString; }, z.core.$strip>
+```
+
+### `VerifyOrganizationDomainRequest`
+
+_type_, defined in `packages/contract/src/organization-domain.ts`
+
+The body that verifies a claimed domain.
+
+```ts
+export type VerifyOrganizationDomainRequest = z.infer<typeof VerifyOrganizationDomainRequestSchema>
+```
+
+### `VerifyOrganizationDomainRequestSchema`
+
+_constant_, defined in `packages/contract/src/organization-domain.ts`
+
+The code that verifies a claimed domain.
+
+```ts
+const VerifyOrganizationDomainRequestSchema: z.ZodObject<{ code: z.ZodString; }, z.core.$strict>
 ```
 
 ### `VerifySessionRequest`
@@ -9535,6 +9847,63 @@ export function defaultDeviceBinding(name: string): DeviceBindingPolicy
 ```ts
 defaultDeviceBinding('web') // 'none'
 defaultDeviceBinding('back-office') // 'optional'
+```
+
+### `domainOfAddress`
+
+_function_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+The domain of an email address in the spelling the server stores (lower case), or `null`
+when the text has no `@` or ends in one.
+
+It is everything after the **last** `@`, unchanged: no subdomain is cut off, so
+`a@mail.acme.com` is `mail.acme.com` and **never** matches a claim on `acme.com`. Whether the
+result is a domain at all is {@link domainRefusal}'s question.
+
+```ts
+export function domainOfAddress(address: string): string | null
+```
+
+**Parameters**
+
+- `address`: An email address, normalised (lower case) by the caller.
+
+**Returns** The part after the last `@`, or `null`.
+
+**Example**
+
+```ts
+domainOfAddress('ada@acme.com') // 'acme.com'
+domainOfAddress('ada@mail.acme.com') // 'mail.acme.com'
+```
+
+### `domainRefusal`
+
+_function_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Why a string cannot be claimed as a domain, or `null` when it can.
+
+```ts
+export function domainRefusal(domain: string): DomainRefusal | null
+```
+
+**Parameters**
+
+- `domain`: The text to judge.
+
+**Returns**
+
+`grammar` (not a lower-case ASCII domain name: upper case, Unicode, an IP address,
+a single label), `length` (a label over {@link MAX_DOMAIN_LABEL_LENGTH}, the whole over
+{@link MAX_DOMAIN_LENGTH} or under {@link MIN_DOMAIN_LENGTH}), `public` (a public mail
+domain), or `null`.
+
+**Example**
+
+```ts
+domainRefusal('acme.com') // null
+domainRefusal('gmail.com') // 'public'
+domainRefusal('bücher.example') // 'grammar'
 ```
 
 ### `durationToMs`
@@ -10292,6 +10661,31 @@ export function isProposalTargetId(
 isProposalTargetId('oauth_provider', 'google') // true
 isProposalTargetId('user', 'google') // false
 isProposalTargetId('user', '0199C2F4-7A10-7C3E-9B1A-5D2E8F4A6C01') // false: lower case only
+```
+
+### `isPublicEmailDomain`
+
+_function_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Whether anyone can get an address on this domain: it is on {@link PUBLIC_EMAIL_DOMAINS} or
+is a country domain of one of {@link PUBLIC_EMAIL_BRANDS}.
+
+```ts
+export function isPublicEmailDomain(domain: string): boolean
+```
+
+**Parameters**
+
+- `domain`: A domain in the spelling of {@link DOMAIN_PATTERN}.
+
+**Returns** `true` for a public mail domain.
+
+**Example**
+
+```ts
+isPublicEmailDomain('gmail.com') // true
+isPublicEmailDomain('yahoo.co.uk') // true
+isPublicEmailDomain('acme.com') // false
 ```
 
 ### `isRedirectUrl`
@@ -13362,6 +13756,223 @@ jwksUrl('https://auth.example.com/v1/environments/env_1')
 // 'https://auth.example.com/v1/environments/env_1/.well-known/jwks.json'
 ```
 
+## `@tula-tech/contract/organization-domain-rules`
+
+Source: `packages/contract/src/organization-domain-rules.ts`
+
+### `DOMAIN_PATTERN`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+The grammar of a claimable domain: two or more labels of lower-case ASCII letters, digits
+and hyphens (none at a label's end), joined by single full stops, the last label letters
+only (or punycode, `xn--…`). So: no upper case, no trailing full stop, no port or path, no
+underscore, no `@`, no wildcard, and no IP address (a numeric last label is refused, and so
+is the bracketed IPv6 form).
+
+**Internationalised domains are written in punycode** (`xn--bcher-kva.example`, never
+`bücher.example`): Unicode is refused, not converted, so a domain is stored and compared in
+the one spelling a mail server uses. The pattern is the grammar alone; the length bounds
+({@link MAX_DOMAIN_LENGTH}, {@link MAX_DOMAIN_LABEL_LENGTH}) and the public list are
+{@link domainRefusal}'s. `domainRefusal` runs it only over text of at most twice the length cap, so its work is bounded.
+
+```ts
+const DOMAIN_PATTERN: {}
+```
+
+**Example**
+
+```ts
+DOMAIN_PATTERN.test('acme.com') // true
+DOMAIN_PATTERN.test('Acme.com') // false
+DOMAIN_PATTERN.test('192.168.0.1') // false
+```
+
+### `DomainRefusal`
+
+_type_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Why a string is not a claimable domain.
+
+```ts
+export type DomainRefusal = 'grammar' | 'length' | 'public'
+```
+
+### `MAX_DOMAINS_PER_ORGANIZATION`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+How many domains one organization can claim, verified or waiting for a code. A bound so that
+a signed-in administrator cannot fill the table.
+
+```ts
+const MAX_DOMAINS_PER_ORGANIZATION: 10
+```
+
+### `MAX_DOMAIN_LABEL_LENGTH`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Longest one label of a domain can be, in characters (RFC 1035).
+
+```ts
+const MAX_DOMAIN_LABEL_LENGTH: 63
+```
+
+### `MAX_DOMAIN_LENGTH`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Longest a whole domain can be, in characters (RFC 1035).
+
+```ts
+const MAX_DOMAIN_LENGTH: 253
+```
+
+### `MIN_DOMAIN_LENGTH`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Shortest a domain can be: `a.bc`.
+
+```ts
+const MIN_DOMAIN_LENGTH: 4
+```
+
+### `ORGANIZATION_DOMAIN_MODES`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+How an organization treats a user who signs up with a verified address on its domain.
+
+```ts
+const ORGANIZATION_DOMAIN_MODES: readonly ["suggest", "auto_join"]
+```
+
+### `OrganizationDomainMode`
+
+_type_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+One of {@link ORGANIZATION_DOMAIN_MODES}.
+
+```ts
+export type OrganizationDomainMode = (typeof ORGANIZATION_DOMAIN_MODES)[number]
+```
+
+### `PUBLIC_EMAIL_BRANDS`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Provider names whose every country domain is public: `yahoo.com`, `yahoo.co.uk`, `yahoo.fr`
+and `yahoo.co.jp` are all `yahoo`. A domain matches when its **first** label is one of
+these and what follows is a top-level domain, or a short second-level one and a top-level
+one (`co.uk`, `com.br`): `yahoo.com` and `hotmail.co.uk` match, `yahoo.acme.com` and
+`notyahoo.com` do not.
+
+```ts
+const PUBLIC_EMAIL_BRANDS: readonly string[]
+```
+
+### `PUBLIC_EMAIL_DOMAINS`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Domains that anyone can get an address at, and that so prove nothing about the holder of an
+address on them. **Documented here and nowhere else**: a claim of one is refused
+(`organization.domain_public`) and a join never matches one, even a claim stored before the
+list grew. The list is the large free consumer mailbox providers, the internet providers
+that give every customer an address, and the common national ones; a company's own domain
+is never on it.
+
+Providers that sell a mailbox under many country domains (`yahoo.co.uk`, `yahoo.fr`,
+`hotmail.de`, …) are in {@link PUBLIC_EMAIL_BRANDS} instead.
+
+```ts
+const PUBLIC_EMAIL_DOMAINS: readonly string[]
+```
+
+### `domainOfAddress`
+
+_function_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+The domain of an email address in the spelling the server stores (lower case), or `null`
+when the text has no `@` or ends in one.
+
+It is everything after the **last** `@`, unchanged: no subdomain is cut off, so
+`a@mail.acme.com` is `mail.acme.com` and **never** matches a claim on `acme.com`. Whether the
+result is a domain at all is {@link domainRefusal}'s question.
+
+```ts
+export function domainOfAddress(address: string): string | null
+```
+
+**Parameters**
+
+- `address`: An email address, normalised (lower case) by the caller.
+
+**Returns** The part after the last `@`, or `null`.
+
+**Example**
+
+```ts
+domainOfAddress('ada@acme.com') // 'acme.com'
+domainOfAddress('ada@mail.acme.com') // 'mail.acme.com'
+```
+
+### `domainRefusal`
+
+_function_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Why a string cannot be claimed as a domain, or `null` when it can.
+
+```ts
+export function domainRefusal(domain: string): DomainRefusal | null
+```
+
+**Parameters**
+
+- `domain`: The text to judge.
+
+**Returns**
+
+`grammar` (not a lower-case ASCII domain name: upper case, Unicode, an IP address,
+a single label), `length` (a label over {@link MAX_DOMAIN_LABEL_LENGTH}, the whole over
+{@link MAX_DOMAIN_LENGTH} or under {@link MIN_DOMAIN_LENGTH}), `public` (a public mail
+domain), or `null`.
+
+**Example**
+
+```ts
+domainRefusal('acme.com') // null
+domainRefusal('gmail.com') // 'public'
+domainRefusal('bücher.example') // 'grammar'
+```
+
+### `isPublicEmailDomain`
+
+_function_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Whether anyone can get an address on this domain: it is on {@link PUBLIC_EMAIL_DOMAINS} or
+is a country domain of one of {@link PUBLIC_EMAIL_BRANDS}.
+
+```ts
+export function isPublicEmailDomain(domain: string): boolean
+```
+
+**Parameters**
+
+- `domain`: A domain in the spelling of {@link DOMAIN_PATTERN}.
+
+**Returns** `true` for a public mail domain.
+
+**Example**
+
+```ts
+isPublicEmailDomain('gmail.com') // true
+isPublicEmailDomain('yahoo.co.uk') // true
+isPublicEmailDomain('acme.com') // false
+```
+
 ## `@tula-tech/contract/organization-permissions`
 
 Source: `packages/contract/src/organization-permissions.ts`
@@ -13391,6 +14002,18 @@ export interface BuiltInRole {
   readonly name: string
   readonly permissions: readonly SystemPermission[]
 }
+```
+
+### `DOMAINS_MANAGE_PERMISSION`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permission that lets a member claim, verify, change and remove the organization's
+domains through the client routes (ADR 0065, "Verified domains"). Read from the member's
+role at the time of the request, never from a token.
+
+```ts
+const DOMAINS_MANAGE_PERMISSION: SystemPermission
 ```
 
 ### `MAX_CUSTOM_ROLES`
