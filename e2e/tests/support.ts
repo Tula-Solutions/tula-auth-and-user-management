@@ -116,6 +116,8 @@ export interface TestSettings {
   }
   /** Organizations (ADR 0065); off when left out. */
   organizations?: { enabled: boolean; allowUserCreated?: boolean }
+  /** Addresses to change (an invitation's link leads to an allowed redirect URL). */
+  urls?: { allowedRedirectUrls?: string[] }
 }
 
 /**

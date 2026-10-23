@@ -9305,6 +9305,48 @@ One page of users.
 const UserListSchema
 ```
 
+### `UserMembership`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+A user's membership of an organization, with the organization's name.
+
+```ts
+export type UserMembership = z.infer<typeof UserMembershipSchema>
+```
+
+### `UserMembershipList`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+A page of a user's memberships.
+
+```ts
+export type UserMembershipList = z.infer<typeof UserMembershipListSchema>
+```
+
+### `UserMembershipListSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+One page of a user's memberships, the one they joined first at the top.
+
+```ts
+const UserMembershipListSchema
+```
+
+### `UserMembershipSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+One organization a user belongs to, as an administrator reads it on the user's page: the
+organization, the key of the user's role in it and when they joined. No permission list and
+no session: those are the user's own view (`UserOrganization`).
+
+```ts
+const UserMembershipSchema
+```
+
 ### `UserOrganization`
 
 _type_, defined in `packages/contract/src/organization.ts`

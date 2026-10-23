@@ -1,5 +1,15 @@
 import { expect, test } from 'bun:test'
-import { printable, unseenCodePoints } from './printable'
+import { printable, printableName, unseenCodePoints } from './printable'
+
+test.each([
+  ['words with ordinary spaces', 'Acme Corp', 'Acme Corp'],
+  ['a no-break space', 'Acme\u{A0}Corp', 'Acme\\u{A0}Corp'],
+  ['a direction override', 'Acme\u{202E}Corp', 'Acme\\u{202E}Corp'],
+  ['a backslash', 'Acme\\Corp', 'Acme\\u{5C}Corp'],
+  ['a zero-width space', 'Ac\u{200B}me', 'Ac\\u{200B}me'],
+])('a name is written out except for ordinary spaces: %s', (_name, text, expected) => {
+  expect(printableName(text)).toBe(expected)
+})
 
 test.each([
   ['plain text is left as it is', 'https://api.example.com/webhooks/tula?a=1&b=%20', null],

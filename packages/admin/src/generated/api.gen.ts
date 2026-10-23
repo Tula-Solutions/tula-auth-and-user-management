@@ -1882,6 +1882,17 @@ export interface Schemas {
     meta: Schemas['PaginationMeta']
     data: Schemas['User'][]
   }
+  UserMembership: {
+    organizationId: string
+    name: string
+    slug: string
+    role: string
+    joinedAt: string
+  }
+  UserMembershipList: {
+    meta: Schemas['PaginationMeta']
+    data: Schemas['UserMembership'][]
+  }
   UserMfaDisabledEvent: {
     id: string
     type: 'user.mfa_disabled'
@@ -2360,6 +2371,8 @@ export interface Operations {
   listProposals: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['ProposalList'] }
   /** List signing keys (`GET /v1/admin/signing-keys`). */
   listSigningKeys: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['SigningKeyList'] }
+  /** List the organizations a user belongs to (`GET /v1/admin/users/{userId}/organizations`). */
+  listUserOrganizations: { params: { userId: string }; query: { page?: number; size?: number }; headers: Record<string, never>; body: undefined; response: Schemas['UserMembershipList'] }
   /** List users (`GET /v1/admin/users`). */
   listUsers: { params: Record<string, never>; query: { q?: string; page?: number; size?: number; sort?: Schemas['UserSort'] }; headers: Record<string, never>; body: undefined; response: Schemas['UserList'] }
   /** List a user’s sessions (`GET /v1/admin/users/{userId}/sessions`). */
@@ -2486,6 +2499,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   listOrganizations: { method: 'GET', path: '/v1/admin/organizations' },
   listProposals: { method: 'GET', path: '/v1/admin/proposals' },
   listSigningKeys: { method: 'GET', path: '/v1/admin/signing-keys' },
+  listUserOrganizations: { method: 'GET', path: '/v1/admin/users/{userId}/organizations' },
   listUsers: { method: 'GET', path: '/v1/admin/users' },
   listUserSessions: { method: 'GET', path: '/v1/admin/users/{userId}/sessions' },
   listWebhookDeliveries: { method: 'GET', path: '/v1/admin/webhook-endpoints/{id}/deliveries' },

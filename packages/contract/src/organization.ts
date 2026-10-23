@@ -233,6 +233,32 @@ export const ActiveOrganizationSchema = z
   })
   .meta({ ref: 'ActiveOrganization' })
 
+/**
+ * One organization a user belongs to, as an administrator reads it on the user's page: the
+ * organization, the key of the user's role in it and when they joined. No permission list and
+ * no session: those are the user's own view (`UserOrganization`).
+ */
+export const UserMembershipSchema = z
+  .object({
+    organizationId: z.string(),
+    name: z.string(),
+    slug: z.string(),
+    /** The key of the user's role in it. */
+    role: z.string(),
+    joinedAt: z.iso.datetime(),
+  })
+  .meta({ ref: 'UserMembership' })
+
+/** One page of a user's memberships, the one they joined first at the top. */
+export const UserMembershipListSchema = z
+  .object({ meta: PaginationMetaSchema, data: z.array(UserMembershipSchema) })
+  .meta({ ref: 'UserMembershipList' })
+
+/** A user's membership of an organization, with the organization's name. */
+export type UserMembership = z.infer<typeof UserMembershipSchema>
+/** A page of a user's memberships. */
+export type UserMembershipList = z.infer<typeof UserMembershipListSchema>
+
 /** An organization. */
 export type Organization = z.infer<typeof OrganizationSchema>
 /** A page of organizations. */

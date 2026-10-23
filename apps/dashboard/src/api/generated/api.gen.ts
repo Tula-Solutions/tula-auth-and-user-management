@@ -5681,6 +5681,20 @@ export interface AcceptedInvitation {
   createdAt: string;
 }
 
+export interface UserMembership {
+  organizationId: string;
+  name: string;
+  slug: string;
+  role: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  joinedAt: string;
+}
+
+export interface UserMembershipList {
+  meta: PaginationMeta;
+  data: UserMembership[];
+}
+
 export type AppleAppSiteAssociationWebcredentials = {
   /** @minItems 1 */
   apps: string[];
@@ -6450,6 +6464,19 @@ export const ListOrganizationInvitationsStatus = {
   revoked: 'revoked',
   expired: 'expired',
 } as const;
+
+export type ListUserOrganizationsParams = {
+/**
+ * @minimum 1
+ * @maximum 1000000
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+size?: number;
+};
 
 export type GetSmsUsageParams = {
 /**
@@ -12688,6 +12715,123 @@ export const useRevokeOrganizationInvitation = <TError = ErrorEnvelope,
       > => {
       return useMutation(getRevokeOrganizationInvitationMutationOptions(options), queryClient);
     }
+
+export const getListUserOrganizationsUrl = (userId: string,
+    params?: ListUserOrganizationsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/users/${userId}/organizations?${stringifiedParams}` : `/v1/admin/users/${userId}/organizations`
+}
+
+/**
+ * The user’s memberships, the one they joined first at the top, one page at a time: each organization’s id, name and slug and the key of the user’s role in it. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary List the organizations a user belongs to
+ */
+export const listUserOrganizations = async (userId: string,
+    params?: ListUserOrganizationsParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<UserMembershipList> => {
+
+  return dashboardFetch<UserMembershipList>(getListUserOrganizationsUrl(userId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListUserOrganizationsQueryKey = (userId: string,
+    params?: ListUserOrganizationsParams,) => {
+    return [
+    `/v1/admin/users/${userId}/organizations`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListUserOrganizationsQueryOptions = <TData = Awaited<ReturnType<typeof listUserOrganizations>>, TError = ErrorEnvelope>(userId: string,
+    params?: ListUserOrganizationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUserOrganizations>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListUserOrganizationsQueryKey(userId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listUserOrganizations>>> = ({ signal }) => listUserOrganizations(userId,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: userId !== null && userId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listUserOrganizations>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListUserOrganizationsQueryResult = NonNullable<Awaited<ReturnType<typeof listUserOrganizations>>>
+export type ListUserOrganizationsQueryError = ErrorEnvelope
+
+
+export function useListUserOrganizations<TData = Awaited<ReturnType<typeof listUserOrganizations>>, TError = ErrorEnvelope>(
+ userId: string,
+    params: undefined |  ListUserOrganizationsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUserOrganizations>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listUserOrganizations>>,
+          TError,
+          Awaited<ReturnType<typeof listUserOrganizations>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListUserOrganizations<TData = Awaited<ReturnType<typeof listUserOrganizations>>, TError = ErrorEnvelope>(
+ userId: string,
+    params?: ListUserOrganizationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUserOrganizations>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listUserOrganizations>>,
+          TError,
+          Awaited<ReturnType<typeof listUserOrganizations>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListUserOrganizations<TData = Awaited<ReturnType<typeof listUserOrganizations>>, TError = ErrorEnvelope>(
+ userId: string,
+    params?: ListUserOrganizationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUserOrganizations>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List the organizations a user belongs to
+ */
+
+export function useListUserOrganizations<TData = Awaited<ReturnType<typeof listUserOrganizations>>, TError = ErrorEnvelope>(
+ userId: string,
+    params?: ListUserOrganizationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUserOrganizations>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListUserOrganizationsQueryOptions(userId,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getListNativeAppsUrl = () => {
 
