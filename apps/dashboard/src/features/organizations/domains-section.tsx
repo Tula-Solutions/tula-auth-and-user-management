@@ -152,7 +152,7 @@ function ClaimDialog({
       title={claim ? 'Send a new code' : 'Claim a domain'}
       description={
         reverifying
-          ? 'We email a six-digit code to an address on the domain. Enter it to keep the domain verified for another year.'
+          ? `We email a six-digit code to an address on the domain. Enter it to keep the domain verified for another year. ${claim?.mode === 'auto_join' ? 'People who sign up on it will join automatically again once it is verified.' : 'The organization will be suggested to people who sign up on it, as before.'}`
           : 'We email a six-digit code to an address on the domain. Until you enter it the claim grants nothing.'
       }
     >

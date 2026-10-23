@@ -1116,7 +1116,7 @@ describe('domains', () => {
     expect(rows[0]?.textContent).not.toContain('Needs re-verification')
     expect(rows[1]?.textContent).toContain('Needs re-verification')
     expect(rows[1]?.textContent).toContain('joins nobody until you enter a new code')
-    // A lapsed domain's mode cannot be switched; a new code is the way back.
+    // A lapsed domain offers a new code, not a mode switch.
     expect(within(rows[1] as HTMLElement).queryByText('Only suggest')).toBeNull()
     expect(
       within(rows[1] as HTMLElement).getByRole('button', {
@@ -1141,6 +1141,8 @@ describe('domains', () => {
     })
     await user.click(await screen.findByRole('button', { name: 'Send a new code for acme.com' }))
     // No mode is asked and no weakening is confirmed: nothing about the mode changes.
+    // The mode that comes back with the domain is said, since it is not asked.
+    expect(dialog().textContent).toContain('join automatically')
     expect(within(dialog()).queryByLabelText('When someone verified signs up on it')).toBeNull()
     await user.type(within(dialog()).getByLabelText('Address on that domain'), 'admin@acme.com')
     await user.click(button('Send code'))
@@ -1160,6 +1162,42 @@ describe('domains', () => {
     await waitFor(() => expect(table.textContent).not.toContain('Needs re-verification'))
     expect(table.textContent).toContain('Valid until')
     expect(domainsOf(api)[0]?.mode).toBe('auto_join')
+  })
+
+  test('a current domain is proved again without a question, keeps its mode, and a code in flight can be entered', async () => {
+    const { user, api } = start(`${DEV_PATH}/organizations/${ACME}`, {
+      api: arranged({
+        organizations: [acme],
+        domains: [
+          claim({
+            domain: 'acme.com',
+            mode: 'auto_join',
+            expiresAt: '2026-11-01T12:00:00.000Z',
+          }),
+          claim({
+            domain: 'acme.io',
+            codeExpiresAt: '2026-10-24T12:00:00.000Z',
+          }),
+        ],
+      }),
+    })
+    const table = await screen.findByRole('table', { name: 'Domains of Acme Corp' })
+    const rows = within(table).getAllByRole('row').slice(1)
+    expect(rows[0]?.textContent).toContain('Send a new code before then')
+    expect(
+      within(rows[0] as HTMLElement).queryByRole('button', { name: /Enter the code/ })
+    ).toBeNull()
+    expect(
+      within(rows[1] as HTMLElement).getByRole('button', { name: 'Enter the code for acme.io' })
+    ).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Send a new code for acme.com' }))
+    await user.type(within(dialog()).getByLabelText('Address on that domain'), 'admin@acme.com')
+    await user.click(button('Send code'))
+    // No weakening question: the dialog goes straight to the code.
+    await screen.findByRole('heading', { name: 'Verify acme.com' })
+    expect(sent(api, 'POST', `/v1/admin/organizations/${ACME}/domains`)[0]?.body).toMatchObject({
+      mode: 'auto_join',
+    })
   })
 
   test('with none it says so', async () => {

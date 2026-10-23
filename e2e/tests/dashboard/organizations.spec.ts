@@ -109,8 +109,12 @@ test.beforeEach(async ({ page }) => {
 test.afterEach(async ({ page }) => {
   // A test may have moved the clock a year on; a session made then is dated in the future
   // once it is back, so the clean-up signs in again.
-  await resetClock(page.request)
-  await signIn(page)
+  try {
+    await resetClock(page.request)
+    await signIn(page)
+  } catch {
+    // The clean-up below still runs; its own requests say what is wrong.
+  }
   // A test that failed while organizations were off still gets cleaned up after.
   await useSettings(page.request, ON)
   await clearOrganizations(page)
