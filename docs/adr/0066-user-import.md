@@ -175,7 +175,7 @@ current and is kept.
 
 ## Not done
 
-- `tula import` and each provider's export format.
+- ~~`tula import` and each provider's export format.~~ Done in TULA-122 (amendment below).
 - Importing organizations and memberships.
 - Returning `externalId` and `metadata` on `User`.
 - A way to mark an import's rows as webhook-visible (`user.created` too). The ticket
@@ -259,3 +259,31 @@ takes a different time from the dummy until its first sign-in: (measured on a de
 7 ms and one at its ceiling about 135 ms, against about 65 ms for argon2id at 64 MiB; Firebase
 scrypt at its own parameters is about 18 ms and at its ceiling about 135 ms. Both are comparisons with `~/lib/crypto.timingSafeEqual`
 of equal-length buffers, and the same candidate pair (as typed and NFC) is tried as for the others.
+
+## Amendment: `tula import` (TULA-122)
+
+`tula import --from clerk|auth0|firebase|supabase|better-auth <export>` is the client of this route
+(`packages/cli/src/import/`, [docs/cli.md](../cli.md#tula-import)). No route and no contract field
+was added: the command parses a provider's export into `ImportUsersRequest` rows on the operator's
+machine and calls `importUsers` and, for Clerk's organizations, `createOrganization`,
+`addOrganizationMember` and the two list routes (users by address, organizations by slug).
+
+- **One parser per provider**, pure and tested with a fixture of that export's format. A hash is
+  mapped to the algorithms of this ADR only. **better-auth's default scrypt (`salt:key`, hex) is not
+  one of them**, and this ticket added no server algorithm: such a row is refused with
+  `import.unsupported_algorithm` and a reason, or, with `--allow-passwordless`, imported without a
+  password. The same holds for Clerk's `md5`, `sha256`, `scrypt` and `phpass` hashers and for any
+  hash whose prefix is unknown.
+- **A user the provider had disabled, blocked, banned or soft-deleted is refused** (`source.user_disabled`,
+  `source.user_deleted`): the route has no way to import a banned account, and importing it as a live
+  one would reopen it. This is the command's decision and not the route's.
+- **Dry run first.** Without `--yes` nothing is sent and no key is read. The report names rows by
+  their number, a code and a masked address; no hash, token, signer key or whole address is printed.
+- **A progress file** (row numbers, offsets, counts, codes and ids; no address, name, hash or
+  signer key; mode `0600`) lets a stopped run continue, bound to the export, the provider and
+  a truncated SHA-256 of the API's origin and key. The route's idempotence by address is what makes
+  a re-sent batch safe; the file only saves the work.
+- **Rate limit:** a `429` is waited out for `Retry-After` up to a cap (default 120 s) and the batch
+  is sent again, as is a request with no answer or a `5xx`, six tries in all.
+- **Organizations** are identified by slug (an existing one is used) and members by user id, found
+  from the id created in this run or by the user's address.

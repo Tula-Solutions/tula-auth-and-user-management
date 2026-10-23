@@ -157,6 +157,24 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   before anything is started (no migration, no seed) and again when the tunnel is opened:
   keep both. Never word the command, a doc or an output as shown on a phone:
   `docs/plans/phase-2-unverified.md`, "Step 2.12".
+- **`tula import` reads a provider's export locally and prints nothing sensitive**
+  ([ADR 0066](../../docs/adr/0066-user-import.md), amendment; `packages/cli/src/import/`). A
+  provider is a pure parser (`parseClerk`, …) plus a fixture of that export's real format in
+  `src/import/fixtures/` with a test; **nothing is requested from the old provider**. A hash is
+  mapped to an algorithm the server reads (`readHash`) or refused with `import.unsupported_algorithm`
+  and a fixed reason: **never add a server algorithm for a parser**, and a provider's scrypt is
+  refused until the server reads it. **A report names a row by its number, a code and a masked
+  address** (`maskEmail`: first character and last domain label); it never prints a whole address, a
+  name, a hash, a token or a signer key, and the reason of a refusal is this CLI's sentence, never the
+  server's text. **The progress file holds row numbers, offsets, counts, codes and ids, nothing else**
+  (`readProgress` refuses any other shape; a code the server invented is kept as `unknown`), is
+  written through `Host.writeSecretFile` after every answer, and is bound to the export, the provider
+  and a truncated hash of the API's origin and key (`Target.fingerprint`). A dry run sends nothing and
+  needs no key. Firebase's signer key comes from a file or `TULA_FIREBASE_SIGNER_KEY`, is redacted
+  first, and is in no option, error or file. A disabled, blocked, banned or deleted user is refused,
+  never imported as a live account. Every request is safe to repeat (addresses, slugs and members are
+  matched), which is the only reason a batch may be retried; a new request type must be too. Tests assert
+  that no output and no progress file holds a hash, a signer key or an address.
 - **`create-tula` never ships a default secret and never invents a registry.** Every secret
   in the scaffolded `.env` (mode 0600, covered by the scaffold's `.gitignore`) comes from
   `crypto.getRandomValues`; an existing `.env` or `.env.local` is never replaced, even with

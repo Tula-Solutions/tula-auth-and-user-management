@@ -1,0 +1,13 @@
+[
+  {
+    "id": "7d2c9f6e-0000-4000-8000-000000000001",
+    "email": "maya@northline.app",
+    "encrypted_password": "$2a$10$NDhuqUZcBQ/LFla5qSAXXezYn7yAR/RITInkyddwtdh1ANBpFw7hS",
+    "email_confirmed_at": "2024-01-02T10:00:00+00:00",
+    "raw_user_meta_data": { "full_name": "Maya Chen" },
+    "raw_app_meta_data": { "provider": "email" },
+    "banned_until": null,
+    "deleted_at": null,
+    "is_anonymous": false
+  }
+]
