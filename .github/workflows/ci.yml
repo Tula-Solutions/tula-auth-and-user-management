@@ -412,7 +412,8 @@ jobs:
           ./gradlew --console=plain
           :tula-auth-android:assembleRelease :tula-auth-android:lintRelease
           :tula-auth-compose:assembleRelease :tula-auth-compose:lintRelease
-          :compose-example:assembleDebug :compose-example:assembleDebugAndroidTest
+          :compose-example:assembleDebug :compose-example:assembleRelease
+          :compose-example:assembleDebugAndroidTest
           :compose-example:lintDebug
       - name: Upload the build and lint reports
         if: failure()

@@ -634,6 +634,7 @@ describe('the Kotlin client: the JVM tests and the Android build are read apart'
       ':tula-auth-compose:assembleRelease',
       ':tula-auth-compose:lintRelease',
       ':compose-example:assembleDebug',
+      ':compose-example:assembleRelease',
       ':compose-example:assembleDebugAndroidTest',
       ':compose-example:lintDebug',
     ]) {
