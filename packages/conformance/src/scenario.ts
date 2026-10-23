@@ -91,6 +91,12 @@ export const RequestSchema = z
      */
     instance: z.enum(['first', 'second']).optional(),
   })
+  // Real `fetch` refuses a GET with a body (the in-process app tolerated it), so a scenario
+  // that wrote one passed in process and failed against a live server.
+  .refine((request) => !(request.method === 'GET' && request.body !== undefined), {
+    message: 'a GET request has no body: leave `body` out',
+    path: ['body'],
+  })
   .refine((request) => !(request.auth === 'secret' && request.accessToken !== undefined), {
     message: 'a request carries the secret key or an access token, not both',
   })

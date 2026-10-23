@@ -660,7 +660,6 @@
       "request": {
         "method": "GET",
         "path": "/v1/client/me/organizations/{{orgId}}/invitations",
-        "body": null,
         "accessToken": "{{strangerToken}}"
       },
       "expect": {
