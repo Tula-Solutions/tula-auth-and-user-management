@@ -103,7 +103,10 @@ this file under "Area rules" and does not repeat it.
 - **Accepting uses the invitation and creates the membership in one transaction**
   (`acceptInvitation`): the invitation row is claimed by a conditional update on `pending`,
   so two answers at once make one membership, and a duplicate member or a gone user rolls the
-  claim back. A role key that no longer exists is `invitation_role_gone`; never fall back to another role.
+  claim back. A role key that no longer exists is `invitation_role_gone`; never fall back to another role. A pending invitation follows its role key's
+  current permissions (the subset check runs when it is sent), and a holder of
+  `invitations:manage` may revoke any pending invitation of the organization; both are
+  deliberate (Ollie round 1, F1 and F2).
 - **A client inviter offers only roles within their own permissions**
   (`role_not_assignable`); permissions come from `findUserMembership`, fresh, never the token.
 - **No invited address, name or token in events, audit entries or logs.** The organization's
