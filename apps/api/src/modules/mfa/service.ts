@@ -26,6 +26,7 @@ import * as Audit from '~/modules/audit/service'
 import * as Notices from '~/modules/notice/service'
 import * as OAuth from '~/modules/oauth/service'
 import * as Passkeys from '~/modules/passkey/service'
+import * as Foreign from '~/modules/password/foreign-hash'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
 import * as Settings from '~/modules/settings/service'
@@ -1765,7 +1766,14 @@ export async function stepUp(
     }
     const user = await deps.users.findById(scope.environmentId, userId)
     const found = user ? await Passwords.ofUser(deps, scope.environmentId, user) : null
-    if (!(await Passwords.verify(found?.passwordHash ?? null, proof.password)) || !found) {
+    if (
+      !(await Passwords.verify(
+        found?.passwordHash ?? null,
+        proof.password,
+        found && Foreign.opener(deps, scope.environmentId, found.user.id)
+      )) ||
+      !found
+    ) {
       throw new AuthError('auth.invalid_credentials')
     }
     await deps.lockout.clear(lockKey)

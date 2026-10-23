@@ -63,6 +63,7 @@ import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
 import * as OAuth from '~/modules/oauth/service'
 import * as Passkeys from '~/modules/passkey/service'
+import * as Foreign from '~/modules/password/foreign-hash'
 import * as Passwords from '~/modules/password/service'
 import * as Phone from '~/modules/phone/service'
 import * as Sessions from '~/modules/session/service'
@@ -1203,7 +1204,14 @@ export async function submitPassword(
   await chargeEnvironment(deps, tenant, 'password')
 
   const found = await deps.users.findByEmailWithPassword(tenant.environmentId, attempt.identifier)
-  if (!(await Passwords.verify(found?.passwordHash ?? null, password)) || !found) {
+  if (
+    !(await Passwords.verify(
+      found?.passwordHash ?? null,
+      password,
+      found && Foreign.opener(deps, tenant.environmentId, found.user.id)
+    )) ||
+    !found
+  ) {
     throw new AuthError('auth.invalid_credentials')
   }
   await deps.lockout.clear(lockKey)

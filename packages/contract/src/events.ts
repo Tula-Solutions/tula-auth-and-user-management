@@ -218,7 +218,9 @@ export const EVENT_DATA_SCHEMAS = {
      * The algorithm of the password hash the account arrived with, which its first sign-in
      * replaces with argon2id; absent for an account imported with no password.
      */
-    passwordAlgorithm: z.enum(['bcrypt', 'argon2id', 'argon2i']).optional(),
+    passwordAlgorithm: z
+      .enum(['bcrypt', 'argon2id', 'argon2i', 'pbkdf2_sha256', 'firebase_scrypt'])
+      .optional(),
   }),
   'user.email_verified': data('UserEmailVerified', 'A user proved their email address.', {}),
   // Two shapes: an administrator's own ban (no field) and one that carried out an agent's

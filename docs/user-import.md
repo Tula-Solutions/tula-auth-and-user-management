@@ -6,8 +6,8 @@ password hash they have in the system they come from. The user signs in with the
 password; the first successful sign-in **replaces the foreign hash with Tula's argon2id**,
 and nobody notices. The reasoning is in [ADR 0066](adr/0066-user-import.md).
 
-This page covers `bcrypt`, `argon2id` and `argon2i` hashes. A hash made with Firebase's
-scrypt variant or PBKDF2 is a later addition to the same request.
+This page covers `bcrypt`, `argon2id`, `argon2i`, `pbkdf2_sha256` (Django and others) and
+`firebase_scrypt` (Firebase Authentication) hashes.
 
 ## Import users
 
@@ -71,6 +71,8 @@ routes yet.
 | `bcrypt` | A bcrypt string: `$2a$`, `$2b$` or `$2y$`, cost 10 to 14. |
 | `argon2id` | An argon2 PHC string (`$argon2id$v=19$m=…,t=…,p=…$salt$digest`). |
 | `argon2i` | The same, for argon2i. |
+| `pbkdf2_sha256` | PBKDF2-HMAC-SHA256, in one of the forms [below](#pbkdf2-sha256). |
+| `firebase_scrypt` | Firebase's `passwordHash`, with the user's `salt` in `params` and the project's parameters in the call's `firebaseScrypt` ([below](#firebase-authentication)). |
 
 A hash is parsed and refused if it is not well formed or its parameters are out of range:
 
@@ -80,12 +82,82 @@ A hash is parsed and refused if it is not well formed or its parameters are out 
 | argon2 memory | 19,456 KiB (19 MiB) | 262,144 KiB (256 MiB) |
 | argon2 passes | 2 | 10 |
 | argon2 lanes | 1 | 8 |
+| PBKDF2-SHA256 iterations | 100,000 | 2,000,000 |
+| scrypt cost (`memCost`, log2 of N) | 12 | 16 |
+| scrypt `rounds` (r) | 4 | 16 |
+| scrypt memory (128 × N × r) | | 64 MiB |
 
 The minimums are OWASP's. The maximums protect your sign-in: a user whose hash asks for
 gigabytes would make every one of their sign-ins exhaust the server. The environment's
 [password policy](methods/password.md) is **not** applied to an imported password (nobody
 but the user knows the plaintext); set `password.expiryDays` if you want imported
 passwords replaced.
+
+### PBKDF2-SHA256
+
+Set `algorithm` to `pbkdf2_sha256`. The hash may be any of:
+
+| Form | Example |
+| --- | --- |
+| Django | `pbkdf2_sha256$260000$Xp9aBcDeFgHi$tPuMiTl59uBG…=` (the salt as written, the hash base64) |
+| PHC | `$pbkdf2-sha256$i=600000,l=32$<salt>$<hash>` (unpadded base64; `l`, if given, is the hash length) |
+| passlib | `$pbkdf2-sha256$600000$<salt>$<hash>` (its `.` for `+` base64, unpadded) |
+| A derived key | `hash` is the base64 key and `params` is `{ "iterations": 600000, "salt": "<base64>" }` |
+
+The salt must be 8 to 64 bytes and the key 16 to 64 bytes. The floor of 100,000 iterations
+is below OWASP's current 600,000 so that the real exports of older systems (Django before
+4.2 used 260,000) can be moved; the user's first sign-in replaces the hash with argon2id
+whatever it was. A hash below the floor is `import.hash_parameters_too_weak`; above 2,000,000
+(about 135 ms of CPU on every sign-in of that user until it is replaced) it is
+`import.hash_parameters_too_costly`. A salt that is not a salt, a count that is not a whole
+number or base64 that is not base64 is `import.hash_malformed`.
+
+### Firebase Authentication
+
+Export the users with the Firebase CLI, which also gives you the project's hash parameters:
+
+```sh
+firebase auth:export users.json --format=JSON --project <project-id>
+```
+
+The project's parameters (**Authentication → Users → ⋮ → Password hash parameters** in the
+console) are four values, the same for every user: `base64_signer_key`,
+`base64_salt_separator`, `rounds` and `mem_cost`. Each user in the export has a `passwordHash`
+and a `salt`. Send the parameters **once per call** as `firebaseScrypt`, and each user's two
+values in their row:
+
+```sh
+curl -X POST https://auth.example.com/v1/admin/users/import \
+  -H "Authorization: Bearer $TULA_SECRET_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "firebaseScrypt": {
+      "signerKey": "<base64_signer_key>",
+      "saltSeparator": "<base64_salt_separator>",
+      "rounds": 8,
+      "memCost": 14
+    },
+    "users": [{
+      "email": "maya@northline.app",
+      "emailVerified": true,
+      "password": {
+        "algorithm": "firebase_scrypt",
+        "hash": "<passwordHash>",
+        "params": { "salt": "<salt>" }
+      }
+    }]
+  }'
+```
+
+`emailVerified` comes from the export's `emailVerified`. Firebase's own values are `rounds: 8`
+and `memCost: 14`; the server accepts a `memCost` of 12 to 16 and `rounds` of 4 to 16 whose
+scrypt memory (128 × 2^`memCost` × `rounds`) is at most 64 MiB. The signer key is a secret of
+your Firebase project: the server **seals it** with its master key, bound to the user it is
+kept for, inside that user's stored hash. It is never returned, logged, put in an audit entry
+or an event, and it is gone from the user's record when their first sign-in replaces the hash.
+A `firebase_scrypt` row in a call without `firebaseScrypt`, or with parameters outside the
+limits, is refused on its own with `import.hash_malformed`,
+`import.hash_parameters_too_weak` or `import.hash_parameters_too_costly`.
 
 ## The answer
 

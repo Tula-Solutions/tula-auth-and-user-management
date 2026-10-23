@@ -97,6 +97,8 @@ export const UserImportedEventDataPasswordAlgorithm = {
   bcrypt: 'bcrypt',
   argon2id: 'argon2id',
   argon2i: 'argon2i',
+  pbkdf2_sha256: 'pbkdf2_sha256',
+  firebase_scrypt: 'firebase_scrypt',
 } as const;
 
 /**
@@ -3357,12 +3359,30 @@ export interface ImportUserRow {
   password?: ImportPassword;
 }
 
+export interface FirebaseScryptParams {
+  /** @maxLength 512 */
+  signerKey: string;
+  /** @maxLength 256 */
+  saltSeparator: string;
+  /**
+     * @minimum -9007199254740991
+     * @maximum 9007199254740991
+     */
+  rounds: number;
+  /**
+     * @minimum -9007199254740991
+     * @maximum 9007199254740991
+     */
+  memCost: number;
+}
+
 export interface ImportUsersRequest {
   /**
      * @minItems 1
      * @maxItems 500
      */
   users: ImportUserRow[];
+  firebaseScrypt?: FirebaseScryptParams;
 }
 
 export interface Passkey {

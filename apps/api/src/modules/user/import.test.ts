@@ -2,8 +2,11 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import type { ImportUserRow, ImportUsersResult } from '@tula-tech/contract'
 import { createApp, MAX_BODY_BYTES, MAX_IMPORT_BODY_BYTES } from '~/index'
 import * as Flows from '~/modules/flow/service'
+import * as Mfa from '~/modules/mfa/service'
+import * as Foreign from '~/modules/password/foreign-hash'
 import * as Passwords from '~/modules/password/service'
 import { USER_IMPORT_RATE_LIMIT } from '~/modules/user/router'
+import * as Users from '~/modules/user/service'
 import { InvalidUserDataError } from '~/ports/user-repository'
 import { createTestDeps, seedApiKey, TEST_TENANT, type TestDeps } from '~/testing'
 import { ARGON2I_REFERENCE, BCRYPT_PHP_COST_7 } from '~/testing/password-vectors'
@@ -596,5 +599,230 @@ describe('signing in with the old password', () => {
     ])
     const result = await signIn('maya@northline.app', PASSWORD)
     expect(result.tokens).toBeUndefined()
+  })
+})
+
+// PBKDF2-SHA256 and Firebase's scrypt (ADR 0066, TULA-118).
+const DJANGO_PBKDF2 =
+  'pbkdf2_sha256$260000$Xp9aBcDeFgHi$tPuMiTl59uBGuxPihVmXj2h4nxk2jFn28PP+eoHlEI0='
+// firebase/scrypt's README example.
+const FIREBASE_PARAMS = {
+  signerKey:
+    'jxspr8Ki0RYycVU8zykbdLGjFQ3McFUH0uiiTvC8pVMXAn210wjLNmdZJzxUECKbm0QsEmYUSDzZvpjeJ9WmXA==',
+  saltSeparator: 'Bw==',
+  rounds: 8,
+  memCost: 14,
+}
+const FIREBASE_PASSWORD = 'user1password'
+const firebaseRow = (email: string): ImportUserRow =>
+  row(email, {
+    password: {
+      algorithm: 'firebase_scrypt',
+      hash: 'lSrfV15cpx95/sZS2W9c9Kp6i/LVgQNDNC/qzrCnh1SAyZvqmZqAjTdn3aoItz+VHjoZilo78198JAdRuid5lQ==',
+      params: { salt: '42xEC+ixf3L2lw==' },
+    },
+  })
+
+async function importFirebase(users: ImportUserRow[], firebaseScrypt: unknown = FIREBASE_PARAMS) {
+  const res = await post({ users, ...(firebaseScrypt !== null && { firebaseScrypt }) })
+  expect(res.status).toBe(200)
+  return (await res.json()) as ImportUsersResult
+}
+
+const outcomes = (result: ImportUsersResult) =>
+  result.results.map((entry) => (entry.status === 'refused' ? entry.code : entry.status))
+
+describe('PBKDF2-SHA256 and Firebase scrypt: the first sign-in', () => {
+  test('a Django PBKDF2 hash signs in, is replaced by argon2id, and a wrong password does not', async () => {
+    const result = await importRows([
+      row('dj@northline.app', { password: { algorithm: 'pbkdf2_sha256', hash: DJANGO_PBKDF2 } }),
+    ])
+    expect(result.created).toBe(1)
+    const before = (await stored('dj@northline.app'))?.passwordHash as string
+    expect(before.startsWith('$pbkdf2-sha256$i=260000$')).toBe(true)
+
+    const wrong = await signIn('dj@northline.app', 'not the password').catch((err) => err)
+    expect(wrong.code).toBe('auth.invalid_credentials')
+    expect((await stored('dj@northline.app'))?.passwordHash).toBe(before)
+
+    expect((await signIn('dj@northline.app', PASSWORD)).tokens).toBeDefined()
+    const after = (await stored('dj@northline.app'))?.passwordHash as string
+    expect(after.startsWith('$argon2id$v=19$m=65536,t=2,p=1$')).toBe(true)
+    expect(await Bun.password.verify(PASSWORD, after)).toBe(true)
+    expect((await signIn('dj@northline.app', PASSWORD)).tokens).toBeDefined()
+  })
+
+  test('a Firebase hash signs in, is replaced by argon2id, and a wrong password does not', async () => {
+    const result = await importFirebase([firebaseRow('fb@northline.app')])
+    expect(result.created).toBe(1)
+    const before = (await stored('fb@northline.app'))?.passwordHash as string
+    expect(before.startsWith('$tula-firebase-scrypt$v1$')).toBe(true)
+
+    const wrong = await signIn('fb@northline.app', PASSWORD).catch((err) => err)
+    expect(wrong.code).toBe('auth.invalid_credentials')
+    expect((await stored('fb@northline.app'))?.passwordHash).toBe(before)
+
+    expect((await signIn('fb@northline.app', FIREBASE_PASSWORD)).tokens).toBeDefined()
+    const after = (await stored('fb@northline.app'))?.passwordHash as string
+    expect(after.startsWith('$argon2id$v=19$m=65536,t=2,p=1$')).toBe(true)
+    // Nothing of the project's parameters is left in the row once the user has signed in.
+    expect(after).not.toContain('tula-firebase')
+    expect((await signIn('fb@northline.app', FIREBASE_PASSWORD)).tokens).toBeDefined()
+  })
+
+  test('the project parameters are in no answer, no entry and no event', async () => {
+    const res = await post({
+      users: [firebaseRow('fb@northline.app'), firebaseRow('fb2@northline.app')],
+      firebaseScrypt: FIREBASE_PARAMS,
+    })
+    const text = JSON.stringify([
+      await res.text(),
+      deps.activityLog.ofType('user.imported'),
+      deps.activityLog.ofType('user.created'),
+    ])
+    expect(text).toContain('firebase_scrypt')
+    for (const secret of [FIREBASE_PARAMS.signerKey, FIREBASE_PARAMS.saltSeparator, '42xEC']) {
+      expect(text).not.toContain(secret)
+    }
+    const entries = deps.activityLog.ofType('user.imported')
+    expect(entries.map((entry) => entry.data)).toEqual([
+      { emailVerified: true, passwordAlgorithm: 'firebase_scrypt' },
+      { emailVerified: true, passwordAlgorithm: 'firebase_scrypt' },
+    ])
+  })
+
+  test('the stored hash keeps the project key sealed, not in the clear', async () => {
+    await importFirebase([firebaseRow('fb@northline.app')])
+    const hash = (await stored('fb@northline.app'))?.passwordHash as string
+    expect(hash).not.toContain(FIREBASE_PARAMS.signerKey)
+    expect(hash).not.toContain(FIREBASE_PARAMS.signerKey.slice(0, 24))
+  })
+
+  test('a Firebase row in a call without the project parameters is refused alone', async () => {
+    const result = await importFirebase(
+      [row('ok@northline.app'), firebaseRow('fb@northline.app')],
+      null
+    )
+    expect(outcomes(result)).toEqual(['created', 'import.hash_malformed'])
+    expect(await stored('fb@northline.app')).toBeNull()
+  })
+
+  test.each([
+    ['weak', { ...FIREBASE_PARAMS, memCost: 10 }, 'import.hash_parameters_too_weak'],
+    ['costly', { ...FIREBASE_PARAMS, memCost: 20 }, 'import.hash_parameters_too_costly'],
+    [
+      'costly by the product',
+      { ...FIREBASE_PARAMS, memCost: 16, rounds: 16 },
+      'import.hash_parameters_too_costly',
+    ],
+    ['malformed', { ...FIREBASE_PARAMS, signerKey: '***' }, 'import.hash_malformed'],
+  ])(
+    'project parameters that are %s refuse the Firebase rows, one by one',
+    async (_n, params, code) => {
+      const result = await importFirebase(
+        [firebaseRow('a@northline.app'), firebaseRow('b@northline.app')],
+        params
+      )
+      expect(outcomes(result)).toEqual([code, code])
+      expect(result.created).toBe(0)
+    }
+  )
+
+  test('PBKDF2 under the floor, over the ceiling or malformed is refused per row', async () => {
+    const pbkdf2 = (hash: string) => ({ algorithm: 'pbkdf2_sha256', hash })
+    const result = await importRows([
+      row('a@northline.app', {
+        password: pbkdf2(DJANGO_PBKDF2.replace('$260000$', '$99999$')),
+      }),
+      row('b@northline.app', {
+        password: pbkdf2(DJANGO_PBKDF2.replace('$260000$', '$2000001$')),
+      }),
+      row('c@northline.app', { password: pbkdf2(DJANGO_PBKDF2.replace('tPuM', 'tP*M')) }),
+      row('d@northline.app', { password: pbkdf2(DJANGO_PBKDF2) }),
+    ])
+    expect(outcomes(result)).toEqual([
+      'import.hash_parameters_too_weak',
+      'import.hash_parameters_too_costly',
+      'import.hash_malformed',
+      'created',
+    ])
+  })
+
+  test('the imported Firebase hash opens only for its own user', async () => {
+    await importFirebase([firebaseRow('fb@northline.app')])
+    const found = await stored('fb@northline.app')
+    const hash = found?.passwordHash ?? null
+    const own = Foreign.opener(deps, tenant.environmentId, found?.user.id as string)
+    expect(await Passwords.verify(hash, FIREBASE_PASSWORD, own)).toBe(true)
+    expect(await Passwords.verify(hash, FIREBASE_PASSWORD)).toBe(false)
+    expect(
+      await Passwords.verify(
+        hash,
+        FIREBASE_PASSWORD,
+        Foreign.opener(deps, tenant.environmentId, 'x')
+      )
+    ).toBe(false)
+  })
+})
+
+describe('an imported Firebase user who has not been upgraded is known to every password check', () => {
+  const NEW_PASSWORD = 'a brand new passphrase 9'
+
+  test('changing the password accepts the right current password and refuses a wrong one', async () => {
+    await importFirebase([firebaseRow('fb@northline.app')])
+    const userId = (await stored('fb@northline.app'))?.user.id as string
+    const session = { userId, sessionId: 'session-1' }
+    const wrong = await Users.changePassword(deps, tenant, session, {
+      currentPassword: 'not it',
+      newPassword: NEW_PASSWORD,
+    }).catch((err) => err)
+    expect(wrong.code).toBe('auth.invalid_credentials')
+    await Users.changePassword(deps, tenant, session, {
+      currentPassword: FIREBASE_PASSWORD,
+      newPassword: NEW_PASSWORD,
+    })
+    const after = (await stored('fb@northline.app'))?.passwordHash as string
+    expect(await Bun.password.verify(NEW_PASSWORD, after)).toBe(true)
+  })
+
+  test('step-up with the password works on the imported hash and refuses a wrong one', async () => {
+    await importFirebase([firebaseRow('fb@northline.app')])
+    // Keep the hash foreign through the sign-in, so step-up meets it.
+    spies.push(spyOn(deps.users, 'upgradePasswordHash').mockResolvedValue(false as never))
+    const signedIn = await signIn('fb@northline.app', FIREBASE_PASSWORD)
+    const userId = (await stored('fb@northline.app'))?.user.id as string
+    const kept = (await stored('fb@northline.app'))?.passwordHash ?? ''
+    expect(kept.startsWith('$tula-')).toBe(true)
+    const session = { userId, sessionId: signedIn.tokens?.sessionId as string }
+    const origin = { ipAddress: '203.0.113.7', userAgent: 'tula-tests/1.0' }
+    const wrong = await Mfa.stepUp(
+      deps,
+      tenant,
+      session,
+      { method: 'password', password: 'nope' },
+      origin
+    ).catch((err) => err)
+    expect(wrong.code).toBe('auth.invalid_credentials')
+    await Mfa.stepUp(
+      deps,
+      tenant,
+      session,
+      { method: 'password', password: FIREBASE_PASSWORD },
+      origin
+    )
+  })
+
+  test('the history comparison recognises the imported password', async () => {
+    await importFirebase([firebaseRow('fb@northline.app')])
+    const userId = (await stored('fb@northline.app'))?.user.id as string
+    const reused = await Passwords.assertNotReused(
+      deps,
+      tenant,
+      userId,
+      FIREBASE_PASSWORD,
+      1
+    ).catch((err) => err)
+    expect(reused.code).toBe('password.reused')
+    await Passwords.assertNotReused(deps, tenant, userId, NEW_PASSWORD, 1, false)
   })
 })

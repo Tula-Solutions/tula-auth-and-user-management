@@ -379,20 +379,22 @@ function refusal(index: number, code: ErrorCode): ImportRowResult {
  * not at all. Running the same call again is safe: rows already imported are reported as
  * skipped, which makes a resumed import idempotent by normalized email.
  *
- * A row's password hash is parsed and judged ({@link Foreign.parse}) and then stored as given:
- * it is verified with its own algorithm at the user's first sign-in and replaced there by an
+ * A row's password hash is parsed and judged ({@link Foreign.prepare}) and then stored, as
+ * given or in the normal form of its algorithm (a Firebase hash with its sealed parameters).
+ * It is verified with its own algorithm at the user's first sign-in and replaced there by an
  * argon2id hash of the same password (`Passwords.needsRehash`). The environment's password
  * policy and the breached-password check are not applied: only the user knows the plaintext.
  * The password's age starts at the import, and it has no history (ADR 0066).
  *
- * @param deps - Users, clock and ids.
+ * @param deps - Users, clock, ids and the secret box.
  * @param scope - The project and environment.
- * @param input - The rows, in order.
+ * @param input - The rows, in order, and the Firebase project's parameters for the rows that
+ *   use them.
  * @param actor - The administrator running the import, recorded on every entry.
  * @returns One result per row, in order, with the counts.
  */
 export async function importUsers(
-  deps: Pick<Deps, 'users' | 'clock' | 'ids'>,
+  deps: Pick<Deps, 'users' | 'clock' | 'ids' | 'secretBox'>,
   scope: Scope,
   input: ImportUsersRequest,
   actor: Actor
@@ -400,7 +402,7 @@ export async function importUsers(
   const seen = new Set<string>()
   const results: ImportRowResult[] = []
   for (const [index, row] of input.users.entries()) {
-    results.push(await importRow(deps, scope, row, index, seen, actor))
+    results.push(await importRow(deps, scope, row, index, seen, actor, input.firebaseScrypt))
   }
   const count = (status: ImportRowResult['status']) =>
     results.filter((result) => result.status === status).length
@@ -413,12 +415,13 @@ export async function importUsers(
 }
 
 async function importRow(
-  deps: Pick<Deps, 'users' | 'clock' | 'ids'>,
+  deps: Pick<Deps, 'users' | 'clock' | 'ids' | 'secretBox'>,
   scope: Scope,
   row: ImportUserRow,
   index: number,
   seen: Set<string>,
-  actor: Actor
+  actor: Actor,
+  firebase: ImportUsersRequest['firebaseScrypt']
 ): Promise<ImportRowResult> {
   const parsed = parseEmail(row.email)
   if (!parsed) {
@@ -434,16 +437,24 @@ async function importRow(
   ) {
     return refusal(index, 'validation.failed')
   }
+  const id = deps.ids.next()
   let algorithm: Foreign.ImportAlgorithm | undefined
+  let passwordHash: string | null = null
   if (row.password !== undefined) {
-    const judged = Foreign.parse(row.password.algorithm, row.password.hash)
+    // The id is needed first: a Firebase hash's sealed parameters are bound to the user.
+    const judged = await Foreign.prepare(
+      deps,
+      { environmentId: scope.environmentId, userId: id },
+      row.password,
+      firebase
+    )
     if (!judged.ok) {
       return refusal(index, judged.code)
     }
     algorithm = judged.algorithm
+    passwordHash = judged.stored
   }
   const now = deps.clock.now()
-  const id = deps.ids.next()
   let created: boolean
   try {
     created = await deps.users.create(
@@ -458,7 +469,7 @@ async function importRow(
         createdAt: now,
         identityId: deps.ids.next(),
         credentialId: deps.ids.next(),
-        passwordHash: row.password?.hash ?? null,
+        passwordHash,
         ...(row.externalId !== undefined && { externalId: row.externalId }),
         ...(row.metadata !== undefined && { metadata: row.metadata }),
       },
@@ -638,7 +649,10 @@ export async function remove(
 }
 
 type PasswordDeps = RevocationDeps &
-  Pick<Deps, 'config' | 'environmentSettings' | 'breachChecker' | 'mailer' | 'rateLimiter'>
+  Pick<
+    Deps,
+    'config' | 'environmentSettings' | 'breachChecker' | 'mailer' | 'rateLimiter' | 'secretBox'
+  >
 
 /**
  * How often storing a password is tried when the stored password moved between the comparison
@@ -1093,7 +1107,14 @@ export async function changePassword(
   if (!lock.allowed) {
     throw new RateLimitError(lock.retryAfterMs)
   }
-  if (!(await Passwords.verify(found?.passwordHash ?? null, input.currentPassword)) || !found) {
+  if (
+    !(await Passwords.verify(
+      found?.passwordHash ?? null,
+      input.currentPassword,
+      found && Foreign.opener(deps, scope.environmentId, found.user.id)
+    )) ||
+    !found
+  ) {
     throw new AuthError('auth.invalid_credentials')
   }
   await deps.lockout.clear(lockKey)

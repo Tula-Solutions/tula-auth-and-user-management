@@ -460,6 +460,12 @@ export interface Schemas {
     message: string
     params?: Schemas['ErrorParams']
   }
+  FirebaseScryptParams: {
+    signerKey: string
+    saltSeparator: string
+    rounds: number
+    memCost: number
+  }
   Hook: {
     id: string
     point: string
@@ -627,6 +633,7 @@ export interface Schemas {
   }
   ImportUsersRequest: {
     users: Schemas['ImportUserRow'][]
+    firebaseScrypt?: Schemas['FirebaseScryptParams']
   }
   ImportUsersResult: {
     results: Schemas['ImportRowResult'][]
@@ -1596,7 +1603,7 @@ export interface Schemas {
   UserImportedEventData: {
     emailVerified: boolean
     passwordless?: boolean
-    passwordAlgorithm?: 'bcrypt' | 'argon2id' | 'argon2i'
+    passwordAlgorithm?: 'bcrypt' | 'argon2id' | 'argon2i' | 'pbkdf2_sha256' | 'firebase_scrypt'
   }
   UserList: {
     meta: Schemas['PaginationMeta']
