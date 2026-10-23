@@ -120,7 +120,7 @@ function apiServers(): WebServer[] {
     {
       // The example is built with the fixture's fixed API URL and key, and the dashboard as the
       // image builds it; then the fixture serves both.
-      command: `VITE_TULA_API_URL=${API_URL} VITE_TULA_PUBLISHABLE_KEY=${PUBLISHABLE_KEY} bun run --filter @tula-tech/example-react-vite build && bun run --filter @tula-tech/dashboard build && E2E=1 bun run server.ts`,
+      command: `VITE_TULA_API_URL=${API_URL} VITE_TULA_PUBLISHABLE_KEY=${PUBLISHABLE_KEY} bun run --filter @tula-tech/example-react-vite build && VITE_TULA_API_URL=${API_URL} VITE_TULA_PUBLISHABLE_KEY=${PUBLISHABLE_KEY} bun run --filter @tula-tech/ui browser:build && bun run --filter @tula-tech/dashboard build && E2E=1 bun run server.ts`,
       cwd: import.meta.dirname,
       url: `${API_URL}/v1/status`,
       reuseExistingServer: !process.env.CI,

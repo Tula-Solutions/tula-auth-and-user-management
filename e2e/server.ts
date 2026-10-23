@@ -427,12 +427,28 @@ const api = Bun.serve({
 })
 
 const dist = join(import.meta.dir, '..', 'examples', 'react-vite', 'dist')
+// The browser harness of Tula UI's organization items (packages/ui/browser, TULA-127), served
+// under `/__ui/` beside the example so that it shares the example's origin, and with it the
+// session cookie the test's sign-up leaves for the API.
+const uiDist = join(import.meta.dir, '..', 'packages', 'ui', 'browser', 'dist')
+const UI_PREFIX = '/__ui/'
 
 const web = Bun.serve({
   port: APP_PORT,
   hostname: 'localhost',
   async fetch(request) {
     const { pathname } = new URL(request.url)
+    if (pathname.startsWith(UI_PREFIX)) {
+      const asset = normalize(join(uiDist, pathname.slice(UI_PREFIX.length)))
+      const file = Bun.file(
+        asset.startsWith(uiDist) && pathname !== UI_PREFIX ? asset : join(uiDist, 'index.html')
+      )
+      return (await file.exists())
+        ? new Response(file, { headers: { 'cache-control': 'no-store' } })
+        : new Response('Build the harness first: bun run --filter @tula-tech/ui browser:build', {
+            status: 500,
+          })
+    }
     const path = normalize(join(dist, pathname))
     // A single-page app: a file when the path names one inside dist, the page otherwise.
     const file = path.startsWith(dist) && pathname !== '/' ? Bun.file(path) : null
