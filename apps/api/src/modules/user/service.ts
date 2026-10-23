@@ -296,6 +296,9 @@ function storable(text: string | undefined): boolean {
   return text === undefined || (!text.includes('\u0000') && !LONE_SURROGATE.test(text))
 }
 
+/** The deepest nesting a row's metadata may have (the object itself is level 1). */
+const MAX_IMPORT_METADATA_DEPTH = 32
+
 /** A UTF-16 surrogate with no partner (`String.prototype.isWellFormed` is not in the TS lib). */
 const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/
 
@@ -310,23 +313,37 @@ const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[
  * A NUL or a lone surrogate in any key or string is refused: `jsonb` rejects both.
  */
 function metadataFits(metadata: Record<string, unknown>): boolean {
-  const sound = (value: unknown): boolean => {
+  // Iterative on purpose: the contract's z.unknown() does not bound depth, and recursing over
+  // (or stringifying) a 100,000-deep array overflows the stack, which would fail the whole call
+  // after earlier rows were committed. The depth is judged before any JSON.stringify.
+  const pending: { value: unknown; depth: number }[] = [{ value: metadata, depth: 1 }]
+  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+    const { value, depth } = next
     if (typeof value === 'string') {
-      return storable(value)
+      if (!storable(value)) {
+        return false
+      }
+    } else if (typeof value === 'number') {
+      if (!Number.isFinite(value) || /e/i.test(String(value))) {
+        return false
+      }
+    } else if (value !== null && typeof value === 'object') {
+      if (depth > MAX_IMPORT_METADATA_DEPTH) {
+        return false
+      }
+      if (Array.isArray(value)) {
+        for (const child of value) {
+          pending.push({ value: child, depth: depth + 1 })
+        }
+      } else {
+        for (const [key, child] of Object.entries(value)) {
+          if (!storable(key)) {
+            return false
+          }
+          pending.push({ value: child, depth: depth + 1 })
+        }
+      }
     }
-    if (typeof value === 'number') {
-      return Number.isFinite(value) && !/e/i.test(String(value))
-    }
-    if (Array.isArray(value)) {
-      return value.every(sound)
-    }
-    if (value !== null && typeof value === 'object') {
-      return Object.entries(value).every(([key, child]) => storable(key) && sound(child))
-    }
-    return true
-  }
-  if (!sound(metadata)) {
-    return false
   }
   const compact = JSON.stringify(metadata)
   let bytes = new TextEncoder().encode(compact).length

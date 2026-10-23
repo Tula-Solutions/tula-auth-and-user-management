@@ -46,7 +46,7 @@ externalId?, password? }`, and `password` is a tagged form `{ algorithm, hash, p
   created and the retry reports them as skipped.
 - **Name, metadata and external id.** A row's `name` is split at the first whitespace into
   `firstName` and `lastName` (each cut to the 100 characters the columns allow); users have
-  no single name field. `metadata` (an object, at most 4 KiB as JSON; `validation.failed`
+  no single name field. `metadata` (an object, at most 4 KiB as stored, which is the compact JSON plus about one byte per `:` and `,`, and at most 32 levels deep, judged iteratively before any stringify; `validation.failed`
   beyond it) and `externalId` are stored on two new columns of `users` (migration `0036`):
   `metadata` with a database check on its size, `externalId` indexed by nothing and unique
   for nobody (two sources may reuse an id; matching rows to a source is the operator's job

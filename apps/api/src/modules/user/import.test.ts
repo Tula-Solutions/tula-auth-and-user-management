@@ -292,6 +292,35 @@ describe('the refusals, row by row', () => {
     expect(results[1]).toMatchObject({ code: 'validation.failed' })
   })
 
+  // A depth the contract's z.unknown() does not bound: recursing over it (or stringifying it)
+  // overflows the stack, which would be the whole call's 500 after earlier rows committed.
+  test('metadata nested 100000 deep is refused alone, whole call 200', async () => {
+    const deep = `${'['.repeat(100_000)}${']'.repeat(100_000)}`
+    const good = (email: string) => JSON.stringify(row(email))
+    const raw = `{"users":[${good('before@northline.app')},{"email":"deep@northline.app","emailVerified":true,"metadata":{"a":${deep}}},${good('after@northline.app')}]}`
+    const res = await post(null, SK, raw)
+    expect(res.status).toBe(200)
+    const result = (await res.json()) as ImportUsersResult
+    expect(result.results.map((entry) => entry.status)).toEqual(['created', 'refused', 'created'])
+    expect(result.results[1]).toMatchObject({ code: 'validation.failed' })
+  })
+
+  test('metadata nested 32 deep is allowed and 33 deep is refused', async () => {
+    const nest = (levels: number) => {
+      let value: unknown = 1
+      for (let i = 0; i < levels; i += 1) {
+        value = [value]
+      }
+      return { a: value }
+    }
+    // `metadata` itself is level 1, so `a` holds 31 more arrays at the limit.
+    const { results } = await importRows([
+      { ...row('ok@northline.app'), metadata: nest(31) },
+      { ...row('deep@northline.app'), metadata: nest(32) },
+    ])
+    expect(results.map((entry) => entry.status)).toEqual(['created', 'refused'])
+  })
+
   test('a row the store itself refuses is refused alone and earlier rows stay', async () => {
     const create = deps.users.create.bind(deps.users)
     spies.push(

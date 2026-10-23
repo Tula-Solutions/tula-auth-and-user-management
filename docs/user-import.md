@@ -55,7 +55,7 @@ curl -X POST https://auth.example.com/v1/admin/users/import \
 | `email` | Required. Validated and normalized as for any user. |
 | `emailVerified` | Required. `true` only if the source had proven the address: a user whose address is not verified signs in with the old password only after verifying it. |
 | `name` | Optional, up to 200 characters. Split at the first space into the first and last name. |
-| `metadata` | Optional object, at most 4 KiB as JSON. |
+| `metadata` | Optional object, at most 4 KiB **as stored**: the compact JSON plus about one byte for every `:` and `,` (the database prints a space after each), nested at most 32 levels deep. |
 | `externalId` | Optional, up to 256 characters: the user's id in the system they come from. |
 | `password` | Optional. Without it the user has no password and signs in another way or resets. |
 
@@ -125,7 +125,7 @@ row with no `email`, is refused whole with `422`.
 | `import.hash_malformed` | The hash is not a hash of the algorithm named. |
 | `import.hash_parameters_too_weak` | Below the minimums above. |
 | `import.hash_parameters_too_costly` | Above the maximums above. |
-| `validation.failed` | `metadata` is over 4 KiB. |
+| `validation.failed` | A row's `metadata`, `name` or `externalId` cannot be stored: `metadata` is over 4 KiB as stored (about one extra byte per `:` and `,`); `metadata` is nested more than 32 levels deep; a NUL character or a lone surrogate is in `metadata` (a key or a value), `name` or `externalId`; `metadata` holds a number JSON writes with an exponent (such as `1e300`); or the database itself refused the row's data. Only that row is refused. |
 
 ## What the first sign-in does
 

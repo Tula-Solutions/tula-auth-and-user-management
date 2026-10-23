@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test'
 import { users, withTenant } from '@tula-tech/db'
 import {
   createTestDatabase,
@@ -7,7 +7,9 @@ import {
   type TestTenant,
 } from '@tula-tech/db/testing'
 import { eq } from 'drizzle-orm'
+import { dataRefusal } from '~/adapters/postgres/errors'
 import { PostgresUserRepository } from '~/adapters/postgres/users'
+import * as logger from '~/lib/logger'
 import * as Audit from '~/modules/audit/service'
 import { InvalidUserDataError, type NewUser } from '~/ports/user-repository'
 
@@ -113,6 +115,57 @@ describe('a user created with an external id and metadata', () => {
     await expect(
       repo.create(newUser('h@northline.app', { metadata: { a: '\u0000' } }), Audit.none('fixture'))
     ).rejects.toBeInstanceOf(InvalidUserDataError)
+  })
+
+  test('a mapped refusal is logged by SQLSTATE and constraint, never by its data', async () => {
+    const repo = new PostgresUserRepository(testDb.db)
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    try {
+      await expect(
+        repo.create(
+          newUser('secret-address@northline.app', { metadata: { hidden: 'x'.repeat(5000) } }),
+          Audit.none('fixture')
+        )
+      ).rejects.toBeInstanceOf(InvalidUserDataError)
+      expect(warn).toHaveBeenCalledTimes(1)
+      const [, context] = warn.mock.calls[0] ?? []
+      expect(context).toEqual({
+        environmentId: tenant.environmentId,
+        sqlstate: '23514',
+        constraint: 'users_metadata_bounds',
+      })
+      expect(JSON.stringify(warn.mock.calls)).not.toMatch(/secret-address|hidden|xxxx/)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  test('any other check violation stays a raw error, even for an import', async () => {
+    for (const constraint of ['users_something_else', undefined]) {
+      const raw = Object.assign(new Error('check failed'), { code: '23514', constraint })
+      const failing = {
+        transaction: async () => {
+          throw raw
+        },
+      }
+      const repo = new PostgresUserRepository(failing as never)
+      await expect(
+        repo.create(newUser('k@northline.app', { metadata: { a: 1 } }), Audit.none('fixture'))
+      ).rejects.toBe(raw)
+    }
+  })
+
+  test('dataRefusal names what it maps and nothing else', () => {
+    const wrapped = (inner: object) => Object.assign(new Error('wrapped'), { cause: inner })
+    expect(dataRefusal(wrapped({ code: '23514', constraint: 'users_metadata_bounds' }))).toEqual({
+      code: '23514',
+      constraint: 'users_metadata_bounds',
+    })
+    expect(dataRefusal({ code: '22P05' })).toEqual({ code: '22P05', constraint: undefined })
+    expect(dataRefusal({ code: '23514', constraint: 'other' })).toBeNull()
+    expect(dataRefusal({ code: '23514' })).toBeNull()
+    expect(dataRefusal({ code: '23505', constraint: 'users_metadata_bounds' })).toBeNull()
+    expect(dataRefusal(new Error('plain'))).toBeNull()
   })
 
   test('a refused row leaves no user, and the next row is created', async () => {

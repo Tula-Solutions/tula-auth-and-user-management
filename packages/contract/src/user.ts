@@ -131,8 +131,11 @@ export const CreateUserRequestSchema = z
 export const MAX_IMPORT_ROWS = 500
 
 /**
- * The most bytes a row's `metadata` may take as JSON. It is stored with the user, so it is
- * bounded the way any user-sized value is.
+ * The most bytes a row's `metadata` may take **as stored**: the database prints a space after
+ * every `:` and `,`, so the count is the compact JSON plus about one byte for each of them.
+ * It is stored with the user, so it is bounded the way any user-sized value is. A row over
+ * it, nested more than 32 levels, or holding a NUL, a lone surrogate or an exponent number
+ * is refused alone with `validation.failed`.
  */
 export const MAX_IMPORT_METADATA_BYTES = 4096
 

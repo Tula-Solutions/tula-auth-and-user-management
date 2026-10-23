@@ -23,24 +23,40 @@ export function isUniqueViolation(error: unknown): boolean {
   return false
 }
 
-/** SQLSTATEs of a value the database refuses: check violation, bad `json` text, bad bytes/NUL. */
-const DATA_REFUSALS = new Set(['23514', '22P05', '22P02', '22021', '22P04'])
+/** SQLSTATEs of a value the database refuses outright: `\u0000` or bad text in `text`/`jsonb`. */
+const DATA_REFUSALS = new Set(['22P05', '22P02', '22021', '22P04'])
+
+/** The one check violation (23514) that is a refusal of a row's data: the import's metadata bound. */
+const DATA_CHECKS = new Set(['users_metadata_bounds'])
+
+/** What the database refused: the SQLSTATE and, for a check, the constraint's name. */
+export interface DataRefusal {
+  code: string
+  constraint: string | undefined
+}
 
 /**
- * Whether an error is the database refusing the data of a statement (not a conflict): a check
- * violation, a `\u0000` or an invalid string in `text` or `jsonb`.
+ * Whether an error is the database refusing the data of a statement (not a conflict), and which.
+ *
+ * A check violation (23514) counts only when it is a named constraint in {@link DATA_CHECKS};
+ * any other check violation is a bug or a different rule and stays a raw error. Nothing of the
+ * statement's values is read.
  *
  * @param error - The caught error.
- * @returns `true` for one of those SQLSTATEs anywhere in the cause chain.
+ * @returns The SQLSTATE and constraint found anywhere in the cause chain, or `null`.
  */
-export function isDataRefusal(error: unknown): boolean {
+export function dataRefusal(error: unknown): DataRefusal | null {
   for (let current = error; current instanceof Object; current = (current as Error).cause) {
-    const code = (current as { code?: unknown }).code
-    if (typeof code === 'string' && DATA_REFUSALS.has(code)) {
-      return true
+    const { code, constraint } = current as { code?: unknown; constraint?: unknown }
+    if (typeof code !== 'string') {
+      continue
+    }
+    const name = typeof constraint === 'string' ? constraint : undefined
+    if (DATA_REFUSALS.has(code) || (code === '23514' && name && DATA_CHECKS.has(name))) {
+      return { code, constraint: name }
     }
   }
-  return false
+  return null
 }
 
 /**

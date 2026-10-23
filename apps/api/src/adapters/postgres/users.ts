@@ -33,7 +33,8 @@ import {
   sql,
 } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
-import { isDataRefusal, isUniqueViolation } from '~/adapters/postgres/errors'
+import { dataRefusal, isUniqueViolation } from '~/adapters/postgres/errors'
+import * as logger from '~/lib/logger'
 import { type Activity, activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import type {
   AddEmailRefusal,
@@ -210,7 +211,15 @@ export class PostgresUserRepository implements UserRepository {
         return false
       }
       // Only data that came with an import can be refused by a check of its own.
-      if ((user.metadata !== undefined || user.externalId !== undefined) && isDataRefusal(error)) {
+      const refused =
+        user.metadata !== undefined || user.externalId !== undefined ? dataRefusal(error) : null
+      if (refused) {
+        // Only the SQLSTATE and the constraint's name: never the metadata or the address.
+        logger.warn('the database refused an imported user’s data', {
+          environmentId: user.environmentId,
+          sqlstate: refused.code,
+          constraint: refused.constraint,
+        })
         throw new InvalidUserDataError()
       }
       throw error
