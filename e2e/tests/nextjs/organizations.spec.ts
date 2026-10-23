@@ -75,8 +75,26 @@ async function billingManagerRole(request: APIRequestContext): Promise<string> {
   return key
 }
 
+/**
+ * Switch the active organization and wait until the page has settled on it.
+ *
+ * `setActive` ends with `router.refresh()`, a second request for the page's server components,
+ * and the client's own state (the role, `has()`) changes before that request has answered.
+ * A page checked in between is a document the router is re-rendering, and under load axe
+ * found it without its title (`document-title`, seen in CI). The switch's answer is the
+ * button's `aria-pressed`; the page is then loaded again, which ends the refresh whatever it
+ * was doing, and shows what the cookies the switch set say, the state every later step of the
+ * test works from.
+ *
+ * @param page - The signed-in page of the organization switcher.
+ * @param label - The name of the switch button.
+ */
 async function switchTo(page: Page, label: string | RegExp): Promise<void> {
-  await page.getByRole('button', { name: label }).click()
+  const button = page.getByRole('button', { name: label })
+  await button.click()
+  await expect(button).toHaveAttribute('aria-pressed', 'true')
+  await page.reload()
+  await expect(button).toHaveAttribute('aria-pressed', 'true')
 }
 
 test('a permission of the active organization opens a protected page', async ({
