@@ -2,9 +2,11 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import type { ImportUserRow, ImportUsersResult } from '@tula-tech/contract'
 import { createApp, MAX_BODY_BYTES, MAX_IMPORT_BODY_BYTES } from '~/index'
 import * as Flows from '~/modules/flow/service'
+import * as Mfa from '~/modules/mfa/service'
 import * as Foreign from '~/modules/password/foreign-hash'
 import * as Passwords from '~/modules/password/service'
 import { USER_IMPORT_RATE_LIMIT } from '~/modules/user/router'
+import * as Users from '~/modules/user/service'
 import { InvalidUserDataError } from '~/ports/user-repository'
 import { createTestDeps, seedApiKey, TEST_TENANT, type TestDeps } from '~/testing'
 import { ARGON2I_REFERENCE, BCRYPT_PHP_COST_7 } from '~/testing/password-vectors'
@@ -760,5 +762,67 @@ describe('PBKDF2-SHA256 and Firebase scrypt: the first sign-in', () => {
         Foreign.opener(deps, tenant.environmentId, 'x')
       )
     ).toBe(false)
+  })
+})
+
+describe('an imported Firebase user who has not been upgraded is known to every password check', () => {
+  const NEW_PASSWORD = 'a brand new passphrase 9'
+
+  test('changing the password accepts the right current password and refuses a wrong one', async () => {
+    await importFirebase([firebaseRow('fb@northline.app')])
+    const userId = (await stored('fb@northline.app'))?.user.id as string
+    const session = { userId, sessionId: 'session-1' }
+    const wrong = await Users.changePassword(deps, tenant, session, {
+      currentPassword: 'not it',
+      newPassword: NEW_PASSWORD,
+    }).catch((err) => err)
+    expect(wrong.code).toBe('auth.invalid_credentials')
+    await Users.changePassword(deps, tenant, session, {
+      currentPassword: FIREBASE_PASSWORD,
+      newPassword: NEW_PASSWORD,
+    })
+    const after = (await stored('fb@northline.app'))?.passwordHash as string
+    expect(await Bun.password.verify(NEW_PASSWORD, after)).toBe(true)
+  })
+
+  test('step-up with the password works on the imported hash and refuses a wrong one', async () => {
+    await importFirebase([firebaseRow('fb@northline.app')])
+    // Keep the hash foreign through the sign-in, so step-up meets it.
+    spies.push(spyOn(deps.users, 'upgradePasswordHash').mockResolvedValue(false as never))
+    const signedIn = await signIn('fb@northline.app', FIREBASE_PASSWORD)
+    const userId = (await stored('fb@northline.app'))?.user.id as string
+    const kept = (await stored('fb@northline.app'))?.passwordHash ?? ''
+    expect(kept.startsWith('$tula-')).toBe(true)
+    const session = { userId, sessionId: signedIn.tokens?.sessionId as string }
+    const origin = { ipAddress: '203.0.113.7', userAgent: 'tula-tests/1.0' }
+    const wrong = await Mfa.stepUp(
+      deps,
+      tenant,
+      session,
+      { method: 'password', password: 'nope' },
+      origin
+    ).catch((err) => err)
+    expect(wrong.code).toBe('auth.invalid_credentials')
+    await Mfa.stepUp(
+      deps,
+      tenant,
+      session,
+      { method: 'password', password: FIREBASE_PASSWORD },
+      origin
+    )
+  })
+
+  test('the history comparison recognises the imported password', async () => {
+    await importFirebase([firebaseRow('fb@northline.app')])
+    const userId = (await stored('fb@northline.app'))?.user.id as string
+    const reused = await Passwords.assertNotReused(
+      deps,
+      tenant,
+      userId,
+      FIREBASE_PASSWORD,
+      1
+    ).catch((err) => err)
+    expect(reused.code).toBe('password.reused')
+    await Passwords.assertNotReused(deps, tenant, userId, NEW_PASSWORD, 1, false)
   })
 })

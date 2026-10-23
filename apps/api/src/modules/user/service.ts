@@ -380,14 +380,16 @@ function refusal(index: number, code: ErrorCode): ImportRowResult {
  * skipped, which makes a resumed import idempotent by normalized email.
  *
  * A row's password hash is parsed and judged ({@link Foreign.prepare}) and then stored, as
- * given or in the normal form of its algorithm (a Firebase hash with its sealed parameters): it is verified with its own algorithm at the user's first sign-in and replaced there by an
+ * given or in the normal form of its algorithm (a Firebase hash with its sealed parameters).
+ * It is verified with its own algorithm at the user's first sign-in and replaced there by an
  * argon2id hash of the same password (`Passwords.needsRehash`). The environment's password
  * policy and the breached-password check are not applied: only the user knows the plaintext.
  * The password's age starts at the import, and it has no history (ADR 0066).
  *
  * @param deps - Users, clock, ids and the secret box.
  * @param scope - The project and environment.
- * @param input - The rows, in order, and the Firebase project's parameters for the rows that use them.
+ * @param input - The rows, in order, and the Firebase project's parameters for the rows that
+ *   use them.
  * @param actor - The administrator running the import, recorded on every entry.
  * @returns One result per row, in order, with the counts.
  */
