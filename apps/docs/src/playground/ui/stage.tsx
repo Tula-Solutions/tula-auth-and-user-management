@@ -1,7 +1,10 @@
 import type { TulaClient } from '@tula-tech/core'
 import {
+  CreateOrganization,
   EmailLinkCallback,
   OAuthCallback,
+  OrganizationProfile,
+  OrganizationSwitcher,
   SignedIn,
   SignedOut,
   SignIn,
@@ -10,9 +13,10 @@ import {
   UserProfile,
 } from '@tula-tech/react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
-import { type PlaygroundConfig, themeOverrides } from '../config'
+import { isOrganizationScreen, type PlaygroundConfig, themeOverrides } from '../config'
 import {
   approveOAuth,
+  DEMO_INVITATION_TOKEN,
   denyOAuth,
   type OAuthProfile,
   type OAuthRequest,
@@ -27,6 +31,9 @@ export const SANDBOX_PATHS = {
   signIn: '/sign-in',
   signUp: '/sign-up',
   account: '/account',
+  organizations: '/organizations',
+  organizationProfile: '/organization',
+  createOrganization: '/organization/new',
   oauthCallback: '/auth/callback',
   emailLink: '/auth/email-link',
 }
@@ -48,8 +55,18 @@ export function addressOf(config: PlaygroundConfig, view: View): string {
     case 'email-link':
       return `acme.example${SANDBOX_PATHS.emailLink}`
     default:
-      return `acme.example${SANDBOX_PATHS[config.screen === 'account' ? 'account' : config.screen === 'sign-up' ? 'signUp' : 'signIn']}`
+      return `acme.example${SANDBOX_PATHS[PATH_OF_SCREEN[config.screen]]}`
   }
+}
+
+/** Which of {@link SANDBOX_PATHS} each screen is shown at. */
+const PATH_OF_SCREEN: Record<PlaygroundConfig['screen'], keyof typeof SANDBOX_PATHS> = {
+  'sign-in': 'signIn',
+  'sign-up': 'signUp',
+  account: 'account',
+  'organization-switcher': 'organizations',
+  'create-organization': 'createOrganization',
+  'organization-profile': 'organizationProfile',
 }
 
 /** Props of {@link Consent}. */
@@ -156,7 +173,7 @@ function Gate({ sandbox }: { sandbox: Sandbox }) {
     <div className='pg-gate'>
       <h3>You are signed out</h3>
       <p className='pg-muted'>
-        The account screen shows a signed-in user. Sign the demo account in to see it.
+        This screen shows a signed-in user. Sign the demo account in to see it.
       </p>
       <button
         type='button'
@@ -173,16 +190,47 @@ function Gate({ sandbox }: { sandbox: Sandbox }) {
   )
 }
 
+/** The organization component a screen is, with the destinations of the sandbox's app. */
+function OrganizationScreen({ screen }: { screen: PlaygroundConfig['screen'] }) {
+  // The invitation the demo account was sent, as the page an emailed link leads to would pass it.
+  const [token, setToken] = useState<string | undefined>(DEMO_INVITATION_TOKEN)
+  if (screen === 'create-organization') {
+    return <CreateOrganization headingLevel={3} afterCreateUrl={SANDBOX_PATHS.organizations} />
+  }
+  if (screen === 'organization-profile') {
+    return (
+      <OrganizationProfile
+        headingLevel={3}
+        invitationUrl={SANDBOX_PATHS.organizations}
+        afterLeaveUrl={SANDBOX_PATHS.organizations}
+        afterDeleteUrl={SANDBOX_PATHS.organizations}
+      />
+    )
+  }
+  return (
+    <OrganizationSwitcher
+      invitationToken={token}
+      onInvitationHandled={() => setToken(undefined)}
+      organizationProfileUrl={SANDBOX_PATHS.organizationProfile}
+      createOrganizationUrl={SANDBOX_PATHS.createOrganization}
+    />
+  )
+}
+
 function Screen({ config, sandbox }: { config: PlaygroundConfig; sandbox: Sandbox }) {
   const state = useAuthState(sandbox.client)
   if (config.screen === 'sign-up') {
     return <SignUp headingLevel={3} />
   }
-  if (config.screen === 'account') {
+  if (config.screen === 'account' || isOrganizationScreen(config.screen)) {
     return (
       <>
         <SignedIn>
-          <UserProfile headingLevel={3} />
+          {config.screen === 'account' ? (
+            <UserProfile headingLevel={3} />
+          ) : (
+            <OrganizationScreen screen={config.screen} />
+          )}
         </SignedIn>
         <SignedOut>{state.status === 'loading' ? null : <Gate sandbox={sandbox} />}</SignedOut>
       </>
@@ -211,6 +259,9 @@ function Provider(props: {
       afterSignUpUrl={at(SANDBOX_PATHS.account)}
       afterSignOutUrl={at(SANDBOX_PATHS.signIn)}
       oauthCallbackUrl={at(SANDBOX_PATHS.oauthCallback)}
+      organizationProfileUrl={at(SANDBOX_PATHS.organizationProfile)}
+      createOrganizationUrl={at(SANDBOX_PATHS.createOrganization)}
+      invitationUrl={at(SANDBOX_PATHS.organizations)}
       emailLinkUrl={config.settings.methods.emailLink ? at(SANDBOX_PATHS.emailLink) : undefined}
       appearance={{ theme: themeOverrides(config), colorScheme: scheme }}
     >
@@ -239,6 +290,15 @@ export function Stage(props: StageProps) {
     } else if (path === SANDBOX_PATHS.account) {
       go({ kind: 'screen' })
       show('account')
+    } else if (path === SANDBOX_PATHS.organizations) {
+      go({ kind: 'screen' })
+      show('organization-switcher')
+    } else if (path === SANDBOX_PATHS.organizationProfile) {
+      go({ kind: 'screen' })
+      show('organization-profile')
+    } else if (path === SANDBOX_PATHS.createOrganization) {
+      go({ kind: 'screen' })
+      show('create-organization')
     }
   }
   const provider = (children: ReactNode, key = `${epoch}-${view.kind}`) => (

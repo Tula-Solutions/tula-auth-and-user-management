@@ -304,10 +304,17 @@
       "breakpoints": true
     },
     {
-      "idx": 43,
+      "idx": 44,
       "version": "7",
-      "when": 1792744246804,
-      "tag": "0043_organization_search_indexes",
+      "when": 1792745535429,
+      "tag": "0044_organization_invitations_email_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1792751006253,
+      "tag": "0045_organization_search_indexes",
       "breakpoints": true
     }
   ]

@@ -47,6 +47,8 @@ describe('conformance scenarios, in process', () => {
       'my organizations and the active organization',
       'organization invitations',
       'verified domains: suggest and auto-join',
+      'organization members and roles from the client',
+      'my pending organization invitations',
       'attempt binding',
       'email code sign-in',
       'email link sign-in',

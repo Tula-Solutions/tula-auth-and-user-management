@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { RoleKeySchema, UserOrganizationSchema } from './organization'
+import { OrganizationPageQuerySchema, RoleKeySchema, UserOrganizationSchema } from './organization'
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, PaginationMetaSchema } from './user'
 
 // Invitations to an organization (ADR 0065, Orgs 04): an administrator, or a member whose role
@@ -119,6 +119,36 @@ export const InvitationPreviewSchema = z
 
 /** What accepting an invitation answers: the organization the user joined, with their role. */
 export const AcceptedInvitationSchema = UserOrganizationSchema.meta({ ref: 'AcceptedInvitation' })
+
+/**
+ * A pending invitation addressed to the signed-in user, as `GET /v1/client/me/organization-invitations`
+ * lists it: enough to show and answer it, and nothing else. No token, no invited address, no
+ * inviter and no other user's data. It is answered by its `id`
+ * (`POST …/organization-invitations/{invitationId}/accept` and `…/decline`), which the session
+ * authorizes exactly as the token does.
+ */
+export const MyOrganizationInvitationSchema = z
+  .object({
+    id: z.string(),
+    organizationName: z.string(),
+    /** The key of the role the user gets on accepting. */
+    role: z.string(),
+    expiresAt: z.iso.datetime(),
+  })
+  .meta({ ref: 'MyOrganizationInvitation' })
+
+/** One page of the signed-in user's pending invitations, newest first. */
+export const MyOrganizationInvitationListSchema = z
+  .object({ meta: PaginationMetaSchema, data: z.array(MyOrganizationInvitationSchema) })
+  .meta({ ref: 'MyOrganizationInvitationList' })
+
+/** The query of {@link MyOrganizationInvitationListSchema}: a page. */
+export const MyOrganizationInvitationQuerySchema = OrganizationPageQuerySchema
+
+/** An invitation addressed to the signed-in user. */
+export type MyOrganizationInvitation = z.infer<typeof MyOrganizationInvitationSchema>
+/** A page of them. */
+export type MyOrganizationInvitationList = z.infer<typeof MyOrganizationInvitationListSchema>
 
 /** An invitation. */
 export type OrganizationInvitation = z.infer<typeof OrganizationInvitationSchema>

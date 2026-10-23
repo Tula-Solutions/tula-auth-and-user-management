@@ -61,7 +61,12 @@ by error code. Their code samples are copied from files of this repository by
 
 | | |
 | --- | --- |
-| [Organizations](organizations.md) | Groups of users who share something: turning them on (`tula.config.ts`, admin API), creating them and the active organization, the `org_id`, `org_role` and `org_perms` claims and their size, `has()` in Next.js, React and any backend, access rules in the Next.js proxy, the Tula UI switcher and profile, and what is coming (invitations, verified domains). |
+| [Organizations](organizations.md) | Groups of users who share something: turning them on (`tula.config.ts`, admin API), creating them and the active organization, the `org_id`, `org_role` and `org_perms` claims and their size, `has()` in Next.js, React and any backend, access rules in the Next.js proxy, the Tula UI switcher and profile, and where invitations and verified domains fit. |
+| [OrganizationSwitcher](organization-switcher.md) | The prebuilt control that shows the active organization and switches it: the user's organizations, the personal account, suggestions from their email domain, an invitation they opened, and the way to create or manage an organization. |
+| [CreateOrganization](create-organization.md) | The prebuilt form that makes an organization and makes it the active one, with every state it can be in. |
+| [OrganizationProfile](organization-profile.md) | The prebuilt page for one organization: General (rename, leave, delete), Members, Invitations and Domains, each drawn only where the user's role permits. |
+| [Invitations](invitations.md) | Inviting an address to an organization from the admin API or the client: the emailed link and its `#tula_invitation=` fragment, accepting and declining, the seven-day expiry, the error codes, the limits and what happens when the role was deleted. |
+| [Verified domains](verified-domains.md) | Claiming an email domain with an emailed code, `suggest` and `auto_join` (at sign-up only), the deny list of public mail domains, the one-year lifetime and its reminders, re-verifying, the error codes and the limits. |
 | [Roles and permissions](roles-and-permissions.md) | The built-in `admin` and `member`, custom roles, the `org:<feature>:<action>` grammar and the system permissions, why `has()` is exact, and what weakens security. |
 
 ## Claims for your backend

@@ -1,6 +1,6 @@
 {
-  "id": "092865df-c038-4383-b284-0d15c5cbd7d9",
-  "prevId": "e0f345ed-5fb6-4bde-9069-4c33d547ab81",
+  "id": "ff8cc703-ed28-4935-89f7-6b9e8b1dfdc5",
+  "prevId": "89a88bf8-e7a2-4850-a817-47dc9d7dcb44",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2828,6 +2828,28 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "organization_invitations_email_idx": {
+          "name": "organization_invitations_email_idx",
+          "columns": [
+            {
+              "expression": "environment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "email_normalized",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"tula\".\"organization_invitations\".\"status\" = 'pending'",
           "concurrently": false,
           "method": "btree",
           "with": {}

@@ -46,6 +46,7 @@ import type {
   OwnedOrganization,
   Page,
   PageCriteria,
+  PendingInvitationRecord,
   ResolveInvitationOutcome,
   RoleChanges,
   UpdateOrganizationOutcome,
@@ -996,6 +997,51 @@ export class PostgresOrganizationStore implements OrganizationStore {
       const [total] = await tx.select({ value: count() }).from(organizationInvitations).where(where)
       return { records: rows.map(invitationOf), total: total?.value ?? 0 }
     })
+  }
+
+  /** @inheritdoc */
+  async listPendingInvitationsForEmail(
+    environmentId: string,
+    emailNormalized: string,
+    now: Date,
+    { page, size }: PageCriteria
+  ): Promise<Page<PendingInvitationRecord>> {
+    const where = and(
+      eq(organizationInvitations.environmentId, environmentId),
+      eq(organizationInvitations.emailNormalized, emailNormalized),
+      invitationFilter('pending', now)
+    )
+    return withTenant(this.db, environmentId, async (tx) => {
+      const rows = await tx
+        .select({ ...invitationColumns, organizationName: organizations.name })
+        .from(organizationInvitations)
+        .innerJoin(
+          organizations,
+          and(
+            eq(organizations.id, organizationInvitations.organizationId),
+            eq(organizations.environmentId, organizationInvitations.environmentId)
+          )
+        )
+        .where(where)
+        .orderBy(desc(organizationInvitations.createdAt), desc(organizationInvitations.id))
+        .limit(size)
+        .offset((page - 1) * size)
+      const [total] = await tx.select({ value: count() }).from(organizationInvitations).where(where)
+      return {
+        records: rows.map(({ organizationName, ...row }) => ({
+          record: invitationOf(row),
+          organizationName,
+        })),
+        total: total?.value ?? 0,
+      }
+    })
+  }
+
+  /** @inheritdoc */
+  async findInvitationById(environmentId: string, id: string): Promise<InvitationRecord | null> {
+    return withTenant(this.db, environmentId, (tx) =>
+      readInvitation(tx, environmentId, eq(organizationInvitations.id, id))
+    )
   }
 
   /** @inheritdoc */

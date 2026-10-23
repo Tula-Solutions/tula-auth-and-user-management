@@ -244,6 +244,52 @@ export const ActiveOrganizationSchema = z
   .meta({ ref: 'ActiveOrganization' })
 
 /**
+ * A member of an organization as another member sees them (ADR 0065, Orgs 07): who they are
+ * and the key of their role. The name and the address are shown so that a member list can be
+ * read at all; they go to members whose role holds `org:sys:memberships:read` or `:manage` and
+ * to nobody else, and never into an event or an audit entry.
+ */
+export const OrganizationMemberSchema = z
+  .object({
+    userId: z.string(),
+    /** First and last name as the user gave them, or `null` when they gave neither. */
+    name: z.string().nullable(),
+    /** The user's address as typed, or `null` for an account that has none. */
+    email: z.string().nullable(),
+    /** The key of the member's role. */
+    role: z.string(),
+    createdAt: z.iso.datetime(),
+  })
+  .meta({ ref: 'OrganizationMember' })
+
+/** One page of an organization's members, oldest first, as a member sees them. */
+export const OrganizationMemberListSchema = z
+  .object({ meta: PaginationMetaSchema, data: z.array(OrganizationMemberSchema) })
+  .meta({ ref: 'OrganizationMemberList' })
+
+/** A role a member may give to someone: its key and its name, never its permissions. */
+export const AssignableRoleSchema = z
+  .object({ key: z.string(), name: z.string() })
+  .meta({ ref: 'AssignableRole' })
+
+/**
+ * The roles the signed-in member may offer (to an invitation, or to a member): those whose
+ * permissions they hold themselves. Built-in roles first, then the custom ones by key.
+ */
+export const AssignableRoleListSchema = z
+  .object({ data: z.array(AssignableRoleSchema) })
+  .meta({ ref: 'AssignableRoleList' })
+
+/** A member of an organization, as another member sees them. */
+export type OrganizationMember = z.infer<typeof OrganizationMemberSchema>
+/** A page of members. */
+export type OrganizationMemberList = z.infer<typeof OrganizationMemberListSchema>
+/** A role a member may give to someone. */
+export type AssignableRole = z.infer<typeof AssignableRoleSchema>
+/** The roles a member may give. */
+export type AssignableRoleList = z.infer<typeof AssignableRoleListSchema>
+
+/**
  * One organization a user belongs to, as an administrator reads it on the user's page: the
  * organization, the key of the user's role in it and when they joined. No permission list and
  * no session: those are the user's own view (`UserOrganization`).

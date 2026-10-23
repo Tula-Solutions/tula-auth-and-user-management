@@ -55,7 +55,7 @@ an organization. There are six, and no others can be invented:
 | `org:sys:organization:delete` | Delete the organization. |
 | `org:sys:memberships:read` | See who the members are. |
 | `org:sys:memberships:manage` | Add and remove members and change their roles. |
-| `org:sys:invitations:manage` | Invite people. Used when [invitations](organizations.md#coming-invitations-and-verified-domains) arrive. |
+| `org:sys:invitations:manage` | Invite people. Used when [invitations](organizations.md#invitations-and-verified-domains) arrive. |
 | `org:sys:domains:manage` | Manage the organization's verified domains. Used when verified domains arrive. |
 
 A custom role may hold any of these beside its own keys.

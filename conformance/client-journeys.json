@@ -949,6 +949,24 @@
         "decision": "journey"
       }
     },
+    "my pending organization invitations": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "not_built",
+        "ticket": "TULA-132",
+        "reason": "the Swift client has no call for the invitations addressed to the signed-in user, or for answering one by its id, yet; they are built there by TULA-132 (the invitee's own list in the Swift and Kotlin clients)."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-132",
+        "reason": "the Kotlin client has no call for the invitations addressed to the signed-in user, or for answering one by its id, yet; they are built there by TULA-132 (the invitee's own list in the Swift and Kotlin clients)."
+      }
+    },
     "native Apple ID token refused": {
       "core": {
         "decision": "journey"
@@ -1095,6 +1113,24 @@
       },
       "kotlin": {
         "decision": "journey"
+      }
+    },
+    "organization members and roles from the client": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "not_built",
+        "ticket": "TULA-130",
+        "reason": "the Swift client has no call for an organization's members, the roles a member may give, renaming, deleting or leaving an organization yet; they are built there by TULA-130 (member and organization management in the Swift and Kotlin clients)."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-130",
+        "reason": "the Kotlin client has no call for an organization's members, the roles a member may give, renaming, deleting or leaving an organization yet; they are built there by TULA-130 (member and organization management in the Swift and Kotlin clients)."
       }
     },
     "passkey assertion replay": {

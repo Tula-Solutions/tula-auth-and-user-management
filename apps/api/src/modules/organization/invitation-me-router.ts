@@ -3,6 +3,8 @@ import {
   CreateOrganizationInvitationRequestSchema,
   InvitationPreviewSchema,
   InvitationTokenRequestSchema,
+  MyOrganizationInvitationListSchema,
+  MyOrganizationInvitationQuerySchema,
   OrganizationInvitationListSchema,
   OrganizationInvitationQuerySchema,
   OrganizationInvitationSchema,
@@ -17,7 +19,11 @@ import { byIp, rateLimit } from '~/middleware/rate-limit'
 import { sessionAuth } from '~/middleware/session-auth'
 import * as Invitations from '~/modules/organization/invitation-service'
 import * as openapi from '~/openapi'
-import { MemberInvitationParamSchema, MemberOrganizationParamSchema } from './schema'
+import {
+  MemberInvitationParamSchema,
+  MemberOrganizationParamSchema,
+  MyInvitationParamSchema,
+} from './schema'
 
 /** Requests per minute from one IP to the route that lists an organization's invitations. */
 export const INVITATIONS_READ_RATE_LIMIT = 60
@@ -334,6 +340,146 @@ router.post(
       c.get('tenant'),
       { userId: c.get('session').sub },
       c.req.valid('json').token,
+      userActor(c)
+    )
+    return c.body(null, 204)
+  }
+)
+
+router.get(
+  '/me/organization-invitations',
+  describeRoute({
+    operationId: 'listMyPendingOrganizationInvitations',
+    tags: ['Organizations'],
+    summary: 'List the invitations addressed to me',
+    description:
+      'The pending, unexpired invitations sent to the signed-in user’s own address, newest ' +
+      'first, one page at a time: each one’s `id`, the organization’s name, the role’s key and ' +
+      'its expiry, and nothing else (never the token, the address or the inviter). Only a ' +
+      '**verified** address matches: a user whose address is unverified, or who has none, gets ' +
+      'an empty page. Answer one with `POST /v1/client/me/organization-invitations/{invitationId}/accept` ' +
+      `or \`…/decline\`. ${disabled}`,
+    security: openapi.security.session,
+    responses: {
+      200: {
+        description: 'One page of invitations.',
+        content: json(MyOrganizationInvitationListSchema),
+      },
+      422: openapi.responses[422],
+      ...errors,
+    },
+  }),
+  rateLimit({
+    name: 'my_organization_invitations_pending',
+    limit: INVITATIONS_READ_RATE_LIMIT,
+    window: '1m',
+    key: byIp,
+  }),
+  publishableKey(),
+  sessionAuth(),
+  validator('query', MyOrganizationInvitationQuerySchema, validationHook),
+  async (c) => {
+    c.header('Cache-Control', 'no-store')
+    return c.json(
+      MyOrganizationInvitationListSchema.parse(
+        await Invitations.listMine(
+          c.get('deps'),
+          c.get('tenant'),
+          { userId: c.get('session').sub },
+          c.req.valid('query')
+        )
+      )
+    )
+  }
+)
+
+router.post(
+  '/me/organization-invitations/:invitationId/accept',
+  describeRoute({
+    operationId: 'acceptMyOrganizationInvitation',
+    tags: ['Organizations'],
+    summary: 'Accept an invitation addressed to me',
+    description:
+      'As `acceptOrganizationInvitation`, for an invitation the user found in their own list ' +
+      '(`listMyPendingOrganizationInvitations`) and so holds no token for. The session ' +
+      'authorizes it: the invitation must have been sent to the user’s own **verified** ' +
+      'address. An id that is not theirs, and one that does not exist, both answer ' +
+      '`organization.invitation_not_found` (404). Refuses an unverified address with ' +
+      '`organization.invitation_email_unverified` (403) and a used-up one with ' +
+      `\`…_expired\`, \`…_revoked\` or \`…_used\` (410). ${disabled}`,
+    security: openapi.security.session,
+    responses: {
+      200: {
+        description: 'The organization the user joined, with their role.',
+        content: json(AcceptedInvitationSchema),
+      },
+      404: openapi.responses[404],
+      409: openapi.responses[409],
+      410: openapi.responses[410],
+      422: openapi.responses[422],
+      ...errors,
+    },
+  }),
+  rateLimit({
+    name: 'my_organization_invitation_accept',
+    limit: INVITATIONS_WRITE_RATE_LIMIT,
+    window: '1m',
+    key: byIp,
+  }),
+  publishableKey(),
+  sessionAuth(),
+  validator('param', MyInvitationParamSchema, validationHook),
+  async (c) => {
+    c.header('Cache-Control', 'no-store')
+    return c.json(
+      AcceptedInvitationSchema.parse(
+        await Invitations.acceptById(
+          c.get('deps'),
+          c.get('tenant'),
+          { userId: c.get('session').sub },
+          c.req.valid('param').invitationId,
+          userActor(c)
+        )
+      )
+    )
+  }
+)
+
+router.post(
+  '/me/organization-invitations/:invitationId/decline',
+  describeRoute({
+    operationId: 'declineMyOrganizationInvitation',
+    tags: ['Organizations'],
+    summary: 'Decline an invitation addressed to me',
+    description:
+      'As `declineOrganizationInvitation`, for an invitation the user found in their own list. ' +
+      'The conditions are those of `acceptMyOrganizationInvitation`. ' +
+      disabled,
+    security: openapi.security.session,
+    responses: {
+      204: { description: 'Declined.' },
+      404: openapi.responses[404],
+      410: openapi.responses[410],
+      422: openapi.responses[422],
+      ...errors,
+    },
+  }),
+  rateLimit({
+    name: 'my_organization_invitation_decline',
+    limit: INVITATIONS_WRITE_RATE_LIMIT,
+    window: '1m',
+    key: byIp,
+  }),
+  publishableKey(),
+  sessionAuth(),
+  validator('param', MyInvitationParamSchema, validationHook),
+  async (c) => {
+    c.header('Cache-Control', 'no-store')
+    await Invitations.declineById(
+      c.get('deps'),
+      c.get('tenant'),
+      { userId: c.get('session').sub },
+      c.req.valid('param').invitationId,
       userActor(c)
     )
     return c.body(null, 204)

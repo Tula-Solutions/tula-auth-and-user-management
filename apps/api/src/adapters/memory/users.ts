@@ -119,6 +119,18 @@ export class MemoryUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
+  async findByIds(environmentId: string, ids: readonly string[]): Promise<UserRecord[]> {
+    const found: UserRecord[] = []
+    for (const id of new Set(ids)) {
+      const user = this.#users.get(id)
+      if (user?.environmentId === environmentId) {
+        found.push({ ...user })
+      }
+    }
+    return found
+  }
+
+  /** @inheritdoc */
   async findByEmail(environmentId: string, emailNormalized: string): Promise<UserRecord | null> {
     const user = this.#byEmail(environmentId, emailNormalized)
     return user ? { ...user } : null

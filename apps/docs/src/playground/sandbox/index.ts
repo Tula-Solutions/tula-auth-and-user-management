@@ -28,6 +28,7 @@ export * from './types'
 export {
   createWorld,
   DEMO_EMAIL,
+  DEMO_INVITATION_TOKEN,
   DEMO_MFA_EMAIL,
   DEMO_PASSWORD,
   DEMO_TOTP_SECRET,

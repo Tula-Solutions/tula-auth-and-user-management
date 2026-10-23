@@ -44,6 +44,12 @@ export interface SandboxSettings {
   signUpPassword: 'required' | 'optional'
   /** Whether two-step verification is off, offered or required. */
   mfaPolicy: SandboxMfaPolicy
+  /**
+   * Whether organizations are on (ADR 0065): users may create them, belong to several and
+   * switch between them. The sandbox keeps the personal account and user-created organizations
+   * on whenever this is.
+   */
+  organizations: boolean
 }
 
 /** The sandbox's default environment: the password and emailed codes. */
@@ -53,6 +59,7 @@ export const DEFAULT_SANDBOX_SETTINGS: SandboxSettings = {
   oauth: [],
   signUpPassword: 'required',
   mfaPolicy: 'optional',
+  organizations: false,
 }
 
 /** An account of the sandbox. Fake, and held in memory only. */
@@ -94,6 +101,70 @@ export interface SandboxSession {
   /** The current refresh token. Opaque, and meaningless outside the sandbox. */
   refreshToken: string
   amr: string[]
+  /** The organization the session acts in (`org_id` of its access token), or the personal account. */
+  organizationId: string | null
+}
+
+/**
+ * The key of a role a sandbox organization's member holds: one of the contract's two built-in
+ * ones (`admin`, `member`) or of the environment's custom roles (`SANDBOX_CUSTOM_ROLES`).
+ */
+export type SandboxRole = string
+
+/** A custom role (ADR 0065, "Custom roles") the sandbox's environment defines. */
+export interface SandboxCustomRole {
+  key: string
+  name: string
+  permissions: readonly string[]
+}
+
+/** An organization of the sandbox, with everything that belongs to it. */
+export interface SandboxOrganization {
+  id: string
+  name: string
+  slug: string
+  createdAt: string
+  members: SandboxMember[]
+  invitations: SandboxInvitation[]
+  domains: SandboxDomain[]
+  /** The user who created it through the client, or `null` for one the sandbox started with. */
+  createdBy: string | null
+}
+
+/** A user's membership of a sandbox organization. */
+export interface SandboxMember {
+  userId: string
+  role: SandboxRole
+  createdAt: string
+}
+
+/** An invitation to a sandbox organization. */
+export interface SandboxInvitation {
+  id: string
+  /** The address it was sent to. */
+  email: string
+  role: SandboxRole
+  status: Schemas['OrganizationInvitation']['status']
+  invitedBy: string | null
+  expiresAt: string
+  createdAt: string
+  /** What the emailed link carries. Opaque, and meaningless outside the sandbox. */
+  token: string
+}
+
+/** An email domain an organization claims. */
+export interface SandboxDomain {
+  id: string
+  domain: string
+  mode: Schemas['OrganizationDomainMode']
+  /** The code emailed to the claim's address, until the domain is verified. */
+  code: string | null
+  codeExpiresAt: number | null
+  /** Wrong guesses so far. */
+  tries: number
+  verifiedAt: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 /** The steps an attempt can wait on. */
