@@ -40,9 +40,12 @@ describe('declared schema', () => {
         'project_id',
       ])
       // Four tables have one more, restrictive: it narrows what the retention job may delete.
+      // Roles have two, restrictive too: a built-in role is out of every update and delete.
       const extra = ['audit_logs', 'events', 'sms_code_counts', 'webhook_deliveries'].includes(name)
         ? [`${name}_retention_floor`]
-        : []
+        : name === 'organization_roles'
+          ? ['organization_roles_custom_update_only', 'organization_roles_custom_delete_only']
+          : []
       expect(config.policies.map((policy) => policy.name)).toEqual([
         `${name}_tenant_isolation`,
         ...extra,

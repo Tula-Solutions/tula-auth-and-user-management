@@ -260,22 +260,80 @@ test('the runtime role may rename an organization but not rewrite who created it
   ).toContain('permission denied')
 })
 
-test('the runtime role can neither change nor delete a role', async () => {
-  const id = await addRole(tenant, { key: 'frozen', builtIn: false })
+test('the runtime role changes a custom role in four columns and nothing else', async () => {
+  const id = await addRole(tenant, { key: 'editable', builtIn: false })
   const inScope = <T>(work: (tx: Parameters<Parameters<typeof withTenant>[2]>[0]) => Promise<T>) =>
     withTenant(testDb.db, tenant.environmentId, work)
-  expect(
-    await refused(() =>
-      inScope((tx) =>
-        tx.update(organizationRoles).set({ permissions: [] }).where(eq(organizationRoles.id, id))
+  await inScope((tx) =>
+    tx
+      .update(organizationRoles)
+      .set({ name: 'Renamed', permissions: ['org:a:b'], version: 2, updatedAt: new Date() })
+      .where(eq(organizationRoles.id, id))
+  )
+  const [row] = await inScope((tx) =>
+    tx.select().from(organizationRoles).where(eq(organizationRoles.id, id))
+  )
+  expect(row).toMatchObject({ name: 'Renamed', permissions: ['org:a:b'], version: 2 })
+  for (const change of [
+    { key: 'other' },
+    { builtIn: true },
+    { environmentId: Bun.randomUUIDv7() },
+    { id: Bun.randomUUIDv7() },
+  ]) {
+    expect(
+      await refused(() =>
+        inScope((tx) =>
+          tx.update(organizationRoles).set(change).where(eq(organizationRoles.id, id))
+        )
       )
+    ).toContain('permission denied')
+  }
+})
+
+test('a built-in role is out of every update and delete of the runtime role', async () => {
+  const id = await addRole(tenant, { key: 'admin', builtIn: true, permissions: [] })
+  const inScope = <T>(work: (tx: Parameters<Parameters<typeof withTenant>[2]>[0]) => Promise<T>) =>
+    withTenant(testDb.db, tenant.environmentId, work)
+  // The restrictive policies hide the row from the statement: nothing matches, nothing changes.
+  const updated = await inScope((tx) =>
+    tx
+      .update(organizationRoles)
+      .set({ permissions: ['org:a:b'], name: 'Hijacked' })
+      .where(eq(organizationRoles.id, id))
+      .returning({ id: organizationRoles.id })
+  )
+  expect(updated).toEqual([])
+  const deleted = await inScope((tx) =>
+    tx
+      .delete(organizationRoles)
+      .where(eq(organizationRoles.id, id))
+      .returning({ id: organizationRoles.id })
+  )
+  expect(deleted).toEqual([])
+  const [row] = await inScope((tx) =>
+    tx.select().from(organizationRoles).where(eq(organizationRoles.id, id))
+  )
+  expect(row).toMatchObject({ name: expect.not.stringMatching('Hijacked'), permissions: [] })
+})
+
+test('a custom role cannot take a built-in key', async () => {
+  expect(await refused(() => addRole(tenant, { key: 'member', builtIn: false }))).toContain(
+    'organization_roles_reserved_keys'
+  )
+})
+
+test('a role that is still assigned cannot be deleted, one that is not can', async () => {
+  const org = await addOrganization(tenant, 'delete-role')
+  const user = await addUser(tenant)
+  const held = await addRole(tenant, { key: 'held_role', builtIn: false })
+  const free = await addRole(tenant, { key: 'free_role', builtIn: false })
+  await addMember(tenant, org, user, held)
+  const remove = (id: string) =>
+    withTenant(testDb.db, tenant.environmentId, (tx) =>
+      tx.delete(organizationRoles).where(eq(organizationRoles.id, id))
     )
-  ).toContain('permission denied')
-  expect(
-    await refused(() =>
-      inScope((tx) => tx.delete(organizationRoles).where(eq(organizationRoles.id, id)))
-    )
-  ).toContain('permission denied')
+  expect(await refused(() => remove(held))).toContain('organization_memberships_role_fk')
+  await remove(free)
 })
 
 test('a membership can change its role and nothing else', async () => {

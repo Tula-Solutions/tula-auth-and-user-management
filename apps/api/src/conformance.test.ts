@@ -42,6 +42,7 @@ describe('conformance scenarios, in process', () => {
       'admin organizations and memberships',
       'user import with a bcrypt hash',
       'user import with Firebase scrypt and PBKDF2-SHA256 hashes',
+      'admin organization roles',
       'environment settings',
       'attempt binding',
       'email code sign-in',

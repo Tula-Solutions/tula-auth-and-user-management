@@ -267,6 +267,13 @@
       "when": 1792722417362,
       "tag": "0037_user_import_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1792723428178,
+      "tag": "0038_organization_custom_roles",
+      "breakpoints": true
     }
   ]
 }

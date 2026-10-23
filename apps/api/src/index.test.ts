@@ -283,6 +283,8 @@ describe('documentation routes', () => {
       '/v1/admin/organizations/{id}',
       '/v1/admin/organizations/{id}/memberships',
       '/v1/admin/organizations/{id}/memberships/{userId}',
+      '/v1/admin/organization-roles',
+      '/v1/admin/organization-roles/{key}',
       '/v1/environments/{environmentId}/.well-known/apple-app-site-association',
       '/v1/environments/{environmentId}/.well-known/assetlinks.json',
       '/v1/admin/native-apps',
