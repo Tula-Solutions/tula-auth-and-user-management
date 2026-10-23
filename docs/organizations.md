@@ -147,6 +147,7 @@ await admin.call('addOrganizationMember', {
 | `client.organizations.setActive(id \| null)` | `PUT /v1/client/me/organizations/active` | The signed-in user, for an organization they belong to. |
 | `listOrganizations`, `createOrganization` | `/v1/admin/organizations` | Your server (secret key). |
 | `listOrganizationMemberships`, `addOrganizationMember` | `/v1/admin/organizations/:id/memberships` | Your server (secret key). |
+| `listUserOrganizations` | `GET /v1/admin/users/:userId/organizations` | Your server (secret key): the organizations a user belongs to and their role in each. The dashboard's user page uses it. |
 
 The errors you will meet:
 

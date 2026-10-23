@@ -539,3 +539,61 @@ describe('what an event carries', () => {
     }
   })
 })
+
+describe('GET /v1/admin/users/:userId/organizations', () => {
+  const memberships = (userId: string, key: string | null = SK) =>
+    call(`/v1/admin/users/${userId}/organizations`, 'GET', '', undefined, key)
+
+  test('lists the organizations a user belongs to, the first joined at the top', async () => {
+    const maya = await user()
+    const acme = await organization('acme')
+    const globex = await organization('globex')
+    await organization('other')
+    await join(acme, maya.id, 'admin')
+    await join(globex, maya.id, 'member')
+    const res = await memberships(maya.id)
+    expect(res.status).toBe(200)
+    const list = await json<{
+      meta: { totalCount: number }
+      data: Record<string, unknown>[]
+    }>(res)
+    expect(list.meta.totalCount).toBe(2)
+    expect(list.data.map((row) => [row.slug, row.role])).toEqual([
+      ['acme', 'admin'],
+      ['globex', 'member'],
+    ])
+    // The organization's identity and the role key, and nothing else: no permission list.
+    expect(Object.keys(list.data[0] ?? {}).sort()).toEqual(
+      ['joinedAt', 'name', 'organizationId', 'role', 'slug'].sort()
+    )
+  })
+
+  test('answers an empty page for a user in no organization', async () => {
+    const maya = await user()
+    const list = await json<{ meta: { totalCount: number }; data: unknown[] }>(
+      await memberships(maya.id)
+    )
+    expect(list.meta.totalCount).toBe(0)
+    expect(list.data).toEqual([])
+  })
+
+  test('is not found for a user that does not exist', async () => {
+    expect((await memberships(UNKNOWN)).status).toBe(404)
+  })
+
+  test('answers organization.disabled and reads nothing while organizations are off', async () => {
+    const maya = await user()
+    enable(TEST_TENANT.environmentId, false)
+    const res = await memberships(maya.id)
+    expect(res.status).toBe(403)
+    expect(await code(res)).toBe('organization.disabled')
+  })
+
+  test('does not show another environment’s user, and is refused without a secret key', async () => {
+    const maya = await user('maya@northline.app', PROD_SK)
+    expect((await memberships(maya.id)).status).toBe(404)
+    expect((await memberships(maya.id, PK)).status).toBe(401)
+    expect((await memberships(maya.id, null)).status).toBe(401)
+    expect((await memberships(maya.id, AK)).status).toBe(404)
+  })
+})
