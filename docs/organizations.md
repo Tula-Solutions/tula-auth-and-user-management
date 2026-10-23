@@ -433,7 +433,8 @@ Two ways to join an organization without being added by hand, each with a guide 
 
 - **[Invitations](invitations.md).** A member who may manage invitations, or your server, invites
   an email address with a role. The invitee gets a single-use link that works for seven days
-  and joins only with an account whose verified address matches.
+  and joins only with an account whose verified address matches. A signed-in user can also list
+  and answer the invitations sent to their own address, with no token.
 - **[Verified domains](verified-domains.md).** An organization proves it owns an email domain with
   a code sent to an address at it. People who then sign up with a verified address there are
   offered the organization (`suggest`) or join it at once (`auto_join`) with the `defaultRole`.

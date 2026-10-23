@@ -1,0 +1,1 @@
+CREATE INDEX "organization_invitations_email_idx" ON "tula"."organization_invitations" USING btree ("environment_id","email_normalized") WHERE "tula"."organization_invitations"."status" = 'pending';

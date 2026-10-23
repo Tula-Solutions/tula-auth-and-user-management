@@ -870,6 +870,21 @@ object MfaPolicySerializer : KSerializer<MfaPolicy> {
     }
 }
 
+@Serializable
+data class MyOrganizationInvitation(
+    val id: String,
+    val organizationName: String,
+    val role: String,
+    /** Format: `date-time`. */
+    val expiresAt: String,
+)
+
+@Serializable
+data class MyOrganizationInvitationList(
+    val meta: PaginationMeta,
+    val data: List<MyOrganizationInvitation>,
+)
+
 @Serializable(with = NewPasswordReasonSerializer::class)
 sealed class NewPasswordReason {
     /** The value as the API writes it. */

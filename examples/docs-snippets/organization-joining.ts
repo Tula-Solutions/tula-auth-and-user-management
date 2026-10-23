@@ -220,3 +220,19 @@ export async function joinFromASuggestion() {
   }
   // #endregion
 }
+
+/** List the invitations addressed to the signed-in user and answer one, with no token. */
+export async function answerMyInvitations() {
+  // #region core-my-invitations
+  // Pending invitations to the user's own verified address, newest first. No token is involved:
+  // the session and the address are the proof. An unverified address has none.
+  const { data: mine } = await tula.organizations.invitations.mine()
+  const [first] = mine
+  if (first) {
+    // first: { id, organizationName, role, expiresAt }
+    const joined = await tula.organizations.invitations.acceptMine(first.id)
+    await tula.organizations.setActive(joined.id)
+    // Or turn it down: await tula.organizations.invitations.declineMine(first.id)
+  }
+  // #endregion
+}

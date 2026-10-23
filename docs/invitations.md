@@ -138,6 +138,32 @@ with "Accept" and "Decline": see [An invitation link](organization-switcher.md#a
 
 :::
 
+## Invitations for the signed-in user
+
+A signed-in user does not need the link to find an invitation: `mine()` lists the pending
+invitations addressed to their own **verified** address (an unverified address has none), newest
+first, as an `id`, the organization's name, the role's key and the expiry, never a token.
+`acceptMine(id)` and `declineMine(id)` answer one by its `id`, with exactly the checks of
+`accept` and `decline`; an `id` that is not the user's own is `organization.invitation_not_found`.
+
+<!-- snippet: examples/docs-snippets/organization-joining.ts#core-my-invitations -->
+```ts
+// Pending invitations to the user's own verified address, newest first. No token is involved:
+// the session and the address are the proof. An unverified address has none.
+const { data: mine } = await tula.organizations.invitations.mine()
+const [first] = mine
+if (first) {
+  // first: { id, organizationName, role, expiresAt }
+  const joined = await tula.organizations.invitations.acceptMine(first.id)
+  await tula.organizations.setActive(joined.id)
+  // Or turn it down: await tula.organizations.invitations.declineMine(first.id)
+}
+```
+<!-- /snippet -->
+
+[`<OrganizationSwitcher>`](organization-switcher.md) draws this list under "Invitations for you",
+each with "Accept" and "Decline", so a user who lost the email still finds the invitation.
+
 ## Accepting and declining
 
 Accepting needs a signed-in session, and the server checks two things about it:

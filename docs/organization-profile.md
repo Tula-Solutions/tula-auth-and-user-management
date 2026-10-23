@@ -50,7 +50,7 @@ With the built-in roles, an `admin` sees all four and a `member` sees General an
 
 - **Rename.** The name and the short name; a taken short name is announced under its field.
 - **Leave.** Asks first ("Leave <name>?"). The last member who can manage members cannot leave: the component shows "An organization must keep at least one member who can manage its members." and stays. Leaving the active organization moves the session to the personal account where the environment has one, otherwise to another organization.
-- **Delete.** Asks for the organization's name to be typed; the button stays unavailable until it matches. Deleting removes the members, invitations and domains for good.
+- **Delete.** Asks for the organization's name to be typed; the button stays unavailable until it matches. Deleting removes the members, invitations and domains for good. It also needs a recent sign-in: when the server asks (`auth.step_up_required`), the provider's "Confirm it is you" dialog opens and the delete runs once more after it; closing the dialog deletes nothing and shows no error.
 
 After either, the page says "You left <name>." or "<name> was deleted." with the focus on the title, then goes to `afterLeaveUrl` or `afterDeleteUrl`.
 

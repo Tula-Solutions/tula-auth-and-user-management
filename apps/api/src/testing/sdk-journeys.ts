@@ -2760,6 +2760,103 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
     )
 
     journey(
+      'my pending organization invitations',
+      'my invitations: the invited user lists the invitations sent to their verified address, with no token, and accepts or declines one by its id; another account is told it does not exist; a withdrawn one is refused',
+      async () => {
+        const s = await server()
+        const JOIN = `${APP_ORIGIN}/join`
+        const read = await s.admin('GET', '/v1/admin/settings')
+        const { settings } = (await read.json()) as { settings: EnvironmentSettings }
+        const saved = await s.admin(
+          'PUT',
+          '/v1/admin/settings',
+          {
+            ...settings,
+            urls: { ...settings.urls, allowedRedirectUrls: [JOIN] },
+            organizations: {
+              enabled: true,
+              allowUserCreated: true,
+              maxCreatedPerUser: 1,
+              creatorRole: 'admin',
+              defaultRole: 'member',
+              personalAccount: true,
+            },
+          },
+          { 'if-match': read.headers.get('etag') ?? '' }
+        )
+        expect(saved.status).toBe(200)
+
+        const owner = await signUp(s)
+        const ada = await signUp(s)
+        const stranger = await signUp(s)
+        const org = await owner.tula.organizations.create({ name: 'Acme', slug: 'acme' })
+        const invitations = owner.tula.organizations.invitations
+
+        // Nothing yet. Then an invitation: the invited user lists it, and nobody else does.
+        expect((await ada.tula.organizations.invitations.mine()).data).toEqual([])
+        const sent = await invitations.invite(org.id, {
+          email: ada.email,
+          role: 'admin',
+          redirectUrl: JOIN,
+        })
+        const link = /#tula_invitation=(\S+)/.exec(
+          s.deps.mailer.outbox.findLast((message) => /invited/.test(message.subject))?.text ?? ''
+        )?.[1]
+        const mine = await ada.tula.organizations.invitations.mine()
+        expect(mine.data).toEqual([
+          {
+            id: sent.id,
+            organizationName: 'Acme',
+            role: 'admin',
+            expiresAt: sent.expiresAt,
+          },
+        ])
+        // Four fields: not the token, the address, the inviter or the organization's id.
+        expect(JSON.stringify(mine)).not.toContain(link ?? 'no link was sent')
+        expect(JSON.stringify(mine)).not.toContain(ada.email)
+        expect(JSON.stringify(mine)).not.toContain(org.id)
+        expect((await stranger.tula.organizations.invitations.mine()).data).toEqual([])
+
+        // Another account, and an id nothing was issued for, look alike.
+        expect(
+          (await caught(stranger.tula.organizations.invitations.acceptMine(sent.id))).code
+        ).toBe('organization.invitation_not_found')
+        expect(
+          (await caught(stranger.tula.organizations.invitations.declineMine(sent.id))).code
+        ).toBe('organization.invitation_not_found')
+
+        // Accepting by id joins with the invitation's role, and uses it up.
+        expect(await ada.tula.organizations.invitations.acceptMine(sent.id)).toMatchObject({
+          id: org.id,
+          role: 'admin',
+        })
+        expect((await ada.tula.organizations.invitations.mine()).data).toEqual([])
+        expect((await caught(ada.tula.organizations.invitations.acceptMine(sent.id))).code).toBe(
+          'organization.invitation_used'
+        )
+
+        // Declining by id uses one up with no membership; a withdrawn one is refused.
+        const second = await invitations.invite(org.id, {
+          email: stranger.email,
+          role: 'member',
+          redirectUrl: JOIN,
+        })
+        await stranger.tula.organizations.invitations.declineMine(second.id)
+        expect((await stranger.tula.organizations.list()).data).toEqual([])
+        const third = await invitations.invite(org.id, {
+          email: stranger.email,
+          role: 'member',
+          redirectUrl: JOIN,
+        })
+        await invitations.revoke(org.id, third.id)
+        expect((await stranger.tula.organizations.invitations.mine()).data).toEqual([])
+        expect(
+          (await caught(stranger.tula.organizations.invitations.acceptMine(third.id))).code
+        ).toBe('organization.invitation_revoked')
+      }
+    )
+
+    journey(
       'verified domains: suggest and auto-join',
       'verified domains: an address on an organization\u2019s verified domain joins it at sign-up (auto-join) or is offered it to join (suggest); the server decides again, and a removed domain offers and joins nobody',
       async () => {

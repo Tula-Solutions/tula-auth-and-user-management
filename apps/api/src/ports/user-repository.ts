@@ -269,6 +269,15 @@ export interface UserRepository {
   findById(environmentId: string, id: string): Promise<UserRecord | null>
 
   /**
+   * Several users by id in one lookup (a page of a member list, not one query per member).
+   *
+   * @param environmentId - The environment to look in; an id of another environment is skipped.
+   * @param ids - User ids. Duplicates and unknown ids are fine.
+   * @returns The users that exist, once each, in no particular order.
+   */
+  findByIds(environmentId: string, ids: readonly string[]): Promise<UserRecord[]>
+
+  /**
    * @param environmentId - The environment to look in.
    * @param emailNormalized - Normalized email.
    * @returns The user, or `null`.

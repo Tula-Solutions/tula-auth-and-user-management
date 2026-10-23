@@ -18,6 +18,9 @@ public struct TulaOperation: Hashable, Sendable {
 
 /// Every operation of the client API (`/v1/client/*`).
 public enum TulaOperations {
+    /// Accept an invitation addressed to me (`POST /v1/client/me/organization-invitations/{invitationId}/accept`). No body. Answers `AcceptedInvitation`.
+    public static let acceptMyOrganizationInvitation = TulaOperation(id: "acceptMyOrganizationInvitation", method: "POST", path: "/v1/client/me/organization-invitations/{invitationId}/accept", requiresSession: true)
+
     /// Accept an invitation (`POST /v1/client/me/organization-invitations/accept`). Body: `InvitationTokenRequest`. Answers `AcceptedInvitation`.
     public static let acceptOrganizationInvitation = TulaOperation(id: "acceptOrganizationInvitation", method: "POST", path: "/v1/client/me/organization-invitations/accept", requiresSession: true)
 
@@ -44,6 +47,9 @@ public enum TulaOperations {
 
     /// Create an organization (`POST /v1/client/me/organizations`). Body: `CreateOrganizationRequest`. Answers `UserOrganization`.
     public static let createMyOrganization = TulaOperation(id: "createMyOrganization", method: "POST", path: "/v1/client/me/organizations", requiresSession: true)
+
+    /// Decline an invitation addressed to me (`POST /v1/client/me/organization-invitations/{invitationId}/decline`). No body. Answers no body.
+    public static let declineMyOrganizationInvitation = TulaOperation(id: "declineMyOrganizationInvitation", method: "POST", path: "/v1/client/me/organization-invitations/{invitationId}/decline", requiresSession: true)
 
     /// Decline an invitation (`POST /v1/client/me/organization-invitations/decline`). Body: `InvitationTokenRequest`. Answers no body.
     public static let declineOrganizationInvitation = TulaOperation(id: "declineOrganizationInvitation", method: "POST", path: "/v1/client/me/organization-invitations/decline", requiresSession: true)
@@ -119,6 +125,9 @@ public enum TulaOperations {
 
     /// List my passkeys (`GET /v1/client/me/passkeys`). No body. Answers `PasskeyList`.
     public static let listMyPasskeys = TulaOperation(id: "listMyPasskeys", method: "GET", path: "/v1/client/me/passkeys", requiresSession: true)
+
+    /// List the invitations addressed to me (`GET /v1/client/me/organization-invitations`). No body. Answers `MyOrganizationInvitationList`.
+    public static let listMyPendingOrganizationInvitations = TulaOperation(id: "listMyPendingOrganizationInvitations", method: "GET", path: "/v1/client/me/organization-invitations", requiresSession: true)
 
     /// List my sessions (`GET /v1/client/sessions`). No body. Answers `SessionList`.
     public static let listSessions = TulaOperation(id: "listSessions", method: "GET", path: "/v1/client/sessions", requiresSession: true)
@@ -287,6 +296,7 @@ public enum TulaOperations {
 
     /// Every operation, by id.
     public static let all: [TulaOperation] = [
+        acceptMyOrganizationInvitation,
         acceptOrganizationInvitation,
         attemptSignInFirstFactor,
         changeMyPassword,
@@ -296,6 +306,7 @@ public enum TulaOperations {
         confirmSmsFactorEnrolment,
         confirmTotpEnrolment,
         createMyOrganization,
+        declineMyOrganizationInvitation,
         declineOrganizationInvitation,
         deleteMyIdentity,
         deleteMyOrganization,
@@ -321,6 +332,7 @@ public enum TulaOperations {
         listMyOrganizationSuggestions,
         listMyOrganizations,
         listMyPasskeys,
+        listMyPendingOrganizationInvitations,
         listSessions,
         preparePasswordResetSecondFactor,
         prepareSignInFirstFactor,

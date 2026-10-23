@@ -265,6 +265,128 @@ describe('<OrganizationSwitcher>', () => {
     })
   })
 
+  describe('the invitations addressed to the user', () => {
+    const MINE = {
+      id: 'inv_1',
+      organizationName: 'Initech',
+      role: 'member',
+      expiresAt: '2030-02-01T00:00:00.000Z',
+    }
+    const mineWorld = (data: unknown[] = [MINE]) => {
+      const w = orgWorld()
+      const state = { data }
+      w.api.on(ORG_ROUTE.myInvitations, () =>
+        json(200, {
+          data: state.data,
+          meta: { totalCount: state.data.length, totalPages: 1, page: 1, perPage: 20 },
+        })
+      )
+      return Object.assign(w, { state })
+    }
+
+    test('are listed when the panel opens, with the organization and the role', async () => {
+      const w = mineWorld()
+      w.mount(<OrganizationSwitcher />)
+      await open(w)
+      expect(await screen.findByText('Invitations for you')).toBeTruthy()
+      expect(screen.getByText('Initech, as member')).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Accept invitation to Initech' })).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Decline invitation to Initech' })).toBeTruthy()
+      expect(w.api.calls(ORG_ROUTE.myInvitations)).toHaveLength(1)
+    })
+
+    test('are not asked for until the panel opens, and nothing is drawn when there are none', async () => {
+      const w = orgWorld()
+      w.mount(<OrganizationSwitcher />)
+      const trigger = await screen.findByRole('button', { name: TRIGGER })
+      expect(w.api.calls(ORG_ROUTE.myInvitations)).toHaveLength(0)
+      await w.user.click(trigger)
+      await waitFor(() => expect(w.api.calls(ORG_ROUTE.myInvitations)).toHaveLength(1))
+      expectAbsent(screen.queryByText('Invitations for you'))
+    })
+
+    test('accepting joins by the invitation’s id, reads the list again and drops the entry', async () => {
+      const w = mineWorld()
+      w.api.on(ORG_ROUTE.acceptMyInvitation('inv_1'), () => {
+        w.organizations.push(organization(C, 'Initech', 'member', []))
+        w.state.data = []
+        return json(200, organization(C, 'Initech', 'member', []))
+      })
+      w.mount(<OrganizationSwitcher />)
+      await open(w)
+      await w.user.click(
+        await screen.findByRole('button', { name: 'Accept invitation to Initech' })
+      )
+      expect(await screen.findByRole('button', { name: 'Initech' })).toBeTruthy()
+      expect(screen.getByText('You joined Initech.')).toBeTruthy()
+      expectAbsent(screen.queryByText('Invitations for you'))
+      // By id: no body, and nothing like a token is sent.
+      const sent = w.api.calls(ORG_ROUTE.acceptMyInvitation('inv_1'))[0]
+      expect(sent?.body).toBeUndefined()
+      expect(sent?.path).toBe('/v1/client/me/organization-invitations/inv_1/accept')
+      expect(w.api.calls(ORG_ROUTE.acceptInvitation)).toHaveLength(0)
+    })
+
+    test('declining says so and drops the entry, and joins nothing', async () => {
+      const w = mineWorld()
+      w.api.on(ORG_ROUTE.declineMyInvitation('inv_1'), () => {
+        w.state.data = []
+        return new Response(null, { status: 204 })
+      })
+      w.mount(<OrganizationSwitcher />)
+      await open(w)
+      await w.user.click(
+        await screen.findByRole('button', { name: 'Decline invitation to Initech' })
+      )
+      expect(await screen.findByText('Invitation declined.')).toBeTruthy()
+      expectAbsent(screen.queryByText('Invitations for you'))
+      expectAbsent(screen.queryByRole('button', { name: 'Initech' }))
+    })
+
+    test('an answer the server refuses is said, and the list is read again', async () => {
+      const w = mineWorld()
+      w.api.on(ORG_ROUTE.acceptMyInvitation('inv_1'), () => {
+        w.state.data = []
+        return failure(410, 'organization.invitation_revoked')
+      })
+      w.mount(<OrganizationSwitcher />)
+      await open(w)
+      await w.user.click(
+        await screen.findByRole('button', { name: 'Accept invitation to Initech' })
+      )
+      expect((await screen.findByRole('alert')).textContent).toBe('This invitation was withdrawn.')
+      await waitFor(() => expectAbsent(screen.queryByText('Invitations for you')))
+      expect(w.api.calls(ORG_ROUTE.myInvitations)).toHaveLength(2)
+    })
+
+    test('a list that could not be fetched is said and the organizations stay', async () => {
+      const w = orgWorld()
+      w.api.on(ORG_ROUTE.myInvitations, () => failure(503, 'service.unavailable'))
+      w.mount(<OrganizationSwitcher />)
+      await open(w)
+      expect(await screen.findByRole('alert')).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Globex' })).toBeTruthy()
+    })
+
+    test('an answer that arrives after the session ended is neither shown nor announced', async () => {
+      const w = mineWorld()
+      const held = deferred<Response>()
+      w.api.on(ORG_ROUTE.acceptMyInvitation('inv_1'), () => held.promise)
+      w.mount(<OrganizationSwitcher />)
+      await open(w)
+      await w.user.click(
+        await screen.findByRole('button', { name: 'Accept invitation to Initech' })
+      )
+      await act(async () => {
+        await w.client.session.signOut()
+      })
+      await act(async () => {
+        held.resolve(json(200, organization(C, 'Initech', 'member', [])))
+      })
+      expectAbsent(screen.queryByText('You joined Initech.'))
+    })
+  })
+
   describe('an invitation handed over by the app', () => {
     const PREVIEW = {
       organizationName: 'Initech',

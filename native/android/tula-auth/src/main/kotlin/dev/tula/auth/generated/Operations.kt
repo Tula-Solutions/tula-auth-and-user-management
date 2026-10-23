@@ -18,6 +18,9 @@ data class TulaOperation(
 
 /** Every operation of the client API (`/v1/client/`). */
 object TulaOperations {
+    /** Accept an invitation addressed to me (`POST /v1/client/me/organization-invitations/{invitationId}/accept`). No body. Answers [AcceptedInvitation]. */
+    val acceptMyOrganizationInvitation: TulaOperation = TulaOperation("acceptMyOrganizationInvitation", "POST", "/v1/client/me/organization-invitations/{invitationId}/accept", true)
+
     /** Accept an invitation (`POST /v1/client/me/organization-invitations/accept`). Body: [InvitationTokenRequest]. Answers [AcceptedInvitation]. */
     val acceptOrganizationInvitation: TulaOperation = TulaOperation("acceptOrganizationInvitation", "POST", "/v1/client/me/organization-invitations/accept", true)
 
@@ -44,6 +47,9 @@ object TulaOperations {
 
     /** Create an organization (`POST /v1/client/me/organizations`). Body: [CreateOrganizationRequest]. Answers [UserOrganization]. */
     val createMyOrganization: TulaOperation = TulaOperation("createMyOrganization", "POST", "/v1/client/me/organizations", true)
+
+    /** Decline an invitation addressed to me (`POST /v1/client/me/organization-invitations/{invitationId}/decline`). No body. Answers no body. */
+    val declineMyOrganizationInvitation: TulaOperation = TulaOperation("declineMyOrganizationInvitation", "POST", "/v1/client/me/organization-invitations/{invitationId}/decline", true)
 
     /** Decline an invitation (`POST /v1/client/me/organization-invitations/decline`). Body: [InvitationTokenRequest]. Answers no body. */
     val declineOrganizationInvitation: TulaOperation = TulaOperation("declineOrganizationInvitation", "POST", "/v1/client/me/organization-invitations/decline", true)
@@ -119,6 +125,9 @@ object TulaOperations {
 
     /** List my passkeys (`GET /v1/client/me/passkeys`). No body. Answers [PasskeyList]. */
     val listMyPasskeys: TulaOperation = TulaOperation("listMyPasskeys", "GET", "/v1/client/me/passkeys", true)
+
+    /** List the invitations addressed to me (`GET /v1/client/me/organization-invitations`). No body. Answers [MyOrganizationInvitationList]. */
+    val listMyPendingOrganizationInvitations: TulaOperation = TulaOperation("listMyPendingOrganizationInvitations", "GET", "/v1/client/me/organization-invitations", true)
 
     /** List my sessions (`GET /v1/client/sessions`). No body. Answers [SessionList]. */
     val listSessions: TulaOperation = TulaOperation("listSessions", "GET", "/v1/client/sessions", true)
@@ -287,6 +296,7 @@ object TulaOperations {
 
     /** Every operation, by id. */
     val all: List<TulaOperation> = listOf(
+        acceptMyOrganizationInvitation,
         acceptOrganizationInvitation,
         attemptSignInFirstFactor,
         changeMyPassword,
@@ -296,6 +306,7 @@ object TulaOperations {
         confirmSmsFactorEnrolment,
         confirmTotpEnrolment,
         createMyOrganization,
+        declineMyOrganizationInvitation,
         declineOrganizationInvitation,
         deleteMyIdentity,
         deleteMyOrganization,
@@ -321,6 +332,7 @@ object TulaOperations {
         listMyOrganizationSuggestions,
         listMyOrganizations,
         listMyPasskeys,
+        listMyPendingOrganizationInvitations,
         listSessions,
         preparePasswordResetSecondFactor,
         prepareSignInFirstFactor,
