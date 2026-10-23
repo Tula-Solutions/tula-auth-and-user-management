@@ -8,7 +8,7 @@ import { SessionCheckForm } from './session-check'
  * the page checks again, because a page must not depend on the proxy's matcher covering it.
  */
 export default async function Dashboard() {
-  const { isSignedIn, userId, sessionId, claims } = await auth()
+  const { isSignedIn, userId, sessionId, claims, orgId, orgRole } = await auth()
   if (!isSignedIn) {
     redirect('/sign-in?redirect_url=%2Fdashboard')
   }
@@ -28,11 +28,18 @@ export default async function Dashboard() {
         <dd data-testid='server-session-id'>{sessionId}</dd>
         <dt>Token expires</dt>
         <dd data-testid='server-token-expiry'>{new Date(claims.exp * 1000).toISOString()}</dd>
+        <dt>Organization</dt>
+        <dd data-testid='server-org-id'>{orgId ?? 'none'}</dd>
+        <dt>Role</dt>
+        <dd data-testid='server-org-role'>{orgRole ?? 'none'}</dd>
       </dl>
       <SessionCheckForm />
       <p className='row'>
         <Link href='/profile' className='button-link'>
           Manage your account
+        </Link>
+        <Link href='/organizations' className='button-link quiet'>
+          Your organizations
         </Link>
       </p>
     </section>

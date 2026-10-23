@@ -254,8 +254,13 @@ describe('what @tula-tech/react costs a browser bundle', () => {
    * four messages of custom roles (Orgs 03) arrive with them. The bundle then measured 55,248
    * bytes, 812 more. The budget moved by exactly the measurement, to 55,684, so the 436 bytes
    * of room are still what is left.
+   * The organization hooks (ADR 0065, Orgs 06: `useOrganization`, `useOrganizationList`, the
+   * per-client store behind them that keeps a list for the session it was fetched for, and
+   * `has()` with the contract's claim grammar it checks a role against) took it to 56,654
+   * bytes, 1,406 more. The budget moved by exactly those bytes, to 57,090, so the 436 bytes
+   * of room are still what is left.
    */
-  const GZIP_BUDGET_BYTES = 55_684
+  const GZIP_BUDGET_BYTES = 57_090
   /**
    * The QR encoder, in a chunk of its own: loaded when an enrolment is first drawn, so an app
    * that never shows one does not pay for it.

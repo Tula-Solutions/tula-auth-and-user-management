@@ -61,7 +61,7 @@ by error code. Their code samples are copied from files of this repository by
 
 | | |
 | --- | --- |
-| [JWT templates](jwt-templates.md) | Custom claims under `ext`: the sources a claim can have, the reserved names and the size cap, when a change takes effect, reading them with `@tula-tech/nextjs`. |
+| [JWT templates](jwt-templates.md) | Custom claims under `ext`: the sources a claim can have, the reserved names and the size cap, when a change takes effect, reading them with `@tula-tech/nextjs`; the organization claims beside them. |
 
 ## Events for your backend
 

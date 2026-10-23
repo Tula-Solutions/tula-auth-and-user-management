@@ -5421,6 +5421,26 @@ An organization.
 export type Organization = z.infer<typeof OrganizationSchema>
 ```
 
+### `OrganizationCheck`
+
+_type_, defined in `packages/contract/src/custom-claims.ts`
+
+What {@link hasOrganizationAccess} asks: one permission key, or one role key. Exactly one
+of the two.
+
+```ts
+export type OrganizationCheck =
+| { readonly permission: string; readonly role?: never }
+| { readonly role: string; readonly permission?: never }
+```
+
+**Example**
+
+```ts
+const byPermission: OrganizationCheck = { permission: 'org:billing:read' }
+const byRole: OrganizationCheck = { role: 'admin' }
+```
+
 ### `OrganizationClaims`
 
 _interface_, defined in `packages/contract/src/custom-claims.ts`
@@ -9926,6 +9946,46 @@ hasInvisibleCharacter('a\u{200B}b') // true
 hasInvisibleCharacter('münchen') // false
 ```
 
+### `hasOrganizationAccess`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Whether the active organization grants a permission or a role: the one rule behind
+`has()` in `@tula-tech/nextjs` and `@tula-tech/react`.
+
+It is exact. A permission is held when the claims list that very key; there is no wildcard
+(`org:billing:*` matches nothing) and no implication between keys (`manage` does not
+include `read`). A role is held when it is the member's role key. It is **false** with no
+active organization, for a check that names neither or both, and for anything that is not a
+non-empty string: a check that cannot be understood never grants.
+
+This reads claims, so it is as old as the access token (the server decides afresh at every
+refresh, within the token's life). Use it to decide what to show and what to let through
+quickly; a request that changes data is authorized by the server that changes it.
+
+```ts
+export function hasOrganizationAccess(
+  claims: OrganizationClaims | null | undefined,
+  check: OrganizationCheck
+): boolean
+```
+
+**Parameters**
+
+- `claims`: What {@link readOrganizationClaims} returned, or `null`.
+- `check`: The permission or the role asked for.
+
+**Returns** Whether the organization grants it.
+
+**Example**
+
+```ts
+const claims = readOrganizationClaims(payload)
+hasOrganizationAccess(claims, { permission: 'org:billing:read' })
+hasOrganizationAccess(claims, { role: 'admin' })
+hasOrganizationAccess(null, { role: 'admin' }) // false: no organization is active
+```
+
 ### `hookFailureOutcome`
 
 _function_, defined in `packages/contract/src/hook.ts`
@@ -11249,10 +11309,11 @@ Read the organization claims out of a session's claims, for an SDK or an applica
 
 Call it only with claims that were **verified**: this checks a shape, not where the claims
 came from. The three are returned together or not at all. A token that carries one without
-the others, a value of another type, more than {@link MAX_ORGANIZATION_PERMISSIONS_CLAIM}
-permissions, a permission that is not a string or claims over
-{@link MAX_ORGANIZATION_CLAIMS_BYTES} has **no** active organization, whole: never repaired
-and never partly believed. Treat `null` as "no organization, no permission".
+the others, a value of another type, an id or a role key outside their grammar, more than
+{@link MAX_ORGANIZATION_PERMISSIONS_CLAIM} permissions, a permission outside the permission
+grammar (`PERMISSION_KEY_PATTERN`) or claims over {@link MAX_ORGANIZATION_CLAIMS_BYTES} has
+**no** active organization, whole: never repaired and never partly believed. Treat `null`
+as "no organization, no permission".
 
 ```ts
 export function readOrganizationClaims(claims: unknown): OrganizationClaims | null
@@ -12239,6 +12300,26 @@ The access token's claim holding the key of the member's role in the active orga
 const ORGANIZATION_ROLE_CLAIM: "org_role"
 ```
 
+### `OrganizationCheck`
+
+_type_, defined in `packages/contract/src/custom-claims.ts`
+
+What {@link hasOrganizationAccess} asks: one permission key, or one role key. Exactly one
+of the two.
+
+```ts
+export type OrganizationCheck =
+| { readonly permission: string; readonly role?: never }
+| { readonly role: string; readonly permission?: never }
+```
+
+**Example**
+
+```ts
+const byPermission: OrganizationCheck = { permission: 'org:billing:read' }
+const byRole: OrganizationCheck = { role: 'admin' }
+```
+
 ### `OrganizationClaims`
 
 _interface_, defined in `packages/contract/src/custom-claims.ts`
@@ -12328,6 +12409,46 @@ export function customClaimsBytes(claims: Readonly<Record<string, CustomClaimVal
 
 ```ts
 customClaimsBytes({ role: 'admin' }) // 16: {"role":"admin"}
+```
+
+### `hasOrganizationAccess`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Whether the active organization grants a permission or a role: the one rule behind
+`has()` in `@tula-tech/nextjs` and `@tula-tech/react`.
+
+It is exact. A permission is held when the claims list that very key; there is no wildcard
+(`org:billing:*` matches nothing) and no implication between keys (`manage` does not
+include `read`). A role is held when it is the member's role key. It is **false** with no
+active organization, for a check that names neither or both, and for anything that is not a
+non-empty string: a check that cannot be understood never grants.
+
+This reads claims, so it is as old as the access token (the server decides afresh at every
+refresh, within the token's life). Use it to decide what to show and what to let through
+quickly; a request that changes data is authorized by the server that changes it.
+
+```ts
+export function hasOrganizationAccess(
+  claims: OrganizationClaims | null | undefined,
+  check: OrganizationCheck
+): boolean
+```
+
+**Parameters**
+
+- `claims`: What {@link readOrganizationClaims} returned, or `null`.
+- `check`: The permission or the role asked for.
+
+**Returns** Whether the organization grants it.
+
+**Example**
+
+```ts
+const claims = readOrganizationClaims(payload)
+hasOrganizationAccess(claims, { permission: 'org:billing:read' })
+hasOrganizationAccess(claims, { role: 'admin' })
+hasOrganizationAccess(null, { role: 'admin' }) // false: no organization is active
 ```
 
 ### `isCustomClaimKey`
@@ -12443,10 +12564,11 @@ Read the organization claims out of a session's claims, for an SDK or an applica
 
 Call it only with claims that were **verified**: this checks a shape, not where the claims
 came from. The three are returned together or not at all. A token that carries one without
-the others, a value of another type, more than {@link MAX_ORGANIZATION_PERMISSIONS_CLAIM}
-permissions, a permission that is not a string or claims over
-{@link MAX_ORGANIZATION_CLAIMS_BYTES} has **no** active organization, whole: never repaired
-and never partly believed. Treat `null` as "no organization, no permission".
+the others, a value of another type, an id or a role key outside their grammar, more than
+{@link MAX_ORGANIZATION_PERMISSIONS_CLAIM} permissions, a permission outside the permission
+grammar (`PERMISSION_KEY_PATTERN`) or claims over {@link MAX_ORGANIZATION_CLAIMS_BYTES} has
+**no** active organization, whole: never repaired and never partly believed. Treat `null`
+as "no organization, no permission".
 
 ```ts
 export function readOrganizationClaims(claims: unknown): OrganizationClaims | null

@@ -1,11 +1,19 @@
 import type { TulaConfig } from './config'
-import { clearCookieLine, formatCookieHeader, isCookieValue, setCookieLine } from './cookies'
+import {
+  accessCookieChanges,
+  clearCookieLine,
+  formatCookieHeader,
+  isAccessToken,
+  MAX_ACCESS_TOKEN_LENGTH,
+  setCookieLine,
+} from './cookies'
 import {
   apiHeaders,
   callApi,
   readRequestCookies,
   refreshSession,
   supersededCookieLines,
+  supersededNames,
 } from './upstream'
 import { hasTimeLeft, type SessionClaims, sessionClaims, verifyAccessToken } from './verify'
 
@@ -300,7 +308,7 @@ export async function resolveSession(
       // The plain-named cookies go with any change (see `supersededCookieLines`), from the
       // browser and from the rest of this request: with the `__Host-` ones cleared, `auth()`
       // would otherwise read them and disagree with the interceptor.
-      for (const name of Object.values(cookies.superseded)) {
+      for (const name of supersededNames(cookies)) {
         jar.delete(name)
       }
       setCookies.push(...supersededCookieLines(cookies))
@@ -316,6 +324,22 @@ export async function resolveSession(
   const drop = (name: string) => {
     jar.delete(name)
     setCookies.push(clearCookieLine(name, secure))
+  }
+  /**
+   * Keep the access token in its cookie(s), or remove it (`null`): the parts it needs are
+   * set, and parts of an earlier, longer token that this request carried are removed.
+   */
+  const keepAccess = (token: string | null, maxAge?: number) => {
+    for (const [name, value] of accessCookieChanges(names.access, token, jar.keys())) {
+      if (value === null) {
+        drop(name)
+      } else {
+        jar.set(name, value)
+        setCookies.push(
+          setCookieLine(name, value, { secure, ...(maxAge !== undefined && { maxAge }) })
+        )
+      }
+    }
   }
 
   /** A token that verifies but is about to expire: used only if no newer one can be had. */
@@ -335,16 +359,25 @@ export async function resolveSession(
     if (outcome.status === 'refused') {
       drop(names.refresh)
       if (cookies.access) {
-        drop(names.access)
+        keepAccess(null)
       }
       return finish(null)
     }
     if (outcome.status === 'refreshed') {
       const { accessToken, accessTokenMaxAge } = outcome.session
       // The answer is verified like any other token before it becomes this request's session.
-      const claims = isCookieValue(accessToken)
-        ? await verifyAccessToken(accessToken, config)
-        : null
+      const fits = isAccessToken(accessToken)
+      if (!fits && accessToken.length > MAX_ACCESS_TOKEN_LENGTH) {
+        config.warn(
+          'access-token-size',
+          'an access token was longer than this package keeps in cookies, so it was not stored ' +
+            'and every request refreshes the session instead. A Tula server never issues one ' +
+            "this large with its documented limits (a role's permissions and the custom " +
+            'claims of the JWT template): check that the issuer and the environment are the ' +
+            'ones this app is set up for.'
+        )
+      }
+      const claims = fits ? await verifyAccessToken(accessToken, config) : null
       if (outcome.refresh) {
         jar.set(names.refresh, outcome.refresh.value)
         setCookies.push(
@@ -355,10 +388,7 @@ export async function resolveSession(
         )
       }
       if (claims) {
-        jar.set(names.access, accessToken)
-        setCookies.push(
-          setCookieLine(names.access, accessToken, { secure, maxAge: accessTokenMaxAge })
-        )
+        keepAccess(accessToken, accessTokenMaxAge)
         return finish({ claims, token: accessToken })
       }
     }
