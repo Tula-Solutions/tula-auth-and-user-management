@@ -216,6 +216,61 @@ export const UpdateOrganizationMemberRequestSchema = z
   .strictObject({ role: RoleKeySchema })
   .meta({ ref: 'UpdateOrganizationMemberRequest' })
 
+/**
+ * An organization the signed-in user belongs to, with their role in it (ADR 0065, Orgs 02).
+ * What `GET /v1/client/me/organizations` lists and `POST` creates. No creator and no other
+ * member: a user is told about their own membership and nothing of anyone else's.
+ */
+export const UserOrganizationSchema = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    slug: z.string(),
+    /** The key of the user's role in it. */
+    role: z.string(),
+    /** The permission keys of that role, as they are now. */
+    permissions: z.array(z.string()),
+    createdAt: z.iso.datetime(),
+  })
+  .meta({ ref: 'UserOrganization' })
+
+/**
+ * One page of the signed-in user's organizations, the one they joined first at the top. The
+ * `activeOrganizationId` is the session's own: `null` for the personal account, and for an
+ * organization the user is no longer a member of.
+ */
+export const UserOrganizationListSchema = z
+  .object({
+    activeOrganizationId: z.string().nullable(),
+    meta: PaginationMetaSchema,
+    data: z.array(UserOrganizationSchema),
+  })
+  .meta({ ref: 'UserOrganizationList' })
+
+/**
+ * Make an organization the session's active one, or clear it (`null`: the personal
+ * account, where the environment allows one).
+ */
+export const SetActiveOrganizationRequestSchema = z
+  .strictObject({ organizationId: z.uuid().nullable() })
+  .meta({ ref: 'SetActiveOrganizationRequest' })
+
+/**
+ * The session after the active organization changed. A `hybrid` session gets a **new access
+ * token** that already carries `org_id`, `org_role` and `org_perms` (or none of them, once
+ * cleared); the refresh token is untouched. A `stateful` session gets no token: its next
+ * request is read from the stored session.
+ */
+export const ActiveOrganizationSchema = z
+  .object({
+    sessionId: z.string(),
+    /** The session's active organization now: `null` for the personal account. */
+    organizationId: z.string().nullable(),
+    accessToken: z.string().optional(),
+    accessTokenExpiresAt: z.iso.datetime().optional(),
+  })
+  .meta({ ref: 'ActiveOrganization' })
+
 /** An organization. */
 export type Organization = z.infer<typeof OrganizationSchema>
 /** A page of organizations. */
@@ -232,6 +287,15 @@ export type OrganizationMembershipList = z.infer<typeof OrganizationMembershipLi
 export type AddOrganizationMemberRequest = z.infer<typeof AddOrganizationMemberRequestSchema>
 /** The body that changes a member's role. */
 export type UpdateOrganizationMemberRequest = z.infer<typeof UpdateOrganizationMemberRequestSchema>
+
+/** An organization the signed-in user belongs to. */
+export type UserOrganization = z.infer<typeof UserOrganizationSchema>
+/** A page of the signed-in user's organizations. */
+export type UserOrganizationList = z.infer<typeof UserOrganizationListSchema>
+/** The body that sets or clears the active organization. */
+export type SetActiveOrganizationRequest = z.infer<typeof SetActiveOrganizationRequestSchema>
+/** The session after its active organization changed. */
+export type ActiveOrganization = z.infer<typeof ActiveOrganizationSchema>
 
 /**
  * The fields of an organization an update can change, as `organization.updated` names them.

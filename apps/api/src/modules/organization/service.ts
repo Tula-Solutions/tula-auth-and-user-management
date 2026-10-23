@@ -98,7 +98,7 @@ async function requireOrganization(
  * `member` is created from {@link BUILT_IN_ROLES} and read again. Any other key that is
  * missing is an unknown role.
  */
-async function requireRole(
+export async function requireRole(
   deps: Pick<Deps, 'organizations' | 'ids' | 'clock'>,
   tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
   key: string

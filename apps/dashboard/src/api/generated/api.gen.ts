@@ -2406,6 +2406,10 @@ export const ErrorCode = {
   organizationmember_exists: 'organization.member_exists',
   organizationlast_manager: 'organization.last_manager',
   organizationrole_unknown: 'organization.role_unknown',
+  organizationnot_a_member: 'organization.not_a_member',
+  organizationcreation_disabled: 'organization.creation_disabled',
+  organizationlimit_reached: 'organization.limit_reached',
+  organizationpersonal_account_disabled: 'organization.personal_account_disabled',
   rate_limited: 'rate_limited',
   requestmalformed: 'request.malformed',
   requesttoo_large: 'request.too_large',
@@ -2802,6 +2806,9 @@ export interface AccessTokenClaims {
   amr?: string[];
   sp?: string;
   cnf?: AccessTokenClaimsCnf;
+  org_id?: string;
+  org_role?: string;
+  org_perms?: string[];
   ext?: AccessTokenClaimsExt;
 }
 
@@ -4787,6 +4794,36 @@ export interface AddOrganizationMemberRequest {
 
 export interface UpdateOrganizationMemberRequest {
   role: OrganizationRoleKey;
+}
+
+export interface UserOrganization {
+  id: string;
+  name: string;
+  slug: string;
+  role: string;
+  permissions: string[];
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+}
+
+export interface UserOrganizationList {
+  /** @nullable */
+  activeOrganizationId: string | null;
+  meta: PaginationMeta;
+  data: UserOrganization[];
+}
+
+export interface ActiveOrganization {
+  sessionId: string;
+  /** @nullable */
+  organizationId: string | null;
+  accessToken?: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  accessTokenExpiresAt?: string;
+}
+
+export interface SetActiveOrganizationRequest {
+  organizationId: string | null;
 }
 
 export type AppleAppSiteAssociationWebcredentials = {

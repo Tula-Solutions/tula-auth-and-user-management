@@ -3,6 +3,12 @@
 
 /** Schemas of the client API (`/v1/client/*`), by their name in the OpenAPI document. */
 export interface Schemas {
+  ActiveOrganization: {
+    sessionId: string
+    organizationId: string | null
+    accessToken?: string
+    accessTokenExpiresAt?: string
+  }
   BackupCodes: {
     codes: string[]
   }
@@ -30,6 +36,10 @@ export interface Schemas {
     phone?: {
       enabled: boolean
     }
+  }
+  CreateOrganizationRequest: {
+    name: string
+    slug: Schemas['OrganizationSlug']
   }
   CurrentUser: {
     id: string
@@ -63,7 +73,7 @@ export interface Schemas {
     status: 'verified'
   }
   EmailVerificationStrategy: 'email_code' | 'email_link'
-  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'email.already_set' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.reused' | 'password.not_set' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.enrolment_needs_other_sign_in' | 'mfa.needs_other_sign_in' | 'mfa.sms_not_allowed' | 'mfa.phone_number_required' | 'mfa.required_by_policy' | 'oauth.access_denied' | 'oauth.provider_error' | 'oauth.state_invalid' | 'oauth.ticket_invalid' | 'oauth.different_browser' | 'oauth.email_missing' | 'oauth.email_unverified' | 'oauth.account_exists' | 'oauth.identity_in_use' | 'oauth.already_linked' | 'identity.last_sign_in_method' | 'webhook.url_not_allowed' | 'webhook.cannot_redeliver' | 'webhook.rotation_refused' | 'hook.denied' | 'hook.unavailable' | 'hook.url_not_allowed' | 'passkey.registration_failed' | 'passkey.already_registered' | 'passkey.limit_reached' | 'passkey.last_sign_in_method' | 'phone.invalid' | 'sms.disabled' | 'sms.country_not_allowed' | 'sms.unavailable' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'session.limit_reached' | 'device.proof_invalid' | 'device.nonce_required' | 'device.binding_not_supported' | 'device.binding_required' | 'organization.disabled' | 'organization.slug_taken' | 'organization.member_exists' | 'organization.last_manager' | 'organization.role_unknown' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
+  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'email.already_set' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.reused' | 'password.not_set' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.enrolment_needs_other_sign_in' | 'mfa.needs_other_sign_in' | 'mfa.sms_not_allowed' | 'mfa.phone_number_required' | 'mfa.required_by_policy' | 'oauth.access_denied' | 'oauth.provider_error' | 'oauth.state_invalid' | 'oauth.ticket_invalid' | 'oauth.different_browser' | 'oauth.email_missing' | 'oauth.email_unverified' | 'oauth.account_exists' | 'oauth.identity_in_use' | 'oauth.already_linked' | 'identity.last_sign_in_method' | 'webhook.url_not_allowed' | 'webhook.cannot_redeliver' | 'webhook.rotation_refused' | 'hook.denied' | 'hook.unavailable' | 'hook.url_not_allowed' | 'passkey.registration_failed' | 'passkey.already_registered' | 'passkey.limit_reached' | 'passkey.last_sign_in_method' | 'phone.invalid' | 'sms.disabled' | 'sms.country_not_allowed' | 'sms.unavailable' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'session.limit_reached' | 'device.proof_invalid' | 'device.nonce_required' | 'device.binding_not_supported' | 'device.binding_required' | 'organization.disabled' | 'organization.slug_taken' | 'organization.member_exists' | 'organization.last_manager' | 'organization.role_unknown' | 'organization.not_a_member' | 'organization.creation_disabled' | 'organization.limit_reached' | 'organization.personal_account_disabled' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
   ErrorEnvelope: {
     status: number
     code: Schemas['ErrorCode']
@@ -203,6 +213,13 @@ export interface Schemas {
   OAuthStartRequest: {
     provider: Schemas['OAuthProvider']
     redirectUrl: string
+  }
+  OrganizationSlug: string
+  PaginationMeta: {
+    totalCount: number
+    totalPages: number
+    page: number
+    perPage: number
   }
   Passkey: {
     id: string
@@ -376,6 +393,9 @@ export interface Schemas {
     accessTokenExpiresAt?: string
     refreshToken?: string
   }
+  SetActiveOrganizationRequest: {
+    organizationId: string | null
+  }
   SignInStartRequest: {
     identifier: string
   }
@@ -425,6 +445,19 @@ export interface Schemas {
     secret: string
     uri: string
   }
+  UserOrganization: {
+    id: string
+    name: string
+    slug: string
+    role: string
+    permissions: string[]
+    createdAt: string
+  }
+  UserOrganizationList: {
+    activeOrganizationId: string | null
+    meta: Schemas['PaginationMeta']
+    data: Schemas['UserOrganization'][]
+  }
   VerifyEmailRequest: {
     code: string
   }
@@ -446,6 +479,8 @@ export interface Operations {
   confirmSmsFactorEnrolment: { params: Record<string, never>; body: Schemas['SmsFactorConfirmRequest']; response: Schemas['Factors'] }
   /** Confirm the authenticator app (`POST /v1/client/me/factors/totp/confirm`). */
   confirmTotpEnrolment: { params: Record<string, never>; body: Schemas['TotpConfirmRequest']; response: Schemas['BackupCodes'] }
+  /** Create an organization (`POST /v1/client/me/organizations`). */
+  createMyOrganization: { params: Record<string, never>; body: Schemas['CreateOrganizationRequest']; response: Schemas['UserOrganization'] }
   /** Disconnect a provider account (`DELETE /v1/client/me/identities/{identityId}`). */
   deleteMyIdentity: { params: { identityId: string }; body: undefined; response: undefined }
   /** Stop using a texted code as my second factor (`DELETE /v1/client/me/factors/sms`). */
@@ -474,6 +509,8 @@ export interface Operations {
   getStepUpPasskeyOptions: { params: Record<string, never>; body: undefined; response: Schemas['PasskeyRequestOptions'] }
   /** List my connected accounts (`GET /v1/client/me/identities`). */
   listMyIdentities: { params: Record<string, never>; body: undefined; response: Schemas['IdentityList'] }
+  /** List my organizations (`GET /v1/client/me/organizations`). */
+  listMyOrganizations: { params: Record<string, never>; body: undefined; response: Schemas['UserOrganizationList'] }
   /** List my passkeys (`GET /v1/client/me/passkeys`). */
   listMyPasskeys: { params: Record<string, never>; body: undefined; response: Schemas['PasskeyList'] }
   /** List my sessions (`GET /v1/client/sessions`). */
@@ -512,6 +549,8 @@ export interface Operations {
   sendStepUpEmailCode: { params: Record<string, never>; body: undefined; response: Schemas['StepUpEmailCode'] }
   /** Text me a code to prove it is still me (`POST /v1/client/sessions/step-up/sms-code`). */
   sendStepUpSmsCode: { params: Record<string, never>; body: undefined; response: Schemas['SmsFactorCode'] }
+  /** Set the active organization (`PUT /v1/client/me/organizations/active`). */
+  setActiveOrganization: { params: Record<string, never>; body: Schemas['SetActiveOrganizationRequest']; response: Schemas['ActiveOrganization'] }
   /** Sign out (`POST /v1/client/sessions/sign-out`). */
   signOut: { params: Record<string, never>; body: Schemas['RefreshTokenRequest']; response: undefined }
   /** Start connecting a provider account (`POST /v1/client/me/identities/oauth`). */
@@ -587,6 +626,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   confirmSignUpTotpEnrolment: { method: 'POST', path: '/v1/client/sign-ups/{attemptId}/factor-enrolment/totp/confirm', session: false },
   confirmSmsFactorEnrolment: { method: 'POST', path: '/v1/client/me/factors/sms/confirm', session: true },
   confirmTotpEnrolment: { method: 'POST', path: '/v1/client/me/factors/totp/confirm', session: true },
+  createMyOrganization: { method: 'POST', path: '/v1/client/me/organizations', session: true },
   deleteMyIdentity: { method: 'DELETE', path: '/v1/client/me/identities/{identityId}', session: true },
   disableSmsFactor: { method: 'DELETE', path: '/v1/client/me/factors/sms', session: true },
   disableTotp: { method: 'DELETE', path: '/v1/client/me/factors/totp', session: true },
@@ -601,6 +641,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   getSignInSecondFactorPasskeyOptions: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/second-factor/passkey/options', session: false },
   getStepUpPasskeyOptions: { method: 'POST', path: '/v1/client/sessions/step-up/passkey', session: true },
   listMyIdentities: { method: 'GET', path: '/v1/client/me/identities', session: true },
+  listMyOrganizations: { method: 'GET', path: '/v1/client/me/organizations', session: true },
   listMyPasskeys: { method: 'GET', path: '/v1/client/me/passkeys', session: true },
   listSessions: { method: 'GET', path: '/v1/client/sessions', session: true },
   preparePasswordResetSecondFactor: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/second-factor/prepare', session: false },
@@ -620,6 +661,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   revokeSession: { method: 'DELETE', path: '/v1/client/sessions/{sessionId}', session: true },
   sendStepUpEmailCode: { method: 'POST', path: '/v1/client/sessions/step-up/email-code', session: true },
   sendStepUpSmsCode: { method: 'POST', path: '/v1/client/sessions/step-up/sms-code', session: true },
+  setActiveOrganization: { method: 'PUT', path: '/v1/client/me/organizations/active', session: true },
   signOut: { method: 'POST', path: '/v1/client/sessions/sign-out', session: false },
   startIdentityLink: { method: 'POST', path: '/v1/client/me/identities/oauth', session: true },
   startIdTokenSignIn: { method: 'POST', path: '/v1/client/sign-ins/id-token', session: false },

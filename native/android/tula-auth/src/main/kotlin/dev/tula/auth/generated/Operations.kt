@@ -39,6 +39,9 @@ object TulaOperations {
     /** Confirm the authenticator app (`POST /v1/client/me/factors/totp/confirm`). Body: [TotpConfirmRequest]. Answers [BackupCodes]. */
     val confirmTotpEnrolment: TulaOperation = TulaOperation("confirmTotpEnrolment", "POST", "/v1/client/me/factors/totp/confirm", true)
 
+    /** Create an organization (`POST /v1/client/me/organizations`). Body: [CreateOrganizationRequest]. Answers [UserOrganization]. */
+    val createMyOrganization: TulaOperation = TulaOperation("createMyOrganization", "POST", "/v1/client/me/organizations", true)
+
     /** Disconnect a provider account (`DELETE /v1/client/me/identities/{identityId}`). No body. Answers no body. */
     val deleteMyIdentity: TulaOperation = TulaOperation("deleteMyIdentity", "DELETE", "/v1/client/me/identities/{identityId}", true)
 
@@ -80,6 +83,9 @@ object TulaOperations {
 
     /** List my connected accounts (`GET /v1/client/me/identities`). No body. Answers [IdentityList]. */
     val listMyIdentities: TulaOperation = TulaOperation("listMyIdentities", "GET", "/v1/client/me/identities", true)
+
+    /** List my organizations (`GET /v1/client/me/organizations`). No body. Answers [UserOrganizationList]. */
+    val listMyOrganizations: TulaOperation = TulaOperation("listMyOrganizations", "GET", "/v1/client/me/organizations", true)
 
     /** List my passkeys (`GET /v1/client/me/passkeys`). No body. Answers [PasskeyList]. */
     val listMyPasskeys: TulaOperation = TulaOperation("listMyPasskeys", "GET", "/v1/client/me/passkeys", true)
@@ -137,6 +143,9 @@ object TulaOperations {
 
     /** Text me a code to prove it is still me (`POST /v1/client/sessions/step-up/sms-code`). No body. Answers [SmsFactorCode]. */
     val sendStepUpSmsCode: TulaOperation = TulaOperation("sendStepUpSmsCode", "POST", "/v1/client/sessions/step-up/sms-code", true)
+
+    /** Set the active organization (`PUT /v1/client/me/organizations/active`). Body: [SetActiveOrganizationRequest]. Answers [ActiveOrganization]. */
+    val setActiveOrganization: TulaOperation = TulaOperation("setActiveOrganization", "PUT", "/v1/client/me/organizations/active", true)
 
     /** Sign out (`POST /v1/client/sessions/sign-out`). Body: [RefreshTokenRequest]. Answers no body. */
     val signOut: TulaOperation = TulaOperation("signOut", "POST", "/v1/client/sessions/sign-out", false)
@@ -228,6 +237,7 @@ object TulaOperations {
         confirmSignUpTotpEnrolment,
         confirmSmsFactorEnrolment,
         confirmTotpEnrolment,
+        createMyOrganization,
         deleteMyIdentity,
         disableSmsFactor,
         disableTotp,
@@ -242,6 +252,7 @@ object TulaOperations {
         getSignInSecondFactorPasskeyOptions,
         getStepUpPasskeyOptions,
         listMyIdentities,
+        listMyOrganizations,
         listMyPasskeys,
         listSessions,
         preparePasswordResetSecondFactor,
@@ -261,6 +272,7 @@ object TulaOperations {
         revokeSession,
         sendStepUpEmailCode,
         sendStepUpSmsCode,
+        setActiveOrganization,
         signOut,
         startIdTokenSignIn,
         startIdentityLink,

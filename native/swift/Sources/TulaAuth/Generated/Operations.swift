@@ -39,6 +39,9 @@ public enum TulaOperations {
     /// Confirm the authenticator app (`POST /v1/client/me/factors/totp/confirm`). Body: `TotpConfirmRequest`. Answers `BackupCodes`.
     public static let confirmTotpEnrolment = TulaOperation(id: "confirmTotpEnrolment", method: "POST", path: "/v1/client/me/factors/totp/confirm", requiresSession: true)
 
+    /// Create an organization (`POST /v1/client/me/organizations`). Body: `CreateOrganizationRequest`. Answers `UserOrganization`.
+    public static let createMyOrganization = TulaOperation(id: "createMyOrganization", method: "POST", path: "/v1/client/me/organizations", requiresSession: true)
+
     /// Disconnect a provider account (`DELETE /v1/client/me/identities/{identityId}`). No body. Answers no body.
     public static let deleteMyIdentity = TulaOperation(id: "deleteMyIdentity", method: "DELETE", path: "/v1/client/me/identities/{identityId}", requiresSession: true)
 
@@ -80,6 +83,9 @@ public enum TulaOperations {
 
     /// List my connected accounts (`GET /v1/client/me/identities`). No body. Answers `IdentityList`.
     public static let listMyIdentities = TulaOperation(id: "listMyIdentities", method: "GET", path: "/v1/client/me/identities", requiresSession: true)
+
+    /// List my organizations (`GET /v1/client/me/organizations`). No body. Answers `UserOrganizationList`.
+    public static let listMyOrganizations = TulaOperation(id: "listMyOrganizations", method: "GET", path: "/v1/client/me/organizations", requiresSession: true)
 
     /// List my passkeys (`GET /v1/client/me/passkeys`). No body. Answers `PasskeyList`.
     public static let listMyPasskeys = TulaOperation(id: "listMyPasskeys", method: "GET", path: "/v1/client/me/passkeys", requiresSession: true)
@@ -137,6 +143,9 @@ public enum TulaOperations {
 
     /// Text me a code to prove it is still me (`POST /v1/client/sessions/step-up/sms-code`). No body. Answers `SmsFactorCode`.
     public static let sendStepUpSmsCode = TulaOperation(id: "sendStepUpSmsCode", method: "POST", path: "/v1/client/sessions/step-up/sms-code", requiresSession: true)
+
+    /// Set the active organization (`PUT /v1/client/me/organizations/active`). Body: `SetActiveOrganizationRequest`. Answers `ActiveOrganization`.
+    public static let setActiveOrganization = TulaOperation(id: "setActiveOrganization", method: "PUT", path: "/v1/client/me/organizations/active", requiresSession: true)
 
     /// Sign out (`POST /v1/client/sessions/sign-out`). Body: `RefreshTokenRequest`. Answers no body.
     public static let signOut = TulaOperation(id: "signOut", method: "POST", path: "/v1/client/sessions/sign-out", requiresSession: false)
@@ -228,6 +237,7 @@ public enum TulaOperations {
         confirmSignUpTotpEnrolment,
         confirmSmsFactorEnrolment,
         confirmTotpEnrolment,
+        createMyOrganization,
         deleteMyIdentity,
         disableSmsFactor,
         disableTotp,
@@ -242,6 +252,7 @@ public enum TulaOperations {
         getSignInSecondFactorPasskeyOptions,
         getStepUpPasskeyOptions,
         listMyIdentities,
+        listMyOrganizations,
         listMyPasskeys,
         listSessions,
         preparePasswordResetSecondFactor,
@@ -261,6 +272,7 @@ public enum TulaOperations {
         revokeSession,
         sendStepUpEmailCode,
         sendStepUpSmsCode,
+        setActiveOrganization,
         signOut,
         startIdTokenSignIn,
         startIdentityLink,

@@ -332,6 +332,22 @@ sealed class ErrorCode {
         override val rawValue: String = "organization.role_unknown"
     }
 
+    object OrganizationNotAMember : ErrorCode() {
+        override val rawValue: String = "organization.not_a_member"
+    }
+
+    object OrganizationCreationDisabled : ErrorCode() {
+        override val rawValue: String = "organization.creation_disabled"
+    }
+
+    object OrganizationLimitReached : ErrorCode() {
+        override val rawValue: String = "organization.limit_reached"
+    }
+
+    object OrganizationPersonalAccountDisabled : ErrorCode() {
+        override val rawValue: String = "organization.personal_account_disabled"
+    }
+
     object RateLimited : ErrorCode() {
         override val rawValue: String = "rate_limited"
     }
@@ -473,6 +489,10 @@ sealed class ErrorCode {
                 OrganizationMemberExists,
                 OrganizationLastManager,
                 OrganizationRoleUnknown,
+                OrganizationNotAMember,
+                OrganizationCreationDisabled,
+                OrganizationLimitReached,
+                OrganizationPersonalAccountDisabled,
                 RateLimited,
                 RequestMalformed,
                 RequestTooLarge,
@@ -569,6 +589,10 @@ sealed class ErrorCode {
             "organization.member_exists" -> OrganizationMemberExists
             "organization.last_manager" -> OrganizationLastManager
             "organization.role_unknown" -> OrganizationRoleUnknown
+            "organization.not_a_member" -> OrganizationNotAMember
+            "organization.creation_disabled" -> OrganizationCreationDisabled
+            "organization.limit_reached" -> OrganizationLimitReached
+            "organization.personal_account_disabled" -> OrganizationPersonalAccountDisabled
             "rate_limited" -> RateLimited
             "request.malformed" -> RequestMalformed
             "request.too_large" -> RequestTooLarge
@@ -845,6 +869,18 @@ object TulaErrorDefinitions {
     /** `organization.role_unknown` */
     val organizationRoleUnknown: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationRoleUnknown, 422, "That role does not exist in this environment.")
 
+    /** `organization.not_a_member` */
+    val organizationNotAMember: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationNotAMember, 403, "You are not a member of that organization.")
+
+    /** `organization.creation_disabled` */
+    val organizationCreationDisabled: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationCreationDisabled, 403, "Creating an organization is not allowed in this environment.")
+
+    /** `organization.limit_reached` */
+    val organizationLimitReached: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationLimitReached, 403, "You have reached the number of organizations you can create.")
+
+    /** `organization.personal_account_disabled` */
+    val organizationPersonalAccountDisabled: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationPersonalAccountDisabled, 409, "An organization must be active in this environment.")
+
     /** `rate_limited` */
     val rateLimited: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.RateLimited, 429, "Too many requests. Try again shortly.")
 
@@ -964,6 +1000,10 @@ object TulaErrorDefinitions {
         organizationMemberExists,
         organizationLastManager,
         organizationRoleUnknown,
+        organizationNotAMember,
+        organizationCreationDisabled,
+        organizationLimitReached,
+        organizationPersonalAccountDisabled,
         rateLimited,
         requestMalformed,
         requestTooLarge,

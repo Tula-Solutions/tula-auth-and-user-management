@@ -88,6 +88,40 @@ export type ChangeMembershipOutcome =
   | { outcome: 'last_manager' }
 
 /**
+ * An organization a user belongs to, with their membership and the permissions of their role
+ * as stored now (ADR 0065, Orgs 02). **The one shape every read of "what may this member do"
+ * goes through**: the list of a user's organizations and the claims of a token are built from
+ * it, so the rule that turns a role into permissions is in one place.
+ */
+export interface UserMembershipRecord {
+  organization: OrganizationRecord
+  membership: MembershipRecord
+  /** The permission keys of the membership's role. */
+  permissions: string[]
+}
+
+/** What creating an organization for a user, as its first member, came to. */
+export type CreateOwnedOutcome =
+  | { outcome: 'created'; record: UserMembershipRecord }
+  | { outcome: 'slug_taken' }
+  /** The user has already created as many organizations as the limit allows. */
+  | { outcome: 'limit_reached' }
+  /** The user or the role is gone (removed between the read and the write). */
+  | { outcome: 'gone' }
+
+/** What {@link OrganizationStore.insertOwned} writes. */
+export interface OwnedOrganization {
+  /** The organization, with `createdBy` the user. */
+  organization: OrganizationRecord
+  /** The creator's membership. */
+  membership: MembershipRecord
+  /** The permissions of the role the membership names. */
+  permissions: string[]
+  /** The most organizations the user may have created, this one included; `null` for no limit. */
+  limit: number | null
+}
+
+/**
  * Organizations, the roles of an environment and the memberships between users and
  * organizations, always read and written inside one environment (ADR 0065). Another
  * environment's row is never returned, changed or counted.
@@ -222,6 +256,48 @@ export interface OrganizationStore {
     expectedRoleId: string,
     activity: Recorded
   ): Promise<ChangeMembershipOutcome>
+
+  /**
+   * The organizations a user belongs to, the one they joined first at the top.
+   *
+   * @param environmentId - The environment to look in.
+   * @param userId - The user.
+   * @param page - Which page.
+   * @returns The user's memberships with their organizations and permissions, and how many.
+   */
+  listUserMemberships(
+    environmentId: string,
+    userId: string,
+    page: PageCriteria
+  ): Promise<Page<UserMembershipRecord>>
+
+  /**
+   * @param environmentId - The environment to look in.
+   * @param organizationId - The organization.
+   * @param userId - The user.
+   * @returns The user's membership of that organization with its permissions, or `null` when
+   *   they are not a member (or the organization is another environment's, or does not exist).
+   */
+  findUserMembership(
+    environmentId: string,
+    organizationId: string,
+    userId: string
+  ): Promise<UserMembershipRecord | null>
+
+  /**
+   * Create an organization for a user and make them its first member, **in one transaction**
+   * that first holds the user's row, so that the limit on organizations one user creates holds
+   * against simultaneous requests: of several creations at once, no more than the limit are
+   * stored.
+   *
+   * @param input - The organization, the membership and the limit.
+   * @param activities - The records of the two writes, stored with them.
+   * @returns What came of it. Nothing is written unless it is `created`.
+   */
+  insertOwned(
+    input: OwnedOrganization,
+    activities: { organization: Recorded; membership: Recorded }
+  ): Promise<CreateOwnedOutcome>
 
   /**
    * @param environmentId - The environment to look in.

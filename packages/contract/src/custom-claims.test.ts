@@ -6,9 +6,22 @@ import {
   isCustomClaimKey,
   MAX_CUSTOM_CLAIM_KEY_LENGTH,
   MAX_CUSTOM_CLAIMS_BYTES,
+  MAX_ORGANIZATION_CLAIMS_BYTES,
+  MAX_ORGANIZATION_PERMISSIONS_CLAIM,
+  ORGANIZATION_ID_CLAIM,
+  ORGANIZATION_PERMISSIONS_CLAIM,
+  ORGANIZATION_ROLE_CLAIM,
+  organizationClaimsBytes,
   RESERVED_CLAIM_NAMES,
   readCustomClaims,
+  readOrganizationClaims,
 } from './custom-claims'
+import {
+  BUILT_IN_ROLES,
+  MAX_PERMISSIONS_PER_ROLE,
+  PERMISSION_KEY_PATTERN,
+  ROLE_KEY_PATTERN,
+} from './organization'
 import { AccessTokenClaimsSchema } from './tokens'
 
 describe('the namespace claim', () => {
@@ -203,5 +216,134 @@ describe('checking claims a source outside the settings hands over', () => {
 
   test('invalid is said before too large: nothing of a bad answer is measured', () => {
     expect(checkCustomClaims({ sub: 'x'.repeat(4096) })).toEqual({ problem: 'invalid' })
+  })
+})
+
+describe('the organization claims (ADR 0065)', () => {
+  const ID = '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b'
+
+  test.each([ORGANIZATION_ID_CLAIM, ORGANIZATION_ROLE_CLAIM, ORGANIZATION_PERMISSIONS_CLAIM])(
+    '%s is a top-level name no custom claim, template or hook may set',
+    (name) => {
+      expect(RESERVED_CLAIM_NAMES as readonly string[]).toContain(name)
+      expect(isCustomClaimKey(name)).toBe(false)
+      expect(checkCustomClaims({ [name]: 'x' })).toEqual({ problem: 'invalid' })
+    }
+  )
+
+  test('are named org_id, org_role and org_perms', () => {
+    expect([
+      ORGANIZATION_ID_CLAIM,
+      ORGANIZATION_ROLE_CLAIM,
+      ORGANIZATION_PERMISSIONS_CLAIM,
+    ]).toEqual(['org_id', 'org_role', 'org_perms'])
+  })
+
+  // The longest value the grammars allow: a UUID, a 32-character role key and as many
+  // permissions as a role holds, each of the longest key.
+  const longest = {
+    orgId: ID,
+    orgRole: `r${'x'.repeat(31)}`,
+    orgPermissions: Array.from(
+      { length: MAX_PERMISSIONS_PER_ROLE },
+      (_, index) => `org:sys:${'f'.repeat(31)}${index % 10}:${'a'.repeat(31)}${index % 10}`
+    ),
+  }
+
+  test('the maximal claims are made of keys the grammars accept', () => {
+    expect(ROLE_KEY_PATTERN.test(longest.orgRole)).toBe(true)
+    expect(longest.orgPermissions).toHaveLength(MAX_ORGANIZATION_PERMISSIONS_CLAIM)
+    for (const permission of longest.orgPermissions) {
+      expect(PERMISSION_KEY_PATTERN.test(permission)).toBe(true)
+      expect(permission).toHaveLength(73)
+    }
+  })
+
+  test('the cap covers the maximal role with a little room, and no more', () => {
+    const bytes = organizationClaimsBytes(longest)
+    expect(bytes).toBe(2541)
+    expect(bytes).toBeLessThanOrEqual(MAX_ORGANIZATION_CLAIMS_BYTES)
+    expect(MAX_ORGANIZATION_CLAIMS_BYTES - bytes).toBeLessThan(64)
+    expect(MAX_PERMISSIONS_PER_ROLE).toBe(MAX_ORGANIZATION_PERMISSIONS_CLAIM)
+  })
+
+  test('the cap is its own: the custom claims keep their 1,024 bytes', () => {
+    expect(MAX_CUSTOM_CLAIMS_BYTES).toBe(1024)
+    expect(MAX_ORGANIZATION_CLAIMS_BYTES).not.toBe(MAX_CUSTOM_CLAIMS_BYTES)
+  })
+
+  test('the built-in roles fit', () => {
+    for (const role of BUILT_IN_ROLES) {
+      expect(
+        organizationClaimsBytes({
+          orgId: ID,
+          orgRole: role.key,
+          orgPermissions: role.permissions,
+        })
+      ).toBeLessThan(MAX_ORGANIZATION_CLAIMS_BYTES)
+    }
+  })
+
+  describe('read from verified claims', () => {
+    const claims = { org_id: ID, org_role: 'admin', org_perms: ['org:sys:memberships:read'] }
+
+    test('returns the three together, frozen and copied', () => {
+      const read = readOrganizationClaims({ sub: 'u', ...claims })
+      expect(read).toEqual({
+        orgId: ID,
+        orgRole: 'admin',
+        orgPermissions: ['org:sys:memberships:read'],
+      })
+      expect(Object.isFrozen(read)).toBe(true)
+      expect(Object.isFrozen(read?.orgPermissions)).toBe(true)
+    })
+
+    test('a role with no permission is still an organization', () => {
+      expect(readOrganizationClaims({ ...claims, org_perms: [] })?.orgPermissions).toEqual([])
+    })
+
+    test('the maximal claims are read, and one more permission is not', () => {
+      const token = {
+        org_id: longest.orgId,
+        org_role: longest.orgRole,
+        org_perms: longest.orgPermissions,
+      }
+      expect(readOrganizationClaims(token)?.orgPermissions).toHaveLength(32)
+      expect(
+        readOrganizationClaims({ ...token, org_perms: [...longest.orgPermissions, 'org:a:b'] })
+      ).toBeNull()
+    })
+
+    test('claims over the cap are no organization, whole', () => {
+      expect(
+        readOrganizationClaims({
+          ...claims,
+          org_perms: ['x'.repeat(MAX_ORGANIZATION_CLAIMS_BYTES)],
+        })
+      ).toBeNull()
+    })
+
+    test.each([
+      ['no claims', {}],
+      ['not an object', 'org_id'],
+      ['null', null],
+      ['only the id', { org_id: ID }],
+      ['no id', { org_role: 'admin', org_perms: [] }],
+      ['no role', { org_id: ID, org_perms: [] }],
+      ['no permissions', { org_id: ID, org_role: 'admin' }],
+      ['an empty id', { ...claims, org_id: '' }],
+      ['an empty role', { ...claims, org_role: '' }],
+      ['an id that is not a string', { ...claims, org_id: 7 }],
+      ['a role that is not a string', { ...claims, org_role: ['admin'] }],
+      ['permissions that are a string', { ...claims, org_perms: 'org:sys:memberships:read' }],
+      ['a permission that is not a string', { ...claims, org_perms: ['org:a:b', 7] }],
+      ['permissions that are an object', { ...claims, org_perms: { 0: 'org:a:b' } }],
+    ])('%s is no organization', (_name, value) => {
+      expect(readOrganizationClaims(value)).toBeNull()
+    })
+
+    test('the custom claims namespace is no way to carry them', () => {
+      expect(readOrganizationClaims({ ext: claims })).toBeNull()
+    })
   })
 })

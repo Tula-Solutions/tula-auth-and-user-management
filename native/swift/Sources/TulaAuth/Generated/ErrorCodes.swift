@@ -84,6 +84,10 @@ public enum ErrorCode: Codable, Hashable, Sendable {
     case organizationMemberExists
     case organizationLastManager
     case organizationRoleUnknown
+    case organizationNotAMember
+    case organizationCreationDisabled
+    case organizationLimitReached
+    case organizationPersonalAccountDisabled
     case rateLimited
     case requestMalformed
     case requestTooLarge
@@ -180,6 +184,10 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         .organizationMemberExists,
         .organizationLastManager,
         .organizationRoleUnknown,
+        .organizationNotAMember,
+        .organizationCreationDisabled,
+        .organizationLimitReached,
+        .organizationPersonalAccountDisabled,
         .rateLimited,
         .requestMalformed,
         .requestTooLarge,
@@ -276,6 +284,10 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case "organization.member_exists": self = .organizationMemberExists
         case "organization.last_manager": self = .organizationLastManager
         case "organization.role_unknown": self = .organizationRoleUnknown
+        case "organization.not_a_member": self = .organizationNotAMember
+        case "organization.creation_disabled": self = .organizationCreationDisabled
+        case "organization.limit_reached": self = .organizationLimitReached
+        case "organization.personal_account_disabled": self = .organizationPersonalAccountDisabled
         case "rate_limited": self = .rateLimited
         case "request.malformed": self = .requestMalformed
         case "request.too_large": self = .requestTooLarge
@@ -374,6 +386,10 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case .organizationMemberExists: return "organization.member_exists"
         case .organizationLastManager: return "organization.last_manager"
         case .organizationRoleUnknown: return "organization.role_unknown"
+        case .organizationNotAMember: return "organization.not_a_member"
+        case .organizationCreationDisabled: return "organization.creation_disabled"
+        case .organizationLimitReached: return "organization.limit_reached"
+        case .organizationPersonalAccountDisabled: return "organization.personal_account_disabled"
         case .rateLimited: return "rate_limited"
         case .requestMalformed: return "request.malformed"
         case .requestTooLarge: return "request.too_large"
@@ -655,6 +671,18 @@ public enum TulaErrorDefinitions {
     /// `organization.role_unknown`
     public static let organizationRoleUnknown = TulaErrorDefinition(code: .organizationRoleUnknown, status: 422, message: "That role does not exist in this environment.")
 
+    /// `organization.not_a_member`
+    public static let organizationNotAMember = TulaErrorDefinition(code: .organizationNotAMember, status: 403, message: "You are not a member of that organization.")
+
+    /// `organization.creation_disabled`
+    public static let organizationCreationDisabled = TulaErrorDefinition(code: .organizationCreationDisabled, status: 403, message: "Creating an organization is not allowed in this environment.")
+
+    /// `organization.limit_reached`
+    public static let organizationLimitReached = TulaErrorDefinition(code: .organizationLimitReached, status: 403, message: "You have reached the number of organizations you can create.")
+
+    /// `organization.personal_account_disabled`
+    public static let organizationPersonalAccountDisabled = TulaErrorDefinition(code: .organizationPersonalAccountDisabled, status: 409, message: "An organization must be active in this environment.")
+
     /// `rate_limited`
     public static let rateLimited = TulaErrorDefinition(code: .rateLimited, status: 429, message: "Too many requests. Try again shortly.")
 
@@ -774,6 +802,10 @@ public enum TulaErrorDefinitions {
         organizationMemberExists,
         organizationLastManager,
         organizationRoleUnknown,
+        organizationNotAMember,
+        organizationCreationDisabled,
+        organizationLimitReached,
+        organizationPersonalAccountDisabled,
         rateLimited,
         requestMalformed,
         requestTooLarge,
