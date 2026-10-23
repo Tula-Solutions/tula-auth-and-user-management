@@ -65,6 +65,13 @@ export interface ItemDefinition {
   dependencies: readonly string[]
   /** What the CLI prints after the install. */
   docs?: string
+  /**
+   * The release that last changed the item, when it is not {@link ITEM_VERSION}: an item added
+   * later than the headless layer is as new as the release that carries what it calls.
+   */
+  version?: string
+  /** The `@tula-tech/react` release the item needs, when it is not {@link MIN_REACT}. */
+  minReact?: string
 }
 
 /**
@@ -82,6 +89,13 @@ export const ITEM_VERSION = '0.2.0'
 
 /** The npm dependency every item that draws a flow has. */
 const REACT = `@tula-tech/react@^${MIN_REACT}`
+
+/**
+ * The release that carries `useOrganization()`, `useOrganizationList()` and the `organizations`
+ * strings of the localization table (ADR 0065): the next minor after the headless layer's. An
+ * item that calls them cannot work with an older package, so it says so.
+ */
+const ORGANIZATIONS_REACT = '0.3.0'
 
 /**
  * Every item, in the order the index lists them: the theme and the primitives first, then the
@@ -147,6 +161,44 @@ export const ITEMS: readonly ItemDefinition[] = [
     registryDependencies: ['button', 'input', 'label', 'step-card', 'status'],
     dependencies: [REACT],
     docs: 'Draw <SignIn onComplete={...} /> inside <TulaProvider> from @tula-tech/react. Import "@tula-tech/react/styles.css" once for the one screen the package draws itself, the "not supported" fallback.',
+  },
+  {
+    name: 'organization-switcher',
+    type: 'registry:block',
+    title: 'Organization switcher',
+    description:
+      'Lists the organizations the signed-in user belongs to and makes one the session\'s active organization; "Personal account" clears it. Optionally creates an organization and switches to it. A native select, so it is right on a phone. Behaviour lives in useOrganizationList() of @tula-tech/react; this is presentation you own.',
+    files: [
+      {
+        source: 'organization-switcher.tsx',
+        type: 'registry:component',
+        target: '@components/tula/organization-switcher.tsx',
+      },
+    ],
+    registryDependencies: ['button', 'input', 'label', 'status'],
+    dependencies: [`@tula-tech/react@^${ORGANIZATIONS_REACT}`],
+    version: ORGANIZATIONS_REACT,
+    minReact: ORGANIZATIONS_REACT,
+    docs: 'Draw <OrganizationSwitcher onSwitch={() => router.refresh()} allowCreate /> inside <TulaProvider> from @tula-tech/react, for a signed-in user, where the environment has organizations switched on (organizations.enabled). Pass allowCreate only where users may create organizations (organizations.allowUserCreated).',
+  },
+  {
+    name: 'organization-profile',
+    type: 'registry:block',
+    title: 'Organization profile',
+    description:
+      "The organization the session acts in: its name, short name and creation date, the user's role, what that role allows and whether they can see or manage the members. Behaviour lives in useOrganization() of @tula-tech/react, whose has() decides what to show and never what to allow; this is presentation you own.",
+    files: [
+      {
+        source: 'organization-profile.tsx',
+        type: 'registry:component',
+        target: '@components/tula/organization-profile.tsx',
+      },
+    ],
+    registryDependencies: ['button', 'card', 'status'],
+    dependencies: [`@tula-tech/react@^${ORGANIZATIONS_REACT}`],
+    version: ORGANIZATIONS_REACT,
+    minReact: ORGANIZATIONS_REACT,
+    docs: 'Draw <OrganizationProfile /> inside <TulaProvider> from @tula-tech/react, for a signed-in user, where the environment has organizations switched on. Check permissions again on your server: the profile only shows what the access token says.',
   },
 ]
 

@@ -17,12 +17,14 @@ import {
   type Plan,
   planHooks,
   planNativeApps,
+  planOrganizationRoles,
   planProviders,
   planWebhooks,
   providersGoingOff,
   type RemoteDependents,
   type RemoteHook,
   type RemoteNativeApp,
+  type RemoteOrganizationRole,
   type RemoteProvider,
   type RemoteState,
   type RemoteWebhook,
@@ -2797,6 +2799,274 @@ describe('planNativeApps', () => {
         'nativeApp.update ios/com.a.moved',
         'nativeApp.create ios/com.a.new',
       ])
+    })
+  })
+})
+
+describe('planOrganizationRoles', () => {
+  const STAMPS = { createdAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-01T00:00:00.000Z' }
+  const BILLING = ['org:billing:read', 'org:billing:write']
+
+  function role(
+    key: string,
+    permissions: string[] = BILLING,
+    over: Partial<RemoteOrganizationRole> = {}
+  ): RemoteOrganizationRole {
+    return {
+      id: `role-${key}`,
+      key,
+      name: `Name of ${key}`,
+      permissions,
+      builtIn: false,
+      version: 1,
+      ...STAMPS,
+      ...over,
+    }
+  }
+
+  const builtIns: RemoteOrganizationRole[] = [
+    role('admin', ['org:sys:memberships:manage'], { builtIn: true, name: 'Admin' }),
+    role('member', ['org:sys:memberships:read'], { builtIn: true, name: 'Member' }),
+  ]
+
+  function entry(key: string, permissions: string[] = BILLING, name = `Name of ${key}`) {
+    return { key, name, permissions }
+  }
+
+  const summary = (roles: ReturnType<typeof planOrganizationRoles>['roles']) =>
+    roles.map((one) => `${one.key}: ${one.action}${one.weakened.length > 0 ? ' (weaker)' : ''}`)
+
+  test('without the key the roles are not managed, --prune included', () => {
+    const result = planOrganizationRoles([...builtIns, role('a')], undefined, { prune: true })
+    expect(result).toEqual({ managed: false, roles: [], overLimit: null, unread: false })
+    const planned = plan(
+      {},
+      remote({ managedBy: undefined, organizationRoles: [...builtIns, role('a')] }),
+      { prune: true }
+    )
+    expect(planned.organizationRoles.managed).toBe(false)
+    expect(planned.changes).toBe(false)
+  })
+
+  test.each<[string, RemoteOrganizationRole[], ReturnType<typeof entry>[], boolean, string[]]>([
+    ['a new role is defined', [], [entry('a')], false, ['a: create']],
+    ['a role as the file says is unchanged', [role('a')], [entry('a')], false, ['a: none']],
+    [
+      'the order and repeats of permissions are no difference',
+      [role('a', ['org:billing:write', 'org:billing:read'])],
+      [entry('a', ['org:billing:read', 'org:billing:write', 'org:billing:read'])],
+      false,
+      ['a: none'],
+    ],
+    [
+      'a renamed role is an update that weakens nothing',
+      [role('a')],
+      [entry('a', BILLING, 'Renamed')],
+      false,
+      ['a: update'],
+    ],
+    [
+      'a permission taken away weakens nothing',
+      [role('a')],
+      [entry('a', ['org:billing:read'])],
+      false,
+      ['a: update'],
+    ],
+    [
+      'a permission added is a weakening',
+      [role('a')],
+      [entry('a', [...BILLING, 'org:reports:read'])],
+      false,
+      ['a: update (weaker)'],
+    ],
+    [
+      'one permission swapped for another is a weakening',
+      [role('a')],
+      [entry('a', ['org:billing:read', 'org:reports:read'])],
+      false,
+      ['a: update (weaker)'],
+    ],
+    [
+      'a role the file leaves out is unmanaged',
+      [role('a'), role('b')],
+      [entry('a')],
+      false,
+      ['a: none', 'b: unmanaged'],
+    ],
+    [
+      'with --prune a role the file leaves out is removed',
+      [role('a'), role('b')],
+      [entry('a')],
+      true,
+      ['a: none', 'b: delete'],
+    ],
+    [
+      'an empty list prunes every custom role and never a built-in one',
+      [...builtIns, role('a')],
+      [],
+      true,
+      ['a: delete'],
+    ],
+  ])('%s', (_name, existing, desired, prune, expected) => {
+    const result = planOrganizationRoles(existing, desired, { prune })
+    expect(summary(result.roles)).toEqual(expected)
+  })
+
+  test('the built-in roles are never planned, whatever the server lists', () => {
+    const result = planOrganizationRoles([...builtIns, role('a')], [entry('a')], { prune: true })
+    expect(result.roles.map((one) => one.key)).toEqual(['a'])
+  })
+
+  test('a change names the fields: the name, and the permissions as a set', () => {
+    const [change] = planOrganizationRoles(
+      [role('a', ['org:a:x', 'org:b:y'])],
+      [entry('a', ['org:b:y', 'org:c:z'], 'Renamed')],
+      {}
+    ).roles
+    expect(change?.fields).toEqual([
+      { path: 'name', kind: 'changed', before: 'Name of a', after: 'Renamed' },
+      {
+        path: 'permissions',
+        kind: 'changed',
+        before: ['org:a:x', 'org:b:y'],
+        after: ['org:b:y', 'org:c:z'],
+        added: ['org:c:z'],
+        removed: ['org:a:x'],
+      },
+    ])
+    expect(change?.weakened).toEqual(['organizationRoles.a.permissions'])
+    expect(change).toMatchObject({ id: 'role-a', version: 1 })
+  })
+
+  test('a new role is no weakening: nobody holds it', () => {
+    const [change] = planOrganizationRoles(
+      [],
+      [entry('a', ['org:sys:memberships:manage'])],
+      {}
+    ).roles
+    expect(change?.weakened).toEqual([])
+    expect(change?.version).toBeUndefined()
+  })
+
+  test('a removed role carries the version the plan read', () => {
+    const [change] = planOrganizationRoles([role('a', BILLING, { version: 7 })], [], {
+      prune: true,
+    }).roles
+    expect(change).toMatchObject({ key: 'a', action: 'delete', version: 7 })
+  })
+
+  test('a plan that would end over the limit is a blocker, and only when it creates', () => {
+    const many = Array.from({ length: 50 }, (_, index) => role(`r${index}`))
+    const over = planOrganizationRoles(
+      many,
+      [...many.map((one) => entry(one.key)), entry('extra')],
+      {}
+    )
+    expect(over.overLimit).toBe(51)
+    // Removing one as it defines one keeps the environment within the limit.
+    const swap = planOrganizationRoles(
+      many.slice(0, 50),
+      [...many.slice(1).map((one) => entry(one.key)), entry('extra')],
+      {
+        prune: true,
+      }
+    )
+    expect(swap.overLimit).toBeNull()
+    // A full environment that defines nothing is not over any limit.
+    expect(
+      planOrganizationRoles(
+        many,
+        many.map((one) => entry(one.key)),
+        {}
+      ).overLimit
+    ).toBeNull()
+  })
+
+  test('the plan’s weakenings include the roles’, after the native apps’', () => {
+    const planned = plan(
+      {
+        nativeApps: [{ platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'com.a.b' }],
+        organizationRoles: [entry('a', [...BILLING, 'org:reports:read'])],
+      },
+      remote({ nativeApps: [], organizationRoles: [...builtIns, role('a')] })
+    )
+    expect(planned.weakened).toEqual(['nativeApps.ios/com.a.b', 'organizationRoles.a.permissions'])
+    expect(planned.changes).toBe(true)
+  })
+
+  test('a plan whose only difference is a role has changes; an unmanaged role is none', () => {
+    const none = plan(
+      { organizationRoles: [] },
+      remote({ managedBy: undefined, organizationRoles: [role('a')] })
+    )
+    expect(none.changes).toBe(false)
+    expect(orderOperations(none).some((op) => op.kind.startsWith('organizationRole.'))).toBe(false)
+    const pruned = plan(
+      { organizationRoles: [] },
+      remote({ managedBy: undefined, organizationRoles: [role('a')] }),
+      { prune: true }
+    )
+    expect(pruned.changes).toBe(true)
+  })
+
+  describe('orderOperations', () => {
+    const kinds = (planned: Plan) =>
+      orderOperations(planned).map((operation) =>
+        operation.kind.startsWith('organizationRole.')
+          ? `${operation.kind} ${'key' in operation ? operation.key : ''}`
+          : operation.kind
+      )
+
+    test('roles come last, after the settings that switch organizations on', () => {
+      const planned = plan(
+        {
+          settings: { organizations: { enabled: true } },
+          nativeApps: [{ platform: 'ios', teamId: 'A1B2C3D4E5', bundleId: 'com.a.b' }],
+          organizationRoles: [entry('a')],
+        },
+        remote({ nativeApps: [], organizationRoles: [] })
+      )
+      expect(kinds(planned)).toEqual(['settings', 'nativeApp.create', 'organizationRole.create a'])
+    })
+
+    test('removals, then what gives nothing, then what gives a permission, then definitions', () => {
+      const planned = plan(
+        {
+          organizationRoles: [
+            entry('new'),
+            entry('widened', [...BILLING, 'org:reports:read']),
+            entry('narrowed', ['org:billing:read']),
+          ],
+        },
+        remote({
+          organizationRoles: [...builtIns, role('widened'), role('narrowed'), role('gone')],
+        }),
+        { prune: true }
+      )
+      expect(kinds(planned)).toEqual([
+        'settings',
+        'organizationRole.delete gone',
+        'organizationRole.update narrowed',
+        'organizationRole.update widened',
+        'organizationRole.create new',
+      ])
+    })
+
+    test('an update and a removal carry the version the plan read', () => {
+      const planned = plan(
+        { organizationRoles: [entry('a', ['org:billing:read'])] },
+        remote({
+          organizationRoles: [
+            role('a', BILLING, { version: 4 }),
+            role('b', BILLING, { version: 9 }),
+          ],
+        }),
+        { prune: true }
+      )
+      const versions = orderOperations(planned).flatMap((operation) =>
+        'version' in operation ? [`${operation.kind}@${operation.version}`] : []
+      )
+      expect(versions).toEqual(['organizationRole.delete@9', 'organizationRole.update@4'])
     })
   })
 })

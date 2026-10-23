@@ -19,6 +19,15 @@ import { documentAgentReads, documentation, eventSchemas, hookSchemas } from '~/
  */
 export const MAX_BODY_BYTES = 64 * 1024
 
+/** Where a bulk user import is posted (ADR 0066): the one route with a larger body. */
+export const IMPORT_PATH = '/v1/admin/users/import'
+
+/**
+ * Largest body of {@link IMPORT_PATH}: 500 rows, each with a hash and up to 4 KiB of metadata.
+ * It is the same ceiling the socket gets, so the socket's cap is never the one that answers.
+ */
+export const MAX_IMPORT_BODY_BYTES = 4 * 1024 * 1024
+
 /** Where the OpenAPI document is served. */
 export const OPENAPI_PATH = '/v1/openapi.json'
 
@@ -42,6 +51,18 @@ const routes: ReadonlyArray<readonly [path: string, router: Hono<AppEnv>]> = [
   ['/v1', (await import('~/modules/email-address/router')).default],
   ['/v1/admin/webhook-endpoints', (await import('~/modules/webhook/router')).default],
   ['/v1/admin/hooks', (await import('~/modules/hook/router')).default],
+  ['/v1/admin/organizations', (await import('~/modules/organization/router')).default],
+  ['/v1/admin/organization-roles', (await import('~/modules/organization-role/router')).default],
+  ['/v1/client/me/organizations', (await import('~/modules/organization/me-router')).default],
+  ['/v1/admin/organizations', (await import('~/modules/organization-domain/router')).default],
+  [
+    '/v1/client/me/organizations',
+    (await import('~/modules/organization-domain/me-router')).default,
+  ],
+  ['/v1/admin/organizations', (await import('~/modules/organization/invitation-router')).default],
+  ['/v1/client', (await import('~/modules/organization/invitation-me-router')).default],
+  ['/v1/client/me/organizations', (await import('~/modules/organization/member-router')).default],
+  ['/v1/admin/users', (await import('~/modules/organization/user-router')).default],
   ['/v1', (await import('~/modules/native-app/router')).default],
   ['/v1/admin/sms', (await import('~/modules/sms/router')).default],
   ['/v1/admin/message-preview', (await import('~/modules/message-preview/router')).default],
@@ -90,14 +111,19 @@ export function createApp(deps: Deps): Hono<AppEnv> {
   app.use(secureHeaders())
   app.use(cors(deps))
   // After cors() so a 413 still carries CORS headers and browsers can read the error code.
-  app.use(
+  const limits = [MAX_BODY_BYTES, MAX_IMPORT_BODY_BYTES].map((maxSize) =>
     bodyLimit({
-      maxSize: MAX_BODY_BYTES,
+      maxSize,
       onError: () => {
         throw new ServiceException('request.too_large')
       },
     })
   )
+  app.use((c, next) => {
+    const [normal, bulk] = limits
+    const limit = c.req.method === 'POST' && c.req.path === IMPORT_PATH ? bulk : normal
+    return limit ? limit(c, next) : next()
+  })
   app.use(async (c, next) => {
     c.set('deps', deps)
     await next()

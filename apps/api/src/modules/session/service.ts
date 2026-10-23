@@ -2,6 +2,7 @@ import {
   ACCESS_TOKEN_ALGORITHM,
   ACCESS_TOKEN_VERSION,
   type AccessTokenClaims,
+  type ActiveOrganization,
   type AdminSession,
   type AuthenticationMethod,
   CUSTOM_CLAIMS_CLAIM,
@@ -11,6 +12,7 @@ import {
   MAX_ACCESS_TOKEN_TTL,
   type NamedJwtTemplate,
   type NamedSessionProfile,
+  type OrganizationClaims,
   type ProposalApprover,
   profileOfSession,
   REFRESH_TOKEN_PREFIX,
@@ -30,9 +32,11 @@ import * as logger from '~/lib/logger'
 import * as Audit from '~/modules/audit/service'
 import * as Hooks from '~/modules/hook/service'
 import * as Jwks from '~/modules/jwks/service'
+import * as OrganizationClaimsOf from '~/modules/organization/claims'
 import * as CustomClaims from '~/modules/session/custom-claims'
 import * as DeviceBinding from '~/modules/session/device-binding'
 import * as Settings from '~/modules/settings/service'
+import type { UserMembershipRecord } from '~/ports/organization-store'
 import {
   authenticatedAt,
   beganBefore,
@@ -79,10 +83,13 @@ type TokenDeps = Pick<
   'clock' | 'ids' | 'config' | 'signingKeys' | 'environments' | 'secretBox'
 >
 type ProfileDeps = Pick<Deps, 'environmentSettings' | 'config'>
+/** What building the organization claims of a token needs (`OrganizationClaimsOf.claimsOf`). */
+type OrganizationDeps = Pick<Deps, 'organizations' | 'environmentSettings' | 'config'>
 /** What asking the claims hook needs (`Hooks.beforeToken`). */
 type HookDeps = Pick<Deps, 'hooks' | 'rateLimiter' | 'outbound' | 'secretBox' | 'ids' | 'clock'>
 type SessionDeps = TokenDeps &
   ProfileDeps &
+  OrganizationDeps &
   Pick<Deps, 'sessions' | 'revokedSessions' | 'keyedHash' | 'users'>
 /** What checking a bound session's proof needs (`DeviceBinding.atRefresh`). */
 type ProofDeps = Pick<Deps, 'proofReplay' | 'rateLimiter'>
@@ -344,7 +351,8 @@ function claimsOf(
   session: ClaimSource,
   profile: SessionProfile,
   now: Date,
-  custom: CustomClaims.Claims | undefined
+  custom: CustomClaims.Claims | undefined,
+  organization: OrganizationClaims | undefined
 ): AccessTokenClaims {
   const iat = Math.floor(now.getTime() / 1000)
   return {
@@ -367,6 +375,8 @@ function claimsOf(
     ...(session.deviceThumbprint && { cnf: { jkt: session.deviceThumbprint } }),
     // Absent, never empty: a session without custom claims is what it always was.
     ...(custom && { [CUSTOM_CLAIMS_CLAIM]: custom }),
+    // All three or none (ADR 0065): a session acting in no organization is what it always was.
+    ...(organization && OrganizationClaimsOf.asTokenClaims(organization)),
   }
 }
 
@@ -386,7 +396,8 @@ async function signAccessToken(
   profile: SessionProfile,
   now: Date,
   { kid, privateKey }: SigningKey,
-  custom: CustomClaims.Claims | undefined
+  custom: CustomClaims.Claims | undefined,
+  organization: OrganizationClaims | undefined
 ): Promise<{ accessToken: string; accessTokenExpiresAt: string }> {
   const { iss, sub, aud, iat, exp, ...claims } = claimsOf(
     deps,
@@ -394,7 +405,8 @@ async function signAccessToken(
     session,
     profile,
     now,
-    custom
+    custom,
+    organization
   )
   const accessToken = await new SignJWT(claims)
     .setProtectedHeader({ alg: ACCESS_TOKEN_ALGORITHM, kid, typ: 'JWT' })
@@ -670,7 +682,17 @@ export async function create(
   if (!signingKey) {
     return { sessionId, sessionToken: token, cookieMaxAge }
   }
-  const access = await signAccessToken(deps, scope, session, profile, now, signingKey, custom)
+  // A new session acts in no organization until its user chooses one.
+  const access = await signAccessToken(
+    deps,
+    scope,
+    session,
+    profile,
+    now,
+    signingKey,
+    custom,
+    undefined
+  )
   return {
     sessionId,
     ...access,
@@ -786,7 +808,7 @@ async function createWithinLimit(
  * @throws ServiceUnavailableError when step-ups of the same session kept getting in between.
  */
 export async function recordAuthentication(
-  deps: TokenDeps & ProfileDeps & HookDeps & Pick<Deps, 'sessions' | 'users'>,
+  deps: TokenDeps & OrganizationDeps & HookDeps & Pick<Deps, 'sessions' | 'users'>,
   scope: Scope,
   self: { userId: string; sessionId: string },
   methods: readonly AuthenticationMethod[],
@@ -843,7 +865,8 @@ export async function recordAuthentication(
         issue.profile,
         now,
         signingKey,
-        custom
+        custom,
+        await OrganizationClaimsOf.claimsOf(deps, scope, session)
       )
       return { sessionId: session.id, ...access }
     }
@@ -980,6 +1003,9 @@ export async function refresh(
     }
     const user = await rejectBanned(deps, scope, session, now, origin)
     const custom = await customClaims(deps, scope, issue, session, user)
+    // Only a session with an active organization reads its membership (ADR 0065): a removal
+    // or a demotion is in this token, and a session acting in none reads nothing more.
+    const organization = await OrganizationClaimsOf.claimsOf(deps, scope, session)
 
     // Reuse is judged before the token's own expiry: a rotated token replayed on a live session
     // is theft however old it is, and must not be waved through as merely "expired".
@@ -987,7 +1013,7 @@ export async function refresh(
       return replayOrRevoke(
         deps,
         scope,
-        { session, profile, token, custom },
+        { session, profile, token, custom, organization },
         token.usedAt,
         now,
         origin
@@ -1014,7 +1040,16 @@ export async function refresh(
       idleExpiresAt,
     })
     if (rotated) {
-      const access = await signAccessToken(deps, scope, session, profile, now, signingKey, custom)
+      const access = await signAccessToken(
+        deps,
+        scope,
+        session,
+        profile,
+        now,
+        signingKey,
+        custom,
+        organization
+      )
       return {
         sessionId: session.id,
         ...access,
@@ -1035,12 +1070,13 @@ async function replayOrRevoke(
     profile: SessionProfile
     token: RefreshTokenRecord
     custom: CustomClaims.Claims | undefined
+    organization: OrganizationClaims | undefined
   },
   usedAt: Date,
   now: Date,
   origin: Partial<Origin>
 ): Promise<IssuedSession> {
-  const { session, profile, token, custom } = presented
+  const { session, profile, token, custom, organization } = presented
   // No grace period (`null`) is strict rotation: every replay is reuse.
   const grace = profile.refresh.reuseGracePeriod
   const withinGrace = grace !== null && now.getTime() - usedAt.getTime() < durationToMs(grace)
@@ -1050,7 +1086,16 @@ async function replayOrRevoke(
       : null
   if (child && child.usedAt === null) {
     const signingKey = await Jwks.activeSigningKey(deps, scope.environmentId)
-    const access = await signAccessToken(deps, scope, session, profile, now, signingKey, custom)
+    const access = await signAccessToken(
+      deps,
+      scope,
+      session,
+      profile,
+      now,
+      signingKey,
+      custom,
+      organization
+    )
     return {
       sessionId: session.id,
       ...access,
@@ -1104,7 +1149,9 @@ async function replayOrRevoke(
  *   `auth.user_banned`.
  */
 export async function authenticate(
-  deps: ProfileDeps & Pick<Deps, 'sessions' | 'revokedSessions' | 'users' | 'clock' | 'ids'>,
+  deps: ProfileDeps &
+    OrganizationDeps &
+    Pick<Deps, 'sessions' | 'revokedSessions' | 'users' | 'clock' | 'ids'>,
   scope: Scope,
   sessionToken: string,
   origin: Partial<Origin> = {}
@@ -1126,7 +1173,8 @@ export async function authenticate(
   if (now.getTime() - session.lastActiveAt.getTime() < interval && idleLeft >= interval) {
     // The one read a template can add: the user, and only for a `user.*` source.
     const custom = await customClaims(deps, scope, issue, session)
-    return claimsOf(deps, scope, session, profile, now, custom)
+    const organization = await OrganizationClaimsOf.claimsOf(deps, scope, session)
+    return claimsOf(deps, scope, session, profile, now, custom, organization)
   }
   const user = await rejectBanned(deps, scope, session, now, origin)
   const custom = await customClaims(deps, scope, issue, session, user)
@@ -1136,7 +1184,80 @@ export async function authenticate(
     const ended = await deps.sessions.findById(scope.environmentId, session.id)
     throw new AuthError(ended?.revokedAt === null ? 'session.expired' : 'session.revoked')
   }
-  return claimsOf(deps, scope, session, profile, now, custom)
+  const organization = await OrganizationClaimsOf.claimsOf(deps, scope, session)
+  return claimsOf(deps, scope, session, profile, now, custom, organization)
+}
+
+/**
+ * Make an organization the one a session acts in, or clear it, and answer with what the
+ * client needs to act in it at once (ADR 0065, "Token claims").
+ *
+ * **The caller has checked that the user belongs to the organization** (and passes the
+ * membership it read: `held`); this function stores the choice for a session that is still
+ * live and is the user's own, and builds the token from that same membership, never from a
+ * second read. A `hybrid` session gets a new access token that carries `org_id`, `org_role` and
+ * `org_perms` (none once cleared) and the **refresh token is untouched**: this is not a
+ * rotation. A `stateful` session gets no token; its next request reads the row. The choice is
+ * not recorded (ADR 0012): it chooses among memberships the user holds already.
+ *
+ * What is stored is only the id; the claims of every later token are re-read from the
+ * membership (`OrganizationClaimsOf.claimsOf`), so the choice outlives a removal as nothing
+ * but an unused id.
+ *
+ * @param deps - Session store, signing keys, settings, clock and ids.
+ * @param scope - The project and environment.
+ * @param self - The signed-in user and their session, from the access token.
+ * @param held - The user's membership of the organization to act in, or `null` to clear. It
+ *   was read just before this call: a member removed in between gets a token with claims for
+ *   an organization they have left, for one access-token life at most (the window a refresh
+ *   has), and the next refresh drops them.
+ * @returns The session id, the organization now active and, for a `hybrid` session, a fresh
+ *   access token.
+ * @throws AuthError `session.revoked` when the session has ended or is not this user's.
+ */
+export async function setActiveOrganization(
+  deps: TokenDeps & ProfileDeps & Pick<Deps, 'sessions' | 'users'>,
+  scope: Scope,
+  self: { userId: string; sessionId: string },
+  held: UserMembershipRecord | null
+): Promise<ActiveOrganization> {
+  const now = deps.clock.now()
+  const current = await deps.sessions.findById(scope.environmentId, self.sessionId)
+  // Judged before anything is written, like a step-up: a session that has ended, or is
+  // someone else's, changes nothing and learns nothing.
+  if (!current || current.userId !== self.userId || !isActive(current, now)) {
+    throw new AuthError('session.revoked')
+  }
+  // Loaded before the write, like every signing key (see `signAccessToken`).
+  const signingKey =
+    current.type === 'stateful' ? null : await Jwks.activeSigningKey(deps, scope.environmentId)
+  const issue = await configured(deps, scope, current)
+  const updated = await deps.sessions.setActiveOrganization(
+    scope.environmentId,
+    self.sessionId,
+    held?.organization.id ?? null,
+    now
+  )
+  if (!updated) {
+    // It ended between the read and the write.
+    throw new AuthError('session.revoked')
+  }
+  const organizationId = updated.activeOrganizationId
+  if (!signingKey) {
+    return { sessionId: updated.id, organizationId }
+  }
+  const custom = await customClaims(deps, scope, issue, updated)
+  const access = await signAccessToken(
+    deps,
+    scope,
+    updated,
+    issue.profile,
+    now,
+    signingKey,
+    custom,
+    held ? OrganizationClaimsOf.fromMembership(scope, held) : undefined
+  )
+  return { sessionId: updated.id, organizationId, ...access }
 }
 
 function toSession(record: SessionRecord, currentSessionId: string): Session {

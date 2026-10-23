@@ -249,8 +249,33 @@ describe('what @tula-tech/react costs a browser bundle', () => {
    * copy-in components (ADR 0064: the step renderer, the first-factor table's helper, five
    * hooks) took it to 54,436 bytes, 439 more. The budget moved by exactly those bytes, to
    * 54,872, so the 436 bytes of room are still what is left.
+   * The client side of organizations (ADR 0065, Orgs 02) is `@tula-tech/core`'s: the three
+   * calls, the `org_id` read and `setActiveOrganization`, with the four error messages; the
+   * four messages of custom roles (Orgs 03) arrive with them. The bundle then measured 55,248
+   * bytes, 812 more. The budget moved by exactly the measurement, to 55,684, so the 436 bytes
+   * of room are still what is left.
+   * The organization hooks (ADR 0065, Orgs 06: `useOrganization`, `useOrganizationList`, the
+   * per-client store behind them that keeps a list for the session it was fetched for, and
+   * `has()` with the contract's claim grammar it checks a role against) took it to 56,654
+   * bytes, 1,406 more. The budget moved by exactly those bytes, to 57,090, so the 436 bytes
+   * of room are still what is left.
+   * Invitations by email (ADR 0065, Orgs 04) are `@tula-tech/core`'s: the ten error messages
+   * and the `organizations.invitations` calls, with the message of
+   * `user.last_organization_manager` that arrived with it from `develop`. The bundle then
+   * measured 57,090 bytes, 436 more. The budget moved by exactly those bytes, to 57,526, so
+   * the 436 bytes of room are still what is left.
+   * The words of the Tula UI organization items (ADR 0064, ADR 0065, Orgs 10: the
+   * `organizations` group of the localization, 29 strings) took it to 57,504 bytes, 414 more.
+   * The budget moved by exactly those bytes, to 57,940, so the 436 bytes of room are still
+   * what is left.
+   * `<OrganizationSwitcher>`, `<CreateOrganization>` and `<OrganizationProfile>` (ADR 0065,
+   * Orgs 07: four tabs, their words, the member, role, rename, leave, delete and domain calls
+   * of `@tula-tech/core`, the three components' own forms and the re-exported `readInvitationLink`,
+   * which the page an invitation link leads to reads) took it to 69,138 bytes, 11,634 more: three
+   * screens with a dozen states each, not one control. The budget moved by exactly those bytes, to
+   * 69,574, so the 436 bytes of room are still what is left.
    */
-  const GZIP_BUDGET_BYTES = 54_872
+  const GZIP_BUDGET_BYTES = 69_574
   /**
    * The QR encoder, in a chunk of its own: loaded when an enrolment is first drawn, so an app
    * that never shows one does not pay for it.

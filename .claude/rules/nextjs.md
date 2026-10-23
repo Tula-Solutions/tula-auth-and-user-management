@@ -22,6 +22,24 @@ this file under "Area rules" and does not repeat it. A section named in a senten
 - **The handler refuses what does not come from the app's own pages**, before forwarding: a
   cross-site request, a foreign `Origin`, and any request other than `GET`/`HEAD` with no
   `Origin`.
+- **The access token may be split across two cookies** (`tula_at` and `tula_at_1`, 3,072
+  characters each at most; ADR 0029, "Amendment"): the largest role and custom claims give a
+  token longer than one cookie. Only `cookies.ts` (`accessCookieChanges`, `readAccessToken`)
+  splits and joins; every write sets the parts it needs and clears the present ones it does not,
+  every clear and every "this browser holds one session" removal covers both parts, and the
+  joined value is only a candidate that `verifyAccessToken` judges. A token over
+  `MAX_ACCESS_TOKEN_LENGTH` is not stored (a warning, the refresh cookie carries the session).
+  Never add a third part or raise a bound without measuring the worst case again.
+- **Organization claims reach `auth()` only through `sessionClaims`**, as the set
+  `readOrganizationClaims` accepts, whatever the way they arrived (token, stateful answer,
+  sealed header): never read `org_*` from a payload anywhere else. `has()` is the contract's
+  `hasOrganizationAccess` (exact, no wildcard, `false` with no organization); the middleware's
+  `access` rules are validated when it is created, and a rule never lets a signed-out visitor
+  through.
+- **The middleware matches `canonicalPath`, never the raw pathname**: escapes decoded per
+  segment, repeated slashes collapsed, dot segments resolved, because Next.js serves the page for
+  every spelling (`/%62illing`, `//billing`) and a rule is a permission boundary. The
+  `redirect_url` is still built from the raw path.
 - **Three first-party cookies** (`tula_rt`, `tula_session`, `tula_at`): `HttpOnly`,
   `SameSite=Lax`, `Path=/`, no `Domain`, `Secure` and `__Host-` over https. Write them only
   with `setCookieLine` / `clearCookieLine` (`packages/nextjs/src/cookies.ts`), never copy an

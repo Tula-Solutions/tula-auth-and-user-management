@@ -46,21 +46,39 @@ import {
 import { memoryStorage, type TokenStorage } from './storage'
 import { createTransport } from './transport'
 import type {
+  AcceptedInvitation,
+  ActiveOrganization,
+  AssignableRoleList,
   AuthState,
   BackupCodes,
   ClientConfig,
   ClientKind,
+  CreateOrganizationInput,
+  CreateOrganizationInvitationInput,
   EmailCodeSent,
   Factors,
   FetchLike,
+  InvitationPreview,
+  MyOrganizationInvitationList,
+  OrganizationDomain,
+  OrganizationDomainList,
+  OrganizationInvitation,
+  OrganizationInvitationList,
+  OrganizationMember,
+  OrganizationMemberList,
+  OrganizationSuggestionList,
   Passkey,
   PhoneCodeSent,
   Session,
   SmsFactorCode,
+  StartOrganizationDomainInput,
   StepUpPrepared,
   StepUpProof,
   TotpEnrolment,
+  UpdateOrganizationInput,
   User,
+  UserOrganization,
+  UserOrganizationList,
 } from './types'
 
 /**
@@ -562,6 +580,418 @@ export interface TulaClient {
      * ```
      */
     prepareStepUp(request: { method: 'email_code' | 'sms_code' }): Promise<StepUpPrepared>
+  }
+  /**
+   * The signed-in user's organizations and the one the session acts in (ADR 0065). While the
+   * environment's `organizations.enabled` setting is off, each call answers
+   * `organization.disabled`.
+   */
+  readonly organizations: {
+    /**
+     * The organizations the user belongs to, with their role and its permission keys in each,
+     * and the session's active organization, one page at a time (the first, 20 of them, without
+     * a query). `meta.totalPages` says whether there is a next page.
+     *
+     * @param query - The page to read (1-based, default 1) and its `size` (1 to 100, default 20).
+     * @returns The page; `activeOrganizationId` is `null` for the personal account.
+     * @throws TulaError `auth.unauthenticated` when signed out, `organization.disabled`.
+     * @example
+     * ```ts
+     * const { data, meta, activeOrganizationId } = await tula.organizations.list({ page: 2 })
+     * ```
+     */
+    list(query?: { page?: number; size?: number }): Promise<UserOrganizationList>
+    /**
+     * Create an organization the user owns (it holds the environment's `creatorRole`). The
+     * session does not switch to it: call `setActive`.
+     *
+     * @param input - The name and the slug.
+     * @returns The organization.
+     * @throws TulaError `organization.creation_disabled`, `organization.limit_reached`,
+     *   `organization.slug_taken`.
+     * @example
+     * ```ts
+     * const org = await tula.organizations.create({ name: 'Acme', slug: 'acme' })
+     * await tula.organizations.setActive(org.id)
+     * ```
+     */
+    create(input: CreateOrganizationInput): Promise<UserOrganization>
+    /**
+     * Make an organization the one the session acts in (or `null`, the personal account). The
+     * access token is replaced with one that carries `org_id`, `org_role` and `org_perms`;
+     * `state.organizationId` follows.
+     *
+     * @param organizationId - The organization, or `null`.
+     * @returns The API's answer.
+     * @throws TulaError `organization.not_a_member`, `organization.personal_account_disabled`.
+     * @example
+     * ```ts
+     * await tula.organizations.setActive(org.id)
+     * ```
+     */
+    setActive(organizationId: string | null): Promise<ActiveOrganization>
+    /**
+     * The organizations the user may join because their **verified** email address is on a
+     * domain the organization verified (ADR 0065, "Verified domains"): its id, name and slug,
+     * nothing of its members. Empty for a user with no verified address, for one already in
+     * the organization and for a domain that is not exactly the address's.
+     *
+     * @returns The suggestions.
+     * @throws TulaError `auth.unauthenticated` when signed out, `organization.disabled`.
+     * @example
+     * ```ts
+     * const { data } = await tula.organizations.suggestions()
+     * ```
+     */
+    suggestions(): Promise<OrganizationSuggestionList>
+    /**
+     * Join a suggested organization with the environment's default role. The server decides
+     * again, so a suggestion that is gone (the domain was removed, the address changed) is
+     * refused. The session does not switch to it: call `setActive`.
+     *
+     * @param organizationId - The organization, from {@link suggestions}.
+     * @returns The organization, with the user's role and its permission keys.
+     * @throws TulaError `organization.suggestion_unavailable`, `organization.member_exists`,
+     *   `organization.disabled`.
+     * @example
+     * ```ts
+     * const [first] = (await tula.organizations.suggestions()).data
+     * if (first) {
+     *   await tula.organizations.join(first.id)
+     * }
+     * ```
+     */
+    join(organizationId: string): Promise<UserOrganization>
+    /**
+     * Rename an organization, or change its slug. Needs `org:sys:organization:manage`, which
+     * the API reads from the user's membership on every call.
+     *
+     * @param organizationId - The organization.
+     * @param input - A new `name`, a new `slug`, or both.
+     * @returns The organization with the user's role, as it is now.
+     * @throws TulaError `organization.not_a_member`, `organization.permission_required`,
+     *   `organization.slug_taken`, `organization.disabled`.
+     * @example
+     * ```ts
+     * await tula.organizations.update(org.id, { name: 'Acme Inc' })
+     * ```
+     */
+    update(organizationId: string, input: UpdateOrganizationInput): Promise<UserOrganization>
+    /**
+     * Delete an organization for good, with its memberships, invitations and domains. Needs
+     * `org:sys:organization:delete`. Members' sessions leave it at their next refresh; if it
+     * was this session's active organization, call `setActive` for another one.
+     *
+     * @param organizationId - The organization.
+     * @throws TulaError `organization.not_a_member`, `organization.permission_required`,
+     *   `organization.disabled`.
+     * @example
+     * ```ts
+     * await tula.organizations.remove(org.id)
+     * await tula.organizations.setActive(null)
+     * ```
+     */
+    remove(organizationId: string): Promise<void>
+    /**
+     * Leave an organization: remove the signed-in user's own membership, which needs no
+     * permission. The last member who can manage members cannot leave.
+     *
+     * @param organizationId - The organization.
+     * @throws TulaError `organization.not_a_member`, `organization.last_manager`,
+     *   `organization.disabled`.
+     * @example
+     * ```ts
+     * await tula.organizations.leave(org.id)
+     * ```
+     */
+    leave(organizationId: string): Promise<void>
+    /**
+     * The roles the user may give to an invitation or a member: those whose permissions they
+     * hold themselves. Needs `org:sys:invitations:manage` or `org:sys:memberships:manage`.
+     *
+     * @param organizationId - The organization.
+     * @returns The roles' keys and names.
+     * @throws TulaError `organization.not_a_member`, `organization.permission_required`,
+     *   `organization.disabled`.
+     * @example
+     * ```ts
+     * const { data } = await tula.organizations.roles(org.id)
+     * ```
+     */
+    roles(organizationId: string): Promise<AssignableRoleList>
+    /**
+     * An organization's members. Reading needs `org:sys:memberships:read` or `:manage`;
+     * changing needs `org:sys:memberships:manage`, which the API reads from the user's
+     * membership on every call.
+     */
+    readonly members: {
+      /**
+       * The organization's members, oldest first, with each one's name, address and role key.
+       * Only the first page: the client sends no paging query yet.
+       *
+       * @param organizationId - The organization.
+       * @returns The page.
+       * @throws TulaError `organization.not_a_member`, `organization.permission_required`,
+       *   `organization.disabled`.
+       * @example
+       * ```ts
+       * const { data } = await tula.organizations.members.list(org.id)
+       * ```
+       */
+      list(organizationId: string): Promise<OrganizationMemberList>
+      /**
+       * Give a member another role, one whose permissions the user holds themselves. The
+       * member's sessions carry it from their next refresh.
+       *
+       * @param organizationId - The organization.
+       * @param userId - The member.
+       * @param role - The key of the new role.
+       * @returns The member, as they are now.
+       * @throws TulaError `organization.permission_required`, `organization.role_unknown`,
+       *   `organization.role_not_assignable`, `organization.last_manager`.
+       * @example
+       * ```ts
+       * await tula.organizations.members.changeRole(org.id, member.userId, 'admin')
+       * ```
+       */
+      changeRole(organizationId: string, userId: string, role: string): Promise<OrganizationMember>
+      /**
+       * Remove a member. The user keeps their account; to remove yourself use `leave`.
+       *
+       * @param organizationId - The organization.
+       * @param userId - The member.
+       * @throws TulaError `organization.permission_required`, `organization.last_manager`.
+       * @example
+       * ```ts
+       * await tula.organizations.members.remove(org.id, member.userId)
+       * ```
+       */
+      remove(organizationId: string, userId: string): Promise<void>
+    }
+    /**
+     * An organization's domains (ADR 0065, "Verified domains"): the organization claims one by
+     * a code emailed to an address on it, and a verified one suggests or joins the people who
+     * sign up with a verified address on it. Needs `org:sys:domains:manage`, which the API
+     * reads from the user's membership on every call.
+     */
+    readonly domains: {
+      /**
+       * The organization's domains, oldest first: claims waiting for a code and verified ones.
+       *
+       * @param organizationId - The organization.
+       * @returns The domains.
+       * @throws TulaError `organization.not_a_member`, `auth.forbidden`, `organization.disabled`.
+       * @example
+       * ```ts
+       * const { data } = await tula.organizations.domains.list(org.id)
+       * ```
+       */
+      list(organizationId: string): Promise<OrganizationDomainList>
+      /**
+       * Claim a domain: email a code to an address on it. Sent again for a pending claim it
+       * emails a new code.
+       *
+       * @param organizationId - The organization.
+       * @param input - The domain, an address on it and what a verified domain does.
+       * @returns The pending claim.
+       * @throws TulaError `organization.domain_public`, `organization.domain_taken`,
+       *   `organization.domain_address_mismatch`, `organization.domain_limit`, `rate_limited`.
+       * @example
+       * ```ts
+       * await tula.organizations.domains.start(org.id, {
+       *   domain: 'acme.com',
+       *   email: 'ada@acme.com',
+       *   mode: 'suggest',
+       * })
+       * ```
+       */
+      start(
+        organizationId: string,
+        input: StartOrganizationDomainInput
+      ): Promise<OrganizationDomain>
+      /**
+       * Enter the emailed code. Five wrong guesses use the code up.
+       *
+       * @param organizationId - The organization.
+       * @param domainId - The claim.
+       * @param code - The six digits.
+       * @returns The verified domain.
+       * @throws TulaError `verification.invalid_code` and its siblings, `organization.domain_taken`.
+       * @example
+       * ```ts
+       * await tula.organizations.domains.verify(org.id, domain.id, '123456')
+       * ```
+       */
+      verify(organizationId: string, domainId: string, code: string): Promise<OrganizationDomain>
+      /**
+       * Change what a domain does.
+       *
+       * @param organizationId - The organization.
+       * @param domainId - The domain.
+       * @param mode - `suggest` or `auto_join`.
+       * @returns The domain.
+       * @example
+       * ```ts
+       * await tula.organizations.domains.update(org.id, domain.id, 'auto_join')
+       * ```
+       */
+      update(
+        organizationId: string,
+        domainId: string,
+        mode: OrganizationDomain['mode']
+      ): Promise<OrganizationDomain>
+      /**
+       * Remove a domain. Later sign-ups are neither offered nor joined to the organization;
+       * the members it brought stay.
+       *
+       * @param organizationId - The organization.
+       * @param domainId - The domain.
+       * @example
+       * ```ts
+       * await tula.organizations.domains.remove(org.id, domain.id)
+       * ```
+       */
+      remove(organizationId: string, domainId: string): Promise<void>
+    }
+    /**
+     * Invitations by email (ADR 0065, Orgs 04). The inviting calls need the permission
+     * `org:sys:invitations:manage`, which the API reads from the user's membership on every
+     * call. Answering needs the invited account: signed in, with the invited address, verified.
+     */
+    readonly invitations: {
+      /**
+       * An organization's pending invitations, newest first. Only the first page: the client
+       * sends no paging or state query yet.
+       *
+       * @param organizationId - The organization.
+       * @returns The page.
+       * @throws TulaError `organization.not_a_member`, `organization.permission_required`,
+       *   `organization.disabled`.
+       * @example
+       * ```ts
+       * const { data } = await tula.organizations.invitations.list(org.id)
+       * ```
+       */
+      list(organizationId: string): Promise<OrganizationInvitationList>
+      /**
+       * Email an invitation. The link leads to `input.redirectUrl` (one of the environment's
+       * allowed redirect URLs) with the token in its fragment; read it there with
+       * `readInvitationLink`. The role must be within the permissions of the inviter's own.
+       *
+       * @param organizationId - The organization.
+       * @param input - The address, the role's key and the redirect URL.
+       * @returns The invitation; the token is only in the email.
+       * @throws TulaError `organization.not_a_member`, `organization.permission_required`,
+       *   `organization.role_not_assignable`, `organization.role_unknown`,
+       *   `organization.member_exists`, `organization.invitation_exists`,
+       *   `request.redirect_not_allowed`, `rate_limited`.
+       * @example
+       * ```ts
+       * await tula.organizations.invitations.invite(org.id, {
+       *   email: 'ada@example.com',
+       *   role: 'member',
+       *   redirectUrl: 'https://app.example.com/join',
+       * })
+       * ```
+       */
+      invite(
+        organizationId: string,
+        input: CreateOrganizationInvitationInput
+      ): Promise<OrganizationInvitation>
+      /**
+       * Withdraw a pending invitation: its link stops working.
+       *
+       * @param organizationId - The organization.
+       * @param invitationId - The invitation.
+       * @throws TulaError `organization.invitation_used`, `organization.invitation_revoked`,
+       *   `organization.invitation_expired` (410) for one that is no longer pending, and the
+       *   errors of `list`.
+       * @example
+       * ```ts
+       * await tula.organizations.invitations.revoke(org.id, invitation.id)
+       * ```
+       */
+      revoke(organizationId: string, invitationId: string): Promise<void>
+      /**
+       * What an invitation's token shows before anyone has signed in: the organization's
+       * name, the role's key and the address invited, to prefill a sign-up. Needs no session.
+       *
+       * @param token - The token from the link's fragment.
+       * @returns The preview.
+       * @throws TulaError `organization.invitation_not_found`, `organization.invitation_expired`,
+       *   `organization.invitation_revoked`, `organization.invitation_used`.
+       * @example
+       * ```ts
+       * const { organizationName, email } = await tula.organizations.invitations.preview(token)
+       * ```
+       */
+      preview(token: string): Promise<InvitationPreview>
+      /**
+       * Join the organization the token invites to, with the invitation's role. Only the
+       * account the invitation was sent to may, and only with a verified address.
+       *
+       * @param token - The token from the link's fragment.
+       * @returns The organization joined, with the role and its permission keys.
+       * @throws TulaError `organization.invitation_wrong_account`,
+       *   `organization.invitation_email_unverified`, `organization.invitation_role_gone`,
+       *   `organization.member_exists`, and the errors of `preview`.
+       * @example
+       * ```ts
+       * const org = await tula.organizations.invitations.accept(token)
+       * await tula.organizations.setActive(org.id)
+       * ```
+       */
+      accept(token: string): Promise<AcceptedInvitation>
+      /**
+       * Turn an invitation down: it is used up and nobody joins.
+       *
+       * @param token - The token from the link's fragment.
+       * @throws TulaError As `accept`, but a deleted role does not matter.
+       * @example
+       * ```ts
+       * await tula.organizations.invitations.decline(token)
+       * ```
+       */
+      decline(token: string): Promise<void>
+      /**
+       * The pending invitations addressed to the signed-in user's own verified address, newest
+       * first: an `id`, the organization's name, the role's key and the expiry, never a token.
+       * Only the first page: the client sends no paging query yet. An unverified address
+       * has none.
+       *
+       * @returns The page.
+       * @throws TulaError `organization.disabled`, `auth.unauthenticated`.
+       * @example
+       * ```ts
+       * const { data } = await tula.organizations.invitations.mine()
+       * ```
+       */
+      mine(): Promise<MyOrganizationInvitationList>
+      /**
+       * Join the organization of an invitation listed by `mine()`, by its id. The same checks as
+       * `accept`: an id that is not the user's own answers `organization.invitation_not_found`.
+       *
+       * @param invitationId - The `id` from `mine()`.
+       * @returns The organization joined, with the role and its permission keys.
+       * @throws TulaError As `accept`.
+       * @example
+       * ```ts
+       * const org = await tula.organizations.invitations.acceptMine(invitation.id)
+       * ```
+       */
+      acceptMine(invitationId: string): Promise<AcceptedInvitation>
+      /**
+       * Turn down an invitation listed by `mine()`, by its id.
+       *
+       * @param invitationId - The `id` from `mine()`.
+       * @throws TulaError As `decline`.
+       * @example
+       * ```ts
+       * await tula.organizations.invitations.declineMine(invitation.id)
+       * ```
+       */
+      declineMine(invitationId: string): Promise<void>
+    }
   }
   /** The signed-in user. */
   readonly user: {
@@ -1183,6 +1613,91 @@ export function createClient(options: TulaClientOptions, environment: Environmen
       },
       prepareStepUp: ({ method }) =>
         receipt(method === 'sms_code' ? 'sendStepUpSmsCode' : 'sendStepUpEmailCode', method),
+    },
+    organizations: {
+      async list(query) {
+        const epoch = session.organizationEpoch()
+        const answer = await session.authorized('listMyOrganizations', { query })
+        const now = session.state()
+        if (now.status === 'signed-in') {
+          session.noteActiveOrganization(now.sessionId, answer.activeOrganizationId, epoch)
+        }
+        return answer
+      },
+      create: (input) => session.authorized('createMyOrganization', { body: input }),
+      setActive: (organizationId) => session.setActiveOrganization(organizationId),
+      suggestions: () => session.authorized('listMyOrganizationSuggestions', {}),
+      join: (organizationId) =>
+        session.authorized('joinOrganizationSuggestion', { params: { organizationId } }),
+      update: (organizationId, input) =>
+        session.authorized('updateMyOrganization', { params: { organizationId }, body: input }),
+      async remove(organizationId) {
+        await session.authorized('deleteMyOrganization', { params: { organizationId } })
+      },
+      async leave(organizationId) {
+        const now = session.state()
+        const user = now.status === 'signed-in' ? now.user : null
+        const userId = user?.id ?? (await asUser(() => session.authorized('getMe', {}))).id
+        await session.authorized('removeMyOrganizationMember', {
+          params: { organizationId, userId },
+        })
+      },
+      roles: (organizationId) =>
+        session.authorized('listMyOrganizationRoles', { params: { organizationId } }),
+      members: {
+        list: (organizationId) =>
+          session.authorized('listMyOrganizationMembers', { params: { organizationId } }),
+        changeRole: (organizationId, userId, role) =>
+          session.authorized('updateMyOrganizationMember', {
+            params: { organizationId, userId },
+            body: { role },
+          }),
+        async remove(organizationId, userId) {
+          await session.authorized('removeMyOrganizationMember', {
+            params: { organizationId, userId },
+          })
+        },
+      },
+      domains: {
+        list: (id) => session.authorized('listMyOrganizationDomains', { params: { id } }),
+        start: (id, input) =>
+          session.authorized('startMyOrganizationDomain', { params: { id }, body: input }),
+        verify: (id, domainId, code) =>
+          session.authorized('verifyMyOrganizationDomain', {
+            params: { id, domainId },
+            body: { code },
+          }),
+        update: (id, domainId, mode) =>
+          session.authorized('updateMyOrganizationDomain', {
+            params: { id, domainId },
+            body: { mode },
+          }),
+        async remove(id, domainId) {
+          await session.authorized('removeMyOrganizationDomain', { params: { id, domainId } })
+        },
+      },
+      invitations: {
+        list: (organizationId) =>
+          session.authorized('listMyOrganizationInvitations', { params: { organizationId } }),
+        invite: (organizationId, input) =>
+          session.authorized('inviteToMyOrganization', { params: { organizationId }, body: input }),
+        async revoke(organizationId, invitationId) {
+          await session.authorized('revokeMyOrganizationInvitation', {
+            params: { organizationId, invitationId },
+          })
+        },
+        preview: (token) => transport.call('previewOrganizationInvitation', { body: { token } }),
+        accept: (token) => session.authorized('acceptOrganizationInvitation', { body: { token } }),
+        async decline(token) {
+          await session.authorized('declineOrganizationInvitation', { body: { token } })
+        },
+        mine: () => session.authorized('listMyPendingOrganizationInvitations', {}),
+        acceptMine: (invitationId) =>
+          session.authorized('acceptMyOrganizationInvitation', { params: { invitationId } }),
+        async declineMine(invitationId) {
+          await session.authorized('declineMyOrganizationInvitation', { params: { invitationId } })
+        },
+      },
     },
     user: {
       get: () => asUser(() => session.authorized('getMe', {})),

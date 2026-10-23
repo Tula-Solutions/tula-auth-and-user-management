@@ -2,7 +2,7 @@ import { join, normalize } from 'node:path'
 import { FixedClock } from '../apps/api/src/adapters/memory/clock'
 import { MemoryRateLimiter } from '../apps/api/src/adapters/memory/rate-limiter'
 import { mockOAuthProviders } from '../apps/api/src/adapters/oauth/mock'
-import { createApp, MAX_BODY_BYTES } from '../apps/api/src/index'
+import { createApp, MAX_IMPORT_BODY_BYTES } from '../apps/api/src/index'
 import { sha256Hex } from '../apps/api/src/lib/crypto'
 import { findDashboardDir } from '../apps/api/src/lib/dashboard-files'
 import * as Audit from '../apps/api/src/modules/audit/service'
@@ -190,13 +190,15 @@ const FIXTURE_SETTINGS = {
  * The document is validated exactly as `PUT /v1/admin/settings` validates one.
  */
 async function replaceSettings(request: Request): Promise<Response> {
-  const asked = (await request.json()) as { password?: object }
+  const asked = (await request.json()) as { password?: object; urls?: object }
   const parsed = EnvironmentSettingsSchema.safeParse({
     ...FIXTURE_SETTINGS,
     ...asked,
     // A test names the rules it changes (`history`, `expiryDays`); the rest of the policy
     // stays the default.
     password: { ...FIXTURE_SETTINGS.password, ...asked.password },
+    // The same for the addresses: the fixture's allowed origins stay unless a test names them.
+    urls: { ...FIXTURE_SETTINGS.urls, ...asked.urls },
   })
   if (!parsed.success) {
     return json({ error: 'not a settings document' }, 422)
@@ -420,17 +422,33 @@ function testRoute(request: Request): Response | Promise<Response> | null {
 const api = Bun.serve({
   port: API_PORT,
   hostname: 'localhost',
-  maxRequestBodySize: MAX_BODY_BYTES,
+  maxRequestBodySize: MAX_IMPORT_BODY_BYTES,
   fetch: (request, server) => testRoute(request) ?? app.fetch(request, server),
 })
 
 const dist = join(import.meta.dir, '..', 'examples', 'react-vite', 'dist')
+// The browser harness of Tula UI's organization items (packages/ui/browser, TULA-127), served
+// under `/__ui/` beside the example so that it shares the example's origin, and with it the
+// session cookie the test's sign-up leaves for the API.
+const uiDist = join(import.meta.dir, '..', 'packages', 'ui', 'browser', 'dist')
+const UI_PREFIX = '/__ui/'
 
 const web = Bun.serve({
   port: APP_PORT,
   hostname: 'localhost',
   async fetch(request) {
     const { pathname } = new URL(request.url)
+    if (pathname.startsWith(UI_PREFIX)) {
+      const asset = normalize(join(uiDist, pathname.slice(UI_PREFIX.length)))
+      const file = Bun.file(
+        asset.startsWith(uiDist) && pathname !== UI_PREFIX ? asset : join(uiDist, 'index.html')
+      )
+      return (await file.exists())
+        ? new Response(file, { headers: { 'cache-control': 'no-store' } })
+        : new Response('Build the harness first: bun run --filter @tula-tech/ui browser:build', {
+            status: 500,
+          })
+    }
     const path = normalize(join(dist, pathname))
     // A single-page app: a file when the path names one inside dist, the page otherwise.
     const file = path.startsWith(dist) && pathname !== '/' ? Bun.file(path) : null

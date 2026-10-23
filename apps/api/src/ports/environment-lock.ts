@@ -8,8 +8,14 @@
  *   count and then an insert; a registration does both while holding this lock (ADR 0034).
  * - `native_apps`: "an environment has at most `MAX_NATIVE_APPS` native apps", a count and
  *   then an insert in the same way (ADR 0040).
+ * - `organization_roles`: "an environment has at most `MAX_CUSTOM_ROLES` custom roles", the same
+ *   count and insert (ADR 0065).
  */
-export type EnvironmentLockScope = 'sign_in_methods' | 'webhook_endpoints' | 'native_apps'
+export type EnvironmentLockScope =
+  | 'sign_in_methods'
+  | 'webhook_endpoints'
+  | 'native_apps'
+  | 'organization_roles'
 
 /**
  * Makes writes that share an invariant take turns, per environment and across API instances.

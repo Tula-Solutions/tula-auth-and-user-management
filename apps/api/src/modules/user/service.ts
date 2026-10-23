@@ -3,6 +3,13 @@ import {
   type CreateUserRequest,
   type CurrentUser,
   DEFAULT_PAGE_SIZE,
+  type ErrorCode,
+  errorDefinition,
+  type ImportRowResult,
+  type ImportUserRow,
+  type ImportUsersRequest,
+  type ImportUsersResult,
+  MAX_IMPORT_METADATA_BYTES,
   type OAuthProvider,
   type ProposalApprover,
   type User,
@@ -27,11 +34,16 @@ import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
 import * as OAuth from '~/modules/oauth/service'
 import * as Passkeys from '~/modules/passkey/service'
+import * as Foreign from '~/modules/password/foreign-hash'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
 import * as Settings from '~/modules/settings/service'
 import { CREDENTIAL_LOCKOUT, signInLockKey } from '~/ports/lockout'
-import type { PasswordOutcome, UserRecord } from '~/ports/user-repository'
+import {
+  InvalidUserDataError,
+  type PasswordOutcome,
+  type UserRecord,
+} from '~/ports/user-repository'
 
 type Scope = Pick<Tenant, 'projectId' | 'environmentId'>
 
@@ -262,6 +274,245 @@ export async function create(
   return toUser(record)
 }
 
+/** Split a full name at its first run of whitespace; each half fits a name column. */
+function splitName(name: string | undefined): {
+  firstName: string | null
+  lastName: string | null
+} {
+  const trimmed = name?.trim() ?? ''
+  if (trimmed === '') {
+    return { firstName: null, lastName: null }
+  }
+  const [first = '', ...rest] = trimmed.split(/\s+/)
+  const last = rest.join(' ')
+  return {
+    firstName: [...first].slice(0, 100).join(''),
+    lastName: last === '' ? null : [...last].slice(0, 100).join(''),
+  }
+}
+
+/** Whether a string can be stored: no NUL (`text` and `jsonb` refuse it) and no lone surrogate. */
+function storable(text: string | undefined): boolean {
+  return text === undefined || (!text.includes('\u0000') && !LONE_SURROGATE.test(text))
+}
+
+/** The deepest nesting a row's metadata may have (the object itself is level 1). */
+const MAX_IMPORT_METADATA_DEPTH = 32
+
+/** A UTF-16 surrogate with no partner (`String.prototype.isWellFormed` is not in the TS lib). */
+const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/
+
+/**
+ * Whether every key and value of a metadata object can be stored by the database and the
+ * object fits {@link MAX_IMPORT_METADATA_BYTES} **as `jsonb` prints it** (the column's check
+ * measures `metadata::text`).
+ *
+ * `jsonb` prints a space after every `:` and `,` and rewrites numbers, so the compact JSON
+ * is measured with one extra byte for each structural `:` and `,`, and a number JSON writes
+ * with an exponent is refused (`jsonb` would write it out in full, which can be far longer).
+ * A NUL or a lone surrogate in any key or string is refused: `jsonb` rejects both.
+ */
+function metadataFits(metadata: Record<string, unknown>): boolean {
+  // Iterative on purpose: the contract's z.unknown() does not bound depth, and recursing over
+  // (or stringifying) a 100,000-deep array overflows the stack, which would fail the whole call
+  // after earlier rows were committed. The depth is judged before any JSON.stringify.
+  const pending: { value: unknown; depth: number }[] = [{ value: metadata, depth: 1 }]
+  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+    const { value, depth } = next
+    if (typeof value === 'string') {
+      if (!storable(value)) {
+        return false
+      }
+    } else if (typeof value === 'number') {
+      if (!Number.isFinite(value) || /e/i.test(String(value))) {
+        return false
+      }
+    } else if (value !== null && typeof value === 'object') {
+      if (depth > MAX_IMPORT_METADATA_DEPTH) {
+        return false
+      }
+      if (Array.isArray(value)) {
+        for (const child of value) {
+          pending.push({ value: child, depth: depth + 1 })
+        }
+      } else {
+        for (const [key, child] of Object.entries(value)) {
+          if (!storable(key)) {
+            return false
+          }
+          pending.push({ value: child, depth: depth + 1 })
+        }
+      }
+    }
+  }
+  const compact = JSON.stringify(metadata)
+  let bytes = new TextEncoder().encode(compact).length
+  let inString = false
+  for (let at = 0; at < compact.length; at += 1) {
+    const char = compact[at]
+    if (inString) {
+      if (char === '\\') {
+        at += 1
+      } else if (char === '"') {
+        inString = false
+      }
+    } else if (char === '"') {
+      inString = true
+    } else if (char === ':' || char === ',') {
+      bytes += 1
+    }
+  }
+  return bytes <= MAX_IMPORT_METADATA_BYTES
+}
+
+function refusal(index: number, code: ErrorCode): ImportRowResult {
+  return { index, status: 'refused', code, message: errorDefinition(code).message }
+}
+
+/**
+ * Create the users of one import (`POST /v1/admin/users/import`, ADR 0066), each in a
+ * transaction of its own.
+ *
+ * The call is not all-or-nothing: a row that is refused, or that is a duplicate, does not
+ * stop the rest, and the answer says what became of every row. A row is atomic: the user, their
+ * identity, their credential and their `user.imported` audit entry are written together or
+ * not at all. Running the same call again is safe: rows already imported are reported as
+ * skipped (with the existing user's id), which makes a resumed import idempotent by normalized
+ * email.
+ *
+ * A row's password hash is parsed and judged ({@link Foreign.prepare}) and then stored, as
+ * given or in the normal form of its algorithm (a Firebase hash with its sealed parameters).
+ * It is verified with its own algorithm at the user's first sign-in and replaced there by an
+ * argon2id hash of the same password (`Passwords.needsRehash`). The environment's password
+ * policy and the breached-password check are not applied: only the user knows the plaintext.
+ * The password's age starts at the import, and it has no history (ADR 0066).
+ *
+ * @param deps - Users, clock, ids and the secret box.
+ * @param scope - The project and environment.
+ * @param input - The rows, in order, and the Firebase project's parameters for the rows that
+ *   use them.
+ * @param actor - The administrator running the import, recorded on every entry.
+ * @returns One result per row, in order, with the counts.
+ */
+export async function importUsers(
+  deps: Pick<Deps, 'users' | 'clock' | 'ids' | 'secretBox'>,
+  scope: Scope,
+  input: ImportUsersRequest,
+  actor: Actor
+): Promise<ImportUsersResult> {
+  const seen = new Set<string>()
+  const results: ImportRowResult[] = []
+  for (const [index, row] of input.users.entries()) {
+    results.push(await importRow(deps, scope, row, index, seen, actor, input.firebaseScrypt))
+  }
+  const count = (status: ImportRowResult['status']) =>
+    results.filter((result) => result.status === status).length
+  return {
+    results,
+    created: count('created'),
+    skipped: count('skipped'),
+    refused: count('refused'),
+  }
+}
+
+async function importRow(
+  deps: Pick<Deps, 'users' | 'clock' | 'ids' | 'secretBox'>,
+  scope: Scope,
+  row: ImportUserRow,
+  index: number,
+  seen: Set<string>,
+  actor: Actor,
+  firebase: ImportUsersRequest['firebaseScrypt']
+): Promise<ImportRowResult> {
+  const parsed = parseEmail(row.email)
+  if (!parsed) {
+    return refusal(index, 'email.invalid')
+  }
+  if (seen.has(parsed.normalized)) {
+    return { index, status: 'skipped', reason: 'repeated_in_batch' }
+  }
+  if (
+    !storable(row.name) ||
+    !storable(row.externalId) ||
+    (row.metadata !== undefined && !metadataFits(row.metadata))
+  ) {
+    return refusal(index, 'validation.failed')
+  }
+  const id = deps.ids.next()
+  let algorithm: Foreign.ImportAlgorithm | undefined
+  let passwordHash: string | null = null
+  if (row.password !== undefined) {
+    // The id is needed first: a Firebase hash's sealed parameters are bound to the user.
+    const judged = await Foreign.prepare(
+      deps,
+      { environmentId: scope.environmentId, userId: id },
+      row.password,
+      firebase
+    )
+    if (!judged.ok) {
+      return refusal(index, judged.code)
+    }
+    algorithm = judged.algorithm
+    passwordHash = judged.stored
+  }
+  const now = deps.clock.now()
+  let created: boolean
+  try {
+    created = await deps.users.create(
+      {
+        id,
+        projectId: scope.projectId,
+        environmentId: scope.environmentId,
+        email: parsed.email,
+        emailNormalized: parsed.normalized,
+        emailVerifiedAt: row.emailVerified ? now : null,
+        ...splitName(row.name),
+        createdAt: now,
+        identityId: deps.ids.next(),
+        credentialId: deps.ids.next(),
+        passwordHash,
+        ...(row.externalId !== undefined && { externalId: row.externalId }),
+        ...(row.metadata !== undefined && { metadata: row.metadata }),
+      },
+      Audit.entry(deps, scope, {
+        type: 'user.imported',
+        actor,
+        target: { type: 'user', id },
+        data: {
+          emailVerified: row.emailVerified,
+          ...(algorithm === undefined ? { passwordless: true } : { passwordAlgorithm: algorithm }),
+        },
+      })
+    )
+  } catch (error) {
+    // The store's own check refused what the pre-check let through: that row alone is
+    // refused, and the rows before it stay (ADR 0066).
+    if (error instanceof InvalidUserDataError) {
+      return refusal(index, 'validation.failed')
+    }
+    throw error
+  }
+  // Taken in either case from here on, whether this row made the user or found them there.
+  seen.add(parsed.normalized)
+  if (created) {
+    return { index, status: 'created', id }
+  }
+  // The address is taken: say whose it is, so a retried batch can tell its own users from
+  // ones that were there before (ADR 0066, "A retried batch"). An id and a yes or no, nothing
+  // else of the user; the administrator named the address and can list users anyway.
+  const existing = await deps.users.findImportMatch(scope.environmentId, parsed.normalized)
+  if (existing === null) {
+    return { index, status: 'skipped', reason: 'email_exists' }
+  }
+  return {
+    index,
+    status: 'skipped',
+    reason: 'email_exists',
+    id: existing.id,
+    sameExternalId: row.externalId !== undefined && existing.externalId === row.externalId,
+  }
+}
+
 type RevocationDeps = Pick<Deps, 'users' | 'sessions' | 'revokedSessions' | 'clock' | 'ids'>
 
 /**
@@ -383,6 +634,13 @@ export async function liftBan(
 /**
  * Delete a user and everything that belongs to them.
  *
+ * **Refused while the user is the only member who holds `org:sys:memberships:manage` of an
+ * organization** (ADR 0065, TULA-124): the cascade would leave an organization nobody can
+ * manage, as removing or demoting that member would (`organization.last_manager`). The
+ * operator adds another manager or deletes the organization first. The refusal is checked
+ * before anything is changed (a refused deletion does not end the user's sessions), and
+ * again by the store under the organizations' locks, which is what decides it.
+ *
  * Their sessions are revoked through the session service first, so their access tokens are
  * denylisted before the rows disappear.
  *
@@ -393,6 +651,8 @@ export async function liftBan(
  * @param userId - The user.
  * @param actor - Who is deleting them, for the audit log.
  * @throws NotFoundError when they do not exist in this environment.
+ * @throws AuthError `user.last_organization_manager` (`params.organizationIds`) when they are
+ *   the only manager of an organization.
  */
 export async function remove(
   deps: RevocationDeps,
@@ -401,19 +661,42 @@ export async function remove(
   actor: Actor
 ): Promise<void> {
   await requireUser(deps, scope, userId)
+  const early = await deps.users.soleManagerOf(scope.environmentId, userId)
+  if (early.length > 0) {
+    throw lastOrganizationManager(early)
+  }
   await Sessions.revokeAllForUser(deps, scope, userId, 'revoked_by_admin', actor)
-  const deleted = await deps.users.delete(
+  const result = await deps.users.delete(
     scope.environmentId,
     userId,
     Audit.entry(deps, scope, { type: 'user.deleted', actor, target: { type: 'user', id: userId } })
   )
-  if (!deleted) {
-    throw new NotFoundError()
+  switch (result.outcome) {
+    case 'deleted':
+      return
+    case 'last_manager':
+      throw lastOrganizationManager(result.organizationIds)
+    case 'not_found':
+      throw new NotFoundError()
   }
 }
 
+/** The most organization ids an error names; `count` says how many there are. */
+const MAX_NAMED_ORGANIZATIONS = 20
+
+/** The refusal to delete a user who alone manages these organizations. */
+function lastOrganizationManager(organizationIds: readonly string[]): AuthError {
+  return new AuthError('user.last_organization_manager', {
+    organizationIds: organizationIds.slice(0, MAX_NAMED_ORGANIZATIONS).join(','),
+    count: organizationIds.length,
+  })
+}
+
 type PasswordDeps = RevocationDeps &
-  Pick<Deps, 'config' | 'environmentSettings' | 'breachChecker' | 'mailer' | 'rateLimiter'>
+  Pick<
+    Deps,
+    'config' | 'environmentSettings' | 'breachChecker' | 'mailer' | 'rateLimiter' | 'secretBox'
+  >
 
 /**
  * How often storing a password is tried when the stored password moved between the comparison
@@ -868,7 +1151,14 @@ export async function changePassword(
   if (!lock.allowed) {
     throw new RateLimitError(lock.retryAfterMs)
   }
-  if (!(await Passwords.verify(found?.passwordHash ?? null, input.currentPassword)) || !found) {
+  if (
+    !(await Passwords.verify(
+      found?.passwordHash ?? null,
+      input.currentPassword,
+      found && Foreign.opener(deps, scope.environmentId, found.user.id)
+    )) ||
+    !found
+  ) {
     throw new AuthError('auth.invalid_credentials')
   }
   await deps.lockout.clear(lockKey)

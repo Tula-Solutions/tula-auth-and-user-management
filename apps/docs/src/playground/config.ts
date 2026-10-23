@@ -12,7 +12,25 @@ import {
 // the code to copy. One object, so the live component and the copied code cannot disagree.
 
 /** The component the frame shows. Resetting a password is reached from "Forgot password?". */
-export type Screen = 'sign-in' | 'sign-up' | 'account'
+export type Screen =
+  | 'sign-in'
+  | 'sign-up'
+  | 'account'
+  | 'organization-switcher'
+  | 'create-organization'
+  | 'organization-profile'
+
+/** The screens that need organizations switched on, and a signed-in user. */
+export const ORGANIZATION_SCREENS: readonly Screen[] = [
+  'organization-switcher',
+  'create-organization',
+  'organization-profile',
+]
+
+/** Whether a screen is one of the organization components. */
+export function isOrganizationScreen(screen: Screen): boolean {
+  return ORGANIZATION_SCREENS.includes(screen)
+}
 
 /** How tightly the component is spaced. */
 export type Density = 'compact' | 'comfortable' | 'spacious'
@@ -127,6 +145,15 @@ export function setProvider(
     ? [...config.settings.oauth, provider]
     : config.settings.oauth.filter((one) => one !== provider)
   return normalize({ ...config, settings: { ...config.settings, oauth } })
+}
+
+/**
+ * Switch organizations on or off. Switching them off while an organization component is shown
+ * goes back to the sign-in screen: those components render nothing without them.
+ */
+export function setOrganizations(config: PlaygroundConfig, on: boolean): PlaygroundConfig {
+  const screen = !on && isOrganizationScreen(config.screen) ? 'sign-in' : config.screen
+  return { ...config, screen, settings: { ...config.settings, organizations: on } }
 }
 
 /** Set the two-step verification policy. */
@@ -304,7 +331,7 @@ export function matchingLook(config: PlaygroundConfig): string | null {
 }
 
 /** The groups of controls a page may show. */
-export type Panel = 'screen' | 'methods' | 'providers' | 'mfa' | 'look'
+export type Panel = 'screen' | 'methods' | 'providers' | 'mfa' | 'organizations' | 'look'
 
 /** A preset of an embedded playground: the starting configuration and the controls it shows. */
 export interface EmbedPreset {
@@ -321,6 +348,7 @@ function preset(
   rest: {
     oauth?: SandboxProvider[]
     mfaPolicy?: SandboxMfaPolicy
+    organizations?: boolean
     screen?: Screen
     panels: readonly Panel[]
     tryIt: readonly string[]
@@ -334,6 +362,7 @@ function preset(
       methods: { password: false, emailCode: false, emailLink: false, passkey: false, ...settings },
       oauth: rest.oauth ?? [],
       mfaPolicy: rest.mfaPolicy ?? 'optional',
+      organizations: rest.organizations ?? false,
     },
   })
   return { id, config, panels: rest.panels, tryIt: rest.tryIt }
@@ -418,6 +447,21 @@ export const EMBED_PRESETS: Readonly<Record<string, EmbedPreset>> = {
       tryIt: [
         'Sign in as grace@example.test; the sandbox shows her authenticator app code.',
         'Set the policy to required and sign in as ada@example.test to enrol.',
+      ],
+    }
+  ),
+  organizations: preset(
+    'organizations',
+    { password: true },
+    {
+      organizations: true,
+      screen: 'organization-switcher',
+      panels: ['screen', 'organizations', 'look'],
+      tryIt: [
+        'Sign in as the demo account, then open the switcher and choose Globex.',
+        'Accept the invitation to Hooli, or join Initech from the suggestions.',
+        'Open Manage organization on Acme: rename it, invite someone, claim a domain.',
+        'Switch to Globex, where you are a member, and see tabs and controls disappear.',
       ],
     }
   ),

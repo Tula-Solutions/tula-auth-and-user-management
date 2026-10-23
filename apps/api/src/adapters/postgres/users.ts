@@ -28,12 +28,15 @@ import {
   like,
   lt,
   ne,
+  notInArray,
   or,
   type SQL,
   sql,
 } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
-import { isUniqueViolation } from '~/adapters/postgres/errors'
+import { dataRefusal, isUniqueViolation } from '~/adapters/postgres/errors'
+import { findBlocked } from '~/adapters/postgres/manager-guard'
+import * as logger from '~/lib/logger'
 import { type Activity, activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import type {
   AddEmailRefusal,
@@ -56,6 +59,7 @@ import type {
   UserRepository,
   UserWithPassword,
 } from '~/ports/user-repository'
+import { type DeleteUserOutcome, InvalidUserDataError } from '~/ports/user-repository'
 
 const columns = {
   id: users.id,
@@ -116,6 +120,20 @@ export class PostgresUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
+  async findByIds(environmentId: string, ids: readonly string[]): Promise<UserRecord[]> {
+    const wanted = [...new Set(ids)]
+    if (wanted.length === 0) {
+      return []
+    }
+    return withTenant(this.db, environmentId, (tx) =>
+      tx
+        .select(columns)
+        .from(users)
+        .where(and(inArray(users.id, wanted), eq(users.environmentId, environmentId)))
+    )
+  }
+
+  /** @inheritdoc */
   async findByEmail(environmentId: string, emailNormalized: string): Promise<UserRecord | null> {
     const [row] = await withTenant(this.db, environmentId, (tx) =>
       tx
@@ -150,6 +168,23 @@ export class PostgresUserRepository implements UserRepository {
             eq(credentials.type, 'password')
           )
         )
+        .where(
+          and(eq(users.emailNormalized, emailNormalized), eq(users.environmentId, environmentId))
+        )
+        .limit(1)
+    )
+    return row ?? null
+  }
+
+  /** @inheritdoc */
+  async findImportMatch(
+    environmentId: string,
+    emailNormalized: string
+  ): Promise<{ id: string; externalId: string | null } | null> {
+    const [row] = await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .select({ id: users.id, externalId: users.externalId })
+        .from(users)
         .where(
           and(eq(users.emailNormalized, emailNormalized), eq(users.environmentId, environmentId))
         )
@@ -207,6 +242,18 @@ export class PostgresUserRepository implements UserRepository {
       // identities_environment_provider_subject_key: the provider account is.
       if (isUniqueViolation(error)) {
         return false
+      }
+      // Only data that came with an import can be refused by a check of its own.
+      const refused =
+        user.metadata !== undefined || user.externalId !== undefined ? dataRefusal(error) : null
+      if (refused) {
+        // Only the SQLSTATE and the constraint's name: never the metadata or the address.
+        logger.warn('the database refused an imported user’s data', {
+          environmentId: user.environmentId,
+          sqlstate: refused.code,
+          constraint: refused.constraint,
+        })
+        throw new InvalidUserDataError()
       }
       throw error
     }
@@ -1057,17 +1104,35 @@ export class PostgresUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
-  async delete(environmentId: string, userId: string, recorded: Recorded): Promise<boolean> {
+  async delete(
+    environmentId: string,
+    userId: string,
+    recorded: Recorded
+  ): Promise<DeleteUserOutcome> {
     const activity = activityOf(recorded)
     return withTenant(this.db, environmentId, async (tx) => {
+      // The organizations' locks come before the delete, whose cascade removes the memberships.
+      const blocked = (await findBlocked(tx, environmentId, [userId])).get(userId)
+      if (blocked) {
+        return { outcome: 'last_manager', organizationIds: blocked } as const
+      }
       const rows = await tx
         .delete(users)
         .where(and(eq(users.id, userId), eq(users.environmentId, environmentId)))
         .returning({ id: users.id })
       const deleted = rows.length === 1
       await recordActivity(tx, deleted && activity ? [activity] : [])
-      return deleted
+      return { outcome: deleted ? 'deleted' : 'not_found' } as const
     })
+  }
+
+  /** @inheritdoc */
+  async soleManagerOf(environmentId: string, userId: string): Promise<string[]> {
+    return withTenant(
+      this.db,
+      environmentId,
+      async (tx) => (await findBlocked(tx, environmentId, [userId], false)).get(userId) ?? []
+    )
   }
 
   /** @inheritdoc */
@@ -1091,15 +1156,36 @@ export class PostgresUserRepository implements UserRepository {
     )
     return withTenant(this.db, environmentId, async (tx) => {
       // DELETE has no LIMIT in Postgres: the batch is picked first, oldest first, and a row
-      // a test's own deletion holds is passed over rather than waited for.
-      const batch = await tx
-        .select({ id: users.id })
-        .from(users)
-        .where(marked)
-        .orderBy(asc(users.createdAt), asc(users.id))
-        .limit(Math.max(0, limit))
-        .for('update', { skipLocked: true })
-      if (batch.length === 0) {
+      // a test's own deletion holds is passed over rather than waited for. A test user who is
+      // the only manager of an organization is left for a later round, as a user's deletion
+      // would refuse them (TULA-124); the pick goes on past such users, so that `limit` of them
+      // at the head of the order cannot keep the rest from ever being reached.
+      const seen: string[] = []
+      const deletable: Array<{ id: string }> = []
+      while (deletable.length < limit) {
+        const want = limit - deletable.length
+        const batch = await tx
+          .select({ id: users.id })
+          .from(users)
+          .where(seen.length > 0 ? and(marked, notInArray(users.id, seen)) : marked)
+          .orderBy(asc(users.createdAt), asc(users.id))
+          .limit(want)
+          .for('update', { skipLocked: true })
+        if (batch.length === 0) {
+          break
+        }
+        const blocked = await findBlocked(
+          tx,
+          environmentId,
+          batch.map((row) => row.id)
+        )
+        seen.push(...batch.map((row) => row.id))
+        deletable.push(...batch.filter((row) => !blocked.has(row.id)))
+        if (batch.length < want) {
+          break
+        }
+      }
+      if (deletable.length === 0) {
         return 0
       }
       const rows = await tx
@@ -1109,7 +1195,7 @@ export class PostgresUserRepository implements UserRepository {
             eq(users.environmentId, environmentId),
             inArray(
               users.id,
-              batch.map((row) => row.id)
+              deletable.map((row) => row.id)
             )
           )
         )

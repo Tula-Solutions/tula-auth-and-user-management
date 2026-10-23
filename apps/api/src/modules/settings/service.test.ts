@@ -439,6 +439,7 @@ describe('clientConfig', () => {
       password: PASSWORD_POLICY_PRESETS.recommended,
       mfa: { policy: 'optional', smsCode: false },
       phone: { enabled: false },
+      organizations: { enabled: false, allowUserCreated: false, personalAccount: true },
     })
     expect(JSON.stringify(config)).not.toContain('https://acme.test')
   })

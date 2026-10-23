@@ -303,6 +303,57 @@ async function runNativeAppOperation(
   })
 }
 
+const STALE_ORGANIZATION_ROLE =
+  'An organization role was changed by someone else after this plan was made. Nothing was ' +
+  'written to it. Run `tula diff` again and review the new plan.'
+
+/** Thrown inside the run when a role's version is no longer the one the plan read. */
+class StaleOrganizationRole extends Error {
+  constructor() {
+    super('an organization role changed after the plan was made')
+  }
+}
+
+/**
+ * One write to a custom organization role. An update or a removal carries the version the
+ * plan read as `If-Match`: the server refuses (412) a role that was changed since, so a
+ * change that was judged a weakening, or not, is never written over a role that is no longer
+ * what the plan saw. An update sends only the fields that differ, the permissions whole.
+ */
+async function runOrganizationRoleOperation(
+  admin: AdminClient,
+  operation: Extract<Operation, { kind: `organizationRole.${string}` }>
+): Promise<void> {
+  if (operation.kind === 'organizationRole.create') {
+    const { entry } = operation
+    await admin.call('createOrganizationRole', {
+      body: { key: entry.key, name: entry.name, permissions: entry.permissions },
+    })
+    return
+  }
+  const headers = { 'If-Match': ifMatch(operation.version) }
+  try {
+    if (operation.kind === 'organizationRole.delete') {
+      await admin.call('deleteOrganizationRole', { params: { key: operation.key }, headers })
+      return
+    }
+    const differs = (path: string) => operation.change.fields.some((field) => field.path === path)
+    await admin.call('updateOrganizationRole', {
+      params: { key: operation.key },
+      headers,
+      body: {
+        ...(differs('name') && { name: operation.entry.name }),
+        ...(differs('permissions') && { permissions: operation.entry.permissions }),
+      },
+    })
+  } catch (error) {
+    if (isTulaAdminError(error) && error.code === 'precondition.failed') {
+      throw new StaleOrganizationRole()
+    }
+    throw error
+  }
+}
+
 /**
  * One write to a hook: what the file says for a registration, only what differs for a
  * change. The body never has a field for a secret: the server makes it and answers it once.
@@ -416,7 +467,13 @@ async function runOperation(
   secrets: ReadonlyMap<string, string>,
   operation: Exclude<
     Operation,
-    { kind: `webhook.${string}` | `hook.${string}` | `nativeApp.${string}` }
+    {
+      kind:
+        | `webhook.${string}`
+        | `hook.${string}`
+        | `nativeApp.${string}`
+        | `organizationRole.${string}`
+    }
   >
 ): Promise<number | undefined> {
   if (operation.kind === 'settings') {
@@ -857,6 +914,14 @@ export const applyCommand: Command = {
           }
           await runNativeAppOperation(target.admin, operation)
         } else if (
+          operation.kind === 'organizationRole.create' ||
+          operation.kind === 'organizationRole.update' ||
+          operation.kind === 'organizationRole.delete'
+        ) {
+          // No second read: a role has a version, and the write carries the one the plan
+          // read, so a role changed since is refused by the server and never written over.
+          await runOrganizationRoleOperation(target.admin, operation)
+        } else if (
           operation.kind === 'webhook.create' ||
           operation.kind === 'webhook.update' ||
           operation.kind === 'webhook.delete'
@@ -899,6 +964,8 @@ export const applyCommand: Command = {
         } else if (error instanceof UnreadHooks) {
           output.error(`${output.errorStyle.red('error:')} ${UNREAD_HOOKS}`)
           reportError(output, error.reason)
+        } else if (error instanceof StaleOrganizationRole) {
+          output.error(`${output.errorStyle.red('error:')} ${STALE_ORGANIZATION_ROLE}`)
         } else if (error instanceof StaleNativeApps) {
           output.error(`${output.errorStyle.red('error:')} ${STALE_NATIVE_APPS}`)
         } else if (error instanceof UnreadNativeApps) {

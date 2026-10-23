@@ -28,6 +28,11 @@ const SAMPLE_TTL_MINUTES = 10
  */
 const SAMPLE_LINK = 'https://app.example/sign-in#sample-link'
 
+/**
+ * The link of the sample invitation: a reserved example domain, as {@link SAMPLE_LINK}.
+ */
+const SAMPLE_INVITATION_LINK = 'https://app.example/invitation#tula_invitation=sample-token'
+
 const notice = { at: SAMPLE_TIME } as const
 const code = { code: SAMPLE_CODE, ttlMinutes: SAMPLE_TTL_MINUTES } as const
 
@@ -40,6 +45,13 @@ export const SAMPLE_EMAILS: Readonly<Record<EmailTemplateKind, EmailMessage>> = 
   password_reset: { type: 'password_reset', ...code },
   sign_in: { type: 'sign_in', ...code, linkUrl: SAMPLE_LINK },
   step_up: { type: 'step_up', ...code },
+  organization_domain_verification: { type: 'organization_domain_verification', ...code },
+  organization_domain_expiring: {
+    type: 'organization_domain_expiring',
+    organizationName: 'Acme',
+    domains: 1,
+    daysLeft: 30,
+  },
   account_exists: { type: 'account_exists' },
   no_account: { type: 'no_account' },
   no_account_sign_in: { type: 'no_account_sign_in' },
@@ -75,6 +87,12 @@ export const SAMPLE_EMAILS: Readonly<Record<EmailTemplateKind, EmailMessage>> = 
   },
   email_in_use: { type: 'email_in_use' },
   email_added: { type: 'email_added', ...notice },
+  organization_invitation: {
+    type: 'organization_invitation',
+    organizationName: 'Acme',
+    linkUrl: SAMPLE_INVITATION_LINK,
+    ttlDays: 7,
+  },
 }
 
 /**

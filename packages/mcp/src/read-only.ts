@@ -26,6 +26,9 @@ export const READ_OPERATIONS = [
   'getUserAuthentication',
   'listAuditLogs',
   'listOAuthProviders',
+  'listOrganizationMemberships',
+  'listOrganizationRoles',
+  'listOrganizations',
   'listUsers',
   'listUserSessions',
 ] as const satisfies readonly (keyof AdminOperations)[]

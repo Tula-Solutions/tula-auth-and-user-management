@@ -1,0 +1,914 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "my organizations and the active organization",
+  "description": "A signed-in user lists the organizations they belong to, creates one where the environment allows it and chooses the one their session acts in. While organizations are off every route answers organization.disabled; while users may not create them, a create answers organization.creation_disabled, and past the environment's limit organization.limit_reached. An organization the user is not in, and one that does not exist, are refused with the same organization.not_a_member. Choosing one answers a new access token that carries org_id, org_role and org_perms, and the list names it as active. A refresh keeps the choice and re-reads the membership: a role given or taken away is in the next token, and a removed member's next token has no organization claims while the session lives on. Choosing the personal account (null) takes the claims away. The original settings are put back afterwards, even when a step fails.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "managerEmail": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    },
+    "suffix": {
+      "generate": "snowflake"
+    },
+    "missingId": {
+      "generate": "uuid"
+    }
+  },
+  "steps": [
+    {
+      "name": "start a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "signUpId": "id",
+        "signUpSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "code"
+      }
+    },
+    {
+      "name": "verify the address: the sign-up completes",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{signUpId}}/verify-email",
+        "body": {
+          "code": "{{code}}"
+        },
+        "attempt": "{{signUpSecret}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          },
+          "session": {
+            "sessionId": "$any",
+            "accessToken": "$any",
+            "refreshToken": {
+              "$matches": "^tula_rt_"
+            }
+          }
+        },
+        "claims": {
+          "session.accessToken": {
+            "org_id": "$absent",
+            "org_role": "$absent",
+            "org_perms": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "userId": "step.userId",
+        "accessToken": "session.accessToken",
+        "refreshToken": "session.refreshToken",
+        "sessionId": "session.sessionId"
+      }
+    },
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "appSettings": "settings.app",
+        "passwordSettings": "settings.password",
+        "signInSettings": "settings.signIn",
+        "signUpSettings": "settings.signUp",
+        "urlsSettings": "settings.urls",
+        "auditSettings": "settings.audit",
+        "notificationsSettings": "settings.notifications",
+        "mfaSettings": "settings.mfa",
+        "passkeysSettings": "settings.passkeys",
+        "smsSettings": "settings.sms",
+        "emailsSettings": "settings.emails"
+      }
+    },
+    {
+      "name": "with organizations off, the list answers a code",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.disabled"
+        }
+      }
+    },
+    {
+      "name": "and so does a create",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organizations",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "name": "Mine",
+          "slug": "mine-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.disabled"
+        }
+      }
+    },
+    {
+      "name": "and choosing one",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/client/me/organizations/active",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "organizationId": "{{missingId}}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.disabled"
+        }
+      }
+    },
+    {
+      "name": "without a session the routes are refused",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations"
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
+      "name": "an administrator switches organizations on, for administrators only",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{appSettings}}"
+          },
+          "password": {
+            "$json": "{{passwordSettings}}"
+          },
+          "signIn": {
+            "$json": "{{signInSettings}}"
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "$json": "{{urlsSettings}}"
+          },
+          "audit": {
+            "$json": "{{auditSettings}}"
+          },
+          "notifications": {
+            "$json": "{{notificationsSettings}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "$json": "{{passkeysSettings}}"
+          },
+          "sms": {
+            "$json": "{{smsSettings}}"
+          },
+          "emails": {
+            "$json": "{{emailsSettings}}"
+          },
+          "organizations": {
+            "enabled": true,
+            "allowUserCreated": false,
+            "maxCreatedPerUser": 1,
+            "creatorRole": "admin",
+            "defaultRole": "member",
+            "personalAccount": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "organizations": {
+              "enabled": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "a user cannot create one while the setting is off",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organizations",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "name": "Mine",
+          "slug": "mine-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.creation_disabled"
+        }
+      }
+    },
+    {
+      "name": "the list is empty and the personal account is active",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [],
+          "activeOrganizationId": "$absent"
+        },
+        "headers": {
+          "cache-control": "no-store"
+        }
+      }
+    },
+    {
+      "name": "an administrator creates an organization",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations",
+        "auth": "secret",
+        "body": {
+          "name": "Conformance Org",
+          "slug": "conformance-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "orgId": "id"
+      }
+    },
+    {
+      "name": "and another the user is not in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations",
+        "auth": "secret",
+        "body": {
+          "name": "Elsewhere",
+          "slug": "elsewhere-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "otherOrgId": "id"
+      }
+    },
+    {
+      "name": "an administrator creates a second user to manage the first organization",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users",
+        "auth": "secret",
+        "body": {
+          "email": "{{managerEmail}}",
+          "emailVerified": true
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "managerId": "id"
+      }
+    },
+    {
+      "name": "who is its admin",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/memberships",
+        "auth": "secret",
+        "body": {
+          "userId": "{{managerId}}",
+          "role": "admin"
+        }
+      },
+      "expect": {
+        "status": 201
+      }
+    },
+    {
+      "name": "the signed-in user is added as a member",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/memberships",
+        "auth": "secret",
+        "body": {
+          "userId": "{{userId}}",
+          "role": "member"
+        }
+      },
+      "expect": {
+        "status": 201
+      }
+    },
+    {
+      "name": "the list holds the organization with the role and nothing else of the other",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "id": "{{orgId}}",
+              "slug": "conformance-{{suffix}}",
+              "role": "member",
+              "permissions": "$any"
+            }
+          ],
+          "activeOrganizationId": "$absent"
+        }
+      }
+    },
+    {
+      "name": "an organization the user is not in cannot be chosen",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/client/me/organizations/active",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "organizationId": "{{otherOrgId}}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.not_a_member"
+        }
+      }
+    },
+    {
+      "name": "and one that does not exist answers the same",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/client/me/organizations/active",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "organizationId": "018f0000-0000-7000-8000-000000000000"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.not_a_member"
+        }
+      }
+    },
+    {
+      "name": "a body that is not an id is a validation error",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/client/me/organizations/active",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "organizationId": "not-an-id"
+        }
+      },
+      "expect": {
+        "status": 422
+      }
+    },
+    {
+      "name": "choosing the organization answers a token that carries it",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/client/me/organizations/active",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "organizationId": "{{orgId}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "sessionId": "{{sessionId}}",
+          "organizationId": "{{orgId}}",
+          "accessToken": "$any",
+          "refreshToken": "$absent"
+        },
+        "claims": {
+          "accessToken": {
+            "sub": "{{userId}}",
+            "org_id": "{{orgId}}",
+            "org_role": "member",
+            "org_perms": "$any"
+          }
+        },
+        "headers": {
+          "cache-control": "no-store"
+        }
+      },
+      "capture": {
+        "accessToken": "accessToken"
+      }
+    },
+    {
+      "name": "the list names the active organization",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "activeOrganizationId": "{{orgId}}"
+        }
+      }
+    },
+    {
+      "name": "a refresh keeps the choice",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/refresh",
+        "body": {
+          "refreshToken": "{{refreshToken}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "claims": {
+          "accessToken": {
+            "org_id": "{{orgId}}",
+            "org_role": "member"
+          }
+        }
+      },
+      "capture": {
+        "refreshToken": "refreshToken",
+        "accessToken": "accessToken"
+      }
+    },
+    {
+      "name": "an administrator gives the user the admin role",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/organizations/{{orgId}}/memberships/{{userId}}",
+        "auth": "secret",
+        "body": {
+          "role": "admin"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "the new role is in the next token",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/refresh",
+        "body": {
+          "refreshToken": "{{refreshToken}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "claims": {
+          "accessToken": {
+            "org_id": "{{orgId}}",
+            "org_role": "admin"
+          }
+        }
+      },
+      "capture": {
+        "refreshToken": "refreshToken",
+        "accessToken": "accessToken"
+      }
+    },
+    {
+      "name": "and takes it away again",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/organizations/{{orgId}}/memberships/{{userId}}",
+        "auth": "secret",
+        "body": {
+          "role": "member"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "the demotion is in the next token",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/refresh",
+        "body": {
+          "refreshToken": "{{refreshToken}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "claims": {
+          "accessToken": {
+            "org_id": "{{orgId}}",
+            "org_role": "member"
+          }
+        }
+      },
+      "capture": {
+        "refreshToken": "refreshToken",
+        "accessToken": "accessToken"
+      }
+    },
+    {
+      "name": "an administrator removes the user",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/organizations/{{orgId}}/memberships/{{userId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "the next token has no organization claims and the session lives",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sessions/refresh",
+        "body": {
+          "refreshToken": "{{refreshToken}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "claims": {
+          "accessToken": {
+            "sub": "{{userId}}",
+            "org_id": "$absent",
+            "org_role": "$absent",
+            "org_perms": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "refreshToken": "refreshToken",
+        "accessToken": "accessToken"
+      }
+    },
+    {
+      "name": "and the removed organization cannot be chosen again",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/client/me/organizations/active",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "organizationId": "{{orgId}}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.not_a_member"
+        }
+      }
+    },
+    {
+      "name": "the personal account can be chosen",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/client/me/organizations/active",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "organizationId": null
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "organizationId": "$absent",
+          "accessToken": "$any"
+        },
+        "claims": {
+          "accessToken": {
+            "org_id": "$absent"
+          }
+        }
+      },
+      "capture": {
+        "accessToken": "accessToken"
+      }
+    },
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "etag2": "ETag"
+      }
+    },
+    {
+      "name": "an administrator lets users create organizations, one each",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag2}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{appSettings}}"
+          },
+          "password": {
+            "$json": "{{passwordSettings}}"
+          },
+          "signIn": {
+            "$json": "{{signInSettings}}"
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "$json": "{{urlsSettings}}"
+          },
+          "audit": {
+            "$json": "{{auditSettings}}"
+          },
+          "notifications": {
+            "$json": "{{notificationsSettings}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "$json": "{{passkeysSettings}}"
+          },
+          "sms": {
+            "$json": "{{smsSettings}}"
+          },
+          "emails": {
+            "$json": "{{emailsSettings}}"
+          },
+          "organizations": {
+            "enabled": true,
+            "allowUserCreated": true,
+            "maxCreatedPerUser": 1,
+            "creatorRole": "admin",
+            "defaultRole": "member",
+            "personalAccount": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "organizations": {
+              "enabled": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "a slug another organization has is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organizations",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "name": "Taken",
+          "slug": "conformance-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "organization.slug_taken"
+        }
+      }
+    },
+    {
+      "name": "the user creates an organization and holds the creator role in it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organizations",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "name": "Mine",
+          "slug": "mine-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "slug": "mine-{{suffix}}",
+          "role": "admin"
+        }
+      },
+      "capture": {
+        "ownOrgId": "id"
+      }
+    },
+    {
+      "name": "a second is over the limit",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organizations",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "name": "Again",
+          "slug": "again-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.limit_reached"
+        }
+      }
+    },
+    {
+      "name": "creating did not switch the session",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations",
+        "accessToken": "{{accessToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "activeOrganizationId": "$absent"
+        }
+      }
+    },
+    {
+      "name": "the user chooses the organization they made",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/client/me/organizations/active",
+        "accessToken": "{{accessToken}}",
+        "body": {
+          "organizationId": "{{ownOrgId}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "claims": {
+          "accessToken": {
+            "org_id": "{{ownOrgId}}",
+            "org_role": "admin"
+          }
+        }
+      },
+      "capture": {
+        "accessToken": "accessToken"
+      }
+    },
+    {
+      "name": "a publishable key alone is refused",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations"
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
+      "name": "an administrator deletes the organization the user made",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/organizations/{{ownOrgId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "an administrator deletes the first",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/organizations/{{orgId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "an administrator deletes and the other",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/organizations/{{otherOrgId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

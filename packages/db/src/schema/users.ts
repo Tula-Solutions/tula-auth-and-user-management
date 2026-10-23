@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { check, index, text, timestamp, unique } from 'drizzle-orm/pg-core'
+import { check, index, jsonb, text, timestamp, unique } from 'drizzle-orm/pg-core'
 import { primaryKey, timestamps } from '../mixins'
 import { tenantColumns, tenantConstraints, tenantParentKey } from '../tenant-columns'
 import { tula } from './pg-schema'
@@ -43,6 +43,13 @@ export const users = tula.table(
      * and the check below refuses a factor with no number.
      */
     smsFactorEnabledAt: timestamp('sms_factor_enabled_at', { withTimezone: true }),
+    /**
+     * The user's id in the system an import brought them from (ADR 0066), for the operator to
+     * match rows by. Not unique and not a way to sign in; `NULL` for every other user.
+     */
+    externalId: text('external_id'),
+    /** What an import kept with the user (at most 4 KiB as JSON); `{}` for every other user. */
+    metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
     ...timestamps(),
   },
   (t) => [
@@ -52,6 +59,11 @@ export const users = tula.table(
     check(
       'users_email_whole',
       sql`(${t.email} IS NULL) = (${t.emailNormalized} IS NULL) AND (${t.email} IS NOT NULL OR ${t.emailVerifiedAt} IS NULL)`
+    ),
+    // What an import keeps with a user is an object of at most 4 KiB of its text.
+    check(
+      'users_metadata_bounds',
+      sql`jsonb_typeof(${t.metadata}) = 'object' AND octet_length(${t.metadata}::text) <= 4096`
     ),
     // A number is there exactly when its verification time is: neither half alone.
     check(

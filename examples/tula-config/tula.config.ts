@@ -84,6 +84,19 @@ export default defineConfig({
         },
         // #endregion
         audit: { retentionDays: 365 },
+        // #region organizations
+        // Organizations (ADR 0065) are off until an environment switches them on; the roles
+        // below only exist while they are on. The other fields are shown at their defaults,
+        // except `allowUserCreated`: here a signed-in user may create up to five.
+        organizations: {
+          enabled: true,
+          allowUserCreated: true,
+          maxCreatedPerUser: 5,
+          creatorRole: 'admin',
+          defaultRole: 'member',
+          personalAccount: true,
+        },
+        // #endregion
         // #region mfa
         mfa: { policy: 'required' },
         // #endregion
@@ -173,6 +186,21 @@ export default defineConfig({
             '14:6D:E9:83:C5:73:06:50:D8:EE:B9:95:2F:34:FC:64:16:A0:83:42:E6:1D:BE:A8:8A:04:96:B2:3F:CF:44:E5',
           ],
         },
+      ],
+      // #endregion
+      // #region organization-roles
+      // The custom roles of the environment's organizations (ADR 0065), beside the built-in
+      // `admin` and `member`. A role is its key; the permissions are a set. Giving a role a
+      // permission it did not have widens what its members may do, so `tula apply --yes`
+      // asks for `--allow-weaker`. `dev` has no `organizationRoles` key: its roles are not
+      // managed by this file.
+      organizationRoles: [
+        {
+          key: 'billing_manager',
+          name: 'Billing manager',
+          permissions: ['org:billing:read', 'org:billing:write', 'org:sys:memberships:read'],
+        },
+        { key: 'viewer', name: 'Viewer', permissions: ['org:billing:read'] },
       ],
       // #endregion
     },

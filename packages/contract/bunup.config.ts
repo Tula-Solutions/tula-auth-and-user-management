@@ -1,6 +1,6 @@
 import { defineConfig } from 'bunup'
 
-// One entry per `exports` subpath (package.json › publishConfig.exports). The nine besides the
+// One entry per `exports` subpath (package.json › publishConfig.exports). The entries besides the
 // index import no Zod, which is what lets an SDK use them without a schema library in the bundle.
 export default defineConfig({
   entry: [
@@ -11,6 +11,8 @@ export default defineConfig({
     'src/event-types.ts',
     'src/headers.ts',
     'src/issuer.ts',
+    'src/organization-domain-rules.ts',
+    'src/organization-permissions.ts',
     'src/password-rules.ts',
     'src/redirect-url.ts',
     'src/theme.ts',

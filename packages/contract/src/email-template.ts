@@ -6,11 +6,16 @@
  * Every email whose wording an environment can change (ADR 0039): one kind per message the
  * server sends, so that a template never has to say two different things.
  *
- * - `email_verification`, `password_reset`, `sign_in`, `step_up`: the messages that carry a
- *   6-digit code (`sign_in` can carry a link as well).
+ * - `email_verification`, `password_reset`, `sign_in`, `step_up`, `organization_domain_verification`:
+ *   the messages that carry a 6-digit code (`sign_in` can carry a link as well). The last is
+ *   the code that shows an organization controls a domain (ADR 0065).
  * - `account_exists`, `no_account`, `no_account_sign_in`, `email_in_use`: what is sent
  *   instead of a code, so that a sign-up, a reset, a sign-in and adding an address to an
  *   account (ADR 0059) answer alike for every address.
+ * - `organization_domain_expiring` (ADR 0065): the reminder, 30 and 7 days ahead, that a
+ *   verified domain of an organization will stop matching unless it is verified again.
+ * - `organization_invitation` (ADR 0065): an invitation to join an organization, with the
+ *   server's link and no code.
  * - the rest: security notices (ADR 0023), one per thing that can have happened.
  *
  * A closed list. Later servers may add kinds: additive.
@@ -49,6 +54,9 @@ export const EMAIL_TEMPLATE_KINDS = [
   'identity_unlinked',
   'email_in_use',
   'email_added',
+  'organization_domain_verification',
+  'organization_domain_expiring',
+  'organization_invitation',
 ] as const
 
 /** One of {@link EMAIL_TEMPLATE_KINDS}. */
@@ -62,6 +70,7 @@ export type EmailTemplateKind = (typeof EMAIL_TEMPLATE_KINDS)[number]
  * - `link`: the sign-in link. In a body only; the server draws it as its own button, and a
  *   paragraph that names it is left out of a message that has no link.
  * - `expiresInMinutes`: minutes until the code (and link) stop working. A number.
+ * - `expiresInDays`: days until an invitation's link stops working. A number.
  * - `device`: the device family of a new sign-in (`Chrome on Windows`): one of the server's
  *   fixed names, never the user agent.
  * - `time`: when it happened, in UTC (`2026-10-03 14:05 UTC`).
@@ -81,6 +90,7 @@ export const EMAIL_TEMPLATE_PLACEHOLDERS = [
   'code',
   'link',
   'expiresInMinutes',
+  'expiresInDays',
   'device',
   'time',
   'provider',
@@ -106,19 +116,22 @@ export type EmailTemplatePlaceholder = (typeof EMAIL_TEMPLATE_PLACEHOLDERS)[numb
 export const EMAIL_TEMPLATE_DIGIT_PLACEHOLDERS: readonly EmailTemplatePlaceholder[] = [
   'code',
   'expiresInMinutes',
+  'expiresInDays',
   'time',
   'backupCodesLeft',
 ]
 
 /** What a kind of message is, which decides the rules its templates are held to. */
-export type EmailTemplateCategory = 'code' | 'notice'
+export type EmailTemplateCategory = 'code' | 'notice' | 'invitation'
 
 /** The rules of one kind's templates. */
 export interface EmailTemplateRules {
   /**
    * `code`: the message exists to carry a code. `notice`: it carries none, its template can
-   * name no code and no link, and its subject does not lead with a digit. No kind of either
-   * category can hold something that reads as a link.
+   * name no code and no link, and its subject does not lead with a digit. `invitation`: it
+   * carries the server's link and no code (an invitation to an organization, ADR 0065), and
+   * its subject does not lead with a digit either, so that it is never taken for a code. No
+   * kind of any category can hold something that reads as a link.
    */
   category: EmailTemplateCategory
   /** Placeholders a body must name: without them the message could not do its job. */
@@ -182,6 +195,17 @@ export const EMAIL_TEMPLATE_RULES: Readonly<Record<EmailTemplateKind, EmailTempl
   identity_unlinked: { ...NOTICE, optional: ['appName', 'time', 'provider'] },
   email_in_use: DECOY,
   email_added: NOTICE,
+  organization_domain_verification: CODE,
+  // A reminder to the managers (ADR 0065, "Lapse"): no code and no link, so a notice. The
+  // domain and the organization's name are named by the server's own wording only.
+  organization_domain_expiring: { ...NOTICE, optional: ['appName', 'expiresInDays'] },
+  // The link is the whole point of an invitation: a template has to keep it. The organization's
+  // name is text a user typed and has no placeholder: only the server's own wording names it.
+  organization_invitation: {
+    category: 'invitation',
+    required: ['link'],
+    optional: ['appName', 'expiresInDays'],
+  },
 }
 
 /** Longest subject of a template, in characters (UTF-16 code units). */
@@ -656,7 +680,7 @@ function fieldProblems(
     )
   }
   if (
-    rules.category === 'notice' &&
+    rules.category !== 'code' &&
     field === 'subject' &&
     /^\p{Nd}/u.test(visibleEmailText(withLeadingStandIns(tokens)))
   ) {

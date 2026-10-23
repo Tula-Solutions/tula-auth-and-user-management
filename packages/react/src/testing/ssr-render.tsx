@@ -1,10 +1,13 @@
 import { renderToString } from 'react-dom/server'
 import {
+  CreateOrganization,
   EmailLinkCallback,
   firstFactorStrategies,
   formatDuration,
   formatText,
   OAuthCallback,
+  OrganizationProfile,
+  OrganizationSwitcher,
   SignedIn,
   SignedOut,
   SignIn,
@@ -77,6 +80,9 @@ const html = renderToString(
     <SignUp />
     <UserButton />
     <UserProfile />
+    <OrganizationSwitcher />
+    <CreateOrganization />
+    <OrganizationProfile />
     <HeadlessProbe />
     <StepRenderer
       step={{ status: 'needs_password' }}

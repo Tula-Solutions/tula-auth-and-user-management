@@ -90,6 +90,48 @@ export interface UserCreatedEvent {
   test?: true;
 }
 
+export type UserImportedEventDataPasswordAlgorithm = typeof UserImportedEventDataPasswordAlgorithm[keyof typeof UserImportedEventDataPasswordAlgorithm];
+
+
+export const UserImportedEventDataPasswordAlgorithm = {
+  bcrypt: 'bcrypt',
+  argon2id: 'argon2id',
+  argon2i: 'argon2i',
+  pbkdf2_sha256: 'pbkdf2_sha256',
+  firebase_scrypt: 'firebase_scrypt',
+} as const;
+
+/**
+ * A user account was created by an import.
+ */
+export interface UserImportedEventData {
+  emailVerified: boolean;
+  passwordless?: boolean;
+  passwordAlgorithm?: UserImportedEventDataPasswordAlgorithm;
+}
+
+export type UserImportedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A user account was created by an import.
+ */
+export interface UserImportedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.imported';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserImportedEventTarget;
+  data: UserImportedEventData;
+  test?: true;
+}
+
 /**
  * A user proved their email address.
  */
@@ -1215,7 +1257,7 @@ export interface OAuthProviderDeletedEvent {
 export interface WebhookEndpointCreatedEventData {
   /**
      * @minimum 1
-     * @maximum 50
+     * @maximum 68
      */
   eventTypes: number;
   enabled: boolean;
@@ -1695,6 +1737,639 @@ export interface NativeAppDeletedEvent {
   test?: true;
 }
 
+/**
+ * An organization was created. Its name and slug are not in the event: read the organization by its id.
+ */
+export interface OrganizationCreatedEventData { [key: string]: unknown }
+
+export type OrganizationCreatedEventTarget = {
+  type: 'organization';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An organization was created. Its name and slug are not in the event: read the organization by its id.
+ */
+export interface OrganizationCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationCreatedEventTarget;
+  data: OrganizationCreatedEventData;
+  test?: true;
+}
+
+export type OrganizationUpdatedEventDataChangedItem = typeof OrganizationUpdatedEventDataChangedItem[keyof typeof OrganizationUpdatedEventDataChangedItem];
+
+
+export const OrganizationUpdatedEventDataChangedItem = {
+  name: 'name',
+  slug: 'slug',
+} as const;
+
+/**
+ * An organization was renamed or its slug changed.
+ */
+export interface OrganizationUpdatedEventData {
+  /**
+     * @minItems 1
+     * @maxItems 2
+     */
+  changed: OrganizationUpdatedEventDataChangedItem[];
+}
+
+export type OrganizationUpdatedEventTarget = {
+  type: 'organization';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An organization was renamed or its slug changed.
+ */
+export interface OrganizationUpdatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization.updated';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationUpdatedEventTarget;
+  data: OrganizationUpdatedEventData;
+  test?: true;
+}
+
+/**
+ * An organization was deleted, and its memberships with it. No `organization_membership.removed` event is recorded for them.
+ */
+export interface OrganizationDeletedEventData {
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  memberships: number;
+}
+
+export type OrganizationDeletedEventTarget = {
+  type: 'organization';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An organization was deleted, and its memberships with it. No `organization_membership.removed` event is recorded for them.
+ */
+export interface OrganizationDeletedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization.deleted';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationDeletedEventTarget;
+  data: OrganizationDeletedEventData;
+  test?: true;
+}
+
+/**
+ * @pattern ^[a-z][a-z0-9_]{0,31}$
+ */
+export type OrganizationRoleKey = string;
+
+export type OrganizationMembershipAddedEventDataVia = typeof OrganizationMembershipAddedEventDataVia[keyof typeof OrganizationMembershipAddedEventDataVia];
+
+
+export const OrganizationMembershipAddedEventDataVia = {
+  domain_auto_join: 'domain_auto_join',
+  domain_suggestion: 'domain_suggestion',
+} as const;
+
+/**
+ * A user became a member of an organization. The target is the membership. `via` is present when it was not an administrator or an invitation that added them: `domain_auto_join` (they signed up with a verified address on a domain set to auto-join) or `domain_suggestion` (they joined an organization their verified address was suggested).
+ */
+export interface OrganizationMembershipAddedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  userId: string;
+  role: OrganizationRoleKey;
+  via?: OrganizationMembershipAddedEventDataVia;
+}
+
+export type OrganizationMembershipAddedEventTarget = {
+  type: 'organization_membership';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A user became a member of an organization. The target is the membership. `via` is present when it was not an administrator or an invitation that added them: `domain_auto_join` (they signed up with a verified address on a domain set to auto-join) or `domain_suggestion` (they joined an organization their verified address was suggested).
+ */
+export interface OrganizationMembershipAddedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_membership.added';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationMembershipAddedEventTarget;
+  data: OrganizationMembershipAddedEventData;
+  test?: true;
+}
+
+/**
+ * A member was given another role. The session of that member carries the new role from its next refresh.
+ */
+export interface OrganizationMembershipRoleChangedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  userId: string;
+  role: OrganizationRoleKey;
+  previousRole: OrganizationRoleKey;
+}
+
+export type OrganizationMembershipRoleChangedEventTarget = {
+  type: 'organization_membership';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A member was given another role. The session of that member carries the new role from its next refresh.
+ */
+export interface OrganizationMembershipRoleChangedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_membership.role_changed';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationMembershipRoleChangedEventTarget;
+  data: OrganizationMembershipRoleChangedEventData;
+  test?: true;
+}
+
+/**
+ * A member was removed from an organization. The session of that user leaves the organization at its next refresh; the account stays.
+ */
+export interface OrganizationMembershipRemovedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  userId: string;
+  role: OrganizationRoleKey;
+}
+
+export type OrganizationMembershipRemovedEventTarget = {
+  type: 'organization_membership';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A member was removed from an organization. The session of that user leaves the organization at its next refresh; the account stays.
+ */
+export interface OrganizationMembershipRemovedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_membership.removed';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationMembershipRemovedEventTarget;
+  data: OrganizationMembershipRemovedEventData;
+  test?: true;
+}
+
+/**
+ * A custom role was defined. No member holds it yet. Read the role by its key for its name and permissions.
+ */
+export interface OrganizationRoleCreatedEventData {
+  role: OrganizationRoleKey;
+  /**
+     * @minimum 0
+     * @maximum 32
+     */
+  permissions: number;
+}
+
+export type OrganizationRoleCreatedEventTarget = {
+  type: 'organization_role';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A custom role was defined. No member holds it yet. Read the role by its key for its name and permissions.
+ */
+export interface OrganizationRoleCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_role.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationRoleCreatedEventTarget;
+  data: OrganizationRoleCreatedEventData;
+  test?: true;
+}
+
+export type OrganizationRoleUpdatedEventDataChangedItem = typeof OrganizationRoleUpdatedEventDataChangedItem[keyof typeof OrganizationRoleUpdatedEventDataChangedItem];
+
+
+export const OrganizationRoleUpdatedEventDataChangedItem = {
+  name: 'name',
+  permissions: 'permissions',
+} as const;
+
+/**
+ * A custom role was renamed or its permissions were replaced. Members who hold it carry the new permissions from their next refresh. `weakened` is present, and true, when the role gained a permission.
+ */
+export interface OrganizationRoleUpdatedEventData {
+  role: OrganizationRoleKey;
+  /**
+     * @minItems 1
+     * @maxItems 2
+     */
+  changed: OrganizationRoleUpdatedEventDataChangedItem[];
+  /**
+     * @minimum 0
+     * @maximum 32
+     */
+  permissions: number;
+  weakened?: true;
+}
+
+export type OrganizationRoleUpdatedEventTarget = {
+  type: 'organization_role';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A custom role was renamed or its permissions were replaced. Members who hold it carry the new permissions from their next refresh. `weakened` is present, and true, when the role gained a permission.
+ */
+export interface OrganizationRoleUpdatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_role.updated';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationRoleUpdatedEventTarget;
+  data: OrganizationRoleUpdatedEventData;
+  test?: true;
+}
+
+/**
+ * A custom role was deleted. No member held it.
+ */
+export interface OrganizationRoleDeletedEventData {
+  role: OrganizationRoleKey;
+}
+
+export type OrganizationRoleDeletedEventTarget = {
+  type: 'organization_role';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A custom role was deleted. No member held it.
+ */
+export interface OrganizationRoleDeletedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_role.deleted';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationRoleDeletedEventTarget;
+  data: OrganizationRoleDeletedEventData;
+  test?: true;
+}
+
+export type OrganizationDomainClaimedEventDataMode = typeof OrganizationDomainClaimedEventDataMode[keyof typeof OrganizationDomainClaimedEventDataMode];
+
+
+export const OrganizationDomainClaimedEventDataMode = {
+  suggest: 'suggest',
+  auto_join: 'auto_join',
+} as const;
+
+/**
+ * A code was emailed to an address on a domain an organization wants to claim (the first time, or again). Nothing is granted until the code is entered.
+ */
+export interface OrganizationDomainClaimedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  /**
+     * @maxLength 253
+     * @pattern ^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:[a-z]{2,}|xn--[a-z0-9-]*[a-z0-9])$
+     */
+  domain: string;
+  mode: OrganizationDomainClaimedEventDataMode;
+}
+
+export type OrganizationDomainClaimedEventTarget = {
+  type: 'organization_domain';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A code was emailed to an address on a domain an organization wants to claim (the first time, or again). Nothing is granted until the code is entered.
+ */
+export interface OrganizationDomainClaimedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_domain.claimed';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationDomainClaimedEventTarget;
+  data: OrganizationDomainClaimedEventData;
+  test?: true;
+}
+
+export type OrganizationDomainVerifiedEventDataMode = typeof OrganizationDomainVerifiedEventDataMode[keyof typeof OrganizationDomainVerifiedEventDataMode];
+
+
+export const OrganizationDomainVerifiedEventDataMode = {
+  suggest: 'suggest',
+  auto_join: 'auto_join',
+} as const;
+
+/**
+ * An organization verified a domain: users who sign up with a verified address on it are suggested the organization or joined to it, by `mode`, until the verification lapses. `reverified` is present, and true, when the domain was already verified (proven again before or after it lapsed). `weakened` is present, and true, for `auto_join`.
+ */
+export interface OrganizationDomainVerifiedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  /**
+     * @maxLength 253
+     * @pattern ^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:[a-z]{2,}|xn--[a-z0-9-]*[a-z0-9])$
+     */
+  domain: string;
+  mode: OrganizationDomainVerifiedEventDataMode;
+  reverified?: true;
+  weakened?: true;
+}
+
+export type OrganizationDomainVerifiedEventTarget = {
+  type: 'organization_domain';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An organization verified a domain: users who sign up with a verified address on it are suggested the organization or joined to it, by `mode`, until the verification lapses. `reverified` is present, and true, when the domain was already verified (proven again before or after it lapsed). `weakened` is present, and true, for `auto_join`.
+ */
+export interface OrganizationDomainVerifiedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_domain.verified';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationDomainVerifiedEventTarget;
+  data: OrganizationDomainVerifiedEventData;
+  test?: true;
+}
+
+export type OrganizationDomainUpdatedEventDataMode = typeof OrganizationDomainUpdatedEventDataMode[keyof typeof OrganizationDomainUpdatedEventDataMode];
+
+
+export const OrganizationDomainUpdatedEventDataMode = {
+  suggest: 'suggest',
+  auto_join: 'auto_join',
+} as const;
+
+export type OrganizationDomainUpdatedEventDataPreviousMode = typeof OrganizationDomainUpdatedEventDataPreviousMode[keyof typeof OrganizationDomainUpdatedEventDataPreviousMode];
+
+
+export const OrganizationDomainUpdatedEventDataPreviousMode = {
+  suggest: 'suggest',
+  auto_join: 'auto_join',
+} as const;
+
+/**
+ * What a domain does was changed. `weakened` is present, and true, when the domain now auto-joins.
+ */
+export interface OrganizationDomainUpdatedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  /**
+     * @maxLength 253
+     * @pattern ^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:[a-z]{2,}|xn--[a-z0-9-]*[a-z0-9])$
+     */
+  domain: string;
+  mode: OrganizationDomainUpdatedEventDataMode;
+  previousMode: OrganizationDomainUpdatedEventDataPreviousMode;
+  weakened?: true;
+}
+
+export type OrganizationDomainUpdatedEventTarget = {
+  type: 'organization_domain';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * What a domain does was changed. `weakened` is present, and true, when the domain now auto-joins.
+ */
+export interface OrganizationDomainUpdatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_domain.updated';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationDomainUpdatedEventTarget;
+  data: OrganizationDomainUpdatedEventData;
+  test?: true;
+}
+
+/**
+ * A domain was removed, verified or not. No future sign-up joins or is suggested the organization because of it; members who joined stay.
+ */
+export interface OrganizationDomainRemovedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  /**
+     * @maxLength 253
+     * @pattern ^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:[a-z]{2,}|xn--[a-z0-9-]*[a-z0-9])$
+     */
+  domain: string;
+}
+
+export type OrganizationDomainRemovedEventTarget = {
+  type: 'organization_domain';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A domain was removed, verified or not. No future sign-up joins or is suggested the organization because of it; members who joined stay.
+ */
+export interface OrganizationDomainRemovedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_domain.removed';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationDomainRemovedEventTarget;
+  data: OrganizationDomainRemovedEventData;
+  test?: true;
+}
+
+/**
+ * Someone was invited to an organization. The target is the invitation; the invited address is not in the event: read the invitation by its id.
+ */
+export interface OrganizationInvitationCreatedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  role: OrganizationRoleKey;
+}
+
+export type OrganizationInvitationCreatedEventTarget = {
+  type: 'organization_invitation';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * Someone was invited to an organization. The target is the invitation; the invited address is not in the event: read the invitation by its id.
+ */
+export interface OrganizationInvitationCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_invitation.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationInvitationCreatedEventTarget;
+  data: OrganizationInvitationCreatedEventData;
+  test?: true;
+}
+
+/**
+ * An invitation was accepted by the user it was for, who became a member in the same transaction (an `organization_membership.added` event follows it). The actor is that user.
+ */
+export interface OrganizationInvitationAcceptedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  role: OrganizationRoleKey;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  userId: string;
+}
+
+export type OrganizationInvitationAcceptedEventTarget = {
+  type: 'organization_invitation';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An invitation was accepted by the user it was for, who became a member in the same transaction (an `organization_membership.added` event follows it). The actor is that user.
+ */
+export interface OrganizationInvitationAcceptedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_invitation.accepted';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationInvitationAcceptedEventTarget;
+  data: OrganizationInvitationAcceptedEventData;
+  test?: true;
+}
+
+/**
+ * An invitation was declined by the user it was for. The actor is that user.
+ */
+export interface OrganizationInvitationDeclinedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  role: OrganizationRoleKey;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  userId: string;
+}
+
+export type OrganizationInvitationDeclinedEventTarget = {
+  type: 'organization_invitation';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An invitation was declined by the user it was for. The actor is that user.
+ */
+export interface OrganizationInvitationDeclinedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_invitation.declined';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationInvitationDeclinedEventTarget;
+  data: OrganizationInvitationDeclinedEventData;
+  test?: true;
+}
+
+/**
+ * A pending invitation was withdrawn: its link no longer works.
+ */
+export interface OrganizationInvitationRevokedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  role: OrganizationRoleKey;
+}
+
+export type OrganizationInvitationRevokedEventTarget = {
+  type: 'organization_invitation';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A pending invitation was withdrawn: its link no longer works.
+ */
+export interface OrganizationInvitationRevokedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'organization_invitation.revoked';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: OrganizationInvitationRevokedEventTarget;
+  data: OrganizationInvitationRevokedEventData;
+  test?: true;
+}
+
 export type ProposalCreatedEventDataOperation = typeof ProposalCreatedEventDataOperation[keyof typeof ProposalCreatedEventDataOperation];
 
 
@@ -1988,7 +2663,7 @@ export interface SignInTestFinishedEvent {
   test?: true;
 }
 
-export type TulaEvent = UserCreatedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserEmailAddedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
+export type TulaEvent = UserCreatedEvent | UserImportedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserEmailAddedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | OrganizationCreatedEvent | OrganizationUpdatedEvent | OrganizationDeletedEvent | OrganizationMembershipAddedEvent | OrganizationMembershipRoleChangedEvent | OrganizationMembershipRemovedEvent | OrganizationRoleCreatedEvent | OrganizationRoleUpdatedEvent | OrganizationRoleDeletedEvent | OrganizationDomainClaimedEvent | OrganizationDomainVerifiedEvent | OrganizationDomainUpdatedEvent | OrganizationDomainRemovedEvent | OrganizationInvitationCreatedEvent | OrganizationInvitationAcceptedEvent | OrganizationInvitationDeclinedEvent | OrganizationInvitationRevokedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
 
 export type HookBeforeSignUpDataMethod = typeof HookBeforeSignUpDataMethod[keyof typeof HookBeforeSignUpDataMethod];
 
@@ -2147,6 +2822,10 @@ export const ErrorCode = {
   passwordsequence: 'password.sequence',
   passwordreused: 'password.reused',
   passwordnot_set: 'password.not_set',
+  importunsupported_algorithm: 'import.unsupported_algorithm',
+  importhash_malformed: 'import.hash_malformed',
+  importhash_parameters_too_weak: 'import.hash_parameters_too_weak',
+  importhash_parameters_too_costly: 'import.hash_parameters_too_costly',
   verificationinvalid_code: 'verification.invalid_code',
   verificationexpired: 'verification.expired',
   verificationtoo_many_attempts: 'verification.too_many_attempts',
@@ -2195,6 +2874,35 @@ export const ErrorCode = {
   devicenonce_required: 'device.nonce_required',
   devicebinding_not_supported: 'device.binding_not_supported',
   devicebinding_required: 'device.binding_required',
+  userlast_organization_manager: 'user.last_organization_manager',
+  organizationdisabled: 'organization.disabled',
+  organizationslug_taken: 'organization.slug_taken',
+  organizationmember_exists: 'organization.member_exists',
+  organizationlast_manager: 'organization.last_manager',
+  organizationrole_unknown: 'organization.role_unknown',
+  organizationnot_a_member: 'organization.not_a_member',
+  organizationcreation_disabled: 'organization.creation_disabled',
+  organizationlimit_reached: 'organization.limit_reached',
+  organizationpersonal_account_disabled: 'organization.personal_account_disabled',
+  organizationrole_exists: 'organization.role_exists',
+  organizationrole_in_use: 'organization.role_in_use',
+  organizationrole_built_in: 'organization.role_built_in',
+  organizationrole_limit: 'organization.role_limit',
+  organizationpermission_required: 'organization.permission_required',
+  organizationrole_not_assignable: 'organization.role_not_assignable',
+  organizationinvitation_exists: 'organization.invitation_exists',
+  organizationinvitation_not_found: 'organization.invitation_not_found',
+  organizationinvitation_expired: 'organization.invitation_expired',
+  organizationinvitation_revoked: 'organization.invitation_revoked',
+  organizationinvitation_used: 'organization.invitation_used',
+  organizationinvitation_wrong_account: 'organization.invitation_wrong_account',
+  organizationinvitation_email_unverified: 'organization.invitation_email_unverified',
+  organizationinvitation_role_gone: 'organization.invitation_role_gone',
+  organizationdomain_public: 'organization.domain_public',
+  organizationdomain_taken: 'organization.domain_taken',
+  organizationdomain_address_mismatch: 'organization.domain_address_mismatch',
+  organizationdomain_limit: 'organization.domain_limit',
+  organizationsuggestion_unavailable: 'organization.suggestion_unavailable',
   rate_limited: 'rate_limited',
   requestmalformed: 'request.malformed',
   requesttoo_large: 'request.too_large',
@@ -2591,6 +3299,9 @@ export interface AccessTokenClaims {
   amr?: string[];
   sp?: string;
   cnf?: AccessTokenClaimsCnf;
+  org_id?: string;
+  org_role?: string;
+  org_perms?: string[];
   ext?: AccessTokenClaimsExt;
 }
 
@@ -3020,6 +3731,117 @@ export interface CreateUserRequest {
   emailVerified?: boolean;
 }
 
+export type ImportSkipReason = typeof ImportSkipReason[keyof typeof ImportSkipReason];
+
+
+export const ImportSkipReason = {
+  email_exists: 'email_exists',
+  repeated_in_batch: 'repeated_in_batch',
+} as const;
+
+export type ImportRowResult = {
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  index: number;
+  status: 'created';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+} | {
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  index: number;
+  status: 'skipped';
+  reason: ImportSkipReason;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id?: string;
+  sameExternalId?: boolean;
+} | {
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  index: number;
+  status: 'refused';
+  code: string;
+  message: string;
+};
+
+export interface ImportUsersResult {
+  results: ImportRowResult[];
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  created: number;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  skipped: number;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  refused: number;
+}
+
+export type ImportPasswordParams = {[key: string]: string | number};
+
+export interface ImportPassword {
+  /** @maxLength 64 */
+  algorithm: string;
+  /** @maxLength 1024 */
+  hash: string;
+  params?: ImportPasswordParams;
+}
+
+export type ImportUserRowMetadata = {[key: string]: unknown};
+
+export interface ImportUserRow {
+  /** @maxLength 320 */
+  email: string;
+  emailVerified: boolean;
+  /** @maxLength 200 */
+  name?: string;
+  metadata?: ImportUserRowMetadata;
+  /**
+     * @minLength 1
+     * @maxLength 256
+     */
+  externalId?: string;
+  password?: ImportPassword;
+}
+
+export interface FirebaseScryptParams {
+  /** @maxLength 512 */
+  signerKey: string;
+  /** @maxLength 256 */
+  saltSeparator: string;
+  /**
+     * @minimum -9007199254740991
+     * @maximum 9007199254740991
+     */
+  rounds: number;
+  /**
+     * @minimum -9007199254740991
+     * @maximum 9007199254740991
+     */
+  memCost: number;
+}
+
+export interface ImportUsersRequest {
+  /**
+     * @minItems 1
+     * @maxItems 500
+     */
+  users: ImportUserRow[];
+  firebaseScrypt?: FirebaseScryptParams;
+}
+
 export interface Passkey {
   id: string;
   name: string;
@@ -3163,6 +3985,7 @@ export type ActivityType = typeof ActivityType[keyof typeof ActivityType];
 
 export const ActivityType = {
   usercreated: 'user.created',
+  userimported: 'user.imported',
   useremail_verified: 'user.email_verified',
   userbanned: 'user.banned',
   userunbanned: 'user.unbanned',
@@ -3206,6 +4029,23 @@ export const ActivityType = {
   native_appcreated: 'native_app.created',
   native_appupdated: 'native_app.updated',
   native_appdeleted: 'native_app.deleted',
+  organizationcreated: 'organization.created',
+  organizationupdated: 'organization.updated',
+  organizationdeleted: 'organization.deleted',
+  organization_membershipadded: 'organization_membership.added',
+  organization_membershiprole_changed: 'organization_membership.role_changed',
+  organization_membershipremoved: 'organization_membership.removed',
+  organization_rolecreated: 'organization_role.created',
+  organization_roleupdated: 'organization_role.updated',
+  organization_roledeleted: 'organization_role.deleted',
+  organization_domainclaimed: 'organization_domain.claimed',
+  organization_domainverified: 'organization_domain.verified',
+  organization_domainupdated: 'organization_domain.updated',
+  organization_domainremoved: 'organization_domain.removed',
+  organization_invitationcreated: 'organization_invitation.created',
+  organization_invitationaccepted: 'organization_invitation.accepted',
+  organization_invitationdeclined: 'organization_invitation.declined',
+  organization_invitationrevoked: 'organization_invitation.revoked',
   proposalcreated: 'proposal.created',
   proposalapproved: 'proposal.approved',
   proposalexecuted: 'proposal.executed',
@@ -3411,6 +4251,9 @@ export interface EmailTemplates {
   identity_unlinked?: EmailTemplate;
   email_in_use?: EmailTemplate;
   email_added?: EmailTemplate;
+  organization_domain_verification?: EmailTemplate;
+  organization_domain_expiring?: EmailTemplate;
+  organization_invitation?: EmailTemplate;
 }
 
 export interface EmailSettings {
@@ -3492,6 +4335,15 @@ export type EnvironmentSettingsStateSettingsAgents = {
   testSignIn?: boolean | null;
 };
 
+export type EnvironmentSettingsStateSettingsOrganizations = {
+  enabled?: boolean;
+  allowUserCreated?: boolean;
+  maxCreatedPerUser?: number | null;
+  creatorRole?: OrganizationRoleKey;
+  defaultRole?: OrganizationRoleKey;
+  personalAccount?: boolean;
+};
+
 export type EnvironmentSettingsStateSettingsNotifications = {
   passwordChanged?: boolean;
   newSignIn?: boolean;
@@ -3534,6 +4386,7 @@ export type EnvironmentSettingsStateSettings = {
   urls: EnvironmentSettingsStateSettingsUrls;
   audit?: EnvironmentSettingsStateSettingsAudit;
   agents?: EnvironmentSettingsStateSettingsAgents;
+  organizations?: EnvironmentSettingsStateSettingsOrganizations;
   notifications?: EnvironmentSettingsStateSettingsNotifications;
   mfa?: EnvironmentSettingsStateSettingsMfa;
   passkeys?: EnvironmentSettingsStateSettingsPasskeys;
@@ -3624,6 +4477,15 @@ export type EnvironmentSettingsInputAgents = {
   testSignIn?: boolean | null;
 };
 
+export type EnvironmentSettingsInputOrganizations = {
+  enabled?: boolean;
+  allowUserCreated?: boolean;
+  maxCreatedPerUser?: number | null;
+  creatorRole?: OrganizationRoleKey;
+  defaultRole?: OrganizationRoleKey;
+  personalAccount?: boolean;
+};
+
 export type EnvironmentSettingsInputNotifications = {
   passwordChanged?: boolean;
   newSignIn?: boolean;
@@ -3666,6 +4528,7 @@ export interface EnvironmentSettingsInput {
   urls?: EnvironmentSettingsInputUrls;
   audit?: EnvironmentSettingsInputAudit;
   agents?: EnvironmentSettingsInputAgents;
+  organizations?: EnvironmentSettingsInputOrganizations;
   notifications?: EnvironmentSettingsInputNotifications;
   mfa?: EnvironmentSettingsInputMfa;
   passkeys?: EnvironmentSettingsInputPasskeys;
@@ -3698,6 +4561,12 @@ export type ClientConfigPhone = {
   enabled: boolean;
 };
 
+export type ClientConfigOrganizations = {
+  enabled: boolean;
+  allowUserCreated: boolean;
+  personalAccount: boolean;
+};
+
 export interface ClientConfig {
   app: ClientConfigApp;
   signIn: ClientConfigSignIn;
@@ -3705,6 +4574,7 @@ export interface ClientConfig {
   password: PasswordPolicy;
   mfa?: ClientConfigMfa;
   phone?: ClientConfigPhone;
+  organizations?: ClientConfigOrganizations;
 }
 
 export interface OAuthProviderSettings {
@@ -3979,6 +4849,7 @@ export type CreateWebhookEndpointRequestEventTypesItem = typeof CreateWebhookEnd
 
 export const CreateWebhookEndpointRequestEventTypesItem = {
   usercreated: 'user.created',
+  userimported: 'user.imported',
   useremail_verified: 'user.email_verified',
   userbanned: 'user.banned',
   userunbanned: 'user.unbanned',
@@ -4022,6 +4893,23 @@ export const CreateWebhookEndpointRequestEventTypesItem = {
   native_appcreated: 'native_app.created',
   native_appupdated: 'native_app.updated',
   native_appdeleted: 'native_app.deleted',
+  organizationcreated: 'organization.created',
+  organizationupdated: 'organization.updated',
+  organizationdeleted: 'organization.deleted',
+  organization_membershipadded: 'organization_membership.added',
+  organization_membershiprole_changed: 'organization_membership.role_changed',
+  organization_membershipremoved: 'organization_membership.removed',
+  organization_rolecreated: 'organization_role.created',
+  organization_roleupdated: 'organization_role.updated',
+  organization_roledeleted: 'organization_role.deleted',
+  organization_domainclaimed: 'organization_domain.claimed',
+  organization_domainverified: 'organization_domain.verified',
+  organization_domainupdated: 'organization_domain.updated',
+  organization_domainremoved: 'organization_domain.removed',
+  organization_invitationcreated: 'organization_invitation.created',
+  organization_invitationaccepted: 'organization_invitation.accepted',
+  organization_invitationdeclined: 'organization_invitation.declined',
+  organization_invitationrevoked: 'organization_invitation.revoked',
   proposalcreated: 'proposal.created',
   proposalapproved: 'proposal.approved',
   proposalexecuted: 'proposal.executed',
@@ -4039,7 +4927,7 @@ export interface CreateWebhookEndpointRequest {
   url: string;
   /**
      * @minItems 1
-     * @maxItems 50
+     * @maxItems 68
      */
   eventTypes: CreateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -4050,6 +4938,7 @@ export type UpdateWebhookEndpointRequestEventTypesItem = typeof UpdateWebhookEnd
 
 export const UpdateWebhookEndpointRequestEventTypesItem = {
   usercreated: 'user.created',
+  userimported: 'user.imported',
   useremail_verified: 'user.email_verified',
   userbanned: 'user.banned',
   userunbanned: 'user.unbanned',
@@ -4093,6 +4982,23 @@ export const UpdateWebhookEndpointRequestEventTypesItem = {
   native_appcreated: 'native_app.created',
   native_appupdated: 'native_app.updated',
   native_appdeleted: 'native_app.deleted',
+  organizationcreated: 'organization.created',
+  organizationupdated: 'organization.updated',
+  organizationdeleted: 'organization.deleted',
+  organization_membershipadded: 'organization_membership.added',
+  organization_membershiprole_changed: 'organization_membership.role_changed',
+  organization_membershipremoved: 'organization_membership.removed',
+  organization_rolecreated: 'organization_role.created',
+  organization_roleupdated: 'organization_role.updated',
+  organization_roledeleted: 'organization_role.deleted',
+  organization_domainclaimed: 'organization_domain.claimed',
+  organization_domainverified: 'organization_domain.verified',
+  organization_domainupdated: 'organization_domain.updated',
+  organization_domainremoved: 'organization_domain.removed',
+  organization_invitationcreated: 'organization_invitation.created',
+  organization_invitationaccepted: 'organization_invitation.accepted',
+  organization_invitationdeclined: 'organization_invitation.declined',
+  organization_invitationrevoked: 'organization_invitation.revoked',
   proposalcreated: 'proposal.created',
   proposalapproved: 'proposal.approved',
   proposalexecuted: 'proposal.executed',
@@ -4110,7 +5016,7 @@ export interface UpdateWebhookEndpointRequest {
   url?: string;
   /**
      * @minItems 1
-     * @maxItems 50
+     * @maxItems 68
      */
   eventTypes?: UpdateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -4239,6 +5145,7 @@ export type SendTestWebhookRequestEventType = typeof SendTestWebhookRequestEvent
 
 export const SendTestWebhookRequestEventType = {
   usercreated: 'user.created',
+  userimported: 'user.imported',
   useremail_verified: 'user.email_verified',
   userbanned: 'user.banned',
   userunbanned: 'user.unbanned',
@@ -4282,6 +5189,23 @@ export const SendTestWebhookRequestEventType = {
   native_appcreated: 'native_app.created',
   native_appupdated: 'native_app.updated',
   native_appdeleted: 'native_app.deleted',
+  organizationcreated: 'organization.created',
+  organizationupdated: 'organization.updated',
+  organizationdeleted: 'organization.deleted',
+  organization_membershipadded: 'organization_membership.added',
+  organization_membershiprole_changed: 'organization_membership.role_changed',
+  organization_membershipremoved: 'organization_membership.removed',
+  organization_rolecreated: 'organization_role.created',
+  organization_roleupdated: 'organization_role.updated',
+  organization_roledeleted: 'organization_role.deleted',
+  organization_domainclaimed: 'organization_domain.claimed',
+  organization_domainverified: 'organization_domain.verified',
+  organization_domainupdated: 'organization_domain.updated',
+  organization_domainremoved: 'organization_domain.removed',
+  organization_invitationcreated: 'organization_invitation.created',
+  organization_invitationaccepted: 'organization_invitation.accepted',
+  organization_invitationdeclined: 'organization_invitation.declined',
+  organization_invitationrevoked: 'organization_invitation.revoked',
   proposalcreated: 'proposal.created',
   proposalapproved: 'proposal.approved',
   proposalexecuted: 'proposal.executed',
@@ -4451,6 +5375,384 @@ export interface UpdateHookRequest {
      */
   deadlineMs?: number;
   failureMode?: UpdateHookRequestFailureMode;
+}
+
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  /** @nullable */
+  createdBy: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  updatedAt: string;
+}
+
+export interface OrganizationList {
+  meta: PaginationMeta;
+  data: Organization[];
+}
+
+export interface OrganizationSearchQuery {
+  /**
+     * @minimum 1
+     * @maximum 1000000
+     */
+  page?: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  size?: number;
+  /** @maxLength 100 */
+  q?: string;
+}
+
+/**
+ * @minLength 2
+ * @maxLength 48
+ * @pattern ^[a-z0-9]+(?:-[a-z0-9]+)*$
+ */
+export type OrganizationSlug = string;
+
+export interface CreateOrganizationRequest {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+  slug: OrganizationSlug;
+}
+
+export interface UpdateOrganizationRequest {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name?: string;
+  slug?: OrganizationSlug;
+}
+
+export interface OrganizationMembership {
+  id: string;
+  organizationId: string;
+  userId: string;
+  role: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  updatedAt: string;
+}
+
+export interface OrganizationMembershipList {
+  meta: PaginationMeta;
+  data: OrganizationMembership[];
+}
+
+export interface OrganizationPageQuery {
+  /**
+     * @minimum 1
+     * @maximum 1000000
+     */
+  page?: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  size?: number;
+}
+
+export interface AddOrganizationMemberRequest {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  userId: string;
+  role: OrganizationRoleKey;
+}
+
+export interface UpdateOrganizationMemberRequest {
+  role: OrganizationRoleKey;
+}
+
+export interface OrganizationRole {
+  id: string;
+  key: string;
+  name: string;
+  permissions: string[];
+  builtIn: boolean;
+  /**
+     * @minimum 1
+     * @maximum 9007199254740991
+     */
+  version: number;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  updatedAt: string;
+}
+
+export interface OrganizationRoleList {
+  data: OrganizationRole[];
+}
+
+/**
+ * @maxItems 32
+ */
+export type OrganizationRolePermissions = string[];
+
+export interface CreateOrganizationRoleRequest {
+  key: OrganizationRoleKey;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+  permissions: OrganizationRolePermissions;
+}
+
+export interface UpdateOrganizationRoleRequest {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name?: string;
+  permissions?: OrganizationRolePermissions;
+}
+
+export interface UserOrganization {
+  id: string;
+  name: string;
+  slug: string;
+  role: string;
+  permissions: string[];
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+}
+
+export interface UserOrganizationList {
+  /** @nullable */
+  activeOrganizationId: string | null;
+  meta: PaginationMeta;
+  data: UserOrganization[];
+}
+
+export interface ActiveOrganization {
+  sessionId: string;
+  /** @nullable */
+  organizationId: string | null;
+  accessToken?: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  accessTokenExpiresAt?: string;
+}
+
+export interface SetActiveOrganizationRequest {
+  organizationId: string | null;
+}
+
+export type OrganizationDomainMode = typeof OrganizationDomainMode[keyof typeof OrganizationDomainMode];
+
+
+export const OrganizationDomainMode = {
+  suggest: 'suggest',
+  auto_join: 'auto_join',
+} as const;
+
+export type OrganizationDomainStatus = typeof OrganizationDomainStatus[keyof typeof OrganizationDomainStatus];
+
+
+export const OrganizationDomainStatus = {
+  pending: 'pending',
+  verified: 'verified',
+  needs_reverification: 'needs_reverification',
+} as const;
+
+export interface OrganizationDomain {
+  id: string;
+  domain: string;
+  mode: OrganizationDomainMode;
+  status: OrganizationDomainStatus;
+  verifiedAt: string | null;
+  expiresAt: string | null;
+  codeExpiresAt: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  updatedAt: string;
+}
+
+export interface OrganizationDomainList {
+  data: OrganizationDomain[];
+}
+
+/**
+ * @maxLength 506
+ */
+export type OrganizationDomainName = string;
+
+export interface StartOrganizationDomainRequest {
+  domain: OrganizationDomainName;
+  /** @maxLength 320 */
+  email: string;
+  mode: OrganizationDomainMode;
+}
+
+export interface VerifyOrganizationDomainRequest {
+  /** @pattern ^\d{6}$ */
+  code: string;
+}
+
+export interface UpdateOrganizationDomainRequest {
+  mode: OrganizationDomainMode;
+}
+
+export interface OrganizationSuggestion {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+export interface OrganizationSuggestionList {
+  data: OrganizationSuggestion[];
+}
+
+export type OrganizationInvitationStatus = typeof OrganizationInvitationStatus[keyof typeof OrganizationInvitationStatus];
+
+
+export const OrganizationInvitationStatus = {
+  pending: 'pending',
+  accepted: 'accepted',
+  declined: 'declined',
+  revoked: 'revoked',
+  expired: 'expired',
+} as const;
+
+export interface OrganizationInvitation {
+  id: string;
+  organizationId: string;
+  email: string;
+  role: string;
+  status: OrganizationInvitationStatus;
+  /** @nullable */
+  invitedBy: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  expiresAt: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+}
+
+export interface OrganizationInvitationList {
+  meta: PaginationMeta;
+  data: OrganizationInvitation[];
+}
+
+export type OrganizationInvitationQueryStatus = typeof OrganizationInvitationQueryStatus[keyof typeof OrganizationInvitationQueryStatus];
+
+
+export const OrganizationInvitationQueryStatus = {
+  pending: 'pending',
+  accepted: 'accepted',
+  declined: 'declined',
+  revoked: 'revoked',
+  expired: 'expired',
+} as const;
+
+export interface OrganizationInvitationQuery {
+  /**
+     * @minimum 1
+     * @maximum 1000000
+     */
+  page?: number;
+  /**
+     * @minimum 1
+     * @maximum 100
+     */
+  size?: number;
+  status?: OrganizationInvitationQueryStatus;
+}
+
+export interface CreateOrganizationInvitationRequest {
+  /** @maxLength 320 */
+  email: string;
+  role: OrganizationRoleKey;
+  /** @maxLength 2048 */
+  redirectUrl: string;
+}
+
+export interface InvitationPreview {
+  organizationName: string;
+  role: string;
+  email: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  expiresAt: string;
+}
+
+export interface InvitationTokenRequest {
+  /**
+     * @minLength 1
+     * @maxLength 2048
+     */
+  token: string;
+}
+
+export interface AcceptedInvitation {
+  id: string;
+  name: string;
+  slug: string;
+  role: string;
+  permissions: string[];
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+}
+
+export interface MyOrganizationInvitation {
+  id: string;
+  organizationName: string;
+  role: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  expiresAt: string;
+}
+
+export interface MyOrganizationInvitationList {
+  meta: PaginationMeta;
+  data: MyOrganizationInvitation[];
+}
+
+export interface OrganizationMember {
+  userId: string;
+  /** @nullable */
+  name: string | null;
+  /** @nullable */
+  email: string | null;
+  role: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+}
+
+export interface OrganizationMemberList {
+  meta: PaginationMeta;
+  data: OrganizationMember[];
+}
+
+export interface AssignableRole {
+  key: string;
+  name: string;
+}
+
+export interface AssignableRoleList {
+  data: AssignableRole[];
+}
+
+export interface UserMembership {
+  organizationId: string;
+  name: string;
+  slug: string;
+  role: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  joinedAt: string;
+}
+
+export interface UserMembershipList {
+  meta: PaginationMeta;
+  data: UserMembership[];
 }
 
 export type AppleAppSiteAssociationWebcredentials = {
@@ -4701,7 +6003,7 @@ export interface MessagePreview {
 
 export type MessagePreviewRequest = {
   channel: 'email';
-  kind: 'email_verification' | 'password_reset' | 'sign_in' | 'step_up' | 'account_exists' | 'no_account' | 'no_account_sign_in' | 'password_changed' | 'password_added' | 'password_reset_completed' | 'password_added_by_reset' | 'password_set_by_admin' | 'password_added_by_admin' | 'password_removed' | 'new_sign_in' | 'mfa_enabled' | 'mfa_disabled' | 'mfa_reset_by_admin' | 'backup_codes_regenerated' | 'backup_code_used' | 'sms_factor_enabled' | 'sms_factor_removed' | 'passkey_added' | 'passkey_removed' | 'identity_linked' | 'identity_unlinked' | 'email_in_use' | 'email_added';
+  kind: 'email_verification' | 'password_reset' | 'sign_in' | 'step_up' | 'account_exists' | 'no_account' | 'no_account_sign_in' | 'password_changed' | 'password_added' | 'password_reset_completed' | 'password_added_by_reset' | 'password_set_by_admin' | 'password_added_by_admin' | 'password_removed' | 'new_sign_in' | 'mfa_enabled' | 'mfa_disabled' | 'mfa_reset_by_admin' | 'backup_codes_regenerated' | 'backup_code_used' | 'sms_factor_enabled' | 'sms_factor_removed' | 'passkey_added' | 'passkey_removed' | 'identity_linked' | 'identity_unlinked' | 'email_in_use' | 'email_added' | 'organization_domain_verification' | 'organization_domain_expiring' | 'organization_invitation';
   template?: {
   /** @maxLength 200 */
   subject?: string;
@@ -5171,6 +6473,74 @@ export const ListWebhookDeliveriesState = {
   delivered: 'delivered',
   failed: 'failed',
 } as const;
+
+export type ListOrganizationsParams = {
+/**
+ * @minimum 1
+ * @maximum 1000000
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+size?: number;
+/**
+ * @maxLength 100
+ */
+q?: string;
+};
+
+export type ListOrganizationMembershipsParams = {
+/**
+ * @minimum 1
+ * @maximum 1000000
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+size?: number;
+};
+
+export type ListOrganizationInvitationsParams = {
+/**
+ * @minimum 1
+ * @maximum 1000000
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+size?: number;
+status?: ListOrganizationInvitationsStatus;
+};
+
+export type ListOrganizationInvitationsStatus = typeof ListOrganizationInvitationsStatus[keyof typeof ListOrganizationInvitationsStatus];
+
+
+export const ListOrganizationInvitationsStatus = {
+  pending: 'pending',
+  accepted: 'accepted',
+  declined: 'declined',
+  revoked: 'revoked',
+  expired: 'expired',
+} as const;
+
+export type ListUserOrganizationsParams = {
+/**
+ * @minimum 1
+ * @maximum 1000000
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+size?: number;
+};
 
 export type GetSmsUsageParams = {
 /**
@@ -6469,6 +7839,95 @@ export const useCreateUser = <TError = ErrorEnvelope,
       return useMutation(getCreateUserMutationOptions(options), queryClient);
     }
 
+export const getImportUsersUrl = () => {
+
+
+
+
+  return `/v1/admin/users/import`
+}
+
+/**
+ * Creates up to 500 users in one call, with the password hash they have in the system they come from (`bcrypt`, `argon2id` or `argon2i`). The call is not all-or-nothing: every row is created or not on its own, and the answer says what became of each: `created` (with the user’s id), `skipped` (the normalized email exists already, or an earlier row of the call has it) or `refused` (with a contract error code: an invalid email, a malformed hash, an algorithm that is not supported, parameters below the minimum or above the maximum). Importing the same file again creates nobody twice. An imported user signs in with their old password; the first successful sign-in replaces the hash with an argon2id one. Each user is recorded as `user.imported`, not `user.created`, so a migration does not fire a `user.created` delivery per user. A hash is never returned.
+ * @summary Import users
+ */
+export const importUsers = async (importUsersRequest: ImportUsersRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<ImportUsersResult> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<ImportUsersResult>(getImportUsersUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(importUsersRequest)
+  }
+);}
+
+
+
+
+
+export const getImportUsersMutationKey = () => ['importUsers'] as const;
+
+export const getImportUsersMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof importUsers>>, TError,ImportUsersMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof importUsers>>, TError,ImportUsersMutationVariables, TContext> => {
+
+const mutationKey = getImportUsersMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof importUsers>>, ImportUsersMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  importUsers(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ImportUsersMutationResult = NonNullable<Awaited<ReturnType<typeof importUsers>>>
+    export type ImportUsersMutationBody = ImportUsersRequest
+    export type ImportUsersMutationError = ErrorEnvelope
+    export type ImportUsersMutationVariables = {data: ImportUsersRequest}
+
+    /**
+ * @summary Import users
+ */
+export const useImportUsers = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof importUsers>>, TError,ImportUsersMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof importUsers>>,
+        TError,
+        ImportUsersMutationVariables,
+        TContext
+      > => {
+      return useMutation(getImportUsersMutationOptions(options), queryClient);
+    }
+
 export const getGetUserUrl = (userId: string,) => {
 
 
@@ -6579,7 +8038,7 @@ export const getDeleteUserUrl = (userId: string,) => {
 }
 
 /**
- * Ends the user’s sessions and deletes them with everything they own.
+ * Ends the user’s sessions and deletes them with everything they own. Refused with `user.last_organization_manager` (409, `params.organizationIds`) while they are the only member who holds `org:sys:memberships:manage` of an organization: add another manager or delete the organization first. No user data is deleted then.
  * @summary Delete a user
  */
 export const deleteUser = async (userId: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
@@ -9284,6 +10743,2159 @@ export const useDeleteHook = <TError = ErrorEnvelope,
       > => {
       return useMutation(getDeleteHookMutationOptions(options), queryClient);
     }
+
+export const getListOrganizationsUrl = (params?: ListOrganizationsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/organizations?${stringifiedParams}` : `/v1/admin/organizations`
+}
+
+/**
+ * Organizations of the secret key’s environment, newest first, one page at a time. `q` keeps the organizations whose name or slug starts with it (ignoring case), counted and paged as a match. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary List organizations
+ */
+export const listOrganizations = async (params?: ListOrganizationsParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationList> => {
+
+  return dashboardFetch<OrganizationList>(getListOrganizationsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListOrganizationsQueryKey = (params?: ListOrganizationsParams,) => {
+    return [
+    `/v1/admin/organizations`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListOrganizationsQueryOptions = <TData = Awaited<ReturnType<typeof listOrganizations>>, TError = ErrorEnvelope>(params?: ListOrganizationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizations>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListOrganizationsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listOrganizations>>> = ({ signal }) => listOrganizations(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listOrganizations>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListOrganizationsQueryResult = NonNullable<Awaited<ReturnType<typeof listOrganizations>>>
+export type ListOrganizationsQueryError = ErrorEnvelope
+
+
+export function useListOrganizations<TData = Awaited<ReturnType<typeof listOrganizations>>, TError = ErrorEnvelope>(
+ params: undefined |  ListOrganizationsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizations>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizations>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizations>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizations<TData = Awaited<ReturnType<typeof listOrganizations>>, TError = ErrorEnvelope>(
+ params?: ListOrganizationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizations>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizations>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizations>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizations<TData = Awaited<ReturnType<typeof listOrganizations>>, TError = ErrorEnvelope>(
+ params?: ListOrganizationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizations>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List organizations
+ */
+
+export function useListOrganizations<TData = Awaited<ReturnType<typeof listOrganizations>>, TError = ErrorEnvelope>(
+ params?: ListOrganizationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizations>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListOrganizationsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateOrganizationUrl = () => {
+
+
+
+
+  return `/v1/admin/organizations`
+}
+
+/**
+ * Creates an organization with no member. The `slug` is lower-case letters and digits joined by single hyphens, 2 to 48 characters, and unique in the environment (a taken one answers `organization.slug_taken`, 409). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Create an organization
+ */
+export const createOrganization = async (createOrganizationRequest: CreateOrganizationRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<Organization> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<Organization>(getCreateOrganizationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createOrganizationRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateOrganizationMutationKey = () => ['createOrganization'] as const;
+
+export const getCreateOrganizationMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createOrganization>>, TError,CreateOrganizationMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createOrganization>>, TError,CreateOrganizationMutationVariables, TContext> => {
+
+const mutationKey = getCreateOrganizationMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createOrganization>>, CreateOrganizationMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createOrganization(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateOrganizationMutationResult = NonNullable<Awaited<ReturnType<typeof createOrganization>>>
+    export type CreateOrganizationMutationBody = CreateOrganizationRequest
+    export type CreateOrganizationMutationError = ErrorEnvelope
+    export type CreateOrganizationMutationVariables = {data: CreateOrganizationRequest}
+
+    /**
+ * @summary Create an organization
+ */
+export const useCreateOrganization = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createOrganization>>, TError,CreateOrganizationMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createOrganization>>,
+        TError,
+        CreateOrganizationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateOrganizationMutationOptions(options), queryClient);
+    }
+
+export const getGetOrganizationUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}`
+}
+
+/**
+ * One organization of the environment. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Get an organization
+ */
+export const getOrganization = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<Organization> => {
+
+  return dashboardFetch<Organization>(getGetOrganizationUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetOrganizationQueryKey = (id: string,) => {
+    return [
+    `/v1/admin/organizations/${id}`
+    ] as const;
+    }
+
+
+export const getGetOrganizationQueryOptions = <TData = Awaited<ReturnType<typeof getOrganization>>, TError = ErrorEnvelope>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganization>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetOrganizationQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOrganization>>> = ({ signal }) => getOrganization(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getOrganization>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetOrganizationQueryResult = NonNullable<Awaited<ReturnType<typeof getOrganization>>>
+export type GetOrganizationQueryError = ErrorEnvelope
+
+
+export function useGetOrganization<TData = Awaited<ReturnType<typeof getOrganization>>, TError = ErrorEnvelope>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganization>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getOrganization>>,
+          TError,
+          Awaited<ReturnType<typeof getOrganization>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOrganization<TData = Awaited<ReturnType<typeof getOrganization>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganization>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getOrganization>>,
+          TError,
+          Awaited<ReturnType<typeof getOrganization>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOrganization<TData = Awaited<ReturnType<typeof getOrganization>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganization>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get an organization
+ */
+
+export function useGetOrganization<TData = Awaited<ReturnType<typeof getOrganization>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganization>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetOrganizationQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateOrganizationUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}`
+}
+
+/**
+ * Changes the organization’s `name`, its `slug` or both. A request that changes nothing writes nothing. Recorded in the audit log by the names of the fields that changed, never their values. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Rename an organization
+ */
+export const updateOrganization = async (id: string,
+    updateOrganizationRequest: UpdateOrganizationRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<Organization> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<Organization>(getUpdateOrganizationUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateOrganizationRequest)
+  }
+);}
+
+
+
+
+
+export const getUpdateOrganizationMutationKey = () => ['updateOrganization'] as const;
+
+export const getUpdateOrganizationMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrganization>>, TError,UpdateOrganizationMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateOrganization>>, TError,UpdateOrganizationMutationVariables, TContext> => {
+
+const mutationKey = getUpdateOrganizationMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateOrganization>>, UpdateOrganizationMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateOrganization(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateOrganizationMutationResult = NonNullable<Awaited<ReturnType<typeof updateOrganization>>>
+    export type UpdateOrganizationMutationBody = UpdateOrganizationRequest
+    export type UpdateOrganizationMutationError = ErrorEnvelope
+    export type UpdateOrganizationMutationVariables = {id: string;data: UpdateOrganizationRequest}
+
+    /**
+ * @summary Rename an organization
+ */
+export const useUpdateOrganization = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrganization>>, TError,UpdateOrganizationMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateOrganization>>,
+        TError,
+        UpdateOrganizationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateOrganizationMutationOptions(options), queryClient);
+    }
+
+export const getDeleteOrganizationUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}`
+}
+
+/**
+ * Deletes the organization and its memberships. The users keep their accounts; a session that had the organization active leaves it at its next refresh. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Delete an organization
+ */
+export const deleteOrganization = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
+
+  return dashboardFetch<void>(getDeleteOrganizationUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteOrganizationMutationKey = () => ['deleteOrganization'] as const;
+
+export const getDeleteOrganizationMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteOrganization>>, TError,DeleteOrganizationMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteOrganization>>, TError,DeleteOrganizationMutationVariables, TContext> => {
+
+const mutationKey = getDeleteOrganizationMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteOrganization>>, DeleteOrganizationMutationVariables> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteOrganization(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteOrganizationMutationResult = NonNullable<Awaited<ReturnType<typeof deleteOrganization>>>
+
+    export type DeleteOrganizationMutationError = ErrorEnvelope
+    export type DeleteOrganizationMutationVariables = {id: string}
+
+    /**
+ * @summary Delete an organization
+ */
+export const useDeleteOrganization = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteOrganization>>, TError,DeleteOrganizationMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteOrganization>>,
+        TError,
+        DeleteOrganizationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteOrganizationMutationOptions(options), queryClient);
+    }
+
+export const getListOrganizationMembershipsUrl = (id: string,
+    params?: ListOrganizationMembershipsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/organizations/${id}/memberships?${stringifiedParams}` : `/v1/admin/organizations/${id}/memberships`
+}
+
+/**
+ * The organization’s memberships, oldest first, one page at a time. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary List an organization’s members
+ */
+export const listOrganizationMemberships = async (id: string,
+    params?: ListOrganizationMembershipsParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationMembershipList> => {
+
+  return dashboardFetch<OrganizationMembershipList>(getListOrganizationMembershipsUrl(id,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListOrganizationMembershipsQueryKey = (id: string,
+    params?: ListOrganizationMembershipsParams,) => {
+    return [
+    `/v1/admin/organizations/${id}/memberships`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListOrganizationMembershipsQueryOptions = <TData = Awaited<ReturnType<typeof listOrganizationMemberships>>, TError = ErrorEnvelope>(id: string,
+    params?: ListOrganizationMembershipsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationMemberships>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListOrganizationMembershipsQueryKey(id,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listOrganizationMemberships>>> = ({ signal }) => listOrganizationMemberships(id,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listOrganizationMemberships>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListOrganizationMembershipsQueryResult = NonNullable<Awaited<ReturnType<typeof listOrganizationMemberships>>>
+export type ListOrganizationMembershipsQueryError = ErrorEnvelope
+
+
+export function useListOrganizationMemberships<TData = Awaited<ReturnType<typeof listOrganizationMemberships>>, TError = ErrorEnvelope>(
+ id: string,
+    params: undefined |  ListOrganizationMembershipsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationMemberships>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizationMemberships>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizationMemberships>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizationMemberships<TData = Awaited<ReturnType<typeof listOrganizationMemberships>>, TError = ErrorEnvelope>(
+ id: string,
+    params?: ListOrganizationMembershipsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationMemberships>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizationMemberships>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizationMemberships>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizationMemberships<TData = Awaited<ReturnType<typeof listOrganizationMemberships>>, TError = ErrorEnvelope>(
+ id: string,
+    params?: ListOrganizationMembershipsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationMemberships>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List an organization’s members
+ */
+
+export function useListOrganizationMemberships<TData = Awaited<ReturnType<typeof listOrganizationMemberships>>, TError = ErrorEnvelope>(
+ id: string,
+    params?: ListOrganizationMembershipsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationMemberships>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListOrganizationMembershipsQueryOptions(id,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAddOrganizationMemberUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}/memberships`
+}
+
+/**
+ * Adds an existing user with the role of the given key (`admin` and `member` are built in). A user who is a member already answers `organization.member_exists` (409), and a key that names no role `organization.role_unknown` (422). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Add a member to an organization
+ */
+export const addOrganizationMember = async (id: string,
+    addOrganizationMemberRequest: AddOrganizationMemberRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationMembership> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<OrganizationMembership>(getAddOrganizationMemberUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(addOrganizationMemberRequest)
+  }
+);}
+
+
+
+
+
+export const getAddOrganizationMemberMutationKey = () => ['addOrganizationMember'] as const;
+
+export const getAddOrganizationMemberMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addOrganizationMember>>, TError,AddOrganizationMemberMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof addOrganizationMember>>, TError,AddOrganizationMemberMutationVariables, TContext> => {
+
+const mutationKey = getAddOrganizationMemberMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof addOrganizationMember>>, AddOrganizationMemberMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  addOrganizationMember(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AddOrganizationMemberMutationResult = NonNullable<Awaited<ReturnType<typeof addOrganizationMember>>>
+    export type AddOrganizationMemberMutationBody = AddOrganizationMemberRequest
+    export type AddOrganizationMemberMutationError = ErrorEnvelope
+    export type AddOrganizationMemberMutationVariables = {id: string;data: AddOrganizationMemberRequest}
+
+    /**
+ * @summary Add a member to an organization
+ */
+export const useAddOrganizationMember = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addOrganizationMember>>, TError,AddOrganizationMemberMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof addOrganizationMember>>,
+        TError,
+        AddOrganizationMemberMutationVariables,
+        TContext
+      > => {
+      return useMutation(getAddOrganizationMemberMutationOptions(options), queryClient);
+    }
+
+export const getUpdateOrganizationMemberUrl = (id: string,
+    userId: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}/memberships/${userId}`
+}
+
+/**
+ * Gives the member another role. The member’s sessions carry it from their next refresh. The last member who holds `org:sys:memberships:manage` cannot be moved to a role without it (`organization.last_manager`, 409). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Change a member’s role
+ */
+export const updateOrganizationMember = async (id: string,
+    userId: string,
+    updateOrganizationMemberRequest: UpdateOrganizationMemberRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationMembership> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<OrganizationMembership>(getUpdateOrganizationMemberUrl(id,userId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateOrganizationMemberRequest)
+  }
+);}
+
+
+
+
+
+export const getUpdateOrganizationMemberMutationKey = () => ['updateOrganizationMember'] as const;
+
+export const getUpdateOrganizationMemberMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrganizationMember>>, TError,UpdateOrganizationMemberMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateOrganizationMember>>, TError,UpdateOrganizationMemberMutationVariables, TContext> => {
+
+const mutationKey = getUpdateOrganizationMemberMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateOrganizationMember>>, UpdateOrganizationMemberMutationVariables> = (props) => {
+          const {id,userId,data} = props ?? {};
+
+          return  updateOrganizationMember(id,userId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateOrganizationMemberMutationResult = NonNullable<Awaited<ReturnType<typeof updateOrganizationMember>>>
+    export type UpdateOrganizationMemberMutationBody = UpdateOrganizationMemberRequest
+    export type UpdateOrganizationMemberMutationError = ErrorEnvelope
+    export type UpdateOrganizationMemberMutationVariables = {id: string;userId: string;data: UpdateOrganizationMemberRequest}
+
+    /**
+ * @summary Change a member’s role
+ */
+export const useUpdateOrganizationMember = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrganizationMember>>, TError,UpdateOrganizationMemberMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateOrganizationMember>>,
+        TError,
+        UpdateOrganizationMemberMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateOrganizationMemberMutationOptions(options), queryClient);
+    }
+
+export const getRemoveOrganizationMemberUrl = (id: string,
+    userId: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}/memberships/${userId}`
+}
+
+/**
+ * Removes the membership. The user keeps their account; a session that had the organization active leaves it at its next refresh. The last member who holds `org:sys:memberships:manage` cannot be removed (`organization.last_manager`, 409). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Remove a member from an organization
+ */
+export const removeOrganizationMember = async (id: string,
+    userId: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
+
+  return dashboardFetch<void>(getRemoveOrganizationMemberUrl(id,userId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRemoveOrganizationMemberMutationKey = () => ['removeOrganizationMember'] as const;
+
+export const getRemoveOrganizationMemberMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeOrganizationMember>>, TError,RemoveOrganizationMemberMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof removeOrganizationMember>>, TError,RemoveOrganizationMemberMutationVariables, TContext> => {
+
+const mutationKey = getRemoveOrganizationMemberMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof removeOrganizationMember>>, RemoveOrganizationMemberMutationVariables> = (props) => {
+          const {id,userId} = props ?? {};
+
+          return  removeOrganizationMember(id,userId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RemoveOrganizationMemberMutationResult = NonNullable<Awaited<ReturnType<typeof removeOrganizationMember>>>
+
+    export type RemoveOrganizationMemberMutationError = ErrorEnvelope
+    export type RemoveOrganizationMemberMutationVariables = {id: string;userId: string}
+
+    /**
+ * @summary Remove a member from an organization
+ */
+export const useRemoveOrganizationMember = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeOrganizationMember>>, TError,RemoveOrganizationMemberMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof removeOrganizationMember>>,
+        TError,
+        RemoveOrganizationMemberMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRemoveOrganizationMemberMutationOptions(options), queryClient);
+    }
+
+export const getListOrganizationRolesUrl = () => {
+
+
+
+
+  return `/v1/admin/organization-roles`
+}
+
+/**
+ * The environment’s roles: the built-in `admin` and `member` first, then the custom roles by key. Roles are shared by all the environment’s organizations. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary List organization roles
+ */
+export const listOrganizationRoles = async ( options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationRoleList> => {
+
+  return dashboardFetch<OrganizationRoleList>(getListOrganizationRolesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListOrganizationRolesQueryKey = () => {
+    return [
+    `/v1/admin/organization-roles`
+    ] as const;
+    }
+
+
+export const getListOrganizationRolesQueryOptions = <TData = Awaited<ReturnType<typeof listOrganizationRoles>>, TError = ErrorEnvelope>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationRoles>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListOrganizationRolesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listOrganizationRoles>>> = ({ signal }) => listOrganizationRoles({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listOrganizationRoles>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListOrganizationRolesQueryResult = NonNullable<Awaited<ReturnType<typeof listOrganizationRoles>>>
+export type ListOrganizationRolesQueryError = ErrorEnvelope
+
+
+export function useListOrganizationRoles<TData = Awaited<ReturnType<typeof listOrganizationRoles>>, TError = ErrorEnvelope>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationRoles>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizationRoles>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizationRoles>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizationRoles<TData = Awaited<ReturnType<typeof listOrganizationRoles>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationRoles>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizationRoles>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizationRoles>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizationRoles<TData = Awaited<ReturnType<typeof listOrganizationRoles>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationRoles>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List organization roles
+ */
+
+export function useListOrganizationRoles<TData = Awaited<ReturnType<typeof listOrganizationRoles>>, TError = ErrorEnvelope>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationRoles>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListOrganizationRolesQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateOrganizationRoleUrl = () => {
+
+
+
+
+  return `/v1/admin/organization-roles`
+}
+
+/**
+ * Defines a role of the environment: a key (`^[a-z][a-z0-9_]{0,31}$`, unique, and never `admin` or `member`), a name and a set of permissions. A permission is `org:<feature>:<action>` in lower case (`org:billing:read`) and a role holds at most 32, each once. A role may also hold any of Tula’s own system permissions (`org:sys:memberships:manage`, …); any other key of the reserved `sys` feature is refused (`validation.failed`, 422). An environment has at most 50 custom roles (`organization.role_limit`, 409). A key that is taken, by a custom role or a built-in one, is `organization.role_exists` (409). A role carries a `version`, which is also its `ETag`: it counts the changes made to the role, from 1. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Define a custom role
+ */
+export const createOrganizationRole = async (createOrganizationRoleRequest: CreateOrganizationRoleRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationRole> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<OrganizationRole>(getCreateOrganizationRoleUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createOrganizationRoleRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateOrganizationRoleMutationKey = () => ['createOrganizationRole'] as const;
+
+export const getCreateOrganizationRoleMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createOrganizationRole>>, TError,CreateOrganizationRoleMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createOrganizationRole>>, TError,CreateOrganizationRoleMutationVariables, TContext> => {
+
+const mutationKey = getCreateOrganizationRoleMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createOrganizationRole>>, CreateOrganizationRoleMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createOrganizationRole(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateOrganizationRoleMutationResult = NonNullable<Awaited<ReturnType<typeof createOrganizationRole>>>
+    export type CreateOrganizationRoleMutationBody = CreateOrganizationRoleRequest
+    export type CreateOrganizationRoleMutationError = ErrorEnvelope
+    export type CreateOrganizationRoleMutationVariables = {data: CreateOrganizationRoleRequest}
+
+    /**
+ * @summary Define a custom role
+ */
+export const useCreateOrganizationRole = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createOrganizationRole>>, TError,CreateOrganizationRoleMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createOrganizationRole>>,
+        TError,
+        CreateOrganizationRoleMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateOrganizationRoleMutationOptions(options), queryClient);
+    }
+
+export const getGetOrganizationRoleUrl = (key: OrganizationRoleKey,) => {
+
+
+
+
+  return `/v1/admin/organization-roles/${key}`
+}
+
+/**
+ * One role of the environment, by its key. A role carries a `version`, which is also its `ETag`: it counts the changes made to the role, from 1. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Get an organization role
+ */
+export const getOrganizationRole = async (key: OrganizationRoleKey, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationRole> => {
+
+  return dashboardFetch<OrganizationRole>(getGetOrganizationRoleUrl(key),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetOrganizationRoleQueryKey = (key: OrganizationRoleKey,) => {
+    return [
+    `/v1/admin/organization-roles/${key}`
+    ] as const;
+    }
+
+
+export const getGetOrganizationRoleQueryOptions = <TData = Awaited<ReturnType<typeof getOrganizationRole>>, TError = ErrorEnvelope>(key: OrganizationRoleKey, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRole>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetOrganizationRoleQueryKey(key);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOrganizationRole>>> = ({ signal }) => getOrganizationRole(key, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: key !== null && key !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRole>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetOrganizationRoleQueryResult = NonNullable<Awaited<ReturnType<typeof getOrganizationRole>>>
+export type GetOrganizationRoleQueryError = ErrorEnvelope
+
+
+export function useGetOrganizationRole<TData = Awaited<ReturnType<typeof getOrganizationRole>>, TError = ErrorEnvelope>(
+ key: OrganizationRoleKey, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRole>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getOrganizationRole>>,
+          TError,
+          Awaited<ReturnType<typeof getOrganizationRole>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOrganizationRole<TData = Awaited<ReturnType<typeof getOrganizationRole>>, TError = ErrorEnvelope>(
+ key: OrganizationRoleKey, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRole>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getOrganizationRole>>,
+          TError,
+          Awaited<ReturnType<typeof getOrganizationRole>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetOrganizationRole<TData = Awaited<ReturnType<typeof getOrganizationRole>>, TError = ErrorEnvelope>(
+ key: OrganizationRoleKey, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRole>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get an organization role
+ */
+
+export function useGetOrganizationRole<TData = Awaited<ReturnType<typeof getOrganizationRole>>, TError = ErrorEnvelope>(
+ key: OrganizationRoleKey, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRole>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetOrganizationRoleQueryOptions(key,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateOrganizationRoleUrl = (key: OrganizationRoleKey,) => {
+
+
+
+
+  return `/v1/admin/organization-roles/${key}`
+}
+
+/**
+ * Renames a custom role or replaces its permissions: the set sent is the whole set. The key cannot be changed. `admin` and `member` cannot be changed (`organization.role_built_in`, 409). `If-Match` must carry the version that was read. A permission is `org:<feature>:<action>` in lower case (`org:billing:read`) and a role holds at most 32, each once. A role may also hold any of Tula’s own system permissions (`org:sys:memberships:manage`, …); any other key of the reserved `sys` feature is refused (`validation.failed`, 422). Members who hold the role carry the new permissions from their next refresh, within the access token’s lifetime; nothing is copied into a membership. A change that takes `org:sys:memberships:manage` from a role is refused (`organization.last_manager`, 409) while some organization has no other member who holds it. The audit entry names the fields that changed and a count of permissions, and carries `weakened: true` when the role gained a permission. A role carries a `version`, which is also its `ETag`: it counts the changes made to the role, from 1. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Change a custom role
+ */
+export const updateOrganizationRole = async (key: OrganizationRoleKey,
+    updateOrganizationRoleRequest: UpdateOrganizationRoleRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationRole> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<OrganizationRole>(getUpdateOrganizationRoleUrl(key),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateOrganizationRoleRequest)
+  }
+);}
+
+
+
+
+
+export const getUpdateOrganizationRoleMutationKey = () => ['updateOrganizationRole'] as const;
+
+export const getUpdateOrganizationRoleMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrganizationRole>>, TError,UpdateOrganizationRoleMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateOrganizationRole>>, TError,UpdateOrganizationRoleMutationVariables, TContext> => {
+
+const mutationKey = getUpdateOrganizationRoleMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateOrganizationRole>>, UpdateOrganizationRoleMutationVariables> = (props) => {
+          const {key,data} = props ?? {};
+
+          return  updateOrganizationRole(key,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateOrganizationRoleMutationResult = NonNullable<Awaited<ReturnType<typeof updateOrganizationRole>>>
+    export type UpdateOrganizationRoleMutationBody = UpdateOrganizationRoleRequest
+    export type UpdateOrganizationRoleMutationError = ErrorEnvelope
+    export type UpdateOrganizationRoleMutationVariables = {key: OrganizationRoleKey;data: UpdateOrganizationRoleRequest}
+
+    /**
+ * @summary Change a custom role
+ */
+export const useUpdateOrganizationRole = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrganizationRole>>, TError,UpdateOrganizationRoleMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateOrganizationRole>>,
+        TError,
+        UpdateOrganizationRoleMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateOrganizationRoleMutationOptions(options), queryClient);
+    }
+
+export const getDeleteOrganizationRoleUrl = (key: OrganizationRoleKey,) => {
+
+
+
+
+  return `/v1/admin/organization-roles/${key}`
+}
+
+/**
+ * Deletes a custom role that no member holds, in any organization of the environment: one that is still assigned is refused (`organization.role_in_use`, 409) and nothing is changed. `admin` and `member` cannot be deleted (`organization.role_built_in`, 409). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Delete a custom role
+ */
+export const deleteOrganizationRole = async (key: OrganizationRoleKey, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
+
+  return dashboardFetch<void>(getDeleteOrganizationRoleUrl(key),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteOrganizationRoleMutationKey = () => ['deleteOrganizationRole'] as const;
+
+export const getDeleteOrganizationRoleMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteOrganizationRole>>, TError,DeleteOrganizationRoleMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteOrganizationRole>>, TError,DeleteOrganizationRoleMutationVariables, TContext> => {
+
+const mutationKey = getDeleteOrganizationRoleMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteOrganizationRole>>, DeleteOrganizationRoleMutationVariables> = (props) => {
+          const {key} = props ?? {};
+
+          return  deleteOrganizationRole(key,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteOrganizationRoleMutationResult = NonNullable<Awaited<ReturnType<typeof deleteOrganizationRole>>>
+
+    export type DeleteOrganizationRoleMutationError = ErrorEnvelope
+    export type DeleteOrganizationRoleMutationVariables = {key: OrganizationRoleKey}
+
+    /**
+ * @summary Delete a custom role
+ */
+export const useDeleteOrganizationRole = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteOrganizationRole>>, TError,DeleteOrganizationRoleMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteOrganizationRole>>,
+        TError,
+        DeleteOrganizationRoleMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteOrganizationRoleMutationOptions(options), queryClient);
+    }
+
+export const getListOrganizationDomainsUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}/domains`
+}
+
+/**
+ * The domains the organization has claimed, oldest first: verified ones, and claims still waiting for their code. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary List an organization’s domains
+ */
+export const listOrganizationDomains = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationDomainList> => {
+
+  return dashboardFetch<OrganizationDomainList>(getListOrganizationDomainsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListOrganizationDomainsQueryKey = (id: string,) => {
+    return [
+    `/v1/admin/organizations/${id}/domains`
+    ] as const;
+    }
+
+
+export const getListOrganizationDomainsQueryOptions = <TData = Awaited<ReturnType<typeof listOrganizationDomains>>, TError = ErrorEnvelope>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationDomains>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListOrganizationDomainsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listOrganizationDomains>>> = ({ signal }) => listOrganizationDomains(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listOrganizationDomains>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListOrganizationDomainsQueryResult = NonNullable<Awaited<ReturnType<typeof listOrganizationDomains>>>
+export type ListOrganizationDomainsQueryError = ErrorEnvelope
+
+
+export function useListOrganizationDomains<TData = Awaited<ReturnType<typeof listOrganizationDomains>>, TError = ErrorEnvelope>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationDomains>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizationDomains>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizationDomains>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizationDomains<TData = Awaited<ReturnType<typeof listOrganizationDomains>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationDomains>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizationDomains>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizationDomains>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizationDomains<TData = Awaited<ReturnType<typeof listOrganizationDomains>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationDomains>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List an organization’s domains
+ */
+
+export function useListOrganizationDomains<TData = Awaited<ReturnType<typeof listOrganizationDomains>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationDomains>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListOrganizationDomainsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getStartOrganizationDomainUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}/domains`
+}
+
+/**
+ * Emails a 6-digit code to an address on the domain and keeps a pending claim; `POST …/{domainId}/verify` with the code verifies it. Sent again for a pending claim it emails a new code and may change the `mode`. A verified domain makes a user who signs up with a **verified** address on exactly that domain (a subdomain is another domain) a member with the environment’s default role (`auto_join`), or is offered the organization (`suggest`). Refused: a public mail domain (`organization.domain_public`, 422), an address that is not on the domain (`organization.domain_address_mismatch`, 422), a domain verified for an organization already (`organization.domain_taken`, 409) and an organization with ten domains (`organization.domain_limit`, 409). Sends are limited per organization, per environment and per address (429). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Claim a domain for an organization
+ */
+export const startOrganizationDomain = async (id: string,
+    startOrganizationDomainRequest: StartOrganizationDomainRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationDomain> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<OrganizationDomain>(getStartOrganizationDomainUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(startOrganizationDomainRequest)
+  }
+);}
+
+
+
+
+
+export const getStartOrganizationDomainMutationKey = () => ['startOrganizationDomain'] as const;
+
+export const getStartOrganizationDomainMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startOrganizationDomain>>, TError,StartOrganizationDomainMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof startOrganizationDomain>>, TError,StartOrganizationDomainMutationVariables, TContext> => {
+
+const mutationKey = getStartOrganizationDomainMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startOrganizationDomain>>, StartOrganizationDomainMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  startOrganizationDomain(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartOrganizationDomainMutationResult = NonNullable<Awaited<ReturnType<typeof startOrganizationDomain>>>
+    export type StartOrganizationDomainMutationBody = StartOrganizationDomainRequest
+    export type StartOrganizationDomainMutationError = ErrorEnvelope
+    export type StartOrganizationDomainMutationVariables = {id: string;data: StartOrganizationDomainRequest}
+
+    /**
+ * @summary Claim a domain for an organization
+ */
+export const useStartOrganizationDomain = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startOrganizationDomain>>, TError,StartOrganizationDomainMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof startOrganizationDomain>>,
+        TError,
+        StartOrganizationDomainMutationVariables,
+        TContext
+      > => {
+      return useMutation(getStartOrganizationDomainMutationOptions(options), queryClient);
+    }
+
+export const getVerifyOrganizationDomainUrl = (id: string,
+    domainId: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}/domains/${domainId}/verify`
+}
+
+/**
+ * Verifies the claim with the code emailed to an address on the domain. A wrong code is `verification.invalid_code` (422) and counts against five guesses per code and against a back-off that grows with every further wrong code (429); a code that expired or was replaced is `verification.expired` (410). A domain another organization verified first is `organization.domain_taken` (409). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Verify a claimed domain
+ */
+export const verifyOrganizationDomain = async (id: string,
+    domainId: string,
+    verifyOrganizationDomainRequest: VerifyOrganizationDomainRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationDomain> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<OrganizationDomain>(getVerifyOrganizationDomainUrl(id,domainId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(verifyOrganizationDomainRequest)
+  }
+);}
+
+
+
+
+
+export const getVerifyOrganizationDomainMutationKey = () => ['verifyOrganizationDomain'] as const;
+
+export const getVerifyOrganizationDomainMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof verifyOrganizationDomain>>, TError,VerifyOrganizationDomainMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof verifyOrganizationDomain>>, TError,VerifyOrganizationDomainMutationVariables, TContext> => {
+
+const mutationKey = getVerifyOrganizationDomainMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof verifyOrganizationDomain>>, VerifyOrganizationDomainMutationVariables> = (props) => {
+          const {id,domainId,data} = props ?? {};
+
+          return  verifyOrganizationDomain(id,domainId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type VerifyOrganizationDomainMutationResult = NonNullable<Awaited<ReturnType<typeof verifyOrganizationDomain>>>
+    export type VerifyOrganizationDomainMutationBody = VerifyOrganizationDomainRequest
+    export type VerifyOrganizationDomainMutationError = ErrorEnvelope
+    export type VerifyOrganizationDomainMutationVariables = {id: string;domainId: string;data: VerifyOrganizationDomainRequest}
+
+    /**
+ * @summary Verify a claimed domain
+ */
+export const useVerifyOrganizationDomain = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof verifyOrganizationDomain>>, TError,VerifyOrganizationDomainMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof verifyOrganizationDomain>>,
+        TError,
+        VerifyOrganizationDomainMutationVariables,
+        TContext
+      > => {
+      return useMutation(getVerifyOrganizationDomainMutationOptions(options), queryClient);
+    }
+
+export const getUpdateOrganizationDomainUrl = (id: string,
+    domainId: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}/domains/${domainId}`
+}
+
+/**
+ * Sets the domain’s `mode`: `suggest` or `auto_join`. Moving to `auto_join` is a weakening, recorded as such. It applies to sign-ups from then on; nobody is joined retroactively. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Change what a domain does
+ */
+export const updateOrganizationDomain = async (id: string,
+    domainId: string,
+    updateOrganizationDomainRequest: UpdateOrganizationDomainRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationDomain> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<OrganizationDomain>(getUpdateOrganizationDomainUrl(id,domainId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateOrganizationDomainRequest)
+  }
+);}
+
+
+
+
+
+export const getUpdateOrganizationDomainMutationKey = () => ['updateOrganizationDomain'] as const;
+
+export const getUpdateOrganizationDomainMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrganizationDomain>>, TError,UpdateOrganizationDomainMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateOrganizationDomain>>, TError,UpdateOrganizationDomainMutationVariables, TContext> => {
+
+const mutationKey = getUpdateOrganizationDomainMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateOrganizationDomain>>, UpdateOrganizationDomainMutationVariables> = (props) => {
+          const {id,domainId,data} = props ?? {};
+
+          return  updateOrganizationDomain(id,domainId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateOrganizationDomainMutationResult = NonNullable<Awaited<ReturnType<typeof updateOrganizationDomain>>>
+    export type UpdateOrganizationDomainMutationBody = UpdateOrganizationDomainRequest
+    export type UpdateOrganizationDomainMutationError = ErrorEnvelope
+    export type UpdateOrganizationDomainMutationVariables = {id: string;domainId: string;data: UpdateOrganizationDomainRequest}
+
+    /**
+ * @summary Change what a domain does
+ */
+export const useUpdateOrganizationDomain = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateOrganizationDomain>>, TError,UpdateOrganizationDomainMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateOrganizationDomain>>,
+        TError,
+        UpdateOrganizationDomainMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateOrganizationDomainMutationOptions(options), queryClient);
+    }
+
+export const getRemoveOrganizationDomainUrl = (id: string,
+    domainId: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}/domains/${domainId}`
+}
+
+/**
+ * Removes a claim, verified or not. Future sign-ups no longer join or are offered the organization because of it; members who joined stay members. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Remove a domain
+ */
+export const removeOrganizationDomain = async (id: string,
+    domainId: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
+
+  return dashboardFetch<void>(getRemoveOrganizationDomainUrl(id,domainId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRemoveOrganizationDomainMutationKey = () => ['removeOrganizationDomain'] as const;
+
+export const getRemoveOrganizationDomainMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeOrganizationDomain>>, TError,RemoveOrganizationDomainMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof removeOrganizationDomain>>, TError,RemoveOrganizationDomainMutationVariables, TContext> => {
+
+const mutationKey = getRemoveOrganizationDomainMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof removeOrganizationDomain>>, RemoveOrganizationDomainMutationVariables> = (props) => {
+          const {id,domainId} = props ?? {};
+
+          return  removeOrganizationDomain(id,domainId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RemoveOrganizationDomainMutationResult = NonNullable<Awaited<ReturnType<typeof removeOrganizationDomain>>>
+
+    export type RemoveOrganizationDomainMutationError = ErrorEnvelope
+    export type RemoveOrganizationDomainMutationVariables = {id: string;domainId: string}
+
+    /**
+ * @summary Remove a domain
+ */
+export const useRemoveOrganizationDomain = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeOrganizationDomain>>, TError,RemoveOrganizationDomainMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof removeOrganizationDomain>>,
+        TError,
+        RemoveOrganizationDomainMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRemoveOrganizationDomainMutationOptions(options), queryClient);
+    }
+
+export const getListOrganizationInvitationsUrl = (id: string,
+    params?: ListOrganizationInvitationsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/organizations/${id}/invitations?${stringifiedParams}` : `/v1/admin/organizations/${id}/invitations`
+}
+
+/**
+ * The organization’s invitations in one state (`status`, `pending` unless another is asked for; `expired` is a pending invitation past its expiry), newest first, one page at a time. The token of an invitation is never returned. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary List an organization’s invitations
+ */
+export const listOrganizationInvitations = async (id: string,
+    params?: ListOrganizationInvitationsParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationInvitationList> => {
+
+  return dashboardFetch<OrganizationInvitationList>(getListOrganizationInvitationsUrl(id,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListOrganizationInvitationsQueryKey = (id: string,
+    params?: ListOrganizationInvitationsParams,) => {
+    return [
+    `/v1/admin/organizations/${id}/invitations`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListOrganizationInvitationsQueryOptions = <TData = Awaited<ReturnType<typeof listOrganizationInvitations>>, TError = ErrorEnvelope>(id: string,
+    params?: ListOrganizationInvitationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationInvitations>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListOrganizationInvitationsQueryKey(id,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listOrganizationInvitations>>> = ({ signal }) => listOrganizationInvitations(id,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listOrganizationInvitations>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListOrganizationInvitationsQueryResult = NonNullable<Awaited<ReturnType<typeof listOrganizationInvitations>>>
+export type ListOrganizationInvitationsQueryError = ErrorEnvelope
+
+
+export function useListOrganizationInvitations<TData = Awaited<ReturnType<typeof listOrganizationInvitations>>, TError = ErrorEnvelope>(
+ id: string,
+    params: undefined |  ListOrganizationInvitationsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationInvitations>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizationInvitations>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizationInvitations>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizationInvitations<TData = Awaited<ReturnType<typeof listOrganizationInvitations>>, TError = ErrorEnvelope>(
+ id: string,
+    params?: ListOrganizationInvitationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationInvitations>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listOrganizationInvitations>>,
+          TError,
+          Awaited<ReturnType<typeof listOrganizationInvitations>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListOrganizationInvitations<TData = Awaited<ReturnType<typeof listOrganizationInvitations>>, TError = ErrorEnvelope>(
+ id: string,
+    params?: ListOrganizationInvitationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationInvitations>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List an organization’s invitations
+ */
+
+export function useListOrganizationInvitations<TData = Awaited<ReturnType<typeof listOrganizationInvitations>>, TError = ErrorEnvelope>(
+ id: string,
+    params?: ListOrganizationInvitationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listOrganizationInvitations>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListOrganizationInvitationsQueryOptions(id,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getInviteToOrganizationUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}/invitations`
+}
+
+/**
+ * Emails the address a link that leads to `redirectUrl` (one of the environment’s allowed redirect URLs, matched exactly; a custom scheme is refused) with the invitation’s token in the URL fragment (`#tula_invitation=…`). The invitation lasts 7 days and can be accepted only by a signed-in user whose **verified** email is the invited address. The role must exist (`organization.role_unknown`, 422); an address that is a member already answers `organization.member_exists` and one with a pending invitation `organization.invitation_exists` (409). Limited per organization per hour and per environment per day (`rate_limited`, 429). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Invite an address to an organization
+ */
+export const inviteToOrganization = async (id: string,
+    createOrganizationInvitationRequest: CreateOrganizationInvitationRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<OrganizationInvitation> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<OrganizationInvitation>(getInviteToOrganizationUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createOrganizationInvitationRequest)
+  }
+);}
+
+
+
+
+
+export const getInviteToOrganizationMutationKey = () => ['inviteToOrganization'] as const;
+
+export const getInviteToOrganizationMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof inviteToOrganization>>, TError,InviteToOrganizationMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof inviteToOrganization>>, TError,InviteToOrganizationMutationVariables, TContext> => {
+
+const mutationKey = getInviteToOrganizationMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof inviteToOrganization>>, InviteToOrganizationMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  inviteToOrganization(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type InviteToOrganizationMutationResult = NonNullable<Awaited<ReturnType<typeof inviteToOrganization>>>
+    export type InviteToOrganizationMutationBody = CreateOrganizationInvitationRequest
+    export type InviteToOrganizationMutationError = ErrorEnvelope
+    export type InviteToOrganizationMutationVariables = {id: string;data: CreateOrganizationInvitationRequest}
+
+    /**
+ * @summary Invite an address to an organization
+ */
+export const useInviteToOrganization = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof inviteToOrganization>>, TError,InviteToOrganizationMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof inviteToOrganization>>,
+        TError,
+        InviteToOrganizationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getInviteToOrganizationMutationOptions(options), queryClient);
+    }
+
+export const getRevokeOrganizationInvitationUrl = (id: string,
+    invitationId: string,) => {
+
+
+
+
+  return `/v1/admin/organizations/${id}/invitations/${invitationId}`
+}
+
+/**
+ * Withdraws a pending invitation: its link stops working. An invitation that was accepted or declined answers `organization.invitation_used`, a withdrawn one `organization.invitation_revoked` and an expired one `organization.invitation_expired` (410). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary Revoke an invitation
+ */
+export const revokeOrganizationInvitation = async (id: string,
+    invitationId: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
+
+  return dashboardFetch<void>(getRevokeOrganizationInvitationUrl(id,invitationId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRevokeOrganizationInvitationMutationKey = () => ['revokeOrganizationInvitation'] as const;
+
+export const getRevokeOrganizationInvitationMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeOrganizationInvitation>>, TError,RevokeOrganizationInvitationMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof revokeOrganizationInvitation>>, TError,RevokeOrganizationInvitationMutationVariables, TContext> => {
+
+const mutationKey = getRevokeOrganizationInvitationMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokeOrganizationInvitation>>, RevokeOrganizationInvitationMutationVariables> = (props) => {
+          const {id,invitationId} = props ?? {};
+
+          return  revokeOrganizationInvitation(id,invitationId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevokeOrganizationInvitationMutationResult = NonNullable<Awaited<ReturnType<typeof revokeOrganizationInvitation>>>
+
+    export type RevokeOrganizationInvitationMutationError = ErrorEnvelope
+    export type RevokeOrganizationInvitationMutationVariables = {id: string;invitationId: string}
+
+    /**
+ * @summary Revoke an invitation
+ */
+export const useRevokeOrganizationInvitation = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeOrganizationInvitation>>, TError,RevokeOrganizationInvitationMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof revokeOrganizationInvitation>>,
+        TError,
+        RevokeOrganizationInvitationMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRevokeOrganizationInvitationMutationOptions(options), queryClient);
+    }
+
+export const getListUserOrganizationsUrl = (userId: string,
+    params?: ListUserOrganizationsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/users/${userId}/organizations?${stringifiedParams}` : `/v1/admin/users/${userId}/organizations`
+}
+
+/**
+ * The user’s memberships, the one they joined first at the top, one page at a time: each organization’s id, name and slug and the key of the user’s role in it. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.
+ * @summary List the organizations a user belongs to
+ */
+export const listUserOrganizations = async (userId: string,
+    params?: ListUserOrganizationsParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<UserMembershipList> => {
+
+  return dashboardFetch<UserMembershipList>(getListUserOrganizationsUrl(userId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListUserOrganizationsQueryKey = (userId: string,
+    params?: ListUserOrganizationsParams,) => {
+    return [
+    `/v1/admin/users/${userId}/organizations`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListUserOrganizationsQueryOptions = <TData = Awaited<ReturnType<typeof listUserOrganizations>>, TError = ErrorEnvelope>(userId: string,
+    params?: ListUserOrganizationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUserOrganizations>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListUserOrganizationsQueryKey(userId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listUserOrganizations>>> = ({ signal }) => listUserOrganizations(userId,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: userId !== null && userId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listUserOrganizations>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListUserOrganizationsQueryResult = NonNullable<Awaited<ReturnType<typeof listUserOrganizations>>>
+export type ListUserOrganizationsQueryError = ErrorEnvelope
+
+
+export function useListUserOrganizations<TData = Awaited<ReturnType<typeof listUserOrganizations>>, TError = ErrorEnvelope>(
+ userId: string,
+    params: undefined |  ListUserOrganizationsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUserOrganizations>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listUserOrganizations>>,
+          TError,
+          Awaited<ReturnType<typeof listUserOrganizations>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListUserOrganizations<TData = Awaited<ReturnType<typeof listUserOrganizations>>, TError = ErrorEnvelope>(
+ userId: string,
+    params?: ListUserOrganizationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUserOrganizations>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listUserOrganizations>>,
+          TError,
+          Awaited<ReturnType<typeof listUserOrganizations>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListUserOrganizations<TData = Awaited<ReturnType<typeof listUserOrganizations>>, TError = ErrorEnvelope>(
+ userId: string,
+    params?: ListUserOrganizationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUserOrganizations>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List the organizations a user belongs to
+ */
+
+export function useListUserOrganizations<TData = Awaited<ReturnType<typeof listUserOrganizations>>, TError = ErrorEnvelope>(
+ userId: string,
+    params?: ListUserOrganizationsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUserOrganizations>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListUserOrganizationsQueryOptions(userId,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getListNativeAppsUrl = () => {
 

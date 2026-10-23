@@ -41,11 +41,24 @@ const EVERY_MESSAGE: EmailMessage[] = [
   { type: 'password_reset', code: '482913', ttlMinutes: 10 },
   signIn,
   { type: 'step_up', code: '482913', ttlMinutes: 10 },
+  { type: 'organization_domain_verification', code: '482913', ttlMinutes: 10 },
+  {
+    type: 'organization_domain_expiring',
+    organizationName: 'Acme Robotics',
+    domains: 2,
+    daysLeft: 7,
+  },
   { type: 'account_exists' },
   { type: 'no_account' },
   { type: 'no_account_sign_in' },
   { type: 'email_in_use' },
   { type: 'email_added', at },
+  {
+    type: 'organization_invitation',
+    organizationName: 'Acme Robotics',
+    linkUrl: 'https://app.acme.test/join#tula_invitation=tok',
+    ttlDays: 7,
+  },
   newSignIn,
   ...(['self', 'reset', 'admin', 'verification'] as const).flatMap((by) =>
     [false, true].map((added): EmailMessage => ({ type: 'password_changed', by, added, at }))
@@ -112,8 +125,20 @@ describe('templateKind', () => {
   })
 })
 
+/**
+ * Notices that report nothing about an account's security: no facts block and no support
+ * line, so they end with the server's sentence and the footer.
+ */
+const NO_SECURITY_FACTS: EmailTemplateKind[] = [
+  'account_exists',
+  'no_account',
+  'no_account_sign_in',
+  'email_in_use',
+  'organization_domain_expiring',
+]
+
 function isSecurityNoticeKind(kind: EmailTemplateKind): boolean {
-  return !['account_exists', 'no_account', 'no_account_sign_in', 'email_in_use'].includes(kind)
+  return !NO_SECURITY_FACTS.includes(kind)
 }
 
 describe('the built-in copy', () => {
@@ -125,6 +150,7 @@ describe('the built-in copy', () => {
       const email = render({ name: 'Acme', supportEmail: null }, message)
       const words = email.text
         .replaceAll(link, 'the link')
+        .replaceAll(('linkUrl' in message ? message.linkUrl : undefined) ?? link, 'the link')
         .split('\n\n')
         // The footer, and the facts: an IP address is a fact of the server's, not wording.
         .filter((paragraph) => !paragraph.startsWith('--\n') && !/^(When|Device): /.test(paragraph))
@@ -354,12 +380,7 @@ describe('renderTemplate', () => {
     )('%s with a body of its own still ends with the server’s own sentence', (_, message) => {
       const builtIn = render(acme, message)
       const paragraphs = (text: string) => text.split('\n\n')
-      const supported =
-        templateKind(message).startsWith('no_account') ||
-        templateKind(message) === 'account_exists' ||
-        templateKind(message) === 'email_in_use'
-          ? 2
-          : 3
+      const supported = NO_SECURITY_FACTS.includes(templateKind(message)) ? 2 : 3
       const sentence = paragraphs(builtIn.text).at(-supported) as string
       expect(sentence).toMatch(/^If (it wasn't you|you did not just sign in)/)
 

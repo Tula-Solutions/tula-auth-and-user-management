@@ -1,0 +1,285 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "user import with Firebase scrypt and PBKDF2-SHA256 hashes",
+  "description": "An administrator imports a user from Firebase (the project's hash parameters once in the call, the user's hash and salt in the row) and one from Django (a PBKDF2-SHA256 hash). Each signs in with the old password, a wrong one is refused like any wrong password, and the first sign-in replaces the hash. A PBKDF2 hash under the iteration floor or over the ceiling, Firebase parameters that cost too much, and a Firebase row in a call without the project's parameters are each refused for that row alone. The project's signer key and the hashes are never in an answer or in the audit log, which names the algorithm only.",
+  "needsSecretKey": true,
+  "variables": {
+    "firebaseEmail": { "generate": "email" },
+    "djangoEmail": { "generate": "email" },
+    "weakEmail": { "generate": "email" },
+    "costlyEmail": { "generate": "email" },
+    "noParamsEmail": { "generate": "email" }
+  },
+  "steps": [
+    {
+      "name": "an administrator imports a Firebase user and a Django user, beside rows that are refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users/import",
+        "auth": "secret",
+        "body": {
+          "firebaseScrypt": {
+            "signerKey": "jxspr8Ki0RYycVU8zykbdLGjFQ3McFUH0uiiTvC8pVMXAn210wjLNmdZJzxUECKbm0QsEmYUSDzZvpjeJ9WmXA==",
+            "saltSeparator": "Bw==",
+            "rounds": 8,
+            "memCost": 14
+          },
+          "users": [
+            {
+              "email": "{{firebaseEmail}}",
+              "emailVerified": true,
+              "password": {
+                "algorithm": "firebase_scrypt",
+                "hash": "lSrfV15cpx95/sZS2W9c9Kp6i/LVgQNDNC/qzrCnh1SAyZvqmZqAjTdn3aoItz+VHjoZilo78198JAdRuid5lQ==",
+                "params": { "salt": "42xEC+ixf3L2lw==" }
+              }
+            },
+            {
+              "email": "{{djangoEmail}}",
+              "emailVerified": true,
+              "password": {
+                "algorithm": "pbkdf2_sha256",
+                "hash": "pbkdf2_sha256$260000$Xp9aBcDeFgHi$tPuMiTl59uBGuxPihVmXj2h4nxk2jFn28PP+eoHlEI0="
+              }
+            },
+            {
+              "email": "{{weakEmail}}",
+              "emailVerified": true,
+              "password": {
+                "algorithm": "pbkdf2_sha256",
+                "hash": "pbkdf2_sha256$99999$Xp9aBcDeFgHi$tPuMiTl59uBGuxPihVmXj2h4nxk2jFn28PP+eoHlEI0="
+              }
+            },
+            {
+              "email": "{{costlyEmail}}",
+              "emailVerified": true,
+              "password": {
+                "algorithm": "pbkdf2_sha256",
+                "hash": "pbkdf2_sha256$2000001$Xp9aBcDeFgHi$tPuMiTl59uBGuxPihVmXj2h4nxk2jFn28PP+eoHlEI0="
+              }
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "created": 2,
+          "skipped": 0,
+          "refused": 2,
+          "results": [
+            { "index": 0, "status": "created", "id": "$any" },
+            { "index": 1, "status": "created", "id": "$any" },
+            { "index": 2, "status": "refused", "code": "import.hash_parameters_too_weak" },
+            { "index": 3, "status": "refused", "code": "import.hash_parameters_too_costly" }
+          ]
+        },
+        "bodyExcludes": ["jxspr8Ki0RYycVU8", "Bw==", "42xEC", "lSrfV15cpx95", "tPuMiTl59uBG"]
+      },
+      "capture": {
+        "firebaseId": "results.0.id",
+        "djangoId": "results.1.id"
+      }
+    },
+    {
+      "name": "Firebase parameters that cost too much refuse the row that uses them",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users/import",
+        "auth": "secret",
+        "body": {
+          "firebaseScrypt": {
+            "signerKey": "jxspr8Ki0RYycVU8zykbdLGjFQ3McFUH0uiiTvC8pVMXAn210wjLNmdZJzxUECKbm0QsEmYUSDzZvpjeJ9WmXA==",
+            "saltSeparator": "Bw==",
+            "rounds": 8,
+            "memCost": 24
+          },
+          "users": [
+            {
+              "email": "{{costlyEmail}}",
+              "emailVerified": true,
+              "password": {
+                "algorithm": "firebase_scrypt",
+                "hash": "lSrfV15cpx95/sZS2W9c9Kp6i/LVgQNDNC/qzrCnh1SAyZvqmZqAjTdn3aoItz+VHjoZilo78198JAdRuid5lQ==",
+                "params": { "salt": "42xEC+ixf3L2lw==" }
+              }
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "created": 0,
+          "refused": 1,
+          "results": [
+            { "index": 0, "status": "refused", "code": "import.hash_parameters_too_costly" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "a Firebase row in a call without the project's parameters is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/users/import",
+        "auth": "secret",
+        "body": {
+          "users": [
+            {
+              "email": "{{noParamsEmail}}",
+              "emailVerified": true,
+              "password": {
+                "algorithm": "firebase_scrypt",
+                "hash": "lSrfV15cpx95/sZS2W9c9Kp6i/LVgQNDNC/qzrCnh1SAyZvqmZqAjTdn3aoItz+VHjoZilo78198JAdRuid5lQ==",
+                "params": { "salt": "42xEC+ixf3L2lw==" }
+              }
+            }
+          ]
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "created": 0,
+          "refused": 1,
+          "results": [{ "index": 0, "status": "refused", "code": "import.hash_malformed" }]
+        }
+      }
+    },
+    {
+      "name": "the Firebase user starts signing in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": { "identifier": "{{firebaseEmail}}" }
+      },
+      "expect": { "status": 200 },
+      "capture": {
+        "fbId": "id",
+        "fbSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "a wrong password is refused like any wrong password",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{fbId}}/password",
+        "attempt": "{{fbSecret}}",
+        "body": { "password": "not the old password" }
+      },
+      "expect": {
+        "status": 401,
+        "body": { "code": "auth.invalid_credentials" }
+      }
+    },
+    {
+      "name": "the Firebase password signs the user in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{fbId}}/password",
+        "attempt": "{{fbSecret}}",
+        "body": { "password": "user1password" }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_in",
+          "step": { "status": "complete", "userId": "{{firebaseId}}", "sessionId": "$any" }
+        }
+      }
+    },
+    {
+      "name": "the Firebase user signs in again, now on the replaced hash",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": { "identifier": "{{firebaseEmail}}" }
+      },
+      "expect": { "status": 200 },
+      "capture": {
+        "fb2Id": "id",
+        "fb2Secret": "attemptSecret"
+      }
+    },
+    {
+      "name": "the same password still works",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{fb2Id}}/password",
+        "attempt": "{{fb2Secret}}",
+        "body": { "password": "user1password" }
+      },
+      "expect": {
+        "status": 200,
+        "body": { "step": { "status": "complete", "userId": "{{firebaseId}}" } }
+      }
+    },
+    {
+      "name": "the Django user starts signing in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins",
+        "client": "ios",
+        "body": { "identifier": "{{djangoEmail}}" }
+      },
+      "expect": { "status": 200 },
+      "capture": {
+        "djId": "id",
+        "djSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "a wrong password is refused for the PBKDF2 user too",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{djId}}/password",
+        "attempt": "{{djSecret}}",
+        "body": { "password": "not the old password" }
+      },
+      "expect": {
+        "status": 401,
+        "body": { "code": "auth.invalid_credentials" }
+      }
+    },
+    {
+      "name": "the Django password signs the user in",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ins/{{djId}}/password",
+        "attempt": "{{djSecret}}",
+        "body": { "password": "correct horse battery staple" }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "kind": "sign_in",
+          "step": { "status": "complete", "userId": "{{djangoId}}", "sessionId": "$any" }
+        }
+      }
+    },
+    {
+      "name": "the audit log names the algorithm and neither the hash nor the project's parameters",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/audit-logs?targetId={{firebaseId}}&action=user.imported",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": { "totalCount": 1 },
+          "data": [
+            {
+              "action": "user.imported",
+              "metadata": { "emailVerified": true, "passwordAlgorithm": "firebase_scrypt" }
+            }
+          ]
+        },
+        "bodyExcludes": ["jxspr8Ki0RYycVU8", "42xEC", "lSrfV15cpx95", "{{firebaseEmail}}"]
+      }
+    }
+  ]
+}

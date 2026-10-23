@@ -40,17 +40,40 @@ by error code. Their code samples are copied from files of this repository by
 | --- | --- |
 | [Phone numbers](phone-numbers.md) | A number on an account, proven with a texted code: the `sms` setting and its country list, sending through Twilio ([setup checklist](providers/twilio.md)), the development SMS inbox, the SDK calls, your own wording for a text message and what it costs in segments, the error codes, and what is not built yet. |
 
+## Bringing users across
+
+| | |
+| --- | --- |
+| [Importing users](user-import.md) | `POST /v1/admin/users/import`: up to 500 users a call with their bcrypt, argon2, PBKDF2 or Firebase scrypt password hashes, the answer for each row, the parameter minimums, what the first sign-in does, and what an import records. |
+| [Migrating from Clerk](migrate-from-clerk.md) | `tula import --from clerk`: the dashboard's CSV or the Backend API's JSON with `password_digest`, and Clerk's organizations and memberships. |
+| [Migrating from Auth0](migrate-from-auth0.md) | `tula import --from auth0`: the bulk user export and the bcrypt hashes Auth0 support sends separately. |
+| [Migrating from Firebase](migrate-from-firebase.md) | `tula import --from firebase`: `firebase auth:export` and the project's scrypt parameters, kept out of the command line. |
+| [Migrating from Supabase](migrate-from-supabase.md) | `tula import --from supabase`: `auth.users` as CSV or JSON, with its bcrypt `encrypted_password`. |
+| [Migrating from better-auth](migrate-from-better-auth.md) | `tula import --from better-auth`: the `user` and `account` tables; why its default scrypt hashes are refused today. |
+
 ## What your users are sent
 
 | | |
 | --- | --- |
 | [Email templates](email-templates.md) | Your own subject and wording for each email: the kinds of message and their placeholders, what a template is refused for, the stricter rules of a security notice, what happens when a template cannot be used, and the preview. |
 
+## Organizations
+
+| | |
+| --- | --- |
+| [Organizations](organizations.md) | Groups of users who share something: turning them on (`tula.config.ts`, admin API), creating them and the active organization, the `org_id`, `org_role` and `org_perms` claims and their size, `has()` in Next.js, React and any backend, access rules in the Next.js proxy, the Tula UI switcher and profile, and where invitations and verified domains fit. |
+| [OrganizationSwitcher](organization-switcher.md) | The prebuilt control that shows the active organization and switches it: the user's organizations, the personal account, suggestions from their email domain, an invitation they opened, and the way to create or manage an organization. |
+| [CreateOrganization](create-organization.md) | The prebuilt form that makes an organization and makes it the active one, with every state it can be in. |
+| [OrganizationProfile](organization-profile.md) | The prebuilt page for one organization: General (rename, leave, delete), Members, Invitations and Domains, each drawn only where the user's role permits. |
+| [Invitations](invitations.md) | Inviting an address to an organization from the admin API or the client: the emailed link and its `#tula_invitation=` fragment, accepting and declining, the seven-day expiry, the error codes, the limits and what happens when the role was deleted. |
+| [Verified domains](verified-domains.md) | Claiming an email domain with an emailed code, `suggest` and `auto_join` (at sign-up only), the deny list of public mail domains, the one-year lifetime and its reminders, re-verifying, the error codes and the limits. |
+| [Roles and permissions](roles-and-permissions.md) | The built-in `admin` and `member`, custom roles, the `org:<feature>:<action>` grammar and the system permissions, why `has()` is exact, and what weakens security. |
+
 ## Claims for your backend
 
 | | |
 | --- | --- |
-| [JWT templates](jwt-templates.md) | Custom claims under `ext`: the sources a claim can have, the reserved names and the size cap, when a change takes effect, reading them with `@tula-tech/nextjs`. |
+| [JWT templates](jwt-templates.md) | Custom claims under `ext`: the sources a claim can have, the reserved names and the size cap, when a change takes effect, reading them with `@tula-tech/nextjs`; the [organization claims](organizations.md#reading-the-organization-in-your-app) beside them. |
 
 ## Events for your backend
 
@@ -78,10 +101,10 @@ by error code. Their code samples are copied from files of this repository by
 
 | | |
 | --- | --- |
-| [CLI](cli.md) | `create-tula`, `tula dev`, `tula doctor`, `tula policy test`, `tula diff`, `tula apply`, `tula mcp`. |
+| [CLI](cli.md) | `create-tula`, `tula dev`, `tula doctor`, `tula policy test`, `tula diff`, `tula apply`, `tula import`, `tula mcp`. |
 | [Settings as code](config.md) | `tula.config.ts`, what `diff` and `apply` do, using them in CI. |
 | [Dashboard](dashboard.md) | The operator's screens at `/dashboard`. |
-| [MCP server](mcp.md) | Tools for an AI assistant: reads, drafts, proposals and a sign-in test. |
+| [MCP server](mcp.md) | Tools for an AI assistant: reads (users, sessions, audit entries, settings, organizations), drafts, proposals and a sign-in test. |
 | [Proposals](proposals.md) | Letting an AI agent ask for a change that a person approves: the agent key, what a proposal holds and how it is carried out. |
 | [Conformance suite](../conformance/README.md) | The scenarios every server and SDK must pass, and how to run them against yours. |
 

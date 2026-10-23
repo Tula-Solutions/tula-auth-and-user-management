@@ -16,6 +16,7 @@ export {
   type MicrosoftProviderConfig,
   type NativeAppConfig,
   type OAuthClientConfig,
+  type OrganizationRoleConfig,
   type ProvidersConfig,
   parseConfig,
   providerSecret,

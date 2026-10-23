@@ -101,7 +101,7 @@ describe('tula mcp, spawned', () => {
 
     run.send({ jsonrpc: '2.0', id: 2, method: 'tools/list' })
     const listed = (await run.answer(2)).result as { tools: { name: string }[] }
-    expect(listed.tools).toHaveLength(17)
+    expect(listed.tools).toHaveLength(20)
 
     run.send({
       jsonrpc: '2.0',
@@ -130,7 +130,7 @@ describe('tula mcp, spawned', () => {
     expect(code).toBe(0)
     onlyFrames(stdout)
     expect(stderr).toContain(
-      'tula mcp: 17 tools; one changes live data while it runs (test_signin, where the environment allows it).'
+      'tula mcp: 20 tools; one changes live data while it runs (test_signin, where the environment allows it).'
     )
     expect(stdout + stderr).not.toContain(SECRET_KEY)
     expect(stdout + stderr).not.toContain(ADMIN_TOKEN)

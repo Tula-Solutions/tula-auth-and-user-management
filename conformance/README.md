@@ -257,11 +257,15 @@ included: use `attempt`).
   has nothing in its query. Against a live server the link is read from Mailpit (the one
   message is fetched, since a link is not in a subject). A runner for another language needs a
   way to read an email's text to run these steps.
-- **Email-message steps** (`emailMessage: { to, subjectContains, captureCode?, subject?,
-  textContains?, textExcludes? }`) read one email as its reader would: the newest email to
-  the address whose subject contains `subjectContains`. In this order: `captureCode` stores
-  the one run of exactly six digits in the text (the step fails for none, or for two
-  different ones); `subject` is what the subject must be, exactly; every entry of
+- **Email-message steps** (`emailMessage: { to, subjectContains, captureCode?,
+  captureFragmentParam?, subject?, textContains?, textExcludes? }`) read one email as its
+  reader would: the newest email to the address whose subject contains `subjectContains`. In
+  this order: `captureCode` stores the one run of exactly six digits in the text (the step
+  fails for none, or for two different ones); `captureFragmentParam: { name, capture, url? }`
+  stores one parameter of the fragment of the first `https://…#…` link in the text (for a
+  message whose link carries a credential in its fragment, an organization invitation's
+  `tula_invitation`; the step fails for no such link or parameter, `url` is what the link
+  must be without its fragment, and the value is never reported); `subject` is what the subject must be, exactly; every entry of
   `textContains` must be in the plain-text part and none of `textExcludes`. The later checks
   can name the captured code. They exist for what a subject cannot say: an environment's own
   wording of a message ([docs/email-templates.md](../docs/email-templates.md)), where the
@@ -436,6 +440,8 @@ Steps run in order and a scenario stops at its first failing step (its cleanup s
 | `113-email-for-account-without-one` | An account made with X has no address. Its signed-in user asks for a code at one (a masked receipt, nothing stored on the account) and proves the address with it: it is then there, verified, and the audit log says so without naming it. Both calls then answer `email.already_set`. An address another account holds is answered exactly like a free one, is sent no code, and no code confirms it. What an older session is told (`auth.step_up_required`) is each client's journey and an API test. Uses the mock provider (needs a secret key). |
 | `114-admin-sets-email-address` | An administrator gives an account with no address one: stored unverified, and the audit log says an administrator added an unverified address without naming it. The route never replaces an address (409 `email.already_set`), an address another account holds is 409 `resource.conflict`, an unknown user is not found, and the user's own call then answers `email.already_set` too. Uses the mock provider (needs a secret key). |
 | `115-provider-dependents` | The accounts that have X connected and could not sign in without it are counted (`{ provider, accounts, more }`, nothing about who; not asserted exactly, a server that has run before holds earlier accounts), by a secret key only. Switching X off is not refused: it is recorded as a weakening with the count the server took, and a start with X is then `auth.method_disabled`. That the count stops at 1,000 accounts looked at is an API test. Uses the mock provider (needs a secret key). |
+| `117-user-import` | An administrator imports users with a bcrypt hash: the answer says per row what became of it (created, skipped as repeated, refused with `import.hash_parameters_too_weak`, `email.invalid` or `import.unsupported_algorithm`), a hash is never echoed, the imported user signs in with the old password (a wrong one is `auth.invalid_credentials`) twice (the first replaces the hash), importing the row again skips it, and the audit log has one `user.imported` entry by an administrator and no `user.created`. Needs a secret key. |
+| `118-user-import-firebase-pbkdf2` | An administrator imports a Firebase user (the project's scrypt parameters once in the call, the user's hash and salt in the row) and a Django user (PBKDF2-SHA256): each signs in with the old password, a wrong one is `auth.invalid_credentials`, and the first sign-in replaces the hash. A PBKDF2 hash under the iteration floor or over the ceiling, Firebase parameters that cost too much and a Firebase row with no project parameters are refused for that row alone. The signer key and the hashes are in no answer; the audit log names `firebase_scrypt` only. Needs a secret key. |
 
 Scenarios assume the default settings (the `recommended` password policy and the default
 session profile). `12-environment-settings` changes the environment's settings while it runs

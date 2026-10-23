@@ -77,6 +77,9 @@ public final class TulaClient: Sendable, TulaRedacted {
     public var identities: TulaIdentities { TulaIdentities(context: context) }
     /// An email address for a signed-in user whose account has none (ADR 0059).
     public var emailAddress: TulaEmailAddress { TulaEmailAddress(context: context) }
+    /// The signed-in user's organizations, the one the session acts in, and invitations to
+    /// join one (ADR 0065).
+    public var organizations: TulaOrganizations { TulaOrganizations(context: context) }
 
     private let transport: ApiTransport
     private let context: FlowContext

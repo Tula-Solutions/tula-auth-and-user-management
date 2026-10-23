@@ -5,6 +5,7 @@ import {
   readStoredEmailTemplates,
 } from './email-template'
 import { EmailSettingsSchema } from './email-template-schema'
+import { RoleKeySchema } from './organization'
 import { PASSWORD_POLICY_PRESETS, PasswordPolicySchema } from './password-policy'
 import {
   DEFAULT_SMS_DAILY_MESSAGE_LIMIT,
@@ -271,6 +272,51 @@ const Agents = z.object({
   testSignIn: z.boolean().nullable().default(null),
 })
 
+/** Most organizations one user may create unless the environment sets another cap. */
+export const DEFAULT_MAX_ORGANIZATIONS_CREATED_PER_USER = 5
+
+/** Highest `organizations.maxCreatedPerUser` that can be set. */
+export const MAX_ORGANIZATIONS_CREATED_PER_USER = 1000
+
+const Organizations = z.object({
+  /**
+   * Whether the environment has organizations (ADR 0065). **Off by default**: a consumer app
+   * is not affected. Off, every organization route answers `organization.disabled` and
+   * access tokens carry no organization claims; nothing stored is deleted, so switching it
+   * back on restores every organization and membership. Switching it off is a weakening
+   * (`settingsWeakenings`): an application that authorizes on the organization claims and
+   * reads a missing claim as permission would open up.
+   */
+  enabled: z.boolean().default(false),
+  /**
+   * Whether a signed-in user may create an organization themselves. `false` (the default)
+   * reserves creation for the operator's backend and the dashboard. Switching it on is a
+   * weakening. (The client route that creates one is Orgs 07; this is the switch it will
+   * read.)
+   */
+  allowUserCreated: z.boolean().default(false),
+  /**
+   * How many organizations one user may have created, or `null` for no cap. Applies to user
+   * created organizations only. Raising it, or removing it, is a weakening.
+   */
+  maxCreatedPerUser: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_ORGANIZATIONS_CREATED_PER_USER)
+    .nullable()
+    .default(DEFAULT_MAX_ORGANIZATIONS_CREATED_PER_USER),
+  /** The key of the role a user gets in the organization they create. */
+  creatorRole: RoleKeySchema.default('admin'),
+  /** The key of the role a member gets when no other is chosen (an invitation, a domain). */
+  defaultRole: RoleKeySchema.default('member'),
+  /**
+   * Whether a session may have no active organization (the user's personal account). `true`
+   * by default. `false` makes a client choose an organization before it can work.
+   */
+  personalAccount: z.boolean().default(true),
+})
+
 const Notifications = z.object({
   /**
    * Email the account's address when its password is changed, reset, set by an administrator or
@@ -518,6 +564,11 @@ const minLengthFloor = {
  *   them for good; `null` (the default) keeps them for ever.
  * - `agents.proposalsInProduction`: whether a production environment accepts proposals from
  *   an AI agent (`false` by default; ADR 0053). Switching it on is a weakening.
+ * - `organizations`: whether the environment has organizations (`enabled`, off by default;
+ *   ADR 0065), whether users may create them (`allowUserCreated`), how many each may
+ *   (`maxCreatedPerUser`), the role a creator and a new member get (`creatorRole`,
+ *   `defaultRole`) and whether a session may have no active organization (`personalAccount`).
+ *   Switching it off, or letting users create organizations, is a weakening.
  * - `notifications`: which security notices are emailed to an account's owner
  *   (`passwordChanged`, `newSignIn`, `mfaChanged`, `identityChanged`). All are on unless switched off.
  * - `mfa.policy`: whether two-step verification is `off`, `optional` (the default) or
@@ -549,6 +600,7 @@ export const EnvironmentSettingsSchema = z
     urls: Urls.strict().prefault({}),
     audit: Audit.strict().prefault({}),
     agents: Agents.strict().prefault({}),
+    organizations: Organizations.strict().prefault({}),
     notifications: Notifications.strict().prefault({}),
     mfa: MfaInput.prefault({}),
     passkeys: Passkeys.strict().prefault({}),
@@ -602,6 +654,7 @@ export const EnvironmentSettingsInputSchema = z
       .prefault({}),
     audit: Audit.strict().prefault({}),
     agents: Agents.strict().prefault({}),
+    organizations: Organizations.strict().prefault({}),
     notifications: Notifications.strict().prefault({}),
     mfa: MfaInput.prefault({}),
     passkeys: Passkeys.strict().prefault({}),
@@ -647,6 +700,7 @@ const Stored = z.object({
   urls: Urls.prefault({}),
   audit: Audit.prefault({}),
   agents: Agents.prefault({}),
+  organizations: Organizations.prefault({}),
   notifications: Notifications.prefault({}),
   mfa: Mfa.prefault({}),
   passkeys: Passkeys.prefault({}),
@@ -864,6 +918,12 @@ export type SettingsManagedBy = z.infer<typeof SettingsManagedBySchema>
  * - `phone.enabled` says whether a profile screen should offer adding a phone number: SMS is
  *   on and at least one country is allowed. Which countries is not said. Optional in the
  *   schema, so a client reading an older server's answer treats a missing one as `false`.
+ * - `organizations` says whether organizations are on at all, whether users may create their
+ *   own and whether the personal account (no organization) is allowed, so that an
+ *   organization switcher draws "Create organization" and "Personal account" only where the
+ *   server would accept them. Optional in the schema, so a client reading an older server's
+ *   answer treats a missing one as organizations off. The server still decides: every
+ *   organization route checks the setting itself.
  * - The allow-lists (`urls`, `sms.allowedCountries`), the audit settings, the email templates (`emails`), the notice switches (`notifications`) and
  *   everything under `sessions` (profiles, timeouts, the session limit) are deliberately
  *   absent: a client learns how its session is held from the response that starts it.
@@ -879,6 +939,13 @@ export const ClientConfigSchema = z
     password: PasswordPolicySchema,
     mfa: z.object({ policy: MfaPolicySchema, smsCode: z.boolean().optional() }).optional(),
     phone: z.object({ enabled: z.boolean() }).optional(),
+    organizations: z
+      .object({
+        enabled: z.boolean(),
+        allowUserCreated: z.boolean(),
+        personalAccount: z.boolean(),
+      })
+      .optional(),
   })
   .meta({ ref: 'ClientConfig' })
 

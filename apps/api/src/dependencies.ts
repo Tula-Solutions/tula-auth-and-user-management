@@ -23,6 +23,8 @@ import type { Mailer } from '~/ports/mailer'
 import type { NativeAppStore } from '~/ports/native-app-store'
 import type { OAuthProviders } from '~/ports/oauth-provider'
 import type { OAuthProviderStore } from '~/ports/oauth-provider-store'
+import type { OrganizationDomainStore } from '~/ports/organization-domain-store'
+import type { OrganizationStore } from '~/ports/organization-store'
 import type { PasskeyStore } from '~/ports/passkey-store'
 import type { ProofReplayGuard } from '~/ports/proof-replay'
 import type { ProposalStore } from '~/ports/proposal-store'
@@ -160,6 +162,10 @@ export interface Deps {
   hooks: HookStore
   /** The native apps an environment says are its own: what its association files are built from. */
   nativeApps: NativeAppStore
+  /** Organizations, the roles of an environment and the memberships between them and its users (ADR 0065). */
+  organizations: OrganizationStore
+  /** The domains organizations claim, and the codes that verify them (ADR 0065, "Verified domains"). */
+  organizationDomains: OrganizationDomainStore
   /** The changes agents have asked for, and what a human decided about each (ADR 0053). */
   proposals: ProposalStore
   /**

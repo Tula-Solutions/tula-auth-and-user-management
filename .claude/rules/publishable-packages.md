@@ -86,7 +86,7 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   ([docs/releasing.md](../../docs/releasing.md), "The release flow").
 - **`@tula-tech/core` must not pull Zod into an application's bundle.** Import run-time values from
   the contract's Zod-free entry points (`@tula-tech/contract/error-codes`, `/event-types`,
-  `/headers`, `/password-rules`, `/theme`, `/issuer`, `/webhook-signature`, `/custom-claims`, `/device-binding`) and types from
+  `/headers`, `/password-rules`, `/theme`, `/issuer`, `/webhook-signature`, `/custom-claims`, `/device-binding`, `/organization-permissions`) and types from
   `src/generated`. Anything
   an SDK needs at run time goes in a contract module that does not import Zod.
   `packages/contract/src/entry-points.test.ts` bundles every subpath but the index and fails

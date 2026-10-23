@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from 'bun:test'
 import {
+  HOOK_MAX_DEADLINE_MS,
   HOOK_QUESTION_SCHEMAS,
   signWebhook,
   TulaEventSchema,
@@ -19,7 +20,17 @@ import type { HookRecord } from '~/ports/hook-store'
 import { createTestDeps, TEST_ACTOR, TEST_TENANT, type TestDeps } from '~/testing'
 
 // The hook's receiver is a listener in this process, reached through the real outbound guard.
-// The clock is the test's; a deadline is real time, so every hook here has the shortest one.
+// The clock is the test's. A deadline is real time (an abort signal of the outbound guard), so
+// a hook here has the longest deadline there is and is never what a test waits on: a request
+// to a listener in this process still took more than 100 ms on a machine under load (TULA-133).
+// Only a hook that is meant to run out of time (`SHORT_DEADLINE_MS`) is given a short one, and
+// it fails the same way however slow the machine is: an answer that never comes, or comes after
+// four times the deadline, is late at any speed.
+
+/** The longest deadline a hook may have: far more than a local round trip needs under load. */
+const ANSWER_DEADLINE_MS = HOOK_MAX_DEADLINE_MS
+/** The shortest deadline a hook may have, for the tests that need one to run out. */
+const SHORT_DEADLINE_MS = 100
 
 const tenant: Tenant = {
   projectId: TEST_TENANT.projectId,
@@ -103,8 +114,7 @@ function register(scope: Tenant = tenant, input: Partial<Parameters<typeof Hooks
       point: 'before_sign_up',
       url: receiverUrl(),
       enabled: true,
-      // The shortest there is: a test that lets one run out waits this long.
-      deadlineMs: 100,
+      deadlineMs: ANSWER_DEADLINE_MS,
       failureMode: 'deny',
       ...input,
     },
@@ -144,7 +154,7 @@ describe('registering a hook', () => {
       point: 'before_sign_up',
       url: receiverUrl(),
       enabled: true,
-      deadlineMs: 100,
+      deadlineMs: ANSWER_DEADLINE_MS,
       failureMode: 'deny',
       lastFailedAt: null,
       lastFailureReason: null,
@@ -269,7 +279,11 @@ describe('changing a hook', () => {
   })
 
   test('making it stricter, or changing what does not weaken it, is not', async () => {
-    const { id } = await register(tenant, { enabled: false, failureMode: 'allow' })
+    const { id } = await register(tenant, {
+      enabled: false,
+      failureMode: 'allow',
+      deadlineMs: SHORT_DEADLINE_MS,
+    })
     await change(id, { enabled: true })
     await change(id, { failureMode: 'deny' })
     await change(id, { deadlineMs: 5000 })
@@ -282,7 +296,11 @@ describe('changing a hook', () => {
 
   test('a request that changes nothing writes nothing', async () => {
     const created = await register()
-    const same = await change(created.id, { enabled: true, deadlineMs: 100, url: receiverUrl() })
+    const same = await change(created.id, {
+      enabled: true,
+      deadlineMs: ANSWER_DEADLINE_MS,
+      url: receiverUrl(),
+    })
     expect(same.updatedAt).toBe(created.updatedAt)
     expect(recorded()).toHaveLength(1)
   })
@@ -315,7 +333,7 @@ describe('changing a hook', () => {
     )
     const error = await failure(change(id, { deadlineMs: 300 }))
     expect(error.code).toBe('resource.conflict')
-    expect(await stored(id)).toMatchObject({ enabled: false, deadlineMs: 100 })
+    expect(await stored(id)).toMatchObject({ enabled: false, deadlineMs: ANSWER_DEADLINE_MS })
     expect(recorded()).toHaveLength(1)
   })
 
@@ -510,10 +528,14 @@ describe('asking before a sign-up', () => {
     ['an answer after the deadline', () => Bun.sleep(400).then(allow), 'timeout'],
   ]
 
+  /** Only a hook that is meant to run out of time gets a short deadline. */
+  const deadlineFor = (reason: string) =>
+    reason === 'timeout' ? SHORT_DEADLINE_MS : ANSWER_DEADLINE_MS
+
   describe.each(bad)('%s', (_name, responder, reason) => {
     test('refuses the sign-up by default, as unavailable and not as denied', async () => {
       quietLogs()
-      const { id } = await register()
+      const { id } = await register(tenant, { deadlineMs: deadlineFor(reason) })
       respond = responder
       const error = await failure(ask())
       expect(error.code).toBe('hook.unavailable')
@@ -527,7 +549,10 @@ describe('asking before a sign-up', () => {
 
     test('lets it through, and says so, when the hook allows on failure', async () => {
       quietLogs()
-      const { id } = await register(tenant, { failureMode: 'allow' })
+      const { id } = await register(tenant, {
+        failureMode: 'allow',
+        deadlineMs: deadlineFor(reason),
+      })
       respond = responder
       expect(await ask()).toBe('bypassed')
       expect((await stored(id)).lastFailureReason).toBe(reason as HookRecord['lastFailureReason'])
@@ -537,12 +562,13 @@ describe('asking before a sign-up', () => {
 
   test('a hook that hangs refuses in bounded time', async () => {
     quietLogs()
-    await register()
+    await register(tenant, { deadlineMs: SHORT_DEADLINE_MS })
     respond = () => new Promise<Response>(() => undefined)
     const started = performance.now()
     expect((await failure(ask())).code).toBe('hook.unavailable')
-    // A deadline of 100 ms: well inside a second even on a slow runner.
-    expect(performance.now() - started).toBeLessThan(1500)
+    // The one wall-clock assertion, with a wide margin on purpose: the call must end at the
+    // hook's 100 ms deadline and not at the 5 s cap. 4 s is far past any load and short of 5.
+    expect(performance.now() - started).toBeLessThan(ANSWER_DEADLINE_MS - 1000)
   })
 
   test('the deadline is the hook’s, and never more than five seconds whatever the row says', async () => {
@@ -748,6 +774,9 @@ describe('recent outcomes', () => {
     await failure(ask())
     deps.clock.advance('1m')
     respond = () => new Promise(() => undefined)
+    // The one call meant to run out of time: shortened only now, so that the others, which
+    // are answered, keep the longest deadline.
+    await Hooks.update(deps, tenant, id, { deadlineMs: SHORT_DEADLINE_MS }, TEST_ACTOR)
     await failure(ask())
     expect(await outcomes(id)).toMatchObject({
       allowed: 2,

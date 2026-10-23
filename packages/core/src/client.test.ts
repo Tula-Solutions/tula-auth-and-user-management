@@ -1007,6 +1007,7 @@ describe('the public surface', () => {
       'isStepUpRequired',
       'isTulaError',
       'memoryStorage',
+      'readInvitationLink',
       'runtimeEnvironment',
       'stepUpMethods',
     ])

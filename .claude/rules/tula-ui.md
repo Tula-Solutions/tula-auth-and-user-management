@@ -83,3 +83,12 @@ rules (`react.md`) apply to the headless files above as they do to the rest of
   this package's tests only; an item never imports from `test-support`. Behaviour that every
   password sign-in must have is one suite (`test-support/sign-in.suite.tsx`), run against the
   prebuilt `<SignIn>` and the registry item: a new behaviour goes in the suite, not in one run.
+- **The organization items are also drawn in a browser** (`packages/ui/browser`, TULA-127):
+  Testing Library in happy-dom has no layout and no styles, so it cannot see contrast or a
+  focus ring. The harness builds the items' sources with the real shadcn primitives the
+  dashboard holds and the registry's own `theme` item (read from `r/theme.json`, never copied),
+  and `e2e/server.ts` serves it at `/__ui/` beside the example app, on the same origin so that
+  the example's sign-up cookie signs it in. `e2e/tests/tula-ui.spec.ts` (the `chromium`
+  project) runs axe on it in both colour schemes with no rule disabled. A new item with a
+  screen of its own gets a state in that spec; the harness is not part of the registry and is
+  never published. It reads `apps/dashboard/src`, which `packages/ui/turbo.json` names.

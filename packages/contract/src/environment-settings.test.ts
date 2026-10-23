@@ -70,6 +70,14 @@ describe('EnvironmentSettingsSchema', () => {
       urls: { allowedOrigins: [], allowedRedirectUrls: [] },
       audit: { retentionDays: null },
       agents: { proposalsInProduction: false, testSignIn: null },
+      organizations: {
+        enabled: false,
+        allowUserCreated: false,
+        maxCreatedPerUser: 5,
+        creatorRole: 'admin',
+        defaultRole: 'member',
+        personalAccount: true,
+      },
       notifications: {
         passwordChanged: true,
         newSignIn: true,
@@ -434,6 +442,14 @@ describe('EnvironmentSettingsInputSchema', () => {
       urls: { allowedRedirectUrls: [] },
       audit: { retentionDays: null },
       agents: { proposalsInProduction: false, testSignIn: null },
+      organizations: {
+        enabled: false,
+        allowUserCreated: false,
+        maxCreatedPerUser: 5,
+        creatorRole: 'admin',
+        defaultRole: 'member',
+        personalAccount: true,
+      },
       notifications: {
         passwordChanged: true,
         newSignIn: true,

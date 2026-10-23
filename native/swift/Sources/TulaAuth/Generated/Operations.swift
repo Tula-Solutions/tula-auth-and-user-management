@@ -18,6 +18,12 @@ public struct TulaOperation: Hashable, Sendable {
 
 /// Every operation of the client API (`/v1/client/*`).
 public enum TulaOperations {
+    /// Accept an invitation addressed to me (`POST /v1/client/me/organization-invitations/{invitationId}/accept`). No body. Answers `AcceptedInvitation`.
+    public static let acceptMyOrganizationInvitation = TulaOperation(id: "acceptMyOrganizationInvitation", method: "POST", path: "/v1/client/me/organization-invitations/{invitationId}/accept", requiresSession: true)
+
+    /// Accept an invitation (`POST /v1/client/me/organization-invitations/accept`). Body: `InvitationTokenRequest`. Answers `AcceptedInvitation`.
+    public static let acceptOrganizationInvitation = TulaOperation(id: "acceptOrganizationInvitation", method: "POST", path: "/v1/client/me/organization-invitations/accept", requiresSession: true)
+
     /// Prove an emailed or texted first factor (`POST /v1/client/sign-ins/{attemptId}/first-factor/attempt`). Body: `FirstFactorAttemptRequest`. Answers `FlowAttempt`.
     public static let attemptSignInFirstFactor = TulaOperation(id: "attemptSignInFirstFactor", method: "POST", path: "/v1/client/sign-ins/{attemptId}/first-factor/attempt", requiresSession: false)
 
@@ -39,8 +45,20 @@ public enum TulaOperations {
     /// Confirm the authenticator app (`POST /v1/client/me/factors/totp/confirm`). Body: `TotpConfirmRequest`. Answers `BackupCodes`.
     public static let confirmTotpEnrolment = TulaOperation(id: "confirmTotpEnrolment", method: "POST", path: "/v1/client/me/factors/totp/confirm", requiresSession: true)
 
+    /// Create an organization (`POST /v1/client/me/organizations`). Body: `CreateOrganizationRequest`. Answers `UserOrganization`.
+    public static let createMyOrganization = TulaOperation(id: "createMyOrganization", method: "POST", path: "/v1/client/me/organizations", requiresSession: true)
+
+    /// Decline an invitation addressed to me (`POST /v1/client/me/organization-invitations/{invitationId}/decline`). No body. Answers no body.
+    public static let declineMyOrganizationInvitation = TulaOperation(id: "declineMyOrganizationInvitation", method: "POST", path: "/v1/client/me/organization-invitations/{invitationId}/decline", requiresSession: true)
+
+    /// Decline an invitation (`POST /v1/client/me/organization-invitations/decline`). Body: `InvitationTokenRequest`. Answers no body.
+    public static let declineOrganizationInvitation = TulaOperation(id: "declineOrganizationInvitation", method: "POST", path: "/v1/client/me/organization-invitations/decline", requiresSession: true)
+
     /// Disconnect a provider account (`DELETE /v1/client/me/identities/{identityId}`). No body. Answers no body.
     public static let deleteMyIdentity = TulaOperation(id: "deleteMyIdentity", method: "DELETE", path: "/v1/client/me/identities/{identityId}", requiresSession: true)
+
+    /// Delete an organization (`DELETE /v1/client/me/organizations/{organizationId}`). No body. Answers no body.
+    public static let deleteMyOrganization = TulaOperation(id: "deleteMyOrganization", method: "DELETE", path: "/v1/client/me/organizations/{organizationId}", requiresSession: true)
 
     /// Stop using a texted code as my second factor (`DELETE /v1/client/me/factors/sms`). No body. Answers no body.
     public static let disableSmsFactor = TulaOperation(id: "disableSmsFactor", method: "DELETE", path: "/v1/client/me/factors/sms", requiresSession: true)
@@ -78,11 +96,38 @@ public enum TulaOperations {
     /// Get the options to step up with a passkey (`POST /v1/client/sessions/step-up/passkey`). No body. Answers `PasskeyRequestOptions`.
     public static let getStepUpPasskeyOptions = TulaOperation(id: "getStepUpPasskeyOptions", method: "POST", path: "/v1/client/sessions/step-up/passkey", requiresSession: true)
 
+    /// Invite an address to an organization (`POST /v1/client/me/organizations/{organizationId}/invitations`). Body: `CreateOrganizationInvitationRequest`. Answers `OrganizationInvitation`.
+    public static let inviteToMyOrganization = TulaOperation(id: "inviteToMyOrganization", method: "POST", path: "/v1/client/me/organizations/{organizationId}/invitations", requiresSession: true)
+
+    /// Join a suggested organization (`POST /v1/client/me/organizations/suggestions/{organizationId}/join`). No body. Answers `UserOrganization`.
+    public static let joinOrganizationSuggestion = TulaOperation(id: "joinOrganizationSuggestion", method: "POST", path: "/v1/client/me/organizations/suggestions/{organizationId}/join", requiresSession: true)
+
     /// List my connected accounts (`GET /v1/client/me/identities`). No body. Answers `IdentityList`.
     public static let listMyIdentities = TulaOperation(id: "listMyIdentities", method: "GET", path: "/v1/client/me/identities", requiresSession: true)
 
+    /// List an organization's domains (`GET /v1/client/me/organizations/{id}/domains`). No body. Answers `OrganizationDomainList`.
+    public static let listMyOrganizationDomains = TulaOperation(id: "listMyOrganizationDomains", method: "GET", path: "/v1/client/me/organizations/{id}/domains", requiresSession: true)
+
+    /// List an organization's invitations (`GET /v1/client/me/organizations/{organizationId}/invitations`). No body. Answers `OrganizationInvitationList`.
+    public static let listMyOrganizationInvitations = TulaOperation(id: "listMyOrganizationInvitations", method: "GET", path: "/v1/client/me/organizations/{organizationId}/invitations", requiresSession: true)
+
+    /// List an organization's members (`GET /v1/client/me/organizations/{organizationId}/members`). No body. Answers `OrganizationMemberList`.
+    public static let listMyOrganizationMembers = TulaOperation(id: "listMyOrganizationMembers", method: "GET", path: "/v1/client/me/organizations/{organizationId}/members", requiresSession: true)
+
+    /// List the roles the caller may give (`GET /v1/client/me/organizations/{organizationId}/roles`). No body. Answers `AssignableRoleList`.
+    public static let listMyOrganizationRoles = TulaOperation(id: "listMyOrganizationRoles", method: "GET", path: "/v1/client/me/organizations/{organizationId}/roles", requiresSession: true)
+
+    /// List the organizations I am suggested (`GET /v1/client/me/organizations/suggestions`). No body. Answers `OrganizationSuggestionList`.
+    public static let listMyOrganizationSuggestions = TulaOperation(id: "listMyOrganizationSuggestions", method: "GET", path: "/v1/client/me/organizations/suggestions", requiresSession: true)
+
+    /// List my organizations (`GET /v1/client/me/organizations`). No body. Answers `UserOrganizationList`.
+    public static let listMyOrganizations = TulaOperation(id: "listMyOrganizations", method: "GET", path: "/v1/client/me/organizations", requiresSession: true)
+
     /// List my passkeys (`GET /v1/client/me/passkeys`). No body. Answers `PasskeyList`.
     public static let listMyPasskeys = TulaOperation(id: "listMyPasskeys", method: "GET", path: "/v1/client/me/passkeys", requiresSession: true)
+
+    /// List the invitations addressed to me (`GET /v1/client/me/organization-invitations`). No body. Answers `MyOrganizationInvitationList`.
+    public static let listMyPendingOrganizationInvitations = TulaOperation(id: "listMyPendingOrganizationInvitations", method: "GET", path: "/v1/client/me/organization-invitations", requiresSession: true)
 
     /// List my sessions (`GET /v1/client/sessions`). No body. Answers `SessionList`.
     public static let listSessions = TulaOperation(id: "listSessions", method: "GET", path: "/v1/client/sessions", requiresSession: true)
@@ -96,11 +141,20 @@ public enum TulaOperations {
     /// Ask for a texted second-factor code (`POST /v1/client/sign-ins/{attemptId}/second-factor/prepare`). Body: `SecondFactorPrepareRequest`. Answers `FlowAttempt`.
     public static let prepareSignInSecondFactor = TulaOperation(id: "prepareSignInSecondFactor", method: "POST", path: "/v1/client/sign-ins/{attemptId}/second-factor/prepare", requiresSession: false)
 
+    /// Preview an invitation (`POST /v1/client/organization-invitations/preview`). Body: `InvitationTokenRequest`. Answers `InvitationPreview`.
+    public static let previewOrganizationInvitation = TulaOperation(id: "previewOrganizationInvitation", method: "POST", path: "/v1/client/organization-invitations/preview", requiresSession: false)
+
     /// Refresh a session (`POST /v1/client/sessions/refresh`). Body: `RefreshTokenRequest`. Answers `SessionTokens`.
     public static let refreshSession = TulaOperation(id: "refreshSession", method: "POST", path: "/v1/client/sessions/refresh", requiresSession: false)
 
     /// Make new backup codes (`POST /v1/client/me/factors/backup-codes`). No body. Answers `BackupCodes`.
     public static let regenerateBackupCodes = TulaOperation(id: "regenerateBackupCodes", method: "POST", path: "/v1/client/me/factors/backup-codes", requiresSession: true)
+
+    /// Remove a domain (`DELETE /v1/client/me/organizations/{id}/domains/{domainId}`). No body. Answers no body.
+    public static let removeMyOrganizationDomain = TulaOperation(id: "removeMyOrganizationDomain", method: "DELETE", path: "/v1/client/me/organizations/{id}/domains/{domainId}", requiresSession: true)
+
+    /// Remove a member, or leave (`DELETE /v1/client/me/organizations/{organizationId}/members/{userId}`). No body. Answers no body.
+    public static let removeMyOrganizationMember = TulaOperation(id: "removeMyOrganizationMember", method: "DELETE", path: "/v1/client/me/organizations/{organizationId}/members/{userId}", requiresSession: true)
 
     /// Remove a passkey (`DELETE /v1/client/me/passkeys/{passkeyId}`). No body. Answers no body.
     public static let removePasskey = TulaOperation(id: "removePasskey", method: "DELETE", path: "/v1/client/me/passkeys/{passkeyId}", requiresSession: true)
@@ -126,6 +180,9 @@ public enum TulaOperations {
     /// Resend the email code (`POST /v1/client/sign-ups/{attemptId}/resend-code`). No body. Answers `FlowAttempt`.
     public static let resendSignUpCode = TulaOperation(id: "resendSignUpCode", method: "POST", path: "/v1/client/sign-ups/{attemptId}/resend-code", requiresSession: false)
 
+    /// Revoke an invitation (`DELETE /v1/client/me/organizations/{organizationId}/invitations/{invitationId}`). No body. Answers no body.
+    public static let revokeMyOrganizationInvitation = TulaOperation(id: "revokeMyOrganizationInvitation", method: "DELETE", path: "/v1/client/me/organizations/{organizationId}/invitations/{invitationId}", requiresSession: true)
+
     /// Sign out my other devices (`POST /v1/client/sessions/revoke-others`). No body. Answers `RevokedSessions`.
     public static let revokeOtherSessions = TulaOperation(id: "revokeOtherSessions", method: "POST", path: "/v1/client/sessions/revoke-others", requiresSession: true)
 
@@ -138,6 +195,9 @@ public enum TulaOperations {
     /// Text me a code to prove it is still me (`POST /v1/client/sessions/step-up/sms-code`). No body. Answers `SmsFactorCode`.
     public static let sendStepUpSmsCode = TulaOperation(id: "sendStepUpSmsCode", method: "POST", path: "/v1/client/sessions/step-up/sms-code", requiresSession: true)
 
+    /// Set the active organization (`PUT /v1/client/me/organizations/active`). Body: `SetActiveOrganizationRequest`. Answers `ActiveOrganization`.
+    public static let setActiveOrganization = TulaOperation(id: "setActiveOrganization", method: "PUT", path: "/v1/client/me/organizations/active", requiresSession: true)
+
     /// Sign out (`POST /v1/client/sessions/sign-out`). Body: `RefreshTokenRequest`. Answers no body.
     public static let signOut = TulaOperation(id: "signOut", method: "POST", path: "/v1/client/sessions/sign-out", requiresSession: false)
 
@@ -146,6 +206,9 @@ public enum TulaOperations {
 
     /// Start connecting a provider account (`POST /v1/client/me/identities/oauth`). Body: `OAuthStartRequest`. Answers `IdentityLinkStart`.
     public static let startIdentityLink = TulaOperation(id: "startIdentityLink", method: "POST", path: "/v1/client/me/identities/oauth", requiresSession: true)
+
+    /// Claim a domain for an organization (`POST /v1/client/me/organizations/{id}/domains`). Body: `StartOrganizationDomainRequest`. Answers `OrganizationDomain`.
+    public static let startMyOrganizationDomain = TulaOperation(id: "startMyOrganizationDomain", method: "POST", path: "/v1/client/me/organizations/{id}/domains", requiresSession: true)
 
     /// Start signing in with an OAuth provider (`POST /v1/client/sign-ins/oauth`). Body: `OAuthStartRequest`. Answers `OAuthStart`.
     public static let startOAuthSignIn = TulaOperation(id: "startOAuthSignIn", method: "POST", path: "/v1/client/sign-ins/oauth", requiresSession: false)
@@ -204,8 +267,20 @@ public enum TulaOperations {
     /// Submit a second factor (`POST /v1/client/sign-ins/{attemptId}/second-factor`). Body: `SecondFactorRequest`. Answers `FlowAttempt`.
     public static let submitSignInSecondFactor = TulaOperation(id: "submitSignInSecondFactor", method: "POST", path: "/v1/client/sign-ins/{attemptId}/second-factor", requiresSession: false)
 
+    /// Rename an organization (`PATCH /v1/client/me/organizations/{organizationId}`). Body: `UpdateOrganizationRequest`. Answers `UserOrganization`.
+    public static let updateMyOrganization = TulaOperation(id: "updateMyOrganization", method: "PATCH", path: "/v1/client/me/organizations/{organizationId}", requiresSession: true)
+
+    /// Change what a domain does (`PATCH /v1/client/me/organizations/{id}/domains/{domainId}`). Body: `UpdateOrganizationDomainRequest`. Answers `OrganizationDomain`.
+    public static let updateMyOrganizationDomain = TulaOperation(id: "updateMyOrganizationDomain", method: "PATCH", path: "/v1/client/me/organizations/{id}/domains/{domainId}", requiresSession: true)
+
+    /// Change a member's role (`PATCH /v1/client/me/organizations/{organizationId}/members/{userId}`). Body: `UpdateOrganizationMemberRequest`. Answers `OrganizationMember`.
+    public static let updateMyOrganizationMember = TulaOperation(id: "updateMyOrganizationMember", method: "PATCH", path: "/v1/client/me/organizations/{organizationId}/members/{userId}", requiresSession: true)
+
     /// Confirm the address with its code (`POST /v1/client/me/email/verify`). Body: `EmailAddressVerifyRequest`. Answers `CurrentUser`.
     public static let verifyEmailAddress = TulaOperation(id: "verifyEmailAddress", method: "POST", path: "/v1/client/me/email/verify", requiresSession: true)
+
+    /// Verify a claimed domain (`POST /v1/client/me/organizations/{id}/domains/{domainId}/verify`). Body: `VerifyOrganizationDomainRequest`. Answers `OrganizationDomain`.
+    public static let verifyMyOrganizationDomain = TulaOperation(id: "verifyMyOrganizationDomain", method: "POST", path: "/v1/client/me/organizations/{id}/domains/{domainId}/verify", requiresSession: true)
 
     /// Confirm a phone number with its code (`POST /v1/client/me/phone/verify`). Body: `PhoneNumberVerifyRequest`. Answers `CurrentUser`.
     public static let verifyPhoneNumber = TulaOperation(id: "verifyPhoneNumber", method: "POST", path: "/v1/client/me/phone/verify", requiresSession: true)
@@ -221,6 +296,8 @@ public enum TulaOperations {
 
     /// Every operation, by id.
     public static let all: [TulaOperation] = [
+        acceptMyOrganizationInvitation,
+        acceptOrganizationInvitation,
         attemptSignInFirstFactor,
         changeMyPassword,
         confirmPasswordResetTotpEnrolment,
@@ -228,7 +305,11 @@ public enum TulaOperations {
         confirmSignUpTotpEnrolment,
         confirmSmsFactorEnrolment,
         confirmTotpEnrolment,
+        createMyOrganization,
+        declineMyOrganizationInvitation,
+        declineOrganizationInvitation,
         deleteMyIdentity,
+        deleteMyOrganization,
         disableSmsFactor,
         disableTotp,
         exchangeIdentityLinkTicket,
@@ -241,14 +322,26 @@ public enum TulaOperations {
         getPasswordResetSecondFactorPasskeyOptions,
         getSignInSecondFactorPasskeyOptions,
         getStepUpPasskeyOptions,
+        inviteToMyOrganization,
+        joinOrganizationSuggestion,
         listMyIdentities,
+        listMyOrganizationDomains,
+        listMyOrganizationInvitations,
+        listMyOrganizationMembers,
+        listMyOrganizationRoles,
+        listMyOrganizationSuggestions,
+        listMyOrganizations,
         listMyPasskeys,
+        listMyPendingOrganizationInvitations,
         listSessions,
         preparePasswordResetSecondFactor,
         prepareSignInFirstFactor,
         prepareSignInSecondFactor,
+        previewOrganizationInvitation,
         refreshSession,
         regenerateBackupCodes,
+        removeMyOrganizationDomain,
+        removeMyOrganizationMember,
         removePasskey,
         removePhoneNumber,
         renamePasskey,
@@ -257,13 +350,16 @@ public enum TulaOperations {
         resendPasswordResetCode,
         resendSignInCode,
         resendSignUpCode,
+        revokeMyOrganizationInvitation,
         revokeOtherSessions,
         revokeSession,
         sendStepUpEmailCode,
         sendStepUpSmsCode,
+        setActiveOrganization,
         signOut,
         startIdTokenSignIn,
         startIdentityLink,
+        startMyOrganizationDomain,
         startOAuthSignIn,
         startPasskeyRegistration,
         startPasskeySignIn,
@@ -283,7 +379,11 @@ public enum TulaOperations {
         submitSignInPasskey,
         submitSignInPassword,
         submitSignInSecondFactor,
+        updateMyOrganization,
+        updateMyOrganizationDomain,
+        updateMyOrganizationMember,
         verifyEmailAddress,
+        verifyMyOrganizationDomain,
         verifyPhoneNumber,
         verifySignInEmail,
         verifySignInLink,

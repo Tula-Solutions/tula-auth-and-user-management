@@ -50,6 +50,14 @@ const EMAIL_WORDS: Record<EmailTemplateKind, { label: string; when: string }> = 
     label: 'Confirmation code',
     when: 'A signed-in user without a second factor confirms it is them before a sensitive change.',
   },
+  organization_domain_verification: {
+    label: 'Organization domain code',
+    when: 'An organization administrator asked to verify a domain and the code is sent to an address on it.',
+  },
+  organization_domain_expiring: {
+    label: 'Organization domain about to lapse',
+    when: 'A verified domain of an organization is 30 or 7 days from needing to be verified again. Sent to the organization managers.',
+  },
   account_exists: {
     label: 'Sign-up for an existing account',
     when: 'Someone tried to sign up with an address that already has an account.',
@@ -134,6 +142,10 @@ const EMAIL_WORDS: Record<EmailTemplateKind, { label: string; when: string }> = 
     label: 'Email address added',
     when: 'A signed-in user added an email address to an account that had none.',
   },
+  organization_invitation: {
+    label: 'Organization invitation',
+    when: 'Someone invited an address to join an organization. The link carries the invitation.',
+  },
 }
 
 const SMS_WORDS: Record<SmsTemplateKind, { label: string; when: string }> = {
@@ -182,6 +194,10 @@ export const MESSAGE_GROUPS: readonly MessageGroup[] = [
     messages: emails(
       (kind) => EMAIL_TEMPLATE_RULES[kind].category === 'notice' && !ABOUT_AN_ADDRESS.includes(kind)
     ),
+  },
+  {
+    title: 'Invitations',
+    messages: emails((kind) => EMAIL_TEMPLATE_RULES[kind].category === 'invitation'),
   },
   {
     title: 'Text messages',

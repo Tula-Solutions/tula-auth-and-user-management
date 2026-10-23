@@ -1,0 +1,43 @@
+{
+  "users": [
+    {
+      "localId": "fbuid0000000000000000000001",
+      "email": "maya@northline.app",
+      "emailVerified": true,
+      "passwordHash": "lSrfV15cpx95_sZS2W9c9Kp6i_LVgQNDNC_qzrCnh1SAyZvqmZqAjTdn3aoItz-VHjoZilo78198JAdRuid5lQ==",
+      "salt": "42xEC-ixf3L2lw==",
+      "displayName": "Maya Chen",
+      "createdAt": "1704189600000",
+      "lastSignedInAt": "1704189600000",
+      "providerUserInfo": [
+        {
+          "providerId": "password",
+          "email": "maya@northline.app",
+          "federatedId": "maya@northline.app",
+          "rawId": "maya@northline.app"
+        }
+      ]
+    },
+    {
+      "localId": "fbuid0000000000000000000002",
+      "email": "jon@northline.app",
+      "emailVerified": false,
+      "passwordHash": "lSrfV15cpx95/sZS2W9c9Kp6i/LVgQNDNC/qzrCnh1SAyZvqmZqAjTdn3aoItz+VHjoZilo78198JAdRuid5lQ=="
+    },
+    {
+      "localId": "fbuid0000000000000000000003",
+      "email": "priya@northline.app",
+      "emailVerified": true,
+      "displayName": "Priya N",
+      "customAttributes": "{\"role\":\"editor\"}",
+      "providerUserInfo": [{ "providerId": "google.com", "rawId": "1100000000000000001" }]
+    },
+    {
+      "localId": "fbuid0000000000000000000004",
+      "email": "off@northline.app",
+      "emailVerified": true,
+      "disabled": true
+    },
+    { "localId": "fbuid0000000000000000000005", "phoneNumber": "+14155550100" }
+  ]
+}

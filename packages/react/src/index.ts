@@ -6,7 +6,18 @@
  * Everything exported here is the package's public, versioned surface. Import the stylesheet
  * once, next to the provider: `import '@tula-tech/react/styles.css'`.
  */
-export type { FlowStep, Session, TulaClient, TulaError, User } from '@tula-tech/core'
+export type { OrganizationCheck } from '@tula-tech/contract/custom-claims'
+export type {
+  ActiveOrganization,
+  CreateOrganizationInput,
+  FlowStep,
+  Session,
+  TulaClient,
+  TulaError,
+  User,
+  UserOrganization,
+} from '@tula-tech/core'
+export { type InvitationLink, readInvitationLink } from '@tula-tech/core'
 export {
   type Appearance,
   ELEMENT_NAMES,
@@ -23,6 +34,19 @@ export {
 export type { FlowResult } from './components/flow-screens'
 export { formatDuration, type PlacedErrors, rateLimitedAlert } from './components/form-errors'
 export { OAuthCallback, type OAuthCallbackProps } from './components/oauth'
+export {
+  CreateOrganization,
+  type CreateOrganizationProps,
+} from './components/organization-create'
+export {
+  OrganizationProfile,
+  type OrganizationProfileProps,
+  type OrganizationProfileSection,
+} from './components/organization-profile'
+export {
+  OrganizationSwitcher,
+  type OrganizationSwitcherProps,
+} from './components/organization-switcher'
 export { SignIn, type SignInProps } from './components/sign-in'
 export { SignUp, type SignUpProps } from './components/sign-up'
 export {
@@ -51,6 +75,12 @@ export {
   type UseOAuthCallbackResult,
   useOAuthCallback,
 } from './hooks/use-oauth-callback'
+export {
+  type UseOrganizationListResult,
+  type UseOrganizationResult,
+  useOrganization,
+  useOrganizationList,
+} from './hooks/use-organization'
 export { usePasskeySupport } from './hooks/use-passkey-support'
 export {
   type PasswordChecklist,

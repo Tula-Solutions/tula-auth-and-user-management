@@ -28,6 +28,7 @@ import {
   tokensFor,
   userByEmail,
 } from './helpers'
+import { ORGANIZATION_HANDLERS } from './organizations'
 import { matchTotp } from './totp'
 import type { SandboxAttempt, SandboxProvider, SandboxUser } from './types'
 import { newTotpSecret, normalizeEmail, SANDBOX_PASSWORD_POLICY, type World } from './world'
@@ -286,6 +287,11 @@ export const HANDLERS: Handlers = {
     password: SANDBOX_PASSWORD_POLICY,
     mfa: { policy: world.settings.mfaPolicy, smsCode: false },
     phone: { enabled: false },
+    organizations: {
+      enabled: world.settings.organizations,
+      allowUserCreated: true,
+      personalAccount: true,
+    },
   }),
   getPasswordPolicy: () => SANDBOX_PASSWORD_POLICY,
 
@@ -914,6 +920,9 @@ export const HANDLERS: Handlers = {
   requestPhoneCode: () => unsupported('requestPhoneCode'),
   verifyPhoneNumber: () => unsupported('verifyPhoneNumber'),
   removePhoneNumber: () => unsupported('removePhoneNumber'),
+
+  // Organizations (ADR 0065) ------------------------------------------------------------------
+  ...ORGANIZATION_HANDLERS,
 
   // Two-step verification ---------------------------------------------------------------------
   getMyFactors: (ctx) => {

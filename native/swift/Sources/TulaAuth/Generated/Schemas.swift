@@ -4,6 +4,158 @@
 
 import Foundation
 
+public struct AcceptedInvitation: Codable, Hashable, Sendable {
+    public var id: String
+    public var name: String
+    public var slug: String
+    public var role: String
+    public var permissions: [String]
+    /// Format: `date-time`.
+    public var createdAt: String
+
+    public init(
+        id: String,
+        name: String,
+        slug: String,
+        role: String,
+        permissions: [String],
+        createdAt: String
+    ) {
+        self.id = id
+        self.name = name
+        self.slug = slug
+        self.role = role
+        self.permissions = permissions
+        self.createdAt = createdAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case slug
+        case role
+        case permissions
+        case createdAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.name = try container.decode(String.self, forKey: .name)
+        self.slug = try container.decode(String.self, forKey: .slug)
+        self.role = try container.decode(String.self, forKey: .role)
+        self.permissions = try container.decode([String].self, forKey: .permissions)
+        self.createdAt = try container.decode(String.self, forKey: .createdAt)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.id, forKey: .id)
+        try container.encode(self.name, forKey: .name)
+        try container.encode(self.slug, forKey: .slug)
+        try container.encode(self.role, forKey: .role)
+        try container.encode(self.permissions, forKey: .permissions)
+        try container.encode(self.createdAt, forKey: .createdAt)
+    }
+}
+
+public struct ActiveOrganization: Codable, Hashable, Sendable {
+    public var sessionId: String
+    public var organizationId: String?
+    public var accessToken: String?
+    /// Format: `date-time`.
+    public var accessTokenExpiresAt: String?
+
+    public init(
+        sessionId: String,
+        organizationId: String?,
+        accessToken: String? = nil,
+        accessTokenExpiresAt: String? = nil
+    ) {
+        self.sessionId = sessionId
+        self.organizationId = organizationId
+        self.accessToken = accessToken
+        self.accessTokenExpiresAt = accessTokenExpiresAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionId
+        case organizationId
+        case accessToken
+        case accessTokenExpiresAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.sessionId = try container.decode(String.self, forKey: .sessionId)
+        self.organizationId = try container.decode(String?.self, forKey: .organizationId)
+        self.accessToken = try container.decodeIfPresent(String.self, forKey: .accessToken)
+        self.accessTokenExpiresAt = try container.decodeIfPresent(String.self, forKey: .accessTokenExpiresAt)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.sessionId, forKey: .sessionId)
+        try container.encode(self.organizationId, forKey: .organizationId)
+        try container.encodeIfPresent(self.accessToken, forKey: .accessToken)
+        try container.encodeIfPresent(self.accessTokenExpiresAt, forKey: .accessTokenExpiresAt)
+    }
+}
+
+public struct AssignableRole: Codable, Hashable, Sendable {
+    public var key: String
+    public var name: String
+
+    public init(
+        key: String,
+        name: String
+    ) {
+        self.key = key
+        self.name = name
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case key
+        case name
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.key = try container.decode(String.self, forKey: .key)
+        self.name = try container.decode(String.self, forKey: .name)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.key, forKey: .key)
+        try container.encode(self.name, forKey: .name)
+    }
+}
+
+public struct AssignableRoleList: Codable, Hashable, Sendable {
+    public var data: [AssignableRole]
+
+    public init(
+        data: [AssignableRole]
+    ) {
+        self.data = data
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case data
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.data = try container.decode([AssignableRole].self, forKey: .data)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.data, forKey: .data)
+    }
+}
+
 public struct BackupCodes: Codable, Hashable, Sendable {
     public var codes: [String]
 
@@ -65,6 +217,7 @@ public struct ClientConfig: Codable, Hashable, Sendable {
     public var password: PasswordPolicy
     public var mfa: ClientConfigMfa?
     public var phone: ClientConfigPhone?
+    public var organizations: ClientConfigOrganizations?
 
     public init(
         app: ClientConfigApp,
@@ -72,7 +225,8 @@ public struct ClientConfig: Codable, Hashable, Sendable {
         signUp: ClientConfigSignUp? = nil,
         password: PasswordPolicy,
         mfa: ClientConfigMfa? = nil,
-        phone: ClientConfigPhone? = nil
+        phone: ClientConfigPhone? = nil,
+        organizations: ClientConfigOrganizations? = nil
     ) {
         self.app = app
         self.signIn = signIn
@@ -80,6 +234,7 @@ public struct ClientConfig: Codable, Hashable, Sendable {
         self.password = password
         self.mfa = mfa
         self.phone = phone
+        self.organizations = organizations
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -89,6 +244,7 @@ public struct ClientConfig: Codable, Hashable, Sendable {
         case password
         case mfa
         case phone
+        case organizations
     }
 
     public init(from decoder: Decoder) throws {
@@ -99,6 +255,7 @@ public struct ClientConfig: Codable, Hashable, Sendable {
         self.password = try container.decode(PasswordPolicy.self, forKey: .password)
         self.mfa = try container.decodeIfPresent(ClientConfigMfa.self, forKey: .mfa)
         self.phone = try container.decodeIfPresent(ClientConfigPhone.self, forKey: .phone)
+        self.organizations = try container.decodeIfPresent(ClientConfigOrganizations.self, forKey: .organizations)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -109,6 +266,7 @@ public struct ClientConfig: Codable, Hashable, Sendable {
         try container.encode(self.password, forKey: .password)
         try container.encodeIfPresent(self.mfa, forKey: .mfa)
         try container.encodeIfPresent(self.phone, forKey: .phone)
+        try container.encodeIfPresent(self.organizations, forKey: .organizations)
     }
 }
 
@@ -169,6 +327,42 @@ public struct ClientConfigMfa: Codable, Hashable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(self.policy, forKey: .policy)
         try container.encodeIfPresent(self.smsCode, forKey: .smsCode)
+    }
+}
+
+public struct ClientConfigOrganizations: Codable, Hashable, Sendable {
+    public var enabled: Bool
+    public var allowUserCreated: Bool
+    public var personalAccount: Bool
+
+    public init(
+        enabled: Bool,
+        allowUserCreated: Bool,
+        personalAccount: Bool
+    ) {
+        self.enabled = enabled
+        self.allowUserCreated = allowUserCreated
+        self.personalAccount = personalAccount
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled
+        case allowUserCreated
+        case personalAccount
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.enabled = try container.decode(Bool.self, forKey: .enabled)
+        self.allowUserCreated = try container.decode(Bool.self, forKey: .allowUserCreated)
+        self.personalAccount = try container.decode(Bool.self, forKey: .personalAccount)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.enabled, forKey: .enabled)
+        try container.encode(self.allowUserCreated, forKey: .allowUserCreated)
+        try container.encode(self.personalAccount, forKey: .personalAccount)
     }
 }
 
@@ -247,6 +441,72 @@ public struct ClientConfigSignUp: Codable, Hashable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(self.password, forKey: .password)
+    }
+}
+
+public struct CreateOrganizationInvitationRequest: Codable, Hashable, Sendable {
+    public var email: String
+    public var role: OrganizationRoleKey
+    public var redirectUrl: String
+
+    public init(
+        email: String,
+        role: OrganizationRoleKey,
+        redirectUrl: String
+    ) {
+        self.email = email
+        self.role = role
+        self.redirectUrl = redirectUrl
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case email
+        case role
+        case redirectUrl
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.email = try container.decode(String.self, forKey: .email)
+        self.role = try container.decode(OrganizationRoleKey.self, forKey: .role)
+        self.redirectUrl = try container.decode(String.self, forKey: .redirectUrl)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.email, forKey: .email)
+        try container.encode(self.role, forKey: .role)
+        try container.encode(self.redirectUrl, forKey: .redirectUrl)
+    }
+}
+
+public struct CreateOrganizationRequest: Codable, Hashable, Sendable {
+    public var name: String
+    public var slug: OrganizationSlug
+
+    public init(
+        name: String,
+        slug: OrganizationSlug
+    ) {
+        self.name = name
+        self.slug = slug
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case slug
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.name = try container.decode(String.self, forKey: .name)
+        self.slug = try container.decode(OrganizationSlug.self, forKey: .slug)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.name, forKey: .name)
+        try container.encode(self.slug, forKey: .slug)
     }
 }
 
@@ -1755,6 +2015,73 @@ public struct IdentityList: Codable, Hashable, Sendable {
     }
 }
 
+public struct InvitationPreview: Codable, Hashable, Sendable {
+    public var organizationName: String
+    public var role: String
+    public var email: String
+    /// Format: `date-time`.
+    public var expiresAt: String
+
+    public init(
+        organizationName: String,
+        role: String,
+        email: String,
+        expiresAt: String
+    ) {
+        self.organizationName = organizationName
+        self.role = role
+        self.email = email
+        self.expiresAt = expiresAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case organizationName
+        case role
+        case email
+        case expiresAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.organizationName = try container.decode(String.self, forKey: .organizationName)
+        self.role = try container.decode(String.self, forKey: .role)
+        self.email = try container.decode(String.self, forKey: .email)
+        self.expiresAt = try container.decode(String.self, forKey: .expiresAt)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.organizationName, forKey: .organizationName)
+        try container.encode(self.role, forKey: .role)
+        try container.encode(self.email, forKey: .email)
+        try container.encode(self.expiresAt, forKey: .expiresAt)
+    }
+}
+
+public struct InvitationTokenRequest: Codable, Hashable, Sendable {
+    public var token: String
+
+    public init(
+        token: String
+    ) {
+        self.token = token
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case token
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.token = try container.decode(String.self, forKey: .token)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.token, forKey: .token)
+    }
+}
+
 public enum MfaPolicy: Codable, Hashable, Sendable {
     case off
     case optional
@@ -1804,6 +2131,79 @@ public enum MfaPolicy: Codable, Hashable, Sendable {
 
     public func hash(into hasher: inout Hasher) {
         hasher.combine(self.rawValue)
+    }
+}
+
+public struct MyOrganizationInvitation: Codable, Hashable, Sendable {
+    public var id: String
+    public var organizationName: String
+    public var role: String
+    /// Format: `date-time`.
+    public var expiresAt: String
+
+    public init(
+        id: String,
+        organizationName: String,
+        role: String,
+        expiresAt: String
+    ) {
+        self.id = id
+        self.organizationName = organizationName
+        self.role = role
+        self.expiresAt = expiresAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case organizationName
+        case role
+        case expiresAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.organizationName = try container.decode(String.self, forKey: .organizationName)
+        self.role = try container.decode(String.self, forKey: .role)
+        self.expiresAt = try container.decode(String.self, forKey: .expiresAt)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.id, forKey: .id)
+        try container.encode(self.organizationName, forKey: .organizationName)
+        try container.encode(self.role, forKey: .role)
+        try container.encode(self.expiresAt, forKey: .expiresAt)
+    }
+}
+
+public struct MyOrganizationInvitationList: Codable, Hashable, Sendable {
+    public var meta: PaginationMeta
+    public var data: [MyOrganizationInvitation]
+
+    public init(
+        meta: PaginationMeta,
+        data: [MyOrganizationInvitation]
+    ) {
+        self.meta = meta
+        self.data = data
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case meta
+        case data
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.meta = try container.decode(PaginationMeta.self, forKey: .meta)
+        self.data = try container.decode([MyOrganizationInvitation].self, forKey: .data)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.meta, forKey: .meta)
+        try container.encode(self.data, forKey: .data)
     }
 }
 
@@ -1987,6 +2387,549 @@ public struct OAuthStartRequest: Codable, Hashable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(self.provider, forKey: .provider)
         try container.encode(self.redirectUrl, forKey: .redirectUrl)
+    }
+}
+
+public struct OrganizationDomain: Codable, Hashable, Sendable {
+    public var id: String
+    public var domain: String
+    public var mode: OrganizationDomainMode
+    public var status: OrganizationDomainStatus
+    public var verifiedAt: String?
+    public var expiresAt: String?
+    public var codeExpiresAt: String?
+    /// Format: `date-time`.
+    public var createdAt: String
+    /// Format: `date-time`.
+    public var updatedAt: String
+
+    public init(
+        id: String,
+        domain: String,
+        mode: OrganizationDomainMode,
+        status: OrganizationDomainStatus,
+        verifiedAt: String?,
+        expiresAt: String?,
+        codeExpiresAt: String?,
+        createdAt: String,
+        updatedAt: String
+    ) {
+        self.id = id
+        self.domain = domain
+        self.mode = mode
+        self.status = status
+        self.verifiedAt = verifiedAt
+        self.expiresAt = expiresAt
+        self.codeExpiresAt = codeExpiresAt
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case domain
+        case mode
+        case status
+        case verifiedAt
+        case expiresAt
+        case codeExpiresAt
+        case createdAt
+        case updatedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.domain = try container.decode(String.self, forKey: .domain)
+        self.mode = try container.decode(OrganizationDomainMode.self, forKey: .mode)
+        self.status = try container.decode(OrganizationDomainStatus.self, forKey: .status)
+        self.verifiedAt = try container.decode(String?.self, forKey: .verifiedAt)
+        self.expiresAt = try container.decode(String?.self, forKey: .expiresAt)
+        self.codeExpiresAt = try container.decode(String?.self, forKey: .codeExpiresAt)
+        self.createdAt = try container.decode(String.self, forKey: .createdAt)
+        self.updatedAt = try container.decode(String.self, forKey: .updatedAt)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.id, forKey: .id)
+        try container.encode(self.domain, forKey: .domain)
+        try container.encode(self.mode, forKey: .mode)
+        try container.encode(self.status, forKey: .status)
+        try container.encode(self.verifiedAt, forKey: .verifiedAt)
+        try container.encode(self.expiresAt, forKey: .expiresAt)
+        try container.encode(self.codeExpiresAt, forKey: .codeExpiresAt)
+        try container.encode(self.createdAt, forKey: .createdAt)
+        try container.encode(self.updatedAt, forKey: .updatedAt)
+    }
+}
+
+public struct OrganizationDomainList: Codable, Hashable, Sendable {
+    public var data: [OrganizationDomain]
+
+    public init(
+        data: [OrganizationDomain]
+    ) {
+        self.data = data
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case data
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.data = try container.decode([OrganizationDomain].self, forKey: .data)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.data, forKey: .data)
+    }
+}
+
+public enum OrganizationDomainMode: Codable, Hashable, Sendable {
+    case suggest
+    case autoJoin
+    /// A value this version does not know, as the API wrote it.
+    case unknown(String)
+
+    /// Every value this version knows.
+    public static let allKnown: [OrganizationDomainMode] = [
+        .suggest,
+        .autoJoin,
+    ]
+
+    /// The value for a string of the API: `unknown` for one this version does not know.
+    public init(rawValue: String) {
+        switch rawValue {
+        case "suggest": self = .suggest
+        case "auto_join": self = .autoJoin
+        default: self = .unknown(rawValue)
+        }
+    }
+
+    /// The value as the API writes it.
+    public var rawValue: String {
+        switch self {
+        case .suggest: return "suggest"
+        case .autoJoin: return "auto_join"
+        case .unknown(let value): return value
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(self.rawValue)
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.rawValue == rhs.rawValue
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(self.rawValue)
+    }
+}
+
+public typealias OrganizationDomainName = String
+
+public enum OrganizationDomainStatus: Codable, Hashable, Sendable {
+    case pending
+    case verified
+    case needsReverification
+    /// A value this version does not know, as the API wrote it.
+    case unknown(String)
+
+    /// Every value this version knows.
+    public static let allKnown: [OrganizationDomainStatus] = [
+        .pending,
+        .verified,
+        .needsReverification,
+    ]
+
+    /// The value for a string of the API: `unknown` for one this version does not know.
+    public init(rawValue: String) {
+        switch rawValue {
+        case "pending": self = .pending
+        case "verified": self = .verified
+        case "needs_reverification": self = .needsReverification
+        default: self = .unknown(rawValue)
+        }
+    }
+
+    /// The value as the API writes it.
+    public var rawValue: String {
+        switch self {
+        case .pending: return "pending"
+        case .verified: return "verified"
+        case .needsReverification: return "needs_reverification"
+        case .unknown(let value): return value
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(self.rawValue)
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.rawValue == rhs.rawValue
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(self.rawValue)
+    }
+}
+
+public struct OrganizationInvitation: Codable, Hashable, Sendable {
+    public var id: String
+    public var organizationId: String
+    public var email: String
+    public var role: String
+    public var status: OrganizationInvitationStatus
+    public var invitedBy: String?
+    /// Format: `date-time`.
+    public var expiresAt: String
+    /// Format: `date-time`.
+    public var createdAt: String
+
+    public init(
+        id: String,
+        organizationId: String,
+        email: String,
+        role: String,
+        status: OrganizationInvitationStatus,
+        invitedBy: String?,
+        expiresAt: String,
+        createdAt: String
+    ) {
+        self.id = id
+        self.organizationId = organizationId
+        self.email = email
+        self.role = role
+        self.status = status
+        self.invitedBy = invitedBy
+        self.expiresAt = expiresAt
+        self.createdAt = createdAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case organizationId
+        case email
+        case role
+        case status
+        case invitedBy
+        case expiresAt
+        case createdAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.organizationId = try container.decode(String.self, forKey: .organizationId)
+        self.email = try container.decode(String.self, forKey: .email)
+        self.role = try container.decode(String.self, forKey: .role)
+        self.status = try container.decode(OrganizationInvitationStatus.self, forKey: .status)
+        self.invitedBy = try container.decode(String?.self, forKey: .invitedBy)
+        self.expiresAt = try container.decode(String.self, forKey: .expiresAt)
+        self.createdAt = try container.decode(String.self, forKey: .createdAt)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.id, forKey: .id)
+        try container.encode(self.organizationId, forKey: .organizationId)
+        try container.encode(self.email, forKey: .email)
+        try container.encode(self.role, forKey: .role)
+        try container.encode(self.status, forKey: .status)
+        try container.encode(self.invitedBy, forKey: .invitedBy)
+        try container.encode(self.expiresAt, forKey: .expiresAt)
+        try container.encode(self.createdAt, forKey: .createdAt)
+    }
+}
+
+public struct OrganizationInvitationList: Codable, Hashable, Sendable {
+    public var meta: PaginationMeta
+    public var data: [OrganizationInvitation]
+
+    public init(
+        meta: PaginationMeta,
+        data: [OrganizationInvitation]
+    ) {
+        self.meta = meta
+        self.data = data
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case meta
+        case data
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.meta = try container.decode(PaginationMeta.self, forKey: .meta)
+        self.data = try container.decode([OrganizationInvitation].self, forKey: .data)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.meta, forKey: .meta)
+        try container.encode(self.data, forKey: .data)
+    }
+}
+
+public enum OrganizationInvitationStatus: Codable, Hashable, Sendable {
+    case pending
+    case accepted
+    case declined
+    case revoked
+    case expired
+    /// A value this version does not know, as the API wrote it.
+    case unknown(String)
+
+    /// Every value this version knows.
+    public static let allKnown: [OrganizationInvitationStatus] = [
+        .pending,
+        .accepted,
+        .declined,
+        .revoked,
+        .expired,
+    ]
+
+    /// The value for a string of the API: `unknown` for one this version does not know.
+    public init(rawValue: String) {
+        switch rawValue {
+        case "pending": self = .pending
+        case "accepted": self = .accepted
+        case "declined": self = .declined
+        case "revoked": self = .revoked
+        case "expired": self = .expired
+        default: self = .unknown(rawValue)
+        }
+    }
+
+    /// The value as the API writes it.
+    public var rawValue: String {
+        switch self {
+        case .pending: return "pending"
+        case .accepted: return "accepted"
+        case .declined: return "declined"
+        case .revoked: return "revoked"
+        case .expired: return "expired"
+        case .unknown(let value): return value
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(self.rawValue)
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.rawValue == rhs.rawValue
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(self.rawValue)
+    }
+}
+
+public struct OrganizationMember: Codable, Hashable, Sendable {
+    public var userId: String
+    public var name: String?
+    public var email: String?
+    public var role: String
+    /// Format: `date-time`.
+    public var createdAt: String
+
+    public init(
+        userId: String,
+        name: String?,
+        email: String?,
+        role: String,
+        createdAt: String
+    ) {
+        self.userId = userId
+        self.name = name
+        self.email = email
+        self.role = role
+        self.createdAt = createdAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case userId
+        case name
+        case email
+        case role
+        case createdAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.userId = try container.decode(String.self, forKey: .userId)
+        self.name = try container.decode(String?.self, forKey: .name)
+        self.email = try container.decode(String?.self, forKey: .email)
+        self.role = try container.decode(String.self, forKey: .role)
+        self.createdAt = try container.decode(String.self, forKey: .createdAt)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.userId, forKey: .userId)
+        try container.encode(self.name, forKey: .name)
+        try container.encode(self.email, forKey: .email)
+        try container.encode(self.role, forKey: .role)
+        try container.encode(self.createdAt, forKey: .createdAt)
+    }
+}
+
+public struct OrganizationMemberList: Codable, Hashable, Sendable {
+    public var meta: PaginationMeta
+    public var data: [OrganizationMember]
+
+    public init(
+        meta: PaginationMeta,
+        data: [OrganizationMember]
+    ) {
+        self.meta = meta
+        self.data = data
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case meta
+        case data
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.meta = try container.decode(PaginationMeta.self, forKey: .meta)
+        self.data = try container.decode([OrganizationMember].self, forKey: .data)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.meta, forKey: .meta)
+        try container.encode(self.data, forKey: .data)
+    }
+}
+
+public typealias OrganizationRoleKey = String
+
+public typealias OrganizationSlug = String
+
+public struct OrganizationSuggestion: Codable, Hashable, Sendable {
+    public var id: String
+    public var name: String
+    public var slug: String
+
+    public init(
+        id: String,
+        name: String,
+        slug: String
+    ) {
+        self.id = id
+        self.name = name
+        self.slug = slug
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case slug
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.name = try container.decode(String.self, forKey: .name)
+        self.slug = try container.decode(String.self, forKey: .slug)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.id, forKey: .id)
+        try container.encode(self.name, forKey: .name)
+        try container.encode(self.slug, forKey: .slug)
+    }
+}
+
+public struct OrganizationSuggestionList: Codable, Hashable, Sendable {
+    public var data: [OrganizationSuggestion]
+
+    public init(
+        data: [OrganizationSuggestion]
+    ) {
+        self.data = data
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case data
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.data = try container.decode([OrganizationSuggestion].self, forKey: .data)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.data, forKey: .data)
+    }
+}
+
+public struct PaginationMeta: Codable, Hashable, Sendable {
+    public var totalCount: Int
+    public var totalPages: Int
+    public var page: Int
+    public var perPage: Int
+
+    public init(
+        totalCount: Int,
+        totalPages: Int,
+        page: Int,
+        perPage: Int
+    ) {
+        self.totalCount = totalCount
+        self.totalPages = totalPages
+        self.page = page
+        self.perPage = perPage
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case totalCount
+        case totalPages
+        case page
+        case perPage
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.totalCount = try container.decode(Int.self, forKey: .totalCount)
+        self.totalPages = try container.decode(Int.self, forKey: .totalPages)
+        self.page = try container.decode(Int.self, forKey: .page)
+        self.perPage = try container.decode(Int.self, forKey: .perPage)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.totalCount, forKey: .totalCount)
+        try container.encode(self.totalPages, forKey: .totalPages)
+        try container.encode(self.page, forKey: .page)
+        try container.encode(self.perPage, forKey: .perPage)
     }
 }
 
@@ -3629,6 +4572,30 @@ public struct SessionTokens: Codable, Hashable, Sendable {
     }
 }
 
+public struct SetActiveOrganizationRequest: Codable, Hashable, Sendable {
+    public var organizationId: String?
+
+    public init(
+        organizationId: String?
+    ) {
+        self.organizationId = organizationId
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case organizationId
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.organizationId = try container.decode(String?.self, forKey: .organizationId)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.organizationId, forKey: .organizationId)
+    }
+}
+
 public struct SignInStartRequest: Codable, Hashable, Sendable {
     public var identifier: String
 
@@ -3802,6 +4769,42 @@ public struct SmsFactorConfirmRequest: Codable, Hashable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(self.code, forKey: .code)
+    }
+}
+
+public struct StartOrganizationDomainRequest: Codable, Hashable, Sendable {
+    public var domain: OrganizationDomainName
+    public var email: String
+    public var mode: OrganizationDomainMode
+
+    public init(
+        domain: OrganizationDomainName,
+        email: String,
+        mode: OrganizationDomainMode
+    ) {
+        self.domain = domain
+        self.email = email
+        self.mode = mode
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case domain
+        case email
+        case mode
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.domain = try container.decode(OrganizationDomainName.self, forKey: .domain)
+        self.email = try container.decode(String.self, forKey: .email)
+        self.mode = try container.decode(OrganizationDomainMode.self, forKey: .mode)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.domain, forKey: .domain)
+        try container.encode(self.email, forKey: .email)
+        try container.encode(self.mode, forKey: .mode)
     }
 }
 
@@ -4134,7 +5137,200 @@ public struct TotpEnrolment: Codable, Hashable, Sendable {
     }
 }
 
+public struct UpdateOrganizationDomainRequest: Codable, Hashable, Sendable {
+    public var mode: OrganizationDomainMode
+
+    public init(
+        mode: OrganizationDomainMode
+    ) {
+        self.mode = mode
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case mode
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.mode = try container.decode(OrganizationDomainMode.self, forKey: .mode)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.mode, forKey: .mode)
+    }
+}
+
+public struct UpdateOrganizationMemberRequest: Codable, Hashable, Sendable {
+    public var role: OrganizationRoleKey
+
+    public init(
+        role: OrganizationRoleKey
+    ) {
+        self.role = role
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case role
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.role = try container.decode(OrganizationRoleKey.self, forKey: .role)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.role, forKey: .role)
+    }
+}
+
+public struct UpdateOrganizationRequest: Codable, Hashable, Sendable {
+    public var name: String?
+    public var slug: OrganizationSlug?
+
+    public init(
+        name: String? = nil,
+        slug: OrganizationSlug? = nil
+    ) {
+        self.name = name
+        self.slug = slug
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case slug
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.name = try container.decodeIfPresent(String.self, forKey: .name)
+        self.slug = try container.decodeIfPresent(OrganizationSlug.self, forKey: .slug)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(self.name, forKey: .name)
+        try container.encodeIfPresent(self.slug, forKey: .slug)
+    }
+}
+
+public struct UserOrganization: Codable, Hashable, Sendable {
+    public var id: String
+    public var name: String
+    public var slug: String
+    public var role: String
+    public var permissions: [String]
+    /// Format: `date-time`.
+    public var createdAt: String
+
+    public init(
+        id: String,
+        name: String,
+        slug: String,
+        role: String,
+        permissions: [String],
+        createdAt: String
+    ) {
+        self.id = id
+        self.name = name
+        self.slug = slug
+        self.role = role
+        self.permissions = permissions
+        self.createdAt = createdAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case slug
+        case role
+        case permissions
+        case createdAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.name = try container.decode(String.self, forKey: .name)
+        self.slug = try container.decode(String.self, forKey: .slug)
+        self.role = try container.decode(String.self, forKey: .role)
+        self.permissions = try container.decode([String].self, forKey: .permissions)
+        self.createdAt = try container.decode(String.self, forKey: .createdAt)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.id, forKey: .id)
+        try container.encode(self.name, forKey: .name)
+        try container.encode(self.slug, forKey: .slug)
+        try container.encode(self.role, forKey: .role)
+        try container.encode(self.permissions, forKey: .permissions)
+        try container.encode(self.createdAt, forKey: .createdAt)
+    }
+}
+
+public struct UserOrganizationList: Codable, Hashable, Sendable {
+    public var activeOrganizationId: String?
+    public var meta: PaginationMeta
+    public var data: [UserOrganization]
+
+    public init(
+        activeOrganizationId: String?,
+        meta: PaginationMeta,
+        data: [UserOrganization]
+    ) {
+        self.activeOrganizationId = activeOrganizationId
+        self.meta = meta
+        self.data = data
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case activeOrganizationId
+        case meta
+        case data
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.activeOrganizationId = try container.decode(String?.self, forKey: .activeOrganizationId)
+        self.meta = try container.decode(PaginationMeta.self, forKey: .meta)
+        self.data = try container.decode([UserOrganization].self, forKey: .data)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.activeOrganizationId, forKey: .activeOrganizationId)
+        try container.encode(self.meta, forKey: .meta)
+        try container.encode(self.data, forKey: .data)
+    }
+}
+
 public struct VerifyEmailRequest: Codable, Hashable, Sendable {
+    public var code: String
+
+    public init(
+        code: String
+    ) {
+        self.code = code
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case code
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.code = try container.decode(String.self, forKey: .code)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.code, forKey: .code)
+    }
+}
+
+public struct VerifyOrganizationDomainRequest: Codable, Hashable, Sendable {
     public var code: String
 
     public init(
