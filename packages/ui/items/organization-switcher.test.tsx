@@ -194,4 +194,25 @@ describe('the registry organization switcher: a new organization', () => {
     expect(screen.queryByLabelText('Name')).toBeNull()
     expect(screen.getByRole('button', { name: 'New organization' })).toBeTruthy()
   })
+
+  test('an organization that was created but could not be switched to closes the form and says so', async () => {
+    const w = inAcme()
+    w.api.on(CREATE, () => json(201, GLOBEX))
+    w.api.on(ACTIVE, () => failure(500, 'internal'))
+    const onSwitch = mock()
+    w.mount(<OrganizationSwitcher allowCreate onSwitch={onSwitch} />)
+    await w.user.click(await screen.findByRole('button', { name: 'New organization' }))
+    await w.user.type(screen.getByLabelText('Name'), 'Globex')
+    await w.user.type(screen.getByLabelText('Short name'), 'globex')
+    await w.user.click(screen.getByRole('button', { name: 'Create organization' }))
+    expect(
+      await screen.findByText(
+        'Globex was created, but switching to it failed. Choose it from the list.'
+      )
+    ).toBeTruthy()
+    // The form is gone, so the user cannot submit the same short name again.
+    expect(screen.queryByLabelText('Name')).toBeNull()
+    expect(w.api.calls(CREATE)).toHaveLength(1)
+    expect(onSwitch).not.toHaveBeenCalled()
+  })
 })

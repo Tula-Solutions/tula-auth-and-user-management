@@ -109,17 +109,24 @@ export function OrganizationSwitcher(props: OrganizationSwitcherProps) {
   const create = async (name: string, slug: string): Promise<string | null> => {
     setFailure(null)
     setDone(null)
+    let created: Awaited<ReturnType<typeof list.create>>
     try {
-      const created = await list.create({ name, slug })
-      await list.setActive(created.id)
-      setDone(formatText(t.organizations.created, { name: created.name }))
-      props.onSwitch?.(created.id)
-      setCreating(false)
-      select.current?.focus()
-      return null
+      created = await list.create({ name, slug })
     } catch (caught) {
       return failureMessage(caught, t.organizations.failed)
     }
+    // The organization exists from here on: a failure to switch must not leave the form open,
+    // or a second submit would answer "short name taken" for the user's own organization.
+    try {
+      await list.setActive(created.id)
+      setDone(formatText(t.organizations.created, { name: created.name }))
+      props.onSwitch?.(created.id)
+    } catch {
+      setFailure(formatText(t.organizations.createdNotSwitched, { name: created.name }))
+    }
+    setCreating(false)
+    select.current?.focus()
+    return null
   }
 
   return (
@@ -167,12 +174,7 @@ export function OrganizationSwitcher(props: OrganizationSwitcherProps) {
         creating ? (
           <CreateForm onCreate={create} onCancel={() => setCreating(false)} />
         ) : (
-          <Button
-            type='button'
-            variant='outline'
-            aria-expanded={false}
-            onClick={() => setCreating(true)}
-          >
+          <Button type='button' variant='outline' onClick={() => setCreating(true)}>
             {t.organizations.newOrganization}
           </Button>
         )

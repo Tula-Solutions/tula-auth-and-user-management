@@ -2065,6 +2065,8 @@ export interface TulaLocalization {
     cancel: string
     /** `{name}`. Said after an organization was created and made the active one. */
     created: string
+    /** `{name}`. The organization exists, but making it the active one failed. */
+    createdNotSwitched: string
     /** The title of the profile. */
     profileTitle: string
     /** Said in place of the profile while no organization is active. */

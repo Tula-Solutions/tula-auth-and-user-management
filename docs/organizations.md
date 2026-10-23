@@ -95,9 +95,10 @@ An organization has a **name** (up to 100 characters, trimmed, no control charac
 **slug**: 2 to 48 characters of lower-case letters, digits and single hyphens, unique in the
 environment. A slug that is taken answers `organization.slug_taken` (409).
 
-A user creates an organization (where you allow it) or your server creates one for them. The
-creator becomes a member with the `creatorRole`. Either way the user is not *in* the
-organization yet: they choose it with `setActive`, which replaces the session's access token
+A user creates an organization where you allow it, and becomes a member with the
+`creatorRole`. An organization your server creates has no members until you add one with
+`addOrganizationMember`. Either way a member is not *in* the organization yet: they choose it
+with `setActive`, which replaces the session's access token
 with one that carries the organization's claims. Choosing `null` returns to the personal account.
 
 <!-- snippet: examples/docs-snippets/organizations.ts#core-organizations -->
@@ -141,7 +142,7 @@ await admin.call('addOrganizationMember', {
 
 | Call | Route | Who |
 | --- | --- | --- |
-| `client.organizations.list()` | `GET /v1/client/me/organizations` | The signed-in user: their organizations, each with their role and its permissions, and the active one. |
+| `client.organizations.list()` | `GET /v1/client/me/organizations` | The signed-in user: their organizations (the first page), each with their role and its permissions, and the active one. |
 | `client.organizations.create({ name, slug })` | `POST /v1/client/me/organizations` | The signed-in user, where `allowUserCreated` is on. |
 | `client.organizations.setActive(id \| null)` | `PUT /v1/client/me/organizations/active` | The signed-in user, for an organization they belong to. |
 | `listOrganizations`, `createOrganization` | `/v1/admin/organizations` | Your server (secret key). |

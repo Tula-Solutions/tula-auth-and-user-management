@@ -1580,6 +1580,34 @@ describe('errors', () => {
     expect(result.raw).not.toMatch(/\bat .*\.ts/)
   })
 
+  test.each([
+    ['list_organizations', 'GET /v1/admin/organizations'],
+    [
+      'list_organization_members',
+      `GET /v1/admin/organizations/${TEST_ORGANIZATION_ID}/memberships`,
+    ],
+    ['list_organization_roles', 'GET /v1/admin/organization-roles'],
+  ])(
+    '%s: an environment with organizations off answers organization.disabled and nothing else',
+    async (name, route) => {
+      const answers = defaultAnswers()
+      answers[route] = () =>
+        Response.json(
+          {
+            status: 403,
+            code: 'organization.disabled',
+            detail: `upstream detail ${'x'.repeat(5)}`,
+          },
+          { status: 403 }
+        )
+      const { client } = await world(answers)
+      const result = await callTool(client, name, SAMPLE_ARGS[name])
+      expect(result.isError).toBe(true)
+      expect(result.structured.error).toMatchObject({ code: 'organization.disabled', status: 403 })
+      expect(result.raw).not.toContain('upstream detail')
+    }
+  )
+
   test('a rate-limit answer is passed on with when to retry', async () => {
     const answers = defaultAnswers()
     answers['GET /v1/admin/users'] = () =>

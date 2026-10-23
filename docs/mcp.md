@@ -151,7 +151,8 @@ not name is refused.
 - A **role** is `id`, `key`, `name`, `permissions` (the permission keys, at most 32),
   `builtIn`, `version`, `createdAt`, `updatedAt` ([roles and permissions](roles-and-permissions.md)).
   An environment with organizations switched off answers these three tools with the API's
-  `organization.disabled`.
+  `organization.disabled`. The first read of the roles can create the two built-in role rows, if
+  the environment does not have them yet.
 - `run_doctor` needs only `TULA_API_URL`; with `TULA_ADMIN_TOKEN` it includes the checks the
   API makes of itself.
 

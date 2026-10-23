@@ -657,7 +657,7 @@ export const TOOLS: readonly ToolDefinition[] = [
     name: 'list_users',
     title: 'List users',
     group: 'read',
-    description: `List the environment’s users, a page at a time (at most 50), optionally searching names and email addresses.${UNTRUSTED}`,
+    description: `List the environment’s users, a page at a time (at most 52), optionally searching names and email addresses.${UNTRUSTED}`,
     input: listUsersInput,
     run: async ({ reads }, input: z.infer<typeof listUsersInput>) => {
       const answer = await reads().read('listUsers', {

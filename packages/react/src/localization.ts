@@ -430,6 +430,8 @@ export interface TulaLocalization {
     cancel: string
     /** `{name}`. Said after an organization was created and made the active one. */
     created: string
+    /** `{name}`. The organization exists, but making it the active one failed. */
+    createdNotSwitched: string
     /** The title of the profile. */
     profileTitle: string
     /** Said in place of the profile while no organization is active. */
@@ -901,6 +903,7 @@ export const EN_LOCALIZATION: TulaLocalization = {
     createSubmit: 'Create organization',
     cancel: 'Cancel',
     created: '{name} was created and is now the active organization.',
+    createdNotSwitched: '{name} was created, but switching to it failed. Choose it from the list.',
     profileTitle: 'Organization',
     profileNone: 'No organization is active. You are using your personal account.',
     profileNotAMember: 'You are no longer a member of this organization.',
