@@ -3,7 +3,7 @@
 `tula mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server. An MCP
 client (Claude Code, Claude Desktop, an editor) starts it as a child process and talks to it
 over standard input and output. It lets an assistant **read** an environment (users,
-sessions, audit entries, settings, deployment checks), gives it the files for adding Tula
+sessions, audit entries, settings, organizations, deployment checks), gives it the files for adding Tula
 to an app, lets it **draft** a settings change as an edit to your config file, lets it
 **test** that sign-up and sign-in work and, with an agent key, lets it **ask** for a change
 that a person approves.
@@ -126,6 +126,9 @@ not name is refused.
 | `list_audit_entries` | `action?`, `actorId?`, `targetId?`, `actorType?`, `from?`, `to?`, `page?`, `size?` (≤ 100, default 50) | `{ meta, data: [entry] }` |
 | `get_settings` | none | `{ revision, settings, managedBy }` |
 | `list_oauth_providers` | none | `{ data: [provider] }` |
+| `list_organizations` | `page?`, `size?` (≤ 50, default 20) | `{ meta, data: [organization] }` |
+| `list_organization_members` | `organizationId`, `page?`, `size?` (≤ 100, default 50) | `{ meta, data: [membership] }` |
+| `list_organization_roles` | none | `{ data: [role] }` (the built-in roles and the custom ones, at most 100) |
 | `run_doctor` | none | `{ apiUrl, version, environment, checks: [{ id, source, status, summary, fix?, values? }] }` |
 
 - A **user** is `id`, `email`, `emailVerifiedAt`, `firstName`, `lastName`, `bannedAt`,
@@ -141,6 +144,14 @@ not name is refused.
   `tenant` (Microsoft's: an alias or a tenant id, not a secret), `additionalClientIds`
   (Google's: the client ids of the operator's native apps, not secrets), `callbackUrl`,
   `updatedAt`.
+- An **organization** is `id`, `name`, `slug`, `createdBy`, `createdAt`, `updatedAt`
+  ([organizations](organizations.md)).
+- A **membership** is `id`, `organizationId`, `userId`, `role` (the role's key), `createdAt` and
+  `updatedAt`. It carries no email address or name: `get_user` answers who a `userId` is.
+- A **role** is `id`, `key`, `name`, `permissions` (the permission keys, at most 32),
+  `builtIn`, `version`, `createdAt`, `updatedAt` ([roles and permissions](roles-and-permissions.md)).
+  An environment with organizations switched off answers these three tools with the API's
+  `organization.disabled`.
 - `run_doctor` needs only `TULA_API_URL`; with `TULA_ADMIN_TOKEN` it includes the checks the
   API makes of itself.
 
