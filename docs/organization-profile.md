@@ -60,11 +60,11 @@ The user's own row is marked "You" and has no "Remove": leaving is on the Genera
 
 ## Invitations
 
-Needs the page the link leads to: `invitationUrl` here or on the provider. Without one the tab says "Invitations cannot be sent from here yet." and sends nothing. The invitee gets a single-use link that works for seven days; see [`<OrganizationSwitcher>`](organization-switcher.md#an-invitation-link) for the page that receives it. An address that is already a member, or already invited, is refused under the field.
+Needs the page the link leads to: `invitationUrl` here or on the provider. Without one the tab says "Invitations cannot be sent from here yet." and sends nothing. The invitee gets a single-use link that works for seven days; see [Invitations](invitations.md) for the server's side and [`<OrganizationSwitcher>`](organization-switcher.md#an-invitation-link) for the page that receives it. An address that is already a member, or already invited, is refused under the field.
 
 ## Domains
 
-Claim a domain by giving it and an address on it; the code is emailed to that address. Typing the six digits verifies it (five guesses). A verified domain either suggests the organization to people who sign up with a verified address on it (`suggest`) or adds them (`auto_join`). A verification lasts a year: a domain whose year has passed is marked "Needs verifying again", matches nobody, and is offered a new code (see [Organizations](organizations.md#invitations-and-verified-domains)). A mode this version does not know is shown as "Not supported by this version" and kept as it is. A public email domain cannot be claimed, and a domain another organization verified is refused.
+Claim a domain by giving it and an address on it; the code is emailed to that address. Typing the six digits verifies it (five guesses). A verified domain either suggests the organization to people who sign up with a verified address on it (`suggest`) or adds them (`auto_join`). A verification lasts a year: a domain whose year has passed is marked "Needs verifying again", matches nobody, and is offered a new code (see [Verified domains](verified-domains.md#a-verification-lasts-a-year)). A mode this version does not know is shown as "Not supported by this version" and kept as it is. A public email domain cannot be claimed, and a domain another organization verified is refused.
 
 ## When access changes
 
@@ -90,4 +90,5 @@ The words are the `organizationProfile` group of the [localization](reference/re
 
 - [`<OrganizationSwitcher>`](organization-switcher.md) and [`<CreateOrganization>`](create-organization.md).
 - [Roles and permissions](roles-and-permissions.md): the permissions above and custom roles.
-- [Organizations](organizations.md): verified domains and invitations from the server's side.
+- [Invitations](invitations.md) and [Verified domains](verified-domains.md): the server's side of the two tabs.
+- [Organizations](organizations.md): turning organizations on and the claims in the token.
