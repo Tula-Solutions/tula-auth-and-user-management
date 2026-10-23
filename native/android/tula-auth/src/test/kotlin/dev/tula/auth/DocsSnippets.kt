@@ -173,4 +173,47 @@ internal object DocsSnippets {
         }
         // #endregion
     }
+
+    suspend fun organizations(tula: TulaClient) {
+        // #region organizations
+        val page = tula.organizations.list() // each with the user's role and its permissions
+        if (page.data.isEmpty()) {
+            val acme = tula.organizations.create(name = "Acme", slug = "acme")
+            tula.organizations.setActive(acme.id) // the next access token carries the claims
+        }
+        tula.organizations.active()?.let { organization ->
+            // Read from the access token, to decide what to draw: your server checks the same keys.
+            if (organization.hasPermission("org:billing:read")) {
+                // show the billing tab
+            }
+            check(organization.hasRole("admin") || organization.role.isNotEmpty())
+        }
+        tula.organizations.clearActive() // back to the personal account
+        // #endregion
+    }
+
+    suspend fun invitation(tula: TulaClient, openedWith: String) {
+        // #region invitation
+        // The app was opened by the link in the emailed invitation (an app link, say).
+        val link = TulaInvitationLink.read(openedWith) ?: return
+        // The token is a secret. It was in the address's fragment, which no server saw.
+        val preview = tula.organizations.invitations.preview(link.token)
+        // preview.organizationName, preview.role and preview.email, to prefill a sign-up.
+        // Once the user is signed in as preview.email, with its address verified:
+        val joined = tula.organizations.invitations.accept(link.token)
+        tula.organizations.setActive(joined.id)
+        // or: tula.organizations.invitations.decline(link.token)
+        // #endregion
+        check(preview.email.isNotEmpty())
+    }
+
+    suspend fun suggestions(tula: TulaClient) {
+        // #region organization-suggestions
+        // Organizations whose verified domain is the one of the user's verified address:
+        val offered = tula.organizations.suggestions()
+        offered.data.firstOrNull()?.let { first ->
+            tula.organizations.join(first.id) // with the environment's default role
+        }
+        // #endregion
+    }
 }

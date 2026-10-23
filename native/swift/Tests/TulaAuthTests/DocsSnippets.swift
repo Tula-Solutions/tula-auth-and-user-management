@@ -221,4 +221,46 @@ enum DocsSnippets {
         // #endregion
         _ = (receipt, user)
     }
+
+    static func organizations(tula: TulaClient) async throws {
+        // #region organizations
+        let page = try await tula.organizations.list()  // each with the user's role and its permissions
+        if page.data.isEmpty {
+            let acme = try await tula.organizations.create(name: "Acme", slug: "acme")
+            try await tula.organizations.setActive(acme.id)  // the next access token carries the claims
+        }
+        if let organization = try await tula.organizations.active() {
+            // Read from the access token, to decide what to draw: your server checks the same keys.
+            if organization.has(permission: "org:billing:read") {
+                // show the billing tab
+            }
+            _ = organization.has(role: "admin")
+        }
+        try await tula.organizations.clearActive()  // back to the personal account
+        // #endregion
+    }
+
+    static func invitation(tula: TulaClient, openedWith url: URL) async throws {
+        // #region invitation
+        // The app was opened by the link in the emailed invitation (a universal link, say).
+        guard let link = TulaInvitationLink.read(url) else { return }
+        // The token is a secret. It was in the address's fragment, which no server saw.
+        let preview = try await tula.organizations.invitations.preview(token: link.token)
+        // preview.organizationName, preview.role and preview.email, to prefill a sign-up.
+        // Once the user is signed in as preview.email, with its address verified:
+        let joined = try await tula.organizations.invitations.accept(token: link.token)
+        try await tula.organizations.setActive(joined.id)
+        // or: try await tula.organizations.invitations.decline(token: link.token)
+        // #endregion
+    }
+
+    static func suggestions(tula: TulaClient) async throws {
+        // #region organization-suggestions
+        // Organizations whose verified domain is the one of the user's verified address:
+        let offered = try await tula.organizations.suggestions()
+        if let first = offered.data.first {
+            _ = try await tula.organizations.join(first.id)  // with the environment's default role
+        }
+        // #endregion
+    }
 }
