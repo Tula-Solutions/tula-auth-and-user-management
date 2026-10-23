@@ -2621,6 +2621,352 @@ describe('native apps in the config file', () => {
   })
 })
 
+interface ListedRole {
+  id: string
+  key: string
+  name: string
+  permissions: string[]
+  builtIn: boolean
+  version: number
+}
+
+const BILLING_ROLE = {
+  key: 'billing_manager',
+  name: 'Billing manager',
+  permissions: ['org:billing:read', 'org:billing:write'],
+}
+const ORGANIZATIONS_ON = { organizations: { enabled: true } }
+
+async function customRoles(): Promise<ListedRole[]> {
+  const body = (await (await admin('/v1/admin/organization-roles')).json()) as {
+    data: ListedRole[]
+  }
+  return body.data.filter((role) => !role.builtIn)
+}
+
+/** Define a role the way a person would, outside the file. */
+async function defineRole(role: Record<string, unknown> = BILLING_ROLE): Promise<ListedRole> {
+  const res = await admin('/v1/admin/organization-roles', {
+    method: 'POST',
+    body: JSON.stringify(role),
+  })
+  expect(res.status).toBe(201)
+  return (await res.json()) as ListedRole
+}
+
+/** The run's writes to organization roles, with the version the write was made over. */
+const roleWrites = (run: Run) =>
+  writes(run).filter((request) => request.includes('/v1/admin/organization-roles'))
+
+/** A dev config that keeps organizations on, as the file is the whole truth for settings. */
+const rolesDev = (environment: Record<string, unknown>) =>
+  dev({ settings: ORGANIZATIONS_ON, ...environment })
+
+describe('organization roles in the config file', () => {
+  beforeEach(async () => {
+    await enableOrganizations()
+  })
+
+  async function enableOrganizations(): Promise<void> {
+    const current = await state()
+    const res = await admin('/v1/admin/settings', {
+      method: 'PUT',
+      headers: { 'if-match': `"${current.revision}"` },
+      body: JSON.stringify({ ...current.settings, ...ORGANIZATIONS_ON }),
+    })
+    expect(res.status).toBe(200)
+  }
+
+  test('a role is planned (exit 2), defined with no word about weakening, and then nothing is left', async () => {
+    const config = await rolesDev({ organizationRoles: [BILLING_ROLE] })
+    const plan = await tula(['diff', '--config', config])
+    expect(plan.code).toBe(2)
+    expect(plan.stdout).toContain('Organization roles\n')
+    expect(plan.stdout).toContain(
+      '+ billing_manager: define (name "Billing manager", permissions org:billing:read org:billing:write)'
+    )
+    expect(plan.stdout).not.toContain('weakens security')
+
+    const applied = await tula(['apply', '--config', config, '--yes'])
+    expect(applied.code).toBe(0)
+    expect(roleWrites(applied)).toEqual(['POST /v1/admin/organization-roles'])
+    expect(applied.stdout).toContain('done  organization role billing_manager: define')
+    expect(await customRoles()).toMatchObject([{ ...BILLING_ROLE, version: 1 }])
+
+    const again = await tula(['diff', '--config', config])
+    expect(again.code).toBe(0)
+    expect(again.stdout).toContain('= billing_manager: unchanged')
+    expect(writes(await tula(['apply', '--config', config, '--yes']))).toEqual([])
+  })
+
+  test('with organizations off in the server and on in the file, the settings go first and the role follows', async () => {
+    // A fresh server: the beforeEach switched organizations on; switch them off again.
+    const current = await state()
+    await admin('/v1/admin/settings', {
+      method: 'PUT',
+      headers: { 'if-match': `"${current.revision}"` },
+      body: JSON.stringify({ ...current.settings, organizations: { enabled: false } }),
+    })
+    const config = await rolesDev({ organizationRoles: [BILLING_ROLE] })
+    const plan = await tula(['diff', '--config', config])
+    expect(plan.code).toBe(2)
+    expect(plan.stdout).toContain('+ billing_manager: define')
+    const applied = await tula(['apply', '--config', config, '--yes'])
+    expect(applied.code).toBe(0)
+    expect(writes(applied)).toEqual(['PUT /v1/admin/settings', 'POST /v1/admin/organization-roles'])
+    expect(await customRoles()).toHaveLength(1)
+  })
+
+  test('a file that leaves organizations off reports the server’s refusal, not a guess', async () => {
+    const current = await state()
+    await admin('/v1/admin/settings', {
+      method: 'PUT',
+      headers: { 'if-match': `"${current.revision}"` },
+      body: JSON.stringify({ ...current.settings, organizations: { enabled: false } }),
+    })
+    const config = await dev({ organizationRoles: [BILLING_ROLE] })
+    const run = await tula(['apply', '--config', config, '--yes'])
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain('Failed: organization role billing_manager: define')
+    expect(run.stderr).toContain('organization.disabled')
+  })
+
+  test('a permission taken away needs no word; one gained needs --allow-weaker, and is one PATCH over the version read', async () => {
+    const role = await defineRole()
+    const narrower = await rolesDev({
+      organizationRoles: [{ ...BILLING_ROLE, permissions: ['org:billing:read'] }],
+    })
+    const bodies: string[] = []
+    const narrowed = await tula(['apply', '--config', narrower, '--yes'], { bodies })
+    expect(narrowed.code).toBe(0)
+    expect(narrowed.stdout).toContain('~ billing_manager: update (permissions -org:billing:write)')
+    expect(roleWrites(narrowed)).toEqual([`PATCH /v1/admin/organization-roles/${role.key}`])
+    expect(bodies.at(-1)).toBe(JSON.stringify({ permissions: ['org:billing:read'] }))
+    expect(await customRoles()).toMatchObject([{ permissions: ['org:billing:read'], version: 2 }])
+
+    const wider = await rolesDev({ organizationRoles: [BILLING_ROLE] })
+    const plan = await tula(['diff', '--config', wider])
+    expect(plan.stdout).toContain('~ billing_manager: update (permissions +org:billing:write)')
+    expect(plan.stdout).toContain(
+      '! weakens security: organizationRoles.billing_manager.permissions (`tula apply --yes` needs --allow-weaker)'
+    )
+    const refused = await tula(['apply', '--config', wider, '--yes'])
+    expect(refused.code).toBe(1)
+    expect(refused.stderr).toContain(
+      'This plan weakens security (organizationRoles.billing_manager.permissions)'
+    )
+    expect(writes(refused)).toEqual([])
+    expect(await customRoles()).toMatchObject([{ permissions: ['org:billing:read'], version: 2 }])
+    const allowed = await tula(['apply', '--config', wider, '--yes', '--allow-weaker'])
+    expect(allowed.code).toBe(0)
+    expect(await customRoles()).toMatchObject([
+      { permissions: BILLING_ROLE.permissions, version: 3 },
+    ])
+    // The server recorded the change as the same weakening: one rule, the contract's.
+    const log = (await (
+      await admin('/v1/admin/audit-logs?action=organization_role.updated')
+    ).json()) as { data: { metadata: Record<string, unknown> }[] }
+    expect(log.data.map((entry) => entry.metadata)).toContainEqual(
+      expect.objectContaining({ weakened: true, changed: ['permissions'] })
+    )
+  })
+
+  test('a role changed by someone else between the plan and the write is not written over', async () => {
+    await defineRole()
+    const config = await rolesDev({
+      organizationRoles: [{ ...BILLING_ROLE, permissions: ['org:billing:read'] }],
+    })
+    // The plan reads version 1; the role is changed by hand, and the write presents version 1.
+    const run = await tula(['apply', '--config', config, '--yes'], {
+      intercept: (method) => {
+        if (method === 'PATCH') {
+          return Response.json(
+            {
+              status: 412,
+              code: 'precondition.failed',
+              detail: 'The role changed.',
+              params: { version: 2 },
+            },
+            { status: 412 }
+          )
+        }
+        return undefined
+      },
+    })
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain(
+      'error: An organization role was changed by someone else after this plan was made. Nothing was written to it.'
+    )
+    expect(run.stderr).not.toContain('Failed: organization role')
+    expect(await customRoles()).toMatchObject([
+      { permissions: BILLING_ROLE.permissions, version: 1 },
+    ])
+  })
+
+  test('the version the plan read is what the write presents: a role changed since is refused by the server', async () => {
+    const role = await defineRole()
+    const config = await rolesDev({
+      organizationRoles: [{ ...BILLING_ROLE, permissions: ['org:billing:read'] }],
+    })
+    const seen: string[] = []
+    const run = await tula(['apply', '--config', config, '--yes'], {
+      observe: (method, path, body) => {
+        if (method === 'PATCH') {
+          seen.push(`${path} ${body.includes('"version":2')}`)
+        }
+      },
+    })
+    expect(run.code).toBe(0)
+    expect(seen).toEqual([`/v1/admin/organization-roles/${role.key} true`])
+    // The same write over the version it replaced is what a racing run would present.
+    const stale = await admin(`/v1/admin/organization-roles/${role.key}`, {
+      method: 'PATCH',
+      headers: { 'if-match': '"1"' },
+      body: JSON.stringify({ name: 'Late' }),
+    })
+    expect(stale.status).toBe(412)
+  })
+
+  test('a role a member holds is not removed by --prune: the run says so and stops', async () => {
+    await defineRole()
+    const org = (await (
+      await admin('/v1/admin/organizations', {
+        method: 'POST',
+        body: JSON.stringify({ name: 'Acme', slug: 'acme' }),
+      })
+    ).json()) as { id: string }
+    const user = (await (
+      await admin('/v1/admin/users', {
+        method: 'POST',
+        body: JSON.stringify({ email: 'holder@example.com', emailVerified: true }),
+      })
+    ).json()) as { id: string }
+    const added = await admin(`/v1/admin/organizations/${org.id}/memberships`, {
+      method: 'POST',
+      body: JSON.stringify({ userId: user.id, role: BILLING_ROLE.key }),
+    })
+    expect(added.status).toBe(201)
+    const config = await rolesDev({ organizationRoles: [] })
+    const run = await tula(['apply', '--config', config, '--yes', '--prune'])
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain('Failed: organization role billing_manager: remove')
+    expect(run.stderr).toContain('organization.role_in_use')
+    expect(await customRoles()).toHaveLength(1)
+  })
+
+  test('an unlisted role is left alone, and --prune removes it over its version', async () => {
+    await defineRole()
+    await defineRole({ key: 'viewer', name: 'Viewer', permissions: [] })
+    const config = await rolesDev({ organizationRoles: [BILLING_ROLE] })
+    const plan = await tula(['diff', '--config', config])
+    expect(plan.stdout).toContain(
+      '= viewer: unmanaged (on the server, not in the file; --prune removes it)'
+    )
+    const kept = await tula(['apply', '--config', config, '--yes'])
+    expect(roleWrites(kept)).toEqual([])
+    const pruned = await tula(['apply', '--config', config, '--yes', '--prune'])
+    expect(pruned.code).toBe(0)
+    expect(roleWrites(pruned)).toEqual(['DELETE /v1/admin/organization-roles/viewer'])
+    expect((await customRoles()).map((role) => role.key)).toEqual(['billing_manager'])
+  })
+
+  test('a file without an organizationRoles list does not read the roles, and --prune does not touch them', async () => {
+    await defineRole()
+    const config = await dev({ settings: { ...ORGANIZATIONS_ON, app: { name: 'Northline' } } })
+    const run = await tula(['apply', '--config', config, '--yes', '--prune'])
+    expect(run.code).toBe(0)
+    expect(run.requests.some((request) => request.includes('organization-roles'))).toBe(false)
+    expect(run.stdout).not.toContain('Organization roles')
+    expect(await customRoles()).toHaveLength(1)
+  })
+
+  test('the built-in roles are not the file’s to name', async () => {
+    const config = await rolesDev({ organizationRoles: [{ ...BILLING_ROLE, key: 'admin' }] })
+    const run = await tula(['diff', '--config', config])
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain('environments.dev.organizationRoles.0.key')
+    expect(run.requests).toEqual([])
+  })
+
+  test('more roles than an environment may have: diff fails with the plan, apply writes nothing', async () => {
+    for (let n = 0; n < 50; n += 1) {
+      await defineRole({ key: `r${n}`, name: `Role ${n}`, permissions: [] })
+    }
+    const config = await rolesDev({ organizationRoles: [BILLING_ROLE] })
+    const plan = await tula(['diff', '--config', config])
+    expect(plan.code).toBe(1)
+    expect(plan.stderr).toContain(
+      'The environment would have 51 custom organization roles and may have 50.'
+    )
+    const run = await tula(['apply', '--config', config, '--yes'])
+    expect(run.code).toBe(1)
+    expect(run.stderr).toContain(
+      'error: The environment would have 51 custom organization roles and may have 50.'
+    )
+    expect(writes(run)).toEqual([])
+  })
+
+  test('--json carries the roles and what apply will ask for', async () => {
+    await defineRole()
+    await defineRole({ key: 'viewer', name: 'Viewer', permissions: [] })
+    const config = await rolesDev({
+      organizationRoles: [
+        { ...BILLING_ROLE, permissions: ['org:billing:read', 'org:reports:read'] },
+      ],
+    })
+    const plan = JSON.parse(
+      (await tula(['diff', '--config', config, '--json', '--prune'])).stdout
+    ) as {
+      organizationRoles: {
+        managed: boolean
+        overLimit: number | null
+        roles: Record<string, unknown>[]
+      }
+      weakened: string[]
+      applyRequires: Record<string, boolean>
+    }
+    expect(plan.organizationRoles.managed).toBe(true)
+    expect(plan.organizationRoles.roles).toMatchObject([
+      {
+        key: 'billing_manager',
+        action: 'update',
+        version: 1,
+        weakened: ['organizationRoles.billing_manager.permissions'],
+      },
+      { key: 'viewer', action: 'delete', weakened: [] },
+    ])
+    expect(plan.organizationRoles.roles.every((role) => !Object.hasOwn(role, 'entry'))).toBe(true)
+    expect(plan.weakened).toEqual(['organizationRoles.billing_manager.permissions'])
+    expect(plan.applyRequires.allowWeaker).toBe(true)
+  })
+
+  test('text the server sends for a role is printed without what a terminal would act on', async () => {
+    const config = await rolesDev({ organizationRoles: [] })
+    const run = await tula(['diff', '--config', config], {
+      intercept: (method, path) =>
+        method === 'GET' && path === '/v1/admin/organization-roles'
+          ? Response.json({
+              data: [
+                {
+                  id: '0199a000-0000-7000-8000-000000000001',
+                  key: 'evil\u001b[2J‮key',
+                  name: 'x',
+                  permissions: [],
+                  builtIn: false,
+                  version: 1,
+                  createdAt: '2026-10-01T00:00:00.000Z',
+                  updatedAt: '2026-10-01T00:00:00.000Z',
+                },
+              ],
+            })
+          : undefined,
+    })
+    expect(run.stdout).toContain('unmanaged')
+    expect(run.stdout).not.toContain('\u001b[2J')
+    expect(run.stdout).not.toContain('‮')
+  })
+})
+
 // Declared last, so it runs after every run above.
 test('no secret that passed through any run was printed, to either stream', () => {
   const printed = everythingPrinted.join('\n')

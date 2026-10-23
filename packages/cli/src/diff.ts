@@ -1,5 +1,10 @@
 import type { AdminSchemas } from '@tula-tech/admin'
-import { type EnvironmentConfig, type NativeAppConfig, providerSecret } from '@tula-tech/config'
+import {
+  type EnvironmentConfig,
+  type NativeAppConfig,
+  type OrganizationRoleConfig,
+  providerSecret,
+} from '@tula-tech/config'
 import {
   type EnvironmentSettings,
   type EnvironmentSettingsInput,
@@ -11,6 +16,7 @@ import {
   hookWeakenings,
   isEmailTemplateKind,
   isSmsTemplateKind,
+  MAX_CUSTOM_ROLES,
   MAX_NATIVE_APPS,
   MAX_WEBHOOK_ENDPOINTS,
   NATIVE_APP_PLATFORMS,
@@ -19,9 +25,11 @@ import {
   nativeAppWeakenings,
   normalizeAppLinkPaths,
   normalizeCertFingerprints,
+  normalizePermissions,
   OAUTH_PROVIDERS,
   type OAuthProvider,
   oauthProviderWeakenings,
+  organizationRoleWeakenings,
   parseStoredEnvironmentSettings,
   type SettingsManagedBy,
   settingsWeakenings,
@@ -286,6 +294,11 @@ export interface RemoteState {
    * are then not even read.
    */
   nativeApps?: readonly RemoteNativeApp[]
+  /**
+   * The organization roles, built-in ones included. Left out when the config does not manage
+   * roles: they are then not even read.
+   */
+  organizationRoles?: readonly RemoteOrganizationRole[]
 }
 
 /**
@@ -619,6 +632,187 @@ export function planNativeApps(
     apps,
     overLimit: count('create') > 0 && after > MAX_NATIVE_APPS ? after : null,
     seen: nativeAppSnapshot(existing),
+  }
+}
+
+/**
+ * A custom organization role as the admin API lists it (the built-in roles are listed too and
+ * are never planned: `builtIn`).
+ *
+ * @example
+ * ```ts
+ * const { data } = await admin.call('listOrganizationRoles')
+ * const roles: RemoteOrganizationRole[] = data.data
+ * ```
+ */
+export type RemoteOrganizationRole = AdminSchemas['OrganizationRole']
+
+/**
+ * What a run does with one custom organization role.
+ *
+ * @example
+ * ```ts
+ * const change: OrganizationRoleChange = planOrganizationRoles(remote.organizationRoles, environment.organizationRoles, {}).roles[0]
+ * ```
+ */
+export interface OrganizationRoleChange {
+  /** The role's key: its identity, the file's for an entry of the file, the server's otherwise. */
+  key: string
+  /** The server's id of the role. Absent for one to create. */
+  id?: string
+  /**
+   * The role's version as the plan read it: the `If-Match` of the update or delete that
+   * follows, so that a change made after the plan is refused by the server (412) and never
+   * written over. Absent for a role to create.
+   */
+  version?: number
+  /**
+   * `create`, `update`, `delete`; `none` when it already is as the config says; `unmanaged`
+   * when the server has it and the config does not list it (left alone without `--prune`).
+   */
+  action: 'create' | 'update' | 'delete' | 'none' | 'unmanaged'
+  /**
+   * The differences: `name`, and `permissions` as a set (`added`, `removed`). For a role to
+   * create, what it is defined with.
+   */
+  fields: Change[]
+  /**
+   * `organizationRoles.<key>.permissions` when the change gives members of the role a
+   * permission it did not have, as the contract's `organizationRoleWeakenings` judges it.
+   * Part of the plan's `weakened`. A new role is no weakening: nobody holds it.
+   */
+  weakened: string[]
+  /** The config's entry, for a role the run creates or updates: what the write sends. */
+  entry?: OrganizationRoleConfig
+}
+
+/**
+ * What a run does with an environment's custom organization roles.
+ *
+ * @example
+ * ```ts
+ * if (plan.organizationRoles.overLimit !== null) {
+ *   // the environment would have more custom roles than it may
+ * }
+ * ```
+ */
+export interface OrganizationRolePlan {
+  /** Whether the config has an `organizationRoles` list at all. Without one nothing is read or changed. */
+  managed: boolean
+  /** One entry per role of the file, in its order, then the server's other custom roles. */
+  roles: OrganizationRoleChange[]
+  /**
+   * How many custom roles the environment would have once the plan is applied, when that is
+   * more than it may have (`MAX_CUSTOM_ROLES`); `null` otherwise.
+   */
+  overLimit: number | null
+}
+
+/** A role's name and permissions, the file's, against the server's role of the same key. */
+function organizationRoleFields(
+  current: RemoteOrganizationRole | undefined,
+  entry: OrganizationRoleConfig
+): Change[] {
+  const after = normalizePermissions(entry.permissions)
+  if (!current) {
+    return [
+      { path: 'name', kind: 'added', after: entry.name },
+      { path: 'permissions', kind: 'added', after },
+    ]
+  }
+  const fields: Change[] = []
+  if (current.name !== entry.name) {
+    fields.push({ path: 'name', kind: 'changed', before: current.name, after: entry.name })
+  }
+  // A set on both sides: order and repeats are not a difference.
+  const before = normalizePermissions(current.permissions)
+  const added = after.filter((key) => !before.includes(key))
+  const removed = before.filter((key) => !after.includes(key))
+  if (added.length > 0 || removed.length > 0) {
+    fields.push({ path: 'permissions', kind: 'changed', before, after, added, removed })
+  }
+  return fields
+}
+
+/**
+ * Decide what to do with each custom organization role (ADR 0065).
+ *
+ * A role is its **key**: an entry of the file is matched to the server's custom role of the
+ * same key, and a changed name or changed permissions are a change of that role. The
+ * permissions are a set. The built-in roles `admin` and `member` are never planned, `--prune`
+ * included (the file cannot name them either).
+ *
+ * As with providers, webhook endpoints, hooks and native apps, a custom role the server has
+ * and the file does not list is left alone (`unmanaged`) unless `prune` asks for it to be
+ * removed, and a file with no `organizationRoles` list at all manages nothing: not even
+ * `prune` touches a role then. The server refuses to remove a role a member holds; that
+ * refusal is reported when the write is tried, not guessed here.
+ *
+ * Which change is a weakening is decided by the contract's `organizationRoleWeakenings`, the
+ * same function the server records `weakened` with and the dashboard asks with: a role that
+ * gains a permission. Removing a permission, defining a role and removing one are not.
+ *
+ * @param remote - The roles as the server lists them; ignored when `desired` is absent.
+ * @param desired - The config's list, or `undefined` when the file does not manage roles.
+ * @param options - `prune`.
+ * @returns The plan for the roles.
+ *
+ * @example
+ * ```ts
+ * planOrganizationRoles(remote.organizationRoles, environment.organizationRoles, { prune: true }).roles
+ * ```
+ */
+export function planOrganizationRoles(
+  remote: readonly RemoteOrganizationRole[] | undefined,
+  desired: EnvironmentConfig['organizationRoles'],
+  options: Pick<PlanOptions, 'prune'>
+): OrganizationRolePlan {
+  if (desired === undefined) {
+    return { managed: false, roles: [], overLimit: null }
+  }
+  const existing = (remote ?? []).filter((role) => !role.builtIn)
+  const byKey = new Map(existing.map((role) => [role.key, role]))
+  const listed = new Set<string>()
+  const roles: OrganizationRoleChange[] = desired.map((entry) => {
+    listed.add(entry.key)
+    const current = byKey.get(entry.key)
+    const fields = organizationRoleFields(current, entry)
+    if (!current) {
+      return { key: entry.key, action: 'create', fields, weakened: [], entry }
+    }
+    const weakened = organizationRoleWeakenings(
+      current.permissions,
+      normalizePermissions(entry.permissions)
+    ).map((field) => `organizationRoles.${entry.key}.${field}`)
+    return {
+      key: entry.key,
+      id: current.id,
+      version: current.version,
+      action: fields.length > 0 ? 'update' : 'none',
+      fields,
+      weakened,
+      entry,
+    }
+  })
+  for (const role of existing) {
+    if (!listed.has(role.key)) {
+      roles.push({
+        key: role.key,
+        id: role.id,
+        version: role.version,
+        action: options.prune === true ? 'delete' : 'unmanaged',
+        fields: [],
+        weakened: [],
+      })
+    }
+  }
+  const count = (action: OrganizationRoleChange['action']) =>
+    roles.filter((role) => role.action === action).length
+  const after = existing.length + count('create') - count('delete')
+  return {
+    managed: true,
+    roles,
+    overLimit: count('create') > 0 && after > MAX_CUSTOM_ROLES ? after : null,
   }
 }
 
@@ -1514,7 +1708,8 @@ export interface Plan {
    * Paths where the run weakens security: the settings' (the contract's
    * `settingsWeakenings`), then the providers' (`oauthProviderWeakenings`, as
    * `providers.<provider>…`), then the hooks' (`hookWeakenings`, as `hooks.<point>…`), then the
-   * native apps' (`nativeAppWeakenings`, as `nativeApps.<platform>/<identifier>…`).
+   * native apps' (`nativeAppWeakenings`, as `nativeApps.<platform>/<identifier>…`), then the
+   * organization roles' (`organizationRoleWeakenings`, as `organizationRoles.<key>.permissions`).
    */
   weakened: string[]
   /** Settings the file leaves out whose default is the deployment's: kept as the server has them. */
@@ -1529,6 +1724,8 @@ export interface Plan {
   hooks: HookPlan
   /** What happens to each native app, when the config manages them. */
   nativeApps: NativeAppPlan
+  /** What happens to each custom organization role, when the config manages them. */
+  organizationRoles: OrganizationRolePlan
   /** Whether the server records this config as the settings' manager. */
   marker: MarkerPlan
   /** The document a replace would send. */
@@ -1637,6 +1834,11 @@ export function buildPlan(
   const webhooks = planWebhooks(remote.webhooks, environment.webhooks, options)
   const hooks = planHooks(remote.hooks, environment.hooks, options)
   const nativeApps = planNativeApps(remote.nativeApps, environment.nativeApps, options)
+  const organizationRoles = planOrganizationRoles(
+    remote.organizationRoles,
+    environment.organizationRoles,
+    options
+  )
   const marker = planMarker(remote, options.configHash)
   return {
     revision: remote.revision,
@@ -1646,6 +1848,7 @@ export function buildPlan(
       ...providers.flatMap((provider) => provider.weakened),
       ...hooks.hooks.flatMap((hook) => hook.weakened),
       ...nativeApps.apps.flatMap((app) => app.weakened),
+      ...organizationRoles.roles.flatMap((role) => role.weakened),
     ],
     kept,
     unknown,
@@ -1653,6 +1856,7 @@ export function buildPlan(
     webhooks,
     hooks,
     nativeApps,
+    organizationRoles,
     marker,
     body,
     changes:
@@ -1665,7 +1869,8 @@ export function buildPlan(
         ['create', 'update', 'delete', 'ambiguous'].includes(endpoint.action)
       ) ||
       hooks.hooks.some((hook) => ['create', 'update', 'delete'].includes(hook.action)) ||
-      nativeApps.apps.some((app) => ['create', 'update', 'delete'].includes(app.action)),
+      nativeApps.apps.some((app) => ['create', 'update', 'delete'].includes(app.action)) ||
+      organizationRoles.roles.some((role) => ['create', 'update', 'delete'].includes(role.action)),
   }
 }
 
@@ -1692,6 +1897,25 @@ export type Operation =
   | { kind: 'nativeApp.create'; entry: NativeAppConfig; change: NativeAppChange }
   | { kind: 'nativeApp.update'; id: string; entry: NativeAppConfig; change: NativeAppChange }
   | { kind: 'nativeApp.delete'; id: string; change: NativeAppChange }
+  | {
+      kind: 'organizationRole.create'
+      key: string
+      entry: OrganizationRoleConfig
+      change: OrganizationRoleChange
+    }
+  | {
+      kind: 'organizationRole.update'
+      key: string
+      version: number
+      entry: OrganizationRoleConfig
+      change: OrganizationRoleChange
+    }
+  | {
+      kind: 'organizationRole.delete'
+      key: string
+      version: number
+      change: OrganizationRoleChange
+    }
 
 /**
  * The writes of a plan, in an order in which every intermediate state is one the server
@@ -1736,6 +1960,13 @@ export type Operation =
  * that widen nothing (a fingerprint or a link path taken away), then changes that widen
  * (another team, a gained fingerprint, a gained link path), then registrations.
  *
+ * **Custom organization roles come after the native apps.** The settings that switch
+ * organizations on are written first, and a role's write is refused while they are off. Among
+ * themselves, as the native apps' and for the same reasons: removals, then changes that give
+ * a role nothing (a permission taken away, a rename), then changes that give it a permission,
+ * then definitions, so that the limit (`MAX_CUSTOM_ROLES`) is never met on the way to a state
+ * that fits and a run that stops has widened as little as it could.
+ *
  * @param plan - The plan.
  * @returns The writes, in order; empty when the plan changes nothing.
  *
@@ -1769,7 +2000,27 @@ export function orderOperations(plan: Plan): Operation[] {
     ...orderWebhooks(plan.webhooks),
     ...orderHooks(plan.hooks),
     ...orderNativeApps(plan.nativeApps),
+    ...orderOrganizationRoles(plan.organizationRoles),
   ]
+}
+
+function orderOrganizationRoles(roles: OrganizationRolePlan): Operation[] {
+  const removals: Operation[] = []
+  const narrowing: Operation[] = []
+  const widening: Operation[] = []
+  const creates: Operation[] = []
+  for (const change of roles.roles) {
+    const { key, version, entry } = change
+    if (change.action === 'create' && entry) {
+      creates.push({ kind: 'organizationRole.create', key, entry, change })
+    } else if (version !== undefined && change.action === 'update' && entry) {
+      const bucket = change.weakened.length > 0 ? widening : narrowing
+      bucket.push({ kind: 'organizationRole.update', key, version, entry, change })
+    } else if (version !== undefined && change.action === 'delete') {
+      removals.push({ kind: 'organizationRole.delete', key, version, change })
+    }
+  }
+  return [...removals, ...narrowing, ...widening, ...creates]
 }
 
 function orderNativeApps(nativeApps: NativeAppPlan): Operation[] {

@@ -112,8 +112,12 @@ import { join } from 'node:path'
  * `validation.failed`, and the messages were cut to one short line each (the first wording
  * cost 179 bytes for five codes, 107 after shortening them). The budget moved by exactly
  * those 88 bytes, from 17,111 to 17,199: the room is the 4 bytes it was.
+ * The four contract codes of custom organization roles (ADR 0065: `organization.role_exists`,
+ * `organization.role_in_use`, `organization.role_built_in`, `organization.role_limit`) added
+ * 107 bytes, from 17,195 to 17,302, the names and messages again. The budget moved by exactly
+ * those 107 bytes, from 17,199 to 17,306: the room is the 4 bytes it was.
  */
-const GZIP_BUDGET_BYTES = 17_199
+const GZIP_BUDGET_BYTES = 17_306
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

@@ -42,7 +42,10 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   (every request header, whatever its name) and fails if anything a request carried, a
   response handed out as a secret or an email held is found in a payload; a client-supplied
   value that is meant to be in one is an entry of that test's `MAY_APPEAR`, with the one
-  field it may be in. `conformance.test.ts` holds every recorded payload to its schema. After changing a schema run `bun run contract:generate` (the schemas are
+  field it may be in (a custom role's key, an operator identifier of the role grammar, is the
+  one value of a request body treated so: `ROLE_KEY_FIELDS` of that test lists the `role` and
+  `previousRole` fields of the role and membership events it may be in, and no other).
+  `conformance.test.ts` holds every recorded payload to its schema. After changing a schema run `bun run contract:generate` (the schemas are
   components of the OpenAPI document, added in `createApp` because no route refers to them)
   and `bun run dashboard:generate`.
 - **The activity is a required parameter, in the ports and in both adapters** (`Recorded` in
