@@ -1,3 +1,4 @@
+import { MAX_DOMAINS_PER_ORGANIZATION } from '@tula-tech/contract/organization-domain-rules'
 import {
   isBuiltInRoleKey,
   isSystemPermission,
@@ -55,6 +56,16 @@ const SENTENCES: Record<string, string> = {
   'organization.invitation_exists': 'That address already has a pending invitation here.',
   'organization.invitation_not_found': 'That invitation no longer exists.',
   'organization.invitation_role_gone': 'The role this invitation offers no longer exists.',
+  'organization.domain_public':
+    'A public email domain (gmail.com, outlook.com and the like) proves nothing about who holds an address on it, so it cannot be claimed.',
+  'organization.domain_taken':
+    'That domain is verified for an organization of this environment already.',
+  'organization.domain_address_mismatch':
+    'The address must be on exactly that domain: a subdomain is another domain.',
+  'verification.expired': 'That code has expired. Send a new one.',
+  'verification.invalid_code': 'That code is not right. Check the email and try again.',
+  'verification.too_many_attempts':
+    'Too many wrong codes. Wait a while, or send a new code, then try again.',
   'user.last_organization_manager':
     'This user is the only manager of an organization. Give the organization another manager, or delete it, then try again.',
 }
@@ -71,6 +82,10 @@ export function organizationMessageFor(error: unknown): string {
   if (failure.code === 'organization.role_limit') {
     const max = failure.params.max
     return `This environment has the most custom roles it can have (${typeof max === 'number' ? max : MAX_CUSTOM_ROLES}). Delete one first.`
+  }
+  if (failure.code === 'organization.domain_limit') {
+    const max = failure.params.max
+    return `This organization has the most domains it can have (${typeof max === 'number' ? max : MAX_DOMAINS_PER_ORGANIZATION}). Remove one first.`
   }
   if (failure.code === 'user.last_organization_manager') {
     const count = failure.params.count
@@ -207,4 +222,35 @@ export function slugFromName(name: string): string {
     .replace(/^-+|-+$/g, '')
     .slice(0, 48)
     .replace(/-+$/g, '')
+}
+
+const DOMAIN_MODE: Record<string, string> = {
+  suggest: 'Suggest the organization',
+  auto_join: 'Join automatically',
+}
+
+/**
+ * A domain mode in words.
+ *
+ * @param mode - The server's mode.
+ * @returns The label; the mode written out for one this version does not know.
+ */
+export function domainModeLabel(mode: string): string {
+  return own(DOMAIN_MODE, mode) ?? printable(mode)
+}
+
+/**
+ * The question asked before a domain joins people automatically: what `auto_join` does and
+ * what it trusts. Moving a domain to it is a weakening (the event says `weakened: true`).
+ *
+ * @param domain - The domain, as claimed.
+ * @param organizationName - The organization's name, written out by the caller.
+ * @returns The sentences of the confirmation.
+ */
+export function autoJoinSentences(domain: string, organizationName: string): string[] {
+  return [
+    `Anyone who signs up with a verified email address on ${printable(domain)} becomes a member of ${organizationName} straight away, with the environment’s default role, and no invitation.`,
+    'It trusts that every address on the domain belongs to your people. A mailbox that forwards or relays can sometimes pass as verified, so use this only for a domain you run.',
+    'People who are members already stay as they are, and switching back to suggesting does not remove anyone who joined.',
+  ]
 }

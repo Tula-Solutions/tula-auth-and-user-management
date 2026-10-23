@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import {
   MAX_CUSTOM_ROLES,
+  OrganizationDomainListSchema,
+  OrganizationDomainSchema,
   OrganizationInvitationListSchema,
   OrganizationInvitationSchema,
   OrganizationListSchema,
@@ -12,7 +14,9 @@ import {
   UserMembershipListSchema,
 } from '@tula-tech/contract'
 import {
+  FAKE_DOMAIN_CODE,
   type FakeApi,
+  fakeDomain,
   fakeMembership,
   fakeOrganization,
   fakeRole,
@@ -340,6 +344,91 @@ describe('roles', () => {
     expect(over.status).toBe(409)
     expect(over.body.code).toBe('organization.role_limit')
     expect((over.body.params as { max: number }).max).toBe(MAX_CUSTOM_ROLES)
+  })
+})
+
+describe('domains', () => {
+  const DOMAINS = `${ROOT}/${ORG}/domains`
+  const start = { domain: 'acme.com', email: 'admin@acme.com', mode: 'suggest' }
+
+  test('a claim waits for its code, which verifies it; the shapes are the contract’s', async () => {
+    arranged()
+    const claimed = await call('POST', DOMAINS, start)
+    expect(claimed.status).toBe(201)
+    expect(OrganizationDomainSchema.safeParse(claimed.body).success).toBe(true)
+    expect(claimed.body.verifiedAt).toBeNull()
+    expect(claimed.body.code).toBeUndefined()
+    const id = claimed.body.id as string
+    const wrong = await call('POST', `${DOMAINS}/${id}/verify`, { code: '000000' })
+    expect(wrong.status).toBe(422)
+    expect(wrong.body.code).toBe('verification.invalid_code')
+    const right = await call('POST', `${DOMAINS}/${id}/verify`, { code: FAKE_DOMAIN_CODE })
+    expect(right.status).toBe(200)
+    expect(right.body.verifiedAt).not.toBeNull()
+    const list = await call('GET', DOMAINS)
+    expect(OrganizationDomainListSchema.safeParse(list.body).success).toBe(true)
+  })
+
+  test('the service’s refusals: public domain, other domain, taken, cap, bad ids', async () => {
+    arranged()
+    expect(
+      (await call('POST', DOMAINS, { ...start, domain: 'gmail.com', email: 'a@gmail.com' })).body
+        .code
+    ).toBe('organization.domain_public')
+    expect((await call('POST', DOMAINS, { ...start, email: 'a@mail.acme.com' })).body.code).toBe(
+      'organization.domain_address_mismatch'
+    )
+    expect((await call('POST', DOMAINS, { ...start, domain: 'Acme.com' })).status).toBe(422)
+    api?.state.organizations.push(fakeOrganization({ id: OTHER, slug: 'other' }))
+    api?.state.domains.push(fakeDomain({ organizationId: OTHER, domain: 'acme.com' }))
+    expect((await call('POST', DOMAINS, start)).body.code).toBe('organization.domain_taken')
+    for (let index = 0; index < 10; index += 1) {
+      api?.state.domains.push(fakeDomain({ organizationId: ORG, domain: `d${index}.example.org` }))
+    }
+    const over = await call('POST', DOMAINS, {
+      ...start,
+      domain: 'extra.example.org',
+      email: 'a@extra.example.org',
+    })
+    expect(over.body.code).toBe('organization.domain_limit')
+    expect((over.body.params as { max: number }).max).toBe(10)
+    expect((await call('PATCH', `${DOMAINS}/not-a-claim`, { mode: 'auto_join' })).status).toBe(404)
+  })
+
+  test('a code works once, expires, and is counted', async () => {
+    arranged()
+    const pending = fakeDomain({
+      organizationId: ORG,
+      verifiedAt: null,
+      codeExpiresAt: '2026-10-22T00:00:00.000Z',
+    })
+    api?.state.domains.push(pending)
+    const expired = await call('POST', `${DOMAINS}/${pending.id}/verify`, {
+      code: FAKE_DOMAIN_CODE,
+    })
+    expect(expired.body.code).toBe('verification.expired')
+    const fresh = await call('POST', DOMAINS, start)
+    expect(fresh.status).toBe(201)
+    const id = (await call('GET', DOMAINS)).body.data as { id: string; domain: string }[]
+    const claim = id.find((entry) => entry.domain === 'acme.com')
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await call('POST', `${DOMAINS}/${claim?.id}/verify`, { code: '000000' })
+    }
+    const locked = await call('POST', `${DOMAINS}/${claim?.id}/verify`, { code: FAKE_DOMAIN_CODE })
+    expect(locked.status).toBe(429)
+    expect(locked.body.code).toBe('verification.too_many_attempts')
+  })
+
+  test('a mode is changed, a domain removed, and an organization takes its claims with it', async () => {
+    arranged()
+    const claim = fakeDomain({ organizationId: ORG })
+    api?.state.domains.push(claim)
+    const changed = await call('PATCH', `${DOMAINS}/${claim.id}`, { mode: 'auto_join' })
+    expect(changed.body.mode).toBe('auto_join')
+    expect((await call('DELETE', `${DOMAINS}/${claim.id}`)).status).toBe(204)
+    api?.state.domains.push(fakeDomain({ organizationId: ORG, domain: 'again.example.org' }))
+    expect((await call('DELETE', `${ROOT}/${ORG}`)).status).toBe(204)
+    expect(api?.state.domains).toEqual([])
   })
 })
 

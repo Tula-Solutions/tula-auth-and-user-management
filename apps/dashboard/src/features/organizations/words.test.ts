@@ -6,6 +6,8 @@ import { entryImports } from '~/testing/entry-imports'
 import { matchesSearch } from './organizations-screen'
 import { permissionProblem } from './role-dialogs'
 import {
+  autoJoinSentences,
+  domainModeLabel,
   invitationStatusLabel,
   isDisabled,
   isStaleVersion,
@@ -37,6 +39,13 @@ const ADMIN_CODES = [
   'organization.invitation_exists',
   'organization.invitation_not_found',
   'organization.invitation_role_gone',
+  'organization.domain_public',
+  'organization.domain_taken',
+  'organization.domain_address_mismatch',
+  'organization.domain_limit',
+  'verification.expired',
+  'verification.invalid_code',
+  'verification.too_many_attempts',
   'user.last_organization_manager',
 ]
 
@@ -146,6 +155,29 @@ describe('roles and permissions in words', () => {
     ['mystery‮', 'mystery\\u{202E}'],
   ])('an invitation that is %s reads %s', (status, label) => {
     expect(invitationStatusLabel(status)).toBe(label)
+  })
+})
+
+describe('domains in words', () => {
+  test('a mode has a label, one a later server knows is written out', () => {
+    expect(domainModeLabel('suggest')).toBe('Suggest the organization')
+    expect(domainModeLabel('auto_join')).toBe('Join automatically')
+    expect(domainModeLabel('constructor')).toBe('constructor')
+  })
+
+  test('joining automatically says what it does, what it trusts and what it leaves', () => {
+    const [does, trusts, leaves] = autoJoinSentences('acme.com', 'Acme Corp')
+    expect(does).toContain('verified email address on acme.com')
+    expect(does).toContain('Acme Corp')
+    expect(trusts).toContain('forwards or relays')
+    expect(leaves).toContain('does not remove anyone')
+  })
+
+  test('the cap of domains is said with the number, or the contract’s own', () => {
+    expect(organizationMessageFor(refusal(409, 'organization.domain_limit', { max: 4 }))).toContain(
+      '(4)'
+    )
+    expect(organizationMessageFor(refusal(409, 'organization.domain_limit', {}))).toContain('(10)')
   })
 })
 

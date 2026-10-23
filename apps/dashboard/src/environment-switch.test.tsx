@@ -1435,6 +1435,26 @@ describe('organizations and roles', () => {
     ).toHaveLength(0)
   })
 
+  test('a typed domain claim and an open code form do not follow the operator', async () => {
+    const api = sameOrganizationInBoth()
+    const current = start(`${DEV_PATH}/organizations/${ORGANIZATION}`, { api })
+    const { user, router, location } = current
+    await user.click(await screen.findByRole('button', { name: 'Claim a domain' }))
+    await user.type(
+      within(screen.getByRole('dialog')).getByLabelText('Domain'),
+      'half-typed.example'
+    )
+
+    await act(() => router.navigate({ href: `${PROD_PATH}/organizations/${ORGANIZATION}` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/organizations/${ORGANIZATION}`))
+    await waitFor(() =>
+      expect(listed(api, `/v1/admin/organizations/${ORGANIZATION}/domains`)).toBe(IDS.production)
+    )
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(document.documentElement.outerHTML.includes('half-typed.example')).toBe(false)
+    expect(api.callsTo('POST', `/v1/admin/organizations/${ORGANIZATION}/domains`)).toHaveLength(0)
+  })
+
   test('an unsaved organization setting does not follow the operator', async () => {
     const api = sameOrganizationInBoth()
     const current = start(`${DEV_PATH}/organization-settings`, { api })

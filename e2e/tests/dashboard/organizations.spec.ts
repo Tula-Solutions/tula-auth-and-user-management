@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { API_URL, uniqueEmail, useSettings } from '../support'
+import { API_URL, latestCode, uniqueEmail, useSettings } from '../support'
 import {
   dialog,
   ENVIRONMENT_ID,
@@ -370,4 +370,59 @@ test('a user’s page lists their organizations; the last manager of one cannot 
   await dialog(page).getByRole('link', { name: 'Northline Labs' }).click()
   await expect(page).toHaveURL(new RegExp(`organizations/${organizationId}$`))
   await expect(page.getByRole('heading', { level: 1, name: 'Northline Labs' })).toBeVisible()
+})
+
+test('domains: claimed with an emailed code, switched to joining automatically after a question, removed', async ({
+  page,
+}) => {
+  const domain = `dom${Date.now()}.example.org`
+  const address = `admin@${domain}`
+  await makeOrganization(page, 'Northline Labs', 'northline-labs')
+  const [organization] = (await read<{ data: Row[] }>(page, '/v1/admin/organizations')).data
+  await open(page, `${ENVIRONMENT_PATH}/organizations/${organization?.id}`, 'Northline Labs')
+  await expect(page.getByText('No domains claimed')).toBeVisible()
+  await expectScreenAccessible(page, 'an organization, no domains')
+
+  // A public mail domain is refused in words.
+  await page.getByRole('button', { name: 'Claim a domain' }).click()
+  await dialog(page).getByLabel('Domain', { exact: true }).fill('gmail.com')
+  await dialog(page).getByLabel('Address on that domain').fill('someone@gmail.com')
+  await dialog(page).getByRole('button', { name: 'Send code' }).click()
+  await expect(dialog(page).getByRole('alert')).toContainText('public email domain')
+  await expectScreenAccessible(page, 'claim a domain, refused')
+
+  await dialog(page).getByLabel('Domain', { exact: true }).fill(domain)
+  await dialog(page).getByLabel('Address on that domain').fill(address)
+  await dialog(page).getByRole('button', { name: 'Send code' }).click()
+  await expect(dialog(page).getByRole('heading')).toHaveText(`Verify ${domain}`)
+  await dialog(page).getByLabel('Code').fill('000000')
+  await dialog(page).getByRole('button', { name: 'Verify domain' }).click()
+  await expect(dialog(page).getByRole('alert')).toContainText('not right')
+  await expectScreenAccessible(page, 'verify a domain, wrong code')
+  await dialog(page)
+    .getByLabel('Code')
+    .fill(await latestCode(page.request, address))
+  await dialog(page).getByRole('button', { name: 'Verify domain' }).click()
+  const table = page.getByRole('table', { name: 'Domains of Northline Labs' })
+  await expect(table).toContainText('Verified')
+  await expect(table).toContainText('Suggest the organization')
+  await expectScreenAccessible(page, 'a verified domain')
+
+  // Joining automatically is a weakening: asked first, then it holds.
+  await page.getByRole('button', { name: `Join people automatically on ${domain}` }).click()
+  await expect(dialog(page).getByRole('heading')).toHaveText(
+    `Join people automatically on ${domain}?`
+  )
+  await expect(dialog(page)).toContainText('no invitation')
+  await expectScreenAccessible(page, 'the question before a domain joins people automatically')
+  await dialog(page).getByRole('button', { name: 'Cancel' }).click()
+  await expect(table).toContainText('Suggest the organization')
+  await page.getByRole('button', { name: `Join people automatically on ${domain}` }).click()
+  await dialog(page).getByRole('button', { name: 'Join automatically' }).click()
+  await expect(table).toContainText('Join automatically')
+
+  await page.getByRole('button', { name: `Remove the domain ${domain}` }).click()
+  await expect(dialog(page).getByRole('heading')).toHaveText(`Remove the domain ${domain}?`)
+  await dialog(page).getByRole('button', { name: 'Remove domain' }).click()
+  await expect(page.getByText('No domains claimed')).toBeVisible()
 })

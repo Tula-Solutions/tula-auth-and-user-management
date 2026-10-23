@@ -4,14 +4,20 @@ import {
   CreateOrganizationInvitationRequestSchema,
   CreateOrganizationRequestSchema,
   CreateOrganizationRoleRequestSchema,
+  domainRefusal,
   INVITATION_EXPIRY_DAYS,
   INVITATION_STATUSES,
   MAX_CUSTOM_ROLES,
+  MAX_DOMAINS_PER_ORGANIZATION,
   MEMBERSHIPS_MANAGE_PERMISSION,
   normalizePermissions,
+  type ORGANIZATION_DOMAIN_MODES,
+  StartOrganizationDomainRequestSchema,
+  UpdateOrganizationDomainRequestSchema,
   UpdateOrganizationMemberRequestSchema,
   UpdateOrganizationRequestSchema,
   UpdateOrganizationRoleRequestSchema,
+  VerifyOrganizationDomainRequestSchema,
 } from '@tula-tech/contract'
 import { z } from 'zod'
 import { type FakeCall, type FakeHandler, failure, IDS } from './fake-api'
@@ -84,12 +90,31 @@ export interface FakeInvitation {
   createdAt: string
 }
 
+/**
+ * A claimed domain as the fake holds it. The emailed code is `code`: a test types it, and the
+ * fake compares it as the service does (expiry, then a count of wrong guesses).
+ */
+export interface FakeDomain {
+  id: string
+  environmentId: string
+  organizationId: string
+  domain: string
+  mode: (typeof ORGANIZATION_DOMAIN_MODES)[number]
+  verifiedAt: string | null
+  codeExpiresAt: string | null
+  createdAt: string
+  updatedAt: string
+  code: string | null
+  attempts: number
+}
+
 /** The part of the fake's state the organization routes work on. */
 export interface FakeOrganizationState {
   organizations: FakeOrganization[]
   memberships: FakeMembership[]
   roles: FakeRole[]
   invitations: FakeInvitation[]
+  domains: FakeDomain[]
 }
 
 /** What the routes ask of the rest of the fake. */
@@ -185,6 +210,34 @@ export function fakeInvitation(overrides: Partial<FakeInvitation> = {}): FakeInv
     invitedBy: null,
     expiresAt: '2026-10-30T12:00:00.000Z',
     createdAt: NOW,
+    ...overrides,
+  }
+}
+
+/** The code the fake emails for a claim: a test types it in. */
+export const FAKE_DOMAIN_CODE = '123456'
+
+/**
+ * A claimed domain for a test to put in the fake's state, in the development environment:
+ * verified unless `verifiedAt` is given as `null`.
+ *
+ * @param overrides - What differs; `organizationId` should be given.
+ * @returns The claim.
+ */
+export function fakeDomain(overrides: Partial<FakeDomain> = {}): FakeDomain {
+  const pending = overrides.verifiedAt === null
+  return {
+    id: nextId(),
+    environmentId: IDS.development,
+    organizationId: nextId(),
+    domain: 'acme.com',
+    mode: 'suggest',
+    verifiedAt: pending ? null : NOW,
+    codeExpiresAt: pending ? '2026-10-24T12:00:00.000Z' : null,
+    createdAt: NOW,
+    updatedAt: NOW,
+    code: pending ? FAKE_DOMAIN_CODE : null,
+    attempts: 0,
     ...overrides,
   }
 }
@@ -293,6 +346,17 @@ function membershipView({ environmentId: _environmentId, ...membership }: FakeMe
   return membership
 }
 
+function domainView(domain: FakeDomain) {
+  const {
+    environmentId: _environmentId,
+    organizationId: _organizationId,
+    code: _code,
+    attempts: _attempts,
+    ...view
+  } = domain
+  return view
+}
+
 function invitationView(invitation: FakeInvitation) {
   const { environmentId: _environmentId, ...view } = invitation
   // A pending invitation past its time is `expired`, which the API does not store.
@@ -354,6 +418,23 @@ export function organizationRoutes(
       )
       return organization ? handler(organization, given?.data as Body, call) : notFound()
     }
+  }
+
+  /** Every route of one claim: organizations on, the organization and the claim found. */
+  function onDomain<Body>(
+    body: z.ZodType<Body> | null,
+    handler: (claim: FakeDomain, body: Body, call: FakeCall) => Response | unknown
+  ): FakeHandler {
+    return (call, match) =>
+      onOrganization(body, (organization, given, inner) => {
+        const claim = state.domains.find(
+          (entry) =>
+            entry.id === match[2] &&
+            entry.organizationId === organization.id &&
+            entry.environmentId === organization.environmentId
+        )
+        return claim ? handler(claim, given, inner) : notFound()
+      })(call, match)
   }
 
   function slugTaken(environmentId: string, slug: string, except?: string): boolean {
@@ -510,6 +591,7 @@ export function organizationRoutes(
         state.invitations = state.invitations.filter(
           (invitation) => invitation.organizationId !== organization.id
         )
+        state.domains = state.domains.filter((entry) => entry.organizationId !== organization.id)
         return new Response(null, { status: 204 })
       }),
     ],
@@ -737,6 +819,142 @@ export function organizationRoutes(
           return new Response(null, { status: 204 })
         })(call, match)
       },
+    ],
+    [
+      'GET',
+      /^\/v1\/admin\/organizations\/([^/]+)\/domains$/,
+      onOrganization(null, (organization) => ({
+        data: state.domains
+          .filter(
+            (entry) =>
+              entry.organizationId === organization.id &&
+              entry.environmentId === organization.environmentId
+          )
+          .map(domainView),
+      })),
+    ],
+    [
+      'POST',
+      /^\/v1\/admin\/organizations\/([^/]+)\/domains$/,
+      onOrganization(StartOrganizationDomainRequestSchema, (organization, body) => {
+        const domain = body.domain
+        if (domainRefusal(domain) === 'public') {
+          return failure(
+            422,
+            'organization.domain_public',
+            'A public email domain cannot be claimed.'
+          )
+        }
+        const address = body.email.trim().toLowerCase()
+        if (!/^[^@\s]+@[^@\s]+$/.test(address)) {
+          return failure(422, 'validation.failed', 'The request is not valid.', [
+            { field: 'email', code: 'validation.failed', message: 'Not an email address.' },
+          ])
+        }
+        if (address.split('@')[1] !== domain) {
+          return failure(
+            422,
+            'organization.domain_address_mismatch',
+            'That address is not on the domain.'
+          )
+        }
+        const mine = state.domains.filter(
+          (entry) =>
+            entry.organizationId === organization.id &&
+            entry.environmentId === organization.environmentId
+        )
+        if (
+          state.domains.some(
+            (entry) =>
+              entry.environmentId === organization.environmentId &&
+              entry.domain === domain &&
+              entry.verifiedAt !== null
+          )
+        ) {
+          return failure(409, 'organization.domain_taken', 'That domain is verified already.')
+        }
+        const existing = mine.find((entry) => entry.domain === domain)
+        if (!existing && mine.length >= MAX_DOMAINS_PER_ORGANIZATION) {
+          return failure(
+            409,
+            'organization.domain_limit',
+            'This organization has the most domains it can have.',
+            undefined,
+            { max: MAX_DOMAINS_PER_ORGANIZATION }
+          )
+        }
+        const claim =
+          existing ??
+          fakeDomain({
+            organizationId: organization.id,
+            environmentId: organization.environmentId,
+            domain,
+            verifiedAt: null,
+          })
+        if (claim.verifiedAt === null) {
+          claim.mode = body.mode
+          claim.code = FAKE_DOMAIN_CODE
+          claim.codeExpiresAt = '2026-10-24T12:00:00.000Z'
+          claim.attempts = 0
+        }
+        if (!existing) {
+          state.domains.push(claim)
+        }
+        return created(domainView(claim))
+      }),
+    ],
+    [
+      'POST',
+      /^\/v1\/admin\/organizations\/([^/]+)\/domains\/([^/]+)\/verify$/,
+      (call, match) =>
+        onDomain(VerifyOrganizationDomainRequestSchema, (claim, body) => {
+          if (claim.verifiedAt !== null) {
+            return domainView(claim)
+          }
+          if (claim.code === null || (claim.codeExpiresAt ?? '') <= NOW) {
+            return failure(410, 'verification.expired', 'The code has expired.')
+          }
+          claim.attempts += 1
+          if (claim.attempts > 5) {
+            return failure(429, 'verification.too_many_attempts', 'Too many wrong codes.')
+          }
+          if (body.code !== claim.code) {
+            return failure(422, 'verification.invalid_code', 'That code is not right.')
+          }
+          const taken = state.domains.some(
+            (entry) =>
+              entry !== claim &&
+              entry.environmentId === claim.environmentId &&
+              entry.domain === claim.domain &&
+              entry.verifiedAt !== null
+          )
+          if (taken) {
+            return failure(409, 'organization.domain_taken', 'That domain is verified already.')
+          }
+          claim.verifiedAt = NOW
+          claim.codeExpiresAt = null
+          claim.code = null
+          return domainView(claim)
+        })(call, match),
+    ],
+    [
+      'PATCH',
+      /^\/v1\/admin\/organizations\/([^/]+)\/domains\/([^/]+)$/,
+      (call, match) =>
+        onDomain(UpdateOrganizationDomainRequestSchema, (claim, body) => {
+          claim.mode = body.mode
+          claim.updatedAt = NOW
+          return domainView(claim)
+        })(call, match),
+    ],
+    [
+      'DELETE',
+      /^\/v1\/admin\/organizations\/([^/]+)\/domains\/([^/]+)$/,
+      (call, match) =>
+        onDomain(null, (claim) => {
+          state.domains.splice(state.domains.indexOf(claim), 1)
+          return new Response(null, { status: 204 })
+        })(call, match),
     ],
     [
       'GET',

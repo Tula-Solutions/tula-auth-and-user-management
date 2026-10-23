@@ -20,10 +20,13 @@ import { type FakeWebhookState, webhookRoutes } from './fake-webhooks'
 export { type FakeHook, fakeHook } from './fake-hooks'
 export { type FakeNativeApp, fakeAndroidApp, fakeIosApp } from './fake-native-apps'
 export {
+  FAKE_DOMAIN_CODE,
+  type FakeDomain,
   type FakeInvitation,
   type FakeMembership,
   type FakeOrganization,
   type FakeRole,
+  fakeDomain,
   fakeInvitation,
   fakeMembership,
   fakeOrganization,
@@ -385,6 +388,7 @@ function initialState(): FakeState {
     memberships: [],
     roles: [],
     invitations: [],
+    domains: [],
     proposals: [],
     proposalNow: NOW,
     webhookWorkerSeparate: false,

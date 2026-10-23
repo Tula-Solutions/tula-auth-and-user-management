@@ -19,6 +19,7 @@ import { useEnvironment, useEnvironmentRequest } from '~/features/shell/environm
 import type { EnvironmentScope } from '~/features/users/users-screen'
 import { formatDateTime } from '~/lib/format'
 import { printable, printableName } from '~/lib/printable'
+import { DomainsSection } from './domains-section'
 import { InvitationsSection } from './invitations-section'
 import { MembersSection } from './members-section'
 import { OrganizationsQueryState } from './organizations-gate'
@@ -250,6 +251,7 @@ export function OrganizationDetailScreen({
               scope={scope}
             />
             <InvitationsSection organizationId={current.id} organizationName={current.name} />
+            <DomainsSection organizationId={current.id} organizationName={current.name} />
             <EditOrganizationDialog
               organization={current}
               open={editing}

@@ -1,12 +1,15 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { screen, waitFor, within } from '@testing-library/react'
 import {
+  FAKE_DOMAIN_CODE,
   type FakeApi,
+  type FakeDomain,
   type FakeInvitation,
   type FakeMembership,
   type FakeOrganization,
   type FakeRole,
   failure,
+  fakeDomain,
   fakeInvitation,
   fakeMembership,
   fakeOrganization,
@@ -47,6 +50,7 @@ interface Arrangement {
   memberships?: Partial<FakeMembership>[]
   roles?: Partial<FakeRole>[]
   invitations?: Partial<FakeInvitation>[]
+  domains?: Partial<FakeDomain>[]
   /** Switch organizations off (they are on unless this is set). */
   off?: boolean
   redirectUrls?: string[]
@@ -72,6 +76,7 @@ function arranged(arrangement: Arrangement = {}): FakeApi {
   api.state.memberships.push(...(arrangement.memberships ?? []).map(fakeMembership))
   api.state.roles.push(...(arrangement.roles ?? []).map(fakeRole))
   api.state.invitations.push(...(arrangement.invitations ?? []).map(fakeInvitation))
+  api.state.domains.push(...(arrangement.domains ?? []).map(fakeDomain))
   return api
 }
 
@@ -1057,5 +1062,253 @@ describe('deleting a user who is the last manager of an organization', () => {
     await user.click(button('Delete user'))
     await waitFor(() => expect(api.state.users.some((entry) => entry.id === IDS.user)).toBe(false))
     expect(api.state.memberships.some((entry) => entry.userId === IDS.user)).toBe(false)
+  })
+})
+
+describe('domains', () => {
+  const claim = (overrides: Partial<FakeDomain> = {}) => ({
+    organizationId: ACME,
+    ...overrides,
+  })
+  const domainsOf = (api: FakeApi) => api.state.domains
+
+  async function openClaimDialog(user: World['user']) {
+    await user.click(await screen.findByRole('button', { name: 'Claim a domain' }))
+  }
+
+  test('lists the claims: a verified one and one that is waiting for its code and grants nothing', async () => {
+    start(`${DEV_PATH}/organizations/${ACME}`, {
+      api: arranged({
+        organizations: [acme],
+        domains: [
+          claim({ domain: 'acme.com', mode: 'auto_join' }),
+          claim({ domain: 'acme.io', verifiedAt: null }),
+        ],
+      }),
+    })
+    const table = await screen.findByRole('table', { name: 'Domains of Acme Corp' })
+    const rows = within(table).getAllByRole('row').slice(1)
+    expect(within(rows[0] as HTMLElement).getByText('acme.com')).toBeTruthy()
+    expect(rows[0]?.textContent).toContain('Verified')
+    expect(rows[0]?.textContent).toContain('Join automatically')
+    expect(rows[1]?.textContent).toContain('Waiting for the code')
+    expect(rows[1]?.textContent).toContain('grants nothing yet')
+  })
+
+  test('with none it says so', async () => {
+    start(`${DEV_PATH}/organizations/${ACME}`, { api: arranged({ organizations: [acme] }) })
+    await screen.findByText('No domains claimed')
+  })
+
+  test('a claim sends the code, then the code verifies the domain', async () => {
+    const { user, api } = start(`${DEV_PATH}/organizations/${ACME}`, {
+      api: arranged({ organizations: [acme] }),
+    })
+    await openClaimDialog(user)
+    await user.click(button('Send code'))
+    await waitFor(() => expect(alerts()).toHaveLength(2))
+    await user.type(within(dialog()).getByLabelText('Domain'), 'acme.com')
+    await user.type(within(dialog()).getByLabelText('Address on that domain'), 'admin@acme.com')
+    await user.click(button('Send code'))
+    await screen.findByRole('heading', { name: 'Verify acme.com' })
+    expect(sent(api, 'POST', `/v1/admin/organizations/${ACME}/domains`)[0]?.body).toEqual({
+      domain: 'acme.com',
+      email: 'admin@acme.com',
+      mode: 'suggest',
+    })
+    // A wrong code is said, and the form stays.
+    await user.type(within(dialog()).getByLabelText('Code'), '000000')
+    await user.click(button('Verify domain'))
+    await waitFor(() => expect(alerts()[0]).toMatch(/not right/))
+    await user.clear(within(dialog()).getByLabelText('Code'))
+    await user.type(within(dialog()).getByLabelText('Code'), FAKE_DOMAIN_CODE)
+    await user.click(button('Verify domain'))
+    await screen.findByText('Domain verified')
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(domainsOf(api)[0]?.verifiedAt).not.toBeNull()
+    expect(screen.getByRole('table', { name: 'Domains of Acme Corp' }).textContent).toContain(
+      'Verified'
+    )
+  })
+
+  test('a code that is not six digits is refused before anything is sent', async () => {
+    const { user, api } = start(`${DEV_PATH}/organizations/${ACME}`, {
+      api: arranged({ organizations: [acme], domains: [claim({ verifiedAt: null })] }),
+    })
+    await user.click(await screen.findByRole('button', { name: 'Enter the code for acme.com' }))
+    await user.type(within(dialog()).getByLabelText('Code'), '12')
+    await user.click(button('Verify domain'))
+    await waitFor(() => expect(alerts()).toEqual(['Enter the six digits from the email.']))
+    expect(sent(api, 'POST', `/v1/admin/organizations/${ACME}/domains/`)).toHaveLength(0)
+  })
+
+  test.each([
+    ['a public mail domain', 'gmail.com', 'admin@gmail.com', /public email domain/],
+    ['an address on another domain', 'acme.com', 'admin@mail.acme.com', /exactly that domain/],
+  ])('%s is refused in words', async (_name, domain, email, message) => {
+    const { user } = start(`${DEV_PATH}/organizations/${ACME}`, {
+      api: arranged({ organizations: [acme] }),
+    })
+    await openClaimDialog(user)
+    await user.type(within(dialog()).getByLabelText('Domain'), domain)
+    await user.type(within(dialog()).getByLabelText('Address on that domain'), email)
+    await user.click(button('Send code'))
+    await waitFor(() => expect(alerts()[0]).toMatch(message))
+  })
+
+  test('a domain verified for another organization is refused, and the cap is said', async () => {
+    const { user } = start(`${DEV_PATH}/organizations/${ACME}`, {
+      api: arranged({
+        organizations: [acme, globex],
+        domains: [{ organizationId: GLOBEX, domain: 'acme.com' }],
+      }),
+    })
+    await openClaimDialog(user)
+    await user.type(within(dialog()).getByLabelText('Domain'), 'acme.com')
+    await user.type(within(dialog()).getByLabelText('Address on that domain'), 'admin@acme.com')
+    await user.click(button('Send code'))
+    await waitFor(() => expect(alerts()[0]).toMatch(/verified for an organization of this/))
+    world?.api.override('POST', /domains$/, () =>
+      failure(409, 'organization.domain_limit', 'Full.', undefined, { max: 10 })
+    )
+    await user.click(button('Send code'))
+    await waitFor(() => expect(alerts()[0]).toMatch(/most domains it can have \(10\)/))
+  })
+
+  test('claiming to join people automatically asks first, and sends nothing until answered', async () => {
+    const { user, api } = start(`${DEV_PATH}/organizations/${ACME}`, {
+      api: arranged({ organizations: [acme] }),
+    })
+    await openClaimDialog(user)
+    await user.type(within(dialog()).getByLabelText('Domain'), 'acme.com')
+    await user.type(within(dialog()).getByLabelText('Address on that domain'), 'admin@acme.com')
+    await user.selectOptions(
+      within(dialog()).getByLabelText('When someone verified signs up on it'),
+      'auto_join'
+    )
+    await user.click(button('Send code'))
+    expect(await within(dialog()).findByTestId('weakening')).toBeTruthy()
+    expect(within(dialog()).getByRole('heading').textContent).toBe('Join people automatically?')
+    expect(dialog().textContent).toContain('becomes a member of Acme Corp straight away')
+    expect(sent(api, 'POST', `/v1/admin/organizations/${ACME}/domains`)).toHaveLength(0)
+    // Going back keeps what was typed.
+    await user.click(button('Cancel'))
+    expect((within(dialog()).getByLabelText('Domain') as HTMLInputElement).value).toBe('acme.com')
+    await user.click(button('Send code'))
+    await user.click(button('Send the code'))
+    await screen.findByRole('heading', { name: 'Verify acme.com' })
+    expect(sent(api, 'POST', `/v1/admin/organizations/${ACME}/domains`)[0]?.body).toMatchObject({
+      mode: 'auto_join',
+    })
+  })
+
+  test('a new code can be sent for a claim that is waiting', async () => {
+    const { user, api } = start(`${DEV_PATH}/organizations/${ACME}`, {
+      api: arranged({ organizations: [acme], domains: [claim({ verifiedAt: null })] }),
+    })
+    await user.click(await screen.findByRole('button', { name: 'Enter the code for acme.com' }))
+    await user.click(button('Send a new code'))
+    expect((within(dialog()).getByLabelText('Domain') as HTMLInputElement).readOnly).toBe(true)
+    await user.type(within(dialog()).getByLabelText('Address on that domain'), 'admin@acme.com')
+    await user.click(button('Send code'))
+    await screen.findByRole('heading', { name: 'Verify acme.com' })
+    expect(domainsOf(api)).toHaveLength(1)
+  })
+
+  test('switching a verified domain to joining automatically asks first; switching back does not', async () => {
+    const { user, api } = start(`${DEV_PATH}/organizations/${ACME}`, {
+      api: arranged({ organizations: [acme], domains: [claim()] }),
+    })
+    await user.click(
+      await screen.findByRole('button', { name: 'Join people automatically on acme.com' })
+    )
+    expect(within(dialog()).getByRole('heading').textContent).toBe(
+      'Join people automatically on acme.com?'
+    )
+    expect(dialog().textContent).toContain('no invitation')
+    expect(sent(api, 'PATCH', `/v1/admin/organizations/${ACME}/domains/`)).toHaveLength(0)
+    await user.click(button('Cancel'))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(domainsOf(api)[0]?.mode).toBe('suggest')
+
+    await user.click(screen.getByRole('button', { name: 'Join people automatically on acme.com' }))
+    await user.click(button('Join automatically'))
+    await screen.findByText('Domain changed')
+    expect(domainsOf(api)[0]?.mode).toBe('auto_join')
+    expect(sent(api, 'PATCH', `/v1/admin/organizations/${ACME}/domains/`)[0]?.body).toEqual({
+      mode: 'auto_join',
+    })
+
+    await user.click(
+      screen.getByRole('button', { name: 'Only suggest the organization on acme.com' })
+    )
+    await waitFor(() => expect(domainsOf(api)[0]?.mode).toBe('suggest'))
+    expect(openDialogs()).toBe(0)
+  })
+
+  test('removing a domain names it and says the members stay', async () => {
+    const { user, api } = start(`${DEV_PATH}/organizations/${ACME}`, {
+      api: arranged({ organizations: [acme], domains: [claim()] }),
+    })
+    await user.click(await screen.findByRole('button', { name: 'Remove the domain acme.com' }))
+    expect(within(dialog()).getByRole('heading').textContent).toBe('Remove the domain acme.com?')
+    expect(dialog().textContent).toContain('Members who already joined stay members')
+    await user.click(button('Remove domain'))
+    await screen.findByText('Domain removed')
+    await screen.findByText('No domains claimed')
+    expect(domainsOf(api)).toHaveLength(0)
+  })
+
+  test('in production the domain is typed to remove it or to join people automatically', async () => {
+    const api = arranged({
+      organizations: [{ ...acme, environmentId: IDS.production }],
+      domains: [claim({ environmentId: IDS.production })],
+    })
+    const { user } = start(`${PROD_PATH}/organizations/${ACME}`, { api })
+    await user.click(await screen.findByRole('button', { name: 'Remove the domain acme.com' }))
+    await user.click(button('Remove domain'))
+    expect(sent(api, 'DELETE', `/v1/admin/organizations/${ACME}/domains/`)).toHaveLength(0)
+    await user.type(within(dialog()).getByLabelText(/Type .* to confirm/), 'acme.com')
+    await user.click(button('Remove domain'))
+    await waitFor(() =>
+      expect(sent(api, 'DELETE', `/v1/admin/organizations/${ACME}/domains/`)).toHaveLength(1)
+    )
+  })
+
+  test('a removal, held while the list is read again, is sent once', async () => {
+    const api = arranged({ organizations: [acme], domains: [claim()] })
+    const { user } = start(`${DEV_PATH}/organizations/${ACME}`, { api })
+    await user.click(await screen.findByRole('button', { name: 'Remove the domain acme.com' }))
+    const held = holdAnswers(
+      (path, _headers, method) => method === 'GET' && path.endsWith('/domains')
+    )
+    await user.click(button('Remove domain'))
+    await waitFor(() =>
+      expect(sent(api, 'DELETE', `/v1/admin/organizations/${ACME}/domains/`)).toHaveLength(1)
+    )
+    await waitFor(() => expect(held.held()).toBeGreaterThan(0))
+    await user.click(button('Remove domain'))
+    await held.release()
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(sent(api, 'DELETE', `/v1/admin/organizations/${ACME}/domains/`)).toHaveLength(1)
+  })
+
+  test('a code, held while the list is read again, is verified once', async () => {
+    const api = arranged({ organizations: [acme], domains: [claim({ verifiedAt: null })] })
+    const { user } = start(`${DEV_PATH}/organizations/${ACME}`, { api })
+    await user.click(await screen.findByRole('button', { name: 'Enter the code for acme.com' }))
+    await user.type(within(dialog()).getByLabelText('Code'), FAKE_DOMAIN_CODE)
+    const held = holdAnswers(
+      (path, _headers, method) => method === 'GET' && path.endsWith('/domains')
+    )
+    await user.click(button('Verify domain'))
+    await waitFor(() =>
+      expect(sent(api, 'POST', `/v1/admin/organizations/${ACME}/domains/`)).toHaveLength(1)
+    )
+    await waitFor(() => expect(held.held()).toBeGreaterThan(0))
+    await user.click(button('Verify domain'))
+    await held.release()
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(sent(api, 'POST', `/v1/admin/organizations/${ACME}/domains/`)).toHaveLength(1)
   })
 })
