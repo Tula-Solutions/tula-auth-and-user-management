@@ -21,7 +21,7 @@ describe('conformance scenarios, in process', () => {
       'verification code attempts',
       'password reset',
       // Files 100 to 109: the loader sorts file names as text, so they run here, and 110
-      // to 115 after file 11.
+      // to 116 after file 11.
       'native Google sign-up and sign-in',
       'native Google sign-in and existing accounts',
       'native Google ID token refused',
@@ -40,6 +40,7 @@ describe('conformance scenarios, in process', () => {
       'an administrator gives an account an email address',
       'accounts that depend on a provider are counted before it is switched off',
       'admin organizations and memberships',
+      'user import with a bcrypt hash',
       'environment settings',
       'attempt binding',
       'email code sign-in',

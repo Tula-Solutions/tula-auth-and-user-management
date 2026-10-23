@@ -31,6 +31,10 @@ public enum ErrorCode: Codable, Hashable, Sendable {
     case passwordSequence
     case passwordReused
     case passwordNotSet
+    case importUnsupportedAlgorithm
+    case importHashMalformed
+    case importHashParametersTooWeak
+    case importHashParametersTooCostly
     case verificationInvalidCode
     case verificationExpired
     case verificationTooManyAttempts
@@ -127,6 +131,10 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         .passwordSequence,
         .passwordReused,
         .passwordNotSet,
+        .importUnsupportedAlgorithm,
+        .importHashMalformed,
+        .importHashParametersTooWeak,
+        .importHashParametersTooCostly,
         .verificationInvalidCode,
         .verificationExpired,
         .verificationTooManyAttempts,
@@ -223,6 +231,10 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case "password.sequence": self = .passwordSequence
         case "password.reused": self = .passwordReused
         case "password.not_set": self = .passwordNotSet
+        case "import.unsupported_algorithm": self = .importUnsupportedAlgorithm
+        case "import.hash_malformed": self = .importHashMalformed
+        case "import.hash_parameters_too_weak": self = .importHashParametersTooWeak
+        case "import.hash_parameters_too_costly": self = .importHashParametersTooCostly
         case "verification.invalid_code": self = .verificationInvalidCode
         case "verification.expired": self = .verificationExpired
         case "verification.too_many_attempts": self = .verificationTooManyAttempts
@@ -321,6 +333,10 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case .passwordSequence: return "password.sequence"
         case .passwordReused: return "password.reused"
         case .passwordNotSet: return "password.not_set"
+        case .importUnsupportedAlgorithm: return "import.unsupported_algorithm"
+        case .importHashMalformed: return "import.hash_malformed"
+        case .importHashParametersTooWeak: return "import.hash_parameters_too_weak"
+        case .importHashParametersTooCostly: return "import.hash_parameters_too_costly"
         case .verificationInvalidCode: return "verification.invalid_code"
         case .verificationExpired: return "verification.expired"
         case .verificationTooManyAttempts: return "verification.too_many_attempts"
@@ -495,6 +511,18 @@ public enum TulaErrorDefinitions {
 
     /// `password.not_set`
     public static let passwordNotSet = TulaErrorDefinition(code: .passwordNotSet, status: 409, message: "This account has no password yet. Use \"forgot password\" to set one.")
+
+    /// `import.unsupported_algorithm`
+    public static let importUnsupportedAlgorithm = TulaErrorDefinition(code: .importUnsupportedAlgorithm, status: 422, message: "That password hash algorithm is not supported.")
+
+    /// `import.hash_malformed`
+    public static let importHashMalformed = TulaErrorDefinition(code: .importHashMalformed, status: 422, message: "That password hash is malformed.")
+
+    /// `import.hash_parameters_too_weak`
+    public static let importHashParametersTooWeak = TulaErrorDefinition(code: .importHashParametersTooWeak, status: 422, message: "That password hash is too weak to import.")
+
+    /// `import.hash_parameters_too_costly`
+    public static let importHashParametersTooCostly = TulaErrorDefinition(code: .importHashParametersTooCostly, status: 422, message: "That password hash is too costly to verify.")
 
     /// `verification.invalid_code`
     public static let verificationInvalidCode = TulaErrorDefinition(code: .verificationInvalidCode, status: 422, message: "That code is incorrect.")
@@ -721,6 +749,10 @@ public enum TulaErrorDefinitions {
         passwordSequence,
         passwordReused,
         passwordNotSet,
+        importUnsupportedAlgorithm,
+        importHashMalformed,
+        importHashParametersTooWeak,
+        importHashParametersTooCostly,
         verificationInvalidCode,
         verificationExpired,
         verificationTooManyAttempts,

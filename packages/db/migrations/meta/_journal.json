@@ -260,6 +260,13 @@
       "when": 1792719557239,
       "tag": "0036_organizations",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1792722417362,
+      "tag": "0037_user_import_columns",
+      "breakpoints": true
     }
   ]
 }

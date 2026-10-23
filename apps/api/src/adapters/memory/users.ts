@@ -152,6 +152,9 @@ export class MemoryUserRepository implements UserRepository {
       credentialId: _credentialId,
       oauthIdentity: _oauthIdentity,
       passwordHash,
+      // Kept by the database for an operator to read; nothing in this server does.
+      externalId: _externalId,
+      metadata: _metadata,
       ...record
     } = user
     this.#users.set(user.id, {

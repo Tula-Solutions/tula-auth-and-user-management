@@ -127,6 +127,105 @@ export const CreateUserRequestSchema = z
   })
   .meta({ ref: 'CreateUserRequest' })
 
+/** The most rows one call of `POST /v1/admin/users/import` takes. */
+export const MAX_IMPORT_ROWS = 500
+
+/**
+ * The most bytes a row's `metadata` may take **as stored**: the database prints a space after
+ * every `:` and `,`, so the count is the compact JSON plus about one byte for each of them.
+ * It is stored with the user, so it is bounded the way any user-sized value is. A row over
+ * it, nested more than 32 levels, or holding a NUL, a lone surrogate or an exponent number
+ * is refused alone with `validation.failed`.
+ */
+export const MAX_IMPORT_METADATA_BYTES = 4096
+
+/**
+ * A password hash made by another system, in a tagged form.
+ *
+ * `algorithm` names the format and decides how `hash` is read and checked. It is a plain
+ * string on the wire so that a name this server does not know is refused for that row
+ * (`import.unsupported_algorithm`) and not for the whole call, and so that a later algorithm
+ * (`firebase_scrypt`, `pbkdf2_sha256`) is an addition, not a break. Today: `bcrypt`
+ * (`$2a$`, `$2b$`, `$2y$`; cost 10 to 14), `argon2id` and `argon2i` (PHC strings; at least
+ * 19 MiB and 2 passes). `params` is for algorithms whose hash does not carry its own
+ * parameters; those three do, so it is ignored for them.
+ *
+ * The hash is never returned by any route.
+ *
+ * @example
+ * ```ts
+ * ImportPasswordSchema.parse({ algorithm: 'bcrypt', hash: '$2b$10$…' })
+ * ```
+ */
+export const ImportPasswordSchema = z
+  .object({
+    algorithm: z.string().max(64),
+    hash: z.string().max(1024),
+    params: z.record(z.string().max(64), z.union([z.string().max(1024), z.number()])).optional(),
+  })
+  .meta({ ref: 'ImportPassword' })
+
+/** One user of an import. */
+export const ImportUserRowSchema = z
+  .object({
+    email: z.string().max(320),
+    emailVerified: z.boolean(),
+    /** The user's full name, kept as given. */
+    name: z.string().trim().max(200).optional(),
+    /** Anything the operator wants to keep with the user, up to 4 KiB as JSON. */
+    metadata: z.record(z.string().max(128), z.unknown()).optional(),
+    /** The user's id in the system they come from. */
+    externalId: z.string().trim().min(1).max(256).optional(),
+    password: ImportPasswordSchema.optional(),
+  })
+  .meta({ ref: 'ImportUserRow' })
+
+/**
+ * A call of `POST /v1/admin/users/import`: up to {@link MAX_IMPORT_ROWS} users. A row that is
+ * wrong is refused alone; a request that is not this shape at all is refused whole.
+ */
+export const ImportUsersRequestSchema = z
+  .object({ users: z.array(ImportUserRowSchema).min(1).max(MAX_IMPORT_ROWS) })
+  .meta({ ref: 'ImportUsersRequest' })
+
+/** Why a row was skipped: the address is taken, or an earlier row of the call has it. */
+export const ImportSkipReasonSchema = z
+  .enum(['email_exists', 'repeated_in_batch'])
+  .meta({ ref: 'ImportSkipReason' })
+
+/**
+ * What became of one row. `index` is the row's place in the request, so the answer can be
+ * matched to the file it came from. A `created` row has the user's `id`, a `skipped` one a
+ * `reason`, a `refused` one a contract error `code` (an `import.*` code, `email.invalid`,
+ * …) and its default message.
+ */
+export const ImportRowResultSchema = z
+  .discriminatedUnion('status', [
+    z.object({ index: z.number().int().min(0), status: z.literal('created'), id: z.uuid() }),
+    z.object({
+      index: z.number().int().min(0),
+      status: z.literal('skipped'),
+      reason: ImportSkipReasonSchema,
+    }),
+    z.object({
+      index: z.number().int().min(0),
+      status: z.literal('refused'),
+      code: z.string(),
+      message: z.string(),
+    }),
+  ])
+  .meta({ ref: 'ImportRowResult' })
+
+/** The answer to an import: one result per row, in order, and the counts. */
+export const ImportUsersResultSchema = z
+  .object({
+    results: z.array(ImportRowResultSchema),
+    created: z.number().int().min(0),
+    skipped: z.number().int().min(0),
+    refused: z.number().int().min(0),
+  })
+  .meta({ ref: 'ImportUsersResult' })
+
 /** Set a user's password from a server or the dashboard. Ends all of their sessions. */
 export const SetPasswordRequestSchema = z
   .object({ password: z.string().max(1024) })
@@ -250,6 +349,14 @@ export type EmailCodeSent = z.infer<typeof EmailCodeSentSchema>
 export type EmailAddressVerifyRequest = z.infer<typeof EmailAddressVerifyRequestSchema>
 /** The address an administrator gives a user who has none. */
 export type SetUserEmailRequest = z.infer<typeof SetUserEmailRequestSchema>
+/** One user of an import. */
+export type ImportUserRow = z.infer<typeof ImportUserRowSchema>
+/** An import request body. */
+export type ImportUsersRequest = z.infer<typeof ImportUsersRequestSchema>
+/** What became of one import row. */
+export type ImportRowResult = z.infer<typeof ImportRowResultSchema>
+/** The answer to an import. */
+export type ImportUsersResult = z.infer<typeof ImportUsersResultSchema>
 /** Create-user request body. */
 export type CreateUserRequest = z.infer<typeof CreateUserRequestSchema>
 /** Set-password request body. */

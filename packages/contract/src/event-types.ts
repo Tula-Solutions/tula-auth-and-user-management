@@ -28,6 +28,9 @@ import type { AuditTargetType } from './audit'
  */
 export const ACTIVITY_TYPES = [
   'user.created',
+  // A user brought across by an import (ADR 0066), instead of `user.created`: an endpoint
+  // subscribes to it deliberately, so a migration does not fire a delivery per user.
+  'user.imported',
   'user.email_verified',
   'user.banned',
   'user.unbanned',
@@ -150,6 +153,7 @@ export const EVENT_SCHEMA_VERSION = 1
  */
 export const EVENT_TARGET_TYPES = {
   'user.created': 'user',
+  'user.imported': 'user',
   'user.email_verified': 'user',
   'user.banned': 'user',
   'user.unbanned': 'user',
