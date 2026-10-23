@@ -6,13 +6,14 @@ import {
   type Transaction,
   withTenant,
 } from '@tula-tech/db'
-import { and, asc, count, eq, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm'
+import { and, asc, count, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { isUniqueViolation } from '~/adapters/postgres/errors'
 import { activityOf, type Recorded } from '~/ports/activity-log'
 import type {
   ClaimOutcome,
   DomainClaim,
+  DueReminder,
   OrganizationDomainRecord,
   OrganizationDomainStore,
   SetDomainModeOutcome,
@@ -27,6 +28,8 @@ const columns = {
   domain: organizationDomains.domain,
   mode: organizationDomains.mode,
   verifiedAt: organizationDomains.verifiedAt,
+  expiresAt: organizationDomains.expiresAt,
+  remindedDays: organizationDomains.remindedDays,
   codeHash: organizationDomains.codeHash,
   codeExpiresAt: organizationDomains.codeExpiresAt,
   codeAttempts: organizationDomains.codeAttempts,
@@ -120,7 +123,11 @@ export class PostgresOrganizationDomainStore implements OrganizationDomainStore 
           return { outcome: 'gone' } as const
         }
         const [verified] = await tx
-          .select({ id: organizationDomains.id })
+          .select({
+            id: organizationDomains.id,
+            organizationId: organizationDomains.organizationId,
+            expiresAt: organizationDomains.expiresAt,
+          })
           .from(organizationDomains)
           .where(
             and(
@@ -129,7 +136,24 @@ export class PostgresOrganizationDomainStore implements OrganizationDomainStore 
               isNotNull(organizationDomains.verifiedAt)
             )
           )
-        if (verified) {
+        if (verified?.organizationId === claim.organizationId) {
+          // Proving a verified domain again: it keeps matching, with its mode and dates, and
+          // only gets a new code.
+          const [row] = await tx
+            .update(organizationDomains)
+            .set({
+              codeHash: claim.codeHash,
+              codeExpiresAt: claim.codeExpiresAt,
+              codeAttempts: 0,
+              updatedAt: claim.at,
+            })
+            .where(owned(claim.environmentId, claim.organizationId, verified.id))
+            .returning(columns)
+          await recordActivity(tx, activity ? [activity] : [])
+          return { outcome: 'claimed', record: row as OrganizationDomainRecord } as const
+        }
+        // Another organization's verification blocks only until it lapses.
+        if (verified && (verified.expiresAt?.getTime() ?? 0) > claim.at.getTime()) {
           return { outcome: 'taken' } as const
         }
         const [existing] = await tx
@@ -215,7 +239,6 @@ export class PostgresOrganizationDomainStore implements OrganizationDomainStore 
         .where(
           and(
             owned(environmentId, organizationId, id),
-            isNull(organizationDomains.verifiedAt),
             isNotNull(organizationDomains.codeHash),
             sql`${organizationDomains.codeExpiresAt} > ${now}`,
             lt(organizationDomains.codeAttempts, maxAttempts)
@@ -233,6 +256,7 @@ export class PostgresOrganizationDomainStore implements OrganizationDomainStore 
     id: string,
     expectedCodeHash: string,
     at: Date,
+    expiresAt: Date,
     recorded: Recorded
   ): Promise<VerifyDomainOutcome> {
     const activity = activityOf(recorded)
@@ -242,6 +266,8 @@ export class PostgresOrganizationDomainStore implements OrganizationDomainStore 
           .update(organizationDomains)
           .set({
             verifiedAt: at,
+            expiresAt,
+            remindedDays: null,
             codeHash: null,
             codeExpiresAt: null,
             codeAttempts: 0,
@@ -250,7 +276,6 @@ export class PostgresOrganizationDomainStore implements OrganizationDomainStore 
           .where(
             and(
               owned(environmentId, organizationId, id),
-              isNull(organizationDomains.verifiedAt),
               eq(organizationDomains.codeHash, expectedCodeHash)
             )
           )
@@ -323,6 +348,97 @@ export class PostgresOrganizationDomainStore implements OrganizationDomainStore 
       await recordActivity(tx, activity ? [activity] : [])
       return true
     })
+  }
+
+  /** @inheritdoc */
+  async listDueReminders(
+    environmentId: string,
+    now: Date,
+    thresholds: readonly number[],
+    limit: number
+  ): Promise<DueReminder[]> {
+    if (thresholds.length === 0) {
+      return []
+    }
+    // Due for a threshold t: lapses within t days of now and was not reminded at t or smaller.
+    const within = (t: number) =>
+      and(
+        sql`${organizationDomains.expiresAt} <= ${now}::timestamptz + make_interval(days => ${t})`,
+        or(isNull(organizationDomains.remindedDays), gt(organizationDomains.remindedDays, t))
+      )
+    const rows = await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .select(columns)
+        .from(organizationDomains)
+        .where(
+          and(
+            eq(organizationDomains.environmentId, environmentId),
+            isNotNull(organizationDomains.verifiedAt),
+            sql`${organizationDomains.expiresAt} > ${now}`,
+            or(...thresholds.map(within))
+          )
+        )
+        .orderBy(asc(organizationDomains.expiresAt), asc(organizationDomains.id))
+        .limit(limit)
+    )
+    return rows.map((record) => {
+      const left = (record.expiresAt?.getTime() ?? 0) - now.getTime()
+      return {
+        record,
+        days: Math.min(...thresholds.filter((t) => left <= t * 86_400_000)),
+      }
+    })
+  }
+
+  /** @inheritdoc */
+  async takeReminder(
+    environmentId: string,
+    organizationId: string,
+    id: string,
+    days: number
+  ): Promise<{ previous: number | null } | false> {
+    return withTenant(this.db, environmentId, async (tx) => {
+      // The previous value is read under the row lock the UPDATE then takes; the guarded
+      // UPDATE is what decides, so two instances cannot both take it.
+      const [before] = await tx
+        .select({ remindedDays: organizationDomains.remindedDays })
+        .from(organizationDomains)
+        .where(owned(environmentId, organizationId, id))
+        .for('update')
+      if (!before) {
+        return false
+      }
+      const taken = await tx
+        .update(organizationDomains)
+        .set({ remindedDays: days })
+        .where(
+          and(
+            owned(environmentId, organizationId, id),
+            isNotNull(organizationDomains.verifiedAt),
+            or(isNull(organizationDomains.remindedDays), gt(organizationDomains.remindedDays, days))
+          )
+        )
+        .returning({ id: organizationDomains.id })
+      return taken.length === 1 ? { previous: before.remindedDays } : false
+    })
+  }
+
+  /** @inheritdoc */
+  async releaseReminder(
+    environmentId: string,
+    organizationId: string,
+    id: string,
+    days: number,
+    previous: number | null
+  ): Promise<void> {
+    await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .update(organizationDomains)
+        .set({ remindedDays: previous })
+        .where(
+          and(owned(environmentId, organizationId, id), eq(organizationDomains.remindedDays, days))
+        )
+    )
   }
 
   /** @inheritdoc */

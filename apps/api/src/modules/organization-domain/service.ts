@@ -1,4 +1,5 @@
 import {
+  DOMAIN_VERIFICATION_LIFETIME_DAYS,
   DOMAINS_MANAGE_PERMISSION,
   domainOfAddress,
   durationToMs,
@@ -7,6 +8,7 @@ import {
   type OrganizationDomain,
   type OrganizationDomainList,
   type OrganizationDomainMode,
+  type OrganizationDomainStatus,
   type OrganizationSuggestion,
   type OrganizationSuggestionList,
   type StartOrganizationDomainRequest,
@@ -64,11 +66,28 @@ export const CODES_PER_ORGANIZATION_PER_HOUR = 10
 export const CODES_PER_ENVIRONMENT_PER_DAY = 200
 
 /**
- * Codes one organization may ask for in a day. Well under the environment's cap, so that one
- * organization (any user may create one where `allowUserCreated` is on) cannot spend the
+ * Codes one organization created by an administrator (the admin API or the dashboard) may ask
+ * for in a day. Well under the environment's cap, so that one organization cannot spend the
  * environment's whole allowance and lock every other organization out.
  */
 export const CODES_PER_ORGANIZATION_PER_DAY = 30
+
+/**
+ * Codes one organization **created by a user** may ask for in a day (where
+ * `organizations.allowUserCreated` is on, anyone signed in can create one). Lower than an
+ * administrator's organization: at 30 each, seven such organizations spent the environment's
+ * 200 and locked every other organization out for the day. A user-created organization is
+ * also held to {@link CODES_PER_CREATOR_PER_DAY} together with its creator's others.
+ */
+export const CODES_PER_USER_ORGANIZATION_PER_DAY = 10
+
+/**
+ * Codes all the organizations one user created may ask for in a day between them. Without it
+ * a user spends {@link CODES_PER_USER_ORGANIZATION_PER_DAY} for each organization they are
+ * allowed to create (`organizations.maxCreatedPerUser`). With both limits it takes ten
+ * creators, not one, to spend the environment's {@link CODES_PER_ENVIRONMENT_PER_DAY}.
+ */
+export const CODES_PER_CREATOR_PER_DAY = 20
 
 /**
  * Codes one address may be sent in an hour. The address is chosen by the asker, so without
@@ -123,14 +142,47 @@ export async function hashCode(
   return deps.keyedHash.hmac(KEYED_HASH_PURPOSE, `${id}:${domain}:${code}`)
 }
 
+const DAY_MS = 86_400_000
+
+/**
+ * Whether a verified domain's verification has lapsed at `now`: it then matches nobody until
+ * it is proven again (ADR 0065, "Lapse"). A pending row has not lapsed; it was never verified.
+ *
+ * @param record - The domain row.
+ * @param now - The current time.
+ * @returns `true` from `expiresAt` on. A verified row with no deadline (not a state the
+ *   database allows) counts as lapsed: unknown is never trusted.
+ */
+export function lapsed(record: OrganizationDomainRecord, now: Date): boolean {
+  if (record.verifiedAt === null) {
+    return false
+  }
+  return record.expiresAt === null || record.expiresAt.getTime() <= now.getTime()
+}
+
+/** What a domain row is at `now`. */
+export function statusOf(record: OrganizationDomainRecord, now: Date): OrganizationDomainStatus {
+  if (record.verifiedAt === null) {
+    return 'pending'
+  }
+  return lapsed(record, now) ? 'needs_reverification' : 'verified'
+}
+
+/** When a verification made at `at` lapses. */
+function lapseOf(at: Date): Date {
+  return new Date(at.getTime() + DOMAIN_VERIFICATION_LIFETIME_DAYS * DAY_MS)
+}
+
 /** The public view of a claim or a verified domain. Never the code or its hash. */
-function view(record: OrganizationDomainRecord): OrganizationDomain {
+function view(record: OrganizationDomainRecord, now: Date): OrganizationDomain {
   return {
     id: record.id,
     domain: record.domain,
     mode: record.mode,
+    status: statusOf(record, now),
     verifiedAt: record.verifiedAt?.toISOString() ?? null,
-    codeExpiresAt: record.verifiedAt ? null : (record.codeExpiresAt?.toISOString() ?? null),
+    expiresAt: record.expiresAt?.toISOString() ?? null,
+    codeExpiresAt: record.codeExpiresAt?.toISOString() ?? null,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
   }
@@ -227,14 +279,18 @@ export async function requireEnabledManager(
  * @throws NotFoundError when the environment has no such organization.
  */
 export async function list(
-  deps: Pick<Deps, 'organizations' | 'organizationDomains' | 'environmentSettings' | 'config'>,
+  deps: Pick<
+    Deps,
+    'organizations' | 'organizationDomains' | 'environmentSettings' | 'config' | 'clock'
+  >,
   scope: Pick<Tenant, 'environmentId'>,
   organizationId: string
 ): Promise<OrganizationDomainList> {
   await requireEnabled(deps, scope)
   await requireOrganization(deps, scope, organizationId)
   const records = await deps.organizationDomains.list(scope.environmentId, organizationId)
-  return { data: records.map(view) }
+  const now = deps.clock.now()
+  return { data: records.map((record) => view(record, now)) }
 }
 
 type StartDeps = Pick<
@@ -270,13 +326,27 @@ async function hit(
  * a new code (the old one stops working) and may change the mode. Nothing is granted until
  * {@link verify}.
  *
+ * **Asked for a domain this organization has verified**, current or lapsed, it starts a
+ * re-verification: a new code is emailed, the domain keeps its mode (the `mode` in the request
+ * is ignored; {@link setMode} changes it) and, if it has not lapsed, keeps matching meanwhile.
+ * Entering the code restarts its lifetime. This is the only way to restore a lapsed domain.
+ *
  * Refused before anything is sent: a public mail domain (`organization.domain_public`), an
  * address that is not, exactly, on the domain (`organization.domain_address_mismatch`: a
- * subdomain is another domain), a domain that is verified already, for this organization or
- * another (`organization.domain_taken`), and an organization at its domain limit.
+ * subdomain is another domain), a domain that another organization has verified and whose
+ * verification has not lapsed (`organization.domain_taken`), and an organization at its domain
+ * limit. A lapsed verification of another organization does not block the claim.
+ *
+ * **That refusal is counted**: it answers whether a name is claimed elsewhere, so each one
+ * spends a slot of the organization's hourly allowance of sends
+ * ({@link CODES_PER_ORGANIZATION_PER_HOUR}), and a manager who tries names one after another
+ * is rate-limited after ten, not told about all of them.
  *
  * Sends are limited per organization (one a minute and {@link CODES_PER_ORGANIZATION_PER_HOUR}
- * an hour), per environment ({@link CODES_PER_ENVIRONMENT_PER_DAY} a day) and per address
+ * an hour; a day's {@link CODES_PER_ORGANIZATION_PER_DAY}, or
+ * {@link CODES_PER_USER_ORGANIZATION_PER_DAY} for an organization a user created), per
+ * creator ({@link CODES_PER_CREATOR_PER_DAY} a day across their organizations), per
+ * environment ({@link CODES_PER_ENVIRONMENT_PER_DAY} a day) and per address
  * ({@link CODES_PER_ADDRESS_PER_HOUR} an hour, under a keyed hash). The code is stored as a
  * keyed hash that also covers the claim's id and the domain, and never as the code.
  *
@@ -303,8 +373,9 @@ export async function start(
   actor: Actor
 ): Promise<OrganizationDomain> {
   await requireEnabled(deps, scope)
-  await requireOrganization(deps, scope, organizationId)
+  const organization = await requireOrganization(deps, scope, organizationId)
   const { domain } = input
+  const subject = `${scope.environmentId}:${organizationId}`
   if (isPublicEmailDomain(domain)) {
     throw new AuthError('organization.domain_public')
   }
@@ -316,7 +387,11 @@ export async function start(
   if (domainOfAddress(address.normalized) !== domain) {
     throw new AuthError('organization.domain_address_mismatch')
   }
-  if (await deps.organizationDomains.findVerified(scope.environmentId, domain)) {
+  const holder = await deps.organizationDomains.findVerified(scope.environmentId, domain)
+  if (holder && holder.organizationId !== organizationId && !lapsed(holder, deps.clock.now())) {
+    // An answer that says a name is claimed elsewhere is a probe of other organizations'
+    // domains: it spends the hourly allowance of sends, so ten tries is all a manager gets.
+    await hit(deps, `organization_domain:${subject}`, CODES_PER_ORGANIZATION_PER_HOUR, '1h')
     throw new AuthError('organization.domain_taken')
   }
   const held = await deps.organizationDomains.list(scope.environmentId, organizationId)
@@ -325,10 +400,25 @@ export async function start(
     throw new AuthError('organization.domain_limit', { max: MAX_DOMAINS_PER_ORGANIZATION })
   }
 
-  const subject = `${scope.environmentId}:${organizationId}`
   await hit(deps, `organization_domain_cooldown:${subject}`, 1, '1m')
   await hit(deps, `organization_domain:${subject}`, CODES_PER_ORGANIZATION_PER_HOUR, '1h')
-  await hit(deps, `organization_domain_day:${subject}`, CODES_PER_ORGANIZATION_PER_DAY, '1d')
+  await hit(
+    deps,
+    `organization_domain_day:${subject}`,
+    organization.createdBy === null
+      ? CODES_PER_ORGANIZATION_PER_DAY
+      : CODES_PER_USER_ORGANIZATION_PER_DAY,
+    '1d'
+  )
+  if (organization.createdBy !== null) {
+    // Ids only: limiter keys may live in Redis.
+    await hit(
+      deps,
+      `organization_domain_creator_day:${scope.environmentId}:${organization.createdBy}`,
+      CODES_PER_CREATOR_PER_DAY,
+      '1d'
+    )
+  }
   await hit(
     deps,
     `organization_domain_environment:${scope.environmentId}`,
@@ -347,6 +437,9 @@ export async function start(
   )
 
   const id = existing?.id ?? deps.ids.next()
+  // A verified domain being proven again keeps its mode: changing it is `setMode`'s (and a
+  // weakening there), never a side effect of asking for a code.
+  const mode = existing?.verifiedAt ? existing.mode : input.mode
   const code = randomDigits(CODE_LENGTH)
   // Send first: a relay that fails stores nothing, and an earlier code keeps working.
   try {
@@ -371,7 +464,7 @@ export async function start(
       environmentId: scope.environmentId,
       organizationId,
       domain,
-      mode: input.mode,
+      mode,
       codeHash: await hashCode(deps, id, domain, code),
       codeExpiresAt: new Date(at.getTime() + durationToMs(CODE_TTL)),
       at,
@@ -381,12 +474,12 @@ export async function start(
       type: 'organization_domain.claimed',
       actor,
       target: { type: 'organization_domain', id },
-      data: { organizationId, domain, mode: input.mode },
+      data: { organizationId, domain, mode },
     })
   )
   switch (result.outcome) {
     case 'claimed':
-      return view(result.record)
+      return view(result.record, at)
     case 'taken':
       throw new AuthError('organization.domain_taken')
     case 'limit_reached':
@@ -411,14 +504,21 @@ type VerifyDeps = Pick<
 /**
  * Verify a claimed domain with the code emailed to an address on it.
  *
- * In order: the claim must exist (404); a claim already verified answers as it is;
- * with no live code (never sent, expired, or out of guesses) there is nothing to guess at:
+ * In order: the claim must exist (404); a domain verified and in force, with no code waiting,
+ * answers as it is; a lapsed one with no code is `verification.expired`; with no live code (never sent, expired, or out of guesses) there is nothing to guess at:
  * `verification.expired`, nothing counted; the guess is counted under the claim's
  * {@link codeLockKey} (`CREDENTIAL_LOCKOUT`) **before** the code is looked at, and again by the
  * row's own counter ({@link MAX_ATTEMPTS} guesses per code); a wrong code is
  * `verification.invalid_code`; the right one verifies in one write that only succeeds while
  * the row still holds that code, and in which the database's unique key over verified domains
  * decides a race between organizations. A success clears the lockout.
+ *
+ * **Entering the right code restarts the lifetime** (`verifiedAt` and `expiresAt` move to now
+ * and a year on, the reminders start over), for a claim that was pending, for a verified
+ * domain being proven again and for a lapsed one. When the name's current holder is another
+ * organization whose verification has lapsed, that row is removed first (recorded as
+ * `organization_domain.removed`), because a lapsed claim must not keep a name from whoever
+ * proves it now; one that has not lapsed is `organization.domain_taken`.
  *
  * @param deps - Stores, settings, ids, clock, keyed hash and lockout.
  * @param scope - The project and environment.
@@ -444,10 +544,15 @@ export async function verify(
   await requireEnabled(deps, scope)
   await requireOrganization(deps, scope, organizationId)
   const claim = await requireDomain(deps, scope, organizationId, domainId)
-  if (claim.verifiedAt !== null) {
-    return view(claim)
-  }
   const now = deps.clock.now()
+  if (claim.verifiedAt !== null && claim.codeHash === null) {
+    // Verified and no code waiting: a domain still in force answers as it is (a repeat is
+    // harmless). One that has lapsed has nothing to enter: ask for a new code with `start`.
+    if (lapsed(claim, now)) {
+      throw new AuthError('verification.expired')
+    }
+    return view(claim, now)
+  }
   if (
     claim.codeHash === null ||
     claim.codeExpiresAt === null ||
@@ -481,12 +586,33 @@ export async function verify(
   if (isPublicEmailDomain(claim.domain)) {
     throw new AuthError('organization.domain_public')
   }
+  const holder = await deps.organizationDomains.findVerified(scope.environmentId, claim.domain)
+  if (holder && holder.id !== claim.id) {
+    if (!lapsed(holder, now)) {
+      throw new AuthError('organization.domain_taken')
+    }
+    // The name's earlier holder lost it: a lapsed verification is not a reason to refuse
+    // whoever proves the domain now. Its members stay members.
+    await deps.organizationDomains.remove(
+      scope.environmentId,
+      holder.organizationId,
+      holder.id,
+      Audit.entry(deps, scope, {
+        type: 'organization_domain.removed',
+        actor,
+        target: { type: 'organization_domain', id: holder.id },
+        data: { organizationId: holder.organizationId, domain: holder.domain },
+      })
+    )
+  }
+  const verifiedAt = deps.clock.now()
   const result = await deps.organizationDomains.verify(
     scope.environmentId,
     organizationId,
     claim.id,
     counted.codeHash,
-    deps.clock.now(),
+    verifiedAt,
+    lapseOf(verifiedAt),
     Audit.entry(deps, scope, {
       type: 'organization_domain.verified',
       actor,
@@ -495,6 +621,7 @@ export async function verify(
         organizationId,
         domain: claim.domain,
         mode: counted.mode,
+        ...(claim.verifiedAt !== null && { reverified: true as const }),
         ...(counted.mode === 'auto_join' && { weakened: true as const }),
       },
     })
@@ -506,7 +633,7 @@ export async function verify(
     throw new AuthError('verification.expired')
   }
   await deps.lockout.clear(lockKey)
-  return view(result.record)
+  return view(result.record, verifiedAt)
 }
 
 /**
@@ -561,7 +688,7 @@ export async function setMode(
   if (result.outcome === 'not_found') {
     throw new NotFoundError()
   }
-  return view(result.record)
+  return view(result.record, deps.clock.now())
 }
 
 /**
@@ -605,7 +732,7 @@ export async function remove(
   }
 }
 
-type MatchDeps = Pick<Deps, 'users' | 'organizationDomains'>
+type MatchDeps = Pick<Deps, 'users' | 'organizationDomains' | 'clock'>
 
 /**
  * The verified domain row that matches a user's **verified** address, or `null`.
@@ -613,8 +740,9 @@ type MatchDeps = Pick<Deps, 'users' | 'organizationDomains'>
  * The one place the rule is written, for the sign-up join, the suggestions and the join of a
  * suggestion (which re-checks it on the server). It matches only when: the user exists and is
  * not banned; their address is **verified** (an unverified address never counts); the part
- * after the `@` is, exactly, a verified domain of the environment (no subdomain, no parent); and
- * the domain is not public (a claim stored before the list grew matches nothing).
+ * after the `@` is, exactly, a verified domain of the environment (no subdomain, no parent);
+ * that verification has not lapsed; and the domain is not public (a claim stored before the
+ * list grew matches nothing).
  */
 async function matchOf(
   deps: MatchDeps,
@@ -629,7 +757,10 @@ async function matchOf(
   if (!domain || isPublicEmailDomain(domain)) {
     return null
   }
-  return deps.organizationDomains.findVerified(scope.environmentId, domain)
+  const verified = await deps.organizationDomains.findVerified(scope.environmentId, domain)
+  // A verification that has lapsed matches nobody (ADR 0065, "Lapse"): the domain may have
+  // been lost and registered again, and only a new code from a manager proves it is still theirs.
+  return verified && !lapsed(verified, deps.clock.now()) ? verified : null
 }
 
 /**
@@ -743,7 +874,7 @@ async function addMember(
 export async function suggestions(
   deps: Pick<
     Deps,
-    'users' | 'organizations' | 'organizationDomains' | 'environmentSettings' | 'config'
+    'users' | 'organizations' | 'organizationDomains' | 'environmentSettings' | 'config' | 'clock'
   >,
   scope: Pick<Tenant, 'environmentId'>,
   self: Self

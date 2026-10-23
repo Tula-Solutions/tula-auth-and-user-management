@@ -279,9 +279,10 @@ it, by the domain's `mode`.
   columns (`code_hash`, `code_expires_at`, `code_attempts`) and not in the verification-token
   store: that store is keyed by a user, and an administrator calling the admin API has none.
   The code's keyed hash is `HMAC('organization-domain-codes', "<row id>:<domain>:<code>")`
-  (`~/lib/keyed-hash`), so a code is bound to the row and the name it was sent for. A row has a
-  code exactly while it is unverified (a check constraint); verifying sets `verified_at` and
-  clears the code in one statement.
+  (`~/lib/keyed-hash`), so a code is bound to the row and the name it was sent for. A pending
+  row always has a code (a check constraint; a verified row holds one only while a manager proves it
+  again, see "Lapse"); verifying sets `verified_at` and `expires_at` and clears the code in one
+  statement.
 - **Guessing.** A code allows 5 guesses (`MAX_ATTEMPTS`), counted by the store **before** the code
   is compared and atomically; `deps.lockout` with `CREDENTIAL_LOCKOUT` under the key
   `organization_domain_code:<environment>:<row id>` counts the attempt first and clears it on
@@ -289,12 +290,14 @@ it, by the domain's `mode`.
   10 minutes; a new send replaces it and resets the counter. The client route for the check
   has a per-IP limit of its own on top (10 a minute).
 - **Sending is limited**, because the address is free text an administrator typed: one send a
-  minute, 10 an hour and 30 a day per organization (`CODES_PER_ORGANIZATION_PER_HOUR`,
-  `CODES_PER_ORGANIZATION_PER_DAY`, so that one organization cannot spend the environment's
-  allowance), 200 a day per environment, and 5 an hour per hashed address (so the code cannot be used to flood one
-  inbox). An organization has at most 10 domains (`organization.domain_limit`, 409).
-- **A domain is verified for one organization per environment** (`organization.domain_taken`,
-  409): a partial unique index over the verified rows. Any number of organizations may have a
+  minute and 10 an hour per organization (`CODES_PER_ORGANIZATION_PER_HOUR`), a day's allowance
+  per organization (30 for one an administrator made, **10 for one a user created**) and 20 a
+  day for **all the organizations one user created together** (see "Fairness of the daily
+  allowance" below), 200 a day per environment, and 5 an hour per hashed address (so the code
+  cannot be used to flood one inbox). An organization has at most 10 domains
+  (`organization.domain_limit`, 409).
+- **A domain is verified for one organization per environment**, until its verification lapses
+  (`organization.domain_taken`, 409; see "Lapse" below): a partial unique index over the verified rows. Any number of organizations may have a
   pending claim on a name, and of two verifications at once the database lets one succeed;
   the other is told `domain_taken`. A claim of an organization of another environment is a 404.
 - **Grammar and the public list** (`@tula-tech/contract/organization-domain-rules`, Zod-free):
@@ -342,22 +345,103 @@ it, by the domain's `mode`.
   `.verified`, `.updated` and `.removed` hold the organization id, **the domain** (public, and
   allowed in its own field by the event canary), the mode and, where `auto_join` is chosen,
   `weakened: true` (a domain that joins people without a human is a weakening, like a looser
-  setting). **Never the address the code was sent to.** `organization_membership.added` gains an
+  setting); `.verified` also says `reverified: true` for a domain that was verified already. **Never the address the code was sent to.** `organization_membership.added` gains an
   optional `via` (`domain_auto_join` or `domain_suggestion`); the auto-join entry's actor is the
   system, the suggestion's the user.
-- **Numbering.** The migration is `0041` and the scenario `122`; TULA-115 (invitations) builds
-  `0040` and `121` in parallel. Whichever merges second renumbers its own file (the `0041`
-  snapshot's `prevId` is `0039`'s, so it collides with `0040`'s).
+- **Numbering.** The migration is `0041` and the scenario `122` (the lifetime is `0042`,
+  TULA-128, below).
 
-- **Accepted limits (Ollie round 2).** The 200-a-day environment allowance of claim codes is an
-  availability limit: where `organizations.allowUserCreated` is on, several user-created
-  organizations can spend it (30 each) and delay other claims until the next day; the
-  per-organization caps bound one organization, not many. `organization.domain_taken` is
-  answered before a send limit is spent, so a manager can learn whether a well-formed domain is
-  claimed in the environment (bounded by the per-IP route limit and the need for an address on
-  that domain). A verified domain is **not re-verified**: the inbox was proved once, so a domain
-  that lapses and is registered by someone else still matches until the claim is removed.
-  Periodic re-verification is a later step.
+- **Accepted limit (Ollie round 2).** A well-formed domain's being claimed elsewhere is still
+  learnable, now at a price: see "Probing" below. The other two limits of that round are
+  decided below (TULA-128).
+
+#### Lapse: a verification is believed for a year (TULA-128, migration `0042`)
+
+A verified domain used to stay verified until someone removed it. If the domain lapsed and
+someone else registered it, their users with verified addresses on it still matched the
+organization, and with `auto_join` became members at sign-up. **A verification now has a
+lifetime**, and past it the claim matches nobody.
+
+- **Lifetime.** `DOMAIN_VERIFICATION_LIFETIME_DAYS = 365` in the contract
+  (`organization-domain-rules`), counted from the day the code was entered. **Stored, not
+  derived from `verified_at`**: the row has `expires_at` (set exactly when `verified_at` is, by a
+  check), written when the code is entered. A stored deadline lets rows from before the
+  change have a deadline of their own (below) and lets the lifetime change later without
+  moving rows that were already verified. The state is **derived from the date and the clock**,
+  not stored as a word that something must flip: `lapsed(record, now)` is `expires_at <= now`
+  (a verified row with no date counts as lapsed), so a stopped job, a skewed timer or a missed
+  run cannot leave a lapsed domain matching. The wire says `status`: `pending`, `verified` or
+  `needs_reverification`, and `expiresAt`.
+- **Where it applies.** One place: `matchOf` (the sign-up join, the suggestions and the join
+  of a suggestion all go through it). A lapsed claim matches nobody; its row, its mode and the
+  members it brought are kept. It does not release the name by itself (a unique index cannot
+  hold a date), see below.
+- **Re-verifying** goes through the existing claim-code path. `POST …/domains` for a domain the
+  organization **has verified** (current or lapsed) emails a code and stores it beside the
+  verified dates; **the domain keeps matching, with its mode, until the new code is entered or
+  it lapses**, and the request's `mode` is ignored (a mode change is `PATCH`, and a weakening
+  there). Entering the code (`verify`) moves `verified_at` and `expires_at`, clears the code and
+  the reminder mark and records `organization_domain.verified` with `reverified: true`. The
+  code, guess counter, lockout and send limits are the first claim's. A lapsed domain with no
+  code waiting is `verification.expired` on `verify`: ask for a code first. The state check of
+  the table now says: a pending row has a code, `expires_at` goes with `verified_at`, and the
+  code columns are all set or all null.
+- **A lapsed claim does not keep the name.** The new owner of a lost domain must be able to
+  claim it: `claim` ignores another organization's lapsed verification, and `verify`
+  removes that row first (`organization_domain.removed`, the verifying actor), then the unique
+  index lets the new holder in. A verification that has not lapsed is `organization.domain_taken`
+  as before. The earlier holder's members stay members.
+- **Reminders.** A daily job (`modules/organization-domain/reminders.ts`, job `domain_reminders`,
+  lock id 3 in `JOB_LOCK_IDS`, in `ProcessPlan.jobs` of every **API** process and never a
+  worker: it sends mail through the API's own mailer and calls no operator's address) emails
+  the managers (members whose role holds `org:sys:domains:manage` **as stored now**, at most
+  10, with a verified address, not banned) **30 and 7 days** before the lapse
+  (`DOMAIN_REMINDER_DAYS`). Each reminder is **taken** by a guarded update of
+  `reminded_days` before anything is sent, so it is sent once per verification however often
+  or on however many instances the job runs; a send that fails for every manager is given
+  back and retried at the next run; verifying again clears the mark. One email covers all the
+  organization's domains at a threshold. The email kind is `organization_domain_expiring`
+  (category `notice`: no code, no link, a subject that never leads with a digit). **It names the
+  organization and how many domains, never a domain**: a domain name reads as a link, and no
+  email carries one (the link rule). It is **never awaited on a request path** (a timer
+  runs it) and is bounded: 200 reminders per environment a day through the rate limiter (which
+  fails closed), 200 domains read per environment per run, nothing at all while
+  `organizations.enabled` is off. No audit entry (it changes nobody's access) and no event;
+  the run logs counts only.
+- **Rows from before the change.** The migration gives a verified row `expires_at =
+  greatest(verified_at + 365 days, now() + 30 days)`: **the clock starts at `verified_at`, as for
+  any row, but with at least 30 days of grace**, so nobody is cut off the day this ships and
+  every manager is reminded (the 30-day threshold has been reached) before a long-verified
+  domain stops matching. The numbers are written into the migration, not read from the
+  contract (`DOMAIN_REVERIFICATION_GRACE_DAYS` documents them); `migration-organization-domain-lifetime.test.ts`
+  holds the backfill.
+- **Not built.** A lapsed claim is not deleted by retention (a manager restores it with a code),
+  and a warning on the dashboard is the Domains section's to draw from `status`
+  (the dashboard has none yet).
+
+#### Fairness of the daily allowance (TULA-128)
+
+At 30 a day each, about seven user-created organizations could spend the environment's 200 and
+delay every other claim to the next day. **Decision: a lower cap for an organization a user
+created, and a per-creator cap across their organizations.** An organization with no creator
+(an administrator made it) keeps 30 a day; one with `created_by` gets
+`CODES_PER_USER_ORGANIZATION_PER_DAY = 10`, and all the organizations one user created share
+`CODES_PER_CREATOR_PER_DAY = 20` (a limiter key of the creator's id, per environment). Creating
+organizations is already bounded per user (`maxCreatedPerUser`), and the creator's cap makes
+the number of organizations stop mattering: it takes ten creators, not seven organizations, to
+spend 200. Chosen over a smaller environment cap (which makes real use fail sooner) and over
+splitting the environment's allowance by organization (state for nothing). An administrator
+who needs more raises it by making the organization themselves.
+
+#### Probing for claimed domains (TULA-128)
+
+`organization.domain_taken` for a name another organization has verified is a yes/no answer
+about other organizations. **Decision: it spends a slot of the asking organization's hourly
+allowance of sends** (`CODES_PER_ORGANIZATION_PER_HOUR`, 10), so a manager learns the answer for
+ten names an hour and is then rate-limited (429), and nothing is sent. A separate probe limit
+was not worth a second counter; sharing the hour's allowance also keeps a manager who really
+sends from probing on top of it. A name that is free, one the organization has verified itself,
+and one whose verification has lapsed are not probes.
 
 ### Events and the audit log
 

@@ -54,6 +54,10 @@ const EMAIL_WORDS: Record<EmailTemplateKind, { label: string; when: string }> = 
     label: 'Organization domain code',
     when: 'An organization administrator asked to verify a domain and the code is sent to an address on it.',
   },
+  organization_domain_expiring: {
+    label: 'Organization domain about to lapse',
+    when: 'A verified domain of an organization is 30 or 7 days from needing to be verified again. Sent to the organization managers.',
+  },
   account_exists: {
     label: 'Sign-up for an existing account',
     when: 'Someone tried to sign up with an address that already has an account.',

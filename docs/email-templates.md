@@ -119,6 +119,7 @@ follow the [rules for notices](#notices).
 | `no_account` | A password reset was asked for an address with no account. | `appName` |
 | `no_account_sign_in` | A sign-in by email was asked for an address with no account. | `appName` |
 | `email_in_use` | A signed-in user of an account with no address asked to add an address that already has an account. Sent to that address instead of a code ([ADR 0059](adr/0059-email-for-accounts-without-one.md)). | `appName` |
+| `organization_domain_expiring` | Sent to an organization's managers 30 and 7 days before a verified domain needs to be verified again ([ADR 0065](adr/0065-organizations.md#verified-domains)). The server's wording names the organization and how many domains, never a domain. | `appName`, `expiresInDays` |
 
 ### Organization invitations
 

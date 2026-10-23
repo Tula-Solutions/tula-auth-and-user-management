@@ -2,6 +2,7 @@ import { afterEach, describe, expect, type Mock, spyOn, test } from 'bun:test'
 import { join } from 'node:path'
 import { bootJobs, type JobTimers, startJobs } from '~/jobs'
 import * as logger from '~/lib/logger'
+import * as DomainReminders from '~/modules/organization-domain/reminders'
 import * as Retention from '~/modules/retention/service'
 import * as Webhooks from '~/modules/webhook/service'
 import { planProcess } from '~/process'
@@ -42,22 +43,30 @@ afterEach(() => {
 function stubs() {
   const retention = spyOn(Retention, 'run').mockResolvedValue(null)
   const delivery = spyOn(Webhooks, 'run').mockResolvedValue(null)
-  spies.push(retention, delivery)
-  return { retention, delivery }
+  const reminders = spyOn(DomainReminders, 'run').mockResolvedValue(null)
+  spies.push(retention, delivery, reminders)
+  return { retention, delivery, reminders }
 }
+
+const DAY = DomainReminders.DOMAIN_REMINDER_INTERVAL_MS
 
 /** Let the promise chains of a round that has settled run. */
 const settle = () => new Promise<void>((resolve) => setImmediate(resolve))
 
 describe('startJobs', () => {
   test('an API instance that delivers runs both jobs at once and on their own timers', async () => {
-    const { retention, delivery } = stubs()
+    const { retention, delivery, reminders } = stubs()
     const { timers, started } = fakeTimers()
     const deps = createTestDeps()
     const jobs = startJobs(deps, planProcess('api', 'api').jobs, timers)
     expect(retention).toHaveBeenCalledTimes(1)
     expect(delivery).toHaveBeenCalledTimes(1)
-    expect(started.map((timer) => timer.ms).sort((a, b) => a - b)).toEqual([5_000, 600_000])
+    expect(reminders).toHaveBeenCalledTimes(1)
+    expect(started.map((timer) => timer.ms).sort((a, b) => a - b)).toEqual([
+      5_000,
+      600_000,
+      DomainReminders.DOMAIN_REMINDER_INTERVAL_MS,
+    ])
     expect(retention.mock.calls[0]?.[0]).toBe(deps)
     expect(delivery.mock.calls[0]?.[0]).toBe(deps)
     await jobs.finish()
@@ -68,7 +77,10 @@ describe('startJobs', () => {
     const { timers, started } = fakeTimers()
     const jobs = startJobs(createTestDeps(), planProcess('api', 'separate').jobs, timers)
     expect(retention).toHaveBeenCalledTimes(1)
-    expect(started.map((timer) => timer.ms)).toEqual([600_000])
+    expect(started.map((timer) => timer.ms)).toEqual([
+      600_000,
+      DomainReminders.DOMAIN_REMINDER_INTERVAL_MS,
+    ])
     for (const timer of started) {
       timer.fn()
     }
@@ -79,7 +91,7 @@ describe('startJobs', () => {
   })
 
   test('a worker runs delivery rounds on the same five-second timer and never retention', async () => {
-    const { retention, delivery } = stubs()
+    const { retention, delivery, reminders } = stubs()
     const { timers, started } = fakeTimers()
     const jobs = startJobs(createTestDeps(), planProcess('worker', 'separate').jobs, timers)
     expect(delivery).toHaveBeenCalledTimes(1)
@@ -89,6 +101,24 @@ describe('startJobs', () => {
     await settle()
     expect(delivery).toHaveBeenCalledTimes(2)
     expect(retention).not.toHaveBeenCalled()
+    // The reminders send mail through the API's mailer: only an API instance runs them.
+    expect(reminders).not.toHaveBeenCalled()
+    await jobs.finish()
+  })
+
+  test('a reminder round that fails is logged with the job’s name and the next one still runs', async () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => undefined)
+    const reminders = spyOn(DomainReminders, 'run').mockRejectedValue(new Error('database is down'))
+    spies.push(warn, reminders)
+    const { timers, started } = fakeTimers()
+    const jobs = startJobs(createTestDeps(), ['domain_reminders'], timers)
+    await settle()
+    expect(warn.mock.calls.map((call) => call[0])).toEqual([
+      'could not run the domain reminder job',
+    ])
+    started[0]?.fn()
+    await settle()
+    expect(reminders).toHaveBeenCalledTimes(2)
     await jobs.finish()
   })
 
@@ -192,17 +222,18 @@ describe('startJobs', () => {
 // delivery timer after all.
 describe('bootJobs: a process starts the jobs of its plan, and no others', () => {
   test.each([
-    ['an API instance that delivers', 'api', 'api', [5_000, 600_000], 1, 1],
-    ['an API instance whose worker is separate', 'api', 'separate', [600_000], 1, 0],
-    ['a worker', 'worker', 'separate', [5_000], 0, 1],
-  ] as const)('%s', async (_name, role, mode, intervals, retentions, deliveries) => {
-    const { retention, delivery } = stubs()
+    ['an API instance that delivers', 'api', 'api', [5_000, 600_000, DAY], 1, 1, 1],
+    ['an API instance whose worker is separate', 'api', 'separate', [600_000, DAY], 1, 0, 1],
+    ['a worker', 'worker', 'separate', [5_000], 0, 1, 0],
+  ] as const)('%s', async (_name, role, mode, intervals, retentions, deliveries, reminded) => {
+    const { retention, delivery, reminders } = stubs()
     const { timers, started } = fakeTimers()
     const deps = createTestDeps()
     const jobs = bootJobs({ deps, plan: planProcess(role, mode) }, timers)
     expect(started.map((timer) => timer.ms).sort((a, b) => a - b)).toEqual([...intervals])
     expect(retention).toHaveBeenCalledTimes(retentions)
     expect(delivery).toHaveBeenCalledTimes(deliveries)
+    expect(reminders).toHaveBeenCalledTimes(reminded)
     await jobs.finish()
   })
 
@@ -219,7 +250,7 @@ describe('bootJobs: a process starts the jobs of its plan, and no others', () =>
       expect(source.match(/\bbootJobs\(([^)]*)\)/g)).toEqual(['bootJobs(container)'])
       expect(source).not.toContain('startJobs')
       expect(source).not.toMatch(/setInterval|setTimeout/)
-      expect(source).not.toMatch(/['"](retention|webhook_delivery)['"]/)
+      expect(source).not.toMatch(/['"](retention|webhook_delivery|domain_reminders)['"]/)
     }
   )
 })

@@ -12,6 +12,8 @@
  * - `account_exists`, `no_account`, `no_account_sign_in`, `email_in_use`: what is sent
  *   instead of a code, so that a sign-up, a reset, a sign-in and adding an address to an
  *   account (ADR 0059) answer alike for every address.
+ * - `organization_domain_expiring` (ADR 0065): the reminder, 30 and 7 days ahead, that a
+ *   verified domain of an organization will stop matching unless it is verified again.
  * - `organization_invitation` (ADR 0065): an invitation to join an organization, with the
  *   server's link and no code.
  * - the rest: security notices (ADR 0023), one per thing that can have happened.
@@ -53,6 +55,7 @@ export const EMAIL_TEMPLATE_KINDS = [
   'email_in_use',
   'email_added',
   'organization_domain_verification',
+  'organization_domain_expiring',
   'organization_invitation',
 ] as const
 
@@ -193,6 +196,9 @@ export const EMAIL_TEMPLATE_RULES: Readonly<Record<EmailTemplateKind, EmailTempl
   email_in_use: DECOY,
   email_added: NOTICE,
   organization_domain_verification: CODE,
+  // A reminder to the managers (ADR 0065, "Lapse"): no code and no link, so a notice. The
+  // domain and the organization's name are named by the server's own wording only.
+  organization_domain_expiring: { ...NOTICE, optional: ['appName', 'expiresInDays'] },
   // The link is the whole point of an invitation: a template has to keep it. The organization's
   // name is text a user typed and has no placeholder: only the server's own wording names it.
   organization_invitation: {

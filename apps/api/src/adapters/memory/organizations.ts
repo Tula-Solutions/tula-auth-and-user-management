@@ -388,6 +388,25 @@ export class MemoryOrganizationStore implements OrganizationStore {
   }
 
   /** @inheritdoc */
+  async listMembersWithPermission(
+    environmentId: string,
+    organizationId: string,
+    permission: string,
+    limit: number
+  ): Promise<string[]> {
+    return [...this.#memberships.values()]
+      .filter(
+        (one) =>
+          one.environmentId === environmentId &&
+          one.organizationId === organizationId &&
+          this.#roles.get(one.roleId)?.permissions.includes(permission)
+      )
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || (a.id < b.id ? -1 : 1))
+      .slice(0, limit)
+      .map((one) => one.userId)
+  }
+
+  /** @inheritdoc */
   async insertOwned(
     input: OwnedOrganization,
     activities: { organization: Recorded; membership: Recorded }

@@ -208,6 +208,7 @@ describe('purge', () => {
       kept,
       'hash',
       from(-6 * DAY),
+      from(300 * DAY),
       Audit.none('fixture')
     )
     expect(await Retention.purge(deps)).toMatchObject({ domainClaims: 2, failed: 0 })

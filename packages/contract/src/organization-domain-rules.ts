@@ -18,6 +18,36 @@ export const MIN_DOMAIN_LENGTH = 4
  */
 export const MAX_DOMAINS_PER_ORGANIZATION = 10
 
+/**
+ * How long a verification of a domain lasts, in days (ADR 0065, "Verified domains", "Lapse").
+ * A domain can be lost and registered again by someone else, and nothing tells Tula, so a
+ * claim is only believed for this long: past it the domain matches nobody (no auto-join, no
+ * suggestion) until a manager proves it again with a new emailed code. Counted from the day
+ * the code was entered.
+ */
+export const DOMAIN_VERIFICATION_LIFETIME_DAYS = 365
+
+/**
+ * How many days before a verification lapses the organization's managers are emailed, largest
+ * first. Each is sent once per verification: a reminder is never repeated, and re-verifying
+ * starts the series again.
+ */
+export const DOMAIN_REMINDER_DAYS: readonly number[] = [30, 7]
+
+/**
+ * The least time, in days, that a domain verified before the lifetime existed (migration
+ * 0042) keeps matching after the migration: its deadline is the later of the original
+ * `verified_at` plus the lifetime and this many days from the migration, so that nobody is
+ * cut off the day the change ships and every manager gets a reminder before it ends.
+ */
+export const DOMAIN_REVERIFICATION_GRACE_DAYS = 30
+
+/** What a domain row is: waiting for its first code, verified, or past its lifetime. */
+export const ORGANIZATION_DOMAIN_STATUSES = ['pending', 'verified', 'needs_reverification'] as const
+
+/** One of {@link ORGANIZATION_DOMAIN_STATUSES}. */
+export type OrganizationDomainStatus = (typeof ORGANIZATION_DOMAIN_STATUSES)[number]
+
 /** How an organization treats a user who signs up with a verified address on its domain. */
 export const ORGANIZATION_DOMAIN_MODES = ['suggest', 'auto_join'] as const
 

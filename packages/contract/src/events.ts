@@ -775,11 +775,12 @@ export const EVENT_DATA_SCHEMAS = {
   ),
   'organization_domain.verified': data(
     'OrganizationDomainVerified',
-    'An organization verified a domain: users who sign up with a verified address on it are suggested the organization or joined to it, by `mode`. `weakened` is present, and true, for `auto_join`.',
+    'An organization verified a domain: users who sign up with a verified address on it are suggested the organization or joined to it, by `mode`, until the verification lapses. `reverified` is present, and true, when the domain was already verified (proven again before or after it lapsed). `weakened` is present, and true, for `auto_join`.',
     {
       organizationId: id(),
       domain: DomainName,
       mode: z.enum(ORGANIZATION_DOMAIN_MODES),
+      reverified: z.literal(true).optional(),
       weakened: z.literal(true).optional(),
     }
   ),
