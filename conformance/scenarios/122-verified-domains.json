@@ -218,7 +218,9 @@
           "id": "$any",
           "domain": "d{{suffix}}.example",
           "mode": "auto_join",
-          "verifiedAt": "$absent"
+          "status": "pending",
+          "verifiedAt": "$absent",
+          "expiresAt": "$absent"
         }
       },
       "capture": {
@@ -340,7 +342,9 @@
         "status": 200,
         "body": {
           "domain": "d{{suffix}}.example",
+          "status": "verified",
           "verifiedAt": "$any",
+          "expiresAt": "$any",
           "codeExpiresAt": "$absent"
         }
       }
@@ -379,7 +383,9 @@
               "id": "{{domainId}}",
               "domain": "d{{suffix}}.example",
               "mode": "auto_join",
-              "verifiedAt": "$any"
+              "status": "verified",
+              "verifiedAt": "$any",
+              "expiresAt": "$any"
             }
           ]
         }

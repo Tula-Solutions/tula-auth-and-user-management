@@ -168,7 +168,17 @@ describe('organization domain schemas', () => {
   test('a domain on the wire never carries the code or its hash', () => {
     const keys = Object.keys(OrganizationDomainSchema.shape)
     expect(keys.sort()).toEqual(
-      ['codeExpiresAt', 'createdAt', 'domain', 'id', 'mode', 'updatedAt', 'verifiedAt'].sort()
+      [
+        'codeExpiresAt',
+        'createdAt',
+        'domain',
+        'expiresAt',
+        'id',
+        'mode',
+        'status',
+        'updatedAt',
+        'verifiedAt',
+      ].sort()
     )
   })
 })

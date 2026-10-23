@@ -677,6 +677,7 @@ export interface Schemas {
     email_in_use?: Schemas['EmailTemplate']
     email_added?: Schemas['EmailTemplate']
     organization_domain_verification?: Schemas['EmailTemplate']
+    organization_domain_expiring?: Schemas['EmailTemplate']
     organization_invitation?: Schemas['EmailTemplate']
   }
   Environment: {
@@ -1120,7 +1121,7 @@ export interface Schemas {
   }
   MessagePreviewRequest: {
     channel: 'email'
-    kind: 'email_verification' | 'password_reset' | 'sign_in' | 'step_up' | 'account_exists' | 'no_account' | 'no_account_sign_in' | 'password_changed' | 'password_added' | 'password_reset_completed' | 'password_added_by_reset' | 'password_set_by_admin' | 'password_added_by_admin' | 'password_removed' | 'new_sign_in' | 'mfa_enabled' | 'mfa_disabled' | 'mfa_reset_by_admin' | 'backup_codes_regenerated' | 'backup_code_used' | 'sms_factor_enabled' | 'sms_factor_removed' | 'passkey_added' | 'passkey_removed' | 'identity_linked' | 'identity_unlinked' | 'email_in_use' | 'email_added' | 'organization_domain_verification' | 'organization_invitation'
+    kind: 'email_verification' | 'password_reset' | 'sign_in' | 'step_up' | 'account_exists' | 'no_account' | 'no_account_sign_in' | 'password_changed' | 'password_added' | 'password_reset_completed' | 'password_added_by_reset' | 'password_set_by_admin' | 'password_added_by_admin' | 'password_removed' | 'new_sign_in' | 'mfa_enabled' | 'mfa_disabled' | 'mfa_reset_by_admin' | 'backup_codes_regenerated' | 'backup_code_used' | 'sms_factor_enabled' | 'sms_factor_removed' | 'passkey_added' | 'passkey_removed' | 'identity_linked' | 'identity_unlinked' | 'email_in_use' | 'email_added' | 'organization_domain_verification' | 'organization_domain_expiring' | 'organization_invitation'
     template?: {
       subject?: string
       body?: string
@@ -1307,7 +1308,9 @@ export interface Schemas {
     id: string
     domain: string
     mode: Schemas['OrganizationDomainMode']
+    status: Schemas['OrganizationDomainStatus']
     verifiedAt: string | null
+    expiresAt: string | null
     codeExpiresAt: string | null
     createdAt: string
     updatedAt: string
@@ -1352,6 +1355,7 @@ export interface Schemas {
     organizationId: string
     domain: string
   }
+  OrganizationDomainStatus: 'pending' | 'verified' | 'needs_reverification'
   OrganizationDomainUpdatedEvent: {
     id: string
     type: 'organization_domain.updated'
@@ -1389,6 +1393,7 @@ export interface Schemas {
     organizationId: string
     domain: string
     mode: 'suggest' | 'auto_join'
+    reverified?: true
     weakened?: true
   }
   OrganizationInvitation: {

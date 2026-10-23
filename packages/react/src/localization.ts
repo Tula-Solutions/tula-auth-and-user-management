@@ -592,6 +592,8 @@ export interface TulaLocalization {
     /** `{email}`. */
     domainCodeSent: string
     domainPending: string
+    /** A verification that lapsed: the domain matches nobody until a new code is entered. */
+    domainNeedsReverification: string
     domainVerified: string
     /** `{domain}`. */
     domainCodeLabel: string
@@ -1181,6 +1183,7 @@ export const EN_LOCALIZATION: TulaLocalization = {
     domainStart: 'Send a code',
     domainCodeSent: 'We emailed a code to {email}.',
     domainPending: 'Waiting for the code',
+    domainNeedsReverification: 'Needs verifying again',
     domainVerified: 'Verified',
     domainCodeLabel: 'Code for {domain}',
     domainCodeRequired: 'Enter the 6-digit code.',

@@ -212,7 +212,11 @@ function domainView(domain: SandboxDomain): Schemas['OrganizationDomain'] {
     id: domain.id,
     domain: domain.domain,
     mode: domain.mode,
+    status: domain.verifiedAt === null ? 'pending' : 'verified',
     verifiedAt: domain.verifiedAt,
+    // A verification lasts a year (the sandbox's clock never gets that far in a visit).
+    expiresAt:
+      domain.verifiedAt === null ? null : iso(Date.parse(domain.verifiedAt) + 365 * 86_400_000),
     codeExpiresAt: domain.codeExpiresAt === null ? null : iso(domain.codeExpiresAt),
     createdAt: domain.createdAt,
     updatedAt: domain.updatedAt,

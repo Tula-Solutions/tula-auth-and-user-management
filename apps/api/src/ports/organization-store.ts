@@ -381,6 +381,21 @@ export interface OrganizationStore {
   ): Promise<UserMembershipRecord | null>
 
   /**
+   * @param environmentId - The environment to look in.
+   * @param organizationId - The organization.
+   * @param permission - A permission key, such as `org:sys:domains:manage`.
+   * @param limit - The most users to return.
+   * @returns The ids of members whose role, as stored now, holds the permission, oldest
+   *   membership first. Empty for an organization of another environment.
+   */
+  listMembersWithPermission(
+    environmentId: string,
+    organizationId: string,
+    permission: string,
+    limit: number
+  ): Promise<string[]>
+
+  /**
    * Create an organization for a user and make them its first member, **in one transaction**
    * that first holds the user's row, so that the limit on organizations one user creates holds
    * against simultaneous requests: of several creations at once, no more than the limit are

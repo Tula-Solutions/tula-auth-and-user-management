@@ -968,7 +968,9 @@ data class OrganizationDomain(
     val id: String,
     val domain: String,
     val mode: OrganizationDomainMode,
+    val status: OrganizationDomainStatus,
     val verifiedAt: String?,
+    val expiresAt: String?,
     val codeExpiresAt: String?,
     /** Format: `date-time`. */
     val createdAt: String,
@@ -1034,6 +1036,64 @@ object OrganizationDomainModeSerializer : KSerializer<OrganizationDomainMode> {
 }
 
 typealias OrganizationDomainName = String
+
+@Serializable(with = OrganizationDomainStatusSerializer::class)
+sealed class OrganizationDomainStatus {
+    /** The value as the API writes it. */
+    abstract val rawValue: String
+
+    override fun toString(): String = rawValue
+
+    object Pending : OrganizationDomainStatus() {
+        override val rawValue: String = "pending"
+    }
+
+    object Verified : OrganizationDomainStatus() {
+        override val rawValue: String = "verified"
+    }
+
+    object NeedsReverification : OrganizationDomainStatus() {
+        override val rawValue: String = "needs_reverification"
+    }
+
+    /** A value this version does not know, as the API wrote it. Made by [of] only. */
+    class Unknown internal constructor(override val rawValue: String) : OrganizationDomainStatus() {
+        override fun equals(other: Any?): Boolean = other is Unknown && other.rawValue == rawValue
+
+        override fun hashCode(): Int = rawValue.hashCode()
+    }
+
+    companion object {
+        /** Every value this version knows. */
+        val known: List<OrganizationDomainStatus> by lazy {
+            listOf(
+                Pending,
+                Verified,
+                NeedsReverification,
+            )
+        }
+
+        /** The value for a string of the API: [Unknown] for one this version does not know. */
+        fun of(rawValue: String): OrganizationDomainStatus = when (rawValue) {
+            "pending" -> Pending
+            "verified" -> Verified
+            "needs_reverification" -> NeedsReverification
+            else -> Unknown(rawValue)
+        }
+    }
+}
+
+/** Reads and writes [OrganizationDomainStatus] as its string, whatever the string is. */
+object OrganizationDomainStatusSerializer : KSerializer<OrganizationDomainStatus> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("dev.tula.auth.generated.OrganizationDomainStatus", PrimitiveKind.STRING)
+
+    override fun deserialize(decoder: Decoder): OrganizationDomainStatus = OrganizationDomainStatus.of(decoder.decodeString())
+
+    override fun serialize(encoder: Encoder, value: OrganizationDomainStatus) {
+        encoder.encodeString(value.rawValue)
+    }
+}
 
 @Serializable
 data class OrganizationInvitation(

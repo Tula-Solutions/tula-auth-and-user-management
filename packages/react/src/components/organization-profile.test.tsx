@@ -65,7 +65,9 @@ const DOMAIN = (id: string, domain: string, verified: boolean, mode = 'suggest')
   id,
   domain,
   mode,
+  status: verified ? 'verified' : 'pending',
   verifiedAt: verified ? '2030-01-02T00:00:00.000Z' : null,
+  expiresAt: verified ? '2031-01-02T00:00:00.000Z' : null,
   codeExpiresAt: verified ? null : '2030-01-03T00:00:00.000Z',
   createdAt: '2030-01-01T00:00:00.000Z',
   updatedAt: '2030-01-01T00:00:00.000Z',
@@ -790,6 +792,23 @@ describe('<OrganizationProfile>: Domains', () => {
     expect(mode).toHaveLength(2)
     expect(screen.getByLabelText('Code for acme.io')).toBeTruthy()
     expectAbsent(screen.queryByLabelText('Code for acme.com'))
+  })
+
+  test('a lapsed verification is offered a new code, not the mode', async () => {
+    const w = adminWorld()
+    const lapsed = {
+      ...DOMAIN('dom_3', 'old.example', true),
+      status: 'needs_reverification',
+      expiresAt: '2030-01-03T00:00:00.000Z',
+    }
+    w.api.on(ORG_ROUTE.domains(A), () => json(200, { data: [lapsed] }))
+    w.mount(<OrganizationProfile section='domains' />)
+    expect(await screen.findByText('old.example')).toBeTruthy()
+    expect(screen.getByText('Needs verifying again')).toBeTruthy()
+    expect(screen.getByLabelText('Code for old.example')).toBeTruthy()
+    expect(
+      screen.getAllByLabelText('When someone signs up with a verified address on it')
+    ).toHaveLength(1)
   })
 
   test('says when there are no domains, and while loading', async () => {

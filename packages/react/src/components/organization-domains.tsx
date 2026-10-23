@@ -48,7 +48,8 @@ function DomainRow(props: {
   const [code, setCode] = useState('')
   const [missing, setMissing] = useState(false)
   const field = useRef<HTMLDivElement>(null)
-  const verified = domain.verifiedAt !== null
+  // A lapsed verification matches nobody: it is offered a new code, not the mode.
+  const verified = domain.status === 'verified'
   const verifying = props.failed === `verify:${domain.id}` ? props.error : null
   const placed = placeErrors(verifying, organizationFieldResolver(['code']))
   const left = attemptsLeft(verifying, t)
@@ -80,7 +81,11 @@ function DomainRow(props: {
         <p className='tula-session-device'>
           <span>{domain.domain}</span>{' '}
           <span {...el('badge', verified && 'tula-is-positive')}>
-            {verified ? t.organizationProfile.domainVerified : t.organizationProfile.domainPending}
+            {verified
+              ? t.organizationProfile.domainVerified
+              : domain.status === 'needs_reverification'
+                ? t.organizationProfile.domainNeedsReverification
+                : t.organizationProfile.domainPending}
           </span>
         </p>
       </div>

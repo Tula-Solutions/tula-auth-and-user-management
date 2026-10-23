@@ -517,6 +517,32 @@ export function describeOrganizationStore(
       ])
     })
 
+    test('lists the members whose role holds a permission, oldest first, bounded, and none of another environment', async () => {
+      const record = await stored(organization(ctx.a))
+      const { admin, member } = await builtIns(ctx.a)
+      const first = await join(ctx.a, record, admin, { createdAt: new Date(now.getTime() - 2000) })
+      await join(ctx.a, record, member)
+      const third = await join(ctx.a, record, admin, { createdAt: new Date(now.getTime() - 1000) })
+      const key = 'org:sys:domains:manage'
+      expect(
+        await ctx.store.listMembersWithPermission(ctx.a.environmentId, record.id, key, 10)
+      ).toEqual([first.userId, third.userId])
+      expect(
+        await ctx.store.listMembersWithPermission(ctx.a.environmentId, record.id, key, 1)
+      ).toEqual([first.userId])
+      expect(
+        await ctx.store.listMembersWithPermission(
+          ctx.a.environmentId,
+          record.id,
+          'org:sys:nothing',
+          10
+        )
+      ).toEqual([])
+      expect(
+        await ctx.store.listMembersWithPermission(ctx.b.environmentId, record.id, key, 10)
+      ).toEqual([])
+    })
+
     test('a user is a member of an organization once', async () => {
       const record = await stored(organization(ctx.a))
       const { admin, member } = await builtIns(ctx.a)

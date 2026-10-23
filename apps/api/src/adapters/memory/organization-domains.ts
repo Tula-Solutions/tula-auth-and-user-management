@@ -5,11 +5,14 @@ import { activityOf, type Recorded } from '~/ports/activity-log'
 import type {
   ClaimOutcome,
   DomainClaim,
+  DueReminder,
   OrganizationDomainRecord,
   OrganizationDomainStore,
   SetDomainModeOutcome,
   VerifyDomainOutcome,
 } from '~/ports/organization-domain-store'
+
+const DAY_MS = 86_400_000
 
 /** In-memory organization domains for tests. */
 export class MemoryOrganizationDomainStore implements OrganizationDomainStore {
@@ -94,7 +97,19 @@ export class MemoryOrganizationDomainStore implements OrganizationDomainStore {
     ) {
       return { outcome: 'gone' }
     }
-    if (this.#verified(claim.environmentId, claim.domain)) {
+    const verified = this.#verified(claim.environmentId, claim.domain)
+    if (verified?.organizationId === claim.organizationId) {
+      // Proving a verified domain again: it keeps matching, with its mode and dates, and
+      // only gets a new code.
+      verified.codeHash = claim.codeHash
+      verified.codeExpiresAt = claim.codeExpiresAt
+      verified.codeAttempts = 0
+      verified.updatedAt = claim.at
+      this.#activityLog.record(activity ? [activity] : [])
+      return { outcome: 'claimed', record: structuredClone(verified) }
+    }
+    // Another organization's verification blocks only until it lapses.
+    if (verified && (verified.expiresAt?.getTime() ?? 0) > claim.at.getTime()) {
       return { outcome: 'taken' }
     }
     const own = [...this.#rows.values()].filter(
@@ -122,6 +137,8 @@ export class MemoryOrganizationDomainStore implements OrganizationDomainStore {
           domain: claim.domain,
           mode: claim.mode,
           verifiedAt: null,
+          expiresAt: null,
+          remindedDays: null,
           codeHash: claim.codeHash,
           codeExpiresAt: claim.codeExpiresAt,
           codeAttempts: 0,
@@ -144,7 +161,6 @@ export class MemoryOrganizationDomainStore implements OrganizationDomainStore {
     const row = this.#own(environmentId, organizationId, id)
     if (
       !row ||
-      row.verifiedAt !== null ||
       row.codeHash === null ||
       row.codeExpiresAt === null ||
       row.codeExpiresAt.getTime() <= now.getTime() ||
@@ -163,17 +179,21 @@ export class MemoryOrganizationDomainStore implements OrganizationDomainStore {
     id: string,
     expectedCodeHash: string,
     at: Date,
+    expiresAt: Date,
     recorded: Recorded
   ): Promise<VerifyDomainOutcome> {
     const activity = activityOf(recorded)
     const row = this.#own(environmentId, organizationId, id)
-    if (!row || row.verifiedAt !== null || row.codeHash !== expectedCodeHash) {
+    if (!row || row.codeHash === null || row.codeHash !== expectedCodeHash) {
       return { outcome: 'stale' }
     }
-    if (this.#verified(environmentId, row.domain)) {
+    const holder = this.#verified(environmentId, row.domain)
+    if (holder && holder.id !== row.id) {
       return { outcome: 'taken' }
     }
     row.verifiedAt = at
+    row.expiresAt = expiresAt
+    row.remindedDays = null
     row.codeHash = null
     row.codeExpiresAt = null
     row.codeAttempts = 0
@@ -208,15 +228,86 @@ export class MemoryOrganizationDomainStore implements OrganizationDomainStore {
     environmentId: string,
     organizationId: string,
     id: string,
-    recorded: Recorded
+    recorded: Recorded,
+    onlyLapsedAt?: Date
   ): Promise<boolean> {
     const activity = activityOf(recorded)
-    if (!this.#own(environmentId, organizationId, id)) {
+    const row = this.#own(environmentId, organizationId, id)
+    if (!row) {
+      return false
+    }
+    if (
+      onlyLapsedAt !== undefined &&
+      row.verifiedAt !== null &&
+      row.expiresAt !== null &&
+      row.expiresAt.getTime() > onlyLapsedAt.getTime()
+    ) {
       return false
     }
     this.#rows.delete(id)
     this.#activityLog.record(activity ? [activity] : [])
     return true
+  }
+
+  /** @inheritdoc */
+  async listDueReminders(
+    environmentId: string,
+    now: Date,
+    thresholds: readonly number[],
+    limit: number
+  ): Promise<DueReminder[]> {
+    const due: DueReminder[] = []
+    for (const row of this.#rows.values()) {
+      if (row.environmentId !== environmentId || row.verifiedAt === null || !row.expiresAt) {
+        continue
+      }
+      const left = row.expiresAt.getTime() - now.getTime()
+      if (left <= 0) {
+        continue
+      }
+      // The smallest threshold the row is within, and not yet reminded of.
+      const days = Math.min(...thresholds.filter((t) => left <= t * DAY_MS))
+      if (Number.isFinite(days) && (row.remindedDays === null || row.remindedDays > days)) {
+        due.push({ record: structuredClone(row), days })
+      }
+    }
+    return due
+      .sort((a, b) => (a.record.expiresAt?.getTime() ?? 0) - (b.record.expiresAt?.getTime() ?? 0))
+      .slice(0, limit)
+  }
+
+  /** @inheritdoc */
+  async takeReminder(
+    environmentId: string,
+    organizationId: string,
+    id: string,
+    days: number
+  ): Promise<{ previous: number | null } | false> {
+    const row = this.#own(environmentId, organizationId, id)
+    if (
+      !row ||
+      row.verifiedAt === null ||
+      (row.remindedDays !== null && row.remindedDays <= days)
+    ) {
+      return false
+    }
+    const previous = row.remindedDays
+    row.remindedDays = days
+    return { previous }
+  }
+
+  /** @inheritdoc */
+  async releaseReminder(
+    environmentId: string,
+    organizationId: string,
+    id: string,
+    days: number,
+    previous: number | null
+  ): Promise<void> {
+    const row = this.#own(environmentId, organizationId, id)
+    if (row && row.remindedDays === days) {
+      row.remindedDays = previous
+    }
   }
 
   /** @inheritdoc */

@@ -101,6 +101,8 @@ export interface FakeDomain {
   domain: string
   mode: (typeof ORGANIZATION_DOMAIN_MODES)[number]
   verifiedAt: string | null
+  /** When the verification lapses; `null` while pending. */
+  expiresAt: string | null
   codeExpiresAt: string | null
   createdAt: string
   updatedAt: string
@@ -214,6 +216,9 @@ export function fakeInvitation(overrides: Partial<FakeInvitation> = {}): FakeInv
   }
 }
 
+/** A year after the fake's clock: when a verification made now lapses. */
+export const IN_A_YEAR = '2027-10-23T12:00:00.000Z'
+
 /** The code the fake emails for a claim: a test types it in. */
 export const FAKE_DOMAIN_CODE = '123456'
 
@@ -233,6 +238,7 @@ export function fakeDomain(overrides: Partial<FakeDomain> = {}): FakeDomain {
     domain: 'acme.com',
     mode: 'suggest',
     verifiedAt: pending ? null : NOW,
+    expiresAt: pending ? null : IN_A_YEAR,
     codeExpiresAt: pending ? '2026-10-24T12:00:00.000Z' : null,
     createdAt: NOW,
     updatedAt: NOW,
@@ -354,7 +360,19 @@ function domainView(domain: FakeDomain) {
     attempts: _attempts,
     ...view
   } = domain
-  return view
+  // Derived from the date and the clock, as the API does: never stored.
+  const status =
+    view.verifiedAt === null
+      ? ('pending' as const)
+      : view.expiresAt !== null && view.expiresAt > NOW
+        ? ('verified' as const)
+        : ('needs_reverification' as const)
+  return { ...view, status }
+}
+
+/** Whether a claim holds its name now: verified and not lapsed. */
+function holds(entry: FakeDomain): boolean {
+  return entry.verifiedAt !== null && entry.expiresAt !== null && entry.expiresAt > NOW
 }
 
 function invitationView(invitation: FakeInvitation) {
@@ -867,8 +885,9 @@ export function organizationRoutes(
           state.domains.some(
             (entry) =>
               entry.environmentId === organization.environmentId &&
+              entry.organizationId !== organization.id &&
               entry.domain === domain &&
-              entry.verifiedAt !== null
+              holds(entry)
           )
         ) {
           return failure(409, 'organization.domain_taken', 'That domain is verified already.')
@@ -891,12 +910,14 @@ export function organizationRoutes(
             domain,
             verifiedAt: null,
           })
+        // A domain this organization has verified keeps its mode and its standing while a new
+        // code is proved (the request's mode is ignored, as the API does).
         if (claim.verifiedAt === null) {
           claim.mode = body.mode
-          claim.code = FAKE_DOMAIN_CODE
-          claim.codeExpiresAt = '2026-10-24T12:00:00.000Z'
-          claim.attempts = 0
         }
+        claim.code = FAKE_DOMAIN_CODE
+        claim.codeExpiresAt = '2026-10-24T12:00:00.000Z'
+        claim.attempts = 0
         if (!existing) {
           state.domains.push(claim)
         }
@@ -908,8 +929,10 @@ export function organizationRoutes(
       /^\/v1\/admin\/organizations\/([^/]+)\/domains\/([^/]+)\/verify$/,
       (call, match) =>
         onDomain(VerifyOrganizationDomainRequestSchema, (claim, body) => {
-          if (claim.verifiedAt !== null) {
-            return domainView(claim)
+          if (claim.verifiedAt !== null && claim.code === null) {
+            return holds(claim)
+              ? domainView(claim)
+              : failure(410, 'verification.expired', 'The code has expired.')
           }
           if (claim.code === null || (claim.codeExpiresAt ?? '') <= NOW) {
             return failure(410, 'verification.expired', 'The code has expired.')
@@ -926,12 +949,21 @@ export function organizationRoutes(
               entry !== claim &&
               entry.environmentId === claim.environmentId &&
               entry.domain === claim.domain &&
-              entry.verifiedAt !== null
+              holds(entry)
           )
           if (taken) {
             return failure(409, 'organization.domain_taken', 'That domain is verified already.')
           }
+          // Another organization's lapsed verification of the name is removed, as the API does.
+          state.domains = state.domains.filter(
+            (entry) =>
+              entry === claim ||
+              entry.domain !== claim.domain ||
+              entry.environmentId !== claim.environmentId ||
+              entry.verifiedAt === null
+          )
           claim.verifiedAt = NOW
+          claim.expiresAt = IN_A_YEAR
           claim.codeExpiresAt = null
           claim.code = null
           return domainView(claim)

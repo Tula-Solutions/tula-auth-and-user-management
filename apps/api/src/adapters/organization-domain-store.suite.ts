@@ -36,6 +36,7 @@ export function describeOrganizationDomainStore(
 ): void {
   const now = new Date('2026-01-01T00:00:00.000Z')
   const inTenMinutes = new Date('2026-01-01T00:10:00.000Z')
+  const inAYear = new Date('2027-01-01T00:00:00.000Z')
   let ctx: OrganizationDomainSuiteContext
 
   function activity(
@@ -107,6 +108,7 @@ export function describeOrganizationDomainStore(
       record.id,
       'hash-1',
       now,
+      inAYear,
       activity(tenant, 'organization_domain.verified', record.id)
     )
     if (result.outcome !== 'verified') {
@@ -199,20 +201,200 @@ export function describeOrganizationDomainStore(
       expect(await ctx.store.findVerified(ctx.a.environmentId, 'mail.acme.test')).toBeNull()
     })
 
-    test('a domain verified for an organization cannot be claimed again, by it or by another', async () => {
+    test('a domain verified for an organization is not claimed by another while it holds', async () => {
       const first = await ctx.organization(ctx.a)
       const second = await ctx.organization(ctx.a)
       await verified(ctx.a, first)
-      for (const org of [first, second]) {
-        const input = claim(ctx.a, org)
-        expect(
-          await ctx.store.claim(input, activity(ctx.a, 'organization_domain.claimed', input.id))
-        ).toEqual({ outcome: 'taken' })
-      }
+      const input = claim(ctx.a, second)
+      expect(
+        await ctx.store.claim(input, activity(ctx.a, 'organization_domain.claimed', input.id))
+      ).toEqual({ outcome: 'taken' })
       expect(await ctx.store.list(ctx.a.environmentId, second)).toEqual([])
       // Another environment is another namespace.
       const other = await ctx.organization(ctx.b)
       await pending(ctx.b, other)
+    })
+
+    test('claiming a domain the organization has verified starts a re-verification: a code, nothing else changes', async () => {
+      const org = await ctx.organization(ctx.a)
+      const before = await verified(ctx.a, org)
+      const input = claim(ctx.a, org, {
+        mode: 'auto_join',
+        codeHash: 'hash-2',
+        at: new Date(now.getTime() + 1000),
+      })
+      const result = await ctx.store.claim(
+        input,
+        activity(ctx.a, 'organization_domain.claimed', input.id)
+      )
+      expect(result.outcome).toBe('claimed')
+      const after = await ctx.store.find(ctx.a.environmentId, org, before.id)
+      // Still verified, same mode (the request's is ignored), same dates; plus the new code.
+      expect(after).toMatchObject({ id: before.id, mode: 'suggest', codeHash: 'hash-2' })
+      expect(after?.verifiedAt?.toISOString()).toBe(now.toISOString())
+      expect(after?.expiresAt?.toISOString()).toBe(inAYear.toISOString())
+      expect(after?.codeExpiresAt?.toISOString()).toBe(inTenMinutes.toISOString())
+      expect(await ctx.store.list(ctx.a.environmentId, org)).toHaveLength(1)
+    })
+
+    test('entering the new code moves the dates on, clears the code and the reminder mark', async () => {
+      const org = await ctx.organization(ctx.a)
+      const before = await verified(ctx.a, org)
+      expect(await ctx.store.takeReminder(ctx.a.environmentId, org, before.id, 30)).toEqual({
+        previous: null,
+      })
+      const input = claim(ctx.a, org, { codeHash: 'hash-2' })
+      await ctx.store.claim(input, activity(ctx.a, 'organization_domain.claimed', input.id))
+      const counted = await ctx.store.recordAttempt(ctx.a.environmentId, org, before.id, now, 5)
+      expect(counted?.codeAttempts).toBe(1)
+      const later = new Date('2026-12-01T00:00:00.000Z')
+      const later2 = new Date('2027-12-01T00:00:00.000Z')
+      const result = await ctx.store.verify(
+        ctx.a.environmentId,
+        org,
+        before.id,
+        'hash-2',
+        later,
+        later2,
+        activity(ctx.a, 'organization_domain.verified', before.id)
+      )
+      expect(result.outcome).toBe('verified')
+      const after = await ctx.store.find(ctx.a.environmentId, org, before.id)
+      expect(after).toMatchObject({ codeHash: null, codeExpiresAt: null, remindedDays: null })
+      expect(after?.verifiedAt?.toISOString()).toBe(later.toISOString())
+      expect(after?.expiresAt?.toISOString()).toBe(later2.toISOString())
+    })
+
+    test('removing a lapsed holder is refused for a row that was verified again meanwhile', async () => {
+      const org = await ctx.organization(ctx.a)
+      const row = await verified(ctx.a, org)
+      const afterLapse = new Date(inAYear.getTime() + 1000)
+      // The holder proves the domain again between the service's look and its removal.
+      const input = claim(ctx.a, org, { at: afterLapse })
+      const again = await ctx.store.claim(
+        input,
+        activity(ctx.a, 'organization_domain.claimed', input.id)
+      )
+      expect(again.outcome).toBe('claimed')
+      await ctx.store.verify(
+        ctx.a.environmentId,
+        org,
+        row.id,
+        'hash-1',
+        afterLapse,
+        new Date(afterLapse.getTime() + 86_400_000),
+        activity(ctx.a, 'organization_domain.verified', row.id)
+      )
+      expect(
+        await ctx.store.remove(
+          ctx.a.environmentId,
+          org,
+          row.id,
+          activity(ctx.a, 'organization_domain.removed', row.id),
+          afterLapse
+        )
+      ).toBe(false)
+      expect(await ctx.store.find(ctx.a.environmentId, org, row.id)).not.toBeNull()
+    })
+
+    test('a lapsed verification does not keep the name from another organization, which still cannot verify it until the row is removed', async () => {
+      const first = await ctx.organization(ctx.a)
+      const second = await ctx.organization(ctx.a)
+      const old = await verified(ctx.a, first)
+      const afterLapse = new Date(inAYear.getTime() + 1000)
+      const input = claim(ctx.a, second, { at: afterLapse })
+      const result = await ctx.store.claim(
+        input,
+        activity(ctx.a, 'organization_domain.claimed', input.id)
+      )
+      expect(result.outcome).toBe('claimed')
+      // The unique key still holds the name for the lapsed row: removing it is the service's.
+      expect(
+        await ctx.store.verify(
+          ctx.a.environmentId,
+          second,
+          input.id,
+          'hash-1',
+          afterLapse,
+          new Date(afterLapse.getTime() + 1000),
+          activity(ctx.a, 'organization_domain.verified', input.id)
+        )
+      ).toEqual({ outcome: 'taken' })
+      expect(
+        await ctx.store.remove(
+          ctx.a.environmentId,
+          first,
+          old.id,
+          activity(ctx.a, 'organization_domain.removed', old.id)
+        )
+      ).toBe(true)
+      expect(
+        (
+          await ctx.store.verify(
+            ctx.a.environmentId,
+            second,
+            input.id,
+            'hash-1',
+            afterLapse,
+            new Date(afterLapse.getTime() + 1000),
+            activity(ctx.a, 'organization_domain.verified', input.id)
+          )
+        ).outcome
+      ).toBe('verified')
+    })
+
+    test('reminders: a row is due once per threshold, soonest lapse first, never when lapsed or unverified', async () => {
+      const org = await ctx.organization(ctx.a)
+      const soon = await verified(ctx.a, org, 'soon.test') // lapses at inAYear
+      await pending(ctx.a, org, { domain: 'waiting.test' })
+      const day = 86_400_000
+      const at = (days: number) => new Date(inAYear.getTime() - days * day)
+      const due = (when: Date) => ctx.store.listDueReminders(ctx.a.environmentId, when, [30, 7], 50)
+      expect(await due(at(31))).toEqual([])
+      expect((await due(at(30))).map((one) => [one.record.id, one.days])).toEqual([[soon.id, 30]])
+      expect((await due(at(5))).map((one) => one.days)).toEqual([7])
+      // At or after the lapse nothing is due: there is nothing left to warn about.
+      expect(await due(inAYear)).toEqual([])
+      expect(await due(new Date(inAYear.getTime() + day))).toEqual([])
+
+      // Taken once: a second take, and the list, say it is done for the 30-day threshold.
+      expect(await ctx.store.takeReminder(ctx.a.environmentId, org, soon.id, 30)).toEqual({
+        previous: null,
+      })
+      expect(await ctx.store.takeReminder(ctx.a.environmentId, org, soon.id, 30)).toBe(false)
+      expect(await due(at(20))).toEqual([])
+      // The 7-day one is still to come, and is taken after the 30.
+      expect((await due(at(6))).map((one) => one.days)).toEqual([7])
+      expect(await ctx.store.takeReminder(ctx.a.environmentId, org, soon.id, 7)).toEqual({
+        previous: 30,
+      })
+      expect(await due(at(6))).toEqual([])
+      // A reminder given back is due again; one given back after a re-verification is not.
+      await ctx.store.releaseReminder(ctx.a.environmentId, org, soon.id, 7, 30)
+      expect((await due(at(6))).map((one) => one.days)).toEqual([7])
+      await ctx.store.releaseReminder(ctx.a.environmentId, org, soon.id, 7, null)
+      expect((await ctx.store.find(ctx.a.environmentId, org, soon.id))?.remindedDays).toBe(30)
+      // A pending row is never taken.
+      const waiting = (await ctx.store.list(ctx.a.environmentId, org)).find(
+        (one) => one.domain === 'waiting.test'
+      )
+      expect(await ctx.store.takeReminder(ctx.a.environmentId, org, waiting?.id ?? '', 30)).toBe(
+        false
+      )
+      // Another environment's rows are never listed or taken.
+      expect(await ctx.store.listDueReminders(ctx.b.environmentId, at(5), [30, 7], 50)).toEqual([])
+      expect(await ctx.store.takeReminder(ctx.b.environmentId, org, soon.id, 7)).toBe(false)
+    })
+
+    test('the reminder list is bounded by its limit', async () => {
+      const org = await ctx.organization(ctx.a)
+      await verified(ctx.a, org, 'one.test')
+      await verified(ctx.a, org, 'two.test')
+      const within = new Date(inAYear.getTime() - 86_400_000)
+      expect(
+        await ctx.store.listDueReminders(ctx.a.environmentId, within, [30, 7], 1)
+      ).toHaveLength(1)
+      expect(await ctx.store.listDueReminders(ctx.a.environmentId, within, [], 10)).toEqual([])
     })
 
     test('many organizations may wait on one name; the first to verify wins and the database says so', async () => {
@@ -229,6 +411,7 @@ export function describeOrganizationDomainStore(
             one.id,
             'hash-1',
             now,
+            inAYear,
             activity(ctx.a, 'organization_domain.verified', one.id)
           )
         ).outcome
@@ -240,6 +423,7 @@ export function describeOrganizationDomainStore(
           two.id,
           'hash-1',
           now,
+          inAYear,
           activity(ctx.a, 'organization_domain.verified', two.id)
         )
       ).toEqual({ outcome: 'taken' })
@@ -260,6 +444,7 @@ export function describeOrganizationDomainStore(
           one.id,
           'hash-1',
           now,
+          inAYear,
           activity(ctx.a, 'organization_domain.verified', one.id)
         ),
         ctx.store.verify(
@@ -268,6 +453,7 @@ export function describeOrganizationDomainStore(
           two.id,
           'hash-1',
           now,
+          inAYear,
           activity(ctx.a, 'organization_domain.verified', two.id)
         ),
       ])
@@ -283,6 +469,7 @@ export function describeOrganizationDomainStore(
         record.id,
         'not-the-hash',
         now,
+        inAYear,
         activity(ctx.a, 'organization_domain.verified', record.id)
       )
       expect(stale).toEqual({ outcome: 'stale' })
@@ -296,6 +483,7 @@ export function describeOrganizationDomainStore(
             Bun.randomUUIDv7(),
             'hash-1',
             now,
+            inAYear,
             activity(ctx.a, 'organization_domain.verified', record.id)
           )
         ).outcome

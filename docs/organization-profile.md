@@ -64,7 +64,7 @@ Needs the page the link leads to: `invitationUrl` here or on the provider. Witho
 
 ## Domains
 
-Claim a domain by giving it and an address on it; the code is emailed to that address. Typing the six digits verifies it (five guesses). A verified domain either suggests the organization to people who sign up with a verified address on it (`suggest`) or adds them (`auto_join`). A mode this version does not know is shown as "Not supported by this version" and kept as it is. A public email domain cannot be claimed, and a domain another organization verified is refused.
+Claim a domain by giving it and an address on it; the code is emailed to that address. Typing the six digits verifies it (five guesses). A verified domain either suggests the organization to people who sign up with a verified address on it (`suggest`) or adds them (`auto_join`). A verification lasts a year: a domain whose year has passed is marked "Needs verifying again", matches nobody, and is offered a new code (see [Organizations](organizations.md#invitations-and-verified-domains)). A mode this version does not know is shown as "Not supported by this version" and kept as it is. A public email domain cannot be claimed, and a domain another organization verified is refused.
 
 ## When access changes
 

@@ -12,6 +12,7 @@ paths:
   - "packages/db/migrations/0038_*"
   - "packages/db/migrations/0039_*"
   - "packages/db/migrations/0041_*"
+  - "packages/db/migrations/0042_*"
   - "apps/api/src/modules/organization-domain/**"
   - "apps/api/src/ports/organization-domain-store.ts"
   - "apps/api/src/adapters/memory/organization-domains*"
@@ -105,6 +106,26 @@ this file under "Area rules" and does not repeat it.
   `requireEnabledManager` (`findUserMembership`, read now). **No event or audit entry holds
   the address the code went to**; the domain is the one allowed string, in its own field
   (`DOMAIN_FIELDS` in the event canary).
+- **A verification lapses** (ADR 0065, "Lapse"; `DOMAIN_VERIFICATION_LIFETIME_DAYS`). Whether a
+  row matches is `lapsed(record, now)` (`expires_at <= now`; no date counts as lapsed) and it is
+  asked in `matchOf` and nowhere else: the join, the suggestions and a suggestion's join all go
+  through it, and a new reader of verified rows goes through it too, never `findVerified` alone.
+  The state is derived from the date, never a stored word a job must flip. Asking for a code for
+  a domain the organization has verified is a re-verification: the row keeps its mode and its
+  standing (the request's `mode` is ignored) and only `verify` moves the dates. Another
+  organization's lapsed row is removed (recorded) by the `verify` that wins the name, never by
+  `claim`. Rows verified before migration 0042 get the later of `verified_at` plus a year and 30
+  days from the migration; write no migration that shortens that.
+- **The reminder job** (`reminders.ts`) takes a reminder in the store (`takeReminder`, a guarded
+  update) **before** sending and gives it back only when nothing could be sent; it emails
+  managers read from the role now, carries no code, link or domain name (a domain reads as a
+  link: `organization_domain_expiring` names the organization and a count), is never awaited by
+  a request, is bounded by the rate limiter (fails closed), and runs in API processes only. A
+  new threshold is an entry of `DOMAIN_REMINDER_DAYS`.
+- **The daily allowance of codes is per organization and per creator** (`start`): an
+  organization with `createdBy` gets the lower cap and shares `CODES_PER_CREATOR_PER_DAY` with
+  the creator's others; `domain_taken` for another organization's live verification spends the
+  hourly allowance first (a probe). Keep both, and a limiter key holds ids only.
 
 ## What to test
 
@@ -130,6 +151,11 @@ this file under "Area rules" and does not repeat it.
   removed domain keeps its members, `joinOnSignUp` swallows a store failure, the client
   routes' permission cases (forbidden, not a member, demoted at once), and the purge of
   expired pending claims in both adapters.
+- Lapse: a lapsed claim stops auto-joining and stops suggesting (the minute either side of the
+  deadline), re-verifying restores it and restarts the year, a re-verification keeps the mode and
+  keeps matching meanwhile, another organization takes a lapsed name and not a live one, the
+  reminder is sent once per threshold and carries no code or link, a failed send is retried, the
+  creator and user-created caps, the probe limit, and the migration's backfill.
 
 ## Invitations (Orgs 04, ADR 0065 "Invitations")
 

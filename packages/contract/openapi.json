@@ -4667,6 +4667,10 @@
               "auto_join"
             ]
           },
+          "reverified": {
+            "type": "boolean",
+            "const": true
+          },
           "weakened": {
             "type": "boolean",
             "const": true
@@ -4677,7 +4681,7 @@
           "domain",
           "mode"
         ],
-        "description": "An organization verified a domain: users who sign up with a verified address on it are suggested the organization or joined to it, by `mode`. `weakened` is present, and true, for `auto_join`."
+        "description": "An organization verified a domain: users who sign up with a verified address on it are suggested the organization or joined to it, by `mode`, until the verification lapses. `reverified` is present, and true, when the domain was already verified (proven again before or after it lapsed). `weakened` is present, and true, for `auto_join`."
       },
       "OrganizationDomainVerifiedEvent": {
         "type": "object",
@@ -4738,7 +4742,7 @@
           "target",
           "data"
         ],
-        "description": "An organization verified a domain: users who sign up with a verified address on it are suggested the organization or joined to it, by `mode`. `weakened` is present, and true, for `auto_join`."
+        "description": "An organization verified a domain: users who sign up with a verified address on it are suggested the organization or joined to it, by `mode`, until the verification lapses. `reverified` is present, and true, when the domain was already verified (proven again before or after it lapsed). `weakened` is present, and true, for `auto_join`."
       },
       "OrganizationDomainUpdatedEventData": {
         "type": "object",
@@ -9830,6 +9834,9 @@
           "organization_domain_verification": {
             "$ref": "#/components/schemas/EmailTemplate"
           },
+          "organization_domain_expiring": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
           "organization_invitation": {
             "$ref": "#/components/schemas/EmailTemplate"
           }
@@ -12800,6 +12807,14 @@
           "auto_join"
         ]
       },
+      "OrganizationDomainStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "verified",
+          "needs_reverification"
+        ]
+      },
       "OrganizationDomain": {
         "type": "object",
         "properties": {
@@ -12812,7 +12827,22 @@
           "mode": {
             "$ref": "#/components/schemas/OrganizationDomainMode"
           },
+          "status": {
+            "$ref": "#/components/schemas/OrganizationDomainStatus"
+          },
           "verifiedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expiresAt": {
             "anyOf": [
               {
                 "type": "string",
@@ -12851,7 +12881,9 @@
           "id",
           "domain",
           "mode",
+          "status",
           "verifiedAt",
+          "expiresAt",
           "codeExpiresAt",
           "createdAt",
           "updatedAt"
@@ -13838,6 +13870,7 @@
                   "email_in_use",
                   "email_added",
                   "organization_domain_verification",
+                  "organization_domain_expiring",
                   "organization_invitation"
                 ]
               },

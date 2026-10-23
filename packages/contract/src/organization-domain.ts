@@ -3,6 +3,7 @@ import {
   domainRefusal,
   MAX_DOMAIN_LENGTH,
   ORGANIZATION_DOMAIN_MODES,
+  ORGANIZATION_DOMAIN_STATUSES,
 } from './organization-domain-rules'
 
 // Verified domains of an organization and the suggestions built from them (ADR 0065,
@@ -40,19 +41,32 @@ export const OrganizationDomainModeSchema = z
   .enum(ORGANIZATION_DOMAIN_MODES)
   .meta({ ref: 'OrganizationDomainMode' })
 
+/** What a domain row is now: see {@link OrganizationDomainSchema}. */
+export const OrganizationDomainStatusSchema = z
+  .enum(ORGANIZATION_DOMAIN_STATUSES)
+  .meta({ ref: 'OrganizationDomainStatus' })
+
 /**
- * A domain of an organization. **Pending** (`verifiedAt` is `null`): a code was emailed and
- * not yet entered; it grants nothing. **Verified**: a user who signs up with a verified
- * address on it is suggested the organization or joined to it, by `mode`.
+ * A domain of an organization. **Pending** (`status` `pending`, `verifiedAt` is `null`): a
+ * code was emailed and not yet entered; it grants nothing. **Verified**: a user who signs up
+ * with a verified address on it is suggested the organization or joined to it, by `mode`,
+ * until `expiresAt`. **Needs re-verification**: `expiresAt` has passed; the domain matches
+ * nobody until a manager claims it again and enters the new code (ADR 0065, "Lapse").
  */
 export const OrganizationDomainSchema = z
   .object({
     id: z.string(),
     domain: z.string(),
     mode: OrganizationDomainModeSchema,
-    /** When the code was entered; `null` while the claim is pending. */
+    status: OrganizationDomainStatusSchema,
+    /** When the code was last entered; `null` while the claim is pending. */
     verifiedAt: z.iso.datetime().nullable(),
-    /** When the emailed code stops working; `null` once the domain is verified. */
+    /** When the verification lapses; `null` while the claim is pending. */
+    expiresAt: z.iso.datetime().nullable(),
+    /**
+     * When the emailed code stops working; `null` when no code is waiting. A verified domain
+     * has one while a manager is proving it again.
+     */
     codeExpiresAt: z.iso.datetime().nullable(),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
@@ -67,7 +81,9 @@ export const OrganizationDomainListSchema = z
 /**
  * Claim a domain: email a code to an address **on that domain**, and say what a verified
  * domain does. Sent again for a pending claim it emails a new code (the old one stops
- * working) and may change `mode`.
+ * working) and may change `mode`. Sent for a verified domain of the same organization it
+ * starts a re-verification: the domain keeps working, with its mode, until the new code is
+ * entered (which restarts its lifetime) or it lapses.
  */
 export const StartOrganizationDomainRequestSchema = z
   .strictObject({

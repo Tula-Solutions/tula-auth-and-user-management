@@ -295,6 +295,13 @@
       "when": 1792734367525,
       "tag": "0041_organization_domains",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1792739520399,
+      "tag": "0042_organization_domain_lifetime",
+      "breakpoints": true
     }
   ]
 }

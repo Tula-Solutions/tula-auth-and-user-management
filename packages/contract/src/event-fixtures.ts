@@ -603,7 +603,13 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     occurredAt,
     actor: user,
     target: aboutDomain,
-    data: { organizationId: ORGANIZATION, domain: 'acme.com', mode: 'auto_join', weakened: true },
+    data: {
+      organizationId: ORGANIZATION,
+      domain: 'acme.com',
+      mode: 'auto_join',
+      reverified: true,
+      weakened: true,
+    },
   },
   'organization_domain.updated': {
     id: eventId(117),

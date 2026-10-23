@@ -3008,6 +3008,8 @@ export interface TulaLocalization {
     /** `{email}`. */
     domainCodeSent: string
     domainPending: string
+    /** A verification that lapsed: the domain matches nobody until a new code is entered. */
+    domainNeedsReverification: string
     domainVerified: string
     /** `{domain}`. */
     domainCodeLabel: string

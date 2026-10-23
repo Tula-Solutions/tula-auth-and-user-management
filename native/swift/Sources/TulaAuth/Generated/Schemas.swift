@@ -2321,7 +2321,9 @@ public struct OrganizationDomain: Codable, Hashable, Sendable {
     public var id: String
     public var domain: String
     public var mode: OrganizationDomainMode
+    public var status: OrganizationDomainStatus
     public var verifiedAt: String?
+    public var expiresAt: String?
     public var codeExpiresAt: String?
     /// Format: `date-time`.
     public var createdAt: String
@@ -2332,7 +2334,9 @@ public struct OrganizationDomain: Codable, Hashable, Sendable {
         id: String,
         domain: String,
         mode: OrganizationDomainMode,
+        status: OrganizationDomainStatus,
         verifiedAt: String?,
+        expiresAt: String?,
         codeExpiresAt: String?,
         createdAt: String,
         updatedAt: String
@@ -2340,7 +2344,9 @@ public struct OrganizationDomain: Codable, Hashable, Sendable {
         self.id = id
         self.domain = domain
         self.mode = mode
+        self.status = status
         self.verifiedAt = verifiedAt
+        self.expiresAt = expiresAt
         self.codeExpiresAt = codeExpiresAt
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -2350,7 +2356,9 @@ public struct OrganizationDomain: Codable, Hashable, Sendable {
         case id
         case domain
         case mode
+        case status
         case verifiedAt
+        case expiresAt
         case codeExpiresAt
         case createdAt
         case updatedAt
@@ -2361,7 +2369,9 @@ public struct OrganizationDomain: Codable, Hashable, Sendable {
         self.id = try container.decode(String.self, forKey: .id)
         self.domain = try container.decode(String.self, forKey: .domain)
         self.mode = try container.decode(OrganizationDomainMode.self, forKey: .mode)
+        self.status = try container.decode(OrganizationDomainStatus.self, forKey: .status)
         self.verifiedAt = try container.decode(String?.self, forKey: .verifiedAt)
+        self.expiresAt = try container.decode(String?.self, forKey: .expiresAt)
         self.codeExpiresAt = try container.decode(String?.self, forKey: .codeExpiresAt)
         self.createdAt = try container.decode(String.self, forKey: .createdAt)
         self.updatedAt = try container.decode(String.self, forKey: .updatedAt)
@@ -2372,7 +2382,9 @@ public struct OrganizationDomain: Codable, Hashable, Sendable {
         try container.encode(self.id, forKey: .id)
         try container.encode(self.domain, forKey: .domain)
         try container.encode(self.mode, forKey: .mode)
+        try container.encode(self.status, forKey: .status)
         try container.encode(self.verifiedAt, forKey: .verifiedAt)
+        try container.encode(self.expiresAt, forKey: .expiresAt)
         try container.encode(self.codeExpiresAt, forKey: .codeExpiresAt)
         try container.encode(self.createdAt, forKey: .createdAt)
         try container.encode(self.updatedAt, forKey: .updatedAt)
@@ -2452,6 +2464,58 @@ public enum OrganizationDomainMode: Codable, Hashable, Sendable {
 }
 
 public typealias OrganizationDomainName = String
+
+public enum OrganizationDomainStatus: Codable, Hashable, Sendable {
+    case pending
+    case verified
+    case needsReverification
+    /// A value this version does not know, as the API wrote it.
+    case unknown(String)
+
+    /// Every value this version knows.
+    public static let allKnown: [OrganizationDomainStatus] = [
+        .pending,
+        .verified,
+        .needsReverification,
+    ]
+
+    /// The value for a string of the API: `unknown` for one this version does not know.
+    public init(rawValue: String) {
+        switch rawValue {
+        case "pending": self = .pending
+        case "verified": self = .verified
+        case "needs_reverification": self = .needsReverification
+        default: self = .unknown(rawValue)
+        }
+    }
+
+    /// The value as the API writes it.
+    public var rawValue: String {
+        switch self {
+        case .pending: return "pending"
+        case .verified: return "verified"
+        case .needsReverification: return "needs_reverification"
+        case .unknown(let value): return value
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(self.rawValue)
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.rawValue == rhs.rawValue
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(self.rawValue)
+    }
+}
 
 public struct OrganizationInvitation: Codable, Hashable, Sendable {
     public var id: String

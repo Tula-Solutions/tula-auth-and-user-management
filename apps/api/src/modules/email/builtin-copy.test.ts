@@ -70,6 +70,19 @@ const MESSAGES: [string, EmailMessage][] = [
   ['new_sign_in with no address', { type: 'new_sign_in', device: 'Safari', at, ipAddress: null }],
   ['email_added', { type: 'email_added', at }],
   [
+    'organization_domain_expiring',
+    {
+      type: 'organization_domain_expiring',
+      organizationName: 'Acme <Robotics> & Sons',
+      domains: 1,
+      daysLeft: 30,
+    },
+  ],
+  [
+    'organization_domain_expiring for several domains and one day',
+    { type: 'organization_domain_expiring', organizationName: 'Acme', domains: 3, daysLeft: 1 },
+  ],
+  [
     'organization_invitation',
     {
       type: 'organization_invitation',

@@ -2439,7 +2439,9 @@ describe('organization members, roles and domains (ADR 0065, Orgs 07)', () => {
     id: DOMAIN,
     domain: 'acme.com',
     mode: 'suggest' as const,
+    status: 'pending' as const,
     verifiedAt: null,
+    expiresAt: null,
     codeExpiresAt: '2030-01-01T00:10:00.000Z',
     createdAt: '2030-01-01T00:00:00.000Z',
     updatedAt: '2030-01-01T00:00:00.000Z',
@@ -2507,7 +2509,13 @@ describe('organization members, roles and domains (ADR 0065, Orgs 07)', () => {
 
   test('domains list, start, verify, change the mode and remove', async () => {
     const w = world()
-    const verified = { ...domain, verifiedAt: '2030-01-01T00:05:00.000Z', codeExpiresAt: null }
+    const verified = {
+      ...domain,
+      status: 'verified' as const,
+      verifiedAt: '2030-01-01T00:05:00.000Z',
+      expiresAt: '2031-01-01T00:05:00.000Z',
+      codeExpiresAt: null,
+    }
     w.api.on(`GET ${BASE}/domains`, () => json(200, { data: [domain] }))
     w.api.on(`POST ${BASE}/domains`, () => json(201, domain))
     w.api.on(`POST ${BASE}/domains/${DOMAIN}/verify`, () => json(200, verified))

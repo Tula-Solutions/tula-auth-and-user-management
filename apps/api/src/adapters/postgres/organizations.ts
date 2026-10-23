@@ -650,6 +650,31 @@ export class PostgresOrganizationStore implements OrganizationStore {
   }
 
   /** @inheritdoc */
+  async listMembersWithPermission(
+    environmentId: string,
+    organizationId: string,
+    permission: string,
+    limit: number
+  ): Promise<string[]> {
+    const rows = await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .select({ userId: organizationMemberships.userId })
+        .from(organizationMemberships)
+        .innerJoin(organizationRoles, joinedToRole)
+        .where(
+          and(
+            eq(organizationMemberships.environmentId, environmentId),
+            eq(organizationMemberships.organizationId, organizationId),
+            sql`${permission} = any(${organizationRoles.permissions})`
+          )
+        )
+        .orderBy(asc(organizationMemberships.createdAt), asc(organizationMemberships.id))
+        .limit(limit)
+    )
+    return rows.map((row) => row.userId)
+  }
+
+  /** @inheritdoc */
   async insertOwned(
     input: OwnedOrganization,
     activities: { organization: Recorded; membership: Recorded }
