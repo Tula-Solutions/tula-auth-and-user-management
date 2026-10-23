@@ -424,6 +424,37 @@ describe('event payloads hold nothing a client or admin supplied, and no secret'
     }
   })
 
+  // An import (ADR 0066) takes the most personal input there is: addresses, names, a hash.
+  test('the tap sees an import’s addresses, name, hash and ids, and its event holds none', async () => {
+    const found = scenarios.find(
+      ({ scenario }) => scenario.name === 'user import with a bcrypt hash'
+    )
+    if (!found) {
+      throw new Error('no user import scenario')
+    }
+    const { tap, result, events, details } = await record(found.scenario)
+    expect(result.status).toBe('passed')
+    expect([...tap.requests]).toContain('POST /v1/admin/users/import')
+    const inputs = [...tap.inputs]
+    expect(inputs.some((input) => input.startsWith('$2b$10$'))).toBe(true)
+    expect(inputs).toContain('Imported Person')
+    expect(inputs).toContain('legacy|42')
+
+    const types = events.map((event) => event.type)
+    expect(types).toContain('user.imported')
+    // An import is not a sign-up.
+    expect(types).not.toContain('user.created')
+    expect(leaks(events, tap.inputs)).toEqual([])
+    expect(leaks(details, tap.inputs)).toEqual([])
+    // And had the event carried the hash, the search would have said so.
+    expect(
+      leaks(
+        [...events, { data: { note: inputs.find((input) => input.startsWith('$2b$10$')) } }],
+        tap.inputs
+      )
+    ).toHaveLength(1)
+  })
+
   test('a leak is found: in a nested value, inside a longer string, or as a whole short one', () => {
     const inputs = new Set(['someone@example.com', '123456', 'tula_rt_abcdefgh'])
     const clean = [{ data: { userId: '00000000-0000-7000-8000-000000123456', reason: 'sign_out' } }]

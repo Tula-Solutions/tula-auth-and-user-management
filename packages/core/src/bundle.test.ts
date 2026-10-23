@@ -100,8 +100,16 @@ import { join } from 'node:path'
  * repeated, 23) and the cheapest kept. No saving elsewhere was found that is not a worse
  * message or a renamed public operation. The budget moved by exactly those 57 bytes, to
  * 16,976: the room is the 4 bytes it was.
+ * The four contract codes of a user import (ADR 0066: `import.unsupported_algorithm`,
+ * `import.hash_malformed`, `import.hash_parameters_too_weak`,
+ * `import.hash_parameters_too_costly`) added 88 bytes, from 16,972 to 17,060: the code
+ * names and their messages, which every client carries because the table of messages is
+ * the contract's. A fifth code, for metadata over its size, cost 19 more and was dropped for
+ * `validation.failed`, and the messages were cut to one short line each (the first wording
+ * cost 179 bytes for five codes, 107 after shortening them). The budget moved by exactly
+ * those 88 bytes, to 17,064: the room is the 4 bytes it was.
  */
-const GZIP_BUDGET_BYTES = 16_976
+const GZIP_BUDGET_BYTES = 17_064
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

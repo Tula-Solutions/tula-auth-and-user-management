@@ -19,6 +19,15 @@ import { documentAgentReads, documentation, eventSchemas, hookSchemas } from '~/
  */
 export const MAX_BODY_BYTES = 64 * 1024
 
+/** Where a bulk user import is posted (ADR 0066): the one route with a larger body. */
+export const IMPORT_PATH = '/v1/admin/users/import'
+
+/**
+ * Largest body of {@link IMPORT_PATH}: 500 rows, each with a hash and up to 4 KiB of metadata.
+ * It is the same ceiling the socket gets, so the socket's cap is never the one that answers.
+ */
+export const MAX_IMPORT_BODY_BYTES = 2 * 1024 * 1024
+
 /** Where the OpenAPI document is served. */
 export const OPENAPI_PATH = '/v1/openapi.json'
 
@@ -90,14 +99,19 @@ export function createApp(deps: Deps): Hono<AppEnv> {
   app.use(secureHeaders())
   app.use(cors(deps))
   // After cors() so a 413 still carries CORS headers and browsers can read the error code.
-  app.use(
+  const limits = [MAX_BODY_BYTES, MAX_IMPORT_BODY_BYTES].map((maxSize) =>
     bodyLimit({
-      maxSize: MAX_BODY_BYTES,
+      maxSize,
       onError: () => {
         throw new ServiceException('request.too_large')
       },
     })
   )
+  app.use((c, next) => {
+    const [normal, bulk] = limits
+    const limit = c.req.method === 'POST' && c.req.path === IMPORT_PATH ? bulk : normal
+    return limit ? limit(c, next) : next()
+  })
   app.use(async (c, next) => {
     c.set('deps', deps)
     await next()

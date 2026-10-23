@@ -40,6 +40,12 @@ by error code. Their code samples are copied from files of this repository by
 | --- | --- |
 | [Phone numbers](phone-numbers.md) | A number on an account, proven with a texted code: the `sms` setting and its country list, sending through Twilio ([setup checklist](providers/twilio.md)), the development SMS inbox, the SDK calls, your own wording for a text message and what it costs in segments, the error codes, and what is not built yet. |
 
+## Bringing users across
+
+| | |
+| --- | --- |
+| [Importing users](user-import.md) | `POST /v1/admin/users/import`: up to 500 users a call with their bcrypt or argon2 password hashes, the answer for each row, the parameter minimums, what the first sign-in does, and what an import records. |
+
 ## What your users are sent
 
 | | |

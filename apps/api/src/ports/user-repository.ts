@@ -64,6 +64,10 @@ export interface NewUser
    * the email one, in the same transaction.
    */
   oauthIdentity?: { id: string; provider: OAuthProvider; subject: string }
+  /** The user's id in the system an import brought them from (ADR 0066); stored, not unique. */
+  externalId?: string
+  /** What an import kept with the user, at most 4 KiB as JSON (ADR 0066). */
+  metadata?: Record<string, unknown>
 }
 
 /** A provider account connected to a user. */

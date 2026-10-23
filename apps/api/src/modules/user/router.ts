@@ -4,7 +4,7 @@ import type { AppEnv } from '~/dependencies'
 import { validationHook } from '~/handlers'
 import { adminActor, requestOrigin } from '~/lib/actor'
 import { publishableKey } from '~/middleware/publishable-key'
-import { adminRateLimit, byIp, rateLimit } from '~/middleware/rate-limit'
+import { adminRateLimit, byEnvironment, byIp, rateLimit } from '~/middleware/rate-limit'
 import { requireRecentAuth } from '~/middleware/recent-auth'
 import { secretKey } from '~/middleware/secret-key'
 import { sessionAuth } from '~/middleware/session-auth'
@@ -14,6 +14,8 @@ import {
   ChangePasswordRequestSchema,
   CreateUserRequestSchema,
   CurrentUserSchema,
+  ImportUsersRequestSchema,
+  ImportUsersResultSchema,
   SetPasswordRequestSchema,
   SetUserEmailRequestSchema,
   UserAuthenticationSchema,
@@ -97,6 +99,59 @@ router.post(
       ),
       201
     )
+)
+
+/** Import calls per minute one environment may make; each carries up to 500 users. */
+export const USER_IMPORT_RATE_LIMIT = 20
+
+/** Per-environment limit of the import: a write of up to 500 users, so it is counted apart. */
+const importRateLimit = rateLimit({
+  name: 'user_import',
+  limit: USER_IMPORT_RATE_LIMIT,
+  window: '1m',
+  key: byEnvironment,
+})
+
+router.post(
+  '/admin/users/import',
+  describeRoute({
+    operationId: 'importUsers',
+    tags: ['Users'],
+    summary: 'Import users',
+    description:
+      'Creates up to 500 users in one call, with the password hash they have in the system ' +
+      'they come from (`bcrypt`, `argon2id` or `argon2i`). The call is not all-or-nothing: ' +
+      'every row is created or not on its own, and the answer says what became of each: ' +
+      '`created` (with the user’s id), `skipped` (the normalized email exists already, or ' +
+      'an earlier row of the call has it) or `refused` (with a contract error code: an ' +
+      'invalid email, a malformed hash, an algorithm that is not supported, parameters below ' +
+      'the minimum or above the maximum). Importing the same file again creates nobody ' +
+      'twice. An imported user signs in with their old password; the first successful ' +
+      'sign-in replaces the hash with an argon2id one. Each user is recorded as ' +
+      '`user.imported`, not `user.created`, so a migration does not fire a `user.created` ' +
+      'delivery per user. A hash is never returned.',
+    security: openapi.security.admin,
+    responses: {
+      200: { description: 'What became of each row.', content: json(ImportUsersResultSchema) },
+      413: openapi.responses[413],
+      422: openapi.responses[422],
+      ...adminErrors,
+      ...openapi.adminResponses,
+    },
+  }),
+  adminRateLimit(),
+  secretKey(),
+  importRateLimit,
+  validator('json', ImportUsersRequestSchema, validationHook),
+  async (c) => {
+    // The answer says which addresses exist in this environment.
+    c.header('Cache-Control', 'no-store')
+    return c.json(
+      ImportUsersResultSchema.parse(
+        await Users.importUsers(c.get('deps'), c.get('tenant'), c.req.valid('json'), adminActor(c))
+      )
+    )
+  }
 )
 
 router.get(

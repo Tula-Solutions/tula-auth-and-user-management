@@ -3,6 +3,13 @@ import {
   type CreateUserRequest,
   type CurrentUser,
   DEFAULT_PAGE_SIZE,
+  type ErrorCode,
+  errorDefinition,
+  type ImportRowResult,
+  type ImportUserRow,
+  type ImportUsersRequest,
+  type ImportUsersResult,
+  MAX_IMPORT_METADATA_BYTES,
   type OAuthProvider,
   type ProposalApprover,
   type User,
@@ -27,6 +34,7 @@ import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
 import * as OAuth from '~/modules/oauth/service'
 import * as Passkeys from '~/modules/passkey/service'
+import * as Foreign from '~/modules/password/foreign-hash'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
 import * as Settings from '~/modules/settings/service'
@@ -260,6 +268,134 @@ export async function create(
     throw new ConflictError({ message: 'A user with this email already exists.' })
   }
   return toUser(record)
+}
+
+/** Split a full name at its first run of whitespace; each half fits a name column. */
+function splitName(name: string | undefined): {
+  firstName: string | null
+  lastName: string | null
+} {
+  const trimmed = name?.trim() ?? ''
+  if (trimmed === '') {
+    return { firstName: null, lastName: null }
+  }
+  const [first = '', ...rest] = trimmed.split(/\s+/)
+  const last = rest.join(' ')
+  return {
+    firstName: [...first].slice(0, 100).join(''),
+    lastName: last === '' ? null : [...last].slice(0, 100).join(''),
+  }
+}
+
+function refusal(index: number, code: ErrorCode): ImportRowResult {
+  return { index, status: 'refused', code, message: errorDefinition(code).message }
+}
+
+/**
+ * Create the users of one import (`POST /v1/admin/users/import`, ADR 0066), each in a
+ * transaction of its own.
+ *
+ * The call is not all-or-nothing: a row that is refused, or that is a duplicate, does not
+ * stop the rest, and the answer says what became of every row. A row is atomic: the user, their
+ * identity, their credential and their `user.imported` audit entry are written together or
+ * not at all. Running the same call again is safe: rows already imported are reported as
+ * skipped, which makes a resumed import idempotent by normalized email.
+ *
+ * A row's password hash is parsed and judged ({@link Foreign.parse}) and then stored as given:
+ * it is verified with its own algorithm at the user's first sign-in and replaced there by an
+ * argon2id hash of the same password (`Passwords.needsRehash`). The environment's password
+ * policy and the breached-password check are not applied: only the user knows the plaintext.
+ * The password's age starts at the import, and it has no history (ADR 0066).
+ *
+ * @param deps - Users, clock and ids.
+ * @param scope - The project and environment.
+ * @param input - The rows, in order.
+ * @param actor - The administrator running the import, recorded on every entry.
+ * @returns One result per row, in order, with the counts.
+ */
+export async function importUsers(
+  deps: Pick<Deps, 'users' | 'clock' | 'ids'>,
+  scope: Scope,
+  input: ImportUsersRequest,
+  actor: Actor
+): Promise<ImportUsersResult> {
+  const seen = new Set<string>()
+  const results: ImportRowResult[] = []
+  for (const [index, row] of input.users.entries()) {
+    results.push(await importRow(deps, scope, row, index, seen, actor))
+  }
+  const count = (status: ImportRowResult['status']) =>
+    results.filter((result) => result.status === status).length
+  return {
+    results,
+    created: count('created'),
+    skipped: count('skipped'),
+    refused: count('refused'),
+  }
+}
+
+async function importRow(
+  deps: Pick<Deps, 'users' | 'clock' | 'ids'>,
+  scope: Scope,
+  row: ImportUserRow,
+  index: number,
+  seen: Set<string>,
+  actor: Actor
+): Promise<ImportRowResult> {
+  const parsed = parseEmail(row.email)
+  if (!parsed) {
+    return refusal(index, 'email.invalid')
+  }
+  if (seen.has(parsed.normalized)) {
+    return { index, status: 'skipped', reason: 'repeated_in_batch' }
+  }
+  if (
+    row.metadata !== undefined &&
+    new TextEncoder().encode(JSON.stringify(row.metadata)).length > MAX_IMPORT_METADATA_BYTES
+  ) {
+    return refusal(index, 'validation.failed')
+  }
+  let algorithm: Foreign.ImportAlgorithm | undefined
+  if (row.password !== undefined) {
+    const judged = Foreign.parse(row.password.algorithm, row.password.hash)
+    if (!judged.ok) {
+      return refusal(index, judged.code)
+    }
+    algorithm = judged.algorithm
+  }
+  const now = deps.clock.now()
+  const id = deps.ids.next()
+  const created = await deps.users.create(
+    {
+      id,
+      projectId: scope.projectId,
+      environmentId: scope.environmentId,
+      email: parsed.email,
+      emailNormalized: parsed.normalized,
+      emailVerifiedAt: row.emailVerified ? now : null,
+      ...splitName(row.name),
+      createdAt: now,
+      identityId: deps.ids.next(),
+      credentialId: deps.ids.next(),
+      passwordHash: row.password?.hash ?? null,
+      ...(row.externalId !== undefined && { externalId: row.externalId }),
+      ...(row.metadata !== undefined && { metadata: row.metadata }),
+    },
+    Audit.entry(deps, scope, {
+      type: 'user.imported',
+      actor,
+      target: { type: 'user', id },
+      data: {
+        emailVerified: row.emailVerified,
+        ...(algorithm === undefined ? { passwordless: true } : { passwordAlgorithm: algorithm }),
+      },
+    })
+  )
+  // Taken in either case from here on, whether this row made the user or found them there.
+  seen.add(parsed.normalized)
+  return created
+    ? { index, status: 'created', id }
+    : { index, status: 'skipped', reason: 'email_exists' }
 }
 
 type RevocationDeps = Pick<Deps, 'users' | 'sessions' | 'revokedSessions' | 'clock' | 'ids'>

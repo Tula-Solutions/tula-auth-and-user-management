@@ -208,6 +208,17 @@ export const EVENT_DATA_SCHEMAS = {
      */
     test: z.boolean().optional(),
   }),
+  'user.imported': data('UserImported', 'A user account was created by an import.', {
+    /** Whether the account's email address was marked verified by the import. */
+    emailVerified: z.boolean(),
+    /** `true` when the account was imported with no password; absent otherwise. */
+    passwordless: z.boolean().optional(),
+    /**
+     * The algorithm of the password hash the account arrived with, which its first sign-in
+     * replaces with argon2id; absent for an account imported with no password.
+     */
+    passwordAlgorithm: z.enum(['bcrypt', 'argon2id', 'argon2i']).optional(),
+  }),
   'user.email_verified': data('UserEmailVerified', 'A user proved their email address.', {}),
   // Two shapes: an administrator's own ban (no field) and one that carried out an agent's
   // proposal (both fields). The pairing is a check on the object, as for
