@@ -194,17 +194,24 @@ export async function importUsers(
     const needsFirebase =
       parsed.firebaseScrypt !== undefined &&
       users.some((user) => user.password?.algorithm === 'firebase_scrypt')
-    let sends = 0
-    const { data } = await withRetry(context, 'importing', () => {
-      sends += 1
-      return context.admin.call('importUsers', {
-        body: needsFirebase ? { users, firebaseScrypt: parsed.firebaseScrypt } : { users },
-      })
+    // Only a failure that says nothing about whether the server acted (no answer, a 5xx) can
+    // hide a committed batch; a 429 was refused before any row was looked at.
+    let retried = false
+    const { data } = await withRetry(context, 'importing', async () => {
+      try {
+        return await context.admin.call('importUsers', {
+          body: needsFirebase ? { users, firebaseScrypt: parsed.firebaseScrypt } : { users },
+        })
+      } catch (error) {
+        if (isTulaAdminError(error) && isTransient(error)) {
+          retried = true
+        }
+        throw error
+      }
     })
-    // A batch sent again got no answer the first time, and the server may have made its users
-    // before the answer was lost. Its duplicates that carry this row's own external id are then
-    // the first attempt's work (ADR 0066, "A retried batch").
-    const retried = sends > 1
+    // A batch sent again after such a failure may have been committed by the first attempt.
+    // Its duplicates that carry this row's own external id are then that attempt's work
+    // (ADR 0066, "A retried batch").
     if (data.results.length !== batch.length) {
       throw new UsageError(
         'The server answered a batch with a different number of results than rows sent. Nothing more was sent; the progress file is unchanged.'

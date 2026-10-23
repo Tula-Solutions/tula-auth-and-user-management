@@ -648,6 +648,30 @@ describe('the rate limit and failures', () => {
       expect(JSON.parse(progressOf(run)).counts).toMatchObject({ created: 3, skipped: 0 })
     })
 
+    test('a rate-limited first attempt is not a lost answer: duplicates stay skipped', async () => {
+      const first = await tula(['import', '--from', 'supabase', 'users.csv', '--yes'], {
+        ...SUPABASE,
+      })
+      const second = await tula(
+        ['import', '--from', 'supabase', 'users.csv', '--yes', '--fresh'],
+        first.files,
+        first.api,
+        {
+          fetch: (() => {
+            let calls = 0
+            return async (url, init) => {
+              calls += 1
+              return calls === 1
+                ? problem(429, 'rate_limited', 'slow', { 'retry-after': '1' })
+                : first.api.fetch(url, init)
+            }
+          })() as AdminFetch,
+        }
+      )
+      expect(second.stdout).toContain('Users created:            0')
+      expect(second.stdout).toContain('Users skipped:            3')
+    })
+
     test('a user who was there before stays skipped in the same retried batch', async () => {
       const api = fakeApi()
       const first = await tula(

@@ -312,7 +312,7 @@ lookup by address.
   without an id.
 - **The client's rule** (`packages/cli/src/import/run.ts`). Every duplicate with an `id` records
   the pairing of a provider id to a Tula id (no lookup by address later). Only in a batch that
-  was **sent again after a failed attempt in this run**, a duplicate with `sameExternalId: true`
+  was **sent again after an attempt that got no answer or a 5xx in this run** (a `429` is not one: nothing was looked at), a duplicate with `sameExternalId: true`
   counts as created; anywhere else it stays skipped, because outside a retry the user was
   there before this run. Every parser sets `externalId` to the provider's user id.
 - **Residual.** A run killed after the server committed a batch and before the progress file was
