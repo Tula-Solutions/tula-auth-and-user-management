@@ -88,22 +88,30 @@ keep equal. Three decisions around it:
   `InvalidEncoding`, which would have been a 500 at sign-in). A row can come from before this
   rule or from a restore.
 - **The unknown-user dummy verify is unchanged**: an unknown address still runs one argon2id
-  verification of the same cost as a current hash. For every kind of account the same one call
-  is made. The residual is stated: a bcrypt cost-10 verification is faster than argon2id at
-  64 MiB, so until its first sign-in an imported bcrypt account answers a little faster than an
-  unknown address or a native account. The floors are chosen so that the difference is a
-  factor of a small number and not of a hundred, and it lasts only until that user's first
-  sign-in. It tells someone who can already time the sign-in endpoint "this address was
-  imported and has not signed in since", which is a statement about the migration and not
-  about the person. Padding every verify to the slowest accepted hash was rejected: it would
-  charge every sign-in of every user for a cost only imported users carry.
+  verification with the current parameters, and every kind of account makes the same single
+  call (a test counts them). **That is the same *work in kind*, not the same *time*, and the
+  difference is an accepted, bounded exposure.** Until its first sign-in an imported account
+  is verified with its own hash, which takes a different time from the dummy: a bcrypt
+  cost-10 verification is faster than argon2id at 64 MiB, a bcrypt cost-14 one slower, an
+  argon2 hash at the floor (19 MiB) faster, one at the ceiling (256 MiB) slower. Someone who
+  can time the sign-in endpoint precisely, across many samples, can tell "imported and not
+  signed in yet" from "no such account". What limits it: the accepted band is narrow (the
+  floors and ceilings above keep a verification within a small factor of the current one,
+  not orders of magnitude), network jitter and the per-IP and per-account limits bound the
+  samples an attacker gets, and it ends at that user's first successful sign-in, when the
+  hash becomes the current argon2id one. It reveals a fact about the migration, never a
+  password. Padding every verify to the slowest accepted hash was rejected: it would charge
+  every sign-in of every user for a cost only imported users carry. No timing test pins it:
+  such tests are flaky on CI.
 - **The password as typed is tried as well as its NFC form** when they differ, for every
   kind of account (the dummy included, so the count of verifications is the same). The
   other system did not normalize what it hashed, and a user whose password has a decomposed
   accent would otherwise be locked out by the move. Bun's bcrypt first hashes a password over
   72 bytes with SHA-512 where other libraries truncate; a user with such a password whose
   hash was made by a truncating library will not match and resets. This is a known limit,
-  not tested for a vector.
+  not tested for a vector. The pair does not cover an origin that hashed the **NFD** form
+  while the user types NFC (or any other form): the typed password and its NFC form are both
+  NFC, neither is the NFD the hash was made from, and that user resets.
 
 ### The first sign-in replaces the hash
 
@@ -144,12 +152,12 @@ current and is kept.
 - A **per-environment rate limit** of 20 calls a minute (`user_import`, at most 10,000
   users a minute), mounted after `secretKey()` so it counts only authorized calls, and
   failing closed when the limiter is down. The route also has the admin per-IP limit.
-- The request body is capped at **2 MiB** for this route only (`MAX_IMPORT_BODY_BYTES`),
+- The request body is capped at **4 MiB** for this route only (`MAX_IMPORT_BODY_BYTES`),
   against 64 KiB for every other route: 500 rows with a bcrypt hash and a name are about
   100 KB. The socket cap of the server is raised to the same figure and the application
   enforces 64 KiB elsewhere. The route is authenticated before the body is parsed, but the
   body limit is enforced earlier, so an unauthenticated caller can make the server read up
-  to 2 MiB to this one path; that is bounded and not parsed.
+  to 4 MiB to this one path; that is bounded and not parsed.
 - The import is an expensive write (up to 500 transactions), which is why it has a limit of
   its own. Its rows are written one after another and never side by side: a parallel import
   would hold many pool connections for one administrator's convenience.

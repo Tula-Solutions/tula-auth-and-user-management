@@ -39,7 +39,11 @@ import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
 import * as Settings from '~/modules/settings/service'
 import { CREDENTIAL_LOCKOUT, signInLockKey } from '~/ports/lockout'
-import type { PasswordOutcome, UserRecord } from '~/ports/user-repository'
+import {
+  InvalidUserDataError,
+  type PasswordOutcome,
+  type UserRecord,
+} from '~/ports/user-repository'
 
 type Scope = Pick<Tenant, 'projectId' | 'environmentId'>
 
@@ -287,6 +291,63 @@ function splitName(name: string | undefined): {
   }
 }
 
+/** Whether a string can be stored: no NUL (`text` and `jsonb` refuse it) and no lone surrogate. */
+function storable(text: string | undefined): boolean {
+  return text === undefined || (!text.includes('\u0000') && !LONE_SURROGATE.test(text))
+}
+
+/** A UTF-16 surrogate with no partner (`String.prototype.isWellFormed` is not in the TS lib). */
+const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/
+
+/**
+ * Whether every key and value of a metadata object can be stored by the database and the
+ * object fits {@link MAX_IMPORT_METADATA_BYTES} **as `jsonb` prints it** (the column's check
+ * measures `metadata::text`).
+ *
+ * `jsonb` prints a space after every `:` and `,` and rewrites numbers, so the compact JSON
+ * is measured with one extra byte for each structural `:` and `,`, and a number JSON writes
+ * with an exponent is refused (`jsonb` would write it out in full, which can be far longer).
+ * A NUL or a lone surrogate in any key or string is refused: `jsonb` rejects both.
+ */
+function metadataFits(metadata: Record<string, unknown>): boolean {
+  const sound = (value: unknown): boolean => {
+    if (typeof value === 'string') {
+      return storable(value)
+    }
+    if (typeof value === 'number') {
+      return Number.isFinite(value) && !/e/i.test(String(value))
+    }
+    if (Array.isArray(value)) {
+      return value.every(sound)
+    }
+    if (value !== null && typeof value === 'object') {
+      return Object.entries(value).every(([key, child]) => storable(key) && sound(child))
+    }
+    return true
+  }
+  if (!sound(metadata)) {
+    return false
+  }
+  const compact = JSON.stringify(metadata)
+  let bytes = new TextEncoder().encode(compact).length
+  let inString = false
+  for (let at = 0; at < compact.length; at += 1) {
+    const char = compact[at]
+    if (inString) {
+      if (char === '\\') {
+        at += 1
+      } else if (char === '"') {
+        inString = false
+      }
+    } else if (char === '"') {
+      inString = true
+    } else if (char === ':' || char === ',') {
+      bytes += 1
+    }
+  }
+  return bytes <= MAX_IMPORT_METADATA_BYTES
+}
+
 function refusal(index: number, code: ErrorCode): ImportRowResult {
   return { index, status: 'refused', code, message: errorDefinition(code).message }
 }
@@ -350,8 +411,9 @@ async function importRow(
     return { index, status: 'skipped', reason: 'repeated_in_batch' }
   }
   if (
-    row.metadata !== undefined &&
-    new TextEncoder().encode(JSON.stringify(row.metadata)).length > MAX_IMPORT_METADATA_BYTES
+    !storable(row.name) ||
+    !storable(row.externalId) ||
+    (row.metadata !== undefined && !metadataFits(row.metadata))
   ) {
     return refusal(index, 'validation.failed')
   }
@@ -365,32 +427,42 @@ async function importRow(
   }
   const now = deps.clock.now()
   const id = deps.ids.next()
-  const created = await deps.users.create(
-    {
-      id,
-      projectId: scope.projectId,
-      environmentId: scope.environmentId,
-      email: parsed.email,
-      emailNormalized: parsed.normalized,
-      emailVerifiedAt: row.emailVerified ? now : null,
-      ...splitName(row.name),
-      createdAt: now,
-      identityId: deps.ids.next(),
-      credentialId: deps.ids.next(),
-      passwordHash: row.password?.hash ?? null,
-      ...(row.externalId !== undefined && { externalId: row.externalId }),
-      ...(row.metadata !== undefined && { metadata: row.metadata }),
-    },
-    Audit.entry(deps, scope, {
-      type: 'user.imported',
-      actor,
-      target: { type: 'user', id },
-      data: {
-        emailVerified: row.emailVerified,
-        ...(algorithm === undefined ? { passwordless: true } : { passwordAlgorithm: algorithm }),
+  let created: boolean
+  try {
+    created = await deps.users.create(
+      {
+        id,
+        projectId: scope.projectId,
+        environmentId: scope.environmentId,
+        email: parsed.email,
+        emailNormalized: parsed.normalized,
+        emailVerifiedAt: row.emailVerified ? now : null,
+        ...splitName(row.name),
+        createdAt: now,
+        identityId: deps.ids.next(),
+        credentialId: deps.ids.next(),
+        passwordHash: row.password?.hash ?? null,
+        ...(row.externalId !== undefined && { externalId: row.externalId }),
+        ...(row.metadata !== undefined && { metadata: row.metadata }),
       },
-    })
-  )
+      Audit.entry(deps, scope, {
+        type: 'user.imported',
+        actor,
+        target: { type: 'user', id },
+        data: {
+          emailVerified: row.emailVerified,
+          ...(algorithm === undefined ? { passwordless: true } : { passwordAlgorithm: algorithm }),
+        },
+      })
+    )
+  } catch (error) {
+    // The store's own check refused what the pre-check let through: that row alone is
+    // refused, and the rows before it stay (ADR 0066).
+    if (error instanceof InvalidUserDataError) {
+      return refusal(index, 'validation.failed')
+    }
+    throw error
+  }
   // Taken in either case from here on, whether this row made the user or found them there.
   seen.add(parsed.normalized)
   return created

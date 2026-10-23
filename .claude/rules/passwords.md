@@ -161,8 +161,17 @@ new one is stored. `null` is off.
 - **Verification is one call, `Bun.password.verify`, which dispatches on the stored hash.**
   Never add a second verifier path that an unknown user does not also run: the dummy hash
   and the count of verifications stay the same for every kind of account
-  (`password/service.test.ts` counts them). A stored hash that cannot be read matches
-  nothing and never throws.
+  (`password/service.test.ts` counts them). That is equal work in kind, **not equal time**:
+  until its first sign-in an imported account verifies in the time of its own hash, so
+  timing can tell "imported, not signed in yet" from "no such account". This is an accepted,
+  bounded exposure (ADR 0066): the parameter floors and ceilings keep the difference to a
+  small factor, it ends at the first sign-in, and it reveals the migration, not a password.
+  Do not widen the band without measuring again; do not claim the times are equal. A stored
+  hash that cannot be read matches nothing and never throws.
+- **Metadata and names of an import are checked as the database stores them**: the
+  pre-check counts the `jsonb` rendering (a byte for each structural `:` and `,`), refuses an
+  exponent number and any NUL or lone surrogate, and the Postgres `create` turns the store's
+  own refusal (`InvalidUserDataError`) into a refusal of that one row, never a failed call.
 - **The first sign-in replaces the hash through `needsRehash` and `upgradePasswordHash`,
   and nothing else does.** An imported password's age is the import's time and it has no
   history (ADR 0066); the rehash moves neither.

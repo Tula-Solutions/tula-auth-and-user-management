@@ -23,6 +23,26 @@ export function isUniqueViolation(error: unknown): boolean {
   return false
 }
 
+/** SQLSTATEs of a value the database refuses: check violation, bad `json` text, bad bytes/NUL. */
+const DATA_REFUSALS = new Set(['23514', '22P05', '22P02', '22021', '22P04'])
+
+/**
+ * Whether an error is the database refusing the data of a statement (not a conflict): a check
+ * violation, a `\u0000` or an invalid string in `text` or `jsonb`.
+ *
+ * @param error - The caught error.
+ * @returns `true` for one of those SQLSTATEs anywhere in the cause chain.
+ */
+export function isDataRefusal(error: unknown): boolean {
+  for (let current = error; current instanceof Object; current = (current as Error).cause) {
+    const code = (current as { code?: unknown }).code
+    if (typeof code === 'string' && DATA_REFUSALS.has(code)) {
+      return true
+    }
+  }
+  return false
+}
+
 /**
  * Whether an error is a Postgres foreign-key violation, raw (pg / PGlite) or wrapped by Drizzle
  * in `cause`: the row a new row points at is not there (any more).

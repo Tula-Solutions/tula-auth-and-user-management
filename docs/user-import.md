@@ -147,7 +147,7 @@ users does not become a hundred thousand sign-up deliveries.
 
 ## Limits
 
-- 500 rows and 2 MiB per call.
+- 500 rows and 4 MiB per call.
 - 20 calls a minute per environment (and the admin per-IP limit): a rate-limited call is
   `429` with `Retry-After`.
 - Rows are written one after another.

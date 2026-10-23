@@ -9,7 +9,7 @@ import {
 import { eq } from 'drizzle-orm'
 import { PostgresUserRepository } from '~/adapters/postgres/users'
 import * as Audit from '~/modules/audit/service'
-import type { NewUser } from '~/ports/user-repository'
+import { InvalidUserDataError, type NewUser } from '~/ports/user-repository'
 
 // What an import keeps with a user (ADR 0066): the external id and the metadata, in the
 // columns migration 0036 added, held to 4 KiB by the database itself.
@@ -85,12 +85,43 @@ describe('a user created with an external id and metadata', () => {
         newUser('e@northline.app', { metadata: { blob: 'x'.repeat(5000) } }),
         Audit.none('fixture')
       )
-    ).rejects.toThrow()
+    ).rejects.toBeInstanceOf(InvalidUserDataError)
     await expect(
       repo.create(
         newUser('f@northline.app', { metadata: [1] as unknown as Record<string, unknown> }),
         Audit.none('fixture')
       )
-    ).rejects.toThrow()
+    ).rejects.toBeInstanceOf(InvalidUserDataError)
+  })
+
+  // jsonb prints a space after every ':' and ',', so ~4000 compact bytes over 100 keys is over
+  // 4096 as stored; and jsonb refuses U+0000 outright (SQLSTATE 22P05). Both must surface as
+  // the port's own error, which the import turns into one refused row, never a failed call.
+  test('metadata that is small compact and over 4 KiB as jsonb prints it is refused', async () => {
+    const repo = new PostgresUserRepository(testDb.db)
+    const metadata = Object.fromEntries(
+      Array.from({ length: 100 }, (_, i) => [`k${String(i).padStart(2, '0')}`, 'v'.repeat(31)])
+    )
+    expect(JSON.stringify(metadata).length).toBeLessThanOrEqual(4096)
+    await expect(
+      repo.create(newUser('g@northline.app', { metadata }), Audit.none('fixture'))
+    ).rejects.toBeInstanceOf(InvalidUserDataError)
+  })
+
+  test('metadata holding a NUL is refused', async () => {
+    const repo = new PostgresUserRepository(testDb.db)
+    await expect(
+      repo.create(newUser('h@northline.app', { metadata: { a: '\u0000' } }), Audit.none('fixture'))
+    ).rejects.toBeInstanceOf(InvalidUserDataError)
+  })
+
+  test('a refused row leaves no user, and the next row is created', async () => {
+    const repo = new PostgresUserRepository(testDb.db)
+    const refused = newUser('i@northline.app', { metadata: { a: '\u0000' } })
+    await expect(repo.create(refused, Audit.none('fixture'))).rejects.toBeInstanceOf(
+      InvalidUserDataError
+    )
+    expect(await row(refused.id)).toBeUndefined()
+    expect(await repo.create(newUser('j@northline.app'), Audit.none('fixture'))).toBe(true)
   })
 })

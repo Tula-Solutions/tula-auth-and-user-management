@@ -4,6 +4,7 @@ import { createApp, MAX_BODY_BYTES, MAX_IMPORT_BODY_BYTES } from '~/index'
 import * as Flows from '~/modules/flow/service'
 import * as Passwords from '~/modules/password/service'
 import { USER_IMPORT_RATE_LIMIT } from '~/modules/user/router'
+import { InvalidUserDataError } from '~/ports/user-repository'
 import { createTestDeps, seedApiKey, TEST_TENANT, type TestDeps } from '~/testing'
 import { ARGON2I_REFERENCE, BCRYPT_PHP_COST_7 } from '~/testing/password-vectors'
 
@@ -253,6 +254,72 @@ describe('the refusals, row by row', () => {
     ).toBeNull()
   })
 
+  // The database measures `metadata::text`, which jsonb prints with a space after every ':' and
+  // ',': a row that is under 4096 bytes as compact JSON can be over it as stored, and one
+  // such row must be refused alone, never fail the call after earlier rows were committed.
+  test('metadata that is under 4 KiB compact and over it as jsonb prints it', async () => {
+    const metadata = Object.fromEntries(
+      Array.from({ length: 100 }, (_, i) => [`k${String(i).padStart(2, '0')}`, 'v'.repeat(31)])
+    )
+    const compact = JSON.stringify(metadata).length
+    expect(compact).toBeLessThanOrEqual(4096)
+    expect(compact + 100 + 99).toBeGreaterThan(4096)
+    const { results } = await importRows([
+      row('before@northline.app'),
+      { ...row('hostile@northline.app'), metadata },
+      row('after@northline.app'),
+    ])
+    expect(results.map((entry) => entry.status)).toEqual(['created', 'refused', 'created'])
+    expect(results[1]).toMatchObject({ code: 'validation.failed' })
+    expect(await deps.users.findByEmail(tenant.environmentId, 'hostile@northline.app')).toBeNull()
+  })
+
+  test.each([
+    ['a NUL in a metadata value', { metadata: { a: 'x\u0000y' } }],
+    ['a NUL in a metadata key', { metadata: { 'a\u0000b': 'x' } }],
+    ['a NUL nested in an array', { metadata: { a: [{ b: ['\u0000'] }] } }],
+    ['a lone surrogate in a metadata value', { metadata: { a: '\ud800' } }],
+    ['a number with an exponent', { metadata: { a: 1e300 } }],
+    ['a NUL in the name', { name: 'Maya\u0000 Lee' }],
+    ['a NUL in the external id', { externalId: 'ext\u00001' }],
+  ] as const)('%s is refused alone, and the rows around it are created', async (_name, change) => {
+    const { results } = await importRows([
+      row('before@northline.app'),
+      { ...row('hostile@northline.app'), ...change } as ImportUserRow,
+      row('after@northline.app'),
+    ])
+    expect(results.map((entry) => entry.status)).toEqual(['created', 'refused', 'created'])
+    expect(results[1]).toMatchObject({ code: 'validation.failed' })
+  })
+
+  test('a row the store itself refuses is refused alone and earlier rows stay', async () => {
+    const create = deps.users.create.bind(deps.users)
+    spies.push(
+      spyOn(deps.users, 'create').mockImplementation(async (user, activity) => {
+        if (user.email?.startsWith('bad')) {
+          throw new InvalidUserDataError()
+        }
+        return create(user, activity)
+      })
+    )
+    const { results } = await importRows([
+      row('before@northline.app'),
+      row('bad@northline.app'),
+      row('after@northline.app'),
+    ])
+    expect(results.map((entry) => entry.status)).toEqual(['created', 'refused', 'created'])
+    expect(results[1]).toMatchObject({ code: 'validation.failed' })
+    expect(
+      await deps.users.findByEmail(tenant.environmentId, 'before@northline.app')
+    ).not.toBeNull()
+  })
+
+  test('another failure of the store is still the call’s failure', async () => {
+    spies.push(spyOn(deps.users, 'create').mockRejectedValue(new Error('connection lost')))
+    const res = await post({ users: [row('a@northline.app')] })
+    expect(res.status).toBe(500)
+  })
+
   test('a refused hash is not stored anywhere', async () => {
     await refusal({ ...row('maya@northline.app'), password: { algorithm: 'bcrypt', hash: 'x' } })
     expect(await deps.users.findByEmail(tenant.environmentId, 'maya@northline.app')).toBeNull()
@@ -294,6 +361,23 @@ describe('the batch', () => {
       body: JSON.stringify({ email: 'a@northline.app', firstName: 'x'.repeat(MAX_BODY_BYTES) }),
     })
     expect(create.status).toBe(413)
+  })
+
+  test('500 rows each with about 4000 bytes of metadata fit the import’s limit', async () => {
+    const users = Array.from({ length: 500 }, (_, i) =>
+      row(`user${i}@northline.app`, { metadata: { blob: 'x'.repeat(4000) } })
+    )
+    const body = JSON.stringify({ users })
+    // Above the 1 MiB the route used to have: the metadata-heavy file is the reason for 4 MiB.
+    expect(body.length).toBeGreaterThan(1024 * 1024)
+    expect(body.length).toBeLessThan(MAX_IMPORT_BODY_BYTES)
+    const res = await post(null, SK, body)
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as ImportUsersResult).created).toBe(500)
+  })
+
+  test('the import’s body limit is 4 MiB', () => {
+    expect(MAX_IMPORT_BODY_BYTES).toBe(4 * 1024 * 1024)
   })
 
   test('refuses a body over the import’s own limit', async () => {

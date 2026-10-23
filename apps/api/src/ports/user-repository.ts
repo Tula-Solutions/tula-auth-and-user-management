@@ -70,6 +70,19 @@ export interface NewUser
   metadata?: Record<string, unknown>
 }
 
+/**
+ * Thrown by {@link UserRepository.create} when the store refuses the user's `externalId` or
+ * `metadata` itself (a check violation, a NUL or an invalid string), nothing having been
+ * written. A caller that took the data from a request turns it into a refusal of that one
+ * row, never a failure of the call (ADR 0066).
+ */
+export class InvalidUserDataError extends Error {
+  constructor() {
+    super('the store refused the data of the user')
+    this.name = 'InvalidUserDataError'
+  }
+}
+
 /** A provider account connected to a user. */
 export interface IdentityRecord {
   id: string

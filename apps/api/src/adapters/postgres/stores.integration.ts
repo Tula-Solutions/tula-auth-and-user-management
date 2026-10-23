@@ -36,6 +36,7 @@ import { describeVerificationTokenStore } from '~/adapters/verification-token-st
 import { describeWebhookStores } from '~/adapters/webhook-store.suite'
 import * as Audit from '~/modules/audit/service'
 import type { NewProposalRecord } from '~/ports/proposal-store'
+import { InvalidUserDataError, type NewUser } from '~/ports/user-repository'
 
 /**
  * The stores' behaviour suites against a real Postgres server, over a pool of several
@@ -400,4 +401,41 @@ test('proposals on a real server: the runtime login cannot rewrite what a propos
       )
     )
   ).toBeNull()
+})
+
+test('a real server refuses metadata the import pre-check should have caught, as InvalidUserDataError', async () => {
+  // jsonb prints a space after every ':' and ',' (4001 compact bytes are 4200 as stored), and
+  // refuses U+0000 with SQLSTATE 22P05; neither may escape `create` as a raw database error,
+  // which the import would answer as a failed call after earlier rows were committed (ADR 0066).
+  const { a } = await tenants()
+  const users = new PostgresUserRepository(db)
+  const make = (email: string, metadata: Record<string, unknown>): NewUser => ({
+    id: Bun.randomUUIDv7(),
+    projectId: a.projectId,
+    environmentId: a.environmentId,
+    email,
+    emailNormalized: email,
+    emailVerifiedAt: null,
+    firstName: null,
+    lastName: null,
+    createdAt: new Date('2026-01-01T00:00:00Z'),
+    identityId: Bun.randomUUIDv7(),
+    credentialId: Bun.randomUUIDv7(),
+    passwordHash: null,
+    metadata,
+  })
+  const wide = Object.fromEntries(
+    Array.from({ length: 100 }, (_, i) => [`k${String(i).padStart(2, '0')}`, 'v'.repeat(31)])
+  )
+  expect(JSON.stringify(wide).length).toBeLessThanOrEqual(4096)
+  for (const [email, metadata] of [
+    [`wide-${Bun.randomUUIDv7()}@northline.app`, wide],
+    [`nul-${Bun.randomUUIDv7()}@northline.app`, { a: '\u0000' }],
+  ] as const) {
+    await expect(users.create(make(email, metadata), Audit.none('fixture'))).rejects.toBeInstanceOf(
+      InvalidUserDataError
+    )
+  }
+  const ok = make(`ok-${Bun.randomUUIDv7()}@northline.app`, { plan: 'team' })
+  expect(await users.create(ok, Audit.none('fixture'))).toBe(true)
 })

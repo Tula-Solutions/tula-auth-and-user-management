@@ -26,7 +26,7 @@ export const IMPORT_PATH = '/v1/admin/users/import'
  * Largest body of {@link IMPORT_PATH}: 500 rows, each with a hash and up to 4 KiB of metadata.
  * It is the same ceiling the socket gets, so the socket's cap is never the one that answers.
  */
-export const MAX_IMPORT_BODY_BYTES = 2 * 1024 * 1024
+export const MAX_IMPORT_BODY_BYTES = 4 * 1024 * 1024
 
 /** Where the OpenAPI document is served. */
 export const OPENAPI_PATH = '/v1/openapi.json'
