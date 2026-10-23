@@ -59,6 +59,39 @@ export interface Appearance {
 />
 ```
 
+### `CreateOrganization`
+
+_function_, defined in `packages/react/src/components/organization-create.tsx`
+
+A form that creates an organization the signed-in user owns, and makes it the one the
+session acts in. The name suggests the short name until the user types their own.
+
+It is drawn only where the environment lets users create organizations
+(`organizations.allowUserCreated` of the public configuration); anywhere else it says so.
+What the server refuses (the short name is taken, the user's limit) is shown under the field
+or above the form. When the organization was created but switching to it failed, it says
+that, and the new organization is in the list.
+
+```ts
+export function CreateOrganization(props: CreateOrganizationProps)
+```
+
+**Parameters**
+
+- `props`: Where to go afterwards, a callback and appearance; all optional.
+
+**Returns** The component; nothing while signed out.
+
+**Throws** Error outside a `<TulaProvider>`.
+
+**Example**
+
+```tsx
+<SignedIn>
+  <CreateOrganization afterCreateUrl='/dashboard' />
+</SignedIn>
+```
+
 ### `CreateOrganizationInput`
 
 _type_, defined in `packages/core/src/types.ts`
@@ -67,6 +100,36 @@ The body of `organizations.create()`: a name and a slug (lower-case letters, dig
 
 ```ts
 export type CreateOrganizationInput = Schemas['CreateOrganizationRequest']
+```
+
+### `CreateOrganizationProps`
+
+_interface_, defined in `packages/react/src/components/organization-create.tsx`
+
+Props of {@link CreateOrganization}.
+
+```ts
+export interface CreateOrganizationProps {
+  /** Where to go once the organization exists (and, by default, is the active one). */
+  afterCreateUrl?: string
+  /** Called once the organization exists, before any navigation. */
+  onCreated?: (organization: UserOrganization) => void
+  /**
+   * Make the new organization the one the session acts in. Defaults to `true`. When switching
+   * fails the organization still exists, and the component says so.
+   */
+  switchToNew?: boolean
+  /** Theme tokens, colour scheme and class names for this component. */
+  appearance?: Appearance
+  /** The level of the title. Defaults to 1. */
+  headingLevel?: HeadingLevel
+}
+```
+
+**Example**
+
+```tsx
+<CreateOrganization afterCreateUrl='/dashboard' />
 ```
 
 ### `ELEMENT_NAMES`
@@ -401,6 +464,21 @@ The level of a component's title; its section titles are one level below.
 export type HeadingLevel = 1 | 2 | 3
 ```
 
+### `InvitationLink`
+
+_interface_, defined in `packages/core/src/invitation.ts`
+
+An invitation's token as read from the URL of an emailed link.
+
+```ts
+export interface InvitationLink {
+  /** The token to pass to `organizations.invitations.preview`, `accept` or `decline`. */
+  token: string
+  /** The URL without the token, to put back in the address bar so the token is not kept. */
+  cleanUrl: string
+}
+```
+
 ### `LocalizationOverrides`
 
 _type_, defined in `packages/react/src/localization.ts`
@@ -463,6 +541,23 @@ export interface NavigationOptions {
   afterSignOutUrl?: string
   /** Where `<UserProfile>` lives. Without it `<UserButton>` opens the profile in a dialog. */
   userProfileUrl?: string
+  /**
+   * The page an emailed organization invitation leads to: the one that reads the invitation's
+   * token from the link (`readInvitationLink`). It must be one of the environment's allowed
+   * redirect URLs, exactly (a relative value is resolved against the page first). Without it
+   * `<OrganizationProfile>` cannot send invitations.
+   */
+  invitationUrl?: string
+  /**
+   * Where `<OrganizationProfile>` lives. Without it `<OrganizationSwitcher>` opens the profile
+   * in a dialog.
+   */
+  organizationProfileUrl?: string
+  /**
+   * Where `<CreateOrganization>` lives. Without it `<OrganizationSwitcher>` opens the form in
+   * a dialog.
+   */
+  createOrganizationUrl?: string
 }
 ```
 
@@ -578,6 +673,176 @@ export type OrganizationCheck =
 ```ts
 const byPermission: OrganizationCheck = { permission: 'org:billing:read' }
 const byRole: OrganizationCheck = { role: 'admin' }
+```
+
+### `OrganizationProfile`
+
+_function_, defined in `packages/react/src/components/organization-profile.tsx`
+
+Manage an organization: General (its details, rename, leave, delete), Members (roles,
+removal), Invitations (invite, revoke) and Domains (claim, verify with the emailed code, what
+a verified domain does). A tab is drawn only where the user's role holds its permission, and
+the server checks every call again: a refusal because the role changed (or the membership
+ended) reads the user's organizations again, says the permissions changed, and a user who is
+no longer a member is told so.
+
+It manages the session's active organization unless `organizationId` names one. Leaving or
+deleting the active organization moves the session to the personal account (or, where the
+environment has none, to another organization).
+
+```ts
+export function OrganizationProfile(props: OrganizationProfileProps)
+```
+
+**Parameters**
+
+- `props`: The organization, the first tab, destinations and appearance; all optional.
+
+**Returns** The component; nothing while signed out or while organizations are off.
+
+**Throws** Error outside a `<TulaProvider>`.
+
+**Example**
+
+```tsx
+<SignedIn>
+  <OrganizationProfile afterLeaveUrl='/' afterDeleteUrl='/' />
+</SignedIn>
+```
+
+### `OrganizationProfileProps`
+
+_interface_, defined in `packages/react/src/components/organization-profile.tsx`
+
+Props of {@link OrganizationProfile}.
+
+```ts
+export interface OrganizationProfileProps {
+  /**
+   * The organization to manage. Left out, it is the one the session acts in; a user who is a
+   * member of several can name any of them.
+   */
+  organizationId?: string
+  /** The tab to open first. A value this version does not know is said to be unsupported. */
+  section?: OrganizationProfileSection
+  /**
+   * The page an emailed invitation's link leads to. Overrides the provider's `invitationUrl`;
+   * without either, the Invitations tab cannot send invitations.
+   */
+  invitationUrl?: string
+  /** Where to go after the user left the organization. */
+  afterLeaveUrl?: string
+  /** Where to go after the user deleted the organization. */
+  afterDeleteUrl?: string
+  /** Called after the user left or deleted the organization, before any navigation. */
+  onGone?: (kind: 'left' | 'deleted', organizationId: string) => void
+  /** Theme tokens, colour scheme and class names for this component. */
+  appearance?: Appearance
+  /** The level of the title; the section titles are one below. Defaults to 1. */
+  headingLevel?: HeadingLevel
+}
+```
+
+**Example**
+
+```tsx
+<OrganizationProfile afterLeaveUrl='/' afterDeleteUrl='/' />
+```
+
+### `OrganizationProfileSection`
+
+_type_, defined in `packages/react/src/components/organization-profile.tsx`
+
+One of {@link ORGANIZATION_PROFILE_SECTIONS}.
+
+```ts
+export type OrganizationProfileSection = (typeof ORGANIZATION_PROFILE_SECTIONS)[number]
+```
+
+### `OrganizationSwitcher`
+
+_function_, defined in `packages/react/src/components/organization-switcher.tsx`
+
+The organization the session acts in, and a panel to change it: the user's organizations,
+"Personal account" where the environment allows it, the organizations their verified email
+address may join, an invitation the app handed over (`invitationToken`), "Manage
+organization" and "Create organization". Renders nothing while signed out and where the
+environment has organizations off.
+
+The panel is a disclosure: the button opens it and moves the focus into it, Escape closes it
+and returns the focus, and so does a click or a focus move outside. A switch is announced
+politely, and an error stays in the panel, which stays open. "Manage organization" opens
+`<OrganizationProfile>` and "Create organization" opens `<CreateOrganization>`, each in a
+dialog unless the app has a page for it (`organizationProfileUrl`, `createOrganizationUrl`).
+
+```ts
+export function OrganizationSwitcher(props: OrganizationSwitcherProps)
+```
+
+**Parameters**
+
+- `props`: Callbacks, destinations and appearance; all optional.
+
+**Returns** The component.
+
+**Throws** Error outside a `<TulaProvider>`.
+
+**Example**
+
+```tsx
+<header>
+  <SignedIn>
+    <OrganizationSwitcher onSwitch={() => router.refresh()} />
+    <UserButton afterSignOutUrl='/' />
+  </SignedIn>
+</header>
+```
+
+### `OrganizationSwitcherProps`
+
+_interface_, defined in `packages/react/src/components/organization-switcher.tsx`
+
+Props of {@link OrganizationSwitcher}.
+
+```ts
+export interface OrganizationSwitcherProps {
+  /**
+   * Called after the session's active organization changed: the organization's id, or `null`
+   * for the personal account. Refresh whatever your app reads from the session here (your
+   * router's `refresh`, a query client's `invalidateQueries`).
+   */
+  onSwitch?: (organizationId: string | null) => void
+  /**
+   * The token of an invitation the user opened (`readInvitationLink(window.location.href)` on
+   * the page the emailed link leads to). The switcher shows what it offers, with "Accept" and
+   * "Decline". The server decides again: only the invited account, with its address verified,
+   * may answer.
+   */
+  invitationToken?: string
+  /**
+   * Called once the invitation was answered, so that the app can forget the token (and keep it
+   * out of the address bar).
+   */
+  onInvitationHandled?: (outcome: 'accepted' | 'declined') => void
+  /**
+   * Where `<OrganizationProfile>` lives. Overrides the provider's `organizationProfileUrl`;
+   * without either, "Manage organization" opens the profile in a dialog.
+   */
+  organizationProfileUrl?: string
+  /**
+   * Where `<CreateOrganization>` lives. Overrides the provider's `createOrganizationUrl`;
+   * without either, "Create organization" opens the form in a dialog.
+   */
+  createOrganizationUrl?: string
+  /** Theme tokens, colour scheme and class names for this component. */
+  appearance?: Appearance
+}
+```
+
+**Example**
+
+```tsx
+<OrganizationSwitcher onSwitch={() => router.refresh()} />
 ```
 
 ### `PasswordChecklist`
@@ -1463,6 +1728,197 @@ export interface TulaClient {
      * ```
      */
     join(organizationId: string): Promise<UserOrganization>
+    /**
+     * Rename an organization, or change its slug. Needs `org:sys:organization:manage`, which
+     * the API reads from the user's membership on every call.
+     *
+     * @param organizationId - The organization.
+     * @param input - A new `name`, a new `slug`, or both.
+     * @returns The organization with the user's role, as it is now.
+     * @throws TulaError `organization.not_a_member`, `organization.permission_required`,
+     *   `organization.slug_taken`, `organization.disabled`.
+     * @example
+     * ```ts
+     * await tula.organizations.update(org.id, { name: 'Acme Inc' })
+     * ```
+     */
+    update(organizationId: string, input: UpdateOrganizationInput): Promise<UserOrganization>
+    /**
+     * Delete an organization for good, with its memberships, invitations and domains. Needs
+     * `org:sys:organization:delete`. Members' sessions leave it at their next refresh; if it
+     * was this session's active organization, call `setActive` for another one.
+     *
+     * @param organizationId - The organization.
+     * @throws TulaError `organization.not_a_member`, `organization.permission_required`,
+     *   `organization.disabled`.
+     * @example
+     * ```ts
+     * await tula.organizations.remove(org.id)
+     * await tula.organizations.setActive(null)
+     * ```
+     */
+    remove(organizationId: string): Promise<void>
+    /**
+     * Leave an organization: remove the signed-in user's own membership, which needs no
+     * permission. The last member who can manage members cannot leave.
+     *
+     * @param organizationId - The organization.
+     * @throws TulaError `organization.not_a_member`, `organization.last_manager`,
+     *   `organization.disabled`.
+     * @example
+     * ```ts
+     * await tula.organizations.leave(org.id)
+     * ```
+     */
+    leave(organizationId: string): Promise<void>
+    /**
+     * The roles the user may give to an invitation or a member: those whose permissions they
+     * hold themselves. Needs `org:sys:invitations:manage` or `org:sys:memberships:manage`.
+     *
+     * @param organizationId - The organization.
+     * @returns The roles' keys and names.
+     * @throws TulaError `organization.not_a_member`, `organization.permission_required`,
+     *   `organization.disabled`.
+     * @example
+     * ```ts
+     * const { data } = await tula.organizations.roles(org.id)
+     * ```
+     */
+    roles(organizationId: string): Promise<AssignableRoleList>
+    /**
+     * An organization's members. Reading needs `org:sys:memberships:read` or `:manage`;
+     * changing needs `org:sys:memberships:manage`, which the API reads from the user's
+     * membership on every call.
+     */
+    readonly members: {
+      /**
+       * The organization's members, oldest first, with each one's name, address and role key.
+       * Only the first page: the client sends no paging query yet.
+       *
+       * @param organizationId - The organization.
+       * @returns The page.
+       * @throws TulaError `organization.not_a_member`, `organization.permission_required`,
+       *   `organization.disabled`.
+       * @example
+       * ```ts
+       * const { data } = await tula.organizations.members.list(org.id)
+       * ```
+       */
+      list(organizationId: string): Promise<OrganizationMemberList>
+      /**
+       * Give a member another role, one whose permissions the user holds themselves. The
+       * member's sessions carry it from their next refresh.
+       *
+       * @param organizationId - The organization.
+       * @param userId - The member.
+       * @param role - The key of the new role.
+       * @returns The member, as they are now.
+       * @throws TulaError `organization.permission_required`, `organization.role_unknown`,
+       *   `organization.role_not_assignable`, `organization.last_manager`.
+       * @example
+       * ```ts
+       * await tula.organizations.members.changeRole(org.id, member.userId, 'admin')
+       * ```
+       */
+      changeRole(organizationId: string, userId: string, role: string): Promise<OrganizationMember>
+      /**
+       * Remove a member. The user keeps their account; to remove yourself use `leave`.
+       *
+       * @param organizationId - The organization.
+       * @param userId - The member.
+       * @throws TulaError `organization.permission_required`, `organization.last_manager`.
+       * @example
+       * ```ts
+       * await tula.organizations.members.remove(org.id, member.userId)
+       * ```
+       */
+      remove(organizationId: string, userId: string): Promise<void>
+    }
+    /**
+     * An organization's domains (ADR 0065, "Verified domains"): the organization claims one by
+     * a code emailed to an address on it, and a verified one suggests or joins the people who
+     * sign up with a verified address on it. Needs `org:sys:domains:manage`, which the API
+     * reads from the user's membership on every call.
+     */
+    readonly domains: {
+      /**
+       * The organization's domains, oldest first: claims waiting for a code and verified ones.
+       *
+       * @param organizationId - The organization.
+       * @returns The domains.
+       * @throws TulaError `organization.not_a_member`, `auth.forbidden`, `organization.disabled`.
+       * @example
+       * ```ts
+       * const { data } = await tula.organizations.domains.list(org.id)
+       * ```
+       */
+      list(organizationId: string): Promise<OrganizationDomainList>
+      /**
+       * Claim a domain: email a code to an address on it. Sent again for a pending claim it
+       * emails a new code.
+       *
+       * @param organizationId - The organization.
+       * @param input - The domain, an address on it and what a verified domain does.
+       * @returns The pending claim.
+       * @throws TulaError `organization.domain_public`, `organization.domain_taken`,
+       *   `organization.domain_address_mismatch`, `organization.domain_limit`, `rate_limited`.
+       * @example
+       * ```ts
+       * await tula.organizations.domains.start(org.id, {
+       *   domain: 'acme.com',
+       *   email: 'ada@acme.com',
+       *   mode: 'suggest',
+       * })
+       * ```
+       */
+      start(
+        organizationId: string,
+        input: StartOrganizationDomainInput
+      ): Promise<OrganizationDomain>
+      /**
+       * Enter the emailed code. Five wrong guesses use the code up.
+       *
+       * @param organizationId - The organization.
+       * @param domainId - The claim.
+       * @param code - The six digits.
+       * @returns The verified domain.
+       * @throws TulaError `verification.invalid_code` and its siblings, `organization.domain_taken`.
+       * @example
+       * ```ts
+       * await tula.organizations.domains.verify(org.id, domain.id, '123456')
+       * ```
+       */
+      verify(organizationId: string, domainId: string, code: string): Promise<OrganizationDomain>
+      /**
+       * Change what a domain does.
+       *
+       * @param organizationId - The organization.
+       * @param domainId - The domain.
+       * @param mode - `suggest` or `auto_join`.
+       * @returns The domain.
+       * @example
+       * ```ts
+       * await tula.organizations.domains.update(org.id, domain.id, 'auto_join')
+       * ```
+       */
+      update(
+        organizationId: string,
+        domainId: string,
+        mode: OrganizationDomain['mode']
+      ): Promise<OrganizationDomain>
+      /**
+       * Remove a domain. Later sign-ups are neither offered nor joined to the organization;
+       * the members it brought stay.
+       *
+       * @param organizationId - The organization.
+       * @param domainId - The domain.
+       * @example
+       * ```ts
+       * await tula.organizations.domains.remove(org.id, domain.id)
+       * ```
+       */
+      remove(organizationId: string, domainId: string): Promise<void>
+    }
     /**
      * Invitations by email (ADR 0065, Orgs 04). The inviting calls need the permission
      * `org:sys:invitations:manage`, which the API reads from the user's membership on every
@@ -2411,6 +2867,165 @@ export interface TulaLocalization {
     permissionsTitle: string
     /** The role holds no permission. */
     permissionsEmpty: string
+  }
+  /**
+   * `<OrganizationSwitcher>` (ADR 0065, Orgs 07). It also uses the `organizations` group
+   * above (`loading`, `loadFailed`, `retry`, `empty`, `personalAccount`, `switchedTo`, …).
+   */
+  organizationSwitcher: {
+    /** `{name}`. The trigger's accessible name; the visible text is the name. */
+    trigger: string
+    /** `{name}`. The trigger's accessible name while an invitation waits for an answer. */
+    triggerInvitation: string
+    /** The panel's accessible name. */
+    panelLabel: string
+    /** The heading over the user's organizations. */
+    listTitle: string
+    /** Said (to assistive technology) after the name of the organization the session acts in. */
+    current: string
+    /** The heading over the organizations the user's verified address may join. */
+    suggestionsTitle: string
+    suggestionJoin: string
+    /** `{name}`. */
+    suggestionJoinLabel: string
+    /** `{name}`. Said after the user joined an organization. */
+    joined: string
+    invitationTitle: string
+    /** `{organization}`, `{role}`. What the invitation offers. */
+    invitationText: string
+    invitationAccept: string
+    invitationDecline: string
+    invitationDeclined: string
+    create: string
+    manage: string
+    close: string
+  }
+  /** `<CreateOrganization>` (ADR 0065, Orgs 07). It also uses the `organizations` group. */
+  createOrganization: {
+    title: string
+    subtitle: string
+    /** The environment does not let users create organizations. */
+    unavailable: string
+    nameRequired: string
+    slugRequired: string
+    doneTitle: string
+    /** `{name}`. Said when the new organization was not made the active one. */
+    created: string
+  }
+  /** `<OrganizationProfile>` (ADR 0065, Orgs 07). It also uses the `organizations` group. */
+  organizationProfile: {
+    title: string
+    tabsLabel: string
+    tabGeneral: string
+    tabMembers: string
+    tabInvitations: string
+    tabDomains: string
+    /** A section this version of the components does not know. */
+    unsupportedTitle: string
+    unsupportedMessage: string
+    unsupportedRestart: string
+    /** `{name}`. The user left the organization. */
+    goneLeft: string
+    /** `{name}`. The user deleted the organization. */
+    goneDeleted: string
+    /** The user's permissions in the organization changed since the page was drawn. */
+    accessChanged: string
+    detailsTitle: string
+    renameReadOnly: string
+    save: string
+    saved: string
+    leaveTitle: string
+    /** `{name}`. */
+    leaveText: string
+    leave: string
+    /** `{name}`. */
+    leaveConfirm: string
+    leaveConfirmButton: string
+    deleteTitle: string
+    /** `{name}`. */
+    deleteText: string
+    delete: string
+    /** `{name}`. */
+    deleteConfirmLabel: string
+    deleteConfirmButton: string
+    membersTitle: string
+    membersIntro: string
+    membersLoading: string
+    membersEmpty: string
+    memberYou: string
+    memberUnnamed: string
+    /** `{name}`. */
+    memberRoleLabel: string
+    /** `{role}`. */
+    memberRole: string
+    memberRemove: string
+    /** `{name}`. */
+    memberRemoveLabel: string
+    /** `{name}`, `{organization}`. */
+    memberRemoveConfirm: string
+    memberRemoveConfirmButton: string
+    /** `{name}`. */
+    memberRemoved: string
+    /** `{name}`, `{role}`. */
+    memberRoleChanged: string
+    invitationsTitle: string
+    invitationsIntro: string
+    invitationsLoading: string
+    invitationsEmpty: string
+    /** Invitations cannot be sent because the app named no page that accepts them. */
+    inviteUnavailable: string
+    inviteEmailLabel: string
+    inviteRoleLabel: string
+    inviteEmailRequired: string
+    inviteRoleRequired: string
+    inviteSubmit: string
+    /** `{email}`. */
+    inviteSent: string
+    /** `{date}`. */
+    invitationExpires: string
+    invitationRevoke: string
+    /** `{email}`. */
+    invitationRevokeLabel: string
+    /** `{email}`. */
+    invitationRevokeConfirm: string
+    invitationRevokeConfirmButton: string
+    /** `{email}`. */
+    invitationRevoked: string
+    domainsTitle: string
+    domainsIntro: string
+    domainsLoading: string
+    domainsEmpty: string
+    domainLabel: string
+    domainEmailLabel: string
+    domainModeLabel: string
+    domainRequired: string
+    domainEmailRequired: string
+    modeSuggest: string
+    modeAutoJoin: string
+    /** A mode this version of the components does not know. */
+    modeUnknown: string
+    domainStart: string
+    /** `{email}`. */
+    domainCodeSent: string
+    domainPending: string
+    domainVerified: string
+    /** `{domain}`. */
+    domainCodeLabel: string
+    domainCodeRequired: string
+    domainVerify: string
+    /** `{domain}`. */
+    domainVerifiedMessage: string
+    domainResend: string
+    domainRemove: string
+    /** `{domain}`. */
+    domainRemoveLabel: string
+    /** `{domain}`. */
+    domainRemoveConfirm: string
+    domainRemoveConfirmButton: string
+    /** `{domain}`. */
+    domainRemoved: string
+    /** `{domain}`. */
+    domainModeChanged: string
   }
   /** The dialog that asks a signed-in user to prove who they are before a sensitive change. */
   stepUp: {
@@ -3442,6 +4057,36 @@ export function rateLimitedAlert(
 const wait = useRetryCountdown(error)
 // 'Too many requests. Try again in 41s.' while a wait runs
 <FormAlert {...rateLimitedAlert(placed.form, wait, t)} />
+```
+
+### `readInvitationLink`
+
+_function_, defined in `packages/core/src/invitation.ts`
+
+Read the invitation token from the URL an emailed invitation link leads to.
+
+The token travels in the URL fragment (`#tula_invitation=…`), which a browser never sends to
+a server, so it is in no log and in no `Referer`. Read it, then replace the address bar with
+`cleanUrl` (`history.replaceState`) so that the token is not left in the history.
+
+```ts
+export function readInvitationLink(url: string): InvitationLink | null
+```
+
+**Parameters**
+
+- `url`: The page's URL, e.g. `window.location.href`.
+
+**Returns** The token and the URL without it, or `null` when the URL carries no token.
+
+**Example**
+
+```ts
+const link = readInvitationLink(window.location.href)
+if (link) {
+  history.replaceState(null, '', link.cleanUrl)
+  const { organizationName } = await tula.organizations.invitations.preview(link.token)
+}
 ```
 
 ### `useAuth`

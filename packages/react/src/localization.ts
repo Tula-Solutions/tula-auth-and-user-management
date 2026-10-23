@@ -452,6 +452,165 @@ export interface TulaLocalization {
     /** The role holds no permission. */
     permissionsEmpty: string
   }
+  /**
+   * `<OrganizationSwitcher>` (ADR 0065, Orgs 07). It also uses the `organizations` group
+   * above (`loading`, `loadFailed`, `retry`, `empty`, `personalAccount`, `switchedTo`, …).
+   */
+  organizationSwitcher: {
+    /** `{name}`. The trigger's accessible name; the visible text is the name. */
+    trigger: string
+    /** `{name}`. The trigger's accessible name while an invitation waits for an answer. */
+    triggerInvitation: string
+    /** The panel's accessible name. */
+    panelLabel: string
+    /** The heading over the user's organizations. */
+    listTitle: string
+    /** Said (to assistive technology) after the name of the organization the session acts in. */
+    current: string
+    /** The heading over the organizations the user's verified address may join. */
+    suggestionsTitle: string
+    suggestionJoin: string
+    /** `{name}`. */
+    suggestionJoinLabel: string
+    /** `{name}`. Said after the user joined an organization. */
+    joined: string
+    invitationTitle: string
+    /** `{organization}`, `{role}`. What the invitation offers. */
+    invitationText: string
+    invitationAccept: string
+    invitationDecline: string
+    invitationDeclined: string
+    create: string
+    manage: string
+    close: string
+  }
+  /** `<CreateOrganization>` (ADR 0065, Orgs 07). It also uses the `organizations` group. */
+  createOrganization: {
+    title: string
+    subtitle: string
+    /** The environment does not let users create organizations. */
+    unavailable: string
+    nameRequired: string
+    slugRequired: string
+    doneTitle: string
+    /** `{name}`. Said when the new organization was not made the active one. */
+    created: string
+  }
+  /** `<OrganizationProfile>` (ADR 0065, Orgs 07). It also uses the `organizations` group. */
+  organizationProfile: {
+    title: string
+    tabsLabel: string
+    tabGeneral: string
+    tabMembers: string
+    tabInvitations: string
+    tabDomains: string
+    /** A section this version of the components does not know. */
+    unsupportedTitle: string
+    unsupportedMessage: string
+    unsupportedRestart: string
+    /** `{name}`. The user left the organization. */
+    goneLeft: string
+    /** `{name}`. The user deleted the organization. */
+    goneDeleted: string
+    /** The user's permissions in the organization changed since the page was drawn. */
+    accessChanged: string
+    detailsTitle: string
+    renameReadOnly: string
+    save: string
+    saved: string
+    leaveTitle: string
+    /** `{name}`. */
+    leaveText: string
+    leave: string
+    /** `{name}`. */
+    leaveConfirm: string
+    leaveConfirmButton: string
+    deleteTitle: string
+    /** `{name}`. */
+    deleteText: string
+    delete: string
+    /** `{name}`. */
+    deleteConfirmLabel: string
+    deleteConfirmButton: string
+    membersTitle: string
+    membersIntro: string
+    membersLoading: string
+    membersEmpty: string
+    memberYou: string
+    memberUnnamed: string
+    /** `{name}`. */
+    memberRoleLabel: string
+    /** `{role}`. */
+    memberRole: string
+    memberRemove: string
+    /** `{name}`. */
+    memberRemoveLabel: string
+    /** `{name}`, `{organization}`. */
+    memberRemoveConfirm: string
+    memberRemoveConfirmButton: string
+    /** `{name}`. */
+    memberRemoved: string
+    /** `{name}`, `{role}`. */
+    memberRoleChanged: string
+    invitationsTitle: string
+    invitationsIntro: string
+    invitationsLoading: string
+    invitationsEmpty: string
+    /** Invitations cannot be sent because the app named no page that accepts them. */
+    inviteUnavailable: string
+    inviteEmailLabel: string
+    inviteRoleLabel: string
+    inviteEmailRequired: string
+    inviteRoleRequired: string
+    inviteSubmit: string
+    /** `{email}`. */
+    inviteSent: string
+    /** `{date}`. */
+    invitationExpires: string
+    invitationRevoke: string
+    /** `{email}`. */
+    invitationRevokeLabel: string
+    /** `{email}`. */
+    invitationRevokeConfirm: string
+    invitationRevokeConfirmButton: string
+    /** `{email}`. */
+    invitationRevoked: string
+    domainsTitle: string
+    domainsIntro: string
+    domainsLoading: string
+    domainsEmpty: string
+    domainLabel: string
+    domainEmailLabel: string
+    domainModeLabel: string
+    domainRequired: string
+    domainEmailRequired: string
+    modeSuggest: string
+    modeAutoJoin: string
+    /** A mode this version of the components does not know. */
+    modeUnknown: string
+    domainStart: string
+    /** `{email}`. */
+    domainCodeSent: string
+    domainPending: string
+    domainVerified: string
+    /** `{domain}`. */
+    domainCodeLabel: string
+    domainCodeRequired: string
+    domainVerify: string
+    /** `{domain}`. */
+    domainVerifiedMessage: string
+    domainResend: string
+    domainRemove: string
+    /** `{domain}`. */
+    domainRemoveLabel: string
+    /** `{domain}`. */
+    domainRemoveConfirm: string
+    domainRemoveConfirmButton: string
+    /** `{domain}`. */
+    domainRemoved: string
+    /** `{domain}`. */
+    domainModeChanged: string
+  }
   /** The dialog that asks a signed-in user to prove who they are before a sensitive change. */
   stepUp: {
     title: string
@@ -916,6 +1075,125 @@ export const EN_LOCALIZATION: TulaLocalization = {
     membersNone: 'You cannot see the members.',
     permissionsTitle: 'What your role allows',
     permissionsEmpty: 'Your role has no permissions.',
+  },
+  organizationSwitcher: {
+    trigger: 'Organization: {name}',
+    triggerInvitation: 'Organization: {name}. You have an invitation.',
+    panelLabel: 'Organizations',
+    listTitle: 'Your organizations',
+    current: 'current',
+    suggestionsTitle: 'You can join',
+    suggestionJoin: 'Join',
+    suggestionJoinLabel: 'Join {name}',
+    joined: 'You joined {name}.',
+    invitationTitle: 'Invitation',
+    invitationText: '{organization} invited you to join as {role}.',
+    invitationAccept: 'Accept',
+    invitationDecline: 'Decline',
+    invitationDeclined: 'Invitation declined.',
+    create: 'Create organization',
+    manage: 'Manage organization',
+    close: 'Close',
+  },
+  createOrganization: {
+    title: 'Create an organization',
+    subtitle: 'Members, roles and invitations live in an organization.',
+    unavailable: 'Creating organizations is not available here.',
+    nameRequired: 'Enter a name for the organization.',
+    slugRequired: 'Enter a short name.',
+    doneTitle: 'Organization created',
+    created: '{name} was created.',
+  },
+  organizationProfile: {
+    title: 'Organization',
+    tabsLabel: 'Organization settings',
+    tabGeneral: 'General',
+    tabMembers: 'Members',
+    tabInvitations: 'Invitations',
+    tabDomains: 'Domains',
+    unsupportedTitle: 'This section is not supported',
+    unsupportedMessage:
+      'This version of the app cannot show that part of the organization. Update the app, or go back to the general settings.',
+    unsupportedRestart: 'Show general settings',
+    goneLeft: 'You left {name}.',
+    goneDeleted: '{name} was deleted.',
+    accessChanged: 'Your permissions in this organization changed. What you can do was updated.',
+    detailsTitle: 'Organization details',
+    renameReadOnly: 'Only members who can manage the organization can change these details.',
+    save: 'Save changes',
+    saved: 'Your changes were saved.',
+    leaveTitle: 'Leave organization',
+    leaveText: 'You will lose access to {name} and everything shared with it.',
+    leave: 'Leave organization',
+    leaveConfirm: 'Leave {name}?',
+    leaveConfirmButton: 'Yes, leave',
+    deleteTitle: 'Delete organization',
+    deleteText:
+      'Deleting {name} removes its members, invitations and domains for good. This cannot be undone.',
+    delete: 'Delete organization',
+    deleteConfirmLabel: 'Type {name} to confirm',
+    deleteConfirmButton: 'Delete this organization',
+    membersTitle: 'Members',
+    membersIntro: 'The people who belong to this organization, and their roles.',
+    membersLoading: 'Loading members…',
+    membersEmpty: 'There are no members to show.',
+    memberYou: 'You',
+    memberUnnamed: 'Unnamed member',
+    memberRoleLabel: 'Role of {name}',
+    memberRole: 'Role: {role}',
+    memberRemove: 'Remove',
+    memberRemoveLabel: 'Remove {name}',
+    memberRemoveConfirm: 'Remove {name} from {organization}? They keep their account.',
+    memberRemoveConfirmButton: 'Yes, remove',
+    memberRemoved: '{name} was removed.',
+    memberRoleChanged: 'The role of {name} is now {role}.',
+    invitationsTitle: 'Invitations',
+    invitationsIntro:
+      'Invite people by email. They join with the role you choose once they accept.',
+    invitationsLoading: 'Loading invitations…',
+    invitationsEmpty: 'No invitations are waiting.',
+    inviteUnavailable: 'Invitations cannot be sent from here yet.',
+    inviteEmailLabel: 'Email address',
+    inviteRoleLabel: 'Role',
+    inviteEmailRequired: 'Enter an email address.',
+    inviteRoleRequired: 'Choose a role.',
+    inviteSubmit: 'Send invitation',
+    inviteSent: 'Invitation sent to {email}.',
+    invitationExpires: 'Expires {date}',
+    invitationRevoke: 'Revoke',
+    invitationRevokeLabel: 'Revoke the invitation for {email}',
+    invitationRevokeConfirm: 'Revoke the invitation for {email}? Its link stops working.',
+    invitationRevokeConfirmButton: 'Yes, revoke',
+    invitationRevoked: 'The invitation for {email} was revoked.',
+    domainsTitle: 'Domains',
+    domainsIntro:
+      'Claim an email domain. People who sign up with a verified address on it can find this organization or join it.',
+    domainsLoading: 'Loading domains…',
+    domainsEmpty: 'No domains yet.',
+    domainLabel: 'Domain',
+    domainEmailLabel: 'An address on that domain',
+    domainModeLabel: 'When someone signs up with a verified address on it',
+    domainRequired: 'Enter a domain, for example acme.com.',
+    domainEmailRequired: 'Enter an address on that domain.',
+    modeSuggest: 'Suggest this organization to them',
+    modeAutoJoin: 'Add them to this organization',
+    modeUnknown: 'Not supported by this version',
+    domainStart: 'Send a code',
+    domainCodeSent: 'We emailed a code to {email}.',
+    domainPending: 'Waiting for the code',
+    domainVerified: 'Verified',
+    domainCodeLabel: 'Code for {domain}',
+    domainCodeRequired: 'Enter the 6-digit code.',
+    domainVerify: 'Verify',
+    domainVerifiedMessage: '{domain} is verified.',
+    domainResend: 'Send a new code',
+    domainRemove: 'Remove',
+    domainRemoveLabel: 'Remove {domain}',
+    domainRemoveConfirm:
+      'Remove {domain}? People who sign up later are no longer offered this organization. The members it brought stay.',
+    domainRemoveConfirmButton: 'Yes, remove',
+    domainRemoved: '{domain} was removed.',
+    domainModeChanged: '{domain} was updated.',
   },
   stepUp: {
     title: 'Confirm it is you',

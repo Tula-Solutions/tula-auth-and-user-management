@@ -28,6 +28,7 @@ import {
   tokensFor,
   userByEmail,
 } from './helpers'
+import { ORGANIZATION_HANDLERS } from './organizations'
 import { matchTotp } from './totp'
 import type { SandboxAttempt, SandboxProvider, SandboxUser } from './types'
 import { newTotpSecret, normalizeEmail, SANDBOX_PASSWORD_POLICY, type World } from './world'
@@ -65,49 +66,12 @@ export const UNSUPPORTED: Partial<Record<OperationId, string>> = {
   getSignInSecondFactorPasskeyOptions: 'a passkey as a second factor is not simulated',
   getPasswordResetSecondFactorPasskeyOptions: 'a passkey as a second factor is not simulated',
   submitSignInNewPassword: 'password expiry needs days to pass',
-  listMyOrganizations: 'the sandbox has no organizations',
-  createMyOrganization: 'the sandbox has no organizations',
-  setActiveOrganization: 'the sandbox has no organizations',
-  listMyOrganizationSuggestions: 'the sandbox has no organizations',
-  joinOrganizationSuggestion: 'the sandbox has no organizations',
-  listMyOrganizationDomains: 'the sandbox has no organizations',
-  startMyOrganizationDomain: 'the sandbox has no organizations',
-  verifyMyOrganizationDomain: 'the sandbox has no organizations',
-  updateMyOrganizationDomain: 'the sandbox has no organizations',
-  removeMyOrganizationDomain: 'the sandbox has no organizations',
-  listMyOrganizationInvitations: 'the sandbox has no organizations',
-  inviteToMyOrganization: 'the sandbox has no organizations',
-  revokeMyOrganizationInvitation: 'the sandbox has no organizations',
-  previewOrganizationInvitation: 'the sandbox has no organizations',
-  acceptOrganizationInvitation: 'the sandbox has no organizations',
-  declineOrganizationInvitation: 'the sandbox has no organizations',
 }
 
 /** The refusal an operation in {@link UNSUPPORTED} answers with. */
 function unsupported(id: OperationId): never {
   if (id === 'requestPhoneCode' || id === 'verifyPhoneNumber' || id === 'removePhoneNumber') {
     throw new SandboxError('sms.disabled')
-  }
-  if (
-    id === 'listMyOrganizations' ||
-    id === 'createMyOrganization' ||
-    id === 'setActiveOrganization' ||
-    id === 'listMyOrganizationSuggestions' ||
-    id === 'joinOrganizationSuggestion' ||
-    id === 'listMyOrganizationDomains' ||
-    id === 'startMyOrganizationDomain' ||
-    id === 'verifyMyOrganizationDomain' ||
-    id === 'updateMyOrganizationDomain' ||
-    id === 'removeMyOrganizationDomain' ||
-    id === 'listMyOrganizationInvitations' ||
-    id === 'inviteToMyOrganization' ||
-    id === 'revokeMyOrganizationInvitation' ||
-    id === 'previewOrganizationInvitation' ||
-    id === 'acceptOrganizationInvitation' ||
-    id === 'declineOrganizationInvitation'
-  ) {
-    // Organizations are an environment setting the sandbox leaves off.
-    throw new SandboxError('organization.disabled')
   }
   throw new SandboxError('auth.method_disabled')
 }
@@ -323,6 +287,11 @@ export const HANDLERS: Handlers = {
     password: SANDBOX_PASSWORD_POLICY,
     mfa: { policy: world.settings.mfaPolicy, smsCode: false },
     phone: { enabled: false },
+    organizations: {
+      enabled: world.settings.organizations,
+      allowUserCreated: true,
+      personalAccount: true,
+    },
   }),
   getPasswordPolicy: () => SANDBOX_PASSWORD_POLICY,
 
@@ -952,23 +921,8 @@ export const HANDLERS: Handlers = {
   verifyPhoneNumber: () => unsupported('verifyPhoneNumber'),
   removePhoneNumber: () => unsupported('removePhoneNumber'),
 
-  // Organizations (ADR 0065) are switched off in the sandbox -----------------------------------
-  listMyOrganizations: () => unsupported('listMyOrganizations'),
-  createMyOrganization: () => unsupported('createMyOrganization'),
-  setActiveOrganization: () => unsupported('setActiveOrganization'),
-  listMyOrganizationSuggestions: () => unsupported('listMyOrganizationSuggestions'),
-  joinOrganizationSuggestion: () => unsupported('joinOrganizationSuggestion'),
-  listMyOrganizationDomains: () => unsupported('listMyOrganizationDomains'),
-  startMyOrganizationDomain: () => unsupported('startMyOrganizationDomain'),
-  verifyMyOrganizationDomain: () => unsupported('verifyMyOrganizationDomain'),
-  updateMyOrganizationDomain: () => unsupported('updateMyOrganizationDomain'),
-  removeMyOrganizationDomain: () => unsupported('removeMyOrganizationDomain'),
-  listMyOrganizationInvitations: () => unsupported('listMyOrganizationInvitations'),
-  inviteToMyOrganization: () => unsupported('inviteToMyOrganization'),
-  revokeMyOrganizationInvitation: () => unsupported('revokeMyOrganizationInvitation'),
-  previewOrganizationInvitation: () => unsupported('previewOrganizationInvitation'),
-  acceptOrganizationInvitation: () => unsupported('acceptOrganizationInvitation'),
-  declineOrganizationInvitation: () => unsupported('declineOrganizationInvitation'),
+  // Organizations (ADR 0065) ------------------------------------------------------------------
+  ...ORGANIZATION_HANDLERS,
 
   // Two-step verification ---------------------------------------------------------------------
   getMyFactors: (ctx) => {

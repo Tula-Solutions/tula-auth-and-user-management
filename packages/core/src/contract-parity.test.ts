@@ -100,7 +100,7 @@ describe('parity with @tula-tech/contract', () => {
     for (const route of Object.values(OPERATIONS)) {
       expect(route.path.startsWith('/v1/client/')).toBe(true)
     }
-    expect(Object.keys(OPERATIONS)).toHaveLength(83)
+    expect(Object.keys(OPERATIONS)).toHaveLength(89)
   })
 
   test('evaluatePassword is the contract’s rule engine and accepts the generated policy type', () => {

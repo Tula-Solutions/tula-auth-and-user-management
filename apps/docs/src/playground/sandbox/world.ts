@@ -5,6 +5,7 @@ import {
   DEFAULT_SANDBOX_SETTINGS,
   type SandboxAttempt,
   type SandboxEmail,
+  type SandboxOrganization,
   type SandboxSession,
   type SandboxSettings,
   type SandboxUser,
@@ -79,6 +80,8 @@ export interface World {
   users: Map<string, SandboxUser>
   attempts: Map<string, SandboxAttempt>
   sessions: Map<string, SandboxSession>
+  /** The organizations, by id (ADR 0065). */
+  organizations: Map<string, SandboxOrganization>
   /** The browser's cookie jar, as far as the sandbox is concerned: the web client's session. */
   cookie: { refreshToken: string | null }
   inbox: SandboxEmail[]
@@ -170,6 +173,74 @@ function seedUsers(world: Pick<World, 'users' | 'now'>): void {
 }
 
 /**
+ * The token of the invitation to "Hooli" the sandbox starts with, sent to `DEMO_EMAIL`. The
+ * playground's organization switcher is given it the way an app is given the token of the
+ * page an emailed link leads to.
+ */
+export const DEMO_INVITATION_TOKEN = 'sbx-invitation-token-hooli'
+
+/** The organizations the sandbox starts with: three the demo accounts belong to, one to join. */
+function seedOrganizations(world: Pick<World, 'organizations' | 'now'>): void {
+  const day = 24 * 60 * 60_000
+  const created = new Date(world.now() - 20 * day).toISOString()
+  const make = (
+    id: string,
+    name: string,
+    members: [string, 'admin' | 'member'][],
+    extra: Partial<SandboxOrganization> = {}
+  ) => {
+    world.organizations.set(id, {
+      id,
+      name,
+      slug: name.toLowerCase(),
+      createdAt: created,
+      members: members.map(([userId, role]) => ({ userId, role, createdAt: created })),
+      invitations: [],
+      domains: [],
+      ...extra,
+    })
+  }
+  make('0198a000-0000-7000-8000-000000000001', 'Acme', [
+    ['usr_sandbox_ada', 'admin'],
+    ['usr_sandbox_grace', 'member'],
+  ])
+  make('0198a000-0000-7000-8000-000000000002', 'Globex', [
+    ['usr_sandbox_ada', 'member'],
+    ['usr_sandbox_grace', 'admin'],
+  ])
+  // A verified domain the demo account's address is on, so that Initech is offered to Ada.
+  make('0198a000-0000-7000-8000-000000000003', 'Initech', [['usr_sandbox_grace', 'admin']], {
+    domains: [
+      {
+        id: '0198a000-0000-7000-8000-0000000000d1',
+        domain: 'example.test',
+        mode: 'suggest',
+        code: null,
+        codeExpiresAt: null,
+        tries: 0,
+        verifiedAt: created,
+        createdAt: created,
+        updatedAt: created,
+      },
+    ],
+  })
+  make('0198a000-0000-7000-8000-000000000004', 'Hooli', [['usr_sandbox_grace', 'admin']], {
+    invitations: [
+      {
+        id: '0198a000-0000-7000-8000-0000000000e1',
+        email: DEMO_EMAIL,
+        role: 'member',
+        status: 'pending',
+        invitedBy: 'usr_sandbox_grace',
+        expiresAt: new Date(world.now() + 7 * day).toISOString(),
+        createdAt: created,
+        token: DEMO_INVITATION_TOKEN,
+      },
+    ],
+  })
+}
+
+/**
  * Make a sandbox world.
  *
  * @param options - A clock and settings, both for tests.
@@ -193,6 +264,7 @@ export function createWorld(options: WorldOptions = {}): World {
     users: new Map(),
     attempts: new Map(),
     sessions: new Map(),
+    organizations: new Map(),
     cookie: { refreshToken: null },
     inbox: [],
     lockouts: new Map(),
@@ -226,12 +298,14 @@ export function createWorld(options: WorldOptions = {}): World {
       world.users.clear()
       world.attempts.clear()
       world.sessions.clear()
+      world.organizations.clear()
       world.inbox.length = 0
       world.lockouts.clear()
       world.usedTotpSteps.clear()
       world.retiredTokens.clear()
       world.cookie.refreshToken = null
       seedUsers(world)
+      seedOrganizations(world)
       world.changed()
     },
     sendEmail(email) {
@@ -260,6 +334,7 @@ export function createWorld(options: WorldOptions = {}): World {
         expiresAt: at + SESSION_TTL_MS,
         refreshToken: `sbx_rt_${world.secret(24)}`,
         amr,
+        organizationId: null,
       }
       world.sessions.set(session.id, session)
       user.lastSignInAt = new Date(at).toISOString()
@@ -290,6 +365,7 @@ export function createWorld(options: WorldOptions = {}): World {
     },
   }
   seedUsers(world)
+  seedOrganizations(world)
   return world
 }
 

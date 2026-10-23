@@ -51,6 +51,26 @@ What `organizations.setActive()` answers: the session's active organization now.
 export type ActiveOrganization = Schemas['ActiveOrganization']
 ```
 
+### `AssignableRole`
+
+_type_, defined in `packages/core/src/types.ts`
+
+A role the signed-in member may give: its key and its name.
+
+```ts
+export type AssignableRole = Schemas['AssignableRole']
+```
+
+### `AssignableRoleList`
+
+_type_, defined in `packages/core/src/types.ts`
+
+What `organizations.roles()` answers: the roles the member may offer.
+
+```ts
+export type AssignableRoleList = Schemas['AssignableRoleList']
+```
+
 ### `AuthState`
 
 _type_, defined in `packages/core/src/types.ts`
@@ -902,6 +922,26 @@ A provider `signIn.withOAuth` can be asked for.
 export type OAuthProvider = Schemas['OAuthProvider']
 ```
 
+### `OrganizationDomain`
+
+_type_, defined in `packages/core/src/types.ts`
+
+A domain an organization claimed, pending a code or verified.
+
+```ts
+export type OrganizationDomain = Schemas['OrganizationDomain']
+```
+
+### `OrganizationDomainList`
+
+_type_, defined in `packages/core/src/types.ts`
+
+An organization's domains.
+
+```ts
+export type OrganizationDomainList = Schemas['OrganizationDomainList']
+```
+
 ### `OrganizationInvitation`
 
 _type_, defined in `packages/core/src/types.ts`
@@ -928,6 +968,34 @@ A page of an organization's invitations.
 
 ```ts
 export type OrganizationInvitationList = Schemas['OrganizationInvitationList']
+```
+
+### `OrganizationMember`
+
+_type_, defined in `packages/core/src/types.ts`
+
+A member of an organization as another member sees them: the user's id, name and address
+(each `null` when they have none) and the key of their role.
+
+```ts
+export type OrganizationMember = Schemas['OrganizationMember']
+```
+
+**Example**
+
+```ts
+const { data } = await tula.organizations.members.list(org.id)
+const admins = data.filter((member) => member.role === 'admin')
+```
+
+### `OrganizationMemberList`
+
+_type_, defined in `packages/core/src/types.ts`
+
+A page of an organization's members.
+
+```ts
+export type OrganizationMemberList = Schemas['OrganizationMemberList']
 ```
 
 ### `OrganizationSuggestion`
@@ -1587,6 +1655,16 @@ const sent: SmsFactorCode = await tula.mfa.startSms()
 show(`We texted a code to ${sent.destination}`)
 ```
 
+### `StartOrganizationDomainInput`
+
+_type_, defined in `packages/core/src/types.ts`
+
+The body of `organizations.domains.start()`: the domain, an address on it and the mode.
+
+```ts
+export type StartOrganizationDomainInput = Schemas['StartOrganizationDomainRequest']
+```
+
 ### `StepUpMethod`
 
 _type_, defined in `packages/core/src/types.ts`
@@ -2182,6 +2260,197 @@ export interface TulaClient {
      * ```
      */
     join(organizationId: string): Promise<UserOrganization>
+    /**
+     * Rename an organization, or change its slug. Needs `org:sys:organization:manage`, which
+     * the API reads from the user's membership on every call.
+     *
+     * @param organizationId - The organization.
+     * @param input - A new `name`, a new `slug`, or both.
+     * @returns The organization with the user's role, as it is now.
+     * @throws TulaError `organization.not_a_member`, `organization.permission_required`,
+     *   `organization.slug_taken`, `organization.disabled`.
+     * @example
+     * ```ts
+     * await tula.organizations.update(org.id, { name: 'Acme Inc' })
+     * ```
+     */
+    update(organizationId: string, input: UpdateOrganizationInput): Promise<UserOrganization>
+    /**
+     * Delete an organization for good, with its memberships, invitations and domains. Needs
+     * `org:sys:organization:delete`. Members' sessions leave it at their next refresh; if it
+     * was this session's active organization, call `setActive` for another one.
+     *
+     * @param organizationId - The organization.
+     * @throws TulaError `organization.not_a_member`, `organization.permission_required`,
+     *   `organization.disabled`.
+     * @example
+     * ```ts
+     * await tula.organizations.remove(org.id)
+     * await tula.organizations.setActive(null)
+     * ```
+     */
+    remove(organizationId: string): Promise<void>
+    /**
+     * Leave an organization: remove the signed-in user's own membership, which needs no
+     * permission. The last member who can manage members cannot leave.
+     *
+     * @param organizationId - The organization.
+     * @throws TulaError `organization.not_a_member`, `organization.last_manager`,
+     *   `organization.disabled`.
+     * @example
+     * ```ts
+     * await tula.organizations.leave(org.id)
+     * ```
+     */
+    leave(organizationId: string): Promise<void>
+    /**
+     * The roles the user may give to an invitation or a member: those whose permissions they
+     * hold themselves. Needs `org:sys:invitations:manage` or `org:sys:memberships:manage`.
+     *
+     * @param organizationId - The organization.
+     * @returns The roles' keys and names.
+     * @throws TulaError `organization.not_a_member`, `organization.permission_required`,
+     *   `organization.disabled`.
+     * @example
+     * ```ts
+     * const { data } = await tula.organizations.roles(org.id)
+     * ```
+     */
+    roles(organizationId: string): Promise<AssignableRoleList>
+    /**
+     * An organization's members. Reading needs `org:sys:memberships:read` or `:manage`;
+     * changing needs `org:sys:memberships:manage`, which the API reads from the user's
+     * membership on every call.
+     */
+    readonly members: {
+      /**
+       * The organization's members, oldest first, with each one's name, address and role key.
+       * Only the first page: the client sends no paging query yet.
+       *
+       * @param organizationId - The organization.
+       * @returns The page.
+       * @throws TulaError `organization.not_a_member`, `organization.permission_required`,
+       *   `organization.disabled`.
+       * @example
+       * ```ts
+       * const { data } = await tula.organizations.members.list(org.id)
+       * ```
+       */
+      list(organizationId: string): Promise<OrganizationMemberList>
+      /**
+       * Give a member another role, one whose permissions the user holds themselves. The
+       * member's sessions carry it from their next refresh.
+       *
+       * @param organizationId - The organization.
+       * @param userId - The member.
+       * @param role - The key of the new role.
+       * @returns The member, as they are now.
+       * @throws TulaError `organization.permission_required`, `organization.role_unknown`,
+       *   `organization.role_not_assignable`, `organization.last_manager`.
+       * @example
+       * ```ts
+       * await tula.organizations.members.changeRole(org.id, member.userId, 'admin')
+       * ```
+       */
+      changeRole(organizationId: string, userId: string, role: string): Promise<OrganizationMember>
+      /**
+       * Remove a member. The user keeps their account; to remove yourself use `leave`.
+       *
+       * @param organizationId - The organization.
+       * @param userId - The member.
+       * @throws TulaError `organization.permission_required`, `organization.last_manager`.
+       * @example
+       * ```ts
+       * await tula.organizations.members.remove(org.id, member.userId)
+       * ```
+       */
+      remove(organizationId: string, userId: string): Promise<void>
+    }
+    /**
+     * An organization's domains (ADR 0065, "Verified domains"): the organization claims one by
+     * a code emailed to an address on it, and a verified one suggests or joins the people who
+     * sign up with a verified address on it. Needs `org:sys:domains:manage`, which the API
+     * reads from the user's membership on every call.
+     */
+    readonly domains: {
+      /**
+       * The organization's domains, oldest first: claims waiting for a code and verified ones.
+       *
+       * @param organizationId - The organization.
+       * @returns The domains.
+       * @throws TulaError `organization.not_a_member`, `auth.forbidden`, `organization.disabled`.
+       * @example
+       * ```ts
+       * const { data } = await tula.organizations.domains.list(org.id)
+       * ```
+       */
+      list(organizationId: string): Promise<OrganizationDomainList>
+      /**
+       * Claim a domain: email a code to an address on it. Sent again for a pending claim it
+       * emails a new code.
+       *
+       * @param organizationId - The organization.
+       * @param input - The domain, an address on it and what a verified domain does.
+       * @returns The pending claim.
+       * @throws TulaError `organization.domain_public`, `organization.domain_taken`,
+       *   `organization.domain_address_mismatch`, `organization.domain_limit`, `rate_limited`.
+       * @example
+       * ```ts
+       * await tula.organizations.domains.start(org.id, {
+       *   domain: 'acme.com',
+       *   email: 'ada@acme.com',
+       *   mode: 'suggest',
+       * })
+       * ```
+       */
+      start(
+        organizationId: string,
+        input: StartOrganizationDomainInput
+      ): Promise<OrganizationDomain>
+      /**
+       * Enter the emailed code. Five wrong guesses use the code up.
+       *
+       * @param organizationId - The organization.
+       * @param domainId - The claim.
+       * @param code - The six digits.
+       * @returns The verified domain.
+       * @throws TulaError `verification.invalid_code` and its siblings, `organization.domain_taken`.
+       * @example
+       * ```ts
+       * await tula.organizations.domains.verify(org.id, domain.id, '123456')
+       * ```
+       */
+      verify(organizationId: string, domainId: string, code: string): Promise<OrganizationDomain>
+      /**
+       * Change what a domain does.
+       *
+       * @param organizationId - The organization.
+       * @param domainId - The domain.
+       * @param mode - `suggest` or `auto_join`.
+       * @returns The domain.
+       * @example
+       * ```ts
+       * await tula.organizations.domains.update(org.id, domain.id, 'auto_join')
+       * ```
+       */
+      update(
+        organizationId: string,
+        domainId: string,
+        mode: OrganizationDomain['mode']
+      ): Promise<OrganizationDomain>
+      /**
+       * Remove a domain. Later sign-ups are neither offered nor joined to the organization;
+       * the members it brought stay.
+       *
+       * @param organizationId - The organization.
+       * @param domainId - The domain.
+       * @example
+       * ```ts
+       * await tula.organizations.domains.remove(org.id, domain.id)
+       * ```
+       */
+      remove(organizationId: string, domainId: string): Promise<void>
+    }
     /**
      * Invitations by email (ADR 0065, Orgs 04). The inviting calls need the permission
      * `org:sys:invitations:manage`, which the API reads from the user's membership on every
@@ -2807,6 +3076,16 @@ export interface TulaFieldError {
 for (const problem of error.errors) {
   showUnder(problem.field, problem.message)
 }
+```
+
+### `UpdateOrganizationInput`
+
+_type_, defined in `packages/core/src/types.ts`
+
+The body of `organizations.update()`: a new name, a new slug, or both.
+
+```ts
+export type UpdateOrganizationInput = Schemas['UpdateOrganizationRequest']
 ```
 
 ### `User`

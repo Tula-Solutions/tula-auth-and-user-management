@@ -41,6 +41,9 @@ export default async function Dashboard() {
         <Link href='/organizations' className='button-link quiet'>
           Your organizations
         </Link>
+        <Link href='/team' className='button-link quiet'>
+          Your teams
+        </Link>
       </p>
     </section>
   )

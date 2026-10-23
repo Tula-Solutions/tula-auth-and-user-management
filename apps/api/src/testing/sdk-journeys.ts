@@ -2674,6 +2674,92 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
     )
 
     journey(
+      'organization members and roles from the client',
+      'organization members: a member reads the list, only a holder of the permission renames, deletes, changes a role or removes someone, the last manager cannot leave, and a member who left is refused on the next call',
+      async () => {
+        const s = await server()
+        const read = await s.admin('GET', '/v1/admin/settings')
+        const { settings } = (await read.json()) as { settings: EnvironmentSettings }
+        const saved = await s.admin(
+          'PUT',
+          '/v1/admin/settings',
+          {
+            ...settings,
+            organizations: {
+              enabled: true,
+              allowUserCreated: true,
+              maxCreatedPerUser: 1,
+              creatorRole: 'admin',
+              defaultRole: 'member',
+              personalAccount: true,
+            },
+          },
+          { 'if-match': read.headers.get('etag') ?? '' }
+        )
+        expect(saved.status).toBe(200)
+
+        const owner = await signUp(s)
+        const ada = await signUp(s)
+        const org = await owner.tula.organizations.create({ name: 'Acme', slug: 'acme' })
+        const adaId = (await ada.tula.user.get()).id
+        const ownerId = (await owner.tula.user.get()).id
+        await s.admin('POST', `/v1/admin/organizations/${org.id}/memberships`, {
+          userId: adaId,
+          role: 'member',
+        })
+
+        // A member reads the list, with addresses and role keys, and nothing else.
+        const listed = await ada.tula.organizations.members.list(org.id)
+        expect(listed.data.map((one) => [one.email, one.role])).toEqual([
+          [owner.email, 'admin'],
+          [ada.email, 'member'],
+        ])
+        // Thunks, so each call starts only when it is awaited: promises made up front would
+        // reject while an earlier one is still being awaited, which Bun reports as unhandled.
+        for (const refused of [
+          () => ada.tula.organizations.roles(org.id),
+          () => ada.tula.organizations.update(org.id, { name: 'Mine' }),
+          () => ada.tula.organizations.remove(org.id),
+          () => ada.tula.organizations.members.changeRole(org.id, ownerId, 'member'),
+          () => ada.tula.organizations.members.remove(org.id, ownerId),
+        ]) {
+          expect((await caught(refused())).code).toBe('organization.permission_required')
+        }
+
+        // The owner manages: roles on offer, a rename, a role that does not exist.
+        expect((await owner.tula.organizations.roles(org.id)).data.map((one) => one.key)).toEqual([
+          'admin',
+          'member',
+        ])
+        expect(await owner.tula.organizations.update(org.id, { name: 'Acme Inc' })).toMatchObject({
+          name: 'Acme Inc',
+          role: 'admin',
+        })
+        expect(
+          (await caught(owner.tula.organizations.members.changeRole(org.id, adaId, 'nobody'))).code
+        ).toBe('organization.role_unknown')
+
+        // The last manager stays; with a second one, the first may leave.
+        expect((await caught(owner.tula.organizations.leave(org.id))).code).toBe(
+          'organization.last_manager'
+        )
+        expect(
+          await owner.tula.organizations.members.changeRole(org.id, adaId, 'admin')
+        ).toMatchObject({ role: 'admin' })
+        await owner.tula.organizations.leave(org.id)
+        expect((await caught(owner.tula.organizations.members.list(org.id))).code).toBe(
+          'organization.not_a_member'
+        )
+
+        // The remaining admin deletes it, and it is gone for everyone.
+        await ada.tula.organizations.remove(org.id)
+        expect((await caught(ada.tula.organizations.members.list(org.id))).code).toBe(
+          'organization.not_a_member'
+        )
+      }
+    )
+
+    journey(
       'verified domains: suggest and auto-join',
       'verified domains: an address on an organization\u2019s verified domain joins it at sign-up (auto-join) or is offered it to join (suggest); the server decides again, and a removed domain offers and joins nobody',
       async () => {

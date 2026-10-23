@@ -30,3 +30,6 @@ export const MemberInvitationParamSchema = z.object({
   organizationId: z.uuid(),
   invitationId: z.uuid(),
 })
+
+/** Path parameters naming one member of one organization (a signed-in member's routes). */
+export const MemberParamSchema = z.object({ organizationId: z.uuid(), userId: z.uuid() })
