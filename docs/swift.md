@@ -759,6 +759,81 @@ provider again. An address another account holds is answered like a free one and
 confirms it (`verification.invalid_code`). An account that has an address, verified or
 not, is `email.already_set`: nothing here changes one.
 
+## Organizations
+
+An environment with organizations switched on lets a user belong to several, and a session
+works in one of them at a time: the **active organization**
+([ADR 0065](adr/0065-organizations.md)). `tula.organizations` lists the user's
+organizations, creates one where the environment lets users, and sets or clears the active
+one. Setting it asks the server for a new access token that carries the organization's
+claims (`org_id`, `org_role`, `org_perms`); the refresh token does not change.
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#organizations -->
+```swift
+let page = try await tula.organizations.list()  // each with the user's role and its permissions
+if page.data.isEmpty {
+    let acme = try await tula.organizations.create(name: "Acme", slug: "acme")
+    try await tula.organizations.setActive(acme.id)  // the next access token carries the claims
+}
+if let organization = try await tula.organizations.active() {
+    // Read from the access token, to decide what to draw: your server checks the same keys.
+    if organization.has(permission: "org:billing:read") {
+        // show the billing tab
+    }
+    if organization.has(role: "admin") {
+        // show the admin tab
+    }
+}
+try await tula.organizations.clearActive()  // back to the personal account
+```
+<!-- /snippet -->
+
+`active()` reads the claims from the access token the client holds, without checking its
+signature: that is for drawing the right screen, never for deciding what a user may do.
+Your server verifies the token and checks the same permission. The claims are all three or
+none: a token whose organization claims do not satisfy the contract's grammar has no active
+organization here, as in `@tula-tech/core`.
+
+An invitation arrives as an emailed link whose address carries the token in its
+**fragment** (`#tula_invitation=…`), which no server sees. Open it in the app (a universal
+link) and read it with `TulaInvitationLink`. Previewing needs no session; accepting and
+declining need one, and accepting needs the address the invitation was sent to, verified.
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#invitation -->
+```swift
+// The app was opened by the link in the emailed invitation (a universal link, say).
+guard let link = TulaInvitationLink.read(url) else { return }
+// The token is a secret. It was in the address's fragment, which no server saw.
+let preview = try await tula.organizations.invitations.preview(token: link.token)
+// preview.organizationName, preview.role and preview.email, to prefill a sign-up.
+// Once the user is signed in as preview.email, with its address verified:
+let joined = try await tula.organizations.invitations.accept(token: link.token)
+try await tula.organizations.setActive(joined.id)
+// or: try await tula.organizations.invitations.decline(token: link.token)
+```
+<!-- /snippet -->
+
+The token is a credential: the client never logs it, prints it or puts it in an error, and
+`TulaInvitationLink` and the types that hold one print as their name only. Keep
+`link.cleanURL`, not the address the token came in.
+
+When an environment verifies an organization's domain, a user whose verified address is on
+it is offered that organization, and joins it with the environment's default role:
+
+<!-- snippet: native/swift/Tests/TulaAuthTests/DocsSnippets.swift#organization-suggestions -->
+```swift
+// Organizations whose verified domain is the one of the user's verified address:
+let offered = try await tula.organizations.suggestions()
+if let first = offered.data.first {
+    _ = try await tula.organizations.join(first.id)  // with the environment's default role
+}
+```
+<!-- /snippet -->
+
+Members, roles and invitations are managed by administrators (the dashboard, or
+`@tula-tech/admin` on your server). `tula.organizations.invitations` also has `list`,
+`invite` and `revoke` for a signed-in member whose role may do it; the server decides.
+
 ## Errors
 
 Everything the client throws after construction is a `TulaError`:

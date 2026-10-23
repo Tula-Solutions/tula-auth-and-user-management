@@ -100,7 +100,7 @@ describe('the committed list', () => {
       perTicket.set(ticket, (perTicket.get(ticket) ?? 0) + 1)
     }
     // TULA-76: the native clients' emailed link. TULA-121: organizations in the native clients.
-    expect(Object.fromEntries(perTicket)).toEqual({ 'TULA-121': 4, 'TULA-76': 1 })
+    expect(Object.fromEntries(perTicket)).toEqual({ 'TULA-121': 1, 'TULA-76': 1 })
   })
 
   test('what each client has not built yet: nothing for @tula-tech/core, and for @tula-tech/expo a number per ticket that only this line lets change', async () => {

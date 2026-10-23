@@ -1446,6 +1446,35 @@ export function HomeScreen(props: { onSignOut(): void }) {
   (`isStepUpRequired`, `stepUpMethods`); `useTula().session.stepUp(proof)` proves it, and
   the call is then repeated.
 
+## Organizations
+
+The client is `@tula-tech/core`'s, so organizations are `client.organizations`
+([ADR 0065](adr/0065-organizations.md), [Organizations](organizations.md)); take the client
+from `useTula()`. It lists the user's organizations (`list()`), creates one where the
+environment lets users (`create({ name, slug })`), and chooses the one the session acts in
+(`setActive(id)`, or `setActive(null)` for the personal account): the next access token
+carries `org_id`, `org_role` and `org_perms`, the refresh token does not change, and
+`useAuth().getToken()` hands your own backend that token, and the signed-in state's
+`organizationId` says which is active. To draw the right screen, read the claims from the
+token the client holds with `readOrganizationClaims` and `hasOrganizationAccess` of
+`@tula-tech/contract/custom-claims`, as [Organizations](organizations.md) shows; your backend
+verifies the token and checks the same keys.
+
+An invitation arrives as an emailed link whose address carries the token in its **fragment**
+(`#tula_invitation=...`). Open it in the app (a universal link or an app link, as for
+[the emailed sign-in link](#the-emailed-link)), read it with `readInvitationLink(url)` and
+hand the token to `client.organizations.invitations`: `preview(token)` needs no session, and
+`accept(token)` and `decline(token)` need one (the invited account, with that address
+verified). `readInvitationLink` also returns the address without the token; keep that one.
+The token is a credential: it is in no error message of the client, and the app should not
+log it either. `client.organizations.suggestions()` lists the organizations a verified
+address is offered, and `join(id)` joins one.
+
+The app's journeys against the real API are the same three of `@tula-tech/core`'s suite
+(my organizations and the active organization, organization invitations, verified domains),
+which `packages/expo/src/journeys.test.ts` runs for this package's client. Nothing here was
+run in a real Expo app.
+
 ## Where the tokens are
 
 | Token | Where | Never |

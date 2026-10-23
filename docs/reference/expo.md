@@ -8,6 +8,26 @@ Tula's headless Expo SDK: the @tula-tech/core client with its refresh token in t
 
 Source: `packages/expo/src/index.ts`
 
+### `AcceptedInvitation`
+
+_type_, defined in `packages/core/src/types.ts`
+
+What accepting an invitation answers: the organization joined, with the role and its permissions.
+
+```ts
+export type AcceptedInvitation = Schemas['AcceptedInvitation']
+```
+
+### `ActiveOrganization`
+
+_type_, defined in `packages/core/src/types.ts`
+
+What `organizations.setActive()` answers: the session's active organization now.
+
+```ts
+export type ActiveOrganization = Schemas['ActiveOrganization']
+```
+
 ### `AuthState`
 
 _type_, defined in `packages/core/src/types.ts`
@@ -549,6 +569,31 @@ A provider account connected to the signed-in user.
 export type Identity = Schemas['Identity']
 ```
 
+### `InvitationLink`
+
+_interface_, defined in `packages/core/src/invitation.ts`
+
+An invitation's token as read from the URL of an emailed link.
+
+```ts
+export interface InvitationLink {
+  /** The token to pass to `organizations.invitations.preview`, `accept` or `decline`. */
+  token: string
+  /** The URL without the token, to put back in the address bar so the token is not kept. */
+  cleanUrl: string
+}
+```
+
+### `InvitationPreview`
+
+_type_, defined in `packages/core/src/types.ts`
+
+What the holder of an invitation's token may see before signing in.
+
+```ts
+export type InvitationPreview = Schemas['InvitationPreview']
+```
+
 ### `KeychainAccess`
 
 _type_, defined in `packages/expo/src/secure-storage.ts`
@@ -624,6 +669,34 @@ export interface ObtainedDeviceKey {
 
 ```ts
 const obtained: ObtainedDeviceKey = { publicJwk, created: false }
+```
+
+### `OrganizationInvitation`
+
+_type_, defined in `packages/core/src/types.ts`
+
+An invitation to an organization as the inviting side sees it. The token the emailed link
+carries is never part of it.
+
+```ts
+export type OrganizationInvitation = Schemas['OrganizationInvitation']
+```
+
+**Example**
+
+```ts
+const { data } = await tula.organizations.invitations.list(org.id)
+const open = data.filter((invitation) => invitation.status === 'pending')
+```
+
+### `OrganizationSuggestion`
+
+_type_, defined in `packages/core/src/types.ts`
+
+An organization the user may join because of a verified address (`organizations.suggestions()`).
+
+```ts
+export type OrganizationSuggestion = Schemas['OrganizationSuggestion']
 ```
 
 ### `Passkey`
@@ -2745,6 +2818,34 @@ export type User = Schemas['CurrentUser']
 const user: User = await tula.user.get()
 ```
 
+### `UserOrganization`
+
+_type_, defined in `packages/core/src/types.ts`
+
+An organization the signed-in user belongs to, with their role in it and its permission
+keys (ADR 0065).
+
+```ts
+export type UserOrganization = Schemas['UserOrganization']
+```
+
+**Example**
+
+```ts
+const { data } = await tula.organizations.list()
+const admin = data.find((org) => org.role === 'admin')
+```
+
+### `UserOrganizationList`
+
+_type_, defined in `packages/core/src/types.ts`
+
+A page of the user's organizations, with the session's active organization's id.
+
+```ts
+export type UserOrganizationList = Schemas['UserOrganizationList']
+```
+
 ### `createTulaExpoClient`
 
 _function_, defined in `packages/expo/src/native.ts`
@@ -3065,6 +3166,36 @@ leaves the step unchanged, with nothing counted against the attempt.
 
 ```ts
 const outcome = await openEmailLink(tula, flow, url)
+```
+
+### `readInvitationLink`
+
+_function_, defined in `packages/core/src/invitation.ts`
+
+Read the invitation token from the URL an emailed invitation link leads to.
+
+The token travels in the URL fragment (`#tula_invitation=…`), which a browser never sends to
+a server, so it is in no log and in no `Referer`. Read it, then replace the address bar with
+`cleanUrl` (`history.replaceState`) so that the token is not left in the history.
+
+```ts
+export function readInvitationLink(url: string): InvitationLink | null
+```
+
+**Parameters**
+
+- `url`: The page's URL, e.g. `window.location.href`.
+
+**Returns** The token and the URL without it, or `null` when the URL carries no token.
+
+**Example**
+
+```ts
+const link = readInvitationLink(window.location.href)
+if (link) {
+  history.replaceState(null, '', link.cleanUrl)
+  const { organizationName } = await tula.organizations.invitations.preview(link.token)
+}
 ```
 
 ### `requestEmailLink`

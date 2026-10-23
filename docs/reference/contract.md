@@ -3926,7 +3926,7 @@ _constant_, defined in `packages/contract/src/user.ts`
 
 What became of one row. `index` is the row's place in the request, so the answer can be
 matched to the file it came from. A `created` row has the user's `id`, a `skipped` one a
-`reason`, a `refused` one a contract error `code` (an `import.*` code, `email.invalid`,
+`reason` (and, for `email_exists`, the existing user's `id` and `sameExternalId`), a `refused` one a contract error `code` (an `import.*` code, `email.invalid`,
 …) and its default message.
 
 ```ts

@@ -12,7 +12,7 @@ To change a page, change the JSDoc (for a native SDK, the doc comment) and run
 | [`@tula-tech/core`](core.md) | `@tula-tech/core` | 104 |
 | [`@tula-tech/react`](react.md) | `@tula-tech/react` | 93 |
 | [`@tula-tech/nextjs`](nextjs.md) | `@tula-tech/nextjs`, `@tula-tech/nextjs/server`, `@tula-tech/nextjs/middleware`, `@tula-tech/nextjs/handlers` | 96 |
-| [`@tula-tech/expo`](expo.md) | `@tula-tech/expo`, `@tula-tech/expo/passkeys`, `@tula-tech/expo/browser`, `@tula-tech/expo/apple`, `@tula-tech/expo/google`, `@tula-tech/expo/device-key`, `@tula-tech/expo/plugin` | 85 |
+| [`@tula-tech/expo`](expo.md) | `@tula-tech/expo`, `@tula-tech/expo/passkeys`, `@tula-tech/expo/browser`, `@tula-tech/expo/apple`, `@tula-tech/expo/google`, `@tula-tech/expo/device-key`, `@tula-tech/expo/plugin` | 94 |
 | [`@tula-tech/expo-screens`](expo-screens.md) | `@tula-tech/expo-screens`, `@tula-tech/expo-screens/plugin` | 19 |
 | [`@tula-tech/admin`](admin.md) | `@tula-tech/admin` | 42 |
 | [`@tula-tech/config`](config.md) | `@tula-tech/config` | 36 |
@@ -27,9 +27,9 @@ Kotlin toolchain). The generated types of the client API are not listed.
 
 | Module | Language | Sources | Declarations | Without a doc comment |
 | --- | --- | --- | --- | --- |
-| [`TulaAuth`](swift.md) | Swift | `native/swift/Sources/TulaAuth` | 272 | 0 |
+| [`TulaAuth`](swift.md) | Swift | `native/swift/Sources/TulaAuth` | 310 | 0 |
 | [`TulaAuthUI`](swift.md) | Swift | `native/swift/Sources/TulaAuthUI` | 696 | 0 |
-| [`tula-auth`](kotlin.md) | Kotlin | `native/android/tula-auth/src/main/kotlin` | 222 | 1 |
+| [`tula-auth`](kotlin.md) | Kotlin | `native/android/tula-auth/src/main/kotlin` | 254 | 1 |
 | [`tula-auth-ui`](kotlin.md) | Kotlin | `native/android/tula-auth-ui/src/main/kotlin` | 242 | 0 |
 | [`tula-auth-compose`](kotlin.md) | Kotlin | `native/android/tula-auth-compose/src/main/kotlin` | 39 | 0 |
 | [`tula-auth-android`](kotlin.md) | Kotlin | `native/android/tula-auth-android/src/main/kotlin` | 12 | 0 |

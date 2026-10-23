@@ -99,6 +99,33 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         await ctx.log.listAudit(tenant.environmentId, { targetId: userId, page: 1, size: 50 })
       ).entries.map((entry) => entry.type)
 
+    describe('the match an import makes for a taken address (ADR 0066)', () => {
+      test('gives the id and the external id, in this environment only', async () => {
+        const withId = user(ctx.a, { externalId: 'src_1' })
+        const without = user(ctx.a)
+        await ctx.users.create(withId, Audit.none('fixture'))
+        await ctx.users.create(without, Audit.none('fixture'))
+        expect(
+          await ctx.users.findImportMatch(ctx.a.environmentId, withId.emailNormalized)
+        ).toEqual({
+          id: withId.id,
+          externalId: 'src_1',
+        })
+        expect(
+          await ctx.users.findImportMatch(ctx.a.environmentId, without.emailNormalized)
+        ).toEqual({
+          id: without.id,
+          externalId: null,
+        })
+        expect(
+          await ctx.users.findImportMatch(ctx.b.environmentId, withId.emailNormalized)
+        ).toBeNull()
+        expect(
+          await ctx.users.findImportMatch(ctx.a.environmentId, 'nobody@northline.app')
+        ).toBeNull()
+      })
+    })
+
     describe('a texted code as the second factor', () => {
       const NUMBER = '+14155550100'
       const OTHER = '+4915112345678'

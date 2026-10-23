@@ -450,7 +450,10 @@ both. Until a guide covers the server's side, add members from your server with
 
 These are outside this version on purpose, so that you do not look for them: SAML and SCIM,
 billing and plans, settings or branding that differ per organization, nested organizations, DNS
-verification of a domain, and native organization screens in the Swift, Kotlin and Expo SDKs.
+verification of a domain, and prebuilt organization screens in the Swift, Kotlin and Expo SDKs.
+Their clients have the calls (`organizations` on each) but draw nothing: see
+[Swift](swift.md#organizations), [Kotlin](kotlin.md#organizations) and
+[Expo](expo.md#organizations).
 
 ## See also
 

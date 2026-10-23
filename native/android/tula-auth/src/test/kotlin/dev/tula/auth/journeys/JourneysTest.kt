@@ -24,6 +24,11 @@ import dev.tula.auth.generated.FlowKind
 import dev.tula.auth.generated.FlowStep
 import dev.tula.auth.generated.PreparedFirstFactorStrategy
 import dev.tula.auth.runTest
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.JsonArray
+import dev.tula.auth.generated.OrganizationSuggestion
+import dev.tula.auth.generated.OrganizationInvitationStatus
+import dev.tula.auth.TulaInvitationLink
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -3517,6 +3522,319 @@ class JourneysTest {
             // This environment has no origin, so there is no last line and the sentence is all.
             assertEquals("Welcome to Tula. Use $code now", world.texts(number).last())
             assertEquals(number, app.tula.phone.verify(code).phoneNumber)
+        }
+
+    /** Switch organizations on, as an operator saves the settings. */
+    private fun organizationsOn(world: World, allowUserCreated: Boolean = false, redirectUrls: List<String>? = null) =
+        world.settings {
+            val on = it.with(
+                "organizations",
+                value = j(
+                    """{"enabled":true,"allowUserCreated":$allowUserCreated,"maxCreatedPerUser":1,""" +
+                        """"creatorRole":"admin","defaultRole":"member","personalAccount":true}""",
+                ),
+            )
+            if (redirectUrls == null) {
+                on
+            } else {
+                on.with("urls", "allowedRedirectUrls", value = JsonArray(redirectUrls.map { url -> JsonPrimitive(url) }))
+            }
+        }
+
+    /** An organization an operator made; returns its id. */
+    private fun operatorOrganization(world: World, name: String, slug: String): String {
+        val made = world.admin("POST", "/v1/admin/organizations", """{"name":"$name","slug":"$slug"}""")
+        World.expect(201, made)
+        return made.json.jsonObject.getValue("id").jsonPrimitive.content
+    }
+
+    /** The active organization an app would read from the token its session holds. */
+    private suspend fun organizationClaims(app: Account): Triple<String?, String?, List<String>?> {
+        val token = claims(app.tula.session.getToken())
+        return Triple(
+            (token["org_id"] as? JsonPrimitive)?.content,
+            (token["org_role"] as? JsonPrimitive)?.content,
+            (token["org_perms"] as? JsonArray)?.map { entry -> entry.jsonPrimitive.content },
+        )
+    }
+
+    /** The link of the newest invitation email sent to [address], and what an app reads from it. */
+    private fun invitationOf(world: World, address: String): Pair<String, TulaInvitationLink> {
+        val mail = world.outbox(address).last { it.getValue("subject").jsonPrimitive.content.contains("invited") }
+        val text = mail.getValue("text").jsonPrimitive.content
+        val link = Regex("https?://\\S+#tula_invitation=\\S+").find(text)?.value
+            ?: throw AssertionError("no invitation link in the email")
+        return link to assertNotNull(TulaInvitationLink.read(link))
+    }
+
+    @Test
+    @Journey("my organizations and the active organization")
+    fun `organizations - a user lists theirs, creates one where allowed and chooses the one the session acts in, the token carries it and a removed member keeps the session without it`() =
+        journey { world ->
+            val app = signUp(world)
+            val userId = app.tula.user().id
+            val orgs = app.tula.organizations
+
+            // Off by default: every call answers its code and nothing changes.
+            assertEquals("organization.disabled", caught { orgs.list() }.code)
+            assertEquals("organization.disabled", caught { orgs.setActive(null) }.code)
+            assertEquals("organization.disabled", caught { orgs.create("Mine", "mine-$userId") }.code)
+
+            organizationsOn(world)
+            assertEquals("organization.creation_disabled", caught { orgs.create("Mine", "mine-$userId") }.code)
+            val empty = orgs.list()
+            assertEquals(emptyList(), empty.data)
+            assertNull(empty.activeOrganizationId)
+
+            val orgId = operatorOrganization(world, "Conformance Org", "conformance-$userId")
+            val otherId = operatorOrganization(world, "Elsewhere", "elsewhere-$userId")
+            // A second user keeps an administrator in the organization, so the first can be demoted.
+            val manager = world.admin("POST", "/v1/admin/users", """{"email":"${world.freshEmail()}","emailVerified":true}""")
+            World.expect(201, manager)
+            val memberships = "/v1/admin/organizations/$orgId/memberships"
+            val managerId = manager.json.jsonObject.getValue("id").jsonPrimitive.content
+            World.expect(201, world.admin("POST", memberships, """{"userId":"$managerId","role":"admin"}"""))
+            World.expect(201, world.admin("POST", memberships, """{"userId":"$userId","role":"member"}"""))
+
+            val page = orgs.list()
+            assertEquals(listOf(orgId), page.data.map { it.id })
+            assertEquals(listOf("member"), page.data.map { it.role })
+            assertNull(page.activeOrganizationId)
+            assertNull(organizationClaims(app).first)
+            assertNull(orgs.active())
+
+            // One that is not theirs, and one that does not exist, are refused alike.
+            val refused = caught { orgs.setActive(otherId) }
+            assertEquals("organization.not_a_member", refused.code)
+            assertEquals(403, refused.status)
+            assertEquals(refused.code, caught { orgs.setActive(userId) }.code)
+            assertNull(organizationClaims(app).first, "a refused choice changes nothing")
+
+            // Choosing asks for no refresh: the answer carries the access token.
+            val refreshes = world.refreshes().size
+            val storedBefore = app.device.storage.get(world.storageKey)
+            assertEquals(orgId, orgs.setActive(orgId).organizationId)
+            assertEquals(refreshes, world.refreshes().size)
+            var now = organizationClaims(app)
+            assertEquals(orgId, now.first)
+            assertEquals("member", now.second)
+            val active = assertNotNull(orgs.active())
+            assertEquals(orgId, active.organizationId)
+            assertEquals(page.data[0].permissions, active.permissions, "the token says what the list said")
+            assertTrue(orgs.hasRole("member"))
+            assertFalse(orgs.hasRole("admin"))
+            assertFalse(orgs.hasPermission("org:invented:thing"))
+            page.data[0].permissions.firstOrNull()?.let { held -> assertTrue(orgs.hasPermission(held)) }
+            assertEquals(orgId, orgs.list().activeOrganizationId)
+            // The refresh token is the one it was: choosing rotated nothing.
+            assertNotNull(storedBefore)
+            assertEquals(storedBefore, app.device.storage.get(world.storageKey))
+
+            // A refresh keeps the choice and reads the membership again.
+            world.advance(1_000)
+            app.tula.session.refresh()
+            now = organizationClaims(app)
+            assertEquals(orgId, now.first)
+            assertEquals("member", now.second)
+            val membership = "$memberships/$userId"
+            World.expect(200, world.admin("PATCH", membership, """{"role":"admin"}"""))
+            world.advance(1_000)
+            app.tula.session.refresh()
+            assertEquals("admin", organizationClaims(app).second)
+            assertTrue(orgs.hasRole("admin"))
+            World.expect(200, world.admin("PATCH", membership, """{"role":"member"}"""))
+            world.advance(1_000)
+            app.tula.session.refresh()
+            assertEquals("member", organizationClaims(app).second)
+
+            // Removed: the session lives on, its next token has no organization.
+            World.expect(204, world.admin("DELETE", membership))
+            world.advance(1_000)
+            app.tula.session.refresh()
+            now = organizationClaims(app)
+            assertNull(now.first)
+            assertNull(now.second)
+            assertNull(now.third)
+            assertNull(orgs.active())
+            assertIs<AuthState.SignedIn>(app.tula.state.value)
+            assertEquals("organization.not_a_member", caught { orgs.setActive(orgId) }.code)
+            assertNull(orgs.clearActive().organizationId)
+
+            // Creating needs the setting, makes the user its admin, stops at the limit and
+            // does not switch the session.
+            organizationsOn(world, allowUserCreated = true)
+            assertEquals("organization.slug_taken", caught { orgs.create("Taken", "conformance-$userId") }.code)
+            val mine = orgs.create("Mine", "mine-$userId")
+            assertEquals("mine-$userId", mine.slug)
+            assertEquals("admin", mine.role)
+            assertEquals("organization.limit_reached", caught { orgs.create("Again", "again-$userId") }.code)
+            assertNull(organizationClaims(app).first, "creating did not switch the session")
+            orgs.setActive(mine.id)
+            now = organizationClaims(app)
+            assertEquals(mine.id, now.first)
+            assertEquals("admin", now.second)
+            assertNull(orgs.clearActive().organizationId)
+            assertNull(organizationClaims(app).first)
+        }
+
+    @Test
+    @Journey("organization invitations")
+    fun `organization invitations - an administrator invites an address, the emailed link carries the token in its fragment, only the invited account answers, and a withdrawn or used invitation is refused`() =
+        journey { world ->
+            val join = "https://app.conformance.example/join"
+            organizationsOn(world, allowUserCreated = true, redirectUrls = listOf(join))
+            val owner = signUp(world)
+            val ada = signUp(world)
+            val stranger = signUp(world)
+            val org = owner.tula.organizations.create("Acme", "acme")
+            val invitations = owner.tula.organizations.invitations
+
+            // An invitation: the email goes to the address and the link leads to the redirect URL.
+            val sent = invitations.invite(org.id, ada.email, "member", join)
+            assertEquals(org.id, sent.organizationId)
+            assertEquals("member", sent.role)
+            assertEquals(OrganizationInvitationStatus.Pending, sent.status)
+            val (firstLink, first) = invitationOf(world, ada.email)
+            assertTrue(firstLink.startsWith("$join#tula_invitation="))
+            assertEquals(join, first.cleanUrl)
+            val token = first.token
+            assertTrue(token.isNotEmpty())
+
+            // The API's answers never hold the token.
+            assertEquals(listOf(sent.id), invitations.list(org.id).data.map { it.id })
+            for (exchange in world.exchanges) {
+                assertFalse(exchange.responseBody.contains(token), "${exchange.path} answered the token")
+                assertFalse(exchange.path.contains(token), "the token was put in a URL")
+            }
+            assertEquals("organization.invitation_exists", caught { invitations.invite(org.id, ada.email, "member", join) }.code)
+            assertEquals(
+                "request.redirect_not_allowed",
+                caught { invitations.invite(org.id, world.freshEmail(), "member", "https://evil.test/join") }.code,
+            )
+            assertEquals("organization.role_unknown", caught { invitations.invite(org.id, world.freshEmail(), "ghost", join) }.code)
+
+            // Anyone with the token may see what it is for, signed in or not.
+            val visitor = world.client()
+            val shown = visitor.tula.organizations.invitations.preview(token)
+            assertEquals("Acme", shown.organizationName)
+            assertEquals("member", shown.role)
+            assertEquals(ada.email, shown.email)
+            assertEquals("organization.invitation_not_found", caught { visitor.tula.organizations.invitations.preview("nothing") }.code)
+            // Accepting needs a session.
+            assertEquals("auth.unauthenticated", caught { visitor.tula.organizations.invitations.accept(token) }.code)
+
+            // Only the invited account answers.
+            assertEquals("organization.invitation_wrong_account", caught { stranger.tula.organizations.invitations.accept(token) }.code)
+            assertEquals("organization.invitation_wrong_account", caught { stranger.tula.organizations.invitations.decline(token) }.code)
+            val joined = ada.tula.organizations.invitations.accept(token)
+            assertEquals(org.id, joined.id)
+            assertEquals("member", joined.role)
+            val theirs = ada.tula.organizations.list()
+            assertEquals(listOf(org.id), theirs.data.map { it.id })
+            // Joining did not switch the session.
+            assertNull(theirs.activeOrganizationId)
+            assertEquals("organization.invitation_used", caught { ada.tula.organizations.invitations.accept(token) }.code)
+            assertEquals("organization.invitation_used", caught { ada.tula.organizations.invitations.decline(token) }.code)
+            assertEquals("organization.invitation_used", caught { visitor.tula.organizations.invitations.preview(token) }.code)
+            assertEquals(emptyList(), invitations.list(org.id).data)
+
+            // A member whose role cannot manage invitations cannot invite or list.
+            val refusedInvite = caught { ada.tula.organizations.invitations.invite(org.id, world.freshEmail(), "member", join) }
+            assertEquals("organization.permission_required", refusedInvite.code)
+            assertEquals(403, refusedInvite.status)
+            assertEquals("organization.permission_required", caught { ada.tula.organizations.invitations.list(org.id) }.code)
+            // A user who is no member at all is told so, not that the organization is missing.
+            assertEquals("organization.not_a_member", caught { stranger.tula.organizations.invitations.list(org.id) }.code)
+            // And a member cannot be invited again.
+            assertEquals("organization.member_exists", caught { invitations.invite(org.id, ada.email, "admin", join) }.code)
+
+            // Declining uses it up.
+            val declined = invitations.invite(org.id, stranger.email, "admin", join)
+            val declinedToken = invitationOf(world, stranger.email).second.token
+            assertEquals("organization.invitation_wrong_account", caught { ada.tula.organizations.invitations.accept(declinedToken) }.code)
+            stranger.tula.organizations.invitations.decline(declinedToken)
+            assertEquals("organization.invitation_used", caught { stranger.tula.organizations.invitations.accept(declinedToken) }.code)
+            assertEquals("organization.invitation_used", caught { invitations.revoke(org.id, declined.id) }.code)
+            assertEquals(emptyList(), stranger.tula.organizations.list().data, "declining joins nobody")
+
+            // Withdrawing makes the link say so.
+            val thirdEmail = world.freshEmail()
+            val withdrawn = invitations.invite(org.id, thirdEmail, "member", join)
+            val withdrawnToken = invitationOf(world, thirdEmail).second.token
+            invitations.revoke(org.id, withdrawn.id)
+            assertEquals("organization.invitation_revoked", caught { visitor.tula.organizations.invitations.preview(withdrawnToken) }.code)
+            assertEquals("organization.invitation_revoked", caught { invitations.revoke(org.id, withdrawn.id) }.code)
+
+            // An invitation lasts seven days.
+            val lapsingEmail = world.freshEmail()
+            invitations.invite(org.id, lapsingEmail, "member", join)
+            val lapsingToken = invitationOf(world, lapsingEmail).second.token
+            world.advance((7 * 24 * 3600 + 1) * 1_000L)
+            assertEquals("organization.invitation_expired", caught { visitor.tula.organizations.invitations.preview(lapsingToken) }.code)
+
+            // The token reached the API in request bodies only: no path, no header, and no
+            // answer holds one.
+            for (exchange in world.exchanges) {
+                for (secret in listOf(token, declinedToken, withdrawnToken, lapsingToken)) {
+                    assertFalse(exchange.path.contains(secret))
+                    assertFalse(exchange.headers.values.any { it.contains(secret) })
+                    assertFalse(exchange.responseBody.contains(secret))
+                }
+            }
+        }
+
+    @Test
+    @Journey("verified domains: suggest and auto-join")
+    fun `verified domains - an address on an organization's verified domain joins it at sign-up or is offered it, the server decides again, and a removed domain offers and joins nobody`() =
+        journey { world ->
+            organizationsOn(world)
+            val orgId = operatorOrganization(world, "Domain Org", "domain-org")
+            val domain = "corp-${orgId.takeLast(8)}.example"
+            val base = "/v1/admin/organizations/$orgId/domains"
+            val claimed = world.admin("POST", base, """{"domain":"$domain","email":"ada@$domain","mode":"auto_join"}""")
+            World.expect(201, claimed)
+            val domainId = claimed.json.jsonObject.getValue("id").jsonPrimitive.content
+
+            // Until the code is entered the claim grants nothing.
+            val early = signUp(world, "early@$domain")
+            assertEquals(emptyList(), early.tula.organizations.list().data)
+            assertEquals(emptyList(), early.tula.organizations.suggestions().data)
+            World.expect(422, world.admin("POST", "$base/$domainId/verify", """{"code":"000000"}"""))
+            World.expect(200, world.admin("POST", "$base/$domainId/verify", """{"code":"${world.code("ada@$domain")}"}"""))
+
+            // Auto-join: a new account with a verified address on the domain is a member.
+            val maya = signUp(world, "maya@$domain")
+            val mine = maya.tula.organizations.list()
+            assertEquals(listOf(orgId), mine.data.map { it.id })
+            assertEquals(listOf("member"), mine.data.map { it.role })
+            assertEquals(emptyList(), maya.tula.organizations.suggestions().data, "a member is not offered what they are in")
+
+            // Another domain is offered nothing and cannot join; the account from before the
+            // domain was verified was not joined.
+            val stranger = signUp(world)
+            assertEquals(emptyList(), stranger.tula.organizations.suggestions().data)
+            assertEquals("organization.suggestion_unavailable", caught { stranger.tula.organizations.join(orgId) }.code)
+            assertEquals(emptyList(), early.tula.organizations.list().data)
+
+            // Suggest: the organization is offered, by name, and the user joins it once.
+            World.expect(200, world.admin("PATCH", "$base/$domainId", """{"mode":"suggest"}"""))
+            val kai = signUp(world, "kai@$domain")
+            assertEquals(emptyList(), kai.tula.organizations.list().data)
+            val offered = kai.tula.organizations.suggestions()
+            assertEquals(listOf(OrganizationSuggestion(orgId, "Domain Org", "domain-org")), offered.data)
+            val joined = kai.tula.organizations.join(orgId)
+            assertEquals(orgId, joined.id)
+            assertEquals("member", joined.role)
+            assertNull(kai.tula.organizations.active(), "joining did not switch the session")
+            assertEquals("organization.member_exists", caught { kai.tula.organizations.join(orgId) }.code)
+
+            // Removed: nobody is offered it or joined to it any more, and members stay.
+            World.expect(204, world.admin("DELETE", "$base/$domainId"))
+            assertEquals("organization.suggestion_unavailable", caught { early.tula.organizations.join(orgId) }.code)
+            val afterwards = signUp(world, "late@$domain")
+            assertEquals(emptyList(), afterwards.tula.organizations.list().data)
+            assertEquals(emptyList(), afterwards.tula.organizations.suggestions().data)
+            assertEquals(1, maya.tula.organizations.list().data.size)
         }
 
     private fun String.refreshToken(): String? =

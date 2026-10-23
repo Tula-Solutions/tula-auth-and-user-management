@@ -943,14 +943,10 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-121",
-        "reason": "the Swift client has no call for the signed-in user's organizations, the active organization or its token claims yet; `GET`, `POST` and `PUT` of `/v1/client/me/organizations` are built there by TULA-121 (Orgs 09: organizations in the Swift, Kotlin and Expo clients)."
+        "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-121",
-        "reason": "the Kotlin client has no call for the signed-in user's organizations, the active organization or its token claims yet; `GET`, `POST` and `PUT` of `/v1/client/me/organizations` are built there by TULA-121 (Orgs 09: organizations in the Swift, Kotlin and Expo clients)."
+        "decision": "journey"
       }
     },
     "native Apple ID token refused": {
@@ -1095,14 +1091,10 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-121",
-        "reason": "the Swift client has no call for an organization's invitations (sending, listing, withdrawing, previewing, accepting or declining one) yet; they are built there by TULA-121 (Orgs 09: organizations in the Swift, Kotlin and Expo clients)."
+        "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-121",
-        "reason": "the Kotlin client has no call for an organization's invitations (sending, listing, withdrawing, previewing, accepting or declining one) yet; they are built there by TULA-121 (Orgs 09: organizations in the Swift, Kotlin and Expo clients)."
+        "decision": "journey"
       }
     },
     "organization members and roles from the client": {
@@ -1115,12 +1107,12 @@
       "swift": {
         "decision": "not_built",
         "ticket": "TULA-121",
-        "reason": "the Swift client has no call for an organization's members, the roles a member may give, renaming, deleting or leaving an organization yet; they are built there by TULA-121 (Orgs 09: organizations in the Swift, Kotlin and Expo clients)."
+        "reason": "the Swift client has no call for an organization's members, the roles a member may give, renaming, deleting or leaving an organization yet; TULA-121 built the list, the switch and the invitation answers, and these calls are the follow-up to it (member management for the native clients)."
       },
       "kotlin": {
         "decision": "not_built",
         "ticket": "TULA-121",
-        "reason": "the Kotlin client has no call for an organization's members, the roles a member may give, renaming, deleting or leaving an organization yet; they are built there by TULA-121 (Orgs 09: organizations in the Swift, Kotlin and Expo clients)."
+        "reason": "the Kotlin client has no call for an organization's members, the roles a member may give, renaming, deleting or leaving an organization yet; TULA-121 built the list, the switch and the invitation answers, and these calls are the follow-up to it (member management for the native clients)."
       }
     },
     "passkey assertion replay": {
@@ -1859,14 +1851,10 @@
         "decision": "journey"
       },
       "swift": {
-        "decision": "not_built",
-        "ticket": "TULA-121",
-        "reason": "the Swift client has no call for the organizations a verified address is suggested or for joining one yet; `GET /v1/client/me/organizations/suggestions` and `POST /v1/client/me/organizations/suggestions/{organizationId}/join` are built there by TULA-121 (Orgs 09: organizations in the Swift, Kotlin and Expo clients)."
+        "decision": "journey"
       },
       "kotlin": {
-        "decision": "not_built",
-        "ticket": "TULA-121",
-        "reason": "the Kotlin client has no call for the organizations a verified address is suggested or for joining one yet; `GET /v1/client/me/organizations/suggestions` and `POST /v1/client/me/organizations/suggestions/{organizationId}/join` are built there by TULA-121 (Orgs 09: organizations in the Swift, Kotlin and Expo clients)."
+        "decision": "journey"
       }
     },
     "webhook delivered and signed": {
