@@ -732,7 +732,9 @@ _function_, defined in `packages/react/src/components/organization-switcher.tsx`
 
 The organization the session acts in, and a panel to change it: the user's organizations,
 "Personal account" where the environment allows it, the organizations their verified email
-address may join, an invitation the app handed over (`invitationToken`), "Manage
+address may join, the invitations sent to that address (listed when the panel opens, each
+with "Accept" and "Decline", answered by its id: no token is involved), an invitation the app
+handed over (`invitationToken`), "Manage
 organization" and "Create organization". Renders nothing while signed out and where the
 environment has organizations off.
 
@@ -1827,6 +1829,44 @@ export interface TulaClient {
        * ```
        */
       decline(token: string): Promise<void>
+      /**
+       * The pending invitations addressed to the signed-in user's own verified address, newest
+       * first: an `id`, the organization's name, the role's key and the expiry, never a token.
+       * Only the first page: the client sends no paging query yet. An unverified address
+       * has none.
+       *
+       * @returns The page.
+       * @throws TulaError `organization.disabled`, `auth.unauthenticated`.
+       * @example
+       * ```ts
+       * const { data } = await tula.organizations.invitations.mine()
+       * ```
+       */
+      mine(): Promise<MyOrganizationInvitationList>
+      /**
+       * Join the organization of an invitation listed by `mine()`, by its id. The same checks as
+       * `accept`: an id that is not the user's own answers `organization.invitation_not_found`.
+       *
+       * @param invitationId - The `id` from `mine()`.
+       * @returns The organization joined, with the role and its permission keys.
+       * @throws TulaError As `accept`.
+       * @example
+       * ```ts
+       * const org = await tula.organizations.invitations.acceptMine(invitation.id)
+       * ```
+       */
+      acceptMine(invitationId: string): Promise<AcceptedInvitation>
+      /**
+       * Turn down an invitation listed by `mine()`, by its id.
+       *
+       * @param invitationId - The `id` from `mine()`.
+       * @throws TulaError As `decline`.
+       * @example
+       * ```ts
+       * await tula.organizations.invitations.declineMine(invitation.id)
+       * ```
+       */
+      declineMine(invitationId: string): Promise<void>
     }
   }
   /** The signed-in user. */
@@ -2704,6 +2744,14 @@ export interface TulaLocalization {
     invitationAccept: string
     invitationDecline: string
     invitationDeclined: string
+    /** The heading over the invitations addressed to the user's verified address. */
+    pendingInvitationsTitle: string
+    /** `{organization}`, `{role}`. One invitation in that list. */
+    pendingInvitationText: string
+    /** `{name}`. The accessible name of "Accept" in that list. */
+    pendingInvitationAcceptLabel: string
+    /** `{name}`. The accessible name of "Decline" in that list. */
+    pendingInvitationDeclineLabel: string
     create: string
     manage: string
     close: string

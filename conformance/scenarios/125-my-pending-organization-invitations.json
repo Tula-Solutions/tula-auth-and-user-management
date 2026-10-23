@@ -1,0 +1,707 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "my pending organization invitations",
+  "description": "A signed-in user lists the invitations sent to their own verified address and answers one by its id, with no token. The list holds the invitation’s id, the organization’s name, the role’s key and the expiry and nothing else: not the token, the address or the organization’s id, and not another user’s invitation. Another account that presents the id is told organization.invitation_not_found, as for an id nothing was issued for, so the route cannot show whether someone else was invited. Accepting by id makes the user a member with the invitation’s role and uses the invitation up (organization.invitation_used); declining uses it up without a membership; a withdrawn one answers organization.invitation_revoked and is not listed. The list needs a session, is paged and answers organization.disabled while organizations are off. Not shown here, and covered by the API’s tests: an expired invitation, an unverified address, and the step-up that deleting an organization needs (auth.step_up_required for a session that has not proven itself in the last ten minutes: a scenario cannot age a session). The original settings are put back afterwards, even when a step fails.",
+  "needsSecretKey": true,
+  "variables": {
+    "email": {
+      "generate": "email"
+    },
+    "strangerEmail": {
+      "generate": "email"
+    },
+    "password": {
+      "generate": "password"
+    },
+    "suffix": {
+      "generate": "snowflake"
+    },
+    "missingId": {
+      "generate": "uuid"
+    },
+    "redirect": "https://app.conformance.example/join"
+  },
+  "steps": [
+    {
+      "name": "invitee: start a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{email}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "inviteeSignUp": "id",
+        "inviteeSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "invitee: read the emailed code",
+      "emailCode": {
+        "to": "{{email}}",
+        "capture": "inviteeCode"
+      }
+    },
+    {
+      "name": "invitee: verify the address",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{inviteeSignUp}}/verify-email",
+        "body": {
+          "code": "{{inviteeCode}}"
+        },
+        "attempt": "{{inviteeSecret}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          },
+          "session": {
+            "accessToken": "$any"
+          }
+        }
+      },
+      "capture": {
+        "inviteeId": "step.userId",
+        "inviteeToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "stranger: start a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "{{strangerEmail}}",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "strangerSignUp": "id",
+        "strangerSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "stranger: read the emailed code",
+      "emailCode": {
+        "to": "{{strangerEmail}}",
+        "capture": "strangerCode"
+      }
+    },
+    {
+      "name": "stranger: verify the address",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{strangerSignUp}}/verify-email",
+        "body": {
+          "code": "{{strangerCode}}"
+        },
+        "attempt": "{{strangerSecret}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          },
+          "session": {
+            "accessToken": "$any"
+          }
+        }
+      },
+      "capture": {
+        "strangerId": "step.userId",
+        "strangerToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "appSettings": "settings.app",
+        "passwordSettings": "settings.password",
+        "signInSettings": "settings.signIn",
+        "signUpSettings": "settings.signUp",
+        "origins": "settings.urls.allowedOrigins",
+        "auditSettings": "settings.audit",
+        "notificationsSettings": "settings.notifications",
+        "mfaSettings": "settings.mfa",
+        "passkeysSettings": "settings.passkeys",
+        "smsSettings": "settings.sms",
+        "emailsSettings": "settings.emails"
+      }
+    },
+    {
+      "name": "with organizations off, listing my invitations answers a code",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organization-invitations",
+        "accessToken": "{{inviteeToken}}"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.disabled"
+        }
+      }
+    },
+    {
+      "name": "and so does answering one by its id",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organization-invitations/{{missingId}}/accept",
+        "accessToken": "{{inviteeToken}}"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.disabled"
+        }
+      }
+    },
+    {
+      "name": "an administrator switches organizations on and allows the redirect URL",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{appSettings}}"
+          },
+          "password": {
+            "$json": "{{passwordSettings}}"
+          },
+          "signIn": {
+            "$json": "{{signInSettings}}"
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "allowedOrigins": {
+              "$json": "{{origins}}"
+            },
+            "allowedRedirectUrls": ["{{redirect}}"]
+          },
+          "audit": {
+            "$json": "{{auditSettings}}"
+          },
+          "notifications": {
+            "$json": "{{notificationsSettings}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "$json": "{{passkeysSettings}}"
+          },
+          "sms": {
+            "$json": "{{smsSettings}}"
+          },
+          "emails": {
+            "$json": "{{emailsSettings}}"
+          },
+          "organizations": {
+            "enabled": true,
+            "allowUserCreated": false,
+            "maxCreatedPerUser": 1,
+            "creatorRole": "admin",
+            "defaultRole": "member",
+            "personalAccount": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "organizations": {
+              "enabled": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "an administrator creates an organization",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations",
+        "auth": "secret",
+        "body": {
+          "name": "Conformance Org",
+          "slug": "conformance-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "orgId": "id"
+      }
+    },
+    {
+      "name": "listing my invitations needs a session",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organization-invitations"
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
+      "name": "answering one by its id needs a session",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organization-invitations/{{missingId}}/accept"
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
+      "name": "nobody has been invited yet: the list is empty",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organization-invitations",
+        "accessToken": "{{inviteeToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 0
+          }
+        },
+        "headers": {
+          "cache-control": "no-store"
+        }
+      }
+    },
+    {
+      "name": "a page below the first is refused",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organization-invitations?page=0",
+        "accessToken": "{{inviteeToken}}"
+      },
+      "expect": {
+        "status": 422
+      }
+    },
+    {
+      "name": "an administrator invites the first user as an administrator",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/invitations",
+        "auth": "secret",
+        "body": {
+          "email": "{{email}}",
+          "role": "admin",
+          "redirectUrl": "{{redirect}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "role": "admin"
+        }
+      },
+      "capture": {
+        "invitationId": "id"
+      }
+    },
+    {
+      "name": "the emailed link carries the token in its fragment",
+      "emailMessage": {
+        "to": "{{email}}",
+        "subjectContains": "invited to join",
+        "captureFragmentParam": {
+          "name": "tula_invitation",
+          "capture": "invitationToken",
+          "url": "{{redirect}}"
+        }
+      }
+    },
+    {
+      "name": "the invited user lists it: its id, the organization, the role and the expiry",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organization-invitations",
+        "accessToken": "{{inviteeToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1,
+            "page": 1
+          },
+          "data": [
+            {
+              "id": "{{invitationId}}",
+              "organizationName": "Conformance Org",
+              "role": "admin",
+              "expiresAt": "$any"
+            }
+          ]
+        },
+        "headers": {
+          "cache-control": "no-store"
+        },
+        "bodyExcludes": ["{{invitationToken}}", "{{email}}", "{{orgId}}", "tokenHash"]
+      }
+    },
+    {
+      "name": "another account sees none of it",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organization-invitations",
+        "accessToken": "{{strangerToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 0
+          }
+        },
+        "bodyExcludes": ["{{invitationId}}", "{{email}}"]
+      }
+    },
+    {
+      "name": "another account cannot accept it by its id",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organization-invitations/{{invitationId}}/accept",
+        "accessToken": "{{strangerToken}}"
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "code": "organization.invitation_not_found"
+        }
+      }
+    },
+    {
+      "name": "nor decline it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organization-invitations/{{invitationId}}/decline",
+        "accessToken": "{{strangerToken}}"
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "code": "organization.invitation_not_found"
+        }
+      }
+    },
+    {
+      "name": "an id nothing was issued for looks the same",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organization-invitations/{{missingId}}/accept",
+        "accessToken": "{{strangerToken}}"
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "code": "organization.invitation_not_found"
+        }
+      }
+    },
+    {
+      "name": "an id that is not one is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organization-invitations/not-an-id/accept",
+        "accessToken": "{{inviteeToken}}"
+      },
+      "expect": {
+        "status": 422
+      }
+    },
+    {
+      "name": "the invited user accepts it by its id: they join with its role",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organization-invitations/{{invitationId}}/accept",
+        "accessToken": "{{inviteeToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "id": "{{orgId}}",
+          "name": "Conformance Org",
+          "role": "admin"
+        },
+        "headers": {
+          "cache-control": "no-store"
+        }
+      }
+    },
+    {
+      "name": "the invitation is used up: accepting again",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organization-invitations/{{invitationId}}/accept",
+        "accessToken": "{{inviteeToken}}"
+      },
+      "expect": {
+        "status": 410,
+        "body": {
+          "code": "organization.invitation_used"
+        }
+      }
+    },
+    {
+      "name": "and declining it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organization-invitations/{{invitationId}}/decline",
+        "accessToken": "{{inviteeToken}}"
+      },
+      "expect": {
+        "status": 410,
+        "body": {
+          "code": "organization.invitation_used"
+        }
+      }
+    },
+    {
+      "name": "it is gone from the list",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organization-invitations",
+        "accessToken": "{{inviteeToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "the user is a member now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/organizations/{{orgId}}/memberships",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1
+          },
+          "data": [
+            {
+              "userId": "{{inviteeId}}",
+              "role": "admin"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "an administrator invites the second user as a member",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/invitations",
+        "auth": "secret",
+        "body": {
+          "email": "{{strangerEmail}}",
+          "role": "member",
+          "redirectUrl": "{{redirect}}"
+        }
+      },
+      "expect": {
+        "status": 201
+      },
+      "capture": {
+        "strangerInvitationId": "id"
+      }
+    },
+    {
+      "name": "the second user declines it by its id",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organization-invitations/{{strangerInvitationId}}/decline",
+        "accessToken": "{{strangerToken}}"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "a declined invitation cannot be accepted afterwards",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organization-invitations/{{strangerInvitationId}}/accept",
+        "accessToken": "{{strangerToken}}"
+      },
+      "expect": {
+        "status": 410,
+        "body": {
+          "code": "organization.invitation_used"
+        }
+      }
+    },
+    {
+      "name": "the second user is not a member",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations",
+        "accessToken": "{{strangerToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "an administrator invites the second user again, and withdraws it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/invitations",
+        "auth": "secret",
+        "body": {
+          "email": "{{strangerEmail}}",
+          "role": "member",
+          "redirectUrl": "{{redirect}}"
+        }
+      },
+      "expect": {
+        "status": 201
+      },
+      "capture": {
+        "withdrawnId": "id"
+      }
+    },
+    {
+      "name": "the withdrawal",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/organizations/{{orgId}}/invitations/{{withdrawnId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "a withdrawn invitation is not listed",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organization-invitations",
+        "accessToken": "{{strangerToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "and answers organization.invitation_revoked",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organization-invitations/{{withdrawnId}}/accept",
+        "accessToken": "{{strangerToken}}"
+      },
+      "expect": {
+        "status": 410,
+        "body": {
+          "code": "organization.invitation_revoked"
+        }
+      }
+    },
+    {
+      "name": "deleting the organization takes its invitations with it",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/organizations/{{orgId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

@@ -4,6 +4,7 @@ import { base32Encode } from './totp'
 import {
   DEFAULT_SANDBOX_SETTINGS,
   type SandboxAttempt,
+  type SandboxCustomRole,
   type SandboxEmail,
   type SandboxOrganization,
   type SandboxSession,
@@ -48,6 +49,27 @@ export const SANDBOX_PASSWORD_POLICY: Schemas['PasswordPolicy'] = {
   history: 0,
   expiryDays: null,
 }
+
+/**
+ * The custom roles (ADR 0065, "Custom roles") the sandbox's environment defines, beside the
+ * built-in `admin` and `member`: one that can read the member list and invite, nothing more.
+ * Anyone with `org:sys:invitations:manage` may offer a role that holds no more than they do, as
+ * on the real server.
+ */
+export const SANDBOX_CUSTOM_ROLES: readonly SandboxCustomRole[] = [
+  {
+    key: 'support',
+    name: 'Support',
+    permissions: ['org:sys:memberships:read', 'org:sys:invitations:manage'],
+  },
+]
+
+/**
+ * How many organizations one user may create through the client in the sandbox
+ * (`organizations.maxCreatedPerUser`; the real default is 5). Low enough to meet
+ * `organization.limit_reached` by hand.
+ */
+export const SANDBOX_MAX_CREATED_PER_USER = 3
 
 /** The demo accounts the sandbox starts with, and their shared password. */
 export const DEMO_PASSWORD = 'Sandbox-pass-42!'
@@ -197,6 +219,7 @@ function seedOrganizations(world: Pick<World, 'organizations' | 'now'>): void {
       members: members.map(([userId, role]) => ({ userId, role, createdAt: created })),
       invitations: [],
       domains: [],
+      createdBy: null,
       ...extra,
     })
   }

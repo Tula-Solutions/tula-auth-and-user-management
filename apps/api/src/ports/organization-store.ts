@@ -191,6 +191,13 @@ export interface InvitationRecord {
   updatedAt: Date
 }
 
+/** A pending invitation with the name of the organization it is to, for the invitee's list. */
+export interface PendingInvitationRecord {
+  record: InvitationRecord
+  /** The organization's name now. */
+  organizationName: string
+}
+
 /** What storing a new invitation came to. */
 export type InsertInvitationOutcome =
   | { outcome: 'created'; record: InvitationRecord }
@@ -517,6 +524,31 @@ export interface OrganizationStore {
     now: Date,
     page: PageCriteria
   ): Promise<Page<InvitationRecord>>
+
+  /**
+   * The pending, unexpired invitations sent to one address, across organizations, newest
+   * first. The caller has already decided that the address is the signed-in user's **and
+   * verified**; the store only matches it.
+   *
+   * @param environmentId - The environment to look in.
+   * @param emailNormalized - The invited address, normalized as `emailNormalized` is stored.
+   * @param now - The time the expiry is judged at.
+   * @param page - Which page.
+   * @returns The invitations with their organizations' names, and how many there are.
+   */
+  listPendingInvitationsForEmail(
+    environmentId: string,
+    emailNormalized: string,
+    now: Date,
+    page: PageCriteria
+  ): Promise<Page<PendingInvitationRecord>>
+
+  /**
+   * @param environmentId - The environment to look in.
+   * @param id - The invitation.
+   * @returns The invitation, or `null` when this environment has none with that id.
+   */
+  findInvitationById(environmentId: string, id: string): Promise<InvitationRecord | null>
 
   /**
    * @param environmentId - The environment to look in.

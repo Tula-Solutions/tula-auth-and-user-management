@@ -332,6 +332,21 @@ export type OrganizationInvitation = Schemas['OrganizationInvitation']
 /** A page of an organization's invitations. */
 export type OrganizationInvitationList = Schemas['OrganizationInvitationList']
 
+/**
+ * An invitation addressed to the signed-in user, as `organizations.invitations.mine()` lists it:
+ * its `id`, the organization's name, the role's key and the expiry; never a token.
+ *
+ * @example
+ * ```ts
+ * const { data } = await tula.organizations.invitations.mine()
+ * await tula.organizations.invitations.acceptMine(data[0].id)
+ * ```
+ */
+export type MyOrganizationInvitation = Schemas['MyOrganizationInvitation']
+
+/** A page of the invitations addressed to the signed-in user. */
+export type MyOrganizationInvitationList = Schemas['MyOrganizationInvitationList']
+
 /** The body of `organizations.invitations.invite()`: the address, a role's key and the page the link leads to. */
 export type CreateOrganizationInvitationInput = Schemas['CreateOrganizationInvitationRequest']
 

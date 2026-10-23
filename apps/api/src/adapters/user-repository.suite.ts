@@ -99,6 +99,29 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         await ctx.log.listAudit(tenant.environmentId, { targetId: userId, page: 1, size: 50 })
       ).entries.map((entry) => entry.type)
 
+    describe('a batch lookup by id', () => {
+      test('finds the users of this environment, in one call, and skips the rest', async () => {
+        const one = user(ctx.a)
+        const two = user(ctx.a)
+        const elsewhere = user(ctx.b)
+        await ctx.users.create(one, Audit.none('fixture'))
+        await ctx.users.create(two, Audit.none('fixture'))
+        await ctx.users.create(elsewhere, Audit.none('fixture'))
+        const found = await ctx.users.findByIds(ctx.a.environmentId, [
+          one.id,
+          two.id,
+          elsewhere.id,
+          Bun.randomUUIDv7(),
+          one.id,
+        ])
+        expect(found.map((row) => row.id).sort()).toEqual([one.id, two.id].sort())
+        expect(found.find((row) => row.id === one.id)).toEqual(
+          (await ctx.users.findById(ctx.a.environmentId, one.id)) ?? undefined
+        )
+        expect(await ctx.users.findByIds(ctx.a.environmentId, [])).toEqual([])
+      })
+    })
+
     describe('the match an import makes for a taken address (ADR 0066)', () => {
       test('gives the id and the external id, in this environment only', async () => {
         const withId = user(ctx.a, { externalId: 'src_1' })

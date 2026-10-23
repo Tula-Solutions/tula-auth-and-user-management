@@ -874,6 +874,34 @@ export type MfaPolicy = Schemas['MfaPolicy']
 const policy: MfaPolicy = (await tula.config.get()).mfa?.policy ?? 'off'
 ```
 
+### `MyOrganizationInvitation`
+
+_type_, defined in `packages/core/src/types.ts`
+
+An invitation addressed to the signed-in user, as `organizations.invitations.mine()` lists it:
+its `id`, the organization's name, the role's key and the expiry; never a token.
+
+```ts
+export type MyOrganizationInvitation = Schemas['MyOrganizationInvitation']
+```
+
+**Example**
+
+```ts
+const { data } = await tula.organizations.invitations.mine()
+await tula.organizations.invitations.acceptMine(data[0].id)
+```
+
+### `MyOrganizationInvitationList`
+
+_type_, defined in `packages/core/src/types.ts`
+
+A page of the invitations addressed to the signed-in user.
+
+```ts
+export type MyOrganizationInvitationList = Schemas['MyOrganizationInvitationList']
+```
+
 ### `OAuthCallbackOutcome`
 
 _type_, defined in `packages/core/src/oauth.ts`
@@ -2551,6 +2579,44 @@ export interface TulaClient {
        * ```
        */
       decline(token: string): Promise<void>
+      /**
+       * The pending invitations addressed to the signed-in user's own verified address, newest
+       * first: an `id`, the organization's name, the role's key and the expiry, never a token.
+       * Only the first page: the client sends no paging query yet. An unverified address
+       * has none.
+       *
+       * @returns The page.
+       * @throws TulaError `organization.disabled`, `auth.unauthenticated`.
+       * @example
+       * ```ts
+       * const { data } = await tula.organizations.invitations.mine()
+       * ```
+       */
+      mine(): Promise<MyOrganizationInvitationList>
+      /**
+       * Join the organization of an invitation listed by `mine()`, by its id. The same checks as
+       * `accept`: an id that is not the user's own answers `organization.invitation_not_found`.
+       *
+       * @param invitationId - The `id` from `mine()`.
+       * @returns The organization joined, with the role and its permission keys.
+       * @throws TulaError As `accept`.
+       * @example
+       * ```ts
+       * const org = await tula.organizations.invitations.acceptMine(invitation.id)
+       * ```
+       */
+      acceptMine(invitationId: string): Promise<AcceptedInvitation>
+      /**
+       * Turn down an invitation listed by `mine()`, by its id.
+       *
+       * @param invitationId - The `id` from `mine()`.
+       * @throws TulaError As `decline`.
+       * @example
+       * ```ts
+       * await tula.organizations.invitations.declineMine(invitation.id)
+       * ```
+       */
+      declineMine(invitationId: string): Promise<void>
     }
   }
   /** The signed-in user. */

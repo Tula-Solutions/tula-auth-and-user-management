@@ -480,6 +480,14 @@ export interface TulaLocalization {
     invitationAccept: string
     invitationDecline: string
     invitationDeclined: string
+    /** The heading over the invitations addressed to the user's verified address. */
+    pendingInvitationsTitle: string
+    /** `{organization}`, `{role}`. One invitation in that list. */
+    pendingInvitationText: string
+    /** `{name}`. The accessible name of "Accept" in that list. */
+    pendingInvitationAcceptLabel: string
+    /** `{name}`. The accessible name of "Decline" in that list. */
+    pendingInvitationDeclineLabel: string
     create: string
     manage: string
     close: string
@@ -1093,6 +1101,10 @@ export const EN_LOCALIZATION: TulaLocalization = {
     invitationAccept: 'Accept',
     invitationDecline: 'Decline',
     invitationDeclined: 'Invitation declined.',
+    pendingInvitationsTitle: 'Invitations for you',
+    pendingInvitationText: '{organization}, as {role}',
+    pendingInvitationAcceptLabel: 'Accept invitation to {name}',
+    pendingInvitationDeclineLabel: 'Decline invitation to {name}',
     create: 'Create organization',
     manage: 'Manage organization',
     close: 'Close',

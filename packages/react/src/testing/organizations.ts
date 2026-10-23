@@ -30,6 +30,9 @@ export const ORG_ROUTE = {
   verify: (id: string, domainId: string) =>
     `POST /v1/client/me/organizations/${id}/domains/${domainId}/verify`,
   domain: (id: string, domainId: string) => `/v1/client/me/organizations/${id}/domains/${domainId}`,
+  myInvitations: 'GET /v1/client/me/organization-invitations',
+  acceptMyInvitation: (id: string) => `POST /v1/client/me/organization-invitations/${id}/accept`,
+  declineMyInvitation: (id: string) => `POST /v1/client/me/organization-invitations/${id}/decline`,
   previewInvitation: 'POST /v1/client/organization-invitations/preview',
   acceptInvitation: 'POST /v1/client/me/organization-invitations/accept',
   declineInvitation: 'POST /v1/client/me/organization-invitations/decline',
@@ -88,6 +91,12 @@ export function activated(organizationId: string | null) {
   })
 }
 
+/** The answer of the invitee's own list when nothing is waiting. */
+export const MY_INVITATIONS_EMPTY = {
+  data: [],
+  meta: { totalCount: 0, totalPages: 0, page: 1, perPage: 20 },
+}
+
 /** What `organizations` of the public configuration says in the worlds below. */
 export const ORGS_ON = { enabled: true, allowUserCreated: true, personalAccount: true }
 
@@ -130,5 +139,6 @@ export function orgWorld(
     return activated(body.organizationId)
   })
   w.api.on(ORG_ROUTE.suggestions, () => json(200, { data: [] }))
+  w.api.on(ORG_ROUTE.myInvitations, () => json(200, MY_INVITATIONS_EMPTY))
   return result
 }

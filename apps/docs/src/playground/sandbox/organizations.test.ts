@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   AssignableRoleListSchema,
   ClientConfigSchema,
+  MyOrganizationInvitationListSchema,
   OrganizationDomainSchema,
   OrganizationInvitationSchema,
   OrganizationMemberListSchema,
@@ -203,7 +204,7 @@ describe('organizations in the sandbox: members', () => {
     const roles = AssignableRoleListSchema.parse(
       (await call(sandbox, 'GET', `/me/organizations/${ACME}/roles`)).json
     )
-    expect(roles.data.map((one) => one.key)).toEqual(['admin', 'member'])
+    expect(roles.data.map((one) => one.key)).toEqual(['admin', 'member', 'support'])
   })
 
   test('changes a role and removes a member; an unknown role is refused', async () => {
@@ -344,6 +345,157 @@ describe('organizations in the sandbox: invitations', () => {
     expect(
       await codeOf(sandbox.client.organizations.invitations.accept(DEMO_INVITATION_TOKEN))
     ).toBe('organization.invitation_email_unverified')
+  })
+})
+
+describe('organizations in the sandbox: custom roles', () => {
+  test('a custom role can be given, and carries the permissions it holds', async () => {
+    const sandbox = await make()
+    const changed = await sandbox.client.organizations.members.changeRole(ACME, GRACE, 'support')
+    expect(changed.role).toBe('support')
+    const org = sandbox.world.organizations.get(ACME)
+    expect(org?.members.find((one) => one.userId === GRACE)?.role).toBe('support')
+  })
+
+  test('a member with a custom role gets its permissions in the list, and no more', async () => {
+    const sandbox = await make()
+    const member = sandbox.world.organizations
+      .get(GLOBEX)
+      ?.members.find((one) => one.userId === ADA)
+    if (member) {
+      member.role = 'support'
+    }
+    const { json } = await call(sandbox, 'GET', '/me/organizations')
+    const globex = UserOrganizationListSchema.parse(json).data.find((one) => one.id === GLOBEX)
+    expect(globex).toMatchObject({
+      role: 'support',
+      permissions: ['org:sys:memberships:read', 'org:sys:invitations:manage'],
+    })
+  })
+
+  test('roles are offered only within the permissions of the one offering them', async () => {
+    const sandbox = await make()
+    const member = sandbox.world.organizations
+      .get(GLOBEX)
+      ?.members.find((one) => one.userId === ADA)
+    if (member) {
+      member.role = 'support'
+    }
+    const roles = AssignableRoleListSchema.parse(
+      (await call(sandbox, 'GET', `/me/organizations/${GLOBEX}/roles`)).json
+    )
+    expect(roles.data.map((one) => one.key)).toEqual(['member', 'support'])
+    const refused = await call(sandbox, 'POST', `/me/organizations/${GLOBEX}/invitations`, {
+      email: 'new@example.com',
+      role: 'admin',
+      redirectUrl: `${PAGE}invitation`,
+    })
+    expect(refused.json).toMatchObject({ code: 'organization.role_not_assignable' })
+    const allowed = await call(sandbox, 'POST', `/me/organizations/${GLOBEX}/invitations`, {
+      email: 'new@example.com',
+      role: 'support',
+      redirectUrl: `${PAGE}invitation`,
+    })
+    expect(OrganizationInvitationSchema.parse(allowed.json).role).toBe('support')
+  })
+
+  test('a role that does not exist is still refused', async () => {
+    const sandbox = await make()
+    expect(
+      await codeOf(sandbox.client.organizations.members.changeRole(ACME, GRACE, 'billing'))
+    ).toBe('organization.role_unknown')
+  })
+})
+
+describe('organizations in the sandbox: how many a user may create', () => {
+  test('stops at the cap with organization.limit_reached, and only counts the ones the user created', async () => {
+    const sandbox = await make()
+    for (const slug of ['one', 'two', 'three']) {
+      await sandbox.client.organizations.create({ name: slug, slug })
+    }
+    expect(await codeOf(sandbox.client.organizations.create({ name: 'Four', slug: 'four' }))).toBe(
+      'organization.limit_reached'
+    )
+    // The organizations the sandbox started with were not created by the visitor.
+    expect((await sandbox.client.organizations.list()).data).toHaveLength(5)
+  })
+})
+
+describe('organizations in the sandbox: my invitations', () => {
+  const HOOLI_INVITATION = '0198a000-0000-7000-8000-0000000000e1'
+
+  test('lists the pending invitations to the signed-in address, and nothing else of them', async () => {
+    const sandbox = await make()
+    const { json } = await call(sandbox, 'GET', '/me/organization-invitations')
+    expect(MyOrganizationInvitationListSchema.parse(json).data).toEqual([
+      {
+        id: HOOLI_INVITATION,
+        organizationName: 'Hooli',
+        role: 'member',
+        expiresAt: expect.any(String),
+      },
+    ])
+    expect(JSON.stringify(json)).not.toContain(DEMO_INVITATION_TOKEN)
+    expect(JSON.stringify(json)).not.toContain(DEMO_EMAIL)
+  })
+
+  test('accepts by id, once; the list is then empty', async () => {
+    const sandbox = await make()
+    const accepted = await sandbox.client.organizations.invitations.acceptMine(HOOLI_INVITATION)
+    expect(accepted).toMatchObject({ id: HOOLI, name: 'Hooli', role: 'member' })
+    expect((await sandbox.client.organizations.invitations.mine()).data).toEqual([])
+    expect(
+      await codeOf(sandbox.client.organizations.invitations.acceptMine(HOOLI_INVITATION))
+    ).toBe('organization.invitation_used')
+  })
+
+  test('declines by id: no membership', async () => {
+    const sandbox = await make()
+    await sandbox.client.organizations.invitations.declineMine(HOOLI_INVITATION)
+    expect((await sandbox.client.organizations.invitations.mine()).data).toEqual([])
+    expect((await sandbox.client.organizations.list()).data.map((one) => one.id)).not.toContain(
+      HOOLI
+    )
+  })
+
+  test('another account’s invitation and an unknown id look alike; an unverified address sees none', async () => {
+    const sandbox = await make()
+    sandbox.world.organizations.get(HOOLI)?.invitations.push({
+      id: 'inv_other',
+      email: 'someone@else.test',
+      role: 'member',
+      status: 'pending',
+      invitedBy: GRACE,
+      expiresAt: new Date(sandbox.world.now() + 1000).toISOString(),
+      createdAt: new Date(sandbox.world.now()).toISOString(),
+      token: 'other-token',
+    })
+    for (const id of ['inv_other', 'nothing']) {
+      expect(await codeOf(sandbox.client.organizations.invitations.acceptMine(id))).toBe(
+        'organization.invitation_not_found'
+      )
+      expect(await codeOf(sandbox.client.organizations.invitations.declineMine(id))).toBe(
+        'organization.invitation_not_found'
+      )
+    }
+    const ada = sandbox.world.users.get(ADA)
+    if (ada) {
+      ada.emailVerifiedAt = null
+    }
+    expect((await sandbox.client.organizations.invitations.mine()).data).toEqual([])
+    expect(
+      await codeOf(sandbox.client.organizations.invitations.acceptMine(HOOLI_INVITATION))
+    ).toBe('organization.invitation_email_unverified')
+  })
+
+  test('with organizations off every route answers organization.disabled', async () => {
+    const sandbox = await make(false)
+    expect(await codeOf(sandbox.client.organizations.invitations.mine())).toBe(
+      'organization.disabled'
+    )
+    expect(
+      await codeOf(sandbox.client.organizations.invitations.acceptMine(HOOLI_INVITATION))
+    ).toBe('organization.disabled')
   })
 })
 

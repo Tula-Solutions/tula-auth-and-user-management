@@ -14,6 +14,7 @@ import { validationHook } from '~/handlers'
 import { userActor } from '~/lib/actor'
 import { publishableKey } from '~/middleware/publishable-key'
 import { byIp, rateLimit } from '~/middleware/rate-limit'
+import { requireRecentAuth } from '~/middleware/recent-auth'
 import { sessionAuth } from '~/middleware/session-auth'
 import * as Members from '~/modules/organization/member-service'
 import * as openapi from '~/openapi'
@@ -106,7 +107,7 @@ router.delete(
     operationId: 'deleteMyOrganization',
     tags: ['Organizations'],
     summary: 'Delete an organization',
-    description: `Deletes the organization and its memberships, invitations and domains; the users keep their accounts, and their sessions leave it at the next refresh. Permanent. ${needs('org:sys:organization:delete')}`,
+    description: `Deletes the organization and its memberships, invitations and domains; the users keep their accounts, and their sessions leave it at the next refresh. Permanent, so it needs a **recent authentication**: a session that has not proven who it is in the last ten minutes (or the profile's \`stepUpAfter\`) answers \`auth.step_up_required\` (403) with \`params.methods\`, before anything else is checked. Call \`POST /v1/client/sessions/step-up\`, then repeat the request. ${needs('org:sys:organization:delete')}`,
     security: openapi.security.session,
     responses: {
       204: { description: 'Deleted.' },
@@ -122,6 +123,8 @@ router.delete(
   }),
   publishableKey(),
   sessionAuth(),
+  // Permanent and unrecoverable: a stolen access token alone must not be able to do it.
+  requireRecentAuth(),
   validator('param', MemberOrganizationParamSchema, validationHook),
   async (c) => {
     c.header('Cache-Control', 'no-store')

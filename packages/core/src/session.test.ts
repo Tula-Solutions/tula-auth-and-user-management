@@ -2349,6 +2349,63 @@ describe('organization invitations (ADR 0065, Orgs 04)', () => {
     expect(bearer(w, ACCEPT)).toEqual([`Bearer ${accessToken('access_1')}`])
   })
 
+  test('mine lists the invitations addressed to the user, and answering one is by id, never a token', async () => {
+    const MINE = 'GET /v1/client/me/organization-invitations'
+    const ACCEPT_MINE = `POST /v1/client/me/organization-invitations/${INVITATION}/accept`
+    const DECLINE_MINE = `POST /v1/client/me/organization-invitations/${INVITATION}/decline`
+    const w = world()
+    const page = {
+      meta: { totalCount: 1, totalPages: 1, page: 1, perPage: 20 },
+      data: [
+        {
+          id: INVITATION,
+          organizationName: 'Acme',
+          role: 'member',
+          expiresAt: invitation.expiresAt,
+        },
+      ],
+    }
+    const joined = {
+      id: ORG,
+      name: 'Acme',
+      slug: 'acme',
+      role: 'member',
+      permissions: [],
+      createdAt: '2030-01-01T00:00:00.000Z',
+    }
+    w.api.on(MINE, () => json(200, page))
+    w.api.on(ACCEPT_MINE, () => json(200, joined))
+    w.api.on(DECLINE_MINE, () => new Response(null, { status: 204 }))
+    const { tula } = await signedIn(w)
+    expect(await tula.organizations.invitations.mine()).toEqual(page)
+    expect(await tula.organizations.invitations.acceptMine(INVITATION)).toEqual(joined)
+    expect(await tula.organizations.invitations.declineMine(INVITATION)).toBeUndefined()
+    expect(w.api.calls(ACCEPT_MINE)[0]?.body).toBeUndefined()
+    for (const key of [MINE, ACCEPT_MINE, DECLINE_MINE]) {
+      expect(bearer(w, key)).toEqual([`Bearer ${accessToken('access_1')}`])
+    }
+  })
+
+  test('mine, acceptMine and declineMine refuse as a TulaError and the session lives on', async () => {
+    const w = world()
+    w.api.on('GET /v1/client/me/organization-invitations', () =>
+      failure(403, 'organization.disabled')
+    )
+    w.api.on(`POST /v1/client/me/organization-invitations/${INVITATION}/accept`, () =>
+      failure(404, 'organization.invitation_not_found')
+    )
+    const { tula } = await signedIn(w)
+    expect(await caught(tula.organizations.invitations.mine())).toMatchObject({
+      code: 'organization.disabled',
+      status: 403,
+    })
+    expect(await caught(tula.organizations.invitations.acceptMine(INVITATION))).toMatchObject({
+      code: 'organization.invitation_not_found',
+      status: 404,
+    })
+    expect(tula.state.status).toBe('signed-in')
+  })
+
   test('preview needs no session: signed out, it sends no Authorization header', async () => {
     const w = world()
     const shown = {

@@ -3,9 +3,10 @@ import {
   ORGANIZATION_DELETE_PERMISSION,
   ORGANIZATION_MANAGE_PERMISSION,
 } from '@tula-tech/contract/organization-permissions'
-import type { UserOrganization } from '@tula-tech/core'
+import { isStepUpRequired, type UserOrganization } from '@tula-tech/core'
 import { type RefObject, useId, useRef, useState } from 'react'
 import { useTulaContext } from '../context'
+import { useStepUp } from '../hooks/use-step-up'
 import { formatText } from '../localization'
 import { placeErrors } from './form-errors'
 import {
@@ -39,7 +40,9 @@ const FIELDS = ['name', 'slug'] as const
  * "Delete" where the role holds `org:sys:organization:delete`.
  *
  * Leaving and deleting ask first; deleting asks for the organization's name to be typed,
- * because it is permanent. The server decides again on every call: a refusal
+ * because it is permanent, and then for a recent authentication: the server answers
+ * `auth.step_up_required` for a session that has not proven who it is lately, and the
+ * provider's step-up dialog (`useStepUp`) is shown before the delete is repeated. The server decides again on every call: a refusal
  * (`organization.last_manager` for the last manager who leaves, `organization.permission_required`
  * for a role that changed since the page was drawn) is shown, and the second one reads the
  * user's organizations again so the control goes away.
@@ -52,6 +55,7 @@ export function GeneralSection(
 ) {
   const { el, t } = useUi()
   const { client } = useTulaContext()
+  const withStepUp = useStepUp()
   const { organization, has } = props
   const titleId = useId()
   const actions = useActions(props.onAccessChanged)
@@ -95,7 +99,17 @@ export function GeneralSection(
     })
   const remove = () =>
     void actions.run('delete', async (current) => {
-      await client.organizations.remove(organization.id)
+      try {
+        // Permanent, so the server wants a recent authentication (`auth.step_up_required`):
+        // the provider's dialog asks for it and the delete runs once more.
+        await withStepUp(() => client.organizations.remove(organization.id))
+      } catch (caught) {
+        if (isStepUpRequired(caught)) {
+          // The user closed the step-up dialog: they chose, so nothing is said.
+          return
+        }
+        throw caught
+      }
       if (current()) {
         props.onGone('deleted')
       }
