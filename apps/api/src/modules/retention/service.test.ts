@@ -199,6 +199,76 @@ describe('purge', () => {
     expect(await Retention.purge(deps)).toMatchObject({ hookCallCounts: 1 })
   })
 
+  test('removes organization invitations seven days after their expiry, whatever became of them, per environment', async () => {
+    async function invitation(scope: Tenant, email: string, expiresAt: Date) {
+      const org = await deps.organizations.insert(
+        {
+          id: deps.ids.next(),
+          projectId: scope.projectId,
+          environmentId: scope.environmentId,
+          name: 'Acme',
+          slug: `acme-${email}`,
+          createdBy: null,
+          createdAt: deps.clock.now(),
+          updatedAt: deps.clock.now(),
+        },
+        Audit.none('fixture')
+      )
+      if (!org) {
+        throw new Error('the organization was not stored')
+      }
+      const id = deps.ids.next()
+      await deps.organizations.insertInvitation(
+        {
+          id,
+          projectId: scope.projectId,
+          environmentId: scope.environmentId,
+          organizationId: org.id,
+          email,
+          emailNormalized: email,
+          roleKey: 'member',
+          tokenHash: `hash-${email}`,
+          status: 'pending',
+          invitedBy: null,
+          expiresAt,
+          resolvedAt: null,
+          resolvedBy: null,
+          createdAt: deps.clock.now(),
+          updatedAt: deps.clock.now(),
+        },
+        // Judged at a time before every expiry here, so that none is replaced.
+        new Date(0),
+        Audit.none('fixture')
+      )
+      return { id, organizationId: org.id }
+    }
+    const lapsed = await invitation(tenant, 'old@example.com', from(-7 * DAY - 1))
+    const used = await invitation(tenant, 'used@example.com', from(-8 * DAY))
+    await deps.organizations.revokeInvitation(
+      tenant.environmentId,
+      used.organizationId,
+      used.id,
+      new Date(0),
+      Audit.none('fixture')
+    )
+    const recent = await invitation(tenant, 'recent@example.com', from(-7 * DAY + 1000))
+    const open = await invitation(tenant, 'open@example.com', from(DAY))
+    const theirs = await invitation(otherTenant, 'theirs@example.com', from(-30 * DAY))
+    const report = await Retention.purge(deps)
+    expect(report).toMatchObject({ invitations: 3, failed: 0 })
+    const find = (scope: Tenant, one: { id: string; organizationId: string }) =>
+      deps.organizations.findInvitation(scope.environmentId, one.organizationId, one.id)
+    expect(await find(tenant, lapsed)).toBeNull()
+    expect(await find(tenant, used)).toBeNull()
+    expect(await find(otherTenant, theirs)).toBeNull()
+    // Inside the seven days, a link followed just after it lapses still finds its row.
+    expect(await find(tenant, recent)).not.toBeNull()
+    expect(await find(tenant, open)).not.toBeNull()
+    expect(await Retention.purge(deps)).toMatchObject({ invitations: 0 })
+    deps.clock.advance('1d')
+    expect(await Retention.purge(deps)).toMatchObject({ invitations: 1 })
+  })
+
   test('removes expired flow attempts in every environment, with their pending password hashes', async () => {
     const abandoned = await flowAttempt(tenant, from(10 * 60_000))
     const other = await flowAttempt(otherTenant, from(10 * 60_000))
@@ -223,6 +293,7 @@ describe('purge', () => {
       passwordHistory: 0,
       proposals: 0,
       hookCallCounts: 0,
+      invitations: 0,
       testUsers: 0,
     })
     expect(await deps.flowAttempts.findById(tenant.environmentId, abandoned)).toBeNull()
@@ -311,6 +382,7 @@ describe('purge', () => {
       passwordHistory: 0,
       proposals: 0,
       hookCallCounts: 0,
+      invitations: 0,
       testUsers: 0,
     })
     expect(await has(tenant, abandoned)).toBe(false)
@@ -363,6 +435,7 @@ describe('purge', () => {
           passwordHistory: 0,
           proposals: 0,
           hookCallCounts: 0,
+          invitations: 0,
           testUsers: 0,
         },
       ],
@@ -614,6 +687,7 @@ describe('purge', () => {
       passwordHistory: 0,
       proposals: 0,
       hookCallCounts: 0,
+      invitations: 0,
       testUsers: 0,
     })
     expect(await deps.flowAttempts.findById(otherTenant.environmentId, other)).toBeNull()
@@ -1078,6 +1152,7 @@ describe('run', () => {
           passwordHistory: 0,
           proposals: 0,
           hookCallCounts: 0,
+          invitations: 0,
           testUsers: 0,
         },
       ],
@@ -1114,6 +1189,7 @@ describe('run', () => {
         passwordHistory: 0,
         proposals: 0,
         hookCallCounts: 0,
+        invitations: 0,
         testUsers: 0,
       },
     ])

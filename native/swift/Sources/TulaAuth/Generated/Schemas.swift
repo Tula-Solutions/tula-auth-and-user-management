@@ -4,6 +4,61 @@
 
 import Foundation
 
+public struct AcceptedInvitation: Codable, Hashable, Sendable {
+    public var id: String
+    public var name: String
+    public var slug: String
+    public var role: String
+    public var permissions: [String]
+    /// Format: `date-time`.
+    public var createdAt: String
+
+    public init(
+        id: String,
+        name: String,
+        slug: String,
+        role: String,
+        permissions: [String],
+        createdAt: String
+    ) {
+        self.id = id
+        self.name = name
+        self.slug = slug
+        self.role = role
+        self.permissions = permissions
+        self.createdAt = createdAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case slug
+        case role
+        case permissions
+        case createdAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.name = try container.decode(String.self, forKey: .name)
+        self.slug = try container.decode(String.self, forKey: .slug)
+        self.role = try container.decode(String.self, forKey: .role)
+        self.permissions = try container.decode([String].self, forKey: .permissions)
+        self.createdAt = try container.decode(String.self, forKey: .createdAt)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.id, forKey: .id)
+        try container.encode(self.name, forKey: .name)
+        try container.encode(self.slug, forKey: .slug)
+        try container.encode(self.role, forKey: .role)
+        try container.encode(self.permissions, forKey: .permissions)
+        try container.encode(self.createdAt, forKey: .createdAt)
+    }
+}
+
 public struct ActiveOrganization: Codable, Hashable, Sendable {
     public var sessionId: String
     public var organizationId: String?
@@ -290,6 +345,42 @@ public struct ClientConfigSignUp: Codable, Hashable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(self.password, forKey: .password)
+    }
+}
+
+public struct CreateOrganizationInvitationRequest: Codable, Hashable, Sendable {
+    public var email: String
+    public var role: OrganizationRoleKey
+    public var redirectUrl: String
+
+    public init(
+        email: String,
+        role: OrganizationRoleKey,
+        redirectUrl: String
+    ) {
+        self.email = email
+        self.role = role
+        self.redirectUrl = redirectUrl
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case email
+        case role
+        case redirectUrl
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.email = try container.decode(String.self, forKey: .email)
+        self.role = try container.decode(OrganizationRoleKey.self, forKey: .role)
+        self.redirectUrl = try container.decode(String.self, forKey: .redirectUrl)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.email, forKey: .email)
+        try container.encode(self.role, forKey: .role)
+        try container.encode(self.redirectUrl, forKey: .redirectUrl)
     }
 }
 
@@ -1828,6 +1919,73 @@ public struct IdentityList: Codable, Hashable, Sendable {
     }
 }
 
+public struct InvitationPreview: Codable, Hashable, Sendable {
+    public var organizationName: String
+    public var role: String
+    public var email: String
+    /// Format: `date-time`.
+    public var expiresAt: String
+
+    public init(
+        organizationName: String,
+        role: String,
+        email: String,
+        expiresAt: String
+    ) {
+        self.organizationName = organizationName
+        self.role = role
+        self.email = email
+        self.expiresAt = expiresAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case organizationName
+        case role
+        case email
+        case expiresAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.organizationName = try container.decode(String.self, forKey: .organizationName)
+        self.role = try container.decode(String.self, forKey: .role)
+        self.email = try container.decode(String.self, forKey: .email)
+        self.expiresAt = try container.decode(String.self, forKey: .expiresAt)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.organizationName, forKey: .organizationName)
+        try container.encode(self.role, forKey: .role)
+        try container.encode(self.email, forKey: .email)
+        try container.encode(self.expiresAt, forKey: .expiresAt)
+    }
+}
+
+public struct InvitationTokenRequest: Codable, Hashable, Sendable {
+    public var token: String
+
+    public init(
+        token: String
+    ) {
+        self.token = token
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case token
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.token = try container.decode(String.self, forKey: .token)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.token, forKey: .token)
+    }
+}
+
 public enum MfaPolicy: Codable, Hashable, Sendable {
     case off
     case optional
@@ -2062,6 +2220,166 @@ public struct OAuthStartRequest: Codable, Hashable, Sendable {
         try container.encode(self.redirectUrl, forKey: .redirectUrl)
     }
 }
+
+public struct OrganizationInvitation: Codable, Hashable, Sendable {
+    public var id: String
+    public var organizationId: String
+    public var email: String
+    public var role: String
+    public var status: OrganizationInvitationStatus
+    public var invitedBy: String?
+    /// Format: `date-time`.
+    public var expiresAt: String
+    /// Format: `date-time`.
+    public var createdAt: String
+
+    public init(
+        id: String,
+        organizationId: String,
+        email: String,
+        role: String,
+        status: OrganizationInvitationStatus,
+        invitedBy: String?,
+        expiresAt: String,
+        createdAt: String
+    ) {
+        self.id = id
+        self.organizationId = organizationId
+        self.email = email
+        self.role = role
+        self.status = status
+        self.invitedBy = invitedBy
+        self.expiresAt = expiresAt
+        self.createdAt = createdAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case organizationId
+        case email
+        case role
+        case status
+        case invitedBy
+        case expiresAt
+        case createdAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.organizationId = try container.decode(String.self, forKey: .organizationId)
+        self.email = try container.decode(String.self, forKey: .email)
+        self.role = try container.decode(String.self, forKey: .role)
+        self.status = try container.decode(OrganizationInvitationStatus.self, forKey: .status)
+        self.invitedBy = try container.decode(String?.self, forKey: .invitedBy)
+        self.expiresAt = try container.decode(String.self, forKey: .expiresAt)
+        self.createdAt = try container.decode(String.self, forKey: .createdAt)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.id, forKey: .id)
+        try container.encode(self.organizationId, forKey: .organizationId)
+        try container.encode(self.email, forKey: .email)
+        try container.encode(self.role, forKey: .role)
+        try container.encode(self.status, forKey: .status)
+        try container.encode(self.invitedBy, forKey: .invitedBy)
+        try container.encode(self.expiresAt, forKey: .expiresAt)
+        try container.encode(self.createdAt, forKey: .createdAt)
+    }
+}
+
+public struct OrganizationInvitationList: Codable, Hashable, Sendable {
+    public var meta: PaginationMeta
+    public var data: [OrganizationInvitation]
+
+    public init(
+        meta: PaginationMeta,
+        data: [OrganizationInvitation]
+    ) {
+        self.meta = meta
+        self.data = data
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case meta
+        case data
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.meta = try container.decode(PaginationMeta.self, forKey: .meta)
+        self.data = try container.decode([OrganizationInvitation].self, forKey: .data)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.meta, forKey: .meta)
+        try container.encode(self.data, forKey: .data)
+    }
+}
+
+public enum OrganizationInvitationStatus: Codable, Hashable, Sendable {
+    case pending
+    case accepted
+    case declined
+    case revoked
+    case expired
+    /// A value this version does not know, as the API wrote it.
+    case unknown(String)
+
+    /// Every value this version knows.
+    public static let allKnown: [OrganizationInvitationStatus] = [
+        .pending,
+        .accepted,
+        .declined,
+        .revoked,
+        .expired,
+    ]
+
+    /// The value for a string of the API: `unknown` for one this version does not know.
+    public init(rawValue: String) {
+        switch rawValue {
+        case "pending": self = .pending
+        case "accepted": self = .accepted
+        case "declined": self = .declined
+        case "revoked": self = .revoked
+        case "expired": self = .expired
+        default: self = .unknown(rawValue)
+        }
+    }
+
+    /// The value as the API writes it.
+    public var rawValue: String {
+        switch self {
+        case .pending: return "pending"
+        case .accepted: return "accepted"
+        case .declined: return "declined"
+        case .revoked: return "revoked"
+        case .expired: return "expired"
+        case .unknown(let value): return value
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(self.rawValue)
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.rawValue == rhs.rawValue
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(self.rawValue)
+    }
+}
+
+public typealias OrganizationRoleKey = String
 
 public typealias OrganizationSlug = String
 

@@ -31,6 +31,16 @@ const ACCESS_TOKEN_EXPIRY_SKEW_MS: 10000
 ACCESS_TOKEN_EXPIRY_SKEW_MS // 10_000
 ```
 
+### `AcceptedInvitation`
+
+_type_, defined in `packages/core/src/types.ts`
+
+What accepting an invitation answers: the organization joined, with the role and its permissions.
+
+```ts
+export type AcceptedInvitation = Schemas['AcceptedInvitation']
+```
+
 ### `ActiveOrganization`
 
 _type_, defined in `packages/core/src/types.ts`
@@ -178,6 +188,16 @@ The body of `organizations.create()`: a name and a slug (lower-case letters, dig
 
 ```ts
 export type CreateOrganizationInput = Schemas['CreateOrganizationRequest']
+```
+
+### `CreateOrganizationInvitationInput`
+
+_type_, defined in `packages/core/src/types.ts`
+
+The body of `organizations.invitations.invite()`: the address, a role's key and the page the link leads to.
+
+```ts
+export type CreateOrganizationInvitationInput = Schemas['CreateOrganizationInvitationRequest']
 ```
 
 ### `DEFAULT_TIMEOUT_MS`
@@ -706,6 +726,31 @@ A provider account connected to the signed-in user.
 export type Identity = Schemas['Identity']
 ```
 
+### `InvitationLink`
+
+_interface_, defined in `packages/core/src/invitation.ts`
+
+An invitation's token as read from the URL of an emailed link.
+
+```ts
+export interface InvitationLink {
+  /** The token to pass to `organizations.invitations.preview`, `accept` or `decline`. */
+  token: string
+  /** The URL without the token, to put back in the address bar so the token is not kept. */
+  cleanUrl: string
+}
+```
+
+### `InvitationPreview`
+
+_type_, defined in `packages/core/src/types.ts`
+
+What the holder of an invitation's token may see before signing in.
+
+```ts
+export type InvitationPreview = Schemas['InvitationPreview']
+```
+
 ### `LinkStorageLike`
 
 _interface_, defined in `packages/core/src/environment.ts`
@@ -855,6 +900,34 @@ A provider `signIn.withOAuth` can be asked for.
 
 ```ts
 export type OAuthProvider = Schemas['OAuthProvider']
+```
+
+### `OrganizationInvitation`
+
+_type_, defined in `packages/core/src/types.ts`
+
+An invitation to an organization as the inviting side sees it. The token the emailed link
+carries is never part of it.
+
+```ts
+export type OrganizationInvitation = Schemas['OrganizationInvitation']
+```
+
+**Example**
+
+```ts
+const { data } = await tula.organizations.invitations.list(org.id)
+const open = data.filter((invitation) => invitation.status === 'pending')
+```
+
+### `OrganizationInvitationList`
+
+_type_, defined in `packages/core/src/types.ts`
+
+A page of an organization's invitations.
+
+```ts
+export type OrganizationInvitationList = Schemas['OrganizationInvitationList']
 ```
 
 ### `PageLike`
@@ -2057,6 +2130,107 @@ export interface TulaClient {
      * ```
      */
     setActive(organizationId: string | null): Promise<ActiveOrganization>
+    /**
+     * Invitations by email (ADR 0065, Orgs 04). The inviting calls need the permission
+     * `org:sys:invitations:manage`, which the API reads from the user's membership on every
+     * call. Answering needs the invited account: signed in, with the invited address, verified.
+     */
+    readonly invitations: {
+      /**
+       * An organization's pending invitations, newest first. Only the first page: the client
+       * sends no paging or state query yet.
+       *
+       * @param organizationId - The organization.
+       * @returns The page.
+       * @throws TulaError `organization.not_a_member`, `organization.permission_required`,
+       *   `organization.disabled`.
+       * @example
+       * ```ts
+       * const { data } = await tula.organizations.invitations.list(org.id)
+       * ```
+       */
+      list(organizationId: string): Promise<OrganizationInvitationList>
+      /**
+       * Email an invitation. The link leads to `input.redirectUrl` (one of the environment's
+       * allowed redirect URLs) with the token in its fragment; read it there with
+       * `readInvitationLink`. The role must be within the permissions of the inviter's own.
+       *
+       * @param organizationId - The organization.
+       * @param input - The address, the role's key and the redirect URL.
+       * @returns The invitation; the token is only in the email.
+       * @throws TulaError `organization.not_a_member`, `organization.permission_required`,
+       *   `organization.role_not_assignable`, `organization.role_unknown`,
+       *   `organization.member_exists`, `organization.invitation_exists`,
+       *   `request.redirect_not_allowed`, `rate_limited`.
+       * @example
+       * ```ts
+       * await tula.organizations.invitations.invite(org.id, {
+       *   email: 'ada@example.com',
+       *   role: 'member',
+       *   redirectUrl: 'https://app.example.com/join',
+       * })
+       * ```
+       */
+      invite(
+        organizationId: string,
+        input: CreateOrganizationInvitationInput
+      ): Promise<OrganizationInvitation>
+      /**
+       * Withdraw a pending invitation: its link stops working.
+       *
+       * @param organizationId - The organization.
+       * @param invitationId - The invitation.
+       * @throws TulaError `organization.invitation_used`, `organization.invitation_revoked`,
+       *   `organization.invitation_expired` (410) for one that is no longer pending, and the
+       *   errors of `list`.
+       * @example
+       * ```ts
+       * await tula.organizations.invitations.revoke(org.id, invitation.id)
+       * ```
+       */
+      revoke(organizationId: string, invitationId: string): Promise<void>
+      /**
+       * What an invitation's token shows before anyone has signed in: the organization's
+       * name, the role's key and the address invited, to prefill a sign-up. Needs no session.
+       *
+       * @param token - The token from the link's fragment.
+       * @returns The preview.
+       * @throws TulaError `organization.invitation_not_found`, `organization.invitation_expired`,
+       *   `organization.invitation_revoked`, `organization.invitation_used`.
+       * @example
+       * ```ts
+       * const { organizationName, email } = await tula.organizations.invitations.preview(token)
+       * ```
+       */
+      preview(token: string): Promise<InvitationPreview>
+      /**
+       * Join the organization the token invites to, with the invitation's role. Only the
+       * account the invitation was sent to may, and only with a verified address.
+       *
+       * @param token - The token from the link's fragment.
+       * @returns The organization joined, with the role and its permission keys.
+       * @throws TulaError `organization.invitation_wrong_account`,
+       *   `organization.invitation_email_unverified`, `organization.invitation_role_gone`,
+       *   `organization.member_exists`, and the errors of `preview`.
+       * @example
+       * ```ts
+       * const org = await tula.organizations.invitations.accept(token)
+       * await tula.organizations.setActive(org.id)
+       * ```
+       */
+      accept(token: string): Promise<AcceptedInvitation>
+      /**
+       * Turn an invitation down: it is used up and nobody joins.
+       *
+       * @param token - The token from the link's fragment.
+       * @throws TulaError As `accept`, but a deleted role does not matter.
+       * @example
+       * ```ts
+       * await tula.organizations.invitations.decline(token)
+       * ```
+       */
+      decline(token: string): Promise<void>
+    }
   }
   /** The signed-in user. */
   readonly user: {
@@ -2911,6 +3085,36 @@ export function memoryStorage(): TokenStorage
 
 ```ts
 createTulaClient({ publishableKey, baseUrl, client: 'server', storage: memoryStorage() })
+```
+
+### `readInvitationLink`
+
+_function_, defined in `packages/core/src/invitation.ts`
+
+Read the invitation token from the URL an emailed invitation link leads to.
+
+The token travels in the URL fragment (`#tula_invitation=…`), which a browser never sends to
+a server, so it is in no log and in no `Referer`. Read it, then replace the address bar with
+`cleanUrl` (`history.replaceState`) so that the token is not left in the history.
+
+```ts
+export function readInvitationLink(url: string): InvitationLink | null
+```
+
+**Parameters**
+
+- `url`: The page's URL, e.g. `window.location.href`.
+
+**Returns** The token and the URL without it, or `null` when the URL carries no token.
+
+**Example**
+
+```ts
+const link = readInvitationLink(window.location.href)
+if (link) {
+  history.replaceState(null, '', link.cleanUrl)
+  const { organizationName } = await tula.organizations.invitations.preview(link.token)
+}
 ```
 
 ### `runtimeEnvironment`

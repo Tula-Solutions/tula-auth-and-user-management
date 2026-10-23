@@ -75,6 +75,15 @@ export const EXPIRED_PROPOSAL_RETENTION = '30d'
 export const HOOK_CALL_COUNT_RETENTION = '7d'
 
 /**
+ * How long an organization invitation is kept after its expiry, whatever became of it
+ * (accepted, declined, withdrawn or never answered; ADR 0065, Orgs 04). Not zero, so that a
+ * link followed just after it lapses still finds the row and answers `invitation_expired`
+ * instead of "no such invitation". The row holds the invited address, so it does not stay
+ * long either; the audit log keeps the ids.
+ */
+export const EXPIRED_INVITATION_RETENTION = '7d'
+
+/**
  * How often the retention job runs. Expired sign-up attempts hold the hash of a password that
  * was never used, so they should not outlive their expiry by long; the other tables only need
  * a daily pass, and an idle pass costs a handful of indexed queries per environment.
@@ -122,6 +131,8 @@ export interface RetentionCounts {
   hookCallCounts: number
   /** Sign-in tests' throwaway users older than {@link TEST_USER_RETENTION}. */
   testUsers: number
+  /** Organization invitations that expired more than {@link EXPIRED_INVITATION_RETENTION} ago. */
+  invitations: number
 }
 
 /** The outcome of one retention run. Counts only: nothing here identifies a user. */
@@ -146,6 +157,7 @@ type RetentionDeps = Pick<
   | 'smsUsage'
   | 'proposals'
   | 'hooks'
+  | 'organizations'
   | 'users'
   | 'environmentSettings'
   | 'config'
@@ -292,7 +304,9 @@ async function purgePasswordHistory(
  * - agents' proposals whose expiry is more than {@link EXPIRED_PROPOSAL_RETENTION} past,
  *   approved or not.
  * - counts of a hook's calls (by hook, hour and outcome) of hours more than
- *   {@link HOOK_CALL_COUNT_RETENTION} ago.
+ *   {@link HOOK_CALL_COUNT_RETENTION} ago;
+ * - organization invitations whose expiry is more than {@link EXPIRED_INVITATION_RETENTION}
+ *   past, whatever became of them.
  *
  * It also deletes instance audit entries (the control plane's log: dashboard sign-ins,
  * workspaces, projects) older than the deployment's `INSTANCE_AUDIT_RETENTION_DAYS`.
@@ -323,6 +337,7 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
   const proposalsBefore = new Date(now.getTime() - durationToMs(EXPIRED_PROPOSAL_RETENTION))
   // An hour (UTC), as the counts are kept: the first one that stays.
   const hookCountsBefore = hourOf(new Date(now.getTime() - durationToMs(HOOK_CALL_COUNT_RETENTION)))
+  const invitationsBefore = new Date(now.getTime() - durationToMs(EXPIRED_INVITATION_RETENTION))
   const report: RetentionReport = {
     environments: 0,
     failed: 0,
@@ -340,6 +355,7 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
     proposals: 0,
     hookCallCounts: 0,
     testUsers: 0,
+    invitations: 0,
   }
   // The instance audit log belongs to no environment, and its period is the deployment's:
   // anyone who can reach the sign-in can add to it, so it always has an end. An environment's
@@ -393,6 +409,9 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
       )
       report.hookCallCounts += await drain((limit) =>
         deps.hooks.deleteCallCountsBefore(id, hookCountsBefore, limit)
+      )
+      report.invitations += await drain((limit) =>
+        deps.organizations.deleteExpiredInvitations(id, invitationsBefore, limit)
       )
     } catch (error) {
       report.failed += 1

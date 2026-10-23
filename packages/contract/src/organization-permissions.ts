@@ -72,6 +72,13 @@ export type SystemPermission = (typeof SYSTEM_PERMISSIONS)[number]
  */
 export const MEMBERSHIPS_MANAGE_PERMISSION: SystemPermission = 'org:sys:memberships:manage'
 
+/**
+ * The permission that lets a member invite people to the organization and withdraw
+ * invitations (ADR 0065, Orgs 04). Checked on the server from the membership as it is now,
+ * never from a token's claims alone.
+ */
+export const INVITATIONS_MANAGE_PERMISSION: SystemPermission = 'org:sys:invitations:manage'
+
 /** A built-in role: its key, its name and the permissions it holds. */
 export interface BuiltInRole {
   readonly key: string

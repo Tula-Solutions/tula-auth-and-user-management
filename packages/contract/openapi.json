@@ -2834,7 +2834,7 @@
           "eventTypes": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 60
+            "maximum": 64
           },
           "enabled": {
             "type": "boolean"
@@ -4551,6 +4551,334 @@
         ],
         "description": "A custom role was deleted. No member held it."
       },
+      "OrganizationInvitationCreatedEventData": {
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "role": {
+            "$ref": "#/components/schemas/OrganizationRoleKey"
+          }
+        },
+        "required": [
+          "organizationId",
+          "role"
+        ],
+        "description": "Someone was invited to an organization. The target is the invitation; the invited address is not in the event: read the invitation by its id."
+      },
+      "OrganizationInvitationCreatedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "organization_invitation.created"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "organization_invitation"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/OrganizationInvitationCreatedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "actor",
+          "target",
+          "data"
+        ],
+        "description": "Someone was invited to an organization. The target is the invitation; the invited address is not in the event: read the invitation by its id."
+      },
+      "OrganizationInvitationAcceptedEventData": {
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "role": {
+            "$ref": "#/components/schemas/OrganizationRoleKey"
+          },
+          "userId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "organizationId",
+          "role",
+          "userId"
+        ],
+        "description": "An invitation was accepted by the user it was for, who became a member in the same transaction (an `organization_membership.added` event follows it). The actor is that user."
+      },
+      "OrganizationInvitationAcceptedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "organization_invitation.accepted"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "organization_invitation"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/OrganizationInvitationAcceptedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "actor",
+          "target",
+          "data"
+        ],
+        "description": "An invitation was accepted by the user it was for, who became a member in the same transaction (an `organization_membership.added` event follows it). The actor is that user."
+      },
+      "OrganizationInvitationDeclinedEventData": {
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "role": {
+            "$ref": "#/components/schemas/OrganizationRoleKey"
+          },
+          "userId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "organizationId",
+          "role",
+          "userId"
+        ],
+        "description": "An invitation was declined by the user it was for. The actor is that user."
+      },
+      "OrganizationInvitationDeclinedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "organization_invitation.declined"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "organization_invitation"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/OrganizationInvitationDeclinedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "actor",
+          "target",
+          "data"
+        ],
+        "description": "An invitation was declined by the user it was for. The actor is that user."
+      },
+      "OrganizationInvitationRevokedEventData": {
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "role": {
+            "$ref": "#/components/schemas/OrganizationRoleKey"
+          }
+        },
+        "required": [
+          "organizationId",
+          "role"
+        ],
+        "description": "A pending invitation was withdrawn: its link no longer works."
+      },
+      "OrganizationInvitationRevokedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "organization_invitation.revoked"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "organization_invitation"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/OrganizationInvitationRevokedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "actor",
+          "target",
+          "data"
+        ],
+        "description": "A pending invitation was withdrawn: its link no longer works."
+      },
       "ProposalCreatedEventData": {
         "type": "object",
         "properties": {
@@ -5305,6 +5633,18 @@
             "$ref": "#/components/schemas/OrganizationRoleDeletedEvent"
           },
           {
+            "$ref": "#/components/schemas/OrganizationInvitationCreatedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/OrganizationInvitationAcceptedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/OrganizationInvitationDeclinedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/OrganizationInvitationRevokedEvent"
+          },
+          {
             "$ref": "#/components/schemas/ProposalCreatedEvent"
           },
           {
@@ -5752,6 +6092,16 @@
           "organization.role_in_use",
           "organization.role_built_in",
           "organization.role_limit",
+          "organization.permission_required",
+          "organization.role_not_assignable",
+          "organization.invitation_exists",
+          "organization.invitation_not_found",
+          "organization.invitation_expired",
+          "organization.invitation_revoked",
+          "organization.invitation_used",
+          "organization.invitation_wrong_account",
+          "organization.invitation_email_unverified",
+          "organization.invitation_role_gone",
           "rate_limited",
           "request.malformed",
           "request.too_large",
@@ -8578,6 +8928,10 @@
           "organization_role.created",
           "organization_role.updated",
           "organization_role.deleted",
+          "organization_invitation.created",
+          "organization_invitation.accepted",
+          "organization_invitation.declined",
+          "organization_invitation.revoked",
           "proposal.created",
           "proposal.approved",
           "proposal.executed",
@@ -9071,6 +9425,9 @@
             "$ref": "#/components/schemas/EmailTemplate"
           },
           "email_added": {
+            "$ref": "#/components/schemas/EmailTemplate"
+          },
+          "organization_invitation": {
             "$ref": "#/components/schemas/EmailTemplate"
           }
         },
@@ -10598,7 +10955,7 @@
           },
           "eventTypes": {
             "minItems": 1,
-            "maxItems": 60,
+            "maxItems": 64,
             "type": "array",
             "items": {
               "type": "string",
@@ -10657,6 +11014,10 @@
                 "organization_role.created",
                 "organization_role.updated",
                 "organization_role.deleted",
+                "organization_invitation.created",
+                "organization_invitation.accepted",
+                "organization_invitation.declined",
+                "organization_invitation.revoked",
                 "proposal.created",
                 "proposal.approved",
                 "proposal.executed",
@@ -10688,7 +11049,7 @@
           },
           "eventTypes": {
             "minItems": 1,
-            "maxItems": 60,
+            "maxItems": 64,
             "type": "array",
             "items": {
               "type": "string",
@@ -10747,6 +11108,10 @@
                 "organization_role.created",
                 "organization_role.updated",
                 "organization_role.deleted",
+                "organization_invitation.created",
+                "organization_invitation.accepted",
+                "organization_invitation.declined",
+                "organization_invitation.revoked",
                 "proposal.created",
                 "proposal.approved",
                 "proposal.executed",
@@ -11197,6 +11562,10 @@
               "organization_role.created",
               "organization_role.updated",
               "organization_role.deleted",
+              "organization_invitation.created",
+              "organization_invitation.accepted",
+              "organization_invitation.declined",
+              "organization_invitation.revoked",
               "proposal.created",
               "proposal.approved",
               "proposal.executed",
@@ -11990,6 +12359,202 @@
         ],
         "additionalProperties": false
       },
+      "OrganizationInvitation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "accepted",
+              "declined",
+              "revoked",
+              "expired"
+            ]
+          },
+          "invitedBy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          }
+        },
+        "required": [
+          "id",
+          "organizationId",
+          "email",
+          "role",
+          "status",
+          "invitedBy",
+          "expiresAt",
+          "createdAt"
+        ]
+      },
+      "OrganizationInvitationList": {
+        "type": "object",
+        "properties": {
+          "meta": {
+            "$ref": "#/components/schemas/PaginationMeta"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrganizationInvitation"
+            }
+          }
+        },
+        "required": [
+          "meta",
+          "data"
+        ]
+      },
+      "OrganizationInvitationQuery": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "default": 1,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000
+          },
+          "size": {
+            "default": 20,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "status": {
+            "default": "pending",
+            "type": "string",
+            "enum": [
+              "pending",
+              "accepted",
+              "declined",
+              "revoked",
+              "expired"
+            ]
+          }
+        }
+      },
+      "CreateOrganizationInvitationRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 320
+          },
+          "role": {
+            "$ref": "#/components/schemas/OrganizationRoleKey"
+          },
+          "redirectUrl": {
+            "type": "string",
+            "maxLength": 2048
+          }
+        },
+        "required": [
+          "email",
+          "role",
+          "redirectUrl"
+        ],
+        "additionalProperties": false
+      },
+      "InvitationPreview": {
+        "type": "object",
+        "properties": {
+          "organizationName": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          }
+        },
+        "required": [
+          "organizationName",
+          "role",
+          "email",
+          "expiresAt"
+        ]
+      },
+      "InvitationTokenRequest": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "additionalProperties": false
+      },
+      "AcceptedInvitation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "role",
+          "permissions",
+          "createdAt"
+        ]
+      },
       "AppleAppSiteAssociation": {
         "type": "object",
         "properties": {
@@ -12547,7 +13112,8 @@
                   "identity_linked",
                   "identity_unlinked",
                   "email_in_use",
-                  "email_added"
+                  "email_added",
+                  "organization_invitation"
                 ]
               },
               "template": {
@@ -30898,6 +31464,1411 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/SetActiveOrganizationRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/organizations/{id}/invitations": {
+      "get": {
+        "operationId": "listOrganizationInvitations",
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "List an organization’s invitations",
+        "description": "The organization’s invitations in one state (`status`, `pending` unless another is asked for; `expired` is a pending invitation past its expiry), newest first, one page at a time. The token of an invitation is never returned. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.",
+        "security": [
+          {
+            "secretKey": []
+          },
+          {
+            "dashboardSession": []
+          },
+          {
+            "agentKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of invitations.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationInvitationList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "default": 1,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "default": "pending",
+              "type": "string",
+              "enum": [
+                "pending",
+                "accepted",
+                "declined",
+                "revoked",
+                "expired"
+              ]
+            }
+          }
+        ]
+      },
+      "post": {
+        "operationId": "inviteToOrganization",
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Invite an address to an organization",
+        "description": "Emails the address a link that leads to `redirectUrl` (one of the environment’s allowed redirect URLs, matched exactly; a custom scheme is refused) with the invitation’s token in the URL fragment (`#tula_invitation=…`). The invitation lasts 7 days and can be accepted only by a signed-in user whose **verified** email is the invited address. The role must exist (`organization.role_unknown`, 422); an address that is a member already answers `organization.member_exists` and one with a pending invitation `organization.invitation_exists` (409). Limited per organization per hour and per environment per day (`rate_limited`, 429). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.",
+        "security": [
+          {
+            "secretKey": []
+          },
+          {
+            "dashboardSession": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The invitation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationInvitation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The change conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrganizationInvitationRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/organizations/{id}/invitations/{invitationId}": {
+      "delete": {
+        "operationId": "revokeOrganizationInvitation",
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Revoke an invitation",
+        "description": "Withdraws a pending invitation: its link stops working. An invitation that was accepted or declined answers `organization.invitation_used`, a withdrawn one `organization.invitation_revoked` and an expired one `organization.invitation_expired` (410). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.",
+        "security": [
+          {
+            "secretKey": []
+          },
+          {
+            "dashboardSession": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Revoked."
+          },
+          "400": {
+            "description": "The request could not be read (`request.malformed`); or it mixes credentials: an `Authorization` header together with the dashboard’s headers, or a dashboard request without `x-tula-environment`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials: no valid secret key (`auth.invalid_key`), or a dashboard request without a valid session (`auth.unauthenticated`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed; or a dashboard request that breaks the origin rules (`request.origin_not_allowed`): a foreign `Origin`, a cross-site request, or a write without an `Origin`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment; or the dashboard’s `x-tula-environment` names no environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "The code or link has expired; request a new one.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "invitationId",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          }
+        ]
+      }
+    },
+    "/v1/client/me/organizations/{organizationId}/invitations": {
+      "get": {
+        "operationId": "listMyOrganizationInvitations",
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "List an organization’s invitations",
+        "description": "The organization’s invitations in one state (`pending` unless `status` says otherwise), newest first. Needs the permission `org:sys:invitations:manage`, read from the caller’s membership on every call (never from the token’s claims): a user who is not a member answers `organization.not_a_member` and one whose role lacks it `organization.permission_required` (403). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.",
+        "security": [
+          {
+            "publishableKey": [],
+            "accessToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of invitations.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationInvitationList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "default": 1,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "default": "pending",
+              "type": "string",
+              "enum": [
+                "pending",
+                "accepted",
+                "declined",
+                "revoked",
+                "expired"
+              ]
+            }
+          }
+        ]
+      },
+      "post": {
+        "operationId": "inviteToMyOrganization",
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Invite an address to an organization",
+        "description": "Emails the address a link that leads to `redirectUrl` (one of the environment’s allowed redirect URLs, matched exactly; a custom scheme is refused) with the invitation’s token in the URL fragment. The invitation lasts 7 days and only a signed-in user whose **verified** email is the invited address can accept it. The role offered must hold no permission the caller’s own role lacks (`organization.role_not_assignable`, 403). An address that is a member already answers `organization.member_exists` and one with a pending invitation `organization.invitation_exists` (409). Limited per IP, per organization per hour and per environment per day. Needs the permission `org:sys:invitations:manage`, read from the caller’s membership on every call (never from the token’s claims): a user who is not a member answers `organization.not_a_member` and one whose role lacks it `organization.permission_required` (403). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.",
+        "security": [
+          {
+            "publishableKey": [],
+            "accessToken": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The invitation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationInvitation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The change conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrganizationInvitationRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/client/me/organizations/{organizationId}/invitations/{invitationId}": {
+      "delete": {
+        "operationId": "revokeMyOrganizationInvitation",
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Revoke an invitation",
+        "description": "Withdraws a pending invitation: its link stops working. One that was accepted or declined answers `organization.invitation_used`, a withdrawn one `organization.invitation_revoked` and an expired one `organization.invitation_expired` (410). Needs the permission `org:sys:invitations:manage`, read from the caller’s membership on every call (never from the token’s claims): a user who is not a member answers `organization.not_a_member` and one whose role lacks it `organization.permission_required` (403). While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.",
+        "security": [
+          {
+            "publishableKey": [],
+            "accessToken": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Revoked."
+          },
+          "400": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "The code or link has expired; request a new one.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "invitationId",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "required": true
+          }
+        ]
+      }
+    },
+    "/v1/client/organization-invitations/preview": {
+      "post": {
+        "operationId": "previewOrganizationInvitation",
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Preview an invitation",
+        "description": "What the holder of an invitation’s token may see before signing in: the organization’s name, the role’s key and the address the invitation was sent to, so that a sign-up can be prefilled with it. Needs no session; the token is the proof of having been sent the invitation. Refuses with `organization.invitation_not_found` (404) for a token nothing was issued for; `organization.invitation_expired`, `organization.invitation_revoked` and `organization.invitation_used` (410) for one that can no longer be used. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.",
+        "security": [
+          {
+            "publishableKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The invitation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationPreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "The code or link has expired; request a new one.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvitationTokenRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/client/me/organization-invitations/accept": {
+      "post": {
+        "operationId": "acceptOrganizationInvitation",
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Accept an invitation",
+        "description": "The signed-in user joins the organization with the invitation’s role. Only the account the invitation was sent to may accept it: its **verified** email must be the invited address (`organization.invitation_wrong_account`, `organization.invitation_email_unverified`; 403). The invitation is used up and the membership created in one transaction. A role deleted since the invitation was sent answers `organization.invitation_role_gone` (409): the invitation is never given another role. A user who is a member already answers `organization.member_exists` (409). Refuses with `organization.invitation_not_found` (404) for a token nothing was issued for; `organization.invitation_expired`, `organization.invitation_revoked` and `organization.invitation_used` (410) for one that can no longer be used. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.",
+        "security": [
+          {
+            "publishableKey": [],
+            "accessToken": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The organization the user joined, with their role.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcceptedInvitation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The change conflicts with existing data.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "The code or link has expired; request a new one.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvitationTokenRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/client/me/organization-invitations/decline": {
+      "post": {
+        "operationId": "declineOrganizationInvitation",
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Decline an invitation",
+        "description": "The invitation is used up without a membership. Only the account the invitation was sent to may decline it, on the same conditions as accepting. Refuses with `organization.invitation_not_found` (404) for a token nothing was issued for; `organization.invitation_expired`, `organization.invitation_revoked` and `organization.invitation_used` (410) for one that can no longer be used. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.",
+        "security": [
+          {
+            "publishableKey": [],
+            "accessToken": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Declined."
+          },
+          "400": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "error": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "data": {}
+                  },
+                  "required": [
+                    "success",
+                    "error",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated but not allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist in this environment.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "The code or link has expired; request a new one.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request body is larger than 64 KiB (`request.too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The input is invalid; `errors` lists each field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited; retry after `params.retryAfter` seconds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unreachable and the request was refused (`service.unavailable`); retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvitationTokenRequest"
               }
             }
           }

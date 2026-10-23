@@ -259,8 +259,13 @@ describe('what @tula-tech/react costs a browser bundle', () => {
    * `has()` with the contract's claim grammar it checks a role against) took it to 56,654
    * bytes, 1,406 more. The budget moved by exactly those bytes, to 57,090, so the 436 bytes
    * of room are still what is left.
+   * Invitations by email (ADR 0065, Orgs 04) are `@tula-tech/core`'s: the ten error messages
+   * and the `organizations.invitations` calls, with the message of
+   * `user.last_organization_manager` that arrived with it from `develop`. The bundle then
+   * measured 57,090 bytes, 436 more. The budget moved by exactly those bytes, to 57,526, so
+   * the 436 bytes of room are still what is left.
    */
-  const GZIP_BUDGET_BYTES = 57_090
+  const GZIP_BUDGET_BYTES = 57_526
   /**
    * The QR encoder, in a chunk of its own: loaded when an enrolment is first drawn, so an app
    * that never shows one does not pay for it.

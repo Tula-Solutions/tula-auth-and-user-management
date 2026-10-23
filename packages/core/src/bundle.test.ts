@@ -127,8 +127,14 @@ import { join } from 'node:path'
  * `user.last_organization_manager`) added 37 bytes, from 17,764 to 17,801, the name and its
  * message. The budget moved by exactly those 37 bytes, from 17,768 to 17,805: the room is the
  * 4 bytes it was.
+ * Invitations by email (ADR 0065, Orgs 04) added 393 bytes, from 17,801 to 18,194: the ten
+ * contract codes with their messages (cut to one short sentence each; the first wording cost
+ * 452 bytes for everything), six operation rows and `organizations.invitations`
+ * (`list`, `invite`, `revoke`, `preview`, `accept`, `decline`). `readInvitationLink` is not in
+ * the bundle of a client that does not import it. The budget moved by exactly those 393
+ * bytes, from 17,805 to 18,198: the room is the 4 bytes it was.
  */
-const GZIP_BUDGET_BYTES = 17_805
+const GZIP_BUDGET_BYTES = 18_198
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

@@ -749,6 +749,28 @@ export const EVENT_DATA_SCHEMAS = {
     'A custom role was deleted. No member held it.',
     { role: RoleKeySchema }
   ),
+  // Invitations to an organization (ADR 0065, Orgs 04). Ids and the role's key only: the invited
+  // address is the inviter's text, and never in an event.
+  'organization_invitation.created': data(
+    'OrganizationInvitationCreated',
+    'Someone was invited to an organization. The target is the invitation; the invited address is not in the event: read the invitation by its id.',
+    { organizationId: id(), role: RoleKeySchema }
+  ),
+  'organization_invitation.accepted': data(
+    'OrganizationInvitationAccepted',
+    'An invitation was accepted by the user it was for, who became a member in the same transaction (an `organization_membership.added` event follows it). The actor is that user.',
+    { organizationId: id(), role: RoleKeySchema, userId: id() }
+  ),
+  'organization_invitation.declined': data(
+    'OrganizationInvitationDeclined',
+    'An invitation was declined by the user it was for. The actor is that user.',
+    { organizationId: id(), role: RoleKeySchema, userId: id() }
+  ),
+  'organization_invitation.revoked': data(
+    'OrganizationInvitationRevoked',
+    'A pending invitation was withdrawn: its link no longer works.',
+    { organizationId: id(), role: RoleKeySchema }
+  ),
   // Proposals (ADR 0053). The actor of `created`, `executed` and `failed` is the agent; the
   // actor of `approved` is the human, and the agent is named in its `data`.
   'proposal.created': data(

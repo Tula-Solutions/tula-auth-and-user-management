@@ -31,6 +31,7 @@ import {
   isStepUpRequired,
   isTulaError,
   type OAuthCallbackOutcome,
+  readInvitationLink,
   type SignInFlow,
   stepUpMethods,
   type TokenStorage,
@@ -2502,6 +2503,173 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
         await tula.organizations.setActive(mine.id)
         expect(tula.state).toMatchObject({ organizationId: mine.id })
         expect(email).toBeTruthy()
+      }
+    )
+
+    journey(
+      'organization invitations',
+      'organization invitations: an administrator invites an address, the emailed link carries the token in its fragment, only the invited account accepts or declines, a member without the permission cannot invite, and a withdrawn or used invitation is refused',
+      async () => {
+        const s = await server()
+        const JOIN = `${APP_ORIGIN}/join`
+        const read = await s.admin('GET', '/v1/admin/settings')
+        const { settings } = (await read.json()) as { settings: EnvironmentSettings }
+        const saved = await s.admin(
+          'PUT',
+          '/v1/admin/settings',
+          {
+            ...settings,
+            urls: { ...settings.urls, allowedRedirectUrls: [JOIN] },
+            organizations: {
+              enabled: true,
+              allowUserCreated: true,
+              maxCreatedPerUser: 1,
+              creatorRole: 'admin',
+              defaultRole: 'member',
+              personalAccount: true,
+            },
+          },
+          { 'if-match': read.headers.get('etag') ?? '' }
+        )
+        expect(saved.status).toBe(200)
+
+        const owner = await signUp(s)
+        const ada = await signUp(s)
+        const stranger = await signUp(s)
+        const org = await owner.tula.organizations.create({ name: 'Acme', slug: 'acme' })
+        const invitations = owner.tula.organizations.invitations
+        const linkOf = () => {
+          const mail = s.deps.mailer.outbox.findLast((message) => /invited/.test(message.subject))
+          const link = /https?:\/\/\S+#tula_invitation=\S+/.exec(mail?.text ?? '')?.[0] ?? ''
+          return { mail, link, read: readInvitationLink(link) }
+        }
+
+        // An invitation: the email goes to the address and the link leads to the redirect URL.
+        const sent = await invitations.invite(org.id, {
+          email: ada.email,
+          role: 'member',
+          redirectUrl: JOIN,
+        })
+        expect(sent).toMatchObject({ organizationId: org.id, role: 'member', status: 'pending' })
+        const first = linkOf()
+        expect(first.mail?.to).toBe(ada.email)
+        expect(first.link.startsWith(`${JOIN}#tula_invitation=`)).toBe(true)
+        expect(first.read?.cleanUrl).toBe(JOIN)
+        const token = first.read?.token ?? ''
+        expect(token).not.toBe('')
+        // The API's answers never hold the token.
+        expect(JSON.stringify(await invitations.list(org.id))).not.toContain(token)
+        expect((await invitations.list(org.id)).data.map((one) => one.id)).toEqual([sent.id])
+        expect(
+          (
+            await caught(
+              invitations.invite(org.id, { email: ada.email, role: 'member', redirectUrl: JOIN })
+            )
+          ).code
+        ).toBe('organization.invitation_exists')
+        expect(
+          (
+            await caught(
+              invitations.invite(org.id, {
+                email: freshEmail(),
+                role: 'member',
+                redirectUrl: 'https://evil.test/join',
+              })
+            )
+          ).code
+        ).toBe('request.redirect_not_allowed')
+
+        // Anyone with the token may see what it is for, signed in or not.
+        const visitor = s.client(NATIVE).tula
+        expect(await visitor.organizations.invitations.preview(token)).toMatchObject({
+          organizationName: 'Acme',
+          role: 'member',
+          email: ada.email,
+        })
+        expect((await caught(visitor.organizations.invitations.preview('nothing'))).code).toBe(
+          'organization.invitation_not_found'
+        )
+
+        // Only the invited account answers.
+        expect((await caught(stranger.tula.organizations.invitations.accept(token))).code).toBe(
+          'organization.invitation_wrong_account'
+        )
+        expect((await caught(stranger.tula.organizations.invitations.decline(token))).code).toBe(
+          'organization.invitation_wrong_account'
+        )
+        const joined = await ada.tula.organizations.invitations.accept(token)
+        expect(joined).toMatchObject({ id: org.id, role: 'member' })
+        expect((await ada.tula.organizations.list()).data.map((one) => one.id)).toEqual([org.id])
+        expect((await caught(ada.tula.organizations.invitations.accept(token))).code).toBe(
+          'organization.invitation_used'
+        )
+        expect((await invitations.list(org.id)).data).toEqual([])
+
+        // A member whose role cannot manage invitations cannot invite or list.
+        const refused = await caught(
+          ada.tula.organizations.invitations.invite(org.id, {
+            email: freshEmail(),
+            role: 'member',
+            redirectUrl: JOIN,
+          })
+        )
+        expect(refused).toMatchObject({
+          code: 'organization.permission_required',
+          status: 403,
+        })
+        expect((await caught(ada.tula.organizations.invitations.list(org.id))).code).toBe(
+          'organization.permission_required'
+        )
+        // And a member cannot be invited again.
+        expect(
+          (
+            await caught(
+              invitations.invite(org.id, { email: ada.email, role: 'admin', redirectUrl: JOIN })
+            )
+          ).code
+        ).toBe('organization.member_exists')
+
+        // Declining uses it up; withdrawing makes the link say so.
+        const declined = await invitations.invite(org.id, {
+          email: stranger.email,
+          role: 'member',
+          redirectUrl: JOIN,
+        })
+        const declinedToken = linkOf().read?.token ?? ''
+        await stranger.tula.organizations.invitations.decline(declinedToken)
+        expect(
+          (await caught(stranger.tula.organizations.invitations.accept(declinedToken))).code
+        ).toBe('organization.invitation_used')
+        expect((await caught(invitations.revoke(org.id, declined.id))).code).toBe(
+          'organization.invitation_used'
+        )
+        const thirdEmail = freshEmail()
+        const withdrawn = await invitations.invite(org.id, {
+          email: thirdEmail,
+          role: 'member',
+          redirectUrl: JOIN,
+        })
+        const withdrawnToken = linkOf().read?.token ?? ''
+        await invitations.revoke(org.id, withdrawn.id)
+        expect((await caught(visitor.organizations.invitations.preview(withdrawnToken))).code).toBe(
+          'organization.invitation_revoked'
+        )
+        expect((await caught(invitations.revoke(org.id, withdrawn.id))).code).toBe(
+          'organization.invitation_revoked'
+        )
+
+        // An invitation lasts seven days.
+        const lapsing = await invitations.invite(org.id, {
+          email: freshEmail(),
+          role: 'member',
+          redirectUrl: JOIN,
+        })
+        const lapsingToken = linkOf().read?.token ?? ''
+        expect(lapsing.status).toBe('pending')
+        s.advance(7 * 24 * 3600 * 1000 + 1000)
+        expect((await caught(visitor.organizations.invitations.preview(lapsingToken))).code).toBe(
+          'organization.invitation_expired'
+        )
       }
     )
 

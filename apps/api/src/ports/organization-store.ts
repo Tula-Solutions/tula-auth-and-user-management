@@ -1,3 +1,4 @@
+import type { InvitationStatus } from '@tula-tech/contract'
 import type { Recorded } from '~/ports/activity-log'
 
 /** An organization as stored (ADR 0065). */
@@ -157,6 +158,64 @@ export interface OwnedOrganization {
   /** The most organizations the user may have created, this one included; `null` for no limit. */
   limit: number | null
 }
+
+/** The states an invitation is stored in. `expired` is derived: a pending one past its expiry. */
+export type StoredInvitationStatus = 'pending' | 'accepted' | 'declined' | 'revoked'
+
+/**
+ * An invitation to an organization as stored (ADR 0065, Orgs 04). The token is never stored,
+ * only its SHA-256.
+ */
+export interface InvitationRecord {
+  id: string
+  projectId: string
+  environmentId: string
+  organizationId: string
+  /** The invited address as it was typed: where the email went. Personal data. */
+  email: string
+  /** The same trimmed and lower-cased (`normalizeEmail`): what a signed-in user's is compared to. */
+  emailNormalized: string
+  /** The key of the role the invitee gets. Not a reference: the role may be deleted later. */
+  roleKey: string
+  /** SHA-256 of the token the emailed link carries. */
+  tokenHash: string
+  status: StoredInvitationStatus
+  /** The user who invited them, or `null` for an administrator. */
+  invitedBy: string | null
+  expiresAt: Date
+  /** When it was accepted, declined or revoked; `null` while pending. */
+  resolvedAt: Date | null
+  /** The user who accepted or declined it; `null` while pending and when revoked. */
+  resolvedBy: string | null
+  createdAt: Date
+  updatedAt: Date
+}
+
+/** What storing a new invitation came to. */
+export type InsertInvitationOutcome =
+  | { outcome: 'created'; record: InvitationRecord }
+  /** The address has a pending invitation (not expired) to the organization already. */
+  | { outcome: 'exists' }
+  /** The organization is gone (removed between the read and the write). */
+  | { outcome: 'gone' }
+
+/** What revoking, declining or accepting an invitation came to. */
+export type ResolveInvitationOutcome =
+  /** The invitation was pending and is now resolved. */
+  | { outcome: 'done'; record: InvitationRecord }
+  /** It could not be resolved: it was resolved already, or it has expired. Its state now. */
+  | { outcome: 'unavailable'; record: InvitationRecord }
+  | { outcome: 'not_found' }
+
+/** What accepting an invitation came to. */
+export type AcceptInvitationOutcome =
+  | { outcome: 'accepted'; record: InvitationRecord; membership: MembershipRecord }
+  | { outcome: 'unavailable'; record: InvitationRecord }
+  | { outcome: 'not_found' }
+  /** The user is a member of the organization already. Nothing was written. */
+  | { outcome: 'duplicate' }
+  /** The organization, the user or the role is gone. Nothing was written. */
+  | { outcome: 'gone' }
 
 /**
  * Organizations, the roles of an environment and the memberships between users and
@@ -410,6 +469,131 @@ export interface OrganizationStore {
     expectedVersion: number | null,
     activity: Recorded
   ): Promise<DeleteRoleOutcome>
+
+  /**
+   * Store an invitation, in one transaction that first removes a pending invitation of the same
+   * organization and address that has **expired** (it would hold the one-pending-per-address
+   * key for nothing). One that has not expired makes this `exists`.
+   *
+   * @param record - The invitation, `pending`.
+   * @param now - The time the expiry is judged at.
+   * @param activity - Recorded in the same transaction, only if the invitation was stored.
+   * @returns What came of it.
+   */
+  insertInvitation(
+    record: InvitationRecord,
+    now: Date,
+    activity: Recorded
+  ): Promise<InsertInvitationOutcome>
+
+  /**
+   * @param environmentId - The environment to look in.
+   * @param organizationId - The organization.
+   * @param status - Which invitations: `pending` is the stored ones still inside their expiry,
+   *   `expired` the pending ones past it, the others are stored states.
+   * @param now - The time the expiry is judged at.
+   * @param page - Which page.
+   * @returns The invitations, newest first, and how many there are.
+   */
+  listInvitations(
+    environmentId: string,
+    organizationId: string,
+    status: InvitationStatus,
+    now: Date,
+    page: PageCriteria
+  ): Promise<Page<InvitationRecord>>
+
+  /**
+   * @param environmentId - The environment to look in.
+   * @param organizationId - The organization the invitation must be of.
+   * @param id - The invitation.
+   * @returns The invitation, or `null` when there is none with that id in the organization.
+   */
+  findInvitation(
+    environmentId: string,
+    organizationId: string,
+    id: string
+  ): Promise<InvitationRecord | null>
+
+  /**
+   * @param environmentId - The environment to look in.
+   * @param tokenHash - The SHA-256 of the presented token.
+   * @returns The invitation that token belongs to, or `null`.
+   */
+  findInvitationByTokenHash(
+    environmentId: string,
+    tokenHash: string
+  ): Promise<InvitationRecord | null>
+
+  /**
+   * Withdraw a pending invitation, **only if it is still pending and has not expired**. The
+   * write is conditional, so of two resolutions at once one wins.
+   *
+   * @param environmentId - The environment.
+   * @param organizationId - The organization the invitation must be of.
+   * @param id - The invitation.
+   * @param now - When it is withdrawn, and the time its expiry is judged at.
+   * @param activity - Recorded in the same transaction, only if it was withdrawn.
+   * @returns What came of it.
+   */
+  revokeInvitation(
+    environmentId: string,
+    organizationId: string,
+    id: string,
+    now: Date,
+    activity: Recorded
+  ): Promise<ResolveInvitationOutcome>
+
+  /**
+   * Decline a pending invitation, on the same conditions as {@link revokeInvitation}.
+   *
+   * @param environmentId - The environment.
+   * @param id - The invitation.
+   * @param userId - The user who declines it.
+   * @param now - When it is declined, and the time its expiry is judged at.
+   * @param activity - Recorded in the same transaction, only if it was declined.
+   * @returns What came of it.
+   */
+  declineInvitation(
+    environmentId: string,
+    id: string,
+    userId: string,
+    now: Date,
+    activity: Recorded
+  ): Promise<ResolveInvitationOutcome>
+
+  /**
+   * Accept a pending invitation and make the user a member, **in one transaction**: the
+   * invitation is used up only if the membership is stored, and the membership is stored only
+   * if the invitation was still pending and had not expired. Two acceptances at once make
+   * one membership; a user who is a member already is `duplicate` and the invitation stays
+   * pending.
+   *
+   * @param environmentId - The environment.
+   * @param id - The invitation.
+   * @param membership - The membership to store, with the role the service resolved.
+   * @param now - When it is accepted, and the time its expiry is judged at.
+   * @param activities - The records of the two writes, stored with them.
+   * @returns What came of it. Nothing is written unless it is `accepted`.
+   */
+  acceptInvitation(
+    environmentId: string,
+    id: string,
+    membership: MembershipRecord,
+    now: Date,
+    activities: { invitation: Recorded; membership: Recorded }
+  ): Promise<AcceptInvitationOutcome>
+
+  /**
+   * Delete invitations that expired before a cutoff, whatever became of them, at most `limit`
+   * of them (the retention job's batch).
+   *
+   * @param environmentId - The environment whose invitations are purged.
+   * @param before - The cutoff: rows whose `expiresAt` is earlier go.
+   * @param limit - The most rows to delete.
+   * @returns How many were deleted.
+   */
+  deleteExpiredInvitations(environmentId: string, before: Date, limit: number): Promise<number>
 
   /**
    * Store the built-in roles of an environment that does not have them yet. A role the

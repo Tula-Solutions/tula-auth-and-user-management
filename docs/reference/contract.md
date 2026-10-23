@@ -233,6 +233,26 @@ opaque.
 const AUTHENTICATION_METHODS: readonly ["pwd", "email", "sms", "otp", "backup_code", "mfa", "hwk", "swk", "user"]
 ```
 
+### `AcceptedInvitation`
+
+_type_, defined in `packages/contract/src/organization-invitation.ts`
+
+The organization a user joined by accepting.
+
+```ts
+export type AcceptedInvitation = z.infer<typeof AcceptedInvitationSchema>
+```
+
+### `AcceptedInvitationSchema`
+
+_constant_, defined in `packages/contract/src/organization-invitation.ts`
+
+What accepting an invitation answers: the organization the user joined, with their role.
+
+```ts
+const AcceptedInvitationSchema
+```
+
 ### `AccessTokenClaims`
 
 _type_, defined in `packages/contract/src/tokens.ts`
@@ -980,6 +1000,33 @@ bundle id or package name.
 
 ```ts
 const CreateNativeAppRequestSchema
+```
+
+### `CreateOrganizationInvitationRequest`
+
+_type_, defined in `packages/contract/src/organization-invitation.ts`
+
+The body that invites an address.
+
+```ts
+export type CreateOrganizationInvitationRequest = z.infer<
+  typeof CreateOrganizationInvitationRequestSchema
+>
+```
+
+### `CreateOrganizationInvitationRequestSchema`
+
+_constant_, defined in `packages/contract/src/organization-invitation.ts`
+
+Invite an address to an organization with a role.
+
+`redirectUrl` is where the emailed link leads: it must be one of the environment's allowed
+redirect URLs (matched exactly), an `https` address or loopback in the `local` tier; a
+custom scheme is refused, so a native app opens its page through an app link. The link is
+the URL followed by `#tula_invitation=<token>`.
+
+```ts
+const CreateOrganizationInvitationRequestSchema: z.ZodObject<{ email: z.ZodString; role: z.ZodString; redirectUrl: z.ZodString; }, z.core.$strict>
 ```
 
 ### `CreateOrganizationRequest`
@@ -1732,6 +1779,8 @@ server sends, so that a template never has to say two different things.
 - `account_exists`, `no_account`, `no_account_sign_in`, `email_in_use`: what is sent
   instead of a code, so that a sign-up, a reset, a sign-in and adding an address to an
   account (ADR 0059) answer alike for every address.
+- `organization_invitation` (ADR 0065): an invitation to join an organization, with the
+  server's link and no code.
 - the rest: security notices (ADR 0023), one per thing that can have happened.
 
 A closed list. Later servers may add kinds: additive.
@@ -1757,6 +1806,7 @@ Every placeholder a template can name, as `{{name}}`.
 - `link`: the sign-in link. In a body only; the server draws it as its own button, and a
   paragraph that names it is left out of a message that has no link.
 - `expiresInMinutes`: minutes until the code (and link) stop working. A number.
+- `expiresInDays`: days until an invitation's link stops working. A number.
 - `device`: the device family of a new sign-in (`Chrome on Windows`): one of the server's
   fixed names, never the user agent.
 - `time`: when it happened, in UTC (`2026-10-03 14:05 UTC`).
@@ -2113,7 +2163,7 @@ _type_, defined in `packages/contract/src/email-template.ts`
 What a kind of message is, which decides the rules its templates are held to.
 
 ```ts
-export type EmailTemplateCategory = 'code' | 'notice'
+export type EmailTemplateCategory = 'code' | 'notice' | 'invitation'
 ```
 
 ### `EmailTemplateKind`
@@ -2201,8 +2251,10 @@ The rules of one kind's templates.
 export interface EmailTemplateRules {
   /**
    * `code`: the message exists to carry a code. `notice`: it carries none, its template can
-   * name no code and no link, and its subject does not lead with a digit. No kind of either
-   * category can hold something that reads as a link.
+   * name no code and no link, and its subject does not lead with a digit. `invitation`: it
+   * carries the server's link and no code (an invitation to an organization, ADR 0065), and
+   * its subject does not lead with a digit either, so that it is never taken for a code. No
+   * kind of any category can hold something that reads as a link.
    */
   category: EmailTemplateCategory
   /** Placeholders a body must name: without them the message could not do its job. */
@@ -3523,6 +3575,52 @@ What an instance audit entry can be about.
 const INSTANCE_AUDIT_TARGET_TYPES: readonly ["workspace", "project", "environment"]
 ```
 
+### `INVITATIONS_MANAGE_PERMISSION`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permission that lets a member invite people to the organization and withdraw
+invitations (ADR 0065, Orgs 04). Checked on the server from the membership as it is now,
+never from a token's claims alone.
+
+```ts
+const INVITATIONS_MANAGE_PERMISSION: SystemPermission
+```
+
+### `INVITATION_EXPIRY_DAYS`
+
+_constant_, defined in `packages/contract/src/organization-invitation.ts`
+
+How long an invitation can be accepted after it was sent, in days. After that it is
+`expired`, and the retention job deletes it a while later.
+
+```ts
+const INVITATION_EXPIRY_DAYS: 7
+```
+
+**Example**
+
+```ts
+new Date(sentAt.getTime() + INVITATION_EXPIRY_DAYS * 86_400_000)
+```
+
+### `INVITATION_STATUSES`
+
+_constant_, defined in `packages/contract/src/organization-invitation.ts`
+
+The states of an invitation. `pending` is the only one that can be accepted. `expired` is
+not stored: it is a `pending` invitation whose time has passed.
+
+```ts
+const INVITATION_STATUSES: readonly ["pending", "accepted", "declined", "revoked", "expired"]
+```
+
+**Example**
+
+```ts
+INVITATION_STATUSES.includes('pending') // true
+```
+
 ### `IdTokenExchangeRequest`
 
 _type_, defined in `packages/contract/src/oauth.ts`
@@ -3838,6 +3936,60 @@ What an instance action was about.
 
 ```ts
 export type InstanceAuditTargetType = (typeof INSTANCE_AUDIT_TARGET_TYPES)[number]
+```
+
+### `InvitationPreview`
+
+_type_, defined in `packages/contract/src/organization-invitation.ts`
+
+What the token's holder may see before signing in.
+
+```ts
+export type InvitationPreview = z.infer<typeof InvitationPreviewSchema>
+```
+
+### `InvitationPreviewSchema`
+
+_constant_, defined in `packages/contract/src/organization-invitation.ts`
+
+What the holder of an invitation's token may see before signing in: which organization
+invites them, as which role, and the address it was sent to (so that a sign-up can be
+prefilled with it). Answered for a pending invitation only; the token is the proof of
+having been sent it.
+
+```ts
+const InvitationPreviewSchema
+```
+
+### `InvitationStatus`
+
+_type_, defined in `packages/contract/src/organization-invitation.ts`
+
+One of {@link INVITATION_STATUSES}.
+
+```ts
+export type InvitationStatus = (typeof INVITATION_STATUSES)[number]
+```
+
+### `InvitationTokenRequest`
+
+_type_, defined in `packages/contract/src/organization-invitation.ts`
+
+The body that carries an invitation's token.
+
+```ts
+export type InvitationTokenRequest = z.infer<typeof InvitationTokenRequestSchema>
+```
+
+### `InvitationTokenRequestSchema`
+
+_constant_, defined in `packages/contract/src/organization-invitation.ts`
+
+The token of an invitation, as the link carried it (`#tula_invitation=…`). What `preview`,
+`accept` and `decline` send.
+
+```ts
+const InvitationTokenRequestSchema: z.ZodObject<{ token: z.ZodString; }, z.core.$strict>
 ```
 
 ### `IosApp`
@@ -5358,6 +5510,28 @@ The access token's claim naming the active organization (ADR 0065, "Token claims
 const ORGANIZATION_ID_CLAIM: "org_id"
 ```
 
+### `ORGANIZATION_INVITATION_TOKEN_PARAM`
+
+_constant_, defined in `packages/contract/src/headers.ts`
+
+Name of the URL-fragment parameter carrying an organization invitation's token (ADR 0065,
+Orgs 04).
+
+The link in the invitation email is the app's own redirect URL followed by
+`#tula_invitation=<token>`. A fragment is never sent to a server, a proxy or in `Referer`,
+so the token reaches only the page's own script, which posts it to the invitation routes
+(`preview`, `accept`, `decline`) and removes it from the URL.
+
+```ts
+const ORGANIZATION_INVITATION_TOKEN_PARAM: "tula_invitation"
+```
+
+**Example**
+
+```ts
+const token = new URLSearchParams(location.hash.slice(1)).get(ORGANIZATION_INVITATION_TOKEN_PARAM)
+```
+
 ### `ORGANIZATION_PERMISSIONS_CLAIM`
 
 _constant_, defined in `packages/contract/src/custom-claims.ts`
@@ -5466,6 +5640,57 @@ One of {@link ORGANIZATION_FIELDS}.
 
 ```ts
 export type OrganizationField = (typeof ORGANIZATION_FIELDS)[number]
+```
+
+### `OrganizationInvitation`
+
+_type_, defined in `packages/contract/src/organization-invitation.ts`
+
+An invitation.
+
+```ts
+export type OrganizationInvitation = z.infer<typeof OrganizationInvitationSchema>
+```
+
+### `OrganizationInvitationList`
+
+_type_, defined in `packages/contract/src/organization-invitation.ts`
+
+A page of invitations.
+
+```ts
+export type OrganizationInvitationList = z.infer<typeof OrganizationInvitationListSchema>
+```
+
+### `OrganizationInvitationListSchema`
+
+_constant_, defined in `packages/contract/src/organization-invitation.ts`
+
+One page of an organization's invitations, newest first.
+
+```ts
+const OrganizationInvitationListSchema
+```
+
+### `OrganizationInvitationQuerySchema`
+
+_constant_, defined in `packages/contract/src/organization-invitation.ts`
+
+The query of a list of invitations: a page, and the state to list (`pending` unless
+another is asked for).
+
+```ts
+const OrganizationInvitationQuerySchema
+```
+
+### `OrganizationInvitationSchema`
+
+_constant_, defined in `packages/contract/src/organization-invitation.ts`
+
+An invitation as the admin API and the inviting members' routes return it.
+
+```ts
+const OrganizationInvitationSchema
 ```
 
 ### `OrganizationList`
@@ -13387,6 +13612,28 @@ const OAUTH_TICKET_PARAM: "tula_ticket"
 const ticket = new URLSearchParams(location.hash.slice(1)).get(OAUTH_TICKET_PARAM)
 ```
 
+### `ORGANIZATION_INVITATION_TOKEN_PARAM`
+
+_constant_, defined in `packages/contract/src/headers.ts`
+
+Name of the URL-fragment parameter carrying an organization invitation's token (ADR 0065,
+Orgs 04).
+
+The link in the invitation email is the app's own redirect URL followed by
+`#tula_invitation=<token>`. A fragment is never sent to a server, a proxy or in `Referer`,
+so the token reaches only the page's own script, which posts it to the invitation routes
+(`preview`, `accept`, `decline`) and removes it from the URL.
+
+```ts
+const ORGANIZATION_INVITATION_TOKEN_PARAM: "tula_invitation"
+```
+
+**Example**
+
+```ts
+const token = new URLSearchParams(location.hash.slice(1)).get(ORGANIZATION_INVITATION_TOKEN_PARAM)
+```
+
 ### `PUBLISHABLE_KEY_HEADER`
 
 _constant_, defined in `packages/contract/src/headers.ts`
@@ -13513,6 +13760,18 @@ export interface BuiltInRole {
   readonly name: string
   readonly permissions: readonly SystemPermission[]
 }
+```
+
+### `INVITATIONS_MANAGE_PERMISSION`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permission that lets a member invite people to the organization and withdraw
+invitations (ADR 0065, Orgs 04). Checked on the server from the membership as it is now,
+never from a token's claims alone.
+
+```ts
+const INVITATIONS_MANAGE_PERMISSION: SystemPermission
 ```
 
 ### `MAX_CUSTOM_ROLES`
