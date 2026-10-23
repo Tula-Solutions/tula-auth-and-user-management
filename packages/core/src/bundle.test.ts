@@ -112,8 +112,14 @@ import { join } from 'node:path'
  * `validation.failed`, and the messages were cut to one short line each (the first wording
  * cost 179 bytes for five codes, 107 after shortening them). The budget moved by exactly
  * those 88 bytes, from 17,111 to 17,199: the room is the 4 bytes it was.
+ * The client side of organizations (ADR 0065, Orgs 02) added 434 bytes, from 17,199 to 17,633:
+ * the four contract codes of the user's own organization routes and their messages, the three
+ * operation rows, `organizations.{list,create,setActive}`, the `org_id` read of the access
+ * token for `state.organizationId`, and `setActiveOrganization` with its stale-generation
+ * handling (shaped like `stepUp`, which it shares `send` and `commit` with). The budget moved
+ * by exactly those 434 bytes: the room is the 4 bytes it was.
  */
-const GZIP_BUDGET_BYTES = 17_199
+const GZIP_BUDGET_BYTES = 17_633
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

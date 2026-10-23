@@ -879,7 +879,12 @@ describe('browser tabs', () => {
     await a.tula.signIn.start({ identifier: 'maya@northline.app' })
     await Promise.resolve()
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(b.tula.state).toEqual({ status: 'signed-in', sessionId: 'session_9', user: TEST_USER })
+    expect(b.tula.state).toEqual({
+      status: 'signed-in',
+      sessionId: 'session_9',
+      user: TEST_USER,
+      organizationId: null,
+    })
     expect(await b.tula.session.getToken()).toBe(accessToken('signed_in'))
     expect(w.refreshes()).toBe(2)
   })
@@ -1037,7 +1042,12 @@ describe('state and listeners', () => {
     const w = world()
     const { tula, states } = tab(w, 'web')
     const loaded = await tula.load()
-    expect(loaded).toEqual({ status: 'signed-in', sessionId: 'session_1', user: TEST_USER })
+    expect(loaded).toEqual({
+      status: 'signed-in',
+      sessionId: 'session_1',
+      user: TEST_USER,
+      organizationId: null,
+    })
     expect(tula.state).toBe(loaded)
     expect(Object.isFrozen(loaded)).toBe(true)
     await tula.session.refresh()
@@ -1099,10 +1109,20 @@ describe('state and listeners', () => {
     const w = world()
     const { tula, states } = tab(w, 'web')
     w.api.on(ME, () => failure(500, 'internal'))
-    expect(await tula.load()).toEqual({ status: 'signed-in', sessionId: 'session_1', user: null })
+    expect(await tula.load()).toEqual({
+      status: 'signed-in',
+      sessionId: 'session_1',
+      user: null,
+      organizationId: null,
+    })
     w.api.on(ME, () => json(200, TEST_USER))
     expect(await tula.user.get()).toEqual(TEST_USER)
-    expect(tula.state).toEqual({ status: 'signed-in', sessionId: 'session_1', user: TEST_USER })
+    expect(tula.state).toEqual({
+      status: 'signed-in',
+      sessionId: 'session_1',
+      user: TEST_USER,
+      organizationId: null,
+    })
     expect(states).toHaveLength(2)
   })
 
@@ -1132,7 +1152,12 @@ describe('state and listeners', () => {
     w.api.on(REFRESH, () => json(200, sessionTokens('other', { sessionId: 'session_2' })))
     w.api.on(ME, () => json(200, other))
     await tula.session.refresh()
-    expect(tula.state).toEqual({ status: 'signed-in', sessionId: 'session_2', user: other })
+    expect(tula.state).toEqual({
+      status: 'signed-in',
+      sessionId: 'session_2',
+      user: other,
+      organizationId: null,
+    })
     expect(states).toHaveLength(2)
   })
 
@@ -1717,7 +1742,12 @@ describe('step-up: a fresh access token for the same session', () => {
     expect(await tula.session.getToken()).toBe(accessToken('proven'))
     expect(w.refreshes()).toBe(1)
     expect(states).toHaveLength(1)
-    expect(tula.state).toEqual({ status: 'signed-in', sessionId: 'session_1', user: TEST_USER })
+    expect(tula.state).toEqual({
+      status: 'signed-in',
+      sessionId: 'session_1',
+      user: TEST_USER,
+      organizationId: null,
+    })
     expect(set).not.toHaveBeenCalled()
     expect(await storage.get(STORAGE_KEY)).toBe('rt_1')
     // The next refresh presents the token the session had before the step-up.
@@ -2050,5 +2080,165 @@ describe('step-up: a fresh access token for the same session', () => {
       expect(a.tula.state.status).toBe('signed-in')
       expect(b.tula.state.status).toBe('signed-in')
     })
+  })
+})
+
+describe('the active organization (ADR 0065)', () => {
+  const ACTIVE = 'PUT /v1/client/me/organizations/active'
+  const LIST = 'GET /v1/client/me/organizations'
+  const ORG = '01980000-0000-7000-8000-000000000001'
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
+  const inOrg = (label: string, id = ORG) => accessToken(label, 60, { org_id: id })
+  const answer = (label: string, organizationId: string | null = ORG) =>
+    json(200, {
+      sessionId: 'session_1',
+      organizationId,
+      accessToken: organizationId ? inOrg(label, organizationId) : accessToken(label),
+      accessTokenExpiresAt: '2030-01-01T00:01:00.000Z',
+    })
+
+  test('state.organizationId is null while the token has no org_id', async () => {
+    const w = world()
+    const { tula } = await signedIn(w)
+    expect(tula.state).toMatchObject({ status: 'signed-in', organizationId: null })
+  })
+
+  test('setActive installs the token it is answered with and the state follows, with one notification', async () => {
+    const w = world()
+    const { tula, states, storage } = await signedIn(w)
+    w.api.on(ACTIVE, () => answer('chosen'))
+    const result = await tula.organizations.setActive(ORG)
+    expect(result.organizationId).toBe(ORG)
+    expect(w.api.calls(ACTIVE)[0]?.body).toEqual({ organizationId: ORG })
+    expect(await tula.session.getToken()).toBe(inOrg('chosen'))
+    expect(tula.state).toMatchObject({ status: 'signed-in', organizationId: ORG })
+    expect(states).toHaveLength(2)
+    expect(w.refreshes()).toBe(1)
+    // The refresh token is untouched.
+    expect(await storage.get(STORAGE_KEY)).toBe('rt_1')
+  })
+
+  test('clearing the choice (null) puts the state back to the personal account', async () => {
+    const w = world()
+    const { tula } = await signedIn(w)
+    w.api.on(ACTIVE, () => answer('chosen'))
+    await tula.organizations.setActive(ORG)
+    w.api.on(ACTIVE, () => answer('personal', null))
+    await tula.organizations.setActive(null)
+    expect(w.api.calls(ACTIVE)[1]?.body).toEqual({ organizationId: null })
+    expect(tula.state).toMatchObject({ status: 'signed-in', organizationId: null })
+  })
+
+  test('a refresh that changes the token’s org_id changes the state (a removed member loses it)', async () => {
+    const w = world()
+    const { tula } = await signedIn(w)
+    w.api.on(ACTIVE, () => answer('chosen'))
+    await tula.organizations.setActive(ORG)
+    w.api.on(REFRESH, () => json(200, sessionTokens('after_removal', { refreshToken: 'rt_9' })))
+    await tula.session.refresh()
+    expect(tula.state).toMatchObject({ status: 'signed-in', organizationId: null })
+  })
+
+  test('an answer that is not what was asked for is response.invalid and installs nothing', async () => {
+    const w = world()
+    const { tula } = await signedIn(w)
+    w.api.on(ACTIVE, () => json(200, { sessionId: 'session_1', organizationId: 7 }))
+    expect(await caught(tula.organizations.setActive(ORG))).toMatchObject({
+      code: 'response.invalid',
+    })
+    expect(await tula.session.getToken()).toBe(accessToken('access_1'))
+    expect(tula.state).toMatchObject({ organizationId: null })
+  })
+
+  test('an answer for another session is never installed', async () => {
+    const w = world()
+    const { tula } = await signedIn(w)
+    w.api.on(ACTIVE, () =>
+      json(200, {
+        sessionId: 'session_2',
+        organizationId: ORG,
+        accessToken: inOrg('other'),
+        accessTokenExpiresAt: '2030-01-01T00:01:00.000Z',
+      })
+    )
+    expect(await caught(tula.organizations.setActive(ORG))).toMatchObject({
+      code: 'auth.unauthenticated',
+    })
+    expect(await tula.session.getToken()).toBe(accessToken('access_1'))
+    expect(tula.state).toMatchObject({ sessionId: 'session_1', organizationId: null })
+  })
+
+  test('the API’s refusal reaches the caller and changes nothing', async () => {
+    const w = world()
+    const { tula } = await signedIn(w)
+    w.api.on(ACTIVE, () => failure(403, 'organization.not_a_member'))
+    expect(await caught(tula.organizations.setActive(ORG))).toMatchObject({
+      code: 'organization.not_a_member',
+      status: 403,
+    })
+    expect(tula.state).toMatchObject({ status: 'signed-in', organizationId: null })
+  })
+
+  test('racing a refresh that lands first: the answer is for an older generation and is not installed; one more refresh carries the choice', async () => {
+    const w = world()
+    const { tula, storage } = await signedIn(w)
+    const held = deferred<Response>()
+    w.api.on(ACTIVE, () => held.promise)
+    const choosing = tula.organizations.setActive(ORG)
+    await tick()
+    expect(await tula.session.refresh()).toBe(accessToken('access_2'))
+    // The refresh after the choice is what carries it.
+    w.api.on(REFRESH, () =>
+      json(200, sessionTokens('after', { accessToken: inOrg('after'), refreshToken: 'rt_3' }))
+    )
+    held.resolve(answer('stale'))
+    await choosing
+    expect(await tula.session.getToken()).toBe(inOrg('after'))
+    expect(tula.state).toMatchObject({ organizationId: ORG })
+    expect(w.refreshes()).toBe(3)
+    expect(await storage.get(STORAGE_KEY)).toBe('rt_3')
+  })
+
+  test('signed out while the choice is in flight: nothing is installed and the client stays signed out', async () => {
+    const w = world()
+    const { tula } = await signedIn(w)
+    const held = deferred<Response>()
+    w.api.on(ACTIVE, () => held.promise)
+    const choosing = tula.organizations.setActive(ORG)
+    await tick()
+    await tula.session.signOut()
+    held.resolve(answer('late'))
+    expect(await caught(choosing)).toMatchObject({ code: 'auth.unauthenticated' })
+    expect(tula.state).toEqual({ status: 'signed-out' })
+  })
+
+  test('list reads the active organization from the API and leaves a token-bearing state to its token', async () => {
+    const w = world()
+    const { tula } = await signedIn(w)
+    w.api.on(LIST, () =>
+      json(200, { data: [], hasMore: false, nextCursor: null, activeOrganizationId: ORG })
+    )
+    const page = await tula.organizations.list()
+    expect(page.activeOrganizationId).toBe(ORG)
+    // The token is what the state reads; a list does not overrule it.
+    expect(tula.state).toMatchObject({ organizationId: null })
+  })
+
+  test('another tab learns the organization from the announced session', async () => {
+    const w = world()
+    const locks = fakeLocks()
+    const hub = fakeChannelHub('manual')
+    const a = tab(w, 'web', { locks, hub })
+    const b = tab(w, 'web', { locks, hub })
+    await a.tula.load()
+    hub.flush()
+    await b.tula.load()
+    hub.flush()
+    await tick()
+    w.api.on(ACTIVE, () => answer('chosen'))
+    await a.tula.organizations.setActive(ORG)
+    hub.flush()
+    await tick()
+    expect(b.tula.state).toMatchObject({ status: 'signed-in', organizationId: ORG })
   })
 })

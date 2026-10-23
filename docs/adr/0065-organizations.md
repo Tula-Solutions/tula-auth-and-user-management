@@ -116,6 +116,45 @@ dropped, the session stays). **A removal or a demotion therefore takes effect at
 refresh, within the access token's life, and does not revoke the session**: the user is still
 who they were.
 
+#### As built in Orgs 02 (TULA-112)
+
+- **The cap.** `MAX_ORGANIZATION_CLAIMS_BYTES` is 2,560; the true maximum is 2,541 bytes (the
+  organization's UUID, a 32-character role key and 32 permission keys of 73 characters,
+  `MAX_ORGANIZATION_PERMISSIONS_CLAIM`). It is a cap of its own and is never added to
+  `MAX_CUSTOM_CLAIMS_BYTES`. Over the cap at issue the token is issued **with no organization
+  claims at all** (fail closed: an application reading "no `org_id`" treats the user as acting
+  in no organization) and an error line names the environment, the organization and the
+  count, never a value. A reader (`readOrganizationClaims`) treats any partial or malformed
+  combination of the three as absent, whole.
+- **A maximal role does not fit a browser cookie.** `@tula-tech/nextjs` keeps the access token
+  in `tula_at`; with the maximal organization claims (about 3.4 KB once base64url-encoded)
+  that cookie can pass a browser's per-cookie budget. Nobody has such a role yet (the
+  built-in ones are small); the SDK's cookie handling for it is Orgs 06 (TULA-117).
+- **The session records its active organization** in `sessions.active_organization_id`
+  (migration 0038), deliberately **without a foreign key**: deleting an organization or a
+  membership must not touch a session row, and the id is trusted for nothing, since every
+  token re-reads the membership. A removed member, a demoted one, a deleted organization and an
+  environment that switched organizations off all lose the claims at the next refresh; the
+  session lives and the stored id is not cleared, so re-adding the member restores the
+  claims. Choosing among memberships already held is an unrecorded write
+  ([ADR 0012](0012-events-and-audit-log.md)).
+- **Routes** (`modules/organization/me-router.ts`, publishable key and session, `no-store`, a
+  per-IP limit each): `GET /v1/client/me/organizations`, `POST` the same path (201) and
+  `PUT /v1/client/me/organizations/active` with `{ organizationId: uuid | null }`. A `hybrid`
+  session gets a new access token and keeps its refresh token; a `stateful` session gets no
+  token and its next request carries the claims. Every permission is read through one function,
+  `OrganizationStore.findUserMembership`, which is where custom roles (Orgs 03) plug in.
+- **Codes.** `organization.not_a_member` (403) is the answer for an organization that does
+  not exist, one the user is not in and one of another environment alike, so the route
+  enumerates nothing; `organization.creation_disabled` (403), `organization.limit_reached`
+  (403, counted by `created_by` under a lock on the user row) and
+  `organization.personal_account_disabled` (409, for `null` while `personalAccount` is off).
+- **`@tula-tech/core`.** `client.organizations.{list, create, setActive}`; the signed-in state
+  gains `organizationId`, read from the access token's `org_id` (for display, never for
+  authorizing) and, for a `stateful` session with no token, from the last list or choice. A
+  choice answered for an older session generation is never installed: one refresh, made after
+  the choice was accepted, carries it. `list` returns the first page only.
+
 ### Routes
 
 - **Admin** (this step): `/v1/admin/organizations` (list, create), `/:id` (read, rename,

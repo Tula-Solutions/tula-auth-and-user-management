@@ -81,10 +81,12 @@ export {
 export { memoryStorage, type TokenStorage } from './storage'
 export type { DeviceKeySource } from './transport'
 export type {
+  ActiveOrganization,
   AuthState,
   BackupCodes,
   ClientConfig,
   ClientKind,
+  CreateOrganizationInput,
   EmailCodeSent,
   FactorEnrolmentMethod,
   Factors,
@@ -105,4 +107,6 @@ export type {
   StepUpProof,
   TotpEnrolment,
   User,
+  UserOrganization,
+  UserOrganizationList,
 } from './types'

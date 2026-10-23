@@ -2372,6 +2372,140 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
     )
 
     journey(
+      'my organizations and the active organization',
+      'organizations: a user lists theirs, creates one where allowed and chooses the one the session acts in; the token carries it, a refresh re-reads the membership and a removed member keeps the session without the claims',
+      async () => {
+        const s = await server()
+        const { tula, email } = await signUp(s)
+        const userId = tula.state.status === 'signed-in' ? tula.state.user?.id : undefined
+
+        // Off by default: every route answers its code and nothing changes.
+        expect((await caught(tula.organizations.list())).code).toBe('organization.disabled')
+        expect((await caught(tula.organizations.setActive(null))).code).toBe(
+          'organization.disabled'
+        )
+
+        /** Replace the environment's organization settings, as an operator does. */
+        async function configure(allowUserCreated: boolean): Promise<void> {
+          const read = await s.admin('GET', '/v1/admin/settings')
+          const { settings } = (await read.json()) as { settings: EnvironmentSettings }
+          const saved = await s.admin(
+            'PUT',
+            '/v1/admin/settings',
+            {
+              ...settings,
+              organizations: {
+                enabled: true,
+                allowUserCreated,
+                maxCreatedPerUser: 1,
+                creatorRole: 'admin',
+                defaultRole: 'member',
+                personalAccount: true,
+              },
+            },
+            { 'if-match': read.headers.get('etag') ?? '' }
+          )
+          expect(saved.status).toBe(200)
+        }
+        await configure(false)
+        expect(
+          (await caught(tula.organizations.create({ name: 'Mine', slug: `mine-${userId}` }))).code
+        ).toBe('organization.creation_disabled')
+
+        const created = async (name: string, slug: string) =>
+          (
+            (await (await s.admin('POST', '/v1/admin/organizations', { name, slug })).json()) as {
+              id: string
+            }
+          ).id
+        const orgId = await created('Conformance Org', `conformance-${userId}`)
+        const otherId = await created('Elsewhere', `elsewhere-${userId}`)
+        // A second user keeps an administrator in the organization, so the first can be demoted.
+        const managerEmail = freshEmail()
+        const manager = (await (
+          await s.admin('POST', '/v1/admin/users', { email: managerEmail, emailVerified: true })
+        ).json()) as { id: string }
+        const memberships = `/v1/admin/organizations/${orgId}/memberships`
+        expect(
+          (await s.admin('POST', memberships, { userId: manager.id, role: 'admin' })).status
+        ).toBe(201)
+        expect((await s.admin('POST', memberships, { userId, role: 'member' })).status).toBe(201)
+
+        const page = await tula.organizations.list()
+        expect(page.data.map((org) => [org.id, org.role])).toEqual([[orgId, 'member']])
+        expect(page.activeOrganizationId).toBeNull()
+        expect(tula.state).toMatchObject({ status: 'signed-in', organizationId: null })
+        expect(decodeJwt((await tula.session.getToken()) ?? '').org_id).toBeUndefined()
+
+        // One that is not theirs, and one that does not exist, are refused alike.
+        const refused = await caught(tula.organizations.setActive(otherId))
+        expect(refused).toMatchObject({ code: 'organization.not_a_member', status: 403 })
+        expect((await caught(tula.organizations.setActive(userId as string))).code).toBe(
+          refused.code
+        )
+        expect(tula.state).toMatchObject({ organizationId: null })
+
+        const before = refreshes(s).length
+        const chosen = await tula.organizations.setActive(orgId)
+        expect(chosen).toMatchObject({ organizationId: orgId })
+        expect(refreshes(s)).toHaveLength(before)
+        expect(tula.state).toMatchObject({ status: 'signed-in', organizationId: orgId })
+        expect(decodeJwt((await tula.session.getToken()) ?? '')).toMatchObject({
+          org_id: orgId,
+          org_role: 'member',
+        })
+        expect((await tula.organizations.list()).activeOrganizationId).toBe(orgId)
+
+        // A refresh keeps the choice and reads the membership again.
+        s.advance(1_000)
+        expect(decodeJwt((await tula.session.refresh()) ?? '')).toMatchObject({
+          org_id: orgId,
+          org_role: 'member',
+        })
+        const member = `${memberships}/${userId}`
+        expect((await s.admin('PATCH', member, { role: 'admin' })).status).toBe(200)
+        s.advance(1_000)
+        expect(decodeJwt((await tula.session.refresh()) ?? '').org_role).toBe('admin')
+        expect((await s.admin('PATCH', member, { role: 'member' })).status).toBe(200)
+        s.advance(1_000)
+        expect(decodeJwt((await tula.session.refresh()) ?? '').org_role).toBe('member')
+
+        // Removed: the session lives on, its next token has no organization.
+        expect((await s.admin('DELETE', member)).status).toBe(204)
+        s.advance(1_000)
+        const after = decodeJwt((await tula.session.refresh()) ?? '')
+        expect(after.org_id).toBeUndefined()
+        expect(after.org_role).toBeUndefined()
+        expect(after.org_perms).toBeUndefined()
+        expect(tula.state).toMatchObject({ status: 'signed-in', organizationId: null })
+        expect((await caught(tula.organizations.setActive(orgId))).code).toBe(
+          'organization.not_a_member'
+        )
+        expect(await tula.organizations.setActive(null)).toMatchObject({ organizationId: null })
+
+        // Creating needs the setting, makes the user its admin, stops at the limit and
+        // does not switch the session.
+        await configure(true)
+        expect(
+          (
+            await caught(
+              tula.organizations.create({ name: 'Taken', slug: `conformance-${userId}` })
+            )
+          ).code
+        ).toBe('organization.slug_taken')
+        const mine = await tula.organizations.create({ name: 'Mine', slug: `mine-${userId}` })
+        expect(mine).toMatchObject({ slug: `mine-${userId}`, role: 'admin' })
+        expect(
+          (await caught(tula.organizations.create({ name: 'Again', slug: `again-${userId}` }))).code
+        ).toBe('organization.limit_reached')
+        expect(tula.state).toMatchObject({ organizationId: null })
+        await tula.organizations.setActive(mine.id)
+        expect(tula.state).toMatchObject({ organizationId: mine.id })
+        expect(email).toBeTruthy()
+      }
+    )
+
+    journey(
       'required second factor',
       'policy required: sign-in and sign-up stop at needs_factor_enrolment and complete with backup codes; the factor cannot be turned off',
       async () => {

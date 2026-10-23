@@ -239,6 +239,10 @@ of.
   [ADR 0035](0035-hooks.md)); what a call of a hook came to, counted by the hour
   (`HookStore.countCall`, added 2026-10-12, TULA-67: a count by hook, hour and one of four
   fixed words, nothing of the question or the answer, and no change to anyone's access);
+  which organization a session acts in (`SessionStore.setActiveOrganization`, a method of its
+  own that takes none, TULA-112: a user choosing among memberships they already hold, which
+  grants nothing, and every later token re-reads the membership;
+  [ADR 0065](0065-organizations.md));
   and what the webhook worker
   writes ([ADR 0034](0034-webhooks.md)): a delivery row and its attempts, which are themselves
   the record of the delivery, an event's `delivered_at` (`WebhookDeliveryStore` has no method

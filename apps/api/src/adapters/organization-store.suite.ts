@@ -672,5 +672,167 @@ export function describeOrganizationStore(
       ).toEqual({ outcome: 'not_found' })
       expect(await ctx.recorded()).toEqual(['organization.created'])
     })
+
+    /** What `insertOwned` is handed for a user who creates an organization with `role`. */
+    function owned(
+      tenant: OrganizationSuiteTenant,
+      userId: string,
+      role: OrganizationRoleRecord,
+      overrides: Partial<OrganizationRecord> = {},
+      limit: number | null = null
+    ) {
+      const org = organization(tenant, { createdBy: userId, ...overrides })
+      const membership: MembershipRecord = {
+        id: Bun.randomUUIDv7(),
+        projectId: tenant.projectId,
+        environmentId: tenant.environmentId,
+        organizationId: org.id,
+        userId,
+        roleId: role.id,
+        roleKey: role.key,
+        createdAt: now,
+        updatedAt: now,
+      }
+      return {
+        input: { organization: org, membership, permissions: role.permissions, limit },
+        activities: {
+          organization: activity(tenant, 'organization.created', org.id),
+          membership: activity(tenant, 'organization_membership.added', membership.id),
+        },
+      }
+    }
+
+    test('a user creates an organization and becomes its member in one write, and both are recorded', async () => {
+      const { admin } = await builtIns(ctx.a)
+      const userId = await ctx.user(ctx.a)
+      const { input, activities } = owned(ctx.a, userId, admin)
+      const result = await ctx.store.insertOwned(input, activities)
+      expect(result).toEqual({
+        outcome: 'created',
+        record: {
+          organization: input.organization,
+          membership: input.membership,
+          permissions: admin.permissions,
+        },
+      })
+      expect(await ctx.store.find(ctx.a.environmentId, input.organization.id)).toEqual(
+        input.organization
+      )
+      expect(
+        await ctx.store.findUserMembership(ctx.a.environmentId, input.organization.id, userId)
+      ).toEqual({
+        organization: input.organization,
+        membership: input.membership,
+        permissions: admin.permissions,
+      })
+      expect(await ctx.recorded()).toEqual([
+        'organization.created',
+        'organization_membership.added',
+      ])
+    })
+
+    test('a slug an organization has is slug_taken and leaves no organization, no member and no entry', async () => {
+      const { admin } = await builtIns(ctx.a)
+      await stored(organization(ctx.a))
+      const userId = await ctx.user(ctx.a)
+      const { input, activities } = owned(ctx.a, userId, admin)
+      expect(await ctx.store.insertOwned(input, activities)).toEqual({ outcome: 'slug_taken' })
+      expect(await ctx.store.find(ctx.a.environmentId, input.organization.id)).toBeNull()
+      expect(
+        await ctx.store.findUserMembership(ctx.a.environmentId, input.organization.id, userId)
+      ).toBeNull()
+      expect(await ctx.recorded()).toEqual(['organization.created'])
+    })
+
+    test('the limit counts what the user created, and not what others did', async () => {
+      const { admin } = await builtIns(ctx.a)
+      const userId = await ctx.user(ctx.a)
+      const other = await ctx.user(ctx.a)
+      const first = owned(ctx.a, userId, admin, { slug: 'one' }, 1)
+      expect((await ctx.store.insertOwned(first.input, first.activities)).outcome).toBe('created')
+      const theirs = owned(ctx.a, other, admin, { slug: 'theirs' }, 1)
+      expect((await ctx.store.insertOwned(theirs.input, theirs.activities)).outcome).toBe('created')
+      const second = owned(ctx.a, userId, admin, { slug: 'two' }, 1)
+      expect(await ctx.store.insertOwned(second.input, second.activities)).toEqual({
+        outcome: 'limit_reached',
+      })
+      expect(await ctx.store.find(ctx.a.environmentId, second.input.organization.id)).toBeNull()
+      // No limit: as many as are asked for.
+      const free = owned(ctx.a, userId, admin, { slug: 'three' }, null)
+      expect((await ctx.store.insertOwned(free.input, free.activities)).outcome).toBe('created')
+      expect(await ctx.recorded()).toHaveLength(6)
+    })
+
+    test('of two creations by one user at the limit exactly one is made', async () => {
+      const { admin } = await builtIns(ctx.a)
+      const userId = await ctx.user(ctx.a)
+      const one = owned(ctx.a, userId, admin, { slug: 'one' }, 1)
+      const two = owned(ctx.a, userId, admin, { slug: 'two' }, 1)
+      const results = await Promise.all([
+        ctx.store.insertOwned(one.input, one.activities),
+        ctx.store.insertOwned(two.input, two.activities),
+      ])
+      expect(results.map((result) => result.outcome).sort()).toEqual(['created', 'limit_reached'])
+      expect(await ctx.recorded()).toHaveLength(2)
+    })
+
+    test('a user that does not exist is gone and nothing is stored', async () => {
+      const { admin } = await builtIns(ctx.a)
+      const { input, activities } = owned(ctx.a, Bun.randomUUIDv7(), admin)
+      expect(await ctx.store.insertOwned(input, activities)).toEqual({ outcome: 'gone' })
+      expect(await ctx.store.find(ctx.a.environmentId, input.organization.id)).toBeNull()
+      expect(await ctx.recorded()).toEqual([])
+    })
+
+    test('a user’s memberships are listed oldest first with their role’s permissions, a page at a time', async () => {
+      const { admin, member } = await builtIns(ctx.a)
+      const userId = await ctx.user(ctx.a)
+      const first = await stored(organization(ctx.a, { slug: 'first' }))
+      const second = await stored(organization(ctx.a, { slug: 'second' }))
+      const third = await stored(organization(ctx.a, { slug: 'third' }))
+      await join(ctx.a, first, member, { userId, createdAt: now })
+      await join(ctx.a, second, admin, { userId, createdAt: later })
+      // Another user's membership is not listed.
+      await join(ctx.a, third, admin)
+      const all = await ctx.store.listUserMemberships(ctx.a.environmentId, userId, {
+        page: 1,
+        size: 10,
+      })
+      expect(all.total).toBe(2)
+      expect(all.records.map((row) => [row.organization.slug, row.membership.roleKey])).toEqual([
+        ['first', 'member'],
+        ['second', 'admin'],
+      ])
+      expect(all.records.map((row) => row.permissions)).toEqual([
+        member.permissions,
+        admin.permissions,
+      ])
+      const paged = await ctx.store.listUserMemberships(ctx.a.environmentId, userId, {
+        page: 2,
+        size: 1,
+      })
+      expect(paged.total).toBe(2)
+      expect(paged.records.map((row) => row.organization.slug)).toEqual(['second'])
+      // Nothing of another environment is seen.
+      expect(
+        await ctx.store.listUserMemberships(ctx.b.environmentId, userId, { page: 1, size: 10 })
+      ).toEqual({ records: [], total: 0 })
+    })
+
+    test('a membership is found for its user only, and in its environment only', async () => {
+      const { member } = await builtIns(ctx.a)
+      const record = await stored(organization(ctx.a))
+      const joined = await join(ctx.a, record, member)
+      expect(
+        (await ctx.store.findUserMembership(ctx.a.environmentId, record.id, joined.userId))
+          ?.membership
+      ).toEqual(joined)
+      expect(
+        await ctx.store.findUserMembership(ctx.a.environmentId, record.id, Bun.randomUUIDv7())
+      ).toBeNull()
+      expect(
+        await ctx.store.findUserMembership(ctx.b.environmentId, record.id, joined.userId)
+      ).toBeNull()
+    })
   })
 }

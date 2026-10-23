@@ -917,6 +917,24 @@
         "decision": "journey"
       }
     },
+    "my organizations and the active organization": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "not_built",
+        "ticket": "TULA-121",
+        "reason": "the Swift client has no call for the signed-in user's organizations, the active organization or its token claims yet; `GET`, `POST` and `PUT` of `/v1/client/me/organizations` are built there by TULA-121 (Orgs 09: organizations in the Swift, Kotlin and Expo clients)."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-121",
+        "reason": "the Kotlin client has no call for the signed-in user's organizations, the active organization or its token claims yet; `GET`, `POST` and `PUT` of `/v1/client/me/organizations` are built there by TULA-121 (Orgs 09: organizations in the Swift, Kotlin and Expo clients)."
+      }
+    },
     "native Apple ID token refused": {
       "core": {
         "decision": "journey"

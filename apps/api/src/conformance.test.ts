@@ -41,6 +41,7 @@ describe('conformance scenarios, in process', () => {
       'accounts that depend on a provider are counted before it is switched off',
       'admin organizations and memberships',
       'user import with a bcrypt hash',
+      'my organizations and the active organization',
       'environment settings',
       'attempt binding',
       'email code sign-in',

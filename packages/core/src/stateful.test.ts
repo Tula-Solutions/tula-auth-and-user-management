@@ -105,7 +105,12 @@ describe('a browser on a stateful profile', () => {
     const w = world()
     const { tula } = tab(w)
     const state = await tula.load()
-    expect(state).toEqual({ status: 'signed-in', sessionId: SESSION_ID, user: TEST_USER })
+    expect(state).toEqual({
+      status: 'signed-in',
+      sessionId: SESSION_ID,
+      user: TEST_USER,
+      organizationId: null,
+    })
     expect(await tula.session.getToken()).toBeNull()
     // One check and one read of the user; neither carried a token.
     expect(w.api.calls(REFRESH)).toHaveLength(1)

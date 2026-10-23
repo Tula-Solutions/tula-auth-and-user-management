@@ -98,7 +98,12 @@ describe('sign-up flow', () => {
     expect(flow.step).toEqual(COMPLETE)
     expect(api.requests[1]?.body).toEqual({ code: '123456' })
     expect(api.requests[1]?.headers.get('x-tula-attempt')).toBe(SECRET)
-    expect(tula.state).toEqual({ status: 'signed-in', sessionId: 'session_1', user: TEST_USER })
+    expect(tula.state).toEqual({
+      status: 'signed-in',
+      sessionId: 'session_1',
+      user: TEST_USER,
+      organizationId: null,
+    })
     expect(states).toHaveLength(1)
     expect(await tula.session.getToken()).toBe(accessToken('first'))
     expect(await storage.get(`tula.refresh.${TEST_BASE_URL}|${TEST_KEY}`)).toBe('rt_first')

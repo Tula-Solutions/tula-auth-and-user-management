@@ -256,6 +256,29 @@ Any language can verify these with the environment's JWKS: check `alg === 'EdDSA
 const AccessTokenClaimsSchema
 ```
 
+### `ActiveOrganization`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+The session after its active organization changed.
+
+```ts
+export type ActiveOrganization = z.infer<typeof ActiveOrganizationSchema>
+```
+
+### `ActiveOrganizationSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+The session after the active organization changed. A `hybrid` session gets a **new access
+token** that already carries `org_id`, `org_role` and `org_perms` (or none of them, once
+cleared); the refresh token is untouched. A `stateful` session gets no token: its next
+request is read from the stored session.
+
+```ts
+const ActiveOrganizationSchema
+```
+
 ### `ActivityType`
 
 _type_, defined in `packages/contract/src/event-types.ts`
@@ -4327,6 +4350,24 @@ Highest `organizations.maxCreatedPerUser` that can be set.
 const MAX_ORGANIZATIONS_CREATED_PER_USER: 1000
 ```
 
+### `MAX_ORGANIZATION_CLAIMS_BYTES`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The most bytes the three organization claims may take together, as JSON (UTF-8): their own
+cap, beside {@link MAX_CUSTOM_CLAIMS_BYTES} and never taken from it.
+
+It is the true upper bound of what the grammars allow: an organization id (a UUID, 36
+characters), a role key of 32 characters and 32 permissions of the longest key
+(`org:sys:` + 32 + `:` + 32 = 73 characters) take 2,541 bytes; the cap leaves a little
+room. A role is bounded by the contract and the database, so a token never reaches it
+unless a row was written by hand: the server then issues the token **without** the
+organization claims (no claim is "no permission"), never with a cut list.
+
+```ts
+const MAX_ORGANIZATION_CLAIMS_BYTES: 2560
+```
+
 ### `MAX_ORGANIZATION_NAME_LENGTH`
 
 _constant_, defined in `packages/contract/src/organization.ts`
@@ -4335,6 +4376,16 @@ Longest organization name, in characters.
 
 ```ts
 const MAX_ORGANIZATION_NAME_LENGTH: 100
+```
+
+### `MAX_ORGANIZATION_PERMISSIONS_CLAIM`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+Most permissions an organization role (and so the `org_perms` claim) holds.
+
+```ts
+const MAX_ORGANIZATION_PERMISSIONS_CLAIM: 32
 ```
 
 ### `MAX_ORGANIZATION_SLUG_LENGTH`
@@ -5235,6 +5286,37 @@ Names only: a value is never in an event.
 const ORGANIZATION_FIELDS: readonly ["name", "slug"]
 ```
 
+### `ORGANIZATION_ID_CLAIM`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The access token's claim naming the active organization (ADR 0065, "Token claims").
+
+```ts
+const ORGANIZATION_ID_CLAIM: "org_id"
+```
+
+### `ORGANIZATION_PERMISSIONS_CLAIM`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The access token's claim holding the permission keys of that role. A list of strings,
+present only beside the other two.
+
+```ts
+const ORGANIZATION_PERMISSIONS_CLAIM: "org_perms"
+```
+
+### `ORGANIZATION_ROLE_CLAIM`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The access token's claim holding the key of the member's role in the active organization.
+
+```ts
+const ORGANIZATION_ROLE_CLAIM: "org_role"
+```
+
 ### `ORGANIZATION_SLUG_PATTERN`
 
 _constant_, defined in `packages/contract/src/organization.ts`
@@ -5264,6 +5346,23 @@ An organization.
 
 ```ts
 export type Organization = z.infer<typeof OrganizationSchema>
+```
+
+### `OrganizationClaims`
+
+_interface_, defined in `packages/contract/src/custom-claims.ts`
+
+The organization claims of a verified session: who it acts as, in which organization.
+
+```ts
+export interface OrganizationClaims {
+  /** The active organization's id. */
+  readonly orgId: string
+  /** The key of the member's role in it. */
+  readonly orgRole: string
+  /** The permission keys of that role. */
+  readonly orgPermissions: readonly string[]
+}
 ```
 
 ### `OrganizationField`
@@ -7200,6 +7299,27 @@ The other types of the business plan (`stateless`, `long-lived`, `kiosk`) are no
 const SessionTypeSchema: z.ZodEnum<{}>
 ```
 
+### `SetActiveOrganizationRequest`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+The body that sets or clears the active organization.
+
+```ts
+export type SetActiveOrganizationRequest = z.infer<typeof SetActiveOrganizationRequestSchema>
+```
+
+### `SetActiveOrganizationRequestSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+Make an organization the session's active one, or clear it (`null`: the personal
+account, where the environment allows one).
+
+```ts
+const SetActiveOrganizationRequestSchema: z.ZodObject<{ organizationId: z.ZodNullable<z.ZodUUID>; }, z.core.$strict>
+```
+
 ### `SetPasswordRequest`
 
 _type_, defined in `packages/contract/src/user.ts`
@@ -8391,6 +8511,50 @@ One page of users.
 
 ```ts
 const UserListSchema
+```
+
+### `UserOrganization`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+An organization the signed-in user belongs to.
+
+```ts
+export type UserOrganization = z.infer<typeof UserOrganizationSchema>
+```
+
+### `UserOrganizationList`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+A page of the signed-in user's organizations.
+
+```ts
+export type UserOrganizationList = z.infer<typeof UserOrganizationListSchema>
+```
+
+### `UserOrganizationListSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+One page of the signed-in user's organizations, the one they joined first at the top. The
+`activeOrganizationId` is the session's own: `null` for the personal account, and for an
+organization the user is no longer a member of.
+
+```ts
+const UserOrganizationListSchema
+```
+
+### `UserOrganizationSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+An organization the signed-in user belongs to, with their role in it (ADR 0065, Orgs 02).
+What `GET /v1/client/me/organizations` lists and `POST` creates. No creator and no other
+member: a user is told about their own membership and nothing of anyone else's.
+
+```ts
+const UserOrganizationSchema
 ```
 
 ### `UserSchema`
@@ -10440,6 +10604,29 @@ oauthProviderWeakenings(
 ) // ['enabled']
 ```
 
+### `organizationClaimsBytes`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Whether permission keys and an organization id and role can ride in a token: the UTF-8 length
+of the JSON of the three claims, which {@link MAX_ORGANIZATION_CLAIMS_BYTES} caps.
+
+```ts
+export function organizationClaimsBytes(claims: OrganizationClaims): number
+```
+
+**Parameters**
+
+- `claims`: The three claims.
+
+**Returns** The byte count.
+
+**Example**
+
+```ts
+organizationClaimsBytes({ orgId: 'o1', orgRole: 'member', orgPermissions: [] }) // 52
+```
+
 ### `originMatchesRelyingParty`
 
 _function_, defined in `packages/contract/src/environment-settings.ts`
@@ -10767,6 +10954,40 @@ export function readHookClaimsAnswer(body: unknown): HookClaimsRead
 ```ts
 readHookClaimsAnswer({ claims: { role: 'admin' } }) // { claims: { role: 'admin' } }
 readHookClaimsAnswer({ claims: { sub: 'x' } }) // { problem: 'claims_invalid' }
+```
+
+### `readOrganizationClaims`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Read the organization claims out of a session's claims, for an SDK or an application.
+
+Call it only with claims that were **verified**: this checks a shape, not where the claims
+came from. The three are returned together or not at all. A token that carries one without
+the others, a value of another type, more than {@link MAX_ORGANIZATION_PERMISSIONS_CLAIM}
+permissions, a permission that is not a string or claims over
+{@link MAX_ORGANIZATION_CLAIMS_BYTES} has **no** active organization, whole: never repaired
+and never partly believed. Treat `null` as "no organization, no permission".
+
+```ts
+export function readOrganizationClaims(claims: unknown): OrganizationClaims | null
+```
+
+**Parameters**
+
+- `claims`: A session's verified claims.
+
+**Returns**
+
+A frozen copy, or `null` when no organization is active (or the claims are not
+what a Tula server issues).
+
+**Example**
+
+```ts
+readOrganizationClaims({ org_id: 'o1', org_role: 'admin', org_perms: ['org:sys:memberships:read'] })
+// { orgId: 'o1', orgRole: 'admin', orgPermissions: ['org:sys:memberships:read'] }
+readOrganizationClaims({ org_id: 'o1' }) // null
 ```
 
 ### `readStoredEmailTemplates`
@@ -11640,6 +11861,82 @@ Most claims one JWT template may define.
 const MAX_JWT_TEMPLATE_CLAIMS: 16
 ```
 
+### `MAX_ORGANIZATION_CLAIMS_BYTES`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The most bytes the three organization claims may take together, as JSON (UTF-8): their own
+cap, beside {@link MAX_CUSTOM_CLAIMS_BYTES} and never taken from it.
+
+It is the true upper bound of what the grammars allow: an organization id (a UUID, 36
+characters), a role key of 32 characters and 32 permissions of the longest key
+(`org:sys:` + 32 + `:` + 32 = 73 characters) take 2,541 bytes; the cap leaves a little
+room. A role is bounded by the contract and the database, so a token never reaches it
+unless a row was written by hand: the server then issues the token **without** the
+organization claims (no claim is "no permission"), never with a cut list.
+
+```ts
+const MAX_ORGANIZATION_CLAIMS_BYTES: 2560
+```
+
+### `MAX_ORGANIZATION_PERMISSIONS_CLAIM`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+Most permissions an organization role (and so the `org_perms` claim) holds.
+
+```ts
+const MAX_ORGANIZATION_PERMISSIONS_CLAIM: 32
+```
+
+### `ORGANIZATION_ID_CLAIM`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The access token's claim naming the active organization (ADR 0065, "Token claims").
+
+```ts
+const ORGANIZATION_ID_CLAIM: "org_id"
+```
+
+### `ORGANIZATION_PERMISSIONS_CLAIM`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The access token's claim holding the permission keys of that role. A list of strings,
+present only beside the other two.
+
+```ts
+const ORGANIZATION_PERMISSIONS_CLAIM: "org_perms"
+```
+
+### `ORGANIZATION_ROLE_CLAIM`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The access token's claim holding the key of the member's role in the active organization.
+
+```ts
+const ORGANIZATION_ROLE_CLAIM: "org_role"
+```
+
+### `OrganizationClaims`
+
+_interface_, defined in `packages/contract/src/custom-claims.ts`
+
+The organization claims of a verified session: who it acts as, in which organization.
+
+```ts
+export interface OrganizationClaims {
+  /** The active organization's id. */
+  readonly orgId: string
+  /** The key of the member's role in it. */
+  readonly orgRole: string
+  /** The permission keys of that role. */
+  readonly orgPermissions: readonly string[]
+}
+```
+
 ### `RESERVED_CLAIM_NAMES`
 
 _constant_, defined in `packages/contract/src/custom-claims.ts`
@@ -11763,6 +12060,29 @@ isCustomClaimValue('admin') // true
 isCustomClaimValue(['admin']) // false
 ```
 
+### `organizationClaimsBytes`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Whether permission keys and an organization id and role can ride in a token: the UTF-8 length
+of the JSON of the three claims, which {@link MAX_ORGANIZATION_CLAIMS_BYTES} caps.
+
+```ts
+export function organizationClaimsBytes(claims: OrganizationClaims): number
+```
+
+**Parameters**
+
+- `claims`: The three claims.
+
+**Returns** The byte count.
+
+**Example**
+
+```ts
+organizationClaimsBytes({ orgId: 'o1', orgRole: 'member', orgPermissions: [] }) // 52
+```
+
 ### `readCustomClaims`
 
 _function_, defined in `packages/contract/src/custom-claims.ts`
@@ -11794,6 +12114,40 @@ export function readCustomClaims(claims: unknown): CustomClaims | null
 ```ts
 readCustomClaims({ sub: 'u1', ext: { role: 'admin' } }) // { role: 'admin' }
 readCustomClaims({ sub: 'u1', ext: ['admin'] }) // null
+```
+
+### `readOrganizationClaims`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Read the organization claims out of a session's claims, for an SDK or an application.
+
+Call it only with claims that were **verified**: this checks a shape, not where the claims
+came from. The three are returned together or not at all. A token that carries one without
+the others, a value of another type, more than {@link MAX_ORGANIZATION_PERMISSIONS_CLAIM}
+permissions, a permission that is not a string or claims over
+{@link MAX_ORGANIZATION_CLAIMS_BYTES} has **no** active organization, whole: never repaired
+and never partly believed. Treat `null` as "no organization, no permission".
+
+```ts
+export function readOrganizationClaims(claims: unknown): OrganizationClaims | null
+```
+
+**Parameters**
+
+- `claims`: A session's verified claims.
+
+**Returns**
+
+A frozen copy, or `null` when no organization is active (or the claims are not
+what a Tula server issues).
+
+**Example**
+
+```ts
+readOrganizationClaims({ org_id: 'o1', org_role: 'admin', org_perms: ['org:sys:memberships:read'] })
+// { orgId: 'o1', orgRole: 'admin', orgPermissions: ['org:sys:memberships:read'] }
+readOrganizationClaims({ org_id: 'o1' }) // null
 ```
 
 ## `@tula-tech/contract/device-binding`
