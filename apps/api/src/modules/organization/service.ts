@@ -10,6 +10,7 @@ import {
   type OrganizationMembershipList,
   type UpdateOrganizationMemberRequest,
   type UpdateOrganizationRequest,
+  type UserMembershipList,
 } from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, ConflictError, NotFoundError } from '~/exceptions'
@@ -528,5 +529,45 @@ export async function removeMember(
       })
     case 'not_found':
       throw new NotFoundError()
+  }
+}
+
+/**
+ * List the organizations a user belongs to, the one they joined first at the top, for the
+ * administrator reading the user's page.
+ *
+ * @param deps - The organization store, users and the settings.
+ * @param tenant - The environment.
+ * @param userId - The user.
+ * @param page - Which page, and how long.
+ * @returns The page: each organization's id, name and slug, the user's role key and when they
+ *   joined. Permissions are not listed: they are read through the role.
+ * @throws AuthError `organization.disabled` while organizations are switched off.
+ * @throws NotFoundError when the environment has no user with that id.
+ */
+export async function listForUser(
+  deps: ReadDeps & Pick<Deps, 'users'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  userId: string,
+  page: PageCriteria
+): Promise<UserMembershipList> {
+  await requireEnabled(deps, tenant)
+  if (!(await deps.users.findById(tenant.environmentId, userId))) {
+    throw new NotFoundError()
+  }
+  const { records, total } = await deps.organizations.listUserMemberships(
+    tenant.environmentId,
+    userId,
+    page
+  )
+  return {
+    meta: meta(total, page),
+    data: records.map(({ organization, membership }) => ({
+      organizationId: organization.id,
+      name: organization.name,
+      slug: organization.slug,
+      role: membership.roleKey,
+      joinedAt: membership.createdAt.toISOString(),
+    })),
   }
 }

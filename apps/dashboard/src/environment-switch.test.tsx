@@ -11,7 +11,10 @@ import {
   type FakeApi,
   fakeHook,
   fakeIosApp,
+  fakeMembership,
+  fakeOrganization,
   fakeProposal,
+  fakeRole,
   fakeWebhookDelivery,
   fakeWebhookEndpoint,
   IDS,
@@ -1307,3 +1310,222 @@ describe('proposals', () => {
     }
   )
 })
+
+describe('organizations and roles', () => {
+  const ORGANIZATION = '00000000-0000-7000-8000-0000000aaa01'
+  const listed = (api: FakeApi, path: string) =>
+    api.callsTo('GET', path).at(-1)?.headers.get(ENVIRONMENT)
+
+  /**
+   * Organizations switched on, and the same organization (under the same id, which no real
+   * server does) in both environments: a screen that was kept would act on the wrong one.
+   */
+  function sameOrganizationInBoth(): FakeApi {
+    const api = installFakeApi()
+    const settings = api.state.settings.settings
+    settings.organizations = { ...settings.organizations, enabled: true }
+    settings.urls = { ...settings.urls, allowedRedirectUrls: ['https://app.example.com/join'] }
+    for (const environmentId of [IDS.development, IDS.production]) {
+      api.state.organizations.push(
+        fakeOrganization({ id: ORGANIZATION, name: 'Acme Corp', slug: 'acme', environmentId })
+      )
+      api.state.memberships.push(
+        fakeMembership({
+          organizationId: ORGANIZATION,
+          userId: IDS.user,
+          role: 'admin',
+          environmentId,
+        })
+      )
+      api.state.roles.push(fakeRole({ environmentId }))
+    }
+    return api
+  }
+
+  test('a half-typed role and the question about it do not follow the operator', async () => {
+    const api = sameOrganizationInBoth()
+    const current = start(`${DEV_PATH}/roles`, { api })
+    const { user, router, location } = current
+    await user.click(await screen.findByRole('button', { name: 'Edit the role Billing manager' }))
+    const form = within(screen.getByRole('dialog'))
+    await user.clear(form.getByLabelText('Your own permissions'))
+    await user.type(form.getByLabelText('Your own permissions'), 'org:half:typed')
+    await user.click(form.getByLabelText('Manage the members'))
+    await user.click(form.getByRole('button', { name: 'Save changes' }))
+    await form.findByRole('heading', { name: 'Give the role Billing manager more access?' })
+
+    await act(() => router.navigate({ href: `${PROD_PATH}/roles` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/roles`))
+    await waitFor(() => expect(listed(api, '/v1/admin/organization-roles')).toBe(IDS.production))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(document.documentElement.outerHTML.includes('org:half:typed')).toBe(false)
+    await user.click(await screen.findByRole('button', { name: 'Create role' }))
+    const fresh = within(screen.getByRole('dialog'))
+    expect((fresh.getByLabelText('Name') as HTMLInputElement).value).toBe('')
+    expect((fresh.getByLabelText('Your own permissions') as HTMLTextAreaElement).value).toBe('')
+    expect(api.callsTo('PATCH', '/v1/admin/organization-roles/billing')).toHaveLength(0)
+  })
+
+  test('an open deletion of a role does not survive a switch', async () => {
+    const api = sameOrganizationInBoth()
+    const current = start(`${DEV_PATH}/roles`, { api })
+    const { user, router, location } = current
+    await user.click(await screen.findByRole('button', { name: 'Delete the role Billing manager' }))
+    await waitFor(() => expect(openDialogs()).toBe(1))
+    await act(() => router.navigate({ href: `${PROD_PATH}/roles` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/roles`))
+    await waitFor(() => expect(listed(api, '/v1/admin/organization-roles')).toBe(IDS.production))
+    await screen.findByRole('button', { name: 'Delete the role Billing manager' })
+    expect(openDialogs()).toBe(0)
+    expect(api.callsTo('DELETE', '/v1/admin/organization-roles/billing')).toHaveLength(0)
+    expect(api.state.roles).toHaveLength(2)
+  })
+
+  test('a typed invitation and a typed deletion do not follow the operator to the same organization', async () => {
+    const api = sameOrganizationInBoth()
+    const current = start(`${DEV_PATH}/organizations/${ORGANIZATION}`, { api })
+    const { user, router, location } = current
+    await user.click(await screen.findByRole('button', { name: 'Invite by email' }))
+    await user.type(
+      within(screen.getByRole('dialog')).getByLabelText('Email address'),
+      'half.typed@example.com'
+    )
+
+    await act(() => router.navigate({ href: `${PROD_PATH}/organizations/${ORGANIZATION}` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/organizations/${ORGANIZATION}`))
+    await waitFor(() =>
+      expect(listed(api, `/v1/admin/organizations/${ORGANIZATION}`)).toBe(IDS.production)
+    )
+    await screen.findByRole('heading', { level: 1, name: 'Acme Corp' })
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(document.documentElement.outerHTML.includes('half.typed@example.com')).toBe(false)
+
+    // Production asks for the slug, typed; what was typed stays with the dialog.
+    await user.click(screen.getByRole('button', { name: 'Delete organization' }))
+    await user.type(within(screen.getByRole('dialog')).getByLabelText(/Type .* to confirm/), 'ac')
+    await act(() => router.navigate({ href: `${DEV_PATH}/organizations/${ORGANIZATION}` }))
+    await waitFor(() => expect(location()).toBe(`${DEV_PATH}/organizations/${ORGANIZATION}`))
+    await waitFor(() =>
+      expect(listed(api, `/v1/admin/organizations/${ORGANIZATION}`)).toBe(IDS.development)
+    )
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(api.callsTo('POST', `/v1/admin/organizations/${ORGANIZATION}/invitations`)).toHaveLength(
+      0
+    )
+    expect(api.callsTo('DELETE', `/v1/admin/organizations/${ORGANIZATION}`)).toHaveLength(0)
+  })
+
+  test('an open change of a member’s role does not survive a switch', async () => {
+    const api = sameOrganizationInBoth()
+    const current = start(`${DEV_PATH}/organizations/${ORGANIZATION}`, { api })
+    const { user, router, location } = current
+    await user.click(
+      await screen.findByRole('button', { name: 'Change the role of ada@example.com' })
+    )
+    await waitFor(() => expect(openDialogs()).toBe(1))
+    await act(() => router.navigate({ href: `${PROD_PATH}/organizations/${ORGANIZATION}` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/organizations/${ORGANIZATION}`))
+    await waitFor(() =>
+      expect(listed(api, `/v1/admin/organizations/${ORGANIZATION}`)).toBe(IDS.production)
+    )
+    await screen.findByRole('button', { name: 'Change the role of ada@example.com' })
+    expect(openDialogs()).toBe(0)
+    expect(
+      api.calls.filter((call) => call.method !== 'GET' && call.path.includes('/memberships'))
+    ).toHaveLength(0)
+  })
+
+  test('an unsaved organization setting does not follow the operator', async () => {
+    const api = sameOrganizationInBoth()
+    const current = start(`${DEV_PATH}/organization-settings`, { api })
+    const { user } = current
+    await user.click(await screen.findByRole('switch', { name: 'Users may create organizations' }))
+    await screen.findByText('You have unsaved changes.')
+    await switchToProduction(current, '/organization-settings')
+    await waitFor(() => expect(listed(api, '/v1/admin/settings')).toBe(IDS.production))
+    await screen.findByText('No unsaved changes.')
+    expect(api.callsTo('PUT', '/v1/admin/settings')).toHaveLength(0)
+  })
+})
+
+describe.each([
+  ['as shipped', false],
+  ['even with mutations queued while offline', true],
+] as const)(
+  'an organization or a role made offline, then a switch to production (%s)',
+  (_name, queued) => {
+    function enabled(): FakeApi {
+      const api = installFakeApi()
+      const settings = api.state.settings.settings
+      settings.organizations = { ...settings.organizations, enabled: true }
+      return api
+    }
+
+    test('an organization is never created in production', async () => {
+      const current = start(`${DEV_PATH}/organizations`, { api: enabled() })
+      if (queued) {
+        queueMutationsWhileOffline(current)
+      }
+      const { user, api, router, location } = current
+      await user.click(await screen.findByRole('button', { name: 'Create organization' }))
+      const form = within(screen.getByRole('dialog'))
+      await user.type(form.getByLabelText('Name'), 'Northline Labs')
+
+      const online = goOffline()
+      await user.click(form.getByRole('button', { name: 'Create organization' }))
+      if (!queued) {
+        await form.findByText(/The API did not answer/)
+      }
+      await act(() => router.navigate({ href: `${PROD_PATH}/organizations` }))
+      await waitFor(() => expect(location()).toBe(`${PROD_PATH}/organizations`))
+      online()
+
+      await waitFor(() =>
+        expect(api.callsTo('GET', '/v1/admin/organizations').at(-1)?.headers.get(ENVIRONMENT)).toBe(
+          IDS.production
+        )
+      )
+      await screen.findByText('No organizations yet')
+      const sent = api
+        .callsTo('POST', '/v1/admin/organizations')
+        .map((call) => call.headers.get(ENVIRONMENT))
+      expect(sent.filter((environment) => environment !== IDS.development)).toEqual([])
+      expect(
+        api.state.organizations.filter((entry) => entry.environmentId === IDS.production)
+      ).toEqual([])
+    })
+
+    test('a role is never created in production', async () => {
+      const current = start(`${DEV_PATH}/roles`, { api: enabled() })
+      if (queued) {
+        queueMutationsWhileOffline(current)
+      }
+      const { user, api, router, location } = current
+      await user.click(await screen.findByRole('button', { name: 'Create role' }))
+      const form = within(screen.getByRole('dialog'))
+      await user.type(form.getByLabelText('Name'), 'Support lead')
+      await user.type(form.getByLabelText('Key'), 'support_lead')
+
+      const online = goOffline()
+      await user.click(form.getByRole('button', { name: 'Create role' }))
+      if (!queued) {
+        await form.findByText(/The API did not answer/)
+      }
+      await act(() => router.navigate({ href: `${PROD_PATH}/roles` }))
+      await waitFor(() => expect(location()).toBe(`${PROD_PATH}/roles`))
+      online()
+
+      await waitFor(() =>
+        expect(
+          api.callsTo('GET', '/v1/admin/organization-roles').at(-1)?.headers.get(ENVIRONMENT)
+        ).toBe(IDS.production)
+      )
+      await screen.findByText('No custom roles yet')
+      const sent = api
+        .callsTo('POST', '/v1/admin/organization-roles')
+        .map((call) => call.headers.get(ENVIRONMENT))
+      expect(sent.filter((environment) => environment !== IDS.development)).toEqual([])
+      expect(api.state.roles.filter((entry) => entry.environmentId === IDS.production)).toEqual([])
+    })
+  }
+)

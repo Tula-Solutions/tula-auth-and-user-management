@@ -63,3 +63,28 @@ export function unseenCodePoints(text: string): string[] {
   }
   return [...found]
 }
+
+// Like `UNSEEN`, but an ordinary space is left alone: a name is a few words.
+const UNSEEN_IN_NAME = /(?! )[\p{C}\p{Z}\p{M}\p{Default_Ignorable_Code_Point}\\]/gu
+
+/**
+ * A name an operator typed (an organization's, a role's, a person's) as something a reader
+ * can check by eye: what {@link printable} writes out, except that an ordinary space stays a
+ * space, because a name is words and `Acme\u{20}Corp` cannot be read.
+ *
+ * Every other space (a no-break space, a thin space), every control or format character,
+ * every combining mark and the backslash is still written out, so two names that look alike
+ * but differ are shown differently.
+ *
+ * @param text - The name as the server gave it.
+ * @returns The name with the characters that cannot be seen written out.
+ * @example
+ * printableName('Acme Corp') // 'Acme Corp'
+ * printableName('Acme\u{A0}Corp') // 'Acme\\u{A0}Corp'
+ */
+export function printableName(text: string): string {
+  return text.replace(UNSEEN_IN_NAME, (character) => {
+    const point = character.codePointAt(0) ?? 0
+    return `\\u{${point.toString(16).toUpperCase()}}`
+  })
+}

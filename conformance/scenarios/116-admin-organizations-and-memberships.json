@@ -358,6 +358,28 @@
       }
     },
     {
+      "name": "a user's own page lists the organizations they belong to",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/users/{{ownerId}}/organizations",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "meta": {
+            "totalCount": 1
+          },
+          "data": [
+            {
+              "organizationId": "{{orgId}}",
+              "role": "admin"
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "the only admin cannot be demoted",
       "request": {
         "method": "PATCH",
