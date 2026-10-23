@@ -36,6 +36,10 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   `hasOrganizationAccess` (exact, no wildcard, `false` with no organization); the middleware's
   `access` rules are validated when it is created, and a rule never lets a signed-out visitor
   through.
+- **The middleware matches `canonicalPath`, never the raw pathname**: escapes decoded per
+  segment, repeated slashes collapsed, dot segments resolved, because Next.js serves the page for
+  every spelling (`/%62illing`, `//billing`) and a rule is a permission boundary. The
+  `redirect_url` is still built from the raw path.
 - **Three first-party cookies** (`tula_rt`, `tula_session`, `tula_at`): `HttpOnly`,
   `SameSite=Lax`, `Path=/`, no `Domain`, `Secure` and `__Host-` over https. Write them only
   with `setCookieLine` / `clearCookieLine` (`packages/nextjs/src/cookies.ts`), never copy an

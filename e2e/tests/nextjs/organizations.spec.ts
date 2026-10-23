@@ -198,7 +198,11 @@ test('the largest role and the largest custom claims fit in the cookies and stil
       profiles: { web: { jwtTemplate: 'app' } },
     },
   })
-  const role = 'r'.repeat(31) + 'x'
+  // 32 characters, the longest key, and new on every run (the fixture keeps its roles).
+  const role = unique('r')
+    .replace(/[^a-z0-9_]/g, '_')
+    .padEnd(32, 'r')
+    .slice(0, 32)
   const permissions = [
     'org:billing:read',
     ...Array.from(

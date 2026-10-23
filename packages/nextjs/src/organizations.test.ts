@@ -282,6 +282,19 @@ describe('permission matchers of the middleware', () => {
     expect(post.status).toBe(403)
   })
 
+  test.each([
+    '/%62illing',
+    '/billing%2Finvoices',
+    '//billing',
+    '/billing/',
+    '/%62illing/%69nvoices',
+    '/a/../billing',
+  ])('a rule covers %s, however the path is spelled', async (path) => {
+    // The member lacks the permission: every spelling that reaches /billing must be refused.
+    const response = await run(path, { ...ORG, org_perms: [] })
+    expect(response.headers.get('x-middleware-next')).not.toBe('1')
+  })
+
   test('no active organization is refused, not let through', async () => {
     const response = await run('/billing', {})
     expect(response.status).toBe(403)

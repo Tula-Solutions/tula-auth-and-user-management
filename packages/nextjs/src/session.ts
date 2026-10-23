@@ -367,7 +367,8 @@ export async function resolveSession(
       const { accessToken, accessTokenMaxAge } = outcome.session
       // The answer is verified like any other token before it becomes this request's session.
       const fits = isAccessToken(accessToken)
-      if (!fits && accessToken.length > MAX_ACCESS_TOKEN_LENGTH) {
+      const tooLong = accessToken.length > MAX_ACCESS_TOKEN_LENGTH
+      if (tooLong) {
         config.warn(
           'access-token-size',
           'an access token was longer than this package keeps in cookies, so it was not stored ' +
@@ -377,7 +378,9 @@ export async function resolveSession(
             'ones this app is set up for.'
         )
       }
-      const claims = fits ? await verifyAccessToken(accessToken, config) : null
+      // A token too long to keep is still verified and answers for this request; it is only
+      // never stored, and the earlier one goes so that its organization cannot outlive it.
+      const claims = fits || tooLong ? await verifyAccessToken(accessToken, config) : null
       if (outcome.refresh) {
         jar.set(names.refresh, outcome.refresh.value)
         setCookies.push(
@@ -388,7 +391,7 @@ export async function resolveSession(
         )
       }
       if (claims) {
-        keepAccess(accessToken, accessTokenMaxAge)
+        keepAccess(fits ? accessToken : null, accessTokenMaxAge)
         return finish({ claims, token: accessToken })
       }
     }

@@ -357,6 +357,8 @@ async function forward(request: Request, config: TulaConfig): Promise<Response> 
         })
       } else if (session?.accessToken && session.accessToken.length > MAX_ACCESS_TOKEN_LENGTH) {
         warnTokenTooLarge(config)
+        // Not stored, and the earlier token must not go on answering for the new session.
+        changes.set(names.access, null)
       }
     }
     // A browser holds one session. The middleware and `auth()` read the access token before

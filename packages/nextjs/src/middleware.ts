@@ -101,6 +101,38 @@ export interface TulaMiddlewareOptions extends TulaServerOptions {
   forbiddenUrl?: string
 }
 
+/**
+ * The path as the router reads it: percent-escapes decoded (`/%62illing` is `/billing`),
+ * repeated slashes collapsed (`//billing`) and dot segments resolved (`/a/%2e%2e/billing`).
+ *
+ * Next.js serves the page for all of these spellings, and a matcher that saw only the raw
+ * path would let a rule (a permission boundary) be skipped by spelling a path differently.
+ * A path that does not decode is matched as it is: Next.js answers such a request with a 400
+ * before any page runs.
+ *
+ * @param raw - `request.nextUrl.pathname`.
+ * @returns The path to match rules and route lists against.
+ */
+function canonicalPath(raw: string): string {
+  const kept: string[] = []
+  for (const encoded of raw.split('/')) {
+    let segment = encoded
+    try {
+      // Per segment: an encoded slash stays inside its segment's text, it starts no new one.
+      segment = decodeURIComponent(encoded)
+    } catch {
+      return raw
+    }
+    if (segment === '..') {
+      kept.pop()
+    } else if (segment !== '.' && segment !== '') {
+      kept.push(segment)
+    }
+  }
+  const trailing = raw.length > 1 && raw.endsWith('/') ? '/' : ''
+  return `/${kept.join('/')}${kept.length > 0 ? trailing : ''}`
+}
+
 function compile(matcher: RouteMatcher | undefined): (pathname: string) => boolean {
   if (matcher === undefined) {
     return () => false
@@ -265,8 +297,11 @@ export function tulaMiddleware(
 
   return async function middleware(request: NextRequest): Promise<NextResponse> {
     const config = configFor(options)
-    const { pathname, search } = request.nextUrl
-    if (pathname === config.path || pathname.startsWith(`${config.path}/`)) {
+    const { search } = request.nextUrl
+    const rawPath = request.nextUrl.pathname
+    // Every matcher judges the path the way the router will read it (see `canonicalPath`).
+    const pathname = canonicalPath(rawPath)
+    if (rawPath === config.path || rawPath.startsWith(`${config.path}/`)) {
       // The route handler does its own checks and talks to the API itself. The claims header
       // is still not the browser's to send, on this path as on any other.
       const headers = new Headers(request.headers)
@@ -316,7 +351,7 @@ export function tulaMiddleware(
       target.search = destination.search
       target.hash = ''
       // Where the visitor was going, as a path: the sign-in page checks it again before use.
-      target.searchParams.set(REDIRECT_PARAM, safeRedirectPath(`${pathname}${search}`))
+      target.searchParams.set(REDIRECT_PARAM, safeRedirectPath(`${rawPath}${search}`))
       response = NextResponse.redirect(target)
     }
     for (const line of setCookies) {

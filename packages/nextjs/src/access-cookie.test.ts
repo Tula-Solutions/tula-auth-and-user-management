@@ -227,3 +227,62 @@ describe('a split token that cannot be trusted', () => {
     expect(names).toContain('tula_at_1')
   })
 })
+
+describe('a token longer than two cookies can hold', () => {
+  // Not reachable within the documented limits; this holds what happens when it is anyway: the
+  // session is not signed out, the token is not stored, and no earlier token outlives it.
+  const huge = () => signer.sign({ ...MAXIMAL, pad: 'p'.repeat(MAX_ACCESS_TOKEN_LENGTH) })
+
+  test('the middleware answers the request with it, stores none of it and clears the old parts', async () => {
+    const token = await huge()
+    expect(token.length).toBeGreaterThan(MAX_ACCESS_TOKEN_LENGTH)
+    const api = createFakeApi([signer])
+    api.on('POST /v1/client/sessions/refresh', () =>
+      Response.json({ sessionId: 'sess_1', accessToken: token })
+    )
+    const warnings: string[] = []
+    const response = await tulaMiddleware({
+      ...api.options,
+      onWarning: (message) => warnings.push(message),
+      publicRoutes: [],
+    })(
+      new NextRequest(`${APP}/dashboard`, {
+        headers: { cookie: 'tula_at=stale; tula_at_1=stale; tula_rt=r1' },
+      })
+    )
+    expect(response.headers.get('x-middleware-next')).toBe('1')
+    const lines = response.headers.getSetCookie()
+    const cleared = lines.filter((line) => line.includes('Max-Age=0')).map((l) => l.split('=')[0])
+    expect(cleared.sort()).toEqual(['tula_at', 'tula_at_1'])
+    expect(warnings).toHaveLength(1)
+  })
+
+  test('the route handler stores none of it and removes the earlier token', async () => {
+    const token = await huge()
+    const api = createFakeApi([signer])
+    const warnings: string[] = []
+    const handlers = createTulaHandlers({
+      ...api.options,
+      onWarning: (message) => warnings.push(message),
+      fetch: async (request) =>
+        new URL(request.url).pathname === '/v1/client/sessions/refresh'
+          ? Response.json({ sessionId: 'sess_1', accessToken: token })
+          : (api.options.fetch?.(request) ?? new Response(null, { status: 404 })),
+    })
+    const response = await handlers.POST(
+      new Request(`${APP}/api/tula/v1/client/sessions/refresh`, {
+        method: 'POST',
+        headers: {
+          origin: APP,
+          'content-type': 'application/json',
+          cookie: 'tula_at=stale; tula_at_1=stale',
+        },
+        body: '{}',
+      })
+    )
+    const lines = response.headers.getSetCookie().filter((line) => line.startsWith('tula_at'))
+    expect(lines.every((line) => line.includes('Max-Age=0'))).toBe(true)
+    expect(lines.map((line) => line.split('=')[0]).sort()).toEqual(['tula_at', 'tula_at_1'])
+    expect(warnings).toHaveLength(1)
+  })
+})
