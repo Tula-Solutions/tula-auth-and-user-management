@@ -56,6 +56,7 @@ export const AUDIT_TARGET_TYPES = [
   'organization_membership',
   'organization_role',
   'organization_domain',
+  'organization_invitation',
   'proposal',
 ] as const
 

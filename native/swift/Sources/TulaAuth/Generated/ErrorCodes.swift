@@ -97,6 +97,16 @@ public enum ErrorCode: Codable, Hashable, Sendable {
     case organizationRoleInUse
     case organizationRoleBuiltIn
     case organizationRoleLimit
+    case organizationPermissionRequired
+    case organizationRoleNotAssignable
+    case organizationInvitationExists
+    case organizationInvitationNotFound
+    case organizationInvitationExpired
+    case organizationInvitationRevoked
+    case organizationInvitationUsed
+    case organizationInvitationWrongAccount
+    case organizationInvitationEmailUnverified
+    case organizationInvitationRoleGone
     case organizationDomainPublic
     case organizationDomainTaken
     case organizationDomainAddressMismatch
@@ -211,6 +221,16 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         .organizationRoleInUse,
         .organizationRoleBuiltIn,
         .organizationRoleLimit,
+        .organizationPermissionRequired,
+        .organizationRoleNotAssignable,
+        .organizationInvitationExists,
+        .organizationInvitationNotFound,
+        .organizationInvitationExpired,
+        .organizationInvitationRevoked,
+        .organizationInvitationUsed,
+        .organizationInvitationWrongAccount,
+        .organizationInvitationEmailUnverified,
+        .organizationInvitationRoleGone,
         .organizationDomainPublic,
         .organizationDomainTaken,
         .organizationDomainAddressMismatch,
@@ -325,6 +345,16 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case "organization.role_in_use": self = .organizationRoleInUse
         case "organization.role_built_in": self = .organizationRoleBuiltIn
         case "organization.role_limit": self = .organizationRoleLimit
+        case "organization.permission_required": self = .organizationPermissionRequired
+        case "organization.role_not_assignable": self = .organizationRoleNotAssignable
+        case "organization.invitation_exists": self = .organizationInvitationExists
+        case "organization.invitation_not_found": self = .organizationInvitationNotFound
+        case "organization.invitation_expired": self = .organizationInvitationExpired
+        case "organization.invitation_revoked": self = .organizationInvitationRevoked
+        case "organization.invitation_used": self = .organizationInvitationUsed
+        case "organization.invitation_wrong_account": self = .organizationInvitationWrongAccount
+        case "organization.invitation_email_unverified": self = .organizationInvitationEmailUnverified
+        case "organization.invitation_role_gone": self = .organizationInvitationRoleGone
         case "organization.domain_public": self = .organizationDomainPublic
         case "organization.domain_taken": self = .organizationDomainTaken
         case "organization.domain_address_mismatch": self = .organizationDomainAddressMismatch
@@ -441,6 +471,16 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case .organizationRoleInUse: return "organization.role_in_use"
         case .organizationRoleBuiltIn: return "organization.role_built_in"
         case .organizationRoleLimit: return "organization.role_limit"
+        case .organizationPermissionRequired: return "organization.permission_required"
+        case .organizationRoleNotAssignable: return "organization.role_not_assignable"
+        case .organizationInvitationExists: return "organization.invitation_exists"
+        case .organizationInvitationNotFound: return "organization.invitation_not_found"
+        case .organizationInvitationExpired: return "organization.invitation_expired"
+        case .organizationInvitationRevoked: return "organization.invitation_revoked"
+        case .organizationInvitationUsed: return "organization.invitation_used"
+        case .organizationInvitationWrongAccount: return "organization.invitation_wrong_account"
+        case .organizationInvitationEmailUnverified: return "organization.invitation_email_unverified"
+        case .organizationInvitationRoleGone: return "organization.invitation_role_gone"
         case .organizationDomainPublic: return "organization.domain_public"
         case .organizationDomainTaken: return "organization.domain_taken"
         case .organizationDomainAddressMismatch: return "organization.domain_address_mismatch"
@@ -766,6 +806,36 @@ public enum TulaErrorDefinitions {
     /// `organization.role_limit`
     public static let organizationRoleLimit = TulaErrorDefinition(code: .organizationRoleLimit, status: 409, message: "This environment has the most custom roles it can have.")
 
+    /// `organization.permission_required`
+    public static let organizationPermissionRequired = TulaErrorDefinition(code: .organizationPermissionRequired, status: 403, message: "Your role does not allow that.")
+
+    /// `organization.role_not_assignable`
+    public static let organizationRoleNotAssignable = TulaErrorDefinition(code: .organizationRoleNotAssignable, status: 403, message: "You can only invite to a role no stronger than yours.")
+
+    /// `organization.invitation_exists`
+    public static let organizationInvitationExists = TulaErrorDefinition(code: .organizationInvitationExists, status: 409, message: "That address already has a pending invitation.")
+
+    /// `organization.invitation_not_found`
+    public static let organizationInvitationNotFound = TulaErrorDefinition(code: .organizationInvitationNotFound, status: 404, message: "This invitation does not exist.")
+
+    /// `organization.invitation_expired`
+    public static let organizationInvitationExpired = TulaErrorDefinition(code: .organizationInvitationExpired, status: 410, message: "This invitation has expired.")
+
+    /// `organization.invitation_revoked`
+    public static let organizationInvitationRevoked = TulaErrorDefinition(code: .organizationInvitationRevoked, status: 410, message: "This invitation was withdrawn.")
+
+    /// `organization.invitation_used`
+    public static let organizationInvitationUsed = TulaErrorDefinition(code: .organizationInvitationUsed, status: 410, message: "This invitation was already used.")
+
+    /// `organization.invitation_wrong_account`
+    public static let organizationInvitationWrongAccount = TulaErrorDefinition(code: .organizationInvitationWrongAccount, status: 403, message: "This invitation was sent to another email address.")
+
+    /// `organization.invitation_email_unverified`
+    public static let organizationInvitationEmailUnverified = TulaErrorDefinition(code: .organizationInvitationEmailUnverified, status: 403, message: "Verify your email address to accept this invitation.")
+
+    /// `organization.invitation_role_gone`
+    public static let organizationInvitationRoleGone = TulaErrorDefinition(code: .organizationInvitationRoleGone, status: 409, message: "The role this invitation offers no longer exists.")
+
     /// `organization.domain_public`
     public static let organizationDomainPublic = TulaErrorDefinition(code: .organizationDomainPublic, status: 422, message: "A public email domain cannot be claimed by an organization.")
 
@@ -913,6 +983,16 @@ public enum TulaErrorDefinitions {
         organizationRoleInUse,
         organizationRoleBuiltIn,
         organizationRoleLimit,
+        organizationPermissionRequired,
+        organizationRoleNotAssignable,
+        organizationInvitationExists,
+        organizationInvitationNotFound,
+        organizationInvitationExpired,
+        organizationInvitationRevoked,
+        organizationInvitationUsed,
+        organizationInvitationWrongAccount,
+        organizationInvitationEmailUnverified,
+        organizationInvitationRoleGone,
         organizationDomainPublic,
         organizationDomainTaken,
         organizationDomainAddressMismatch,

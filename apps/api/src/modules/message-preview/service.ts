@@ -28,6 +28,11 @@ const SAMPLE_TTL_MINUTES = 10
  */
 const SAMPLE_LINK = 'https://app.example/sign-in#sample-link'
 
+/**
+ * The link of the sample invitation: a reserved example domain, as {@link SAMPLE_LINK}.
+ */
+const SAMPLE_INVITATION_LINK = 'https://app.example/invitation#tula_invitation=sample-token'
+
 const notice = { at: SAMPLE_TIME } as const
 const code = { code: SAMPLE_CODE, ttlMinutes: SAMPLE_TTL_MINUTES } as const
 
@@ -76,6 +81,12 @@ export const SAMPLE_EMAILS: Readonly<Record<EmailTemplateKind, EmailMessage>> = 
   },
   email_in_use: { type: 'email_in_use' },
   email_added: { type: 'email_added', ...notice },
+  organization_invitation: {
+    type: 'organization_invitation',
+    organizationName: 'Acme',
+    linkUrl: SAMPLE_INVITATION_LINK,
+    ttlDays: 7,
+  },
 }
 
 /**

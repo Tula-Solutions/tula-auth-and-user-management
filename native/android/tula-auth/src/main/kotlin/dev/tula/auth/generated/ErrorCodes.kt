@@ -384,6 +384,46 @@ sealed class ErrorCode {
         override val rawValue: String = "organization.role_limit"
     }
 
+    object OrganizationPermissionRequired : ErrorCode() {
+        override val rawValue: String = "organization.permission_required"
+    }
+
+    object OrganizationRoleNotAssignable : ErrorCode() {
+        override val rawValue: String = "organization.role_not_assignable"
+    }
+
+    object OrganizationInvitationExists : ErrorCode() {
+        override val rawValue: String = "organization.invitation_exists"
+    }
+
+    object OrganizationInvitationNotFound : ErrorCode() {
+        override val rawValue: String = "organization.invitation_not_found"
+    }
+
+    object OrganizationInvitationExpired : ErrorCode() {
+        override val rawValue: String = "organization.invitation_expired"
+    }
+
+    object OrganizationInvitationRevoked : ErrorCode() {
+        override val rawValue: String = "organization.invitation_revoked"
+    }
+
+    object OrganizationInvitationUsed : ErrorCode() {
+        override val rawValue: String = "organization.invitation_used"
+    }
+
+    object OrganizationInvitationWrongAccount : ErrorCode() {
+        override val rawValue: String = "organization.invitation_wrong_account"
+    }
+
+    object OrganizationInvitationEmailUnverified : ErrorCode() {
+        override val rawValue: String = "organization.invitation_email_unverified"
+    }
+
+    object OrganizationInvitationRoleGone : ErrorCode() {
+        override val rawValue: String = "organization.invitation_role_gone"
+    }
+
     object OrganizationDomainPublic : ErrorCode() {
         override val rawValue: String = "organization.domain_public"
     }
@@ -558,6 +598,16 @@ sealed class ErrorCode {
                 OrganizationRoleInUse,
                 OrganizationRoleBuiltIn,
                 OrganizationRoleLimit,
+                OrganizationPermissionRequired,
+                OrganizationRoleNotAssignable,
+                OrganizationInvitationExists,
+                OrganizationInvitationNotFound,
+                OrganizationInvitationExpired,
+                OrganizationInvitationRevoked,
+                OrganizationInvitationUsed,
+                OrganizationInvitationWrongAccount,
+                OrganizationInvitationEmailUnverified,
+                OrganizationInvitationRoleGone,
                 OrganizationDomainPublic,
                 OrganizationDomainTaken,
                 OrganizationDomainAddressMismatch,
@@ -672,6 +722,16 @@ sealed class ErrorCode {
             "organization.role_in_use" -> OrganizationRoleInUse
             "organization.role_built_in" -> OrganizationRoleBuiltIn
             "organization.role_limit" -> OrganizationRoleLimit
+            "organization.permission_required" -> OrganizationPermissionRequired
+            "organization.role_not_assignable" -> OrganizationRoleNotAssignable
+            "organization.invitation_exists" -> OrganizationInvitationExists
+            "organization.invitation_not_found" -> OrganizationInvitationNotFound
+            "organization.invitation_expired" -> OrganizationInvitationExpired
+            "organization.invitation_revoked" -> OrganizationInvitationRevoked
+            "organization.invitation_used" -> OrganizationInvitationUsed
+            "organization.invitation_wrong_account" -> OrganizationInvitationWrongAccount
+            "organization.invitation_email_unverified" -> OrganizationInvitationEmailUnverified
+            "organization.invitation_role_gone" -> OrganizationInvitationRoleGone
             "organization.domain_public" -> OrganizationDomainPublic
             "organization.domain_taken" -> OrganizationDomainTaken
             "organization.domain_address_mismatch" -> OrganizationDomainAddressMismatch
@@ -992,6 +1052,36 @@ object TulaErrorDefinitions {
     /** `organization.role_limit` */
     val organizationRoleLimit: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationRoleLimit, 409, "This environment has the most custom roles it can have.")
 
+    /** `organization.permission_required` */
+    val organizationPermissionRequired: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationPermissionRequired, 403, "Your role does not allow that.")
+
+    /** `organization.role_not_assignable` */
+    val organizationRoleNotAssignable: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationRoleNotAssignable, 403, "You can only invite to a role no stronger than yours.")
+
+    /** `organization.invitation_exists` */
+    val organizationInvitationExists: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationInvitationExists, 409, "That address already has a pending invitation.")
+
+    /** `organization.invitation_not_found` */
+    val organizationInvitationNotFound: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationInvitationNotFound, 404, "This invitation does not exist.")
+
+    /** `organization.invitation_expired` */
+    val organizationInvitationExpired: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationInvitationExpired, 410, "This invitation has expired.")
+
+    /** `organization.invitation_revoked` */
+    val organizationInvitationRevoked: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationInvitationRevoked, 410, "This invitation was withdrawn.")
+
+    /** `organization.invitation_used` */
+    val organizationInvitationUsed: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationInvitationUsed, 410, "This invitation was already used.")
+
+    /** `organization.invitation_wrong_account` */
+    val organizationInvitationWrongAccount: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationInvitationWrongAccount, 403, "This invitation was sent to another email address.")
+
+    /** `organization.invitation_email_unverified` */
+    val organizationInvitationEmailUnverified: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationInvitationEmailUnverified, 403, "Verify your email address to accept this invitation.")
+
+    /** `organization.invitation_role_gone` */
+    val organizationInvitationRoleGone: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationInvitationRoleGone, 409, "The role this invitation offers no longer exists.")
+
     /** `organization.domain_public` */
     val organizationDomainPublic: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationDomainPublic, 422, "A public email domain cannot be claimed by an organization.")
 
@@ -1139,6 +1229,16 @@ object TulaErrorDefinitions {
         organizationRoleInUse,
         organizationRoleBuiltIn,
         organizationRoleLimit,
+        organizationPermissionRequired,
+        organizationRoleNotAssignable,
+        organizationInvitationExists,
+        organizationInvitationNotFound,
+        organizationInvitationExpired,
+        organizationInvitationRevoked,
+        organizationInvitationUsed,
+        organizationInvitationWrongAccount,
+        organizationInvitationEmailUnverified,
+        organizationInvitationRoleGone,
         organizationDomainPublic,
         organizationDomainTaken,
         organizationDomainAddressMismatch,

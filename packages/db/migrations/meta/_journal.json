@@ -283,9 +283,16 @@
       "breakpoints": true
     },
     {
+      "idx": 40,
+      "version": "7",
+      "when": 1792729555982,
+      "tag": "0040_organization_invitations",
+      "breakpoints": true
+    },
+    {
       "idx": 41,
       "version": "7",
-      "when": 1792729527909,
+      "when": 1792734367525,
       "tag": "0041_organization_domains",
       "breakpoints": true
     }

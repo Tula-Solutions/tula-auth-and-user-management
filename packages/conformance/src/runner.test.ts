@@ -2015,6 +2015,66 @@ describe('the emailMessage step', () => {
     expect(requests[0]?.body).toEqual({ code: '482913' })
   })
 
+  describe('captureFragmentParam', () => {
+    const invitation = {
+      subject: 'Wording 71: you are invited',
+      text: 'You are invited.\n\nOpen this link: https://app.example.com/join#tula_invitation=sec%2Fret&other=1\n\n--\nAcme',
+    }
+    const capture = (extra: Record<string, unknown> = {}) =>
+      steps({
+        captureFragmentParam: { name: 'tula_invitation', capture: 'code', ...extra },
+      })
+
+    test('stores the parameter of the link’s fragment, decoded, and checks the URL without it', async () => {
+      const { target, requests } = fakeTarget(() => ({ status: 200 }), {
+        emailMessage: async () => invitation,
+      })
+      const result = await runScenario(capture({ url: 'https://app.example.com/join' }), target)
+      expect(result.status).toBe('passed')
+      expect(requests[0]?.body).toEqual({ code: 'sec/ret' })
+    })
+
+    test.each<[string, Record<string, unknown>, string]>([
+      [
+        'a link to another page',
+        { url: 'https://app.example.com/elsewhere' },
+        'the link, without its fragment, is not the expected URL',
+      ],
+      [
+        'a parameter that is not there',
+        { name: 'missing' },
+        'the text holds no link with the expected parameter in its fragment',
+      ],
+    ])('%s fails the step and never prints the token', async (_, extra, problem) => {
+      const { target } = fakeTarget(() => ({ status: 200 }), {
+        emailMessage: async () => invitation,
+      })
+      const result = await runScenario(capture(extra), target)
+      expect(result.status).toBe('failed')
+      expect(result.steps[0]?.problems).toEqual([problem])
+      expect(formatResult(result)).not.toContain('sec')
+    })
+
+    test('a text with no link with a fragment cannot be captured from', async () => {
+      const { target } = fakeTarget(() => ({ status: 200 }), {
+        emailMessage: async () => ({
+          subject: 'Wording 71',
+          text: 'Visit https://app.example.com/join to accept.',
+        }),
+      })
+      const result = await runScenario(capture(), target)
+      expect(result.steps[0]?.problems).toEqual([
+        'the text holds no link with the expected parameter in its fragment',
+      ])
+    })
+
+    test('the step names the parameter and the variable, and nothing else', () => {
+      expect(() => steps({ captureFragmentParam: { name: 'x' } })).toThrow()
+      expect(() => steps({ captureFragmentParam: { capture: 'x' } })).toThrow()
+      expect(() => steps({ captureFragmentParam: { name: 'x', capture: 'y', more: 1 } })).toThrow()
+    })
+  })
+
   test('a target that cannot read emails fails the step and says why', async () => {
     const { target } = fakeTarget(() => ({ status: 200 }))
     const result = await runScenario(steps({}), target)

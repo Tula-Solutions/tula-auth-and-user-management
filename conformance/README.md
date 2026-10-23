@@ -257,11 +257,15 @@ included: use `attempt`).
   has nothing in its query. Against a live server the link is read from Mailpit (the one
   message is fetched, since a link is not in a subject). A runner for another language needs a
   way to read an email's text to run these steps.
-- **Email-message steps** (`emailMessage: { to, subjectContains, captureCode?, subject?,
-  textContains?, textExcludes? }`) read one email as its reader would: the newest email to
-  the address whose subject contains `subjectContains`. In this order: `captureCode` stores
-  the one run of exactly six digits in the text (the step fails for none, or for two
-  different ones); `subject` is what the subject must be, exactly; every entry of
+- **Email-message steps** (`emailMessage: { to, subjectContains, captureCode?,
+  captureFragmentParam?, subject?, textContains?, textExcludes? }`) read one email as its
+  reader would: the newest email to the address whose subject contains `subjectContains`. In
+  this order: `captureCode` stores the one run of exactly six digits in the text (the step
+  fails for none, or for two different ones); `captureFragmentParam: { name, capture, url? }`
+  stores one parameter of the fragment of the first `https://…#…` link in the text (for a
+  message whose link carries a credential in its fragment, an organization invitation's
+  `tula_invitation`; the step fails for no such link or parameter, `url` is what the link
+  must be without its fragment, and the value is never reported); `subject` is what the subject must be, exactly; every entry of
   `textContains` must be in the plain-text part and none of `textExcludes`. The later checks
   can name the captured code. They exist for what a subject cannot say: an environment's own
   wording of a message ([docs/email-templates.md](../docs/email-templates.md)), where the

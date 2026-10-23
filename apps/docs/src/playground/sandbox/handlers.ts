@@ -75,6 +75,12 @@ export const UNSUPPORTED: Partial<Record<OperationId, string>> = {
   verifyMyOrganizationDomain: 'the sandbox has no organizations',
   updateMyOrganizationDomain: 'the sandbox has no organizations',
   removeMyOrganizationDomain: 'the sandbox has no organizations',
+  listMyOrganizationInvitations: 'the sandbox has no organizations',
+  inviteToMyOrganization: 'the sandbox has no organizations',
+  revokeMyOrganizationInvitation: 'the sandbox has no organizations',
+  previewOrganizationInvitation: 'the sandbox has no organizations',
+  acceptOrganizationInvitation: 'the sandbox has no organizations',
+  declineOrganizationInvitation: 'the sandbox has no organizations',
 }
 
 /** The refusal an operation in {@link UNSUPPORTED} answers with. */
@@ -92,7 +98,13 @@ function unsupported(id: OperationId): never {
     id === 'startMyOrganizationDomain' ||
     id === 'verifyMyOrganizationDomain' ||
     id === 'updateMyOrganizationDomain' ||
-    id === 'removeMyOrganizationDomain'
+    id === 'removeMyOrganizationDomain' ||
+    id === 'listMyOrganizationInvitations' ||
+    id === 'inviteToMyOrganization' ||
+    id === 'revokeMyOrganizationInvitation' ||
+    id === 'previewOrganizationInvitation' ||
+    id === 'acceptOrganizationInvitation' ||
+    id === 'declineOrganizationInvitation'
   ) {
     // Organizations are an environment setting the sandbox leaves off.
     throw new SandboxError('organization.disabled')
@@ -951,6 +963,12 @@ export const HANDLERS: Handlers = {
   verifyMyOrganizationDomain: () => unsupported('verifyMyOrganizationDomain'),
   updateMyOrganizationDomain: () => unsupported('updateMyOrganizationDomain'),
   removeMyOrganizationDomain: () => unsupported('removeMyOrganizationDomain'),
+  listMyOrganizationInvitations: () => unsupported('listMyOrganizationInvitations'),
+  inviteToMyOrganization: () => unsupported('inviteToMyOrganization'),
+  revokeMyOrganizationInvitation: () => unsupported('revokeMyOrganizationInvitation'),
+  previewOrganizationInvitation: () => unsupported('previewOrganizationInvitation'),
+  acceptOrganizationInvitation: () => unsupported('acceptOrganizationInvitation'),
+  declineOrganizationInvitation: () => unsupported('declineOrganizationInvitation'),
 
   // Two-step verification ---------------------------------------------------------------------
   getMyFactors: (ctx) => {

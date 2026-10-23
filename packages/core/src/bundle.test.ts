@@ -127,16 +127,22 @@ import { join } from 'node:path'
  * `user.last_organization_manager`) added 37 bytes, from 17,764 to 17,801, the name and its
  * message. The budget moved by exactly those 37 bytes, from 17,768 to 17,805: the room is the
  * 4 bytes it was.
- * Verified domains (ADR 0065, Orgs 05) added 246 bytes, from 17,801 to 18,047 (measured on top of `user.last_organization_manager` above): the five
- * contract codes (`organization.domain_public`, `.domain_taken`, `.domain_address_mismatch`,
- * `.domain_limit`, `.suggestion_unavailable`) with their messages, the seven rows of the
- * generated table of operations (the two the client calls, `organizations.suggestions()` and
- * `.join()`, and the five a member who manages an organization's domains would call, which
- * the client does not wrap yet but the table lists all the same), and the two methods. The
- * budget moved by exactly those 246 bytes, from 17,805 to 18,051: the room is the 4 bytes it
- * was.
+ * Invitations by email (ADR 0065, Orgs 04) added 393 bytes, from 17,801 to 18,194: the ten
+ * contract codes with their messages (cut to one short sentence each; the first wording cost
+ * 452 bytes for everything), six operation rows and `organizations.invitations`
+ * (`list`, `invite`, `revoke`, `preview`, `accept`, `decline`). `readInvitationLink` is not in
+ * the bundle of a client that does not import it. The budget moved by exactly those 393
+ * bytes, from 17,805 to 18,198: the room is the 4 bytes it was.
+ * Verified domains (ADR 0065, Orgs 05) added 239 bytes, from 18,194 to 18,433 (measured on top
+ * of the invitations above): the five contract codes (`organization.domain_public`,
+ * `.domain_taken`, `.domain_address_mismatch`, `.domain_limit`, `.suggestion_unavailable`)
+ * with their messages, the seven rows of the generated table of operations (the two the
+ * client calls, `organizations.suggestions()` and `.join()`, and the five a member who manages
+ * an organization's domains would call, which the client does not wrap yet but the table lists
+ * all the same), and the two methods. The budget moved by exactly those 239 bytes, from 18,198
+ * to 18,437: the room is the 4 bytes it was.
  */
-const GZIP_BUDGET_BYTES = 18_051
+const GZIP_BUDGET_BYTES = 18_437
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

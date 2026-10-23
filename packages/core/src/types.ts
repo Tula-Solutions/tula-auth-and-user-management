@@ -317,6 +317,29 @@ export type OrganizationSuggestion = Schemas['OrganizationSuggestion']
 
 /** What `organizations.suggestions()` answers: the organizations the user is offered. */
 export type OrganizationSuggestionList = Schemas['OrganizationSuggestionList']
+/**
+ * An invitation to an organization as the inviting side sees it. The token the emailed link
+ * carries is never part of it.
+ *
+ * @example
+ * ```ts
+ * const { data } = await tula.organizations.invitations.list(org.id)
+ * const open = data.filter((invitation) => invitation.status === 'pending')
+ * ```
+ */
+export type OrganizationInvitation = Schemas['OrganizationInvitation']
+
+/** A page of an organization's invitations. */
+export type OrganizationInvitationList = Schemas['OrganizationInvitationList']
+
+/** The body of `organizations.invitations.invite()`: the address, a role's key and the page the link leads to. */
+export type CreateOrganizationInvitationInput = Schemas['CreateOrganizationInvitationRequest']
+
+/** What the holder of an invitation's token may see before signing in. */
+export type InvitationPreview = Schemas['InvitationPreview']
+
+/** What accepting an invitation answers: the organization joined, with the role and its permissions. */
+export type AcceptedInvitation = Schemas['AcceptedInvitation']
 
 /** What `organizations.setActive()` answers: the session's active organization now. */
 export type ActiveOrganization = Schemas['ActiveOrganization']

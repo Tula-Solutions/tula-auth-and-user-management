@@ -1505,6 +1505,66 @@ Need help? Contact help@acme.test"
 }
 `;
 
+exports[`the built-in copy is what it was before wording became editable organization_invitation, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>You have been invited to join Acme &lt;Robotics&gt; &amp; Sons on Acme.</p>
+<p>The invitation works for 7 days. Open the link to accept it or decline it.</p>
+<p>Open this link to accept or decline:</p>
+<p><a href="https://app.acme.test/join#tula_invitation=tok">View the invitation</a></p>
+<p>If you weren&#39;t expecting this invitation, you can safely ignore this email. Nobody joins an organization unless the invited address accepts while signed in.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "You're invited to join Acme <Robotics> & Sons on Acme",
+  "text": 
+"You have been invited to join Acme <Robotics> & Sons on Acme.
+
+The invitation works for 7 days. Open the link to accept it or decline it.
+
+Open this link to accept or decline: https://app.acme.test/join#tula_invitation=tok
+
+If you weren't expecting this invitation, you can safely ignore this email. Nobody joins an organization unless the invited address accepts while signed in.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable organization_invitation for one day, with a support address 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>You have been invited to join Acme on Acme.</p>
+<p>The invitation works for 1 day. Open the link to accept it or decline it.</p>
+<p>Open this link to accept or decline:</p>
+<p><a href="https://app.acme.test/join#tula_invitation=tok">View the invitation</a></p>
+<p>If you weren&#39;t expecting this invitation, you can safely ignore this email. Nobody joins an organization unless the invited address accepts while signed in.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">Acme<br>Need help? Contact help@acme.test</p>
+</body></html>"
+,
+  "subject": "You're invited to join Acme on Acme",
+  "text": 
+"You have been invited to join Acme on Acme.
+
+The invitation works for 1 day. Open the link to accept it or decline it.
+
+Open this link to accept or decline: https://app.acme.test/join#tula_invitation=tok
+
+If you weren't expecting this invitation, you can safely ignore this email. Nobody joins an organization unless the invited address accepts while signed in.
+
+--
+Acme
+Need help? Contact help@acme.test"
+,
+}
+`;
+
 exports[`the built-in copy is what it was before wording became editable email_verification, without one 1`] = `
 {
   "html": 
@@ -2847,6 +2907,64 @@ When: 2026-10-03 14:05 UTC
 If this was you, there is nothing more to do.
 
 If it wasn't you, or you did not expect it, open O’Neil & <Sons> and set a new password for this address from the sign-in screen right away: that signs every device out of the account.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable organization_invitation, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>You have been invited to join Acme &lt;Robotics&gt; &amp; Sons on O’Neil &amp; &lt;Sons&gt;.</p>
+<p>The invitation works for 7 days. Open the link to accept it or decline it.</p>
+<p>Open this link to accept or decline:</p>
+<p><a href="https://app.acme.test/join#tula_invitation=tok">View the invitation</a></p>
+<p>If you weren&#39;t expecting this invitation, you can safely ignore this email. Nobody joins an organization unless the invited address accepts while signed in.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "You're invited to join Acme <Robotics> & Sons on O’Neil & <Sons>",
+  "text": 
+"You have been invited to join Acme <Robotics> & Sons on O’Neil & <Sons>.
+
+The invitation works for 7 days. Open the link to accept it or decline it.
+
+Open this link to accept or decline: https://app.acme.test/join#tula_invitation=tok
+
+If you weren't expecting this invitation, you can safely ignore this email. Nobody joins an organization unless the invited address accepts while signed in.
+
+--
+O’Neil & <Sons>"
+,
+}
+`;
+
+exports[`the built-in copy is what it was before wording became editable organization_invitation for one day, without one 1`] = `
+{
+  "html": 
+"<!doctype html>
+<html><body style="margin:0;padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#1a1a1a">
+<p>You have been invited to join Acme on O’Neil &amp; &lt;Sons&gt;.</p>
+<p>The invitation works for 1 day. Open the link to accept it or decline it.</p>
+<p>Open this link to accept or decline:</p>
+<p><a href="https://app.acme.test/join#tula_invitation=tok">View the invitation</a></p>
+<p>If you weren&#39;t expecting this invitation, you can safely ignore this email. Nobody joins an organization unless the invited address accepts while signed in.</p>
+<p style="margin-top:32px;font-size:13px;color:#666">O’Neil &amp; &lt;Sons&gt;</p>
+</body></html>"
+,
+  "subject": "You're invited to join Acme on O’Neil & <Sons>",
+  "text": 
+"You have been invited to join Acme on O’Neil & <Sons>.
+
+The invitation works for 1 day. Open the link to accept it or decline it.
+
+Open this link to accept or decline: https://app.acme.test/join#tula_invitation=tok
+
+If you weren't expecting this invitation, you can safely ignore this email. Nobody joins an organization unless the invited address accepts while signed in.
 
 --
 O’Neil & <Sons>"

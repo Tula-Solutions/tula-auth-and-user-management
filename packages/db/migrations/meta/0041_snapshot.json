@@ -1,6 +1,6 @@
 {
-  "id": "fa74d600-0df7-4cf7-94b6-a42a02cba146",
-  "prevId": "4704384a-f65c-4227-9797-fddd9d19dec8",
+  "id": "36b9fbc0-ba41-453b-a1df-1b60b9c53955",
+  "prevId": "12d7bd33-3de9-41ba-8528-b16e5d767806",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2633,6 +2633,289 @@
         "organization_domains_attempts": {
           "name": "organization_domains_attempts",
           "value": "\"tula\".\"organization_domains\".\"code_attempts\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "tula.organization_invitations": {
+      "name": "organization_invitations",
+      "schema": "tula",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "environment_id": {
+          "name": "environment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email_normalized": {
+          "name": "email_normalized",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role_key": {
+          "name": "role_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "invited_by": {
+          "name": "invited_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "resolved_at": {
+          "name": "resolved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolved_by": {
+          "name": "resolved_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "organization_invitations_pending_key": {
+          "name": "organization_invitations_pending_key",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "email_normalized",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"tula\".\"organization_invitations\".\"status\" = 'pending'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "organization_invitations_organization_idx": {
+          "name": "organization_invitations_organization_idx",
+          "columns": [
+            {
+              "expression": "environment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "organization_invitations_expires_idx": {
+          "name": "organization_invitations_expires_idx",
+          "columns": [
+            {
+              "expression": "environment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "organization_invitations_environment_id_idx": {
+          "name": "organization_invitations_environment_id_idx",
+          "columns": [
+            {
+              "expression": "environment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "organization_invitations_project_id_projects_id_fk": {
+          "name": "organization_invitations_project_id_projects_id_fk",
+          "tableFrom": "organization_invitations",
+          "tableTo": "projects",
+          "schemaTo": "tula",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "organization_invitations_environment_id_environments_id_fk": {
+          "name": "organization_invitations_environment_id_environments_id_fk",
+          "tableFrom": "organization_invitations",
+          "tableTo": "environments",
+          "schemaTo": "tula",
+          "columnsFrom": [
+            "environment_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "organization_invitations_organization_fk": {
+          "name": "organization_invitations_organization_fk",
+          "tableFrom": "organization_invitations",
+          "tableTo": "organizations",
+          "schemaTo": "tula",
+          "columnsFrom": [
+            "environment_id",
+            "organization_id"
+          ],
+          "columnsTo": [
+            "environment_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "organization_invitations_environment_project_fk": {
+          "name": "organization_invitations_environment_project_fk",
+          "tableFrom": "organization_invitations",
+          "tableTo": "environments",
+          "schemaTo": "tula",
+          "columnsFrom": [
+            "environment_id",
+            "project_id"
+          ],
+          "columnsTo": [
+            "id",
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "organization_invitations_token_hash_key": {
+          "name": "organization_invitations_token_hash_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "token_hash"
+          ]
+        }
+      },
+      "policies": {
+        "organization_invitations_tenant_isolation": {
+          "name": "organization_invitations_tenant_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "environment_id = nullif(current_setting('tula.environment_id', true), '')::uuid",
+          "withCheck": "environment_id = nullif(current_setting('tula.environment_id', true), '')::uuid"
+        }
+      },
+      "checkConstraints": {
+        "organization_invitations_status_known": {
+          "name": "organization_invitations_status_known",
+          "value": "\"tula\".\"organization_invitations\".\"status\" in ('pending', 'accepted', 'declined', 'revoked')"
+        },
+        "organization_invitations_role_key_shape": {
+          "name": "organization_invitations_role_key_shape",
+          "value": "\"tula\".\"organization_invitations\".\"role_key\" ~ '^[a-z][a-z0-9_]{0,31}$'"
+        },
+        "organization_invitations_email_length": {
+          "name": "organization_invitations_email_length",
+          "value": "char_length(\"tula\".\"organization_invitations\".\"email\") between 3 and 320 and char_length(\"tula\".\"organization_invitations\".\"email_normalized\") between 3 and 320"
+        },
+        "organization_invitations_resolved_consistent": {
+          "name": "organization_invitations_resolved_consistent",
+          "value": "(\"tula\".\"organization_invitations\".\"status\" = 'pending') = (\"tula\".\"organization_invitations\".\"resolved_at\" is null)"
         }
       },
       "isRLSEnabled": false

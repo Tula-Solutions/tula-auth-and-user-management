@@ -1,12 +1,19 @@
-import { BUILT_IN_ROLES, MEMBERSHIPS_MANAGE_PERMISSION } from '@tula-tech/contract'
+import {
+  BUILT_IN_ROLES,
+  type InvitationStatus,
+  MEMBERSHIPS_MANAGE_PERMISSION,
+} from '@tula-tech/contract'
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import type { MemoryUserRepository } from '~/adapters/memory/users'
 import { activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import type {
+  AcceptInvitationOutcome,
   AddMembershipOutcome,
   ChangeMembershipOutcome,
   CreateOwnedOutcome,
   DeleteRoleOutcome,
+  InsertInvitationOutcome,
+  InvitationRecord,
   MembershipRecord,
   OrganizationChanges,
   OrganizationRecord,
@@ -15,6 +22,7 @@ import type {
   OwnedOrganization,
   Page,
   PageCriteria,
+  ResolveInvitationOutcome,
   RoleChanges,
   UpdateOrganizationOutcome,
   UpdateRoleOutcome,
@@ -34,6 +42,7 @@ export class MemoryOrganizationStore implements OrganizationStore {
   readonly #organizations: Map<string, OrganizationRecord>
   readonly #roles: Map<string, OrganizationRoleRecord>
   readonly #memberships: Map<string, MembershipRecord>
+  readonly #invitations: Map<string, InvitationRecord>
   readonly #activityLog: MemoryActivityLog
   readonly #users: MemoryUserRepository | null
   readonly #deleteListeners: ((environmentId: string, organizationId: string) => void)[] = []
@@ -52,6 +61,7 @@ export class MemoryOrganizationStore implements OrganizationStore {
     this.#organizations = new Map()
     this.#roles = new Map()
     this.#memberships = new Map()
+    this.#invitations = new Map()
     this.#activityLog = activityLog
     this.#users = users
     users?.onBeforeDelete((environmentId, userIds) =>
@@ -231,9 +241,15 @@ export class MemoryOrganizationStore implements OrganizationStore {
       listener(environmentId, id)
     }
     // The memberships go with their organization, as the foreign key cascades.
+    // The memberships and invitations go with their organization, as the foreign keys cascade.
     for (const [key, membership] of this.#memberships) {
       if (membership.organizationId === id) {
         this.#memberships.delete(key)
+      }
+    }
+    for (const [key, invitation] of this.#invitations) {
+      if (invitation.organizationId === id) {
+        this.#invitations.delete(key)
       }
     }
     this.#activityLog.record(activity ? [activity] : [])
@@ -541,6 +557,213 @@ export class MemoryOrganizationStore implements OrganizationStore {
               this.#manages(other)
           )
       )
+  }
+
+  /** The invitation, when it is this environment's. */
+  #invitation(environmentId: string, id: string): InvitationRecord | null {
+    const found = this.#invitations.get(id)
+    return found && found.environmentId === environmentId ? found : null
+  }
+
+  /**
+   * Move a pending, unexpired invitation to a final state, as the database's conditional
+   * `UPDATE` does. No await between the check and the write.
+   */
+  #resolve(
+    invitation: InvitationRecord | null,
+    status: 'accepted' | 'declined' | 'revoked',
+    resolvedBy: string | null,
+    now: Date
+  ): ResolveInvitationOutcome {
+    if (!invitation) {
+      return { outcome: 'not_found' }
+    }
+    if (invitation.status !== 'pending' || invitation.expiresAt.getTime() <= now.getTime()) {
+      return { outcome: 'unavailable', record: structuredClone(invitation) }
+    }
+    invitation.status = status
+    invitation.resolvedAt = now
+    invitation.resolvedBy = resolvedBy
+    invitation.updatedAt = now
+    return { outcome: 'done', record: structuredClone(invitation) }
+  }
+
+  /** @inheritdoc */
+  async insertInvitation(
+    record: InvitationRecord,
+    now: Date,
+    recorded: Recorded
+  ): Promise<InsertInvitationOutcome> {
+    const activity = activityOf(recorded)
+    if (this.#own(record.environmentId, record.organizationId) === null) {
+      return { outcome: 'gone' }
+    }
+    const holders = [...this.#invitations.values()].filter(
+      (one) =>
+        one.environmentId === record.environmentId &&
+        one.organizationId === record.organizationId &&
+        one.emailNormalized === record.emailNormalized &&
+        one.status === 'pending'
+    )
+    // An expired pending invitation is replaced; one that is still open holds the key.
+    if (holders.some((one) => one.expiresAt.getTime() > now.getTime())) {
+      return { outcome: 'exists' }
+    }
+    if (
+      this.#invitations.has(record.id) ||
+      [...this.#invitations.values()].some((one) => one.tokenHash === record.tokenHash)
+    ) {
+      return { outcome: 'exists' }
+    }
+    for (const one of holders) {
+      this.#invitations.delete(one.id)
+    }
+    this.#invitations.set(record.id, structuredClone(record))
+    this.#activityLog.record(activity ? [activity] : [])
+    return { outcome: 'created', record: structuredClone(record) }
+  }
+
+  /** @inheritdoc */
+  async listInvitations(
+    environmentId: string,
+    organizationId: string,
+    status: InvitationStatus,
+    now: Date,
+    page: PageCriteria
+  ): Promise<Page<InvitationRecord>> {
+    const open = (one: InvitationRecord) => one.expiresAt.getTime() > now.getTime()
+    const rows = [...this.#invitations.values()]
+      .filter((one) => one.environmentId === environmentId && one.organizationId === organizationId)
+      .filter((one) => {
+        if (status === 'pending') {
+          return one.status === 'pending' && open(one)
+        }
+        if (status === 'expired') {
+          return one.status === 'pending' && !open(one)
+        }
+        return one.status === status
+      })
+      // Newest first; the id breaks ties between invitations of the same instant.
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || (a.id < b.id ? 1 : -1))
+    return paged(rows, page)
+  }
+
+  /** @inheritdoc */
+  async findInvitation(
+    environmentId: string,
+    organizationId: string,
+    id: string
+  ): Promise<InvitationRecord | null> {
+    const found = this.#invitation(environmentId, id)
+    return found && found.organizationId === organizationId ? structuredClone(found) : null
+  }
+
+  /** @inheritdoc */
+  async findInvitationByTokenHash(
+    environmentId: string,
+    tokenHash: string
+  ): Promise<InvitationRecord | null> {
+    const found = [...this.#invitations.values()].find(
+      (one) => one.environmentId === environmentId && one.tokenHash === tokenHash
+    )
+    return found ? structuredClone(found) : null
+  }
+
+  /** @inheritdoc */
+  async revokeInvitation(
+    environmentId: string,
+    organizationId: string,
+    id: string,
+    now: Date,
+    recorded: Recorded
+  ): Promise<ResolveInvitationOutcome> {
+    const activity = activityOf(recorded)
+    const found = this.#invitation(environmentId, id)
+    const result = this.#resolve(
+      found && found.organizationId === organizationId ? found : null,
+      'revoked',
+      null,
+      now
+    )
+    if (result.outcome === 'done') {
+      this.#activityLog.record(activity ? [activity] : [])
+    }
+    return result
+  }
+
+  /** @inheritdoc */
+  async declineInvitation(
+    environmentId: string,
+    id: string,
+    userId: string,
+    now: Date,
+    recorded: Recorded
+  ): Promise<ResolveInvitationOutcome> {
+    const activity = activityOf(recorded)
+    const result = this.#resolve(this.#invitation(environmentId, id), 'declined', userId, now)
+    if (result.outcome === 'done') {
+      this.#activityLog.record(activity ? [activity] : [])
+    }
+    return result
+  }
+
+  /** @inheritdoc */
+  async acceptInvitation(
+    environmentId: string,
+    id: string,
+    membership: MembershipRecord,
+    now: Date,
+    activities: { invitation: Recorded; membership: Recorded }
+  ): Promise<AcceptInvitationOutcome> {
+    const invitation = this.#invitation(environmentId, id)
+    if (!invitation) {
+      return { outcome: 'not_found' }
+    }
+    if (invitation.status !== 'pending' || invitation.expiresAt.getTime() <= now.getTime()) {
+      return { outcome: 'unavailable', record: structuredClone(invitation) }
+    }
+    // The checks the foreign keys and the unique key make, before anything is written.
+    if (
+      this.#own(environmentId, membership.organizationId) === null ||
+      this.#roles.get(membership.roleId)?.environmentId !== environmentId
+    ) {
+      return { outcome: 'gone' }
+    }
+    if (this.#users && (await this.#users.findById(environmentId, membership.userId)) === null) {
+      return { outcome: 'gone' }
+    }
+    // The await above is the last: the checks and the writes below are one turn of the loop.
+    if (this.#invitation(environmentId, id)?.status !== 'pending') {
+      return { outcome: 'unavailable', record: structuredClone(invitation) }
+    }
+    if (this.#membership(environmentId, membership.organizationId, membership.userId)) {
+      return { outcome: 'duplicate' }
+    }
+    this.#resolve(invitation, 'accepted', membership.userId, now)
+    this.#memberships.set(membership.id, structuredClone(membership))
+    this.#activityLog.record(recordedOf([activities.invitation, activities.membership]))
+    return {
+      outcome: 'accepted',
+      record: structuredClone(invitation),
+      membership: structuredClone(membership),
+    }
+  }
+
+  /** @inheritdoc */
+  async deleteExpiredInvitations(
+    environmentId: string,
+    before: Date,
+    limit: number
+  ): Promise<number> {
+    const due = [...this.#invitations.values()]
+      .filter(
+        (one) => one.environmentId === environmentId && one.expiresAt.getTime() <= before.getTime()
+      )
+      .slice(0, limit)
+    for (const one of due) {
+      this.#invitations.delete(one.id)
+    }
+    return due.length
   }
 
   /** @inheritdoc */

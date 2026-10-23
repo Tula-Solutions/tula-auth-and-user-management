@@ -17,7 +17,8 @@ const PROPOSAL = '0199c2f4-7a1b-7dee-8cfd-f0ab1e7d8c12'
 const ORGANIZATION = '0199c2f4-7a1d-7f00-8e1f-12cd3a9f0e14'
 const MEMBERSHIP = '0199c2f4-7a1e-7011-9f2a-23de4b0a1f15'
 const ORGANIZATION_ROLE = '0199c2f4-7a1f-7122-8a3b-34ef5c1b2a16'
-const ORGANIZATION_DOMAIN = '0199c2f4-7a20-7233-9b4c-45f06d2c3b17'
+const ORGANIZATION_DOMAIN = '0199c2f4-7a21-7344-8c5d-56a17e3d4c18'
+const INVITATION = '0199c2f4-7a20-7233-9b4c-45f06d2c3b17'
 const AGENT = '0199c2f4-7a1c-7eff-9d0e-01bc2f8e9d13'
 
 const schemaVersion = EVENT_SCHEMA_VERSION
@@ -42,6 +43,7 @@ const aboutOrganization = { type: 'organization', id: ORGANIZATION } as const
 const aboutMembership = { type: 'organization_membership', id: MEMBERSHIP } as const
 const aboutRole = { type: 'organization_role', id: ORGANIZATION_ROLE } as const
 const aboutDomain = { type: 'organization_domain', id: ORGANIZATION_DOMAIN } as const
+const aboutInvitation = { type: 'organization_invitation', id: INVITATION } as const
 const aboutProposal = { type: 'proposal', id: PROPOSAL } as const
 const proposed = { operation: 'ban_user', targetType: 'user', targetId: USER } as const
 
@@ -626,6 +628,42 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     actor: admin,
     target: aboutDomain,
     data: { organizationId: ORGANIZATION, domain: 'acme.com' },
+  },
+  'organization_invitation.created': {
+    id: eventId(55),
+    type: 'organization_invitation.created',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutInvitation,
+    data: { organizationId: ORGANIZATION, role: 'member' },
+  },
+  'organization_invitation.accepted': {
+    id: eventId(56),
+    type: 'organization_invitation.accepted',
+    schemaVersion,
+    occurredAt,
+    actor: user,
+    target: aboutInvitation,
+    data: { organizationId: ORGANIZATION, role: 'member', userId: USER },
+  },
+  'organization_invitation.declined': {
+    id: eventId(57),
+    type: 'organization_invitation.declined',
+    schemaVersion,
+    occurredAt,
+    actor: user,
+    target: aboutInvitation,
+    data: { organizationId: ORGANIZATION, role: 'member', userId: USER },
+  },
+  'organization_invitation.revoked': {
+    id: eventId(58),
+    type: 'organization_invitation.revoked',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutInvitation,
+    data: { organizationId: ORGANIZATION, role: 'member' },
   },
   'session.refresh_proof_refused': {
     id: eventId(39),

@@ -120,6 +120,20 @@ follow the [rules for notices](#notices).
 | `no_account_sign_in` | A sign-in by email was asked for an address with no account. | `appName` |
 | `email_in_use` | A signed-in user of an account with no address asked to add an address that already has an account. Sent to that address instead of a code ([ADR 0059](adr/0059-email-for-accounts-without-one.md)). | `appName` |
 
+### Organization invitations
+
+| Kind | Sent when | Required | Optional |
+| --- | --- | --- | --- |
+| `organization_invitation` | Someone invited an address to an organization ([ADR 0065](adr/0065-organizations.md#invitations)). | `link` | `appName`, `expiresInDays` |
+
+The link is the server's own: the redirect URL the inviter chose, with the invitation's token
+after a `#`. The organization's name is text a user typed, so **there is no placeholder for it**
+and none for the invited address: only Tula's own wording names the organization, with the name
+escaped. The subject follows the rule for notices (it never starts with a digit, so it is never
+mistaken for a code), and after your paragraphs Tula still writes its own last sentence: if the
+reader was not expecting the invitation they can ignore it, because nobody joins unless the
+invited address accepts while signed in. Do not write that sentence yourself.
+
 ### Security notices
 
 Which of them are sent at all is the environment's `notifications` setting.
@@ -155,6 +169,7 @@ Which of them are sent at all is the environment's `notifications` setting.
 | `code` | The six-digit code. |
 | `link` | The sign-in link, which works only in the browser that asked for it ([emailed link](methods/email-link.md)). |
 | `expiresInMinutes` | How long the code works, as a number. |
+| `expiresInDays` | How many days an organization invitation works, as a number. |
 | `time` | When it happened, in UTC: `2026-10-03 14:05 UTC`. |
 | `device` | The kind of device, from Tula's fixed list: `Chrome on Windows`. |
 | `provider` | The provider's name: `Google`. |

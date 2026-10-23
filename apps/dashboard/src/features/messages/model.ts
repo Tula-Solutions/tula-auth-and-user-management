@@ -138,6 +138,10 @@ const EMAIL_WORDS: Record<EmailTemplateKind, { label: string; when: string }> = 
     label: 'Email address added',
     when: 'A signed-in user added an email address to an account that had none.',
   },
+  organization_invitation: {
+    label: 'Organization invitation',
+    when: 'Someone invited an address to join an organization. The link carries the invitation.',
+  },
 }
 
 const SMS_WORDS: Record<SmsTemplateKind, { label: string; when: string }> = {
@@ -186,6 +190,10 @@ export const MESSAGE_GROUPS: readonly MessageGroup[] = [
     messages: emails(
       (kind) => EMAIL_TEMPLATE_RULES[kind].category === 'notice' && !ABOUT_AN_ADDRESS.includes(kind)
     ),
+  },
+  {
+    title: 'Invitations',
+    messages: emails((kind) => EMAIL_TEMPLATE_RULES[kind].category === 'invitation'),
   },
   {
     title: 'Text messages',
