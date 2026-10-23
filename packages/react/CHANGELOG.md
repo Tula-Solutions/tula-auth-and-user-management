@@ -1,5 +1,19 @@
 # @tula-tech/react
 
+## 0.2.0
+
+### Minor Changes
+
+- b69f95e: Export the headless layer that copied components (Tula UI, ADR 0064) are built on: `StepRenderer` (a typed map from step status to screen; anything else is the "not supported" screen, which cannot be replaced), `firstFactorStrategies` with the `FirstFactorForms` and `FirstFactorFormProps` types, `usePasskeySupport`, `useCountdown`, `useRetryCountdown`, `useFieldErrors`, `useLocalization`, `useScreenChanged`, `formatDuration`, `formatText` and `rateLimitedAlert`. A sign-in that is rate limited now says "Too many requests. Try again in 41s." once (new string `common.rateLimitedIn`), not "Try again shortly" followed by the countdown. `<SignIn>` and `<SignUp>` are now drawn through `StepRenderer`, with no change to their markup or behaviour.
+- f56f6b5: A deliberate change of the default theme: Tula's own "ink and paper" replaces the purple one. Warm neutrals (ink `#1a1a18`, paper `#f1efe8`), a primary button that is ink in light and paper in dark, one restrained violet kept for links and the focus ring, 10px and 6px radii, and ink surfaces with paper text in dark. Token names are unchanged and an app that sets `primary` (or any token) keeps its value; only the defaults moved, on web, Swift and Kotlin alike, and every default pair still passes WCAG AA in both schemes. `@tula-tech/react`'s stylesheet is refined (spacing and type rhythm, a crisp focus ring with a soft halo, quiet elevation, entrances and press feedback that stop under `prefers-reduced-motion`, a card that keeps a sensible width from a 320px phone to an ultrawide screen); class names and the public API are unchanged.
+
+### Patch Changes
+
+- a07a717: Centre a card's header and footer (title, subtitle, the switch link and "Secured by Tula"), as the native screens do.
+- Updated dependencies [f56f6b5]
+  - @tula-tech/contract@0.2.0
+  - @tula-tech/core@0.2.0
+
 ## 0.1.1
 
 ### Patch Changes
