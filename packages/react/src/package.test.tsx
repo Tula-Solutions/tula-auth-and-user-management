@@ -69,6 +69,18 @@ describe('the stylesheet', () => {
     expect(stylesheet.slice(start, end)).toContain(':where(.tula-modal)[open]')
   })
 
+  test('a card’s header and footer are centred, like the native screens', () => {
+    const rule = (selector: string) => {
+      const start = stylesheet.indexOf(`:where(${selector}) {`)
+      return stylesheet.slice(start, stylesheet.indexOf('}', start))
+    }
+    for (const selector of ['.tula-header', '.tula-footer']) {
+      expect(rule(selector)).toContain('align-items: center')
+      expect(rule(selector)).toContain('text-align: center')
+    }
+    expect(rule('.tula-branding')).toContain('justify-content: center')
+  })
+
   test('every element name’s class is styled or deliberately bare', () => {
     const kebab = (name: string) => name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)
     const bare = ELEMENT_NAMES.filter((name) => !stylesheet.includes(`.tula-${kebab(name)}`))

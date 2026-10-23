@@ -299,6 +299,23 @@ test.describe('the playground: configuration and code', () => {
   })
 })
 
+test.describe('the playground beside the site', () => {
+  // The island's stylesheet once declared Tailwind's utilities a second time, after the site's:
+  // its `.hidden` then beat the site's `dark:block`, and the header's sun icon was never drawn
+  // on a page with a playground.
+  test('the site’s own utilities still apply: the theme toggle shows its icon in both schemes', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    for (const scheme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme: scheme })
+      await open(page, '/playground/')
+      const toggle = page.locator('#theme-toggle')
+      await expect(toggle.locator('svg:visible')).toHaveCount(1)
+    }
+  })
+})
+
 test.describe('the playground: what a page costs', () => {
   /** The scripts and stylesheets a route loads, by name and size. */
   async function assetsOf(page: Page, route: string): Promise<{ name: string; bytes: number }[]> {
