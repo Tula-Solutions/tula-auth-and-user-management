@@ -44,7 +44,12 @@ by error code. Their code samples are copied from files of this repository by
 
 | | |
 | --- | --- |
-| [Importing users](user-import.md) | `POST /v1/admin/users/import`: up to 500 users a call with their bcrypt or argon2 password hashes, the answer for each row, the parameter minimums, what the first sign-in does, and what an import records. |
+| [Importing users](user-import.md) | `POST /v1/admin/users/import`: up to 500 users a call with their bcrypt, argon2, PBKDF2 or Firebase scrypt password hashes, the answer for each row, the parameter minimums, what the first sign-in does, and what an import records. |
+| [Migrating from Clerk](migrate-from-clerk.md) | `tula import --from clerk`: the dashboard's CSV or the Backend API's JSON with `password_digest`, and Clerk's organizations and memberships. |
+| [Migrating from Auth0](migrate-from-auth0.md) | `tula import --from auth0`: the bulk user export and the bcrypt hashes Auth0 support sends separately. |
+| [Migrating from Firebase](migrate-from-firebase.md) | `tula import --from firebase`: `firebase auth:export` and the project's scrypt parameters, kept out of the command line. |
+| [Migrating from Supabase](migrate-from-supabase.md) | `tula import --from supabase`: `auth.users` as CSV or JSON, with its bcrypt `encrypted_password`. |
+| [Migrating from better-auth](migrate-from-better-auth.md) | `tula import --from better-auth`: the `user` and `account` tables; why its default scrypt hashes are refused today. |
 
 ## What your users are sent
 
@@ -84,7 +89,7 @@ by error code. Their code samples are copied from files of this repository by
 
 | | |
 | --- | --- |
-| [CLI](cli.md) | `create-tula`, `tula dev`, `tula doctor`, `tula policy test`, `tula diff`, `tula apply`, `tula mcp`. |
+| [CLI](cli.md) | `create-tula`, `tula dev`, `tula doctor`, `tula policy test`, `tula diff`, `tula apply`, `tula import`, `tula mcp`. |
 | [Settings as code](config.md) | `tula.config.ts`, what `diff` and `apply` do, using them in CI. |
 | [Dashboard](dashboard.md) | The operator's screens at `/dashboard`. |
 | [MCP server](mcp.md) | Tools for an AI assistant: reads, drafts, proposals and a sign-in test. |
