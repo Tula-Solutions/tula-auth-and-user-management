@@ -86,6 +86,24 @@ export const DOMAINS_MANAGE_PERMISSION: SystemPermission = 'org:sys:domains:mana
  */
 export const INVITATIONS_MANAGE_PERMISSION: SystemPermission = 'org:sys:invitations:manage'
 
+/**
+ * The permission that lets a member rename the organization through the client routes
+ * (ADR 0065, Orgs 07). Read from the membership now, never from a token's claims alone.
+ */
+export const ORGANIZATION_MANAGE_PERMISSION: SystemPermission = 'org:sys:organization:manage'
+
+/**
+ * The permission that lets a member delete the organization through the client routes (ADR
+ * 0065, Orgs 07). Read from the membership now, never from a token's claims alone.
+ */
+export const ORGANIZATION_DELETE_PERMISSION: SystemPermission = 'org:sys:organization:delete'
+
+/**
+ * The permission that lets a member read the organization's member list through the client
+ * routes (ADR 0065, Orgs 07). `org:sys:memberships:manage` also reads it.
+ */
+export const MEMBERSHIPS_READ_PERMISSION: SystemPermission = 'org:sys:memberships:read'
+
 /** A built-in role: its key, its name and the permissions it holds. */
 export interface BuiltInRole {
   readonly key: string

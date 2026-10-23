@@ -120,6 +120,20 @@ export class PostgresUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
+  async findByIds(environmentId: string, ids: readonly string[]): Promise<UserRecord[]> {
+    const wanted = [...new Set(ids)]
+    if (wanted.length === 0) {
+      return []
+    }
+    return withTenant(this.db, environmentId, (tx) =>
+      tx
+        .select(columns)
+        .from(users)
+        .where(and(inArray(users.id, wanted), eq(users.environmentId, environmentId)))
+    )
+  }
+
+  /** @inheritdoc */
   async findByEmail(environmentId: string, emailNormalized: string): Promise<UserRecord | null> {
     const [row] = await withTenant(this.db, environmentId, (tx) =>
       tx

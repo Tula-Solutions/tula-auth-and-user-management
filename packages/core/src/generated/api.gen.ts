@@ -17,6 +17,13 @@ export interface Schemas {
     accessToken?: string
     accessTokenExpiresAt?: string
   }
+  AssignableRole: {
+    key: string
+    name: string
+  }
+  AssignableRoleList: {
+    data: Schemas['AssignableRole'][]
+  }
   BackupCodes: {
     codes: string[]
   }
@@ -43,6 +50,11 @@ export interface Schemas {
     }
     phone?: {
       enabled: boolean
+    }
+    organizations?: {
+      enabled: boolean
+      allowUserCreated: boolean
+      personalAccount: boolean
     }
   }
   CreateOrganizationInvitationRequest: {
@@ -217,6 +229,16 @@ export interface Schemas {
     token: string
   }
   MfaPolicy: 'off' | 'optional' | 'required'
+  MyOrganizationInvitation: {
+    id: string
+    organizationName: string
+    role: string
+    expiresAt: string
+  }
+  MyOrganizationInvitationList: {
+    meta: Schemas['PaginationMeta']
+    data: Schemas['MyOrganizationInvitation'][]
+  }
   NewPasswordReason: 'expired'
   NewPasswordRequest: {
     password: string
@@ -266,6 +288,17 @@ export interface Schemas {
   OrganizationInvitationList: {
     meta: Schemas['PaginationMeta']
     data: Schemas['OrganizationInvitation'][]
+  }
+  OrganizationMember: {
+    userId: string
+    name: string | null
+    email: string | null
+    role: string
+    createdAt: string
+  }
+  OrganizationMemberList: {
+    meta: Schemas['PaginationMeta']
+    data: Schemas['OrganizationMember'][]
   }
   OrganizationRoleKey: string
   OrganizationSlug: string
@@ -515,6 +548,13 @@ export interface Schemas {
   UpdateOrganizationDomainRequest: {
     mode: Schemas['OrganizationDomainMode']
   }
+  UpdateOrganizationMemberRequest: {
+    role: Schemas['OrganizationRoleKey']
+  }
+  UpdateOrganizationRequest: {
+    name?: string
+    slug?: Schemas['OrganizationSlug']
+  }
   UserOrganization: {
     id: string
     name: string
@@ -538,6 +578,8 @@ export interface Schemas {
 
 /** Path parameters, JSON body and success response of every client operation. */
 export interface Operations {
+  /** Accept an invitation addressed to me (`POST /v1/client/me/organization-invitations/{invitationId}/accept`). */
+  acceptMyOrganizationInvitation: { params: { invitationId: string }; body: undefined; response: Schemas['AcceptedInvitation'] }
   /** Accept an invitation (`POST /v1/client/me/organization-invitations/accept`). */
   acceptOrganizationInvitation: { params: Record<string, never>; body: Schemas['InvitationTokenRequest']; response: Schemas['AcceptedInvitation'] }
   /** Prove an emailed or texted first factor (`POST /v1/client/sign-ins/{attemptId}/first-factor/attempt`). */
@@ -556,10 +598,14 @@ export interface Operations {
   confirmTotpEnrolment: { params: Record<string, never>; body: Schemas['TotpConfirmRequest']; response: Schemas['BackupCodes'] }
   /** Create an organization (`POST /v1/client/me/organizations`). */
   createMyOrganization: { params: Record<string, never>; body: Schemas['CreateOrganizationRequest']; response: Schemas['UserOrganization'] }
+  /** Decline an invitation addressed to me (`POST /v1/client/me/organization-invitations/{invitationId}/decline`). */
+  declineMyOrganizationInvitation: { params: { invitationId: string }; body: undefined; response: undefined }
   /** Decline an invitation (`POST /v1/client/me/organization-invitations/decline`). */
   declineOrganizationInvitation: { params: Record<string, never>; body: Schemas['InvitationTokenRequest']; response: undefined }
   /** Disconnect a provider account (`DELETE /v1/client/me/identities/{identityId}`). */
   deleteMyIdentity: { params: { identityId: string }; body: undefined; response: undefined }
+  /** Delete an organization (`DELETE /v1/client/me/organizations/{organizationId}`). */
+  deleteMyOrganization: { params: { organizationId: string }; body: undefined; response: undefined }
   /** Stop using a texted code as my second factor (`DELETE /v1/client/me/factors/sms`). */
   disableSmsFactor: { params: Record<string, never>; body: undefined; response: undefined }
   /** Turn two-step verification off (`DELETE /v1/client/me/factors/totp`). */
@@ -594,12 +640,18 @@ export interface Operations {
   listMyOrganizationDomains: { params: { id: string }; body: undefined; response: Schemas['OrganizationDomainList'] }
   /** List an organization’s invitations (`GET /v1/client/me/organizations/{organizationId}/invitations`). */
   listMyOrganizationInvitations: { params: { organizationId: string }; body: undefined; response: Schemas['OrganizationInvitationList'] }
+  /** List an organization’s members (`GET /v1/client/me/organizations/{organizationId}/members`). */
+  listMyOrganizationMembers: { params: { organizationId: string }; body: undefined; response: Schemas['OrganizationMemberList'] }
+  /** List the roles the caller may give (`GET /v1/client/me/organizations/{organizationId}/roles`). */
+  listMyOrganizationRoles: { params: { organizationId: string }; body: undefined; response: Schemas['AssignableRoleList'] }
   /** List my organizations (`GET /v1/client/me/organizations`). */
   listMyOrganizations: { params: Record<string, never>; body: undefined; response: Schemas['UserOrganizationList'] }
   /** List the organizations I am suggested (`GET /v1/client/me/organizations/suggestions`). */
   listMyOrganizationSuggestions: { params: Record<string, never>; body: undefined; response: Schemas['OrganizationSuggestionList'] }
   /** List my passkeys (`GET /v1/client/me/passkeys`). */
   listMyPasskeys: { params: Record<string, never>; body: undefined; response: Schemas['PasskeyList'] }
+  /** List the invitations addressed to me (`GET /v1/client/me/organization-invitations`). */
+  listMyPendingOrganizationInvitations: { params: Record<string, never>; body: undefined; response: Schemas['MyOrganizationInvitationList'] }
   /** List my sessions (`GET /v1/client/sessions`). */
   listSessions: { params: Record<string, never>; body: undefined; response: Schemas['SessionList'] }
   /** Ask for a texted second-factor code (`POST /v1/client/password-resets/{attemptId}/second-factor/prepare`). */
@@ -616,6 +668,8 @@ export interface Operations {
   regenerateBackupCodes: { params: Record<string, never>; body: undefined; response: Schemas['BackupCodes'] }
   /** Remove a domain (`DELETE /v1/client/me/organizations/{id}/domains/{domainId}`). */
   removeMyOrganizationDomain: { params: { id: string; domainId: string }; body: undefined; response: undefined }
+  /** Remove a member, or leave (`DELETE /v1/client/me/organizations/{organizationId}/members/{userId}`). */
+  removeMyOrganizationMember: { params: { organizationId: string; userId: string }; body: undefined; response: undefined }
   /** Remove a passkey (`DELETE /v1/client/me/passkeys/{passkeyId}`). */
   removePasskey: { params: { passkeyId: string }; body: undefined; response: undefined }
   /** Remove my phone number (`DELETE /v1/client/me/phone`). */
@@ -690,8 +744,12 @@ export interface Operations {
   submitSignInPassword: { params: { attemptId: string }; body: Schemas['PasswordAttemptRequest']; response: Schemas['FlowAttempt'] }
   /** Submit a second factor (`POST /v1/client/sign-ins/{attemptId}/second-factor`). */
   submitSignInSecondFactor: { params: { attemptId: string }; body: Schemas['SecondFactorRequest']; response: Schemas['FlowAttempt'] }
+  /** Rename an organization (`PATCH /v1/client/me/organizations/{organizationId}`). */
+  updateMyOrganization: { params: { organizationId: string }; body: Schemas['UpdateOrganizationRequest']; response: Schemas['UserOrganization'] }
   /** Change what a domain does (`PATCH /v1/client/me/organizations/{id}/domains/{domainId}`). */
   updateMyOrganizationDomain: { params: { id: string; domainId: string }; body: Schemas['UpdateOrganizationDomainRequest']; response: Schemas['OrganizationDomain'] }
+  /** Change a member’s role (`PATCH /v1/client/me/organizations/{organizationId}/members/{userId}`). */
+  updateMyOrganizationMember: { params: { organizationId: string; userId: string }; body: Schemas['UpdateOrganizationMemberRequest']; response: Schemas['OrganizationMember'] }
   /** Confirm the address with its code (`POST /v1/client/me/email/verify`). */
   verifyEmailAddress: { params: Record<string, never>; body: Schemas['EmailAddressVerifyRequest']; response: Schemas['CurrentUser'] }
   /** Verify a claimed domain (`POST /v1/client/me/organizations/{id}/domains/{domainId}/verify`). */
@@ -718,6 +776,7 @@ export interface OperationRoute {
 
 /** Method, path and authentication of every client operation, by operation id. */
 export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } = {
+  acceptMyOrganizationInvitation: { method: 'POST', path: '/v1/client/me/organization-invitations/{invitationId}/accept', session: true },
   acceptOrganizationInvitation: { method: 'POST', path: '/v1/client/me/organization-invitations/accept', session: true },
   attemptSignInFirstFactor: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/first-factor/attempt', session: false },
   changeMyPassword: { method: 'POST', path: '/v1/client/me/password', session: true },
@@ -727,8 +786,10 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   confirmSmsFactorEnrolment: { method: 'POST', path: '/v1/client/me/factors/sms/confirm', session: true },
   confirmTotpEnrolment: { method: 'POST', path: '/v1/client/me/factors/totp/confirm', session: true },
   createMyOrganization: { method: 'POST', path: '/v1/client/me/organizations', session: true },
+  declineMyOrganizationInvitation: { method: 'POST', path: '/v1/client/me/organization-invitations/{invitationId}/decline', session: true },
   declineOrganizationInvitation: { method: 'POST', path: '/v1/client/me/organization-invitations/decline', session: true },
   deleteMyIdentity: { method: 'DELETE', path: '/v1/client/me/identities/{identityId}', session: true },
+  deleteMyOrganization: { method: 'DELETE', path: '/v1/client/me/organizations/{organizationId}', session: true },
   disableSmsFactor: { method: 'DELETE', path: '/v1/client/me/factors/sms', session: true },
   disableTotp: { method: 'DELETE', path: '/v1/client/me/factors/totp', session: true },
   exchangeIdentityLinkTicket: { method: 'POST', path: '/v1/client/me/identities/oauth/exchange', session: true },
@@ -746,9 +807,12 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   listMyIdentities: { method: 'GET', path: '/v1/client/me/identities', session: true },
   listMyOrganizationDomains: { method: 'GET', path: '/v1/client/me/organizations/{id}/domains', session: true },
   listMyOrganizationInvitations: { method: 'GET', path: '/v1/client/me/organizations/{organizationId}/invitations', session: true },
+  listMyOrganizationMembers: { method: 'GET', path: '/v1/client/me/organizations/{organizationId}/members', session: true },
+  listMyOrganizationRoles: { method: 'GET', path: '/v1/client/me/organizations/{organizationId}/roles', session: true },
   listMyOrganizations: { method: 'GET', path: '/v1/client/me/organizations', session: true },
   listMyOrganizationSuggestions: { method: 'GET', path: '/v1/client/me/organizations/suggestions', session: true },
   listMyPasskeys: { method: 'GET', path: '/v1/client/me/passkeys', session: true },
+  listMyPendingOrganizationInvitations: { method: 'GET', path: '/v1/client/me/organization-invitations', session: true },
   listSessions: { method: 'GET', path: '/v1/client/sessions', session: true },
   preparePasswordResetSecondFactor: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/second-factor/prepare', session: false },
   prepareSignInFirstFactor: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/first-factor/prepare', session: false },
@@ -757,6 +821,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   refreshSession: { method: 'POST', path: '/v1/client/sessions/refresh', session: false },
   regenerateBackupCodes: { method: 'POST', path: '/v1/client/me/factors/backup-codes', session: true },
   removeMyOrganizationDomain: { method: 'DELETE', path: '/v1/client/me/organizations/{id}/domains/{domainId}', session: true },
+  removeMyOrganizationMember: { method: 'DELETE', path: '/v1/client/me/organizations/{organizationId}/members/{userId}', session: true },
   removePasskey: { method: 'DELETE', path: '/v1/client/me/passkeys/{passkeyId}', session: true },
   removePhoneNumber: { method: 'DELETE', path: '/v1/client/me/phone', session: true },
   renamePasskey: { method: 'PATCH', path: '/v1/client/me/passkeys/{passkeyId}', session: true },
@@ -794,7 +859,9 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   submitSignInPasskey: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/passkey', session: false },
   submitSignInPassword: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/password', session: false },
   submitSignInSecondFactor: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/second-factor', session: false },
+  updateMyOrganization: { method: 'PATCH', path: '/v1/client/me/organizations/{organizationId}', session: true },
   updateMyOrganizationDomain: { method: 'PATCH', path: '/v1/client/me/organizations/{id}/domains/{domainId}', session: true },
+  updateMyOrganizationMember: { method: 'PATCH', path: '/v1/client/me/organizations/{organizationId}/members/{userId}', session: true },
   verifyEmailAddress: { method: 'POST', path: '/v1/client/me/email/verify', session: true },
   verifyMyOrganizationDomain: { method: 'POST', path: '/v1/client/me/organizations/{id}/domains/{domainId}/verify', session: true },
   verifyPhoneNumber: { method: 'POST', path: '/v1/client/me/phone/verify', session: true },

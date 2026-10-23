@@ -1608,6 +1608,74 @@ export function describeOrganizationStore(
         expect(await ctx.store.findInvitationByTokenHash(ctx.a.environmentId, 'nope')).toBeNull()
       })
 
+      test('finds an invitation by id in its own environment only', async () => {
+        const { org } = await setup2()
+        const record = await invited(ctx.a, org)
+        expect(await ctx.store.findInvitationById(ctx.a.environmentId, record.id)).toEqual(record)
+        expect(await ctx.store.findInvitationById(ctx.b.environmentId, record.id)).toBeNull()
+        expect(
+          await ctx.store.findInvitationById(ctx.a.environmentId, Bun.randomUUIDv7())
+        ).toBeNull()
+      })
+
+      test('lists the pending, unexpired invitations to one address across organizations', async () => {
+        const { org } = await setup2()
+        const other = await stored(organization(ctx.a, { slug: 'other', name: 'Other Org' }))
+        const first = await invited(ctx.a, org)
+        const second = await invited(ctx.a, other, { createdAt: new Date(now.getTime() + 1000) })
+        // Not listed: another address, a lapsed one, a revoked one, another environment's.
+        await invited(ctx.a, org, { email: 'x@example.com', emailNormalized: 'x@example.com' })
+        const lapsedOrg = await stored(organization(ctx.a, { slug: 'lapsed-org' }))
+        await invited(ctx.a, lapsedOrg, { expiresAt: new Date(now.getTime() + 1000) })
+        const revokedOrg = await stored(organization(ctx.a, { slug: 'revoked-org' }))
+        const revoked = await invited(ctx.a, revokedOrg)
+        await ctx.store.revokeInvitation(
+          ctx.a.environmentId,
+          revokedOrg.id,
+          revoked.id,
+          now,
+          activity(ctx.a, 'organization_invitation.revoked', revokedOrg.id)
+        )
+        const at = new Date(now.getTime() + 5000)
+        const listed = await ctx.store.listPendingInvitationsForEmail(
+          ctx.a.environmentId,
+          'ada@example.com',
+          at,
+          { page: 1, size: 10 }
+        )
+        expect(listed.total).toBe(2)
+        expect(listed.records.map((row) => row.record.id)).toEqual([second.id, first.id])
+        expect(listed.records.map((row) => row.organizationName)).toEqual(['Other Org', org.name])
+        const paged = await ctx.store.listPendingInvitationsForEmail(
+          ctx.a.environmentId,
+          'ada@example.com',
+          at,
+          { page: 2, size: 1 }
+        )
+        expect(paged.total).toBe(2)
+        expect(paged.records.map((row) => row.record.id)).toEqual([first.id])
+        expect(
+          await ctx.store.listPendingInvitationsForEmail(
+            ctx.b.environmentId,
+            'ada@example.com',
+            at,
+            { page: 1, size: 10 }
+          )
+        ).toEqual({ records: [], total: 0 })
+        // Past the expiry nothing is listed.
+        const later = new Date(inAWeek.getTime() + 1000)
+        expect(
+          (
+            await ctx.store.listPendingInvitationsForEmail(
+              ctx.a.environmentId,
+              'ada@example.com',
+              later,
+              { page: 1, size: 10 }
+            )
+          ).total
+        ).toBe(0)
+      })
+
       test('a second pending invitation to the same address is not stored and not recorded', async () => {
         const { org } = await setup2()
         await invited(ctx.a, org)

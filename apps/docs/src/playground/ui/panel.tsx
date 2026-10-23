@@ -23,6 +23,7 @@ import {
   type Screen,
   setMethod,
   setMfaPolicy,
+  setOrganizations,
   setProvider,
 } from '../config'
 import { PROVIDER_NAMES, SANDBOX_PROVIDERS, type SandboxMfaPolicy } from '../sandbox'
@@ -104,6 +105,12 @@ const SCREENS: { value: Screen; label: string }[] = [
   { value: 'sign-in', label: 'Sign in' },
   { value: 'sign-up', label: 'Sign up' },
   { value: 'account', label: 'Account' },
+]
+
+const ORGANIZATION_SCREENS: { value: Screen; label: string }[] = [
+  { value: 'organization-switcher', label: 'Switcher' },
+  { value: 'create-organization', label: 'Create' },
+  { value: 'organization-profile', label: 'Profile' },
 ]
 
 const MFA: { value: SandboxMfaPolicy; label: string }[] = [
@@ -196,11 +203,17 @@ export function ConfigPanel({ config, panels, onChange }: ConfigPanelProps) {
           <Segmented
             label='Screen'
             value={config.screen}
-            options={SCREENS}
+            options={has('organizations') ? ORGANIZATION_SCREENS : SCREENS}
             onChange={(screen) => onChange({ ...config, screen })}
           />
           <p className='pg-hint'>
-            Reset a password from <strong>Forgot password</strong> on the sign-in screen.
+            {has('organizations') ? (
+              'The switcher opens the other two from its Manage and Create buttons.'
+            ) : (
+              <>
+                Reset a password from <strong>Forgot password</strong> on the sign-in screen.
+              </>
+            )}
           </p>
         </Group>
       ) : null}
@@ -286,6 +299,20 @@ export function ConfigPanel({ config, panels, onChange }: ConfigPanelProps) {
             value={settings.mfaPolicy}
             options={MFA}
             onChange={(policy) => onChange(setMfaPolicy(config, policy))}
+          />
+        </Group>
+      ) : null}
+
+      {has('organizations') ? (
+        <Group
+          title='Organizations'
+          hint='Sign in as ada@example.test: she belongs to Acme as an admin and to Globex as a member.'
+        >
+          <SwitchRow
+            label='Organizations'
+            hint='Switching them off hides every organization component'
+            checked={settings.organizations}
+            onChange={(on) => onChange(setOrganizations(config, on))}
           />
         </Group>
       ) : null}

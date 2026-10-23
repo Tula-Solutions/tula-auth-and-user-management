@@ -9,14 +9,14 @@ To change a page, change the JSDoc (for a native SDK, the doc comment) and run
 
 | Package | Entry points | Exports |
 | --- | --- | --- |
-| [`@tula-tech/core`](core.md) | `@tula-tech/core` | 96 |
-| [`@tula-tech/react`](react.md) | `@tula-tech/react` | 84 |
-| [`@tula-tech/nextjs`](nextjs.md) | `@tula-tech/nextjs`, `@tula-tech/nextjs/server`, `@tula-tech/nextjs/middleware`, `@tula-tech/nextjs/handlers` | 87 |
+| [`@tula-tech/core`](core.md) | `@tula-tech/core` | 106 |
+| [`@tula-tech/react`](react.md) | `@tula-tech/react` | 93 |
+| [`@tula-tech/nextjs`](nextjs.md) | `@tula-tech/nextjs`, `@tula-tech/nextjs/server`, `@tula-tech/nextjs/middleware`, `@tula-tech/nextjs/handlers` | 96 |
 | [`@tula-tech/expo`](expo.md) | `@tula-tech/expo`, `@tula-tech/expo/passkeys`, `@tula-tech/expo/browser`, `@tula-tech/expo/apple`, `@tula-tech/expo/google`, `@tula-tech/expo/device-key`, `@tula-tech/expo/plugin` | 94 |
 | [`@tula-tech/expo-screens`](expo-screens.md) | `@tula-tech/expo-screens`, `@tula-tech/expo-screens/plugin` | 19 |
 | [`@tula-tech/admin`](admin.md) | `@tula-tech/admin` | 42 |
 | [`@tula-tech/config`](config.md) | `@tula-tech/config` | 36 |
-| [`@tula-tech/contract`](contract.md) | `@tula-tech/contract`, `@tula-tech/contract/custom-claims`, `@tula-tech/contract/device-binding`, `@tula-tech/contract/error-codes`, `@tula-tech/contract/event-types`, `@tula-tech/contract/headers`, `@tula-tech/contract/issuer`, `@tula-tech/contract/organization-domain-rules`, `@tula-tech/contract/organization-permissions`, `@tula-tech/contract/password-rules`, `@tula-tech/contract/redirect-url`, `@tula-tech/contract/theme`, `@tula-tech/contract/webhook-signature` | 975 |
+| [`@tula-tech/contract`](contract.md) | `@tula-tech/contract`, `@tula-tech/contract/custom-claims`, `@tula-tech/contract/device-binding`, `@tula-tech/contract/error-codes`, `@tula-tech/contract/event-types`, `@tula-tech/contract/headers`, `@tula-tech/contract/issuer`, `@tula-tech/contract/organization-domain-rules`, `@tula-tech/contract/organization-permissions`, `@tula-tech/contract/password-rules`, `@tula-tech/contract/redirect-url`, `@tula-tech/contract/theme`, `@tula-tech/contract/webhook-signature` | 994 |
 
 ## Native SDKs
 

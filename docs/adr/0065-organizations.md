@@ -533,6 +533,56 @@ An environment defines roles of its own beside the two built-in ones.
   `tula diff` and `tula apply` plan like native apps (`docs/config.md`). Left out, roles are
   not managed.
 
+### The prebuilt components (Orgs 07)
+
+- **Client routes.** The signed-in user's organization routes under `/v1/client/me/organizations`
+  gain rename and delete (`PATCH`/`DELETE` on one organization), the member list, a member's role
+  and removal, and the roles the caller may assign. Each checks the caller's permission from a
+  fresh membership read (never the token), and a role change or removal that would leave no
+  member holding `memberships:manage` is refused with `organization.last_manager`.
+- **`ClientConfig.organizations`** (`enabled`, `allowUserCreated`, `personalAccount`) is how a
+  component learns what the environment allows. A configuration without it means organizations
+  are off, so an older server draws nothing.
+- **Invitations reach the switcher by token.** The emailed link carries the token in the URL
+  fragment; `readInvitationLink` (re-exported by React and Next.js) reads it once and removes it
+  from the address bar, and the page hands it to `<OrganizationSwitcher invitationToken>`.
+  Accepting stays authorized by the session ([Invitations](#invitations)).
+- **The invitee's own list (TULA-131).** `GET /v1/client/me/organization-invitations` lists the
+  pending, unexpired invitations sent to the signed-in user's own address, paged like the other
+  lists. Only a **verified** address matches (an account whose address is unproven, or that has
+  none, sees an empty page: anyone can register an address they do not own). Each entry is an
+  `id`, the organization's name, the role's key and the expiry; never the token, the invited
+  address, the inviter or the organization's id. The switcher draws it when the panel opens,
+  beside an invitation the app handed over by token.
+- **Answering by id, not by token.** The list holds no token, so the answer is
+  `POST …/organization-invitations/{invitationId}/accept` and `…/decline`. The session
+  authorizes it exactly as it authorizes the token routes: the invitation must have been sent
+  to the signed-in user's own verified address. Whose it is is decided **before** its state, and
+  an id that is not the caller's, one that does not exist and another environment's all answer
+  `organization.invitation_not_found`, so the route cannot show whether someone else was
+  invited or what became of it. Both paths share one function that does the work
+  (`acceptRecord`, `declineRecord`), so a rule added to one is a rule of both. An index on
+  `(environment_id, email_normalized)` for pending rows (migration `0044`) serves the lookup.
+- **A manager acts only on members within their own permissions.** Giving a role is limited to
+  the caller's permissions (`role_not_assignable`), and so is changing the role of, or removing,
+  another member: a target holding a permission the caller lacks is refused with
+  `organization.permission_required`. Leaving is exempt.
+- **Deleting needs a recent authentication (TULA-131).** `DELETE /v1/client/me/organizations/{id}`
+  is behind `requireRecentAuth()` after `sessionAuth()`, like the other destructive account
+  actions: a session that has not proven itself within the profile's `stepUpAfter` (ten minutes
+  by default) answers `auth.step_up_required` (403) with `params.methods`, **before** the
+  permission is read, so the refusal says nothing about the organization. `<OrganizationProfile>`
+  wraps the call in `useStepUp()`: the provider's dialog asks, the delete runs once more, and a
+  user who closes the dialog gets no error. The admin route behind a secret key has none, as
+  every admin route: a key is not a session. The conformance scenarios do not age a session,
+  so the step-up itself is proved by the API's and the component's tests.
+- **The member list looks users up in one call (TULA-131).** `UserRepository.findByIds` takes a
+  page's ids and returns the users that exist (an id of another environment is skipped); it
+  replaces one `findById` per member. Both adapters and the shared suite have it.
+- **Destinations are props.** `organizationProfileUrl`, `createOrganizationUrl` and
+  `invitationUrl` (on the provider or the component) are the only places the components
+  navigate to; without them the switcher opens the form or the profile in a dialog.
+
 ### Out of scope
 
 SAML and SCIM, billing, per-organization branding and settings overrides, nested

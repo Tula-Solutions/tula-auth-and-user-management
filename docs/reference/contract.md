@@ -500,6 +500,47 @@ app registered it is `[]`.
 const AssetLinksSchema
 ```
 
+### `AssignableRole`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+A role a member may give to someone.
+
+```ts
+export type AssignableRole = z.infer<typeof AssignableRoleSchema>
+```
+
+### `AssignableRoleList`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+The roles a member may give.
+
+```ts
+export type AssignableRoleList = z.infer<typeof AssignableRoleListSchema>
+```
+
+### `AssignableRoleListSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+The roles the signed-in member may offer (to an invitation, or to a member): those whose
+permissions they hold themselves. Built-in roles first, then the custom ones by key.
+
+```ts
+const AssignableRoleListSchema
+```
+
+### `AssignableRoleSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+A role a member may give to someone: its key and its name, never its permissions.
+
+```ts
+const AssignableRoleSchema: z.ZodObject<{ key: z.ZodString; name: z.ZodString; }, z.core.$strip>
+```
+
 ### `AuditActorType`
 
 _type_, defined in `packages/contract/src/audit.ts`
@@ -948,6 +989,12 @@ nothing an operator would not put on that screen.
 - `phone.enabled` says whether a profile screen should offer adding a phone number: SMS is
   on and at least one country is allowed. Which countries is not said. Optional in the
   schema, so a client reading an older server's answer treats a missing one as `false`.
+- `organizations` says whether organizations are on at all, whether users may create their
+  own and whether the personal account (no organization) is allowed, so that an
+  organization switcher draws "Create organization" and "Personal account" only where the
+  server would accept them. Optional in the schema, so a client reading an older server's
+  answer treats a missing one as organizations off. The server still decides: every
+  organization route checks the setting itself.
 - The allow-lists (`urls`, `sms.allowedCountries`), the audit settings, the email templates (`emails`), the notice switches (`notifications`) and
   everything under `sessions` (profiles, timeouts, the session limit) are deliberately
   absent: a client learns how its session is held from the response that starts it.
@@ -4978,6 +5025,17 @@ permissions cannot be changed so that an organization would be left with none.
 const MEMBERSHIPS_MANAGE_PERMISSION: SystemPermission
 ```
 
+### `MEMBERSHIPS_READ_PERMISSION`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permission that lets a member read the organization's member list through the client
+routes (ADR 0065, Orgs 07). `org:sys:memberships:manage` also reads it.
+
+```ts
+const MEMBERSHIPS_READ_PERMISSION: SystemPermission
+```
+
 ### `MICROSOFT_TENANT_ALIASES`
 
 _constant_, defined in `packages/contract/src/oauth.ts`
@@ -5125,6 +5183,60 @@ const MicrosoftTenantSchema: z.ZodString
 ```ts
 MicrosoftTenantSchema.parse('common') // 'common'
 MicrosoftTenantSchema.parse('72F988BF-86F1-41AF-91AB-2D7CD011DB47') // lower-cased
+```
+
+### `MyOrganizationInvitation`
+
+_type_, defined in `packages/contract/src/organization-invitation.ts`
+
+An invitation addressed to the signed-in user.
+
+```ts
+export type MyOrganizationInvitation = z.infer<typeof MyOrganizationInvitationSchema>
+```
+
+### `MyOrganizationInvitationList`
+
+_type_, defined in `packages/contract/src/organization-invitation.ts`
+
+A page of them.
+
+```ts
+export type MyOrganizationInvitationList = z.infer<typeof MyOrganizationInvitationListSchema>
+```
+
+### `MyOrganizationInvitationListSchema`
+
+_constant_, defined in `packages/contract/src/organization-invitation.ts`
+
+One page of the signed-in user's pending invitations, newest first.
+
+```ts
+const MyOrganizationInvitationListSchema
+```
+
+### `MyOrganizationInvitationQuerySchema`
+
+_constant_, defined in `packages/contract/src/organization-invitation.ts`
+
+The query of {@link MyOrganizationInvitationListSchema}: a page.
+
+```ts
+const MyOrganizationInvitationQuerySchema
+```
+
+### `MyOrganizationInvitationSchema`
+
+_constant_, defined in `packages/contract/src/organization-invitation.ts`
+
+A pending invitation addressed to the signed-in user, as `GET /v1/client/me/organization-invitations`
+lists it: enough to show and answer it, and nothing else. No token, no invited address, no
+inviter and no other user's data. It is answered by its `id`
+(`POST …/organization-invitations/{invitationId}/accept` and `…/decline`), which the session
+authorizes exactly as the token does.
+
+```ts
+const MyOrganizationInvitationSchema
 ```
 
 ### `NATIVE_APP_FIELDS`
@@ -5622,6 +5734,17 @@ The answer to starting an OAuth sign-in.
 const OAuthStartSchema
 ```
 
+### `ORGANIZATION_DELETE_PERMISSION`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permission that lets a member delete the organization through the client routes (ADR
+0065, Orgs 07). Read from the membership now, never from a token's claims alone.
+
+```ts
+const ORGANIZATION_DELETE_PERMISSION: SystemPermission
+```
+
 ### `ORGANIZATION_DOMAIN_MODES`
 
 _constant_, defined in `packages/contract/src/organization-domain-rules.ts`
@@ -5683,6 +5806,17 @@ const ORGANIZATION_INVITATION_TOKEN_PARAM: "tula_invitation"
 
 ```ts
 const token = new URLSearchParams(location.hash.slice(1)).get(ORGANIZATION_INVITATION_TOKEN_PARAM)
+```
+
+### `ORGANIZATION_MANAGE_PERMISSION`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permission that lets a member rename the organization through the client routes
+(ADR 0065, Orgs 07). Read from the membership now, never from a token's claims alone.
+
+```ts
+const ORGANIZATION_MANAGE_PERMISSION: SystemPermission
 ```
 
 ### `ORGANIZATION_PERMISSIONS_CLAIM`
@@ -5961,6 +6095,49 @@ One page of organizations, newest first.
 
 ```ts
 const OrganizationListSchema
+```
+
+### `OrganizationMember`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+A member of an organization, as another member sees them.
+
+```ts
+export type OrganizationMember = z.infer<typeof OrganizationMemberSchema>
+```
+
+### `OrganizationMemberList`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+A page of members.
+
+```ts
+export type OrganizationMemberList = z.infer<typeof OrganizationMemberListSchema>
+```
+
+### `OrganizationMemberListSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+One page of an organization's members, oldest first, as a member sees them.
+
+```ts
+const OrganizationMemberListSchema
+```
+
+### `OrganizationMemberSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+A member of an organization as another member sees them (ADR 0065, Orgs 07): who they are
+and the key of their role. The name and the address are shown so that a member list can be
+read at all; they go to members whose role holds `org:sys:memberships:read` or `:manage` and
+to nobody else, and never into an event or an audit entry.
+
+```ts
+const OrganizationMemberSchema
 ```
 
 ### `OrganizationMembership`
@@ -14615,6 +14792,39 @@ permissions cannot be changed so that an organization would be left with none.
 
 ```ts
 const MEMBERSHIPS_MANAGE_PERMISSION: SystemPermission
+```
+
+### `MEMBERSHIPS_READ_PERMISSION`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permission that lets a member read the organization's member list through the client
+routes (ADR 0065, Orgs 07). `org:sys:memberships:manage` also reads it.
+
+```ts
+const MEMBERSHIPS_READ_PERMISSION: SystemPermission
+```
+
+### `ORGANIZATION_DELETE_PERMISSION`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permission that lets a member delete the organization through the client routes (ADR
+0065, Orgs 07). Read from the membership now, never from a token's claims alone.
+
+```ts
+const ORGANIZATION_DELETE_PERMISSION: SystemPermission
+```
+
+### `ORGANIZATION_MANAGE_PERMISSION`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permission that lets a member rename the organization through the client routes
+(ADR 0065, Orgs 07). Read from the membership now, never from a token's claims alone.
+
+```ts
+const ORGANIZATION_MANAGE_PERMISSION: SystemPermission
 ```
 
 ### `PERMISSION_KEY_PATTERN`

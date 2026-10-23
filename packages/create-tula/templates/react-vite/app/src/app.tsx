@@ -16,6 +16,13 @@ import {
   OAUTH_CALLBACK_PATH,
   PUBLISHABLE_KEY,
 } from './auth-provider'
+import {
+  CREATE_ORGANIZATION_PATH,
+  CreateOrganizationPage,
+  ORGANIZATION_PROFILE_PATH,
+  OrganizationProfilePage,
+  OrganizationsPage,
+} from './organizations-page'
 import { Protected } from './protected'
 import { SignInPage } from './sign-in-page'
 
@@ -78,6 +85,9 @@ function Home(props: { navigate(url: string): void }) {
       <p>
         <Link to='/account' navigate={props.navigate} className='button-link'>
           Manage your account
+        </Link>{' '}
+        <Link to='/organizations' navigate={props.navigate} className='button-link quiet'>
+          Your organizations
         </Link>
       </p>
     </section>
@@ -198,6 +208,18 @@ export function App() {
         ) : path === '/account' ? (
           <Protected fallback={<Redirect to='/sign-in' navigate={navigate} />}>
             <UserProfile />
+          </Protected>
+        ) : path === '/organizations' ? (
+          <Protected fallback={<Redirect to='/sign-in' navigate={navigate} />}>
+            <OrganizationsPage navigate={navigate} />
+          </Protected>
+        ) : path === ORGANIZATION_PROFILE_PATH ? (
+          <Protected fallback={<Redirect to='/sign-in' navigate={navigate} />}>
+            <OrganizationProfilePage />
+          </Protected>
+        ) : path === CREATE_ORGANIZATION_PATH ? (
+          <Protected fallback={<Redirect to='/sign-in' navigate={navigate} />}>
+            <CreateOrganizationPage />
           </Protected>
         ) : (
           <>
