@@ -12449,7 +12449,7 @@
           "data"
         ]
       },
-      "OrganizationPageQuery": {
+      "OrganizationSearchQuery": {
         "type": "object",
         "properties": {
           "page": {
@@ -12463,6 +12463,10 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 100
+          },
+          "q": {
+            "type": "string",
+            "maxLength": 100
           }
         }
       },
@@ -12556,6 +12560,23 @@
           "meta",
           "data"
         ]
+      },
+      "OrganizationPageQuery": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "default": 1,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000
+          },
+          "size": {
+            "default": 20,
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
       },
       "AddOrganizationMemberRequest": {
         "type": "object",
@@ -29918,7 +29939,7 @@
           "Organizations"
         ],
         "summary": "List organizations",
-        "description": "Organizations of the secret key’s environment, newest first, one page at a time. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.",
+        "description": "Organizations of the secret key’s environment, newest first, one page at a time. `q` keeps the organizations whose name or slug starts with it (ignoring case), counted and paged as a match. While the environment’s `organizations.enabled` setting is off, every organization route answers `organization.disabled` (403) and touches nothing.",
         "security": [
           {
             "secretKey": []
@@ -30041,6 +30062,14 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 100
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "type": "string",
+              "maxLength": 100
             }
           }
         ]

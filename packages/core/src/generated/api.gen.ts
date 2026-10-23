@@ -576,7 +576,7 @@ export interface Schemas {
   }
 }
 
-/** Path parameters, JSON body and success response of every client operation. */
+/** Path parameters, query (where the operation has one), JSON body and success response of every client operation. */
 export interface Operations {
   /** Accept an invitation addressed to me (`POST /v1/client/me/organization-invitations/{invitationId}/accept`). */
   acceptMyOrganizationInvitation: { params: { invitationId: string }; body: undefined; response: Schemas['AcceptedInvitation'] }
@@ -639,19 +639,19 @@ export interface Operations {
   /** List an organization’s domains (`GET /v1/client/me/organizations/{id}/domains`). */
   listMyOrganizationDomains: { params: { id: string }; body: undefined; response: Schemas['OrganizationDomainList'] }
   /** List an organization’s invitations (`GET /v1/client/me/organizations/{organizationId}/invitations`). */
-  listMyOrganizationInvitations: { params: { organizationId: string }; body: undefined; response: Schemas['OrganizationInvitationList'] }
+  listMyOrganizationInvitations: { params: { organizationId: string }; query: { page?: number; size?: number; status?: 'pending' | 'accepted' | 'declined' | 'revoked' | 'expired' }; body: undefined; response: Schemas['OrganizationInvitationList'] }
   /** List an organization’s members (`GET /v1/client/me/organizations/{organizationId}/members`). */
-  listMyOrganizationMembers: { params: { organizationId: string }; body: undefined; response: Schemas['OrganizationMemberList'] }
+  listMyOrganizationMembers: { params: { organizationId: string }; query: { page?: number; size?: number }; body: undefined; response: Schemas['OrganizationMemberList'] }
   /** List the roles the caller may give (`GET /v1/client/me/organizations/{organizationId}/roles`). */
   listMyOrganizationRoles: { params: { organizationId: string }; body: undefined; response: Schemas['AssignableRoleList'] }
   /** List my organizations (`GET /v1/client/me/organizations`). */
-  listMyOrganizations: { params: Record<string, never>; body: undefined; response: Schemas['UserOrganizationList'] }
+  listMyOrganizations: { params: Record<string, never>; query: { page?: number; size?: number }; body: undefined; response: Schemas['UserOrganizationList'] }
   /** List the organizations I am suggested (`GET /v1/client/me/organizations/suggestions`). */
   listMyOrganizationSuggestions: { params: Record<string, never>; body: undefined; response: Schemas['OrganizationSuggestionList'] }
   /** List my passkeys (`GET /v1/client/me/passkeys`). */
   listMyPasskeys: { params: Record<string, never>; body: undefined; response: Schemas['PasskeyList'] }
   /** List the invitations addressed to me (`GET /v1/client/me/organization-invitations`). */
-  listMyPendingOrganizationInvitations: { params: Record<string, never>; body: undefined; response: Schemas['MyOrganizationInvitationList'] }
+  listMyPendingOrganizationInvitations: { params: Record<string, never>; query: { page?: number; size?: number }; body: undefined; response: Schemas['MyOrganizationInvitationList'] }
   /** List my sessions (`GET /v1/client/sessions`). */
   listSessions: { params: Record<string, never>; body: undefined; response: Schemas['SessionList'] }
   /** Ask for a texted second-factor code (`POST /v1/client/password-resets/{attemptId}/second-factor/prepare`). */

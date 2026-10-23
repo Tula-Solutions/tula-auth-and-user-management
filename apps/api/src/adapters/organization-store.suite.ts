@@ -396,6 +396,60 @@ export function describeOrganizationStore(
       })
     })
 
+    test('searches a name or a slug by prefix, ignoring case, with the total of the match', async () => {
+      const acme = await stored(organization(ctx.a, { name: 'Acme Corp', slug: 'acme' }))
+      const apex = await stored(
+        organization(ctx.a, { name: 'Zeta', slug: 'apex', createdAt: later, updatedAt: later })
+      )
+      await stored(organization(ctx.a, { name: 'Other', slug: 'other' }))
+      await stored(organization(ctx.b, { name: 'Acme Foreign', slug: 'acme' }))
+      const env = ctx.a.environmentId
+      expect(await ctx.store.list(env, { page: 1, size: 10, q: 'ac' })).toEqual({
+        records: [acme],
+        total: 1,
+      })
+      expect(await ctx.store.list(env, { page: 1, size: 10, q: 'ACME C' })).toEqual({
+        records: [acme],
+        total: 1,
+      })
+      expect((await ctx.store.list(env, { page: 1, size: 10, q: 'a' })).records).toEqual([
+        apex,
+        acme,
+      ])
+      // A prefix, not a substring.
+      expect((await ctx.store.list(env, { page: 1, size: 10, q: 'cme' })).total).toBe(0)
+      // Paging applies to the match.
+      expect(await ctx.store.list(env, { page: 2, size: 1, q: 'a' })).toEqual({
+        records: [acme],
+        total: 2,
+      })
+    })
+
+    test('a non-ASCII name is found by a prefix in either case', async () => {
+      const unal = await stored(organization(ctx.a, { name: 'Ünal Works', slug: 'unal' }))
+      const env = ctx.a.environmentId
+      for (const q of ['ÜN', 'ün']) {
+        expect(await ctx.store.list(env, { page: 1, size: 10, q })).toEqual({
+          records: [unal],
+          total: 1,
+        })
+      }
+    })
+
+    test('LIKE wildcards in a search term match themselves only', async () => {
+      await stored(organization(ctx.a, { name: 'Acme', slug: 'acme' }))
+      await stored(organization(ctx.a, { name: '100% Real', slug: 'real' }))
+      await stored(organization(ctx.a, { name: 'a_b', slug: 'ab-under' }))
+      const env = ctx.a.environmentId
+      for (const q of ['%', '_', 'a%', '\\', '%cme']) {
+        const found = await ctx.store.list(env, { page: 1, size: 10, q })
+        expect(found.records.map((one) => one.name)).not.toContain('Acme')
+      }
+      expect((await ctx.store.list(env, { page: 1, size: 10, q: '100%' })).total).toBe(1)
+      expect((await ctx.store.list(env, { page: 1, size: 10, q: 'a_' })).total).toBe(1)
+      expect((await ctx.store.list(env, { page: 1, size: 10, q: '%' })).total).toBe(0)
+    })
+
     test('an organization of another environment is never found, listed, changed or deleted', async () => {
       const theirs = await stored(organization(ctx.b))
       const env = ctx.a.environmentId

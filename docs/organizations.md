@@ -109,12 +109,13 @@ try {
   await tula.organizations.setActive(organization.id)
   // tula.state.organizationId === organization.id
 
-  const { data, activeOrganizationId } = await tula.organizations.list()
+  const { data, meta, activeOrganizationId } = await tula.organizations.list({ page: 1 })
   // data[n] has `role` and `permissions`; activeOrganizationId is the one just chosen.
+  // `meta.totalPages` says whether to ask for `{ page: 2 }`.
 
   // `null` is the personal account.
   await tula.organizations.setActive(null)
-  return { data, activeOrganizationId }
+  return { data, meta, activeOrganizationId }
 } catch (error) {
   if (isTulaError(error) && error.code === 'organization.slug_taken') {
     // Ask for another slug.
@@ -142,10 +143,10 @@ await admin.call('addOrganizationMember', {
 
 | Call | Route | Who |
 | --- | --- | --- |
-| `client.organizations.list()` | `GET /v1/client/me/organizations` | The signed-in user: their organizations (the first page), each with their role and its permissions, and the active one. |
+| `client.organizations.list({ page, size })` | `GET /v1/client/me/organizations` | The signed-in user: their organizations, a page at a time (20 by default, up to 100; `meta.totalPages` says how many pages there are), each with their role and its permissions, and the active one. |
 | `client.organizations.create({ name, slug })` | `POST /v1/client/me/organizations` | The signed-in user, where `allowUserCreated` is on. |
 | `client.organizations.setActive(id \| null)` | `PUT /v1/client/me/organizations/active` | The signed-in user, for an organization they belong to. |
-| `listOrganizations`, `createOrganization` | `/v1/admin/organizations` | Your server (secret key). |
+| `listOrganizations`, `createOrganization` | `/v1/admin/organizations` | Your server (secret key). `listOrganizations` takes `page`, `size` and `q`: the organizations whose name or slug starts with `q`, ignoring case (up to 100 characters; `%` and `_` match themselves), counted and paged as a match. |
 | `listOrganizationMemberships`, `addOrganizationMember` | `/v1/admin/organizations/:id/memberships` | Your server (secret key). |
 | `listUserOrganizations` | `GET /v1/admin/users/:userId/organizations` | Your server (secret key): the organizations a user belongs to and their role in each. The dashboard's user page uses it. |
 

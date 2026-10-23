@@ -38,7 +38,13 @@ export type CallInput<Id extends OperationId> = (Operations[Id]['params'] extend
   : { params: Operations[Id]['params'] }) &
   (Operations[Id]['body'] extends undefined
     ? { body?: undefined }
-    : { body: Operations[Id]['body'] }) & {
+    : { body: Operations[Id]['body'] }) &
+  (Operations[Id] extends { query: infer Query }
+    ? {
+        /** The operation's documented query parameters (paging, for a list). */
+        query?: Query
+      }
+    : { query?: undefined }) & {
     /** Sent as `Authorization: Bearer …`. */
     accessToken?: string
     /** Sent as `x-tula-attempt`. */
@@ -203,12 +209,25 @@ function errorFromResponse(response: Response, payload: unknown, messages: Messa
   })
 }
 
-function buildUrl(baseUrl: string, path: string, params: Record<string, string>): string {
+function buildUrl(
+  baseUrl: string,
+  path: string,
+  params: Record<string, string>,
+  query: Record<string, unknown> = {}
+): string {
+  const search = new URLSearchParams()
+  for (const [name, value] of Object.entries(query)) {
+    if (value !== undefined) {
+      search.set(name, String(value))
+    }
+  }
+  const text = search.toString()
   return (
     baseUrl +
     path.replace(/\{(\w+)\}/g, (_placeholder, name: string) =>
       encodeURIComponent(params[name] ?? '')
-    )
+    ) +
+    (text === '' ? '' : `?${text}`)
   )
 }
 
@@ -276,7 +295,12 @@ export function createTransport(options: TransportOptions): Transport {
     if (input.attemptSecret) {
       headers.set(FLOW_ATTEMPT_HEADER, input.attemptSecret)
     }
-    const url = buildUrl(options.baseUrl, route.path, input.params ?? {})
+    const url = buildUrl(
+      options.baseUrl,
+      route.path,
+      input.params ?? {},
+      input.query as Record<string, unknown> | undefined
+    )
     const source = PROVEN.has(id) ? options.deviceKey : undefined
 
     // One deadline for the whole call, the repeat after a nonce challenge included: a refresh
