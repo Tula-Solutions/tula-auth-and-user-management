@@ -51,6 +51,9 @@ public enum TulaOperations {
     /// Disconnect a provider account (`DELETE /v1/client/me/identities/{identityId}`). No body. Answers no body.
     public static let deleteMyIdentity = TulaOperation(id: "deleteMyIdentity", method: "DELETE", path: "/v1/client/me/identities/{identityId}", requiresSession: true)
 
+    /// Delete an organization (`DELETE /v1/client/me/organizations/{organizationId}`). No body. Answers no body.
+    public static let deleteMyOrganization = TulaOperation(id: "deleteMyOrganization", method: "DELETE", path: "/v1/client/me/organizations/{organizationId}", requiresSession: true)
+
     /// Stop using a texted code as my second factor (`DELETE /v1/client/me/factors/sms`). No body. Answers no body.
     public static let disableSmsFactor = TulaOperation(id: "disableSmsFactor", method: "DELETE", path: "/v1/client/me/factors/sms", requiresSession: true)
 
@@ -102,6 +105,12 @@ public enum TulaOperations {
     /// List an organization's invitations (`GET /v1/client/me/organizations/{organizationId}/invitations`). No body. Answers `OrganizationInvitationList`.
     public static let listMyOrganizationInvitations = TulaOperation(id: "listMyOrganizationInvitations", method: "GET", path: "/v1/client/me/organizations/{organizationId}/invitations", requiresSession: true)
 
+    /// List an organization's members (`GET /v1/client/me/organizations/{organizationId}/members`). No body. Answers `OrganizationMemberList`.
+    public static let listMyOrganizationMembers = TulaOperation(id: "listMyOrganizationMembers", method: "GET", path: "/v1/client/me/organizations/{organizationId}/members", requiresSession: true)
+
+    /// List the roles the caller may give (`GET /v1/client/me/organizations/{organizationId}/roles`). No body. Answers `AssignableRoleList`.
+    public static let listMyOrganizationRoles = TulaOperation(id: "listMyOrganizationRoles", method: "GET", path: "/v1/client/me/organizations/{organizationId}/roles", requiresSession: true)
+
     /// List the organizations I am suggested (`GET /v1/client/me/organizations/suggestions`). No body. Answers `OrganizationSuggestionList`.
     public static let listMyOrganizationSuggestions = TulaOperation(id: "listMyOrganizationSuggestions", method: "GET", path: "/v1/client/me/organizations/suggestions", requiresSession: true)
 
@@ -134,6 +143,9 @@ public enum TulaOperations {
 
     /// Remove a domain (`DELETE /v1/client/me/organizations/{id}/domains/{domainId}`). No body. Answers no body.
     public static let removeMyOrganizationDomain = TulaOperation(id: "removeMyOrganizationDomain", method: "DELETE", path: "/v1/client/me/organizations/{id}/domains/{domainId}", requiresSession: true)
+
+    /// Remove a member, or leave (`DELETE /v1/client/me/organizations/{organizationId}/members/{userId}`). No body. Answers no body.
+    public static let removeMyOrganizationMember = TulaOperation(id: "removeMyOrganizationMember", method: "DELETE", path: "/v1/client/me/organizations/{organizationId}/members/{userId}", requiresSession: true)
 
     /// Remove a passkey (`DELETE /v1/client/me/passkeys/{passkeyId}`). No body. Answers no body.
     public static let removePasskey = TulaOperation(id: "removePasskey", method: "DELETE", path: "/v1/client/me/passkeys/{passkeyId}", requiresSession: true)
@@ -246,8 +258,14 @@ public enum TulaOperations {
     /// Submit a second factor (`POST /v1/client/sign-ins/{attemptId}/second-factor`). Body: `SecondFactorRequest`. Answers `FlowAttempt`.
     public static let submitSignInSecondFactor = TulaOperation(id: "submitSignInSecondFactor", method: "POST", path: "/v1/client/sign-ins/{attemptId}/second-factor", requiresSession: false)
 
+    /// Rename an organization (`PATCH /v1/client/me/organizations/{organizationId}`). Body: `UpdateOrganizationRequest`. Answers `UserOrganization`.
+    public static let updateMyOrganization = TulaOperation(id: "updateMyOrganization", method: "PATCH", path: "/v1/client/me/organizations/{organizationId}", requiresSession: true)
+
     /// Change what a domain does (`PATCH /v1/client/me/organizations/{id}/domains/{domainId}`). Body: `UpdateOrganizationDomainRequest`. Answers `OrganizationDomain`.
     public static let updateMyOrganizationDomain = TulaOperation(id: "updateMyOrganizationDomain", method: "PATCH", path: "/v1/client/me/organizations/{id}/domains/{domainId}", requiresSession: true)
+
+    /// Change a member's role (`PATCH /v1/client/me/organizations/{organizationId}/members/{userId}`). Body: `UpdateOrganizationMemberRequest`. Answers `OrganizationMember`.
+    public static let updateMyOrganizationMember = TulaOperation(id: "updateMyOrganizationMember", method: "PATCH", path: "/v1/client/me/organizations/{organizationId}/members/{userId}", requiresSession: true)
 
     /// Confirm the address with its code (`POST /v1/client/me/email/verify`). Body: `EmailAddressVerifyRequest`. Answers `CurrentUser`.
     public static let verifyEmailAddress = TulaOperation(id: "verifyEmailAddress", method: "POST", path: "/v1/client/me/email/verify", requiresSession: true)
@@ -280,6 +298,7 @@ public enum TulaOperations {
         createMyOrganization,
         declineOrganizationInvitation,
         deleteMyIdentity,
+        deleteMyOrganization,
         disableSmsFactor,
         disableTotp,
         exchangeIdentityLinkTicket,
@@ -297,6 +316,8 @@ public enum TulaOperations {
         listMyIdentities,
         listMyOrganizationDomains,
         listMyOrganizationInvitations,
+        listMyOrganizationMembers,
+        listMyOrganizationRoles,
         listMyOrganizationSuggestions,
         listMyOrganizations,
         listMyPasskeys,
@@ -308,6 +329,7 @@ public enum TulaOperations {
         refreshSession,
         regenerateBackupCodes,
         removeMyOrganizationDomain,
+        removeMyOrganizationMember,
         removePasskey,
         removePhoneNumber,
         renamePasskey,
@@ -345,7 +367,9 @@ public enum TulaOperations {
         submitSignInPasskey,
         submitSignInPassword,
         submitSignInSecondFactor,
+        updateMyOrganization,
         updateMyOrganizationDomain,
+        updateMyOrganizationMember,
         verifyEmailAddress,
         verifyMyOrganizationDomain,
         verifyPhoneNumber,

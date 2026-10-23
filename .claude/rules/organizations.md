@@ -181,3 +181,21 @@ this file under "Area rules" and does not repeat it.
 - Test: every refusal code, the disabled state, an agent key on each write, a lapsed
   invitation replaced, two answers at once making one membership, a send that fails revoking
   the row, the purge in both adapters, and the canary on the four events.
+
+## Prebuilt components (Orgs 07, ADR 0065 "The prebuilt components")
+
+- **A control is drawn only where `has()` permits, and the server decides again.** A refusal
+  (`organization.permission_required`, `auth.forbidden`, `organization.not_a_member`) makes the
+  component re-read the user's organizations and drop the control; never keep a stale one.
+- **The client member routes read the caller's membership fresh** and refuse the removal or
+  demotion of the last member who can manage members (`organization.last_manager`).
+- **The invitation token never leaves the fragment**: `readInvitationLink` strips it from the
+  URL; a component takes it as a prop, never from `location`, and never puts it in a request
+  path, a query or a log.
+- **Results belong to the session they were asked for**: an answer that arrives after sign-out
+  or a user change is dropped. Words come from the localization groups, never from server text.
+- Test: each tab per role, every refusal above, the unknown section, the switch and create
+  failures, and axe in both colour schemes (`e2e/tests/organization-components.spec.ts`).
+- **A manager acts only on members within their own permissions** (`requireOutranks` in
+  `member-service.ts`): changing the role of, or removing, a member who holds a permission the
+  caller lacks is refused; leaving is exempt.

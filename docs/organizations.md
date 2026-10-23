@@ -16,7 +16,7 @@ turning them on is something you do on purpose.
 > organization and its token claims, `has()` in Next.js, React and any backend, the admin API,
 > and the [MCP server](mcp.md#read-tools-need-an-agent-key-or-a-secret-key)'s tools that read them.
 > The dashboard has no organization screens yet. A guide to invitations and verified domains is
-> [coming](#coming-invitations-and-verified-domains).
+> [coming](#invitations-and-verified-domains).
 
 ## Turn organizations on
 
@@ -31,7 +31,7 @@ them while production stays as it is.
 | `allowUserCreated` | `boolean` | no | `false` | Whether a signed-in user may create an organization through `client.organizations.create`. Off, only your server creates organizations (admin API). Turning it on is a weakening. |
 | `maxCreatedPerUser` | `number` or `null` | no | `5` | How many organizations one user may create, from 1 to 1000; `null` for no limit. Raising it or removing it is a weakening. |
 | `creatorRole` | `string` | no | `admin` | The role a creator gets in the organization they create. |
-| `defaultRole` | `string` | no | `member` | The role of someone who joins without being given one. Used by [invitations and verified domains](#coming-invitations-and-verified-domains). |
+| `defaultRole` | `string` | no | `member` | The role of someone who joins without being given one. Used by [invitations and verified domains](#invitations-and-verified-domains). |
 | `personalAccount` | `boolean` | no | `true` | Whether a user may work outside any organization. With `false`, clearing the active organization is refused with `organization.personal_account_disabled` (409). |
 
 :::
@@ -382,8 +382,17 @@ there is no partial list.
 
 ## Prebuilt pieces
 
-`@tula-tech/react` does not draw an organization switcher, because the right one depends on
-your app. The Tula UI registry has two to copy into your project and own:
+`@tula-tech/react` and `@tula-tech/nextjs` draw the three screens most apps need, themed and
+localized like the sign-in components, each drawn only where the user's role permits:
+
+| Component | What it does |
+| --- | --- |
+| [`<OrganizationSwitcher>`](organization-switcher.md) | Shows the active organization and switches it; lists the user's others, the personal account, suggestions and an invitation the user opened; links to the other two. |
+| [`<CreateOrganization>`](create-organization.md) | The form that makes an organization and switches to it. |
+| [`<OrganizationProfile>`](organization-profile.md) | General (rename, leave, delete), Members, Invitations and Domains. |
+
+The Tula UI registry also has two presentation-only items to copy into your project and own,
+when the prebuilt look is not the one you want:
 
 | Item | What it draws |
 | --- | --- |
@@ -409,7 +418,15 @@ import { OrganizationSwitcher } from '@/components/tula/organization-switcher'
 > `input`, `label` and the `status` item) into the project; `shadcn add` works once
 > the registry has an address ([ADR 0064](adr/0064-tula-ui.md)).
 
-## Coming: invitations and verified domains
+The components call the client routes under `/v1/client/me/organizations`: the list, creating,
+switching, renaming and deleting, the members and their roles, the assignable roles, the
+invitations and the domains. They are `@tula-tech/core`'s `organizations.update`, `.remove`,
+`.leave`, `.roles`, `.members.*` and `.domains.*`, if you want to build your own screens.
+`clientConfig.organizations` tells a client whether organizations are on, whether users may
+create them and whether there is a personal account; a client that finds it missing treats
+organizations as off.
+
+## Invitations and verified domains
 
 Two ways to join an organization have a page of their own coming, and are only outlined here
 ([ADR 0065](adr/0065-organizations.md)):
@@ -417,13 +434,14 @@ Two ways to join an organization have a page of their own coming, and are only o
 - **Invitations.** A member who may manage invitations invites an email address with a role.
   The invitee gets a single-use link that works for seven days, and joins only with an account
   whose address is verified and matches. The server routes and `client.organizations.invitations`
-  in `@tula-tech/core` exist; this guide does not document them yet, so read their JSDoc in the
-  [`@tula-tech/core` reference](reference/core.md).
+  in `@tula-tech/core` exist, and `<OrganizationProfile>` and `<OrganizationSwitcher>` draw
+  them; read their JSDoc in the [`@tula-tech/core` reference](reference/core.md).
 - **Verified domains.** An organization proves it owns an email domain with a code sent to an
   address at it. Users with a verified address there are then offered the organization
-  (`suggest`) or join it at once (`auto_join`) with the `defaultRole`. The routes exist
-  (`/v1/admin/organizations/:id/domains`); this guide does not document them yet. What to know
-  before you rely on one:
+  (`suggest`) or join it at once (`auto_join`) with the `defaultRole`. The client routes and
+  `client.organizations.domains` exist; the [Domains tab](organization-profile.md#domains) of
+  `<OrganizationProfile>` claims, verifies and manages them. What to know before you rely on
+  one:
   - **A verification lasts a year.** A domain can be lost and registered again by someone else,
     so after 365 days the domain stops matching: nobody is offered the organization or joined to
     it because of it, and its `status` reads `needs_reverification`. Members who joined stay.
@@ -444,8 +462,10 @@ Two ways to join an organization have a page of their own coming, and are only o
     organizations one user created, and 200 a day for the environment. Being told that a name
     is already claimed elsewhere (`organization.domain_taken`) spends one of the hour's ten.
 
-Until a page covers them, add members from your server with `addOrganizationMember`, or let
-users create organizations of their own.
+The [Invitations](organization-profile.md#invitations) and
+[Domains](organization-profile.md#domains) tabs of `<OrganizationProfile>` are the screens for
+both. Until a guide covers the server's side, add members from your server with
+`addOrganizationMember`, or let users create organizations of their own.
 
 ## Not built
 

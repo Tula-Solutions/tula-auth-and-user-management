@@ -341,6 +341,39 @@ export type InvitationPreview = Schemas['InvitationPreview']
 /** What accepting an invitation answers: the organization joined, with the role and its permissions. */
 export type AcceptedInvitation = Schemas['AcceptedInvitation']
 
+/**
+ * A member of an organization as another member sees them: the user's id, name and address
+ * (each `null` when they have none) and the key of their role.
+ *
+ * @example
+ * ```ts
+ * const { data } = await tula.organizations.members.list(org.id)
+ * const admins = data.filter((member) => member.role === 'admin')
+ * ```
+ */
+export type OrganizationMember = Schemas['OrganizationMember']
+
+/** A page of an organization's members. */
+export type OrganizationMemberList = Schemas['OrganizationMemberList']
+
+/** A role the signed-in member may give: its key and its name. */
+export type AssignableRole = Schemas['AssignableRole']
+
+/** What `organizations.roles()` answers: the roles the member may offer. */
+export type AssignableRoleList = Schemas['AssignableRoleList']
+
+/** The body of `organizations.update()`: a new name, a new slug, or both. */
+export type UpdateOrganizationInput = Schemas['UpdateOrganizationRequest']
+
+/** A domain an organization claimed, pending a code or verified. */
+export type OrganizationDomain = Schemas['OrganizationDomain']
+
+/** An organization's domains. */
+export type OrganizationDomainList = Schemas['OrganizationDomainList']
+
+/** The body of `organizations.domains.start()`: the domain, an address on it and the mode. */
+export type StartOrganizationDomainInput = Schemas['StartOrganizationDomainRequest']
+
 /** What `organizations.setActive()` answers: the session's active organization now. */
 export type ActiveOrganization = Schemas['ActiveOrganization']
 

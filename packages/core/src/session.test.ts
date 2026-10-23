@@ -2422,3 +2422,134 @@ describe('organization invitations (ADR 0065, Orgs 04)', () => {
     expect(w.api.calls(ACCEPT)).toHaveLength(0)
   })
 })
+
+describe('organization members, roles and domains (ADR 0065, Orgs 07)', () => {
+  const ORG = '01980000-0000-7000-8000-000000000001'
+  const USER = '01980000-0000-7000-8000-000000000003'
+  const DOMAIN = '01980000-0000-7000-8000-000000000004'
+  const BASE = `/v1/client/me/organizations/${ORG}`
+  const member = {
+    userId: USER,
+    name: null,
+    email: 'ada@example.com',
+    role: 'member',
+    createdAt: '2030-01-01T00:00:00.000Z',
+  }
+  const domain = {
+    id: DOMAIN,
+    domain: 'acme.com',
+    mode: 'suggest' as const,
+    status: 'pending' as const,
+    verifiedAt: null,
+    expiresAt: null,
+    codeExpiresAt: '2030-01-01T00:10:00.000Z',
+    createdAt: '2030-01-01T00:00:00.000Z',
+    updatedAt: '2030-01-01T00:00:00.000Z',
+  }
+
+  test('update, remove and roles address the organization, signed in as the user', async () => {
+    const w = world()
+    const renamed = {
+      id: ORG,
+      name: 'Acme Inc',
+      slug: 'acme',
+      role: 'admin',
+      permissions: [],
+      createdAt: '2030-01-01T00:00:00.000Z',
+    }
+    w.api.on(`PATCH ${BASE}`, () => json(200, renamed))
+    w.api.on(`DELETE ${BASE}`, () => new Response(null, { status: 204 }))
+    w.api.on(`GET ${BASE}/roles`, () => json(200, { data: [{ key: 'member', name: 'Member' }] }))
+    const { tula } = await signedIn(w)
+    expect(await tula.organizations.update(ORG, { name: 'Acme Inc' })).toEqual(renamed)
+    expect(w.api.calls(`PATCH ${BASE}`)[0]?.body).toEqual({ name: 'Acme Inc' })
+    expect(await tula.organizations.roles(ORG)).toEqual({
+      data: [{ key: 'member', name: 'Member' }],
+    })
+    expect(await tula.organizations.remove(ORG)).toBeUndefined()
+    expect(w.api.calls(`DELETE ${BASE}`)).toHaveLength(1)
+    expect(bearer(w, `PATCH ${BASE}`)).toEqual([`Bearer ${accessToken('access_1')}`])
+  })
+
+  test('members list, change a role and remove', async () => {
+    const w = world()
+    const page = { meta: { totalCount: 1, totalPages: 1, page: 1, perPage: 20 }, data: [member] }
+    w.api.on(`GET ${BASE}/members`, () => json(200, page))
+    w.api.on(`PATCH ${BASE}/members/${USER}`, () => json(200, { ...member, role: 'admin' }))
+    w.api.on(`DELETE ${BASE}/members/${USER}`, () => new Response(null, { status: 204 }))
+    const { tula } = await signedIn(w)
+    expect(await tula.organizations.members.list(ORG)).toEqual(page)
+    expect(await tula.organizations.members.changeRole(ORG, USER, 'admin')).toMatchObject({
+      role: 'admin',
+    })
+    expect(w.api.calls(`PATCH ${BASE}/members/${USER}`)[0]?.body).toEqual({ role: 'admin' })
+    expect(await tula.organizations.members.remove(ORG, USER)).toBeUndefined()
+  })
+
+  test('leave removes the signed-in user themselves', async () => {
+    const w = world()
+    w.api.on(`DELETE ${BASE}/members/${TEST_USER.id}`, () => new Response(null, { status: 204 }))
+    const { tula } = await signedIn(w)
+    expect(await tula.organizations.leave(ORG)).toBeUndefined()
+    expect(w.api.calls(`DELETE ${BASE}/members/${TEST_USER.id}`)).toHaveLength(1)
+  })
+
+  test('the last manager cannot leave: the code is the caller’s to show', async () => {
+    const w = world()
+    w.api.on(`DELETE ${BASE}/members/${TEST_USER.id}`, () =>
+      failure(409, 'organization.last_manager')
+    )
+    const { tula } = await signedIn(w)
+    expect(await caught(tula.organizations.leave(ORG))).toMatchObject({
+      code: 'organization.last_manager',
+      status: 409,
+    })
+    expect(tula.state.status).toBe('signed-in')
+  })
+
+  test('domains list, start, verify, change the mode and remove', async () => {
+    const w = world()
+    const verified = {
+      ...domain,
+      status: 'verified' as const,
+      verifiedAt: '2030-01-01T00:05:00.000Z',
+      expiresAt: '2031-01-01T00:05:00.000Z',
+      codeExpiresAt: null,
+    }
+    w.api.on(`GET ${BASE}/domains`, () => json(200, { data: [domain] }))
+    w.api.on(`POST ${BASE}/domains`, () => json(201, domain))
+    w.api.on(`POST ${BASE}/domains/${DOMAIN}/verify`, () => json(200, verified))
+    w.api.on(`PATCH ${BASE}/domains/${DOMAIN}`, () => json(200, { ...verified, mode: 'auto_join' }))
+    w.api.on(`DELETE ${BASE}/domains/${DOMAIN}`, () => new Response(null, { status: 204 }))
+    const { tula } = await signedIn(w)
+    expect(await tula.organizations.domains.list(ORG)).toEqual({ data: [domain] })
+    const input = { domain: 'acme.com', email: 'ada@acme.com', mode: 'suggest' as const }
+    expect(await tula.organizations.domains.start(ORG, input)).toEqual(domain)
+    expect(w.api.calls(`POST ${BASE}/domains`)[0]?.body).toEqual(input)
+    expect(await tula.organizations.domains.verify(ORG, DOMAIN, '123456')).toEqual(verified)
+    expect(w.api.calls(`POST ${BASE}/domains/${DOMAIN}/verify`)[0]?.body).toEqual({
+      code: '123456',
+    })
+    expect(await tula.organizations.domains.update(ORG, DOMAIN, 'auto_join')).toMatchObject({
+      mode: 'auto_join',
+    })
+    expect(w.api.calls(`PATCH ${BASE}/domains/${DOMAIN}`)[0]?.body).toEqual({ mode: 'auto_join' })
+    expect(await tula.organizations.domains.remove(ORG, DOMAIN)).toBeUndefined()
+  })
+
+  test('signed out, the calls say so without a request', async () => {
+    const w = world()
+    const { tula } = tab(w, 'server')
+    await tula.load()
+    for (const call of [
+      () => tula.organizations.members.list(ORG),
+      () => tula.organizations.roles(ORG),
+      () => tula.organizations.domains.list(ORG),
+      () => tula.organizations.remove(ORG),
+      () => tula.organizations.update(ORG, { name: 'x' }),
+    ]) {
+      expect(await caught(call())).toMatchObject({ code: 'auth.unauthenticated' })
+    }
+    expect(w.api.calls(`GET ${BASE}/members`)).toHaveLength(0)
+  })
+})

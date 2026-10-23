@@ -45,6 +45,17 @@ data class ActiveOrganization(
 )
 
 @Serializable
+data class AssignableRole(
+    val key: String,
+    val name: String,
+)
+
+@Serializable
+data class AssignableRoleList(
+    val data: List<AssignableRole>,
+)
+
+@Serializable
 data class BackupCodes(
     val codes: List<String>,
 )
@@ -63,6 +74,7 @@ data class ClientConfig(
     val password: PasswordPolicy,
     val mfa: ClientConfigMfa? = null,
     val phone: ClientConfigPhone? = null,
+    val organizations: ClientConfigOrganizations? = null,
 )
 
 @Serializable
@@ -75,6 +87,13 @@ data class ClientConfigApp(
 data class ClientConfigMfa(
     val policy: MfaPolicy,
     val smsCode: Boolean? = null,
+)
+
+@Serializable
+data class ClientConfigOrganizations(
+    val enabled: Boolean,
+    val allowUserCreated: Boolean,
+    val personalAccount: Boolean,
 )
 
 @Serializable
@@ -1166,6 +1185,22 @@ object OrganizationInvitationStatusSerializer : KSerializer<OrganizationInvitati
     }
 }
 
+@Serializable
+data class OrganizationMember(
+    val userId: String,
+    val name: String?,
+    val email: String?,
+    val role: String,
+    /** Format: `date-time`. */
+    val createdAt: String,
+)
+
+@Serializable
+data class OrganizationMemberList(
+    val meta: PaginationMeta,
+    val data: List<OrganizationMember>,
+)
+
 typealias OrganizationRoleKey = String
 
 typealias OrganizationSlug = String
@@ -2111,6 +2146,17 @@ data class TotpEnrolment(
 @Serializable
 data class UpdateOrganizationDomainRequest(
     val mode: OrganizationDomainMode,
+)
+
+@Serializable
+data class UpdateOrganizationMemberRequest(
+    val role: OrganizationRoleKey,
+)
+
+@Serializable
+data class UpdateOrganizationRequest(
+    val name: String? = null,
+    val slug: OrganizationSlug? = null,
 )
 
 @Serializable

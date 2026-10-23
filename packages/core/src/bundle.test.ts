@@ -141,8 +141,13 @@ import { join } from 'node:path'
  * an organization's domains would call, which the client does not wrap yet but the table lists
  * all the same), and the two methods. The budget moved by exactly those 239 bytes, from 18,198
  * to 18,437: the room is the 4 bytes it was.
+ * Members, roles, rename, leave and delete (ADR 0065, Orgs 07) added 264 bytes, from 18,433 to
+ * 18,697: six rows of the table of operations (rename, delete, the member list, a member's role,
+ * a member's removal, the roles) and the methods over them and over the domain rows already
+ * listed (`.domains.*`). The budget
+ * moved by exactly those 264 bytes, from 18,437 to 18,701: the room is the 4 bytes it was.
  */
-const GZIP_BUDGET_BYTES = 18_437
+const GZIP_BUDGET_BYTES = 18_701
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

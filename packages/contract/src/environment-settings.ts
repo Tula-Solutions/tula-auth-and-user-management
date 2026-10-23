@@ -918,6 +918,12 @@ export type SettingsManagedBy = z.infer<typeof SettingsManagedBySchema>
  * - `phone.enabled` says whether a profile screen should offer adding a phone number: SMS is
  *   on and at least one country is allowed. Which countries is not said. Optional in the
  *   schema, so a client reading an older server's answer treats a missing one as `false`.
+ * - `organizations` says whether organizations are on at all, whether users may create their
+ *   own and whether the personal account (no organization) is allowed, so that an
+ *   organization switcher draws "Create organization" and "Personal account" only where the
+ *   server would accept them. Optional in the schema, so a client reading an older server's
+ *   answer treats a missing one as organizations off. The server still decides: every
+ *   organization route checks the setting itself.
  * - The allow-lists (`urls`, `sms.allowedCountries`), the audit settings, the email templates (`emails`), the notice switches (`notifications`) and
  *   everything under `sessions` (profiles, timeouts, the session limit) are deliberately
  *   absent: a client learns how its session is held from the response that starts it.
@@ -933,6 +939,13 @@ export const ClientConfigSchema = z
     password: PasswordPolicySchema,
     mfa: z.object({ policy: MfaPolicySchema, smsCode: z.boolean().optional() }).optional(),
     phone: z.object({ enabled: z.boolean() }).optional(),
+    organizations: z
+      .object({
+        enabled: z.boolean(),
+        allowUserCreated: z.boolean(),
+        personalAccount: z.boolean(),
+      })
+      .optional(),
   })
   .meta({ ref: 'ClientConfig' })
 

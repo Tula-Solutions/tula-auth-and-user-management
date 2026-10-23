@@ -533,6 +533,36 @@ An environment defines roles of its own beside the two built-in ones.
   `tula diff` and `tula apply` plan like native apps (`docs/config.md`). Left out, roles are
   not managed.
 
+### The prebuilt components (Orgs 07)
+
+- **Client routes.** The signed-in user's organization routes under `/v1/client/me/organizations`
+  gain rename and delete (`PATCH`/`DELETE` on one organization), the member list, a member's role
+  and removal, and the roles the caller may assign. Each checks the caller's permission from a
+  fresh membership read (never the token), and a role change or removal that would leave no
+  member holding `memberships:manage` is refused with `organization.last_manager`.
+- **`ClientConfig.organizations`** (`enabled`, `allowUserCreated`, `personalAccount`) is how a
+  component learns what the environment allows. A configuration without it means organizations
+  are off, so an older server draws nothing.
+- **Invitations reach the switcher by token.** The emailed link carries the token in the URL
+  fragment; `readInvitationLink` (re-exported by React and Next.js) reads it once and removes it
+  from the address bar, and the page hands it to `<OrganizationSwitcher invitationToken>`.
+  Accepting stays authorized by the session ([Invitations](#invitations)).
+- **Accepted limit.** The server has no route that lists a user's own pending invitations, so
+  the switcher shows only an invitation whose token the app hands it. A listing is deferred.
+- **A manager acts only on members within their own permissions.** Giving a role is limited to
+  the caller's permissions (`role_not_assignable`), and so is changing the role of, or removing,
+  another member: a target holding a permission the caller lacks is refused with
+  `organization.permission_required`. Leaving is exempt.
+- **Accepted limits.** Deleting an organization from the client needs the `organization:delete`
+  permission and a valid session, with no fresh-authentication step (the admin route behind a
+  secret key has none either); a step-up for it is a later change. The member list reads one
+  user per record of a page, bounded by the page size; a batch lookup is deferred.
+  TULA-131 tracks the three deferred items: a step-up for deletion, a route listing a user's own
+  pending invitations, and the batch lookup.
+- **Destinations are props.** `organizationProfileUrl`, `createOrganizationUrl` and
+  `invitationUrl` (on the provider or the component) are the only places the components
+  navigate to; without them the switcher opens the form or the profile in a dialog.
+
 ### Out of scope
 
 SAML and SCIM, billing, per-organization branding and settings overrides, nested
