@@ -411,7 +411,7 @@ export function MembersSection({ organizationId, organizationName, scope }: Memb
           ) : (
             <>
               <DataTable
-                caption={`Members of ${organizationName}`}
+                caption={`Members of ${printableName(organizationName)}`}
                 rows={list.data}
                 rowKey={(membership) => membership.id}
                 columns={[

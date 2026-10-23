@@ -20,7 +20,7 @@ import { notify } from '~/components/toaster'
 import { useEnvironment, useEnvironmentRequest } from '~/features/shell/environment-context'
 import { EnvironmentLink } from '~/features/shell/environment-link'
 import { formatDateTime } from '~/lib/format'
-import { printable } from '~/lib/printable'
+import { printable, printableName } from '~/lib/printable'
 import { refreshOrganizations } from './queries'
 import { roleLabel, useRoles } from './use-roles'
 import { invitationStatusLabel, organizationMessageFor } from './words'
@@ -288,7 +288,7 @@ export function InvitationsSection({ organizationId, organizationName }: Invitat
           ) : (
             <>
               <DataTable
-                caption={`${invitationStatusLabel(status)} invitations to ${organizationName}`}
+                caption={`${invitationStatusLabel(status)} invitations to ${printableName(organizationName)}`}
                 rows={list.data}
                 rowKey={(invitation) => invitation.id}
                 columns={[

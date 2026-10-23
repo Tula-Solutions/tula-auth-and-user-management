@@ -21,7 +21,7 @@ import { notify } from '~/components/toaster'
 import { WeakeningQuestion } from '~/features/hooks/hook-form'
 import { useEnvironment, useEnvironmentRequest } from '~/features/shell/environment-context'
 import { formatDateTime } from '~/lib/format'
-import { printable } from '~/lib/printable'
+import { printable, printableName } from '~/lib/printable'
 import { refreshOrganizations } from './queries'
 import { autoJoinSentences, domainModeLabel, organizationMessageFor } from './words'
 
@@ -307,7 +307,9 @@ export interface DomainsSectionProps {
  * @param props - See {@link DomainsSectionProps}.
  * @returns The section.
  */
-export function DomainsSection({ organizationId, organizationName }: DomainsSectionProps) {
+export function DomainsSection({ organizationId, organizationName: typed }: DomainsSectionProps) {
+  // Written out once: what nobody can see in a name is shown in every sentence that says it.
+  const organizationName = printableName(typed)
   const queryClient = useQueryClient()
   const environment = useEnvironment()
   const request = useEnvironmentRequest()

@@ -1311,4 +1311,25 @@ describe('domains', () => {
     await waitFor(() => expect(openDialogs()).toBe(0))
     expect(sent(api, 'POST', `/v1/admin/organizations/${ACME}/domains/`)).toHaveLength(1)
   })
+
+  test('an organization name nobody can see is written out wherever the dialogs and tables say it', async () => {
+    const odd = 'Acme\u{A0}Corp'
+    const written = 'Acme\\u{A0}Corp'
+    const { user } = start(`${DEV_PATH}/organizations/${ACME}`, {
+      api: arranged({
+        organizations: [{ ...acme, name: odd }],
+        memberships: [{ organizationId: ACME, userId: IDS.user, role: 'admin' }],
+        domains: [claim()],
+      }),
+    })
+    await screen.findByRole('table', { name: `Domains of ${written}` })
+    expect(screen.getByRole('table', { name: `Members of ${written}` })).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Join people automatically on acme.com' }))
+    expect(dialog().textContent).toContain(`becomes a member of ${written}`)
+    expect(dialog().textContent).not.toContain(odd)
+    await user.click(button('Cancel'))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    await user.click(screen.getByRole('button', { name: 'Remove the domain acme.com' }))
+    expect(dialog().textContent).toContain(`${written} stops suggesting`)
+  })
 })
