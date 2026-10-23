@@ -349,6 +349,16 @@ it, by the domain's `mode`.
   `0040` and `121` in parallel. Whichever merges second renumbers its own file (the `0041`
   snapshot's `prevId` is `0039`'s, so it collides with `0040`'s).
 
+- **Accepted limits (Ollie round 2).** The 200-a-day environment allowance of claim codes is an
+  availability limit: where `organizations.allowUserCreated` is on, several user-created
+  organizations can spend it (30 each) and delay other claims until the next day; the
+  per-organization caps bound one organization, not many. `organization.domain_taken` is
+  answered before a send limit is spent, so a manager can learn whether a well-formed domain is
+  claimed in the environment (bounded by the per-IP route limit and the need for an address on
+  that domain). A verified domain is **not re-verified**: the inbox was proved once, so a domain
+  that lapses and is registered by someone else still matches until the claim is removed.
+  Periodic re-verification is a later step.
+
 ### Events and the audit log
 
 Six activity types: `organization.created`, `.updated` and `.deleted` (target `organization`),
