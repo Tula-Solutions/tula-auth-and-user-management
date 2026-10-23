@@ -247,7 +247,9 @@
             "enum": [
               "bcrypt",
               "argon2id",
-              "argon2i"
+              "argon2i",
+              "pbkdf2_sha256",
+              "firebase_scrypt"
             ]
           }
         },
@@ -7994,6 +7996,35 @@
           "emailVerified"
         ]
       },
+      "FirebaseScryptParams": {
+        "type": "object",
+        "properties": {
+          "signerKey": {
+            "type": "string",
+            "maxLength": 512
+          },
+          "saltSeparator": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "rounds": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "memCost": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "signerKey",
+          "saltSeparator",
+          "rounds",
+          "memCost"
+        ]
+      },
       "ImportUsersRequest": {
         "type": "object",
         "properties": {
@@ -8004,6 +8035,9 @@
             "items": {
               "$ref": "#/components/schemas/ImportUserRow"
             }
+          },
+          "firebaseScrypt": {
+            "$ref": "#/components/schemas/FirebaseScryptParams"
           }
         },
         "required": [

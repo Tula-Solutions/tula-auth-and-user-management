@@ -41,6 +41,7 @@ describe('conformance scenarios, in process', () => {
       'accounts that depend on a provider are counted before it is switched off',
       'admin organizations and memberships',
       'user import with a bcrypt hash',
+      'user import with Firebase scrypt and PBKDF2-SHA256 hashes',
       'admin organization roles',
       'environment settings',
       'attempt binding',
