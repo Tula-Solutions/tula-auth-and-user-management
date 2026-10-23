@@ -772,7 +772,8 @@ that defines no JWT template and whose profiles name none, and one that leaves t
 code as the second step (`mfa.smsCode`) at the default, one whose profiles leave
 `deviceBinding` at their default, and one that does not accept an agent's proposals in
 production (`agents.proposalsInProduction`) and does not say whether a sign-in test may
-run (`agents.testSignIn`); the order templates and their claims are written in
+run (`agents.testSignIn`), and one that leaves `organizations` at its default (off); the
+order templates and their claims are written in
 never counts.
 
 ```ts

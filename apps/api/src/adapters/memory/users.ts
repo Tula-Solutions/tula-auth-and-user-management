@@ -37,6 +37,7 @@ function withOutcome(activity: Activity, outcome: PasswordOutcome): Activity {
 /** Users held in memory, for tests. */
 export class MemoryUserRepository implements UserRepository {
   readonly #users: Map<string, UserRecord>
+  readonly #deletionListeners: Array<(environmentId: string, userId: string) => void>
   readonly #passwords: Map<string, string>
   /** When each user's current password was set. A key exactly where `#passwords` has one. */
   readonly #passwordsChangedAt = new Map<string, Date>()
@@ -53,6 +54,7 @@ export class MemoryUserRepository implements UserRepository {
     // Assigned here rather than as field initializers: Bun's per-file coverage counts
     // initializers as an uncalled function.
     this.#users = new Map()
+    this.#deletionListeners = []
     this.#passwords = new Map()
     this.#history = new Map()
     this.#identities = new Map()
@@ -645,8 +647,21 @@ export class MemoryUserRepository implements UserRepository {
       this.#identities.delete(identity.id)
     }
     this.#users.delete(userId)
+    for (const listener of this.#deletionListeners) {
+      listener(environmentId, userId)
+    }
     this.#activityLog.record(activity ? [activity] : [])
     return true
+  }
+
+  /**
+   * Tell a store about every deletion of a user, so that it drops what the database would
+   * cascade (the organization store's memberships).
+   *
+   * @param listener - Called with the environment and the id of each user deleted.
+   */
+  onDelete(listener: (environmentId: string, userId: string) => void): void {
+    this.#deletionListeners.push(listener)
   }
 
   /** @inheritdoc */

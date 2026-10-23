@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { loadScenarios, runScenario, type Scenario, type Target } from '@tula-tech/conformance'
-import { TulaEventSchema } from '@tula-tech/contract'
+import { BUILT_IN_ROLES, TulaEventSchema } from '@tula-tech/contract'
 import { z } from 'zod'
 import { inProcessTarget } from '~/testing/in-process-target'
 
@@ -133,6 +133,11 @@ function vocabulary(): Set<string> {
     }
   }
   walk(z.toJSONSchema(TulaEventSchema, { unrepresentable: 'any' }))
+  // A role's key is a string in the schemas (a custom role's key is the operator's own), but
+  // the two built-in keys are contract words (ADR 0065).
+  for (const role of BUILT_IN_ROLES) {
+    words.add(role.key)
+  }
   return words
 }
 

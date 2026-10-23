@@ -4,6 +4,7 @@ import {
   AndroidAppIdentitySchema,
   CreateHookRequestSchema,
   CreateWebhookEndpointRequestSchema,
+  DEFAULT_ENVIRONMENT_SETTINGS,
   DEFAULT_SMS_DAILY_MESSAGE_LIMIT,
   defaultDeviceBinding,
   type EnvironmentSettingsInput,
@@ -991,14 +992,19 @@ function canonical(value: unknown): unknown {
  * device binding one on every profile (`deviceBinding`: `none` for `web`, `optional` for
  * every other, which is what each did before), proposals from an agent in a production
  * environment one (`agents.proposalsInProduction`, off) and the sign-in test one beside it
- * (`agents.testSignIn`: `null`, the default of the environment's kind; ADR 0058).
+ * (`agents.testSignIn`: `null`, the default of the environment's kind; ADR 0058) and
+ * organizations one section (`organizations`: off; ADR 0065).
  *
  * The fingerprint says which version of the file is applied. A field that every document
  * gained by upgrading must not change it, or each applied environment would report a new
  * version of a file nobody touched.
  */
 function withoutUnusedDefaults(environment: EnvironmentConfig): unknown {
-  const { sessions, sms, signIn, emails, mfa, agents, ...settings } = environment.settings
+  const { sessions, sms, signIn, emails, mfa, agents, organizations, ...settings } =
+    environment.settings
+  const ownOrganizations =
+    JSON.stringify(canonical(organizations)) !==
+    JSON.stringify(canonical(DEFAULT_ENVIRONMENT_SETTINGS.organizations))
   const { smsCode: smsSecondStep, ...mfaBefore } = mfa
   const { jwtTemplates, ...rest } = sessions
   const { smsCode, ...methods } = signIn.methods
@@ -1054,6 +1060,9 @@ function withoutUnusedDefaults(environment: EnvironmentConfig): unknown {
           ...(agents.testSignIn !== null && { testSignIn: agents.testSignIn }),
         },
       }),
+      // Organizations arrived after all of these (ADR 0065): written only when the section
+      // is not the default one, which is off.
+      ...(ownOrganizations && { organizations }),
     },
   }
 }
@@ -1074,7 +1083,8 @@ function withoutUnusedDefaults(environment: EnvironmentConfig): unknown {
  * code as the second step (`mfa.smsCode`) at the default, one whose profiles leave
  * `deviceBinding` at their default, and one that does not accept an agent's proposals in
  * production (`agents.proposalsInProduction`) and does not say whether a sign-in test may
- * run (`agents.testSignIn`); the order templates and their claims are written in
+ * run (`agents.testSignIn`), and one that leaves `organizations` at its default (off); the
+ * order templates and their claims are written in
  * never counts.
  *
  * @param environment - The environment's validated config.

@@ -1,5 +1,12 @@
 import { afterAll, expect, test } from 'bun:test'
-import { environmentSettings, events, flowAttempts, proposals, withTenant } from '@tula-tech/db'
+import {
+  environmentSettings,
+  events,
+  flowAttempts,
+  proposals,
+  users,
+  withTenant,
+} from '@tula-tech/db'
 import { eq, sql } from 'drizzle-orm'
 import { describeActivityLog } from '~/adapters/activity-log.suite'
 import { describeEnvironmentSettingsStore } from '~/adapters/environment-settings-store.suite'
@@ -8,6 +15,7 @@ import { describeFlowAttemptStore } from '~/adapters/flow-attempt-store.suite'
 import { describeHookStore } from '~/adapters/hook-store.suite'
 import { describeNativeAppStore } from '~/adapters/native-app-store.suite'
 import { describeOAuthProviderStore } from '~/adapters/oauth-provider-store.suite'
+import { describeOrganizationStore } from '~/adapters/organization-store.suite'
 import { describePasskeyStore } from '~/adapters/passkey-store.suite'
 import { PostgresActivityLog } from '~/adapters/postgres/activity'
 import { PostgresApiKeyRepository } from '~/adapters/postgres/api-keys'
@@ -21,6 +29,7 @@ import {
 } from '~/adapters/postgres/integration-support'
 import { PostgresNativeAppStore } from '~/adapters/postgres/native-apps'
 import { PostgresOAuthProviderStore } from '~/adapters/postgres/oauth-providers'
+import { PostgresOrganizationStore } from '~/adapters/postgres/organizations'
 import { PostgresPasskeyStore } from '~/adapters/postgres/passkeys'
 import { PostgresProposalStore } from '~/adapters/postgres/proposals'
 import { PostgresSessionStore } from '~/adapters/postgres/sessions'
@@ -168,6 +177,28 @@ describeNativeAppStore('Postgres on a real server', async () => {
       (await log.listAudit(a.environmentId, { page: 1, size: 50 })).entries
         .map((entry) => entry.type)
         .reverse(),
+    a: { projectId: a.projectId, environmentId: a.environmentId },
+    b: { projectId: b.projectId, environmentId: b.environmentId },
+  }
+})
+
+// Fresh tenants per test: an environment has one organization per slug, and on a real server
+// two creations at once meet at the unique index and two demotions at once at the row lock
+// the store takes on the organization.
+describeOrganizationStore('Postgres on a real server', async () => {
+  const [a, b] = [await database.tenant(), await database.tenant('production')]
+  return {
+    store: new PostgresOrganizationStore(db),
+    recorded: async () =>
+      (await log.listAudit(a.environmentId, { page: 1, size: 50 })).entries
+        .map((entry) => entry.type)
+        .reverse(),
+    user: async (tenant) => (tenant.environmentId === a.environmentId ? a : b).user(),
+    deleteUser: async (tenant, userId) => {
+      await withTenant(db, tenant.environmentId, (tx) =>
+        tx.delete(users).where(eq(users.id, userId))
+      )
+    },
     a: { projectId: a.projectId, environmentId: a.environmentId },
     b: { projectId: b.projectId, environmentId: b.environmentId },
   }

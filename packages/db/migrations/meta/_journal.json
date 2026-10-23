@@ -253,6 +253,13 @@
       "when": 1791856146299,
       "tag": "0035_proposals_target_id_text",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1792719557239,
+      "tag": "0036_organizations",
+      "breakpoints": true
     }
   ]
 }

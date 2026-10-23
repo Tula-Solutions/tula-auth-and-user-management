@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula-tech/contract'
 import { createApp } from '~/index'
 import {
   createInstanceTestDeps,
@@ -32,6 +33,15 @@ async function setup() {
     projectId: OTHER.projectId,
     kind: 'development',
     createdAt: now,
+  })
+  // Organizations are off by default and answer `organization.disabled` while they are; the
+  // walk is about credentials, so it switches them on to reach the real handlers.
+  deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+    revision: 1,
+    settings: {
+      ...DEFAULT_ENVIRONMENT_SETTINGS,
+      organizations: { ...DEFAULT_ENVIRONMENT_SETTINGS.organizations, enabled: true },
+    },
   })
   const key = await seedApiKey(deps, SECRET_KEY)
   const app = createApp(deps)

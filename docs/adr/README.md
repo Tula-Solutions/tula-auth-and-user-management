@@ -56,4 +56,5 @@ record.
 - [ADR 0055](0055-expo-emailed-link.md): an emailed sign-in link opened in an Expo app (the binding in memory, the one app link that is read, what is refused without a request, what an ended app costs).
 - [ADR 0063](0063-expo-native-screens.md): Tula's native screens in an Expo app (the native client as the one owner of the session, what crosses to JavaScript and what never does, the sources copied in at build time, what was compiled and what was not).
 - [ADR 0064](0064-tula-ui.md): Tula UI, a copy-in component registry (shadcn's format, presentation-only copies, the step renderer's contract, provenance and a lock file, the theme bridge) and the static docs site.
+- [ADR 0065](0065-organizations.md): organizations, roles and memberships (tables, built-in roles per environment, permission grammar, the last-manager rule, settings, token claims, invitations, verified domains, events) and the user import with tagged password hashes.
 - [ADR 0034](0034-webhooks.md): webhooks (endpoints, the signing secret, the signature, the delivery worker and what is kept of a receiver's answer).
