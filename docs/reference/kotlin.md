@@ -1923,7 +1923,17 @@ not tried on a device. An app that does not want to rest on it passes an [HttpEn
 its own (over OkHttp, for one).
 
 ```kotlin
-class UrlConnectionEngine : HttpEngine
+class UrlConnectionEngine internal constructor(private val patchingClass: String) : HttpEngine
+```
+
+#### `UrlConnectionEngine.constructor`
+
+_constructor_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Http.kt`
+
+The default engine.
+
+```kotlin
+constructor() : this(JDK_ENGINE)
 ```
 
 ### `TulaOrganizationMembers`

@@ -486,6 +486,25 @@ class StorageTest {
     }
 
     @Test
+    fun `a PATCH falls back to the connection when the JDK engine cannot be made, as on Android`() {
+        // Constructor.newInstance wraps what a constructor throws, and a missing java.net.http
+        // class is such an error: it must reach the fallback, not escape as a reflective one.
+        serve({ exchange ->
+            exchange.requestBody.readBytes()
+            exchange.reply(200, "{}")
+        }) { base ->
+            for (engine in listOf(UrlConnectionEngine(BrokenPatching::class.java.name), UrlConnectionEngine("dev.tula.auth.Nothing"))) {
+                val failure = runCatching {
+                    engine.send(HttpRequest("PATCH", "$base/x", emptyMap(), "{}", 5_000))
+                }.exceptionOrNull()
+                // The JVM's HttpURLConnection refuses PATCH; what matters is that it was asked.
+                assertTrue(failure is IOException, failure.toString())
+            }
+            assertEquals(200, UrlConnectionEngine().send(HttpRequest("PATCH", "$base/x", emptyMap(), "{}", 5_000)).status)
+        }
+    }
+
+    @Test
     fun `the default engine hands back an error answer, an empty one and a redirect as they are`() {
         serve({ exchange ->
             when (exchange.requestURI.path) {
@@ -576,4 +595,13 @@ class StorageTest {
             bench.close()
         }
     }
+}
+
+/** An engine whose construction fails the way a missing `java.net.http` class does on Android. */
+class BrokenPatching : HttpEngine {
+    init {
+        throw NoClassDefFoundError("java/net/http/HttpClient")
+    }
+
+    override suspend fun send(request: HttpRequest): HttpResponse = error("never made")
 }

@@ -88,7 +88,10 @@ fun interface HttpEngine {
  * not tried on a device. An app that does not want to rest on it passes an [HttpEngine] of
  * its own (over OkHttp, for one).
  */
-class UrlConnectionEngine : HttpEngine {
+class UrlConnectionEngine internal constructor(private val patchingClass: String) : HttpEngine {
+    /** The default engine. */
+    constructor() : this(JDK_ENGINE)
+
     private val threads: ExecutorService = Executors.newCachedThreadPool { task ->
         Thread(task, "tula-http-${NUMBER.incrementAndGet()}").apply { isDaemon = true }
     }
@@ -104,9 +107,10 @@ class UrlConnectionEngine : HttpEngine {
      */
     private val patching: HttpEngine? by lazy {
         try {
-            Class.forName("dev.tula.auth.JdkHttpEngine").getDeclaredConstructor().newInstance() as? HttpEngine
-        } catch (_: ClassNotFoundException) {
-            // Not there (Android): the connection below is the way.
+            Class.forName(patchingClass).getDeclaredConstructor().newInstance() as? HttpEngine
+        } catch (_: ReflectiveOperationException) {
+            // Not there (Android), or its constructor failed (`InvocationTargetException`
+            // around a `NoClassDefFoundError` for `java.net.http`): the connection below is the way.
             null
         } catch (_: LinkageError) {
             // There, but its `java.net.http` classes are not: the same.
@@ -176,7 +180,10 @@ class UrlConnectionEngine : HttpEngine {
         return HttpResponse(status, headers, text)
     }
 
-    private companion object {
+    internal companion object {
+        /** The JDK-client engine's name, looked up at run time. */
+        const val JDK_ENGINE = "dev.tula.auth.JdkHttpEngine"
+
         val NUMBER = AtomicInteger()
     }
 }

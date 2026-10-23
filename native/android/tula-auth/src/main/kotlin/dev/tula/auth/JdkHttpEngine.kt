@@ -29,7 +29,8 @@ import kotlinx.coroutines.suspendCancellableCoroutine
  * It is meant to behave as [UrlConnectionEngine] does: HTTP/1.1, no redirect followed, no cookie
  * kept, the system's default proxy selector (read per request), the whole answer read up to the
  * same cap, an exception for a request that got no answer, and the answer's stream closed when
- * the caller is cancelled. It sends no proxy credentials: `Authenticator` is not consulted.
+ * the caller is cancelled. The request's timeout bounds the wait for the answer's headers only;
+ * a body that stalls is ended by the caller's cancellation, which the client's own deadline is. It sends no proxy credentials: `Authenticator` is not consulted.
  */
 internal class JdkHttpEngine : HttpEngine {
     private val client: HttpClient = HttpClient.newBuilder()
