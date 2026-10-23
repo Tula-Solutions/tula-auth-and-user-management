@@ -225,7 +225,7 @@ export const ImportSkipReasonSchema = z
 /**
  * What became of one row. `index` is the row's place in the request, so the answer can be
  * matched to the file it came from. A `created` row has the user's `id`, a `skipped` one a
- * `reason`, a `refused` one a contract error `code` (an `import.*` code, `email.invalid`,
+ * `reason` (and, for `email_exists`, the existing user's `id` and `sameExternalId`), a `refused` one a contract error `code` (an `import.*` code, `email.invalid`,
  * …) and its default message.
  */
 export const ImportRowResultSchema = z
@@ -235,6 +235,18 @@ export const ImportRowResultSchema = z
       index: z.number().int().min(0),
       status: z.literal('skipped'),
       reason: ImportSkipReasonSchema,
+      /**
+       * The existing user's id, for an `email_exists` skip (never for `repeated_in_batch`, and
+       * left out if the user vanished between the check and the read). It is the id of the
+       * user the administrator named by address, and an id is all that is ever returned.
+       */
+      id: z.uuid().optional(),
+      /**
+       * Whether that user's stored `externalId` equals the row's. It is how a caller tells
+       * "an earlier attempt of this very row made them" from a user who was there before
+       * (ADR 0066, "A retried batch"). Present with `id`; `false` when either side has none.
+       */
+      sameExternalId: z.boolean().optional(),
     }),
     z.object({
       index: z.number().int().min(0),

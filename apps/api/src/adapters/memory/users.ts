@@ -43,6 +43,8 @@ export class MemoryUserRepository implements UserRepository {
     (environmentId: string, userIds: readonly string[]) => Map<string, string[]>
   >
   readonly #passwords: Map<string, string>
+  /** The `externalId` an import stored, kept for the import's duplicate check only. */
+  readonly #externalIds = new Map<string, string>()
   /** When each user's current password was set. A key exactly where `#passwords` has one. */
   readonly #passwordsChangedAt = new Map<string, Date>()
   /** Each user's previous password hashes, the most recent first. */
@@ -123,6 +125,15 @@ export class MemoryUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
+  async findImportMatch(
+    environmentId: string,
+    emailNormalized: string
+  ): Promise<{ id: string; externalId: string | null } | null> {
+    const user = this.#byEmail(environmentId, emailNormalized)
+    return user ? { id: user.id, externalId: this.#externalIds.get(user.id) ?? null } : null
+  }
+
+  /** @inheritdoc */
   async findByEmailWithPassword(
     environmentId: string,
     emailNormalized: string
@@ -157,11 +168,13 @@ export class MemoryUserRepository implements UserRepository {
       credentialId: _credentialId,
       oauthIdentity: _oauthIdentity,
       passwordHash,
-      // Kept by the database for an operator to read; nothing in this server does.
-      externalId: _externalId,
+      externalId,
       metadata: _metadata,
       ...record
     } = user
+    if (externalId !== undefined) {
+      this.#externalIds.set(user.id, externalId)
+    }
     this.#users.set(user.id, {
       ...record,
       bannedAt: null,
@@ -663,6 +676,7 @@ export class MemoryUserRepository implements UserRepository {
       this.#identities.delete(identity.id)
     }
     this.#users.delete(userId)
+    this.#externalIds.delete(userId)
     for (const listener of this.#deletionListeners) {
       listener(environmentId, userId)
     }

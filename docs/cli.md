@@ -448,8 +448,12 @@ One guide per provider says what to export and what is and is not carried:
 - **A run that stops** (a network failure, `Ctrl-C`, a server that stays down) keeps what it
   did. Run the same command again, with the same options (another `--allow-passwordless` or other
   Firebase parameters is another import: the progress file is refused, `--fresh` starts over). A
-  batch whose answer was lost is sent again and its users are reported as skipped, so the created
-  count can be low after one; a Clerk member is then found by the user's address.
+  batch whose answer was lost is sent again, and the server reports the users its first attempt made
+  as duplicates, with their ids and whether their external id is the row's own: those are counted
+  as created, and a Clerk member is paired by that id, with no lookup by address. A duplicate
+  with another external id (or none) is a user who was there before and stays skipped. A server
+  older than this change sends no ids; the count is then low after a lost answer, and a Clerk
+  member is found by address.
 - **Nothing sensitive is printed.** No hash, token, signer key or whole address, in the report or
   in an error; the secret key and the signer key are redacted from every line.
 

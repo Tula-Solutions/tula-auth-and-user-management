@@ -134,7 +134,14 @@ describe('POST /v1/admin/users/import: the answer', () => {
     const created = result.results[0]
     const known = await deps.users.findByEmail(tenant.environmentId, 'maya@northline.app')
     expect(created).toEqual({ index: 0, status: 'created', id: known?.id as string })
-    expect(result.results[1]).toEqual({ index: 1, status: 'skipped', reason: 'email_exists' })
+    const taken = await deps.users.findByEmail(tenant.environmentId, 'taken@northline.app')
+    expect(result.results[1]).toEqual({
+      index: 1,
+      status: 'skipped',
+      reason: 'email_exists',
+      id: taken?.id as string,
+      sameExternalId: false,
+    })
     expect(result.results[3]).toEqual({ index: 3, status: 'skipped', reason: 'repeated_in_batch' })
   })
 
@@ -169,6 +176,44 @@ describe('POST /v1/admin/users/import: the answer', () => {
   test('an address is the same user whatever its case', async () => {
     await importRows([row('Maya@Northline.app')])
     const result = await importRows([row('maya@northline.APP')])
+    const known = await deps.users.findByEmail(tenant.environmentId, 'maya@northline.app')
+    expect(result.results).toEqual([
+      {
+        index: 0,
+        status: 'skipped',
+        reason: 'email_exists',
+        id: known?.id as string,
+        sameExternalId: false,
+      },
+    ])
+  })
+
+  test('a skipped duplicate names the existing user and whether the external id is the same', async () => {
+    const first = await importRows([
+      row('same@northline.app', { externalId: 'src_1' }),
+      row('other@northline.app', { externalId: 'src_2' }),
+      row('bare@northline.app'),
+    ])
+    const ids = first.results.map((entry) => (entry.status === 'created' ? entry.id : undefined))
+    const again = await importRows([
+      row('same@northline.app', { externalId: 'src_1' }),
+      row('other@northline.app', { externalId: 'src_other' }),
+      row('bare@northline.app', { externalId: 'src_3' }),
+      row('same@northline.app', { externalId: 'src_1' }),
+    ])
+    expect(again.results).toEqual([
+      { index: 0, status: 'skipped', reason: 'email_exists', id: ids[0], sameExternalId: true },
+      { index: 1, status: 'skipped', reason: 'email_exists', id: ids[1], sameExternalId: false },
+      { index: 2, status: 'skipped', reason: 'email_exists', id: ids[2], sameExternalId: false },
+      { index: 3, status: 'skipped', reason: 'repeated_in_batch' },
+    ])
+  })
+
+  test('a duplicate whose user vanished before it was read is skipped without an id', async () => {
+    await importRows([row('gone@northline.app')])
+    const spy = spyOn(deps.users, 'findImportMatch').mockResolvedValue(null)
+    spies.push(spy)
+    const result = await importRows([row('gone@northline.app')])
     expect(result.results).toEqual([{ index: 0, status: 'skipped', reason: 'email_exists' }])
   })
 
