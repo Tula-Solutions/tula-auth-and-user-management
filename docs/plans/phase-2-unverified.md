@@ -777,6 +777,8 @@ completes the sign-in in the app" is therefore **shown in tests only**. Not veri
 
 ## Step 2.14, the Swift client (TULA-37, [ADR 0051](../adr/0051-swift-client.md))
 
+Organizations (TULA-121) are recorded in [their own section](#organizations-in-the-swift-and-kotlin-clients-tula-121-adr-0065), at the end of this page.
+
 The client is tested in Swift, on one Mac, from the command line. **`verify` runs none of
 it**: no job of `ci.yml` has a Swift toolchain. What `verify` holds is that the journey
 tests the Swift sources declare and the `swift` column of
@@ -1188,6 +1190,8 @@ providers are the same before and after). Nothing else.
 | **Postgres, a deployed server** | Not run against either: the tool makes two `GET`s that the read tools already make. |
 
 ## Step 2.15, the Kotlin client (TULA-38, [ADR 0054](../adr/0054-kotlin-client.md))
+
+Organizations (TULA-121) are recorded in [their own section](#organizations-in-the-swift-and-kotlin-clients-tula-121-adr-0065), at the end of this page.
 
 The client (`native/android/tula-auth`) is plain Kotlin and its tests run on a JVM. The
 `kotlin` job of `.github/workflows/ci.yml` runs them on Linux (Temurin 25) on every pull
@@ -1729,3 +1733,13 @@ wrote 22 WebP pictures (11 steps, light and dark) and a manifest.
 | **iOS** | Xcode 16.4, an iPhone 16 simulator with iOS 18.5, the status bar set to 9:41. The six capture tests passed. |
 | **Android** | The `Pixel_10` emulator on an Android 17 image (API 37), JDK 25 and Gradle 9.8.1. The six capture tests passed. The pictures are Compose's capture of the app's window, so they have no system bars: the example is not edge to edge, and the emulator draws an empty status bar. In the dark scheme a strip above the content is the example's own light window background. |
 | **Anything else** | No other simulator, device or OS version. The account screens show the fixture's fixed clock (31 December 2025). Nobody looked at the pictures in VoiceOver or TalkBack: they are pictures, with alternative text. |
+
+## Organizations in the Swift and Kotlin clients (TULA-121, [ADR 0065](../adr/0065-organizations.md))
+
+Run on 2026-10-23, by hand, on one Mac (arm64), Apple Swift 6.1.2, JDK 25, bun 1.4.3. `verify` runs none of the Swift or Kotlin tests; it holds that the journeys the sources declare and `conformance/client-journeys.json` agree.
+
+- `swift test --package-path native/swift`: 576 XCTest tests, 0 failures, as a macOS command-line test bundle. The three organization scenarios (my organizations and the active organization, organization invitations, verified domains: suggest and auto-join) are journeys against the real API served by `native/swift/fixture/server.ts`; 13 unit tests cover the claims reader, the invitation link and the session's choice of an organization. `--enable-code-coverage` then `bun run native/swift/fixture/coverage.ts`: the thresholds hold.
+- `bun run native:kotlin:test`: `tula-auth` and `tula-auth-ui` pass with Kover's bounds; `OrganizationsTest` (17 tests) and the three journeys run over HTTP against `e2e/kotlin-fixture.ts`.
+- The `swift` and `kotlin` columns of the list: the three scenarios went from `not_built` under TULA-121 to `journey`; `SWIFT_NOT_BUILT` is now `TULA-56: 1` and the Kotlin count `TULA-76: 1`.
+
+Not verified: nothing ran on iOS, in a simulator, on an emulator or on a device; no universal link or app link opened an app with an invitation, so `TulaInvitationLink` was only read from strings; no screen shows an organization (the screens are not built). The claims are read without verifying the token signature, on purpose, and are for drawing, never for deciding.

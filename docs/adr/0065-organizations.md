@@ -261,8 +261,8 @@ environment per day; the retention job purges the expired ones.
   became of it (`EXPIRED_INVITATION_RETENTION`), in batches through
   `deleteExpiredInvitations`. The row holds an address; the audit log keeps the ids.
 - **SDKs.** `@tula-tech/core` gets `client.organizations.invitations` (invite, list, revoke,
-  accept, decline, preview). The Swift and Kotlin clients are `not_built` in
-  `conformance/client-journeys.json` until TULA-121.
+  accept, decline, preview). The Swift and Kotlin clients have the same calls on their
+  `organizations` (TULA-121) and a journey for each of the three organization scenarios.
 
 ### Verified domains
 

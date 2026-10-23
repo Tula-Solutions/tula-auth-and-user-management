@@ -769,6 +769,12 @@ final class HardeningTests: XCTestCase {
             ("TulaPhone", world.client.phone),
             ("TulaIdentities", world.client.identities),
             ("TulaEmailAddress", world.client.emailAddress),
+            ("TulaOrganizations", world.client.organizations),
+            ("TulaOrganizationInvitations", world.client.organizations.invitations),
+            (
+                "TulaInvitationLink",
+                try XCTUnwrap(TulaInvitationLink.read("https://app.example/join#tula_invitation=CANARY-invitation"))
+            ),
         ]
         for (name, value) in table {
             let said = everything(value)
