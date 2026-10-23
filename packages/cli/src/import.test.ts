@@ -62,6 +62,7 @@ function problem(status: number, code: string, detail = 'x', headers: Record<str
 function fakeApi(behaviour: Behaviour = {}) {
   const requests: Request[] = []
   const seen = new Map<string, string>()
+  const externalIds = new Map<string, string>()
   let importCalls = 0
   let counter = 0
   const orgs = new Map<string, string>(behaviour.existingSlugs ?? [])
@@ -76,20 +77,43 @@ function fakeApi(behaviour: Behaviour = {}) {
       if (replaced) {
         return replaced
       }
-      const results = (body.users as { email: string }[]).map((user, index) => {
-        const key = user.email.toLowerCase()
-        const code = behaviour.refuse?.[key]
-        if (code) {
-          return { index, status: 'refused', code, message: 'SERVER TEXT WITH maya@northline.app' }
+      const inBatch = new Set<string>()
+      const results = (body.users as { email: string; externalId?: string }[]).map(
+        (user, index) => {
+          const key = user.email.toLowerCase()
+          const code = behaviour.refuse?.[key]
+          if (code) {
+            return {
+              index,
+              status: 'refused',
+              code,
+              message: 'SERVER TEXT WITH maya@northline.app',
+            }
+          }
+          if (inBatch.has(key)) {
+            return { index, status: 'skipped', reason: 'repeated_in_batch' }
+          }
+          inBatch.add(key)
+          if (seen.has(key)) {
+            // As the server: the existing user's id, and whether the external id is the row's.
+            return {
+              index,
+              status: 'skipped',
+              reason: 'email_exists',
+              id: seen.get(key),
+              sameExternalId:
+                user.externalId !== undefined && externalIds.get(key) === user.externalId,
+            }
+          }
+          counter += 1
+          const id = `00000000-0000-7000-8000-${String(counter).padStart(12, '0')}`
+          seen.set(key, id)
+          if (user.externalId !== undefined) {
+            externalIds.set(key, user.externalId)
+          }
+          return { index, status: 'created', id }
         }
-        if (seen.has(key)) {
-          return { index, status: 'skipped', reason: 'email_exists' }
-        }
-        counter += 1
-        const id = `00000000-0000-7000-8000-${String(counter).padStart(12, '0')}`
-        seen.set(key, id)
-        return { index, status: 'created', id }
-      })
+      )
       const count = (status: string) => results.filter((result) => result.status === status).length
       return Response.json({
         results,
@@ -592,6 +616,155 @@ describe('the rate limit and failures', () => {
     expect(run.code).toBe(2)
     expect(run.sleeps).toEqual([2000])
     expect(run.stderr).toContain('The server did not answer (no response)')
+  })
+
+  describe('a batch whose answer was lost after the server committed it (TULA-126)', () => {
+    /** A fetch that lets the server do the import and then loses the answer, on these calls. */
+    function losing(api: ReturnType<typeof fakeApi>, lost: number[]): AdminFetch {
+      let imports = 0
+      return async (url, init) => {
+        const answer = await api.fetch(url, init)
+        if (init?.method === 'POST' && String(url).endsWith('/v1/admin/users/import')) {
+          imports += 1
+          if (lost.includes(imports)) {
+            throw new Error('socket hang up')
+          }
+        }
+        return answer
+      }
+    }
+
+    test('the users the first attempt made are counted as created, not skipped', async () => {
+      const api = fakeApi()
+      const run = await tula(
+        ['import', '--from', 'supabase', 'users.csv', '--yes'],
+        { ...SUPABASE },
+        api,
+        { fetch: losing(api, [1]) }
+      )
+      expect(run.api.imports()).toHaveLength(2)
+      expect(run.stdout).toContain('Users created:            3')
+      expect(run.stdout).toContain('Users skipped:            0')
+      expect(JSON.parse(progressOf(run)).counts).toMatchObject({ created: 3, skipped: 0 })
+    })
+
+    test('a rate-limited first attempt is not a lost answer: duplicates stay skipped', async () => {
+      const first = await tula(['import', '--from', 'supabase', 'users.csv', '--yes'], {
+        ...SUPABASE,
+      })
+      const second = await tula(
+        ['import', '--from', 'supabase', 'users.csv', '--yes', '--fresh'],
+        first.files,
+        first.api,
+        {
+          fetch: (() => {
+            let calls = 0
+            return async (url, init) => {
+              calls += 1
+              return calls === 1
+                ? problem(429, 'rate_limited', 'slow', { 'retry-after': '1' })
+                : first.api.fetch(url, init)
+            }
+          })() as AdminFetch,
+        }
+      )
+      expect(second.stdout).toContain('Users created:            0')
+      expect(second.stdout).toContain('Users skipped:            3')
+    })
+
+    test('a user who was there before stays skipped in the same retried batch', async () => {
+      const api = fakeApi()
+      const first = await tula(
+        ['import', '--from', 'supabase', 'users.csv', '--yes'],
+        { ...SUPABASE },
+        api
+      )
+      expect(first.stdout).toContain('Users created:            3')
+      // Another export of the same people with other source ids: the addresses exist, the
+      // external ids differ, so a retried batch must not call them its own work.
+      const other = SUPABASE['/work/users.csv'].replace(/^([0-9a-f-]{36}),/gm, 'x$1,')
+      const run = await tula(
+        ['import', '--from', 'supabase', 'again.csv', '--yes'],
+        { '/work/again.csv': other },
+        api,
+        { fetch: losing(api, [1]) }
+      )
+      expect(run.api.imports().length).toBeGreaterThanOrEqual(3)
+      expect(run.stdout).toContain('Users created:            0')
+    })
+
+    test('a duplicate answered without a retry is skipped even with the same external id', async () => {
+      const first = await tula(['import', '--from', 'supabase', 'users.csv', '--yes'], {
+        ...SUPABASE,
+      })
+      const second = await tula(
+        ['import', '--from', 'supabase', 'users.csv', '--yes', '--fresh'],
+        first.files,
+        first.api
+      )
+      expect(second.stdout).toContain('Users created:            0')
+      expect(second.stdout).toContain('Users skipped:            3')
+    })
+
+    test('Clerk members are paired by the recorded ids, with no lookup by address', async () => {
+      const api = fakeApi()
+      const run = await tula(
+        [
+          'import',
+          '--from',
+          'clerk',
+          'users.csv',
+          '--yes',
+          '--organizations',
+          'orgs.json',
+          '--memberships',
+          'm.json',
+        ],
+        {
+          '/work/users.csv': fixture('clerk-users.csv'),
+          '/work/orgs.json': fixture('clerk-organizations.json'),
+          '/work/m.json': fixture('clerk-memberships.json'),
+        },
+        api,
+        { fetch: losing(api, [1]) }
+      )
+      expect(run.stdout).toContain('Users created:            3')
+      expect(run.stdout).toContain('Memberships:              3 added')
+      expect(run.api.requests.filter((r) => r.path.startsWith('/v1/admin/users?'))).toEqual([])
+      expect(Object.keys(JSON.parse(progressOf(run)).userIds).sort()).toEqual([
+        'user_2aaa',
+        'user_2bbb',
+        'user_2ccc',
+      ])
+    })
+
+    test('an older server that sends no id keeps the old behaviour: skipped, found by address', async () => {
+      const api = fakeApi()
+      const lossy = losing(api, [1])
+      const old: AdminFetch = async (url, init) => {
+        const answer = await lossy(url, init)
+        if (!String(url).endsWith('/v1/admin/users/import')) {
+          return answer
+        }
+        const body = (await answer.json()) as {
+          results: { id?: string; sameExternalId?: boolean }[]
+        }
+        for (const entry of body.results) {
+          if (entry.sameExternalId !== undefined) {
+            delete entry.id
+            delete entry.sameExternalId
+          }
+        }
+        return Response.json(body)
+      }
+      const run = await tula(
+        ['import', '--from', 'supabase', 'users.csv', '--yes'],
+        { ...SUPABASE },
+        api,
+        { fetch: old }
+      )
+      expect(run.stdout).toContain('Users skipped:            3')
+    })
   })
 
   test('a refusal that is not worth retrying (a wrong key) stops at once', async () => {

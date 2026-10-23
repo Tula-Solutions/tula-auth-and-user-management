@@ -173,7 +173,7 @@ The call is not all-or-nothing, and each row is. The answer has one entry per ro
 {
   "results": [
     { "index": 0, "status": "created", "id": "0199c2f5-…" },
-    { "index": 1, "status": "skipped", "reason": "email_exists" },
+    { "index": 1, "status": "skipped", "reason": "email_exists", "id": "0199c2f4-…", "sameExternalId": false },
     { "index": 2, "status": "refused", "code": "import.hash_parameters_too_weak", "message": "…" }
   ],
   "created": 1,
@@ -185,11 +185,17 @@ The call is not all-or-nothing, and each row is. The answer has one entry per ro
 | `status` | Meaning |
 | --- | --- |
 | `created` | The user exists now. `id` is theirs. |
-| `skipped` | `email_exists`: that address (compared in its normalized form) is already a user. `repeated_in_batch`: an earlier row of the same call has it. |
+| `skipped` | `email_exists`: that address (compared in its normalized form) is already a user; `id` is theirs, and `sameExternalId` says whether their stored `externalId` is the row's own. `repeated_in_batch`: an earlier row of the same call has it (no `id`). |
 | `refused` | The row is wrong. `code` says why. Nothing was written for it. |
 
 Importing the same file again creates nobody twice, so an import that stopped halfway is
 resumed by running it again.
+
+A call whose answer was lost may still have made its users. Sending it again reports them as
+skipped, and `id` with `sameExternalId` is how a client tells its own earlier work (the same
+`externalId`) from a user who was there before. `tula import` uses them: in a batch it had to
+send again, such a row counts as created, and a Clerk member is paired by that `id` instead of
+a lookup by address. Only an id and a yes or no are returned, for an address the caller sent.
 
 A request that is not the right shape at all, such as more than 500 rows, an empty list or a
 row with no `email`, is refused whole with `422`.

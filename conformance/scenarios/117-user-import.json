@@ -227,7 +227,15 @@
           "created": 0,
           "skipped": 1,
           "refused": 0,
-          "results": [{ "index": 0, "status": "skipped", "reason": "email_exists" }]
+          "results": [
+            {
+              "index": 0,
+              "status": "skipped",
+              "reason": "email_exists",
+              "id": "$any",
+              "sameExternalId": false
+            }
+          ]
         }
       }
     },
