@@ -54,6 +54,7 @@ export const AUDIT_TARGET_TYPES = [
   'native_app',
   'organization',
   'organization_membership',
+  'organization_role',
   'proposal',
 ] as const
 

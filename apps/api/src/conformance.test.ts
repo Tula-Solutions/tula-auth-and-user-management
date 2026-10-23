@@ -40,6 +40,7 @@ describe('conformance scenarios, in process', () => {
       'an administrator gives an account an email address',
       'accounts that depend on a provider are counted before it is switched off',
       'admin organizations and memberships',
+      'admin organization roles',
       'environment settings',
       'attempt binding',
       'email code sign-in',

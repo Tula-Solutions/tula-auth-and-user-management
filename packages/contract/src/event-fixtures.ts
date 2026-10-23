@@ -16,6 +16,7 @@ const NATIVE_APP = '0199c2f4-7a1a-7cdd-9bec-ef9a0d6c7b11'
 const PROPOSAL = '0199c2f4-7a1b-7dee-8cfd-f0ab1e7d8c12'
 const ORGANIZATION = '0199c2f4-7a1d-7f00-8e1f-12cd3a9f0e14'
 const MEMBERSHIP = '0199c2f4-7a1e-7011-9f2a-23de4b0a1f15'
+const ORGANIZATION_ROLE = '0199c2f4-7a1f-7122-8a3b-34ef5c1b2a16'
 const AGENT = '0199c2f4-7a1c-7eff-9d0e-01bc2f8e9d13'
 
 const schemaVersion = EVENT_SCHEMA_VERSION
@@ -38,6 +39,7 @@ const aboutHook = { type: 'hook', id: HOOK } as const
 const aboutNativeApp = { type: 'native_app', id: NATIVE_APP } as const
 const aboutOrganization = { type: 'organization', id: ORGANIZATION } as const
 const aboutMembership = { type: 'organization_membership', id: MEMBERSHIP } as const
+const aboutRole = { type: 'organization_role', id: ORGANIZATION_ROLE } as const
 const aboutProposal = { type: 'proposal', id: PROPOSAL } as const
 const proposed = { operation: 'ban_user', targetType: 'user', targetId: USER } as const
 
@@ -544,6 +546,33 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     actor: admin,
     target: aboutMembership,
     data: { organizationId: ORGANIZATION, userId: USER, role: 'member' },
+  },
+  'organization_role.created': {
+    id: eventId(52),
+    type: 'organization_role.created',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutRole,
+    data: { role: 'billing_manager', permissions: 2 },
+  },
+  'organization_role.updated': {
+    id: eventId(53),
+    type: 'organization_role.updated',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutRole,
+    data: { role: 'billing_manager', changed: ['permissions'], permissions: 3, weakened: true },
+  },
+  'organization_role.deleted': {
+    id: eventId(54),
+    type: 'organization_role.deleted',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutRole,
+    data: { role: 'billing_manager' },
   },
   'session.refresh_proof_refused': {
     id: eventId(39),

@@ -38,3 +38,19 @@ export function isForeignKeyViolation(error: unknown): boolean {
   }
   return false
 }
+
+/**
+ * Whether an error is a Postgres check violation, raw (pg / PGlite) or wrapped by Drizzle in
+ * `cause`: a row broke a rule of its table.
+ *
+ * @param error - The caught error.
+ * @returns `true` for SQLSTATE 23514 anywhere in the cause chain.
+ */
+export function isCheckViolation(error: unknown): boolean {
+  for (let current = error; current instanceof Object; current = (current as Error).cause) {
+    if ((current as { code?: unknown }).code === '23514') {
+      return true
+    }
+  }
+  return false
+}

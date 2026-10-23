@@ -84,6 +84,10 @@ public enum ErrorCode: Codable, Hashable, Sendable {
     case organizationMemberExists
     case organizationLastManager
     case organizationRoleUnknown
+    case organizationRoleExists
+    case organizationRoleInUse
+    case organizationRoleBuiltIn
+    case organizationRoleLimit
     case rateLimited
     case requestMalformed
     case requestTooLarge
@@ -180,6 +184,10 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         .organizationMemberExists,
         .organizationLastManager,
         .organizationRoleUnknown,
+        .organizationRoleExists,
+        .organizationRoleInUse,
+        .organizationRoleBuiltIn,
+        .organizationRoleLimit,
         .rateLimited,
         .requestMalformed,
         .requestTooLarge,
@@ -276,6 +284,10 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case "organization.member_exists": self = .organizationMemberExists
         case "organization.last_manager": self = .organizationLastManager
         case "organization.role_unknown": self = .organizationRoleUnknown
+        case "organization.role_exists": self = .organizationRoleExists
+        case "organization.role_in_use": self = .organizationRoleInUse
+        case "organization.role_built_in": self = .organizationRoleBuiltIn
+        case "organization.role_limit": self = .organizationRoleLimit
         case "rate_limited": self = .rateLimited
         case "request.malformed": self = .requestMalformed
         case "request.too_large": self = .requestTooLarge
@@ -374,6 +386,10 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case .organizationMemberExists: return "organization.member_exists"
         case .organizationLastManager: return "organization.last_manager"
         case .organizationRoleUnknown: return "organization.role_unknown"
+        case .organizationRoleExists: return "organization.role_exists"
+        case .organizationRoleInUse: return "organization.role_in_use"
+        case .organizationRoleBuiltIn: return "organization.role_built_in"
+        case .organizationRoleLimit: return "organization.role_limit"
         case .rateLimited: return "rate_limited"
         case .requestMalformed: return "request.malformed"
         case .requestTooLarge: return "request.too_large"
@@ -655,6 +671,18 @@ public enum TulaErrorDefinitions {
     /// `organization.role_unknown`
     public static let organizationRoleUnknown = TulaErrorDefinition(code: .organizationRoleUnknown, status: 422, message: "That role does not exist in this environment.")
 
+    /// `organization.role_exists`
+    public static let organizationRoleExists = TulaErrorDefinition(code: .organizationRoleExists, status: 409, message: "A role with that key already exists in this environment.")
+
+    /// `organization.role_in_use`
+    public static let organizationRoleInUse = TulaErrorDefinition(code: .organizationRoleInUse, status: 409, message: "Members still hold this role. Give them another role first.")
+
+    /// `organization.role_built_in`
+    public static let organizationRoleBuiltIn = TulaErrorDefinition(code: .organizationRoleBuiltIn, status: 409, message: "A built-in role cannot be changed or deleted.")
+
+    /// `organization.role_limit`
+    public static let organizationRoleLimit = TulaErrorDefinition(code: .organizationRoleLimit, status: 409, message: "This environment has the most custom roles it can have.")
+
     /// `rate_limited`
     public static let rateLimited = TulaErrorDefinition(code: .rateLimited, status: 429, message: "Too many requests. Try again shortly.")
 
@@ -774,6 +802,10 @@ public enum TulaErrorDefinitions {
         organizationMemberExists,
         organizationLastManager,
         organizationRoleUnknown,
+        organizationRoleExists,
+        organizationRoleInUse,
+        organizationRoleBuiltIn,
+        organizationRoleLimit,
         rateLimited,
         requestMalformed,
         requestTooLarge,

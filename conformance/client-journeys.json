@@ -544,6 +544,24 @@
         "decision": "journey"
       }
     },
+    "admin organization roles": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a role is defined and changed on the admin API with a secret key (or the dashboard's session), and an administrator, not a user, makes every change here: a client SDK holds a publishable key and a user's session and reaches none of these routes, and must never. What a client does with a role's permissions (`has()`, the claims of the token) is a later ticket's scenarios."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "a role is defined and changed on the admin API with a secret key (or the dashboard's session), and an administrator, not a user, makes every change here: a client SDK holds a publishable key and a user's session and reaches none of these routes, and must never. What a client does with a role's permissions (`has()`, the claims of the token) is a later ticket's scenarios."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "a role is defined and changed on the admin API with a secret key (or the dashboard's session), and an administrator, not a user, makes every change here: a client SDK holds a publishable key and a user's session and reaches none of these routes, and must never. What a client does with a role's permissions (`has()`, the claims of the token) is a later ticket's scenarios."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a role is defined and changed on the admin API with a secret key (or the dashboard's session), and an administrator, not a user, makes every change here: a client SDK holds a publishable key and a user's session and reaches none of these routes, and must never. What a client does with a role's permissions (`has()`, the claims of the token) is a later ticket's scenarios."
+      }
+    },
     "admin organizations and memberships": {
       "core": {
         "decision": "not_applicable",

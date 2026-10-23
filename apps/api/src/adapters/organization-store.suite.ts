@@ -72,6 +72,7 @@ export function describeOrganizationStore(
       name: role.name,
       permissions: [...role.permissions],
       builtIn: true,
+      version: 1,
       createdAt: now,
       updatedAt: now,
     }))
@@ -84,6 +85,9 @@ export function describeOrganizationStore(
     | 'organization_membership.added'
     | 'organization_membership.role_changed'
     | 'organization_membership.removed'
+    | 'organization_role.created'
+    | 'organization_role.updated'
+    | 'organization_role.deleted'
 
   /** An activity of the given type, about the given id, with data that passes the contract. */
   function activity(tenant: OrganizationSuiteTenant, type: Type, id: string): Activity {
@@ -93,6 +97,7 @@ export function describeOrganizationStore(
     const user = Bun.randomUUIDv7()
     const orgTarget = { type: 'organization', id } as const
     const memberTarget = { type: 'organization_membership', id } as const
+    const roleTarget = { type: 'organization_role', id } as const
     const member = { organizationId: id, userId: user, role: 'member' } as const
     switch (type) {
       case 'organization.created':
@@ -122,7 +127,64 @@ export function describeOrganizationStore(
         })
       case 'organization_membership.removed':
         return Audit.entry(deps, scope, { type, actor, target: memberTarget, data: member })
+      case 'organization_role.created':
+        return Audit.entry(deps, scope, {
+          type,
+          actor,
+          target: roleTarget,
+          data: { role: 'billing', permissions: 1 },
+        })
+      case 'organization_role.updated':
+        return Audit.entry(deps, scope, {
+          type,
+          actor,
+          target: roleTarget,
+          data: { role: 'billing', changed: ['permissions'], permissions: 2 },
+        })
+      case 'organization_role.deleted':
+        return Audit.entry(deps, scope, {
+          type,
+          actor,
+          target: roleTarget,
+          data: { role: 'billing' },
+        })
     }
+  }
+
+  /** A custom role of a tenant, not stored yet. */
+  function customRole(
+    tenant: OrganizationSuiteTenant,
+    overrides: Partial<OrganizationRoleRecord> = {}
+  ): OrganizationRoleRecord {
+    return {
+      id: Bun.randomUUIDv7(),
+      projectId: tenant.projectId,
+      environmentId: tenant.environmentId,
+      key: 'billing',
+      name: 'Billing',
+      permissions: ['org:billing:read'],
+      builtIn: false,
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+      ...overrides,
+    }
+  }
+
+  /** Store a custom role, failing the test if it was not stored. */
+  async function storedRole(
+    tenant: OrganizationSuiteTenant,
+    overrides: Partial<OrganizationRoleRecord> = {}
+  ): Promise<OrganizationRoleRecord> {
+    const record = customRole(tenant, overrides)
+    const row = await ctx.store.insertRole(
+      record,
+      activity(tenant, 'organization_role.created', record.id)
+    )
+    if (!row) {
+      throw new Error('the role was not stored')
+    }
+    return row
   }
 
   async function stored(record: OrganizationRecord): Promise<OrganizationRecord> {
@@ -656,6 +718,442 @@ export function describeOrganizationStore(
         )
       const results = await Promise.all([demote(first), demote(second)])
       expect(results.map((result) => result.outcome).sort()).toEqual(['done', 'last_manager'])
+    })
+
+    test('stores a custom role at version 1, reads it back by key and by id and records it', async () => {
+      const record = customRole(ctx.a)
+      expect(
+        await ctx.store.insertRole(record, activity(ctx.a, 'organization_role.created', record.id))
+      ).toEqual(record)
+      expect(await ctx.store.findRole(ctx.a.environmentId, 'billing')).toEqual(record)
+      expect(await ctx.store.findRoleById(ctx.a.environmentId, record.id)).toEqual(record)
+      expect((await ctx.store.listRoles(ctx.a.environmentId)).map((role) => role.key)).toEqual([
+        'billing',
+      ])
+      expect(await ctx.recorded()).toEqual(['organization_role.created'])
+    })
+
+    test('lists the built-in roles first, then the custom ones by key', async () => {
+      await builtIns(ctx.a)
+      await storedRole(ctx.a, { key: 'zeta' })
+      await storedRole(ctx.a, { key: 'alpha' })
+      expect((await ctx.store.listRoles(ctx.a.environmentId)).map((role) => role.key)).toEqual([
+        'admin',
+        'member',
+        'alpha',
+        'zeta',
+      ])
+    })
+
+    test('a role key is unique in an environment: a second is not stored and not recorded', async () => {
+      await storedRole(ctx.a)
+      const again = customRole(ctx.a, { name: 'Other' })
+      expect(
+        await ctx.store.insertRole(again, activity(ctx.a, 'organization_role.created', again.id))
+      ).toBeNull()
+      expect(await ctx.recorded()).toEqual(['organization_role.created'])
+    })
+
+    test('the same key in another environment is another role', async () => {
+      const mine = await storedRole(ctx.a)
+      const theirs = await storedRole(ctx.b)
+      expect(mine.id).not.toBe(theirs.id)
+      expect(await ctx.store.findRole(ctx.b.environmentId, 'billing')).toEqual(theirs)
+      expect(await ctx.store.findRoleById(ctx.a.environmentId, theirs.id)).toBeNull()
+    })
+
+    test('a custom role cannot take the key of a built-in one', async () => {
+      const taken = customRole(ctx.a, { key: 'admin' })
+      expect(
+        await ctx.store.insertRole(taken, activity(ctx.a, 'organization_role.created', taken.id))
+      ).toBeNull()
+      expect(await ctx.store.listRoles(ctx.a.environmentId)).toEqual([])
+      expect(await ctx.recorded()).toEqual([])
+    })
+
+    test('of two definitions of one key at once exactly one is stored', async () => {
+      const [one, two] = [customRole(ctx.a), customRole(ctx.a)]
+      const rows = await Promise.all([
+        ctx.store.insertRole(one, activity(ctx.a, 'organization_role.created', one.id)),
+        ctx.store.insertRole(two, activity(ctx.a, 'organization_role.created', two.id)),
+      ])
+      expect(rows.filter((row) => row !== null)).toHaveLength(1)
+      expect(await ctx.recorded()).toEqual(['organization_role.created'])
+    })
+
+    test('an update sets the name and the permissions, bumps the version and is recorded', async () => {
+      const role = await storedRole(ctx.a)
+      const result = await ctx.store.updateRole(
+        ctx.a.environmentId,
+        role.id,
+        1,
+        { name: 'Billing team', permissions: ['org:billing:read', 'org:billing:write'] },
+        later,
+        activity(ctx.a, 'organization_role.updated', role.id)
+      )
+      expect(result).toEqual({
+        outcome: 'updated',
+        record: {
+          ...role,
+          name: 'Billing team',
+          permissions: ['org:billing:read', 'org:billing:write'],
+          version: 2,
+          updatedAt: later,
+        },
+      })
+      expect(await ctx.store.findRole(ctx.a.environmentId, 'billing')).toMatchObject({
+        version: 2,
+        permissions: ['org:billing:read', 'org:billing:write'],
+      })
+      expect(await ctx.recorded()).toEqual([
+        'organization_role.created',
+        'organization_role.updated',
+      ])
+    })
+
+    test('an update leaves the fields it does not name as they are', async () => {
+      const role = await storedRole(ctx.a)
+      await ctx.store.updateRole(
+        ctx.a.environmentId,
+        role.id,
+        1,
+        { name: 'Renamed' },
+        later,
+        activity(ctx.a, 'organization_role.updated', role.id)
+      )
+      expect(await ctx.store.findRole(ctx.a.environmentId, 'billing')).toMatchObject({
+        name: 'Renamed',
+        permissions: ['org:billing:read'],
+        key: 'billing',
+      })
+    })
+
+    test('an update over a version that moved is stale: not written, not recorded', async () => {
+      const role = await storedRole(ctx.a)
+      await ctx.store.updateRole(
+        ctx.a.environmentId,
+        role.id,
+        1,
+        { name: 'First' },
+        later,
+        activity(ctx.a, 'organization_role.updated', role.id)
+      )
+      expect(
+        await ctx.store.updateRole(
+          ctx.a.environmentId,
+          role.id,
+          1,
+          { name: 'Second' },
+          later,
+          activity(ctx.a, 'organization_role.updated', role.id)
+        )
+      ).toEqual({ outcome: 'stale', version: 2 })
+      expect(await ctx.store.findRole(ctx.a.environmentId, 'billing')).toMatchObject({
+        name: 'First',
+        version: 2,
+      })
+      expect(await ctx.recorded()).toEqual([
+        'organization_role.created',
+        'organization_role.updated',
+      ])
+    })
+
+    test('of two updates over one version at once exactly one is written', async () => {
+      const role = await storedRole(ctx.a)
+      const change = (name: string) =>
+        ctx.store.updateRole(
+          ctx.a.environmentId,
+          role.id,
+          1,
+          { name },
+          later,
+          activity(ctx.a, 'organization_role.updated', role.id)
+        )
+      const results = await Promise.all([change('One'), change('Two')])
+      expect(results.map((result) => result.outcome).sort()).toEqual(['stale', 'updated'])
+      expect(await ctx.store.findRole(ctx.a.environmentId, 'billing')).toMatchObject({
+        version: 2,
+      })
+    })
+
+    test('a built-in role is never updated or deleted, and nothing is recorded', async () => {
+      const { admin, member } = await builtIns(ctx.a)
+      for (const role of [admin, member]) {
+        expect(
+          await ctx.store.updateRole(
+            ctx.a.environmentId,
+            role.id,
+            1,
+            { permissions: [] },
+            later,
+            activity(ctx.a, 'organization_role.updated', role.id)
+          )
+        ).toEqual({ outcome: 'built_in' })
+        expect(
+          await ctx.store.deleteRole(
+            ctx.a.environmentId,
+            role.id,
+            null,
+            activity(ctx.a, 'organization_role.deleted', role.id)
+          )
+        ).toEqual({ outcome: 'built_in' })
+      }
+      expect(await ctx.store.findRole(ctx.a.environmentId, 'admin')).toEqual(admin)
+      expect(await ctx.store.findRole(ctx.a.environmentId, 'member')).toEqual(member)
+      expect(await ctx.recorded()).toEqual([])
+    })
+
+    test('a role of another environment is never updated or deleted', async () => {
+      const theirs = await storedRole(ctx.b)
+      expect(
+        await ctx.store.updateRole(
+          ctx.a.environmentId,
+          theirs.id,
+          1,
+          { name: 'Taken over' },
+          later,
+          activity(ctx.a, 'organization_role.updated', theirs.id)
+        )
+      ).toEqual({ outcome: 'not_found' })
+      expect(
+        await ctx.store.deleteRole(
+          ctx.a.environmentId,
+          theirs.id,
+          null,
+          activity(ctx.a, 'organization_role.deleted', theirs.id)
+        )
+      ).toEqual({ outcome: 'not_found' })
+      expect(await ctx.store.findRole(ctx.b.environmentId, 'billing')).toEqual(theirs)
+      expect(await ctx.recorded()).toEqual([])
+    })
+
+    test('a role that no member holds is deleted and recorded', async () => {
+      const role = await storedRole(ctx.a)
+      expect(
+        await ctx.store.deleteRole(
+          ctx.a.environmentId,
+          role.id,
+          1,
+          activity(ctx.a, 'organization_role.deleted', role.id)
+        )
+      ).toEqual({ outcome: 'deleted', record: role })
+      expect(await ctx.store.findRole(ctx.a.environmentId, 'billing')).toBeNull()
+      expect(await ctx.recorded()).toEqual([
+        'organization_role.created',
+        'organization_role.deleted',
+      ])
+    })
+
+    test('a deletion over a version that moved is stale and deletes nothing', async () => {
+      const role = await storedRole(ctx.a)
+      expect(
+        await ctx.store.deleteRole(
+          ctx.a.environmentId,
+          role.id,
+          7,
+          activity(ctx.a, 'organization_role.deleted', role.id)
+        )
+      ).toEqual({ outcome: 'stale', version: 1 })
+      expect(await ctx.store.findRole(ctx.a.environmentId, 'billing')).toEqual(role)
+      expect(await ctx.recorded()).toEqual(['organization_role.created'])
+    })
+
+    test('a role that a member holds, in any organization, is not deleted', async () => {
+      const record = await stored(organization(ctx.a))
+      const role = await storedRole(ctx.a)
+      const held = await join(ctx.a, record, role)
+      expect(
+        await ctx.store.deleteRole(
+          ctx.a.environmentId,
+          role.id,
+          null,
+          activity(ctx.a, 'organization_role.deleted', role.id)
+        )
+      ).toEqual({ outcome: 'in_use' })
+      expect(await ctx.store.findRole(ctx.a.environmentId, 'billing')).toEqual(role)
+      expect(await ctx.recorded()).toEqual([
+        'organization.created',
+        'organization_role.created',
+        'organization_membership.added',
+      ])
+      // Once nobody holds it, it can go.
+      const { admin } = await builtIns(ctx.a)
+      await join(ctx.a, record, admin)
+      await ctx.store.removeMembership(
+        ctx.a.environmentId,
+        record.id,
+        held.userId,
+        role.id,
+        activity(ctx.a, 'organization_membership.removed', held.id)
+      )
+      expect(
+        (
+          await ctx.store.deleteRole(
+            ctx.a.environmentId,
+            role.id,
+            null,
+            activity(ctx.a, 'organization_role.deleted', role.id)
+          )
+        ).outcome
+      ).toBe('deleted')
+    })
+
+    test('a role change reaches members through the role: nothing is copied into the membership', async () => {
+      const record = await stored(organization(ctx.a))
+      const role = await storedRole(ctx.a)
+      const member = await join(ctx.a, record, role)
+      await ctx.store.updateRole(
+        ctx.a.environmentId,
+        role.id,
+        1,
+        { permissions: ['org:billing:read', 'org:billing:write'] },
+        later,
+        activity(ctx.a, 'organization_role.updated', role.id)
+      )
+      const seen = await ctx.store.findMembership(ctx.a.environmentId, record.id, member.userId)
+      expect(seen).toEqual(member)
+      expect(Object.keys(seen ?? {})).not.toContain('permissions')
+      expect(await ctx.store.findRoleById(ctx.a.environmentId, seen?.roleId ?? '')).toMatchObject({
+        permissions: ['org:billing:read', 'org:billing:write'],
+      })
+    })
+
+    test('permissions cannot be taken from the only role that manages an organization’s members', async () => {
+      const record = await stored(organization(ctx.a))
+      const owner = await storedRole(ctx.a, {
+        key: 'owner',
+        permissions: ['org:billing:read', 'org:sys:memberships:manage'],
+      })
+      await join(ctx.a, record, owner)
+      expect(
+        await ctx.store.updateRole(
+          ctx.a.environmentId,
+          owner.id,
+          1,
+          { permissions: ['org:billing:read'] },
+          later,
+          activity(ctx.a, 'organization_role.updated', owner.id)
+        )
+      ).toEqual({ outcome: 'last_manager' })
+      expect(await ctx.store.findRole(ctx.a.environmentId, 'owner')).toEqual(owner)
+      // Other permissions of the same role may change, and the manage permission may stay.
+      expect(
+        (
+          await ctx.store.updateRole(
+            ctx.a.environmentId,
+            owner.id,
+            1,
+            { permissions: ['org:sys:memberships:manage'] },
+            later,
+            activity(ctx.a, 'organization_role.updated', owner.id)
+          )
+        ).outcome
+      ).toBe('updated')
+      expect(await ctx.recorded()).toEqual([
+        'organization.created',
+        'organization_role.created',
+        'organization_membership.added',
+        'organization_role.updated',
+      ])
+    })
+
+    test('with another manager in every organization the role is used in, its permission can go', async () => {
+      const covered = await stored(organization(ctx.a, { slug: 'covered' }))
+      const { admin } = await builtIns(ctx.a)
+      const owner = await storedRole(ctx.a, {
+        key: 'owner',
+        permissions: ['org:sys:memberships:manage'],
+      })
+      await join(ctx.a, covered, owner)
+      await join(ctx.a, covered, admin)
+      expect(
+        (
+          await ctx.store.updateRole(
+            ctx.a.environmentId,
+            owner.id,
+            1,
+            { permissions: [] },
+            later,
+            activity(ctx.a, 'organization_role.updated', owner.id)
+          )
+        ).outcome
+      ).toBe('updated')
+    })
+
+    test('one organization without another manager refuses the change for all of them', async () => {
+      const covered = await stored(organization(ctx.a, { slug: 'covered' }))
+      const alone = await stored(organization(ctx.a, { slug: 'alone' }))
+      const { admin } = await builtIns(ctx.a)
+      const owner = await storedRole(ctx.a, {
+        key: 'owner',
+        permissions: ['org:sys:memberships:manage'],
+      })
+      await join(ctx.a, covered, owner)
+      await join(ctx.a, covered, admin)
+      await join(ctx.a, alone, owner)
+      expect(
+        await ctx.store.updateRole(
+          ctx.a.environmentId,
+          owner.id,
+          1,
+          { permissions: [] },
+          later,
+          activity(ctx.a, 'organization_role.updated', owner.id)
+        )
+      ).toEqual({ outcome: 'last_manager' })
+      expect(await ctx.store.findRole(ctx.a.environmentId, 'owner')).toEqual(owner)
+    })
+
+    test('a role nobody holds loses its manage permission freely', async () => {
+      const owner = await storedRole(ctx.a, {
+        key: 'owner',
+        permissions: ['org:sys:memberships:manage'],
+      })
+      expect(
+        (
+          await ctx.store.updateRole(
+            ctx.a.environmentId,
+            owner.id,
+            1,
+            { permissions: [] },
+            later,
+            activity(ctx.a, 'organization_role.updated', owner.id)
+          )
+        ).outcome
+      ).toBe('updated')
+    })
+
+    test('stripping a role of the manage permission and demoting the other manager at once leaves a manager', async () => {
+      const record = await stored(organization(ctx.a))
+      const { admin, member } = await builtIns(ctx.a)
+      const owner = await storedRole(ctx.a, {
+        key: 'owner',
+        permissions: ['org:sys:memberships:manage'],
+      })
+      await join(ctx.a, record, owner)
+      const other = await join(ctx.a, record, admin)
+      const [stripped, demoted] = await Promise.all([
+        ctx.store.updateRole(
+          ctx.a.environmentId,
+          owner.id,
+          1,
+          { permissions: [] },
+          later,
+          activity(ctx.a, 'organization_role.updated', owner.id)
+        ),
+        ctx.store.changeRole(
+          ctx.a.environmentId,
+          record.id,
+          other.userId,
+          admin.id,
+          member,
+          later,
+          activity(ctx.a, 'organization_membership.role_changed', other.id)
+        ),
+      ])
+      // Whichever came second saw what the first had done: they cannot both succeed.
+      const pair = `${stripped.outcome}/${demoted.outcome}`
+      expect(['updated/last_manager', 'last_manager/done']).toContain(pair)
     })
 
     test('removing a member that is not one is not found, and nothing is recorded', async () => {

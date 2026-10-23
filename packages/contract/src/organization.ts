@@ -1,12 +1,20 @@
 import { z } from 'zod'
+import {
+  MAX_PERMISSION_KEY_LENGTH,
+  MAX_PERMISSIONS_PER_ROLE,
+  PERMISSION_KEY_PATTERN,
+  ROLE_KEY_PATTERN,
+  rolePermissionRefusal,
+} from './organization-permissions'
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, PaginationMetaSchema } from './user'
 
 // Organizations (ADR 0065): the companies, teams and workspaces an operator's users belong to.
 // An organization is a tenant row of an environment; a user holds one role in each
 // organization they belong to; a role is a set of permission keys. Everything an app or a
 // Tula route asks about access is a permission key, so the grammar of a key, the system
-// permissions and the two built-in roles are defined once, here, for the API, the dashboard,
-// `@tula-tech/config` and the SDKs.
+// permissions and the two built-in roles are defined once, in `./organization-permissions`
+// (no Zod there), for the API, the dashboard, `@tula-tech/config` and the SDKs; this module is
+// the schemas built from them.
 
 /** Shortest organization slug. */
 export const MIN_ORGANIZATION_SLUG_LENGTH = 2
@@ -32,86 +40,6 @@ export const MAX_ORGANIZATION_NAME_LENGTH = 100
  */
 export const ORGANIZATION_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
-/**
- * How many permissions one role can hold. The permissions of the active organization's role are
- * a claim of every access token (ADR 0065, "Token claims"), so the number is capped.
- */
-export const MAX_PERMISSIONS_PER_ROLE = 32
-
-/** How many custom roles an environment can define, beside the built-in ones. */
-export const MAX_CUSTOM_ROLES = 50
-
-/**
- * The grammar of a role's key: a lower-case letter, then lower-case letters, digits and
- * underscores, up to 32 characters (`admin`, `billing_manager`). Unique in its environment.
- *
- * @example
- * ```ts
- * ROLE_KEY_PATTERN.test('billing_manager') // true
- * ```
- */
-export const ROLE_KEY_PATTERN = /^[a-z][a-z0-9_]{0,31}$/
-
-/**
- * The grammar of a permission key (ADR 0065): `org:<feature>:<action>`, each of the last two
- * a lower-case letter followed by lower-case letters, digits and underscores (at most 32
- * characters); or, for the permissions Tula's own routes check, `org:sys:<feature>:<action>`.
- * No dot, no other separator: a key is safe in a token and in a URL. The feature `sys` is
- * reserved: a custom key never has it, and a system key is one of
- * {@link SYSTEM_PERMISSIONS}.
- *
- * @example
- * ```ts
- * PERMISSION_KEY_PATTERN.test('org:billing:read') // true
- * PERMISSION_KEY_PATTERN.test('org:sys:memberships:manage') // true
- * PERMISSION_KEY_PATTERN.test('billing.read') // false
- * ```
- */
-export const PERMISSION_KEY_PATTERN =
-  /^org:(?:sys:[a-z][a-z0-9_]{0,31}|(?!sys:)[a-z][a-z0-9_]{0,31}):[a-z][a-z0-9_]{0,31}$/
-
-/**
- * The permissions Tula's own organization routes check (ADR 0065). The same keys an app's
- * server checks with `has({ permission })`, so Tula's routes hold no privilege an app cannot
- * also give a role.
- */
-export const SYSTEM_PERMISSIONS = [
-  'org:sys:organization:manage',
-  'org:sys:organization:delete',
-  'org:sys:memberships:read',
-  'org:sys:memberships:manage',
-  'org:sys:invitations:manage',
-  'org:sys:domains:manage',
-] as const
-
-/** One of {@link SYSTEM_PERMISSIONS}. */
-export type SystemPermission = (typeof SYSTEM_PERMISSIONS)[number]
-
-/**
- * The permission that makes a member a manager of the organization's members. **Every
- * organization keeps at least one member who holds it**: the last such member cannot be
- * removed or moved to a role without it (`organization.last_manager`).
- */
-export const MEMBERSHIPS_MANAGE_PERMISSION: SystemPermission = 'org:sys:memberships:manage'
-
-/** A built-in role: its key, its name and the permissions it holds. */
-export interface BuiltInRole {
-  readonly key: string
-  readonly name: string
-  readonly permissions: readonly SystemPermission[]
-}
-
-/**
- * The two roles every environment has (ADR 0065): `admin` holds every system permission,
- * `member` may read the member list. They cannot be deleted, renamed or given other
- * permissions. They exist as rows of every environment (`ensureBuiltInRoles`) so that a
- * membership refers to a role the way it does to a custom one.
- */
-export const BUILT_IN_ROLES: readonly BuiltInRole[] = [
-  { key: 'admin', name: 'Admin', permissions: SYSTEM_PERMISSIONS },
-  { key: 'member', name: 'Member', permissions: ['org:sys:memberships:read'] },
-]
-
 /** The key of a role: see {@link ROLE_KEY_PATTERN}. */
 export const RoleKeySchema = z
   .string()
@@ -121,9 +49,43 @@ export const RoleKeySchema = z
 /** A permission key: see {@link PERMISSION_KEY_PATTERN}. */
 export const PermissionKeySchema = z
   .string()
-  .max(100)
+  .max(MAX_PERMISSION_KEY_LENGTH)
   .regex(PERMISSION_KEY_PATTERN, 'a permission key is org:<feature>:<action>')
   .meta({ ref: 'PermissionKey' })
+
+/**
+ * The permissions a **custom** role holds: at most {@link MAX_PERMISSIONS_PER_ROLE} keys, each
+ * of the grammar, none twice, and none of the reserved `sys` feature that Tula does not define
+ * (`rolePermissionRefusal`, ADR 0065). A role may hold any of Tula's own system permissions.
+ */
+export const RolePermissionsSchema = z
+  .array(z.string())
+  .max(MAX_PERMISSIONS_PER_ROLE)
+  .superRefine((permissions, context) => {
+    const seen = new Set<string>()
+    permissions.forEach((key, index) => {
+      const refusal = rolePermissionRefusal(key)
+      if (refusal === 'grammar') {
+        context.addIssue({
+          code: 'custom',
+          path: [index],
+          message: 'a permission key is org:<feature>:<action>',
+        })
+      } else if (refusal === 'reserved') {
+        context.addIssue({
+          code: 'custom',
+          path: [index],
+          message:
+            'the feature sys is reserved: only the system permissions Tula defines are allowed',
+        })
+      }
+      if (seen.has(key)) {
+        context.addIssue({ code: 'custom', path: [index], message: 'a permission is listed once' })
+      }
+      seen.add(key)
+    })
+  })
+  .meta({ ref: 'OrganizationRolePermissions' })
 
 /** An organization's slug: see {@link ORGANIZATION_SLUG_PATTERN}. */
 export const OrganizationSlugSchema = z
@@ -241,3 +203,67 @@ export const ORGANIZATION_FIELDS = ['name', 'slug'] as const
 
 /** One of {@link ORGANIZATION_FIELDS}. */
 export type OrganizationField = (typeof ORGANIZATION_FIELDS)[number]
+
+/** The name of a role, as people read it (`Billing manager`). */
+export const RoleNameSchema = OrganizationName
+
+/**
+ * A role as the admin API returns it. `version` counts the changes made to the role, from 1;
+ * it is also the `ETag` of the role, and the value `If-Match` carries to change or delete it.
+ */
+export const OrganizationRoleSchema = z
+  .object({
+    id: z.string(),
+    key: z.string(),
+    name: z.string(),
+    /** The permission keys, each once, sorted. */
+    permissions: z.array(z.string()),
+    /** `true` for `admin` and `member`: they cannot be changed or deleted. */
+    builtIn: z.boolean(),
+    version: z.number().int().min(1),
+    createdAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime(),
+  })
+  .meta({ ref: 'OrganizationRole' })
+
+/** The environment's roles: the two built-in ones first, then the custom ones by key. */
+export const OrganizationRoleListSchema = z
+  .object({ data: z.array(OrganizationRoleSchema) })
+  .meta({ ref: 'OrganizationRoleList' })
+
+/**
+ * Define a custom role. The key is the role's identity and cannot be changed later; the keys
+ * of the built-in roles are taken.
+ */
+export const CreateOrganizationRoleRequestSchema = z
+  .strictObject({ key: RoleKeySchema, name: RoleNameSchema, permissions: RolePermissionsSchema })
+  .meta({ ref: 'CreateOrganizationRoleRequest' })
+
+/**
+ * Rename a custom role or replace its permissions (the set given is the whole set). At least
+ * one field.
+ */
+export const UpdateOrganizationRoleRequestSchema = z
+  .strictObject({ name: RoleNameSchema.optional(), permissions: RolePermissionsSchema.optional() })
+  .refine((body) => body.name !== undefined || body.permissions !== undefined, {
+    message: 'send a name, permissions or both',
+  })
+  .meta({ ref: 'UpdateOrganizationRoleRequest' })
+
+/** A role. */
+export type OrganizationRole = z.infer<typeof OrganizationRoleSchema>
+/** The list of roles. */
+export type OrganizationRoleList = z.infer<typeof OrganizationRoleListSchema>
+/** The body that defines a custom role. */
+export type CreateOrganizationRoleRequest = z.infer<typeof CreateOrganizationRoleRequestSchema>
+/** The body that changes a custom role. */
+export type UpdateOrganizationRoleRequest = z.infer<typeof UpdateOrganizationRoleRequestSchema>
+
+/**
+ * The fields of a role an update can change, as `organization_role.updated` names them.
+ * Names only: a value is never in an event.
+ */
+export const ORGANIZATION_ROLE_FIELDS = ['name', 'permissions'] as const
+
+/** One of {@link ORGANIZATION_ROLE_FIELDS}. */
+export type OrganizationRoleField = (typeof ORGANIZATION_ROLE_FIELDS)[number]
