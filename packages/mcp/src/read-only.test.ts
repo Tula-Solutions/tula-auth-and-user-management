@@ -18,6 +18,9 @@ describe('the read-only facade', () => {
       'getUserAuthentication',
       'listAuditLogs',
       'listOAuthProviders',
+      'listOrganizationMemberships',
+      'listOrganizationRoles',
+      'listOrganizations',
       'listUserSessions',
       'listUsers',
     ])

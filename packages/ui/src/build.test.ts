@@ -70,6 +70,17 @@ describe('the built registry', () => {
     )
   })
 
+  test('the organization items need the release that has the organization hooks', () => {
+    for (const name of ['organization-switcher', 'organization-profile']) {
+      const item = JSON.parse(built().find((file) => file.name === `${name}.json`)?.text ?? '{}')
+      expect(item.dependencies).toEqual(['@tula-tech/react@^0.3.0'])
+      expect(item.meta.tula.version).toBe('0.3.0')
+      expect(item.meta.tula.minReact).toBe('0.3.0')
+    }
+    const signIn = JSON.parse(built().find((file) => file.name === 'sign-in.json')?.text ?? '{}')
+    expect(signIn.meta.tula.minReact).not.toBe('0.3.0')
+  })
+
   test('every item that has files carries their text', () => {
     const signIn = JSON.parse(built().find((file) => file.name === 'sign-in.json')?.text ?? '{}')
     expect(signIn.files[0].content).toBe(read('sign-in.tsx'))

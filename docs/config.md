@@ -458,7 +458,7 @@ Native apps
 
 ## Organization roles
 
-An environment's custom [organization](adr/0065-organizations.md) roles can be written in the
+An environment's custom [organization](organizations.md) [roles](roles-and-permissions.md) can be written in the
 file, beside the built-in `admin` and `member`, which are never the file's to name.
 
 <!-- snippet: examples/tula-config/tula.config.ts#organization-roles -->

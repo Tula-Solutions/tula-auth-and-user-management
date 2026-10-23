@@ -28,6 +28,7 @@ import {
   signInTestReport,
   TEST_ADMIN_TOKEN,
   TEST_AGENT_KEY,
+  TEST_ORGANIZATION_ID,
   TEST_PROPOSAL_ID,
   TEST_SECRET_KEY,
   TEST_SESSION_ID,
@@ -55,6 +56,9 @@ const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
   },
   get_settings: {},
   list_oauth_providers: {},
+  list_organizations: { page: 1, size: 20 },
+  list_organization_members: { organizationId: TEST_ORGANIZATION_ID, page: 1, size: 100 },
+  list_organization_roles: {},
   run_doctor: {},
   propose_ban_user: { userId: TEST_USER_ID },
   propose_unban_user: { userId: TEST_USER_ID },
@@ -215,6 +219,8 @@ describe('the protocol', () => {
     }
     expect(size('list_users')).toBe(50)
     expect(size('list_audit_entries')).toBe(100)
+    expect(size('list_organizations')).toBe(50)
+    expect(size('list_organization_members')).toBe(100)
   })
 
   test('no tool is named for a change: one that asks for a change is named for asking', async () => {
@@ -259,6 +265,15 @@ describe('the protocol', () => {
     ['a missing user id', 'get_user', {}],
     ['a date that is not a date', 'list_audit_entries', { from: 'yesterday' }],
     ['an audit size past the cap', 'list_audit_entries', { size: 101 }],
+    ['an organization size past the cap', 'list_organizations', { size: 51 }],
+    ['a member size past the cap', 'list_organization_members', { organizationId: 'x', size: 101 }],
+    ['members with no organization', 'list_organization_members', {}],
+    [
+      'members of an organization named by a path',
+      'list_organization_members',
+      { organizationId: '../users' },
+    ],
+    ['an input for the roles', 'list_organization_roles', { key: 'admin' }],
     ['an unknown framework', 'scaffold_provider', { framework: 'angular' }],
     ['a secret key as an argument', 'get_settings', { secretKey: TEST_SECRET_KEY }],
     ['a proposal with no user', 'propose_ban_user', {}],
@@ -497,6 +512,84 @@ describe('the read tools', () => {
       metadata: { userId: TEST_USER_ID, methods: ['pwd'], client: 'web' },
       occurredAt: '2026-02-01T00:00:00.000Z',
     })
+  })
+
+  test('list_organizations: a page of organizations, by name and slug, with the paging asked for', async () => {
+    const { client, requests } = await world()
+    const result = await callTool(client, 'list_organizations', SAMPLE_ARGS.list_organizations)
+    expect(requests[0]?.search).toBe('?page=1&size=20')
+    expect(result.structured).toEqual({
+      meta: { totalCount: 1, totalPages: 1, page: 1, perPage: 20 },
+      data: [
+        {
+          id: TEST_ORGANIZATION_ID,
+          name: 'Acme Inc',
+          slug: 'acme',
+          createdBy: TEST_USER_ID,
+          createdAt: '2026-02-01T00:00:00.000Z',
+          updatedAt: '2026-02-02T00:00:00.000Z',
+        },
+      ],
+    })
+  })
+
+  test('list_organization_members: users by id and role key, never by address', async () => {
+    const answers = defaultAnswers()
+    const path = `GET /v1/admin/organizations/${TEST_ORGANIZATION_ID}/memberships`
+    const answer = answers[path] as { data: Record<string, unknown>[] }
+    // What the API does not send today, and a tool must not pass on if it ever does.
+    answer.data[0] = { ...answer.data[0], email: 'maya@example.com', phoneNumber: '+14155550142' }
+    const { client, requests } = await world(answers)
+    const result = await callTool(
+      client,
+      'list_organization_members',
+      SAMPLE_ARGS.list_organization_members
+    )
+    expect(requests[0]?.path).toBe(path.replace('GET ', ''))
+    expect(requests[0]?.search).toBe('?page=1&size=100')
+    expect(result.structured.data).toEqual([
+      {
+        id: '0198c1de-0000-7000-8000-0000000000d2',
+        organizationId: TEST_ORGANIZATION_ID,
+        userId: TEST_USER_ID,
+        role: 'admin',
+        createdAt: '2026-02-01T00:00:00.000Z',
+        updatedAt: '2026-02-01T00:00:00.000Z',
+      },
+    ])
+    expect(result.raw).not.toContain('maya@example.com')
+    expect(result.raw).not.toContain('+1415')
+  })
+
+  test('list_organization_roles: keys, permission keys and versions', async () => {
+    const { client } = await world()
+    const result = await callTool(client, 'list_organization_roles')
+    expect(result.structured).toEqual({
+      data: [
+        {
+          id: '0198c1de-0000-7000-8000-0000000000d3',
+          key: 'billing',
+          name: 'Billing',
+          permissions: ['org:billing:manage', 'org:billing:read'],
+          builtIn: false,
+          version: 2,
+          createdAt: '2026-02-01T00:00:00.000Z',
+          updatedAt: '2026-02-02T00:00:00.000Z',
+        },
+      ],
+    })
+  })
+
+  test('the organization tools reach the API with GETs only', async () => {
+    const { client, requests } = await world()
+    for (const name of [
+      'list_organizations',
+      'list_organization_members',
+      'list_organization_roles',
+    ]) {
+      expect((await callTool(client, name, SAMPLE_ARGS[name])).isError).toBe(false)
+    }
+    expect(requests.map((request) => request.method)).toEqual(['GET', 'GET', 'GET'])
   })
 
   test('get_settings: the document, its revision and who manages it', async () => {
@@ -1163,6 +1256,9 @@ describe('nothing is changed', () => {
       /^\/v1\/admin\/users\/[^/]+\/sessions$/,
       /^\/v1\/admin\/audit-logs$/,
       /^\/v1\/admin\/oauth-providers$/,
+      /^\/v1\/admin\/organizations$/,
+      /^\/v1\/admin\/organizations\/[^/]+\/memberships$/,
+      /^\/v1\/admin\/organization-roles$/,
     ]
     expect(allowed).toHaveLength(READ_OPERATIONS.length)
     expect(requests.length).toBeGreaterThanOrEqual(READ_OPERATIONS.length)
@@ -1483,6 +1579,34 @@ describe('errors', () => {
     expect(result.raw).not.toContain('https://')
     expect(result.raw).not.toMatch(/\bat .*\.ts/)
   })
+
+  test.each([
+    ['list_organizations', 'GET /v1/admin/organizations'],
+    [
+      'list_organization_members',
+      `GET /v1/admin/organizations/${TEST_ORGANIZATION_ID}/memberships`,
+    ],
+    ['list_organization_roles', 'GET /v1/admin/organization-roles'],
+  ])(
+    '%s: an environment with organizations off answers organization.disabled and nothing else',
+    async (name, route) => {
+      const answers = defaultAnswers()
+      answers[route] = () =>
+        Response.json(
+          {
+            status: 403,
+            code: 'organization.disabled',
+            detail: `upstream detail ${'x'.repeat(5)}`,
+          },
+          { status: 403 }
+        )
+      const { client } = await world(answers)
+      const result = await callTool(client, name, SAMPLE_ARGS[name])
+      expect(result.isError).toBe(true)
+      expect(result.structured.error).toMatchObject({ code: 'organization.disabled', status: 403 })
+      expect(result.raw).not.toContain('upstream detail')
+    }
+  )
 
   test('a rate-limit answer is passed on with when to retry', async () => {
     const answers = defaultAnswers()
