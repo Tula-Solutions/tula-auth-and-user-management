@@ -29,6 +29,7 @@ import {
   TEST_TENANT,
   type TestDeps,
 } from '~/testing'
+import { manualTimers } from '~/testing/manual-timers'
 
 // The route that runs a sign-in test (ADR 0058): who may call it, where it is allowed, what
 // it leaves behind when a step fails, and what never leaves the server.
@@ -165,7 +166,9 @@ function hook(point: Point, environmentId = DEV) {
       point,
       url: `http://127.0.0.1:${listener.port}/${point}`,
       enabled: true,
-      deadlineMs: 500,
+      // The longest there is: a request to a listener in this process took more than 100 ms
+      // on a machine under load (TULA-133).
+      deadlineMs: HOOK_MAX_DEADLINE_MS,
       failureMode: 'deny',
     },
     TEST_ACTOR
@@ -614,13 +617,45 @@ describe('time and cancellation', () => {
   const run = (options: SignInTests.RunOptions) =>
     SignInTests.run(deps, tenantOf(DEV, agentKeyId), actor, options)
 
-  test('a sign-up left at its limit: `timeout`, the rest not run, and no user to clean up, because that step makes none', async () => {
-    let land: () => void = () => undefined
-    const held = new Promise<never>((_, reject) => {
-      land = () => reject(new Error('let go'))
+  // The limits are kept by the test's own timers (`manualTimers`): a step is left at its limit
+  // when the test fires the timer, not when a real 300 ms has gone by, which a sign-up's
+  // password hash does on a machine under load (TULA-133). Each kind of limit has a delay of
+  // its own, so that a test names the one it means.
+  const STEP_MS = 300
+  const CLEANUP_MS = 50
+
+  /** A promise that settles when `release()` is called, and one that says the work began. */
+  function gate() {
+    let release: () => void = () => undefined
+    const released = new Promise<void>((resolve) => {
+      release = resolve
     })
-    const signUp = spyOn(Flows, 'signUp').mockImplementation(() => held)
-    const result = await run({ limits: { stepMs: 20, cleanupMs: 20 } })
+    let enter: () => void = () => undefined
+    const entered = new Promise<void>((resolve) => {
+      enter = resolve
+    })
+    return { released, release: () => release(), entered, enter: () => enter() }
+  }
+
+  test('a sign-up left at its limit: `timeout`, the rest not run, and no user to clean up, because that step makes none', async () => {
+    const stuck = gate()
+    const held = stuck.released.then(() => {
+      throw new Error('let go')
+    })
+    const signUp = spyOn(Flows, 'signUp').mockImplementation(() => {
+      stuck.enter()
+      return held as never
+    })
+    const timers = manualTimers()
+    const running = run({
+      limits: { stepMs: STEP_MS, hookMs: 0, cleanupMs: CLEANUP_MS },
+      after: timers.after,
+    })
+    await stuck.entered
+    timers.fire(STEP_MS)
+    await timers.registered(CLEANUP_MS)
+    timers.fire(CLEANUP_MS)
+    const result = await running
     expect(outcomes(result)).toEqual({
       sign_up: 'timeout',
       verify_email: 'earlier_step',
@@ -639,7 +674,7 @@ describe('time and cancellation', () => {
       { data: { outcome: 'failed', cleanup: 'none' } },
     ])
     expect(logged()).not.toContain('the throwaway user was not deleted')
-    land()
+    stuck.release()
     signUp.mockRestore()
   })
 
@@ -651,31 +686,58 @@ describe('time and cancellation', () => {
   test.each(['sign_in', 'first_factor'] as const)(
     'a %s left at its limit after the account was made: the account is deleted, and nothing is said to remain',
     async (name) => {
-      let land: () => void = () => undefined
-      const held = new Promise<never>((_, reject) => {
-        land = () => reject(new Error('let go'))
+      const stuck = gate()
+      const held = stuck.released.then(() => {
+        throw new Error('let go')
       })
-      const stuck = spyOn(
+      const method = spyOn(
         Flows,
         name === 'sign_in' ? 'signIn' : 'submitPassword'
-      ).mockImplementation(() => held)
-      const result = await run({ limits: { stepMs: 500, hookMs: 0, cleanupMs: 50 } })
+      ).mockImplementation(() => {
+        stuck.enter()
+        return held as never
+      })
+      const timers = manualTimers()
+      const running = run({
+        limits: { stepMs: STEP_MS, hookMs: 0, cleanupMs: CLEANUP_MS },
+        after: timers.after,
+      })
+      await stuck.entered
+      // Only the stuck step has a pending limit: the ones before it passed and cancelled theirs.
+      timers.fire(STEP_MS)
+      // The clean-up's first wait is for the step it left (its work never ends here), and
+      // runs out. Its second, for the deletion, is never fired: the deletion ends by itself.
+      await timers.registered(CLEANUP_MS)
+      timers.fire(CLEANUP_MS)
+      const result = await running
       expect(outcomes(result)).toMatchObject({ [name]: 'timeout', delete_user: 'passed' })
       expect(result).toMatchObject({ outcome: 'failed', cleanup: 'deleted' })
       expect(await markedUsers()).toEqual([])
-      land()
-      stuck.mockRestore()
+      stuck.release()
+      method.mockRestore()
     }
   )
 
   test('a step left at its limit that makes the account afterwards: the account is still deleted', async () => {
     const real = Flows.verifyEmail
+    const stuck = gate()
     const verify = spyOn(Flows, 'verifyEmail').mockImplementation(async (...args) => {
-      await Bun.sleep(700)
+      stuck.enter()
+      await stuck.released
       return real(...args)
     })
-    // Longer than a sign-up's own work (one password hash), shorter than the delay.
-    const result = await run({ limits: { stepMs: 500, hookMs: 0, cleanupMs: 4_000 } })
+    const timers = manualTimers()
+    const running = run({
+      limits: { stepMs: STEP_MS, hookMs: 0, cleanupMs: CLEANUP_MS },
+      after: timers.after,
+    })
+    await stuck.entered
+    timers.fire(STEP_MS)
+    // The clean-up is now waiting for the step, whose limit has passed. The account is made
+    // while it waits, and its wait is never fired: the late step's end is what ends it.
+    await timers.registered(CLEANUP_MS)
+    stuck.release()
+    const result = await running
     verify.mockRestore()
     expect(outcomes(result)).toMatchObject({ verify_email: 'timeout', delete_user: 'passed' })
     expect(result).toMatchObject({ outcome: 'failed', cleanup: 'deleted' })
@@ -684,15 +746,26 @@ describe('time and cancellation', () => {
 
   test('a step still at work when the clean-up stops waiting: the report does not say no user was made', async () => {
     const real = Flows.verifyEmail
+    const stuck = gate()
     let late: Promise<unknown> = Promise.resolve()
     const verify = spyOn(Flows, 'verifyEmail').mockImplementation((...args) => {
-      const work = Bun.sleep(700).then(() => real(...args))
+      stuck.enter()
+      const work = stuck.released.then(() => real(...args))
       late = work.catch(() => undefined)
       return work
     })
-    // The step is left at 300 ms and the clean-up waits 200 more: the account is made after
-    // the clean-up has looked for it.
-    const result = await run({ limits: { stepMs: 300, hookMs: 0, cleanupMs: 200 } })
+    const timers = manualTimers()
+    const running = run({
+      limits: { stepMs: STEP_MS, hookMs: 0, cleanupMs: CLEANUP_MS },
+      after: timers.after,
+    })
+    await stuck.entered
+    // The step is left at its limit and the clean-up's wait for it runs out: the account is
+    // made after the clean-up has looked for it.
+    timers.fire(STEP_MS)
+    await timers.registered(CLEANUP_MS)
+    timers.fire(CLEANUP_MS)
+    const result = await running
     expect(await markedUsers()).toEqual([])
     expect(outcomes(result)).toMatchObject({ verify_email: 'timeout', delete_user: 'timeout' })
     expect(result.steps.at(-1)?.outcome).toBe('failed')
@@ -700,36 +773,30 @@ describe('time and cancellation', () => {
     expect(deps.activityLog.ofType('sign_in_test.finished')).toMatchObject([
       { data: { outcome: 'failed', cleanup: 'failed' } },
     ])
+    stuck.release()
     await late
     verify.mockRestore()
     // What the report warned of: the user the late step made, left for the retention job.
     expect(await markedUsers()).toHaveLength(1)
   })
 
-  test('three hooks that each answer just under their deadline: the run passes', async () => {
-    // Scaled down: a hook's deadline is 1 s here and its allowance in a step the same. What
-    // is tested is the rule, a step's own time and then a hook's longest wait for every hook
-    // it asks; the constants are held by the next test.
-    const slow = (answer: () => Response) => async () => {
-      await Bun.sleep(800)
-      return answer()
-    }
+  test('three hooks that answer: every step is given its own time and a hook’s longest wait for each hook it asks', async () => {
+    // What is tested is the rule, a step's own time and then a hook's longest wait for every
+    // hook it asks; the constants are held by the next test. The hooks answer at once and the
+    // limits are the test's timers, which never go off: no step is timed against a clock.
     respond = {
-      before_sign_up: slow(allow),
-      before_session: slow(allow),
-      before_token: slow(() => Response.json({ claims: {} })),
+      before_sign_up: allow,
+      before_session: allow,
+      before_token: () => Response.json({ claims: {} }),
     }
     for (const point of ['before_sign_up', 'before_session', 'before_token'] as const) {
-      const made = await hook(point)
-      await Hooks.update(
-        deps,
-        tenantOf(DEV, secretKeyId),
-        made.id,
-        { deadlineMs: 1_000 },
-        TEST_ACTOR
-      )
+      await hook(point)
     }
-    const result = await run({ limits: { stepMs: 800, hookMs: 1_000 } })
+    const timers = manualTimers()
+    const result = await run({
+      limits: { stepMs: STEP_MS, hookMs: HOOK_MAX_DEADLINE_MS, cleanupMs: CLEANUP_MS },
+      after: timers.after,
+    })
     expect(outcomes(result)).toEqual(ALL_PASSED)
     expect(result).toMatchObject({ outcome: 'passed', cleanup: 'deleted' })
     // Which step asked how many: what `SIGN_IN_TEST_HOOKS_ASKED` says.
@@ -741,6 +808,17 @@ describe('time and cancellation', () => {
       'before_token',
     ])
     expect(SignInTests.SIGN_IN_TEST_HOOKS_ASKED).toEqual({ verify_email: 3, first_factor: 2 })
+    // The limit each step was kept to, in the order of the steps (the clean-up's two last).
+    expect(timers.started.map((timer) => timer.ms)).toEqual([
+      STEP_MS, // sign_up
+      STEP_MS + 3 * HOOK_MAX_DEADLINE_MS, // verify_email: three hooks
+      STEP_MS, // sign_out
+      STEP_MS, // sign_in
+      STEP_MS + 2 * HOOK_MAX_DEADLINE_MS, // first_factor: two hooks
+      STEP_MS, // revoke_session
+      CLEANUP_MS,
+      CLEANUP_MS,
+    ])
   })
 
   test('the limits add up: every step covers its hooks with headroom, and a run answers inside the minute', () => {

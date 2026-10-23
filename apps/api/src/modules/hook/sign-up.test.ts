@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, type Mock, spyOn, te
 import {
   DEFAULT_ENVIRONMENT_SETTINGS,
   type FlowAttempt,
+  HOOK_MAX_DEADLINE_MS,
   HOOK_QUESTION_SCHEMAS,
   type OAuthStart,
 } from '@tula-tech/contract'
@@ -100,7 +101,9 @@ function hook(input: Partial<Parameters<typeof Hooks.create>[2]> = {}, scope: Te
       point: 'before_sign_up',
       url: `http://127.0.0.1:${listener.port}/tula/before-sign-up`,
       enabled: true,
-      deadlineMs: 100,
+      // The longest there is: a request to a listener in this process took more than 100 ms
+      // on a machine under load (TULA-133). A hook that must run out of time asks for 100.
+      deadlineMs: HOOK_MAX_DEADLINE_MS,
       failureMode: 'deny',
       ...input,
     },
@@ -298,9 +301,11 @@ describe.each([
     expect(await userCount()).toBe(1)
   })
 
+  const hangs = () => new Promise<Response>(() => undefined)
+
   test.each([
     ['a failing endpoint', broken],
-    ['an endpoint that hangs', () => new Promise<Response>(() => undefined)],
+    ['an endpoint that hangs', hangs],
     [
       'an answer that tries to mark the address verified',
       answers({ decision: 'allow', emailVerified: true }),
@@ -308,12 +313,14 @@ describe.each([
   ])(
     '%s refuses the sign-up as unavailable, and leaves nothing behind',
     async (_case, responder) => {
-      await hook()
+      // Only the endpoint that never answers is given a short deadline, to run out of.
+      await hook(responder === hangs ? { deadlineMs: 100 } : {})
       respond = responder
       const { attempt } = await start(password)
       const started = performance.now()
       const error = await rejection(verify(attempt, sentCode()))
-      expect(performance.now() - started).toBeLessThan(1500)
+      // Wide margin on purpose: ends at the 100 ms deadline, not at the 5 s cap.
+      expect(performance.now() - started).toBeLessThan(HOOK_MAX_DEADLINE_MS - 1000)
       expect(error.code).toBe('hook.unavailable')
       expect(error.status).toBe(503)
       await expectNothingLeft()
