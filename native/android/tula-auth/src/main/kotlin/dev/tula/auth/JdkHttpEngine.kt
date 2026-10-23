@@ -1,12 +1,16 @@
 package dev.tula.auth
 
 import java.io.IOException
+import java.net.Proxy
 import java.net.ProxySelector
+import java.net.SocketAddress
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest as JdkRequest
 import java.net.http.HttpResponse as JdkResponse
+import java.io.InputStream
 import java.time.Duration
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -22,15 +26,25 @@ import kotlinx.coroutines.suspendCancellableCoroutine
  * whose Android implementation (OkHttp's) lists `PATCH` among its methods. The class is
  * reached by name only, so nothing that is compiled for Android refers to it.
  *
- * It behaves as [UrlConnectionEngine] does: HTTP/1.1, no redirect followed, no cookie kept,
- * the system's proxy selector, the whole answer read up to the same cap, and an exception for
- * a request that got no answer.
+ * It is meant to behave as [UrlConnectionEngine] does: HTTP/1.1, no redirect followed, no cookie
+ * kept, the system's default proxy selector (read per request), the whole answer read up to the
+ * same cap, an exception for a request that got no answer, and the answer's stream closed when
+ * the caller is cancelled. It sends no proxy credentials: `Authenticator` is not consulted.
  */
 internal class JdkHttpEngine : HttpEngine {
     private val client: HttpClient = HttpClient.newBuilder()
         .version(HttpClient.Version.HTTP_1_1)
         .followRedirects(HttpClient.Redirect.NEVER)
-        .proxy(ProxySelector.getDefault())
+        .proxy(
+            object : ProxySelector() {
+                override fun select(uri: URI?): List<Proxy> =
+                    ProxySelector.getDefault()?.select(uri) ?: listOf(Proxy.NO_PROXY)
+
+                override fun connectFailed(uri: URI?, address: SocketAddress?, failure: IOException?) {
+                    ProxySelector.getDefault()?.connectFailed(uri, address, failure)
+                }
+            },
+        )
         .build()
 
     override suspend fun send(request: HttpRequest): HttpResponse {
@@ -46,17 +60,28 @@ internal class JdkHttpEngine : HttpEngine {
                 .also { builder -> request.headers.forEach { (name, value) -> builder.header(name, value) } }
                 .build()
         } catch (_: IllegalArgumentException) {
-            throw IOException("not an http(s) address")
+            // An address that is not one, or a header the JDK client reserves (the client sends none).
+            throw IOException("not an http(s) request")
         }
         return suspendCancellableCoroutine { continuation ->
             val future = client.sendAsync(built, JdkResponse.BodyHandlers.ofInputStream())
-            continuation.invokeOnCancellation { future.cancel(true) }
+            val stream = AtomicReference<InputStream?>(null)
+            continuation.invokeOnCancellation {
+                future.cancel(true)
+                // A body being read when the caller gives up: closing the stream ends the read.
+                runCatching { stream.get()?.close() }
+            }
             future.whenComplete { answer, error ->
                 if (error != null) {
                     continuation.resumeWithException(error as? IOException ?: IOException("the request failed"))
                     return@whenComplete
                 }
                 try {
+                    stream.set(answer.body())
+                    if (!continuation.isActive) {
+                        answer.body().close()
+                        return@whenComplete
+                    }
                     val headers = HashMap<String, String>()
                     for ((name, values) in answer.headers().map()) {
                         if (values.isNotEmpty()) {
@@ -64,8 +89,8 @@ internal class JdkHttpEngine : HttpEngine {
                         }
                     }
                     continuation.resume(HttpResponse(answer.statusCode(), headers, answer.body().use(::readCapped)))
-                } catch (error: IOException) {
-                    continuation.resumeWithException(error)
+                } catch (error: Throwable) {
+                    continuation.resumeWithException(error as? IOException ?: IOException("the request failed"))
                 }
             }
         }

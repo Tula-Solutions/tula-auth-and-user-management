@@ -45,7 +45,8 @@ class TulaOrganizationMembers internal constructor(private val context: FlowCont
 
     /**
      * Give a member another role, one whose permissions the user holds themselves. The
-     * member's sessions carry it from their next refresh.     *
+     * member's sessions carry it from their next refresh.
+     *
      * @param organizationId The organization.
      * @param userId The member.
      * @param role The key of the new role.
@@ -166,7 +167,8 @@ class TulaOrganizationDomains internal constructor(private val context: FlowCont
         )
 
     /**
-     * Change what a domain does.     *
+     * Change what a domain does.
+     *
      * @param organizationId The organization.
      * @param domainId The domain.
      * @param mode [OrganizationDomainMode.Suggest] or [OrganizationDomainMode.AutoJoin].

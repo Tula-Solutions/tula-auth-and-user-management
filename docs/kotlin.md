@@ -41,7 +41,7 @@ does not want to draw its own ([Screens](#screens), below). The reasoning is in
 | Organizations | The user's organizations, creating, renaming, leaving or deleting one, the active organization and its claims, its members and roles, its domains, an invitation (preview, accept, decline), the organizations a verified address is offered. |
 
 Not yet: an emailed link (the code in the same email is the way) and renaming a passkey
-(both TULA-76: the rename is a `PATCH`, which the default HTTP engine cannot send). A step
+(both TULA-76: the rename call is not written yet). A step
 that offers only a way this version cannot do is reported as "not supported" (below), never
 as an error.
 

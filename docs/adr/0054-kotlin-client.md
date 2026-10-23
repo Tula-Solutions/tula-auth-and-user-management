@@ -362,8 +362,8 @@ bound to. Making it throw that for some exception is a decision to record here, 
 sentence of Android's documentation that justifies it.
 
 **Not built**, each said in the list or the docs: an emailed link (below; TULA-76); renaming
-a passkey, which is a `PATCH` and `HttpURLConnection` has none (an app's own `HttpEngine`
-could send one; the default engine is not replaced for it, and TULA-76 carries the call); a
+a passkey, which is a `PATCH` (the default engine sends one since TULA-130; TULA-76 carries
+the call); a
 phone number on the account (TULA-61).
 
 **An email address for an account without one** ([ADR 0059](0059-email-for-accounts-without-one.md))

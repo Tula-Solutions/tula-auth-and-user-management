@@ -105,8 +105,11 @@ class UrlConnectionEngine : HttpEngine {
     private val patching: HttpEngine? by lazy {
         try {
             Class.forName("dev.tula.auth.JdkHttpEngine").getDeclaredConstructor().newInstance() as? HttpEngine
-        } catch (_: Throwable) {
-            // Not there (Android), or not loadable: the connection below is the way.
+        } catch (_: ClassNotFoundException) {
+            // Not there (Android): the connection below is the way.
+            null
+        } catch (_: LinkageError) {
+            // There, but its `java.net.http` classes are not: the same.
             null
         }
     }

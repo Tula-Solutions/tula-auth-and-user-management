@@ -1964,7 +1964,8 @@ suspend fun list(organizationId: String): OrganizationMemberList
 _fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/OrganizationManagement.kt`
 
 Give a member another role, one whose permissions the user holds themselves. The
-member's sessions carry it from their next refresh.     *
+member's sessions carry it from their next refresh.
+
 @param organizationId The organization.
 @param userId The member.
 @param role The key of the new role.
@@ -2070,7 +2071,8 @@ suspend fun verify(organizationId: String, domainId: String, code: String): Orga
 
 _fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/OrganizationManagement.kt`
 
-Change what a domain does.     *
+Change what a domain does.
+
 @param organizationId The organization.
 @param domainId The domain.
 @param mode [OrganizationDomainMode.Suggest] or [OrganizationDomainMode.AutoJoin].
@@ -2457,7 +2459,8 @@ suspend fun join(organizationId: String): UserOrganization
 _fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
 
 Rename an organization, or change its slug. Needs `org:sys:organization:manage`, which
-the API reads from the user's membership on every call.     *
+the API reads from the user's membership on every call.
+
 @param organizationId The organization.
 @param name A new name, or `null` to keep it.
 @param slug A new slug, or `null` to keep it.

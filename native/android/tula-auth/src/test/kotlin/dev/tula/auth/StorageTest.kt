@@ -6,6 +6,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
+import java.io.IOException
 import java.net.InetSocketAddress
 import java.security.GeneralSecurityException
 import java.security.SecureRandom
@@ -447,6 +448,40 @@ class StorageTest {
             assertEquals(403, refused.status)
             assertEquals("""{"code":"organization.permission_required"}""", refused.body)
             assertEquals("3", refused.headers["retry-after"])
+        }
+    }
+
+    @Test
+    fun `a PATCH answer is held to the same rules, not followed, capped and given up when the caller is cancelled`() {
+        val released = CountDownLatch(1)
+        serve({ exchange ->
+            exchange.requestBody.readBytes()
+            when (exchange.requestURI.path) {
+                "/moved" -> exchange.reply(302, "", mapOf("Location" to "/elsewhere"))
+                "/huge" -> exchange.reply(200, "x".repeat(1024 * 1024 + 1))
+                else -> {
+                    // The headers arrive; the body never does while the test runs.
+                    exchange.sendResponseHeaders(200, 0)
+                    exchange.responseBody.flush()
+                    released.await()
+                }
+            }
+        }) { base ->
+            val engine = UrlConnectionEngine()
+            fun patch(path: String, timeout: Long = 5_000) = HttpRequest("PATCH", base + path, emptyMap(), "{}", timeout)
+            val moved = engine.send(patch("/moved"))
+            assertEquals(302, moved.status)
+            assertEquals("/elsewhere", moved.headers["location"])
+            assertTrue(runCatching { engine.send(patch("/huge")) }.exceptionOrNull() is IOException)
+
+            val asking = async { engine.send(patch("/stalled", 60_000)) }
+            delay(300)
+            withTimeout(5_000) {
+                asking.cancel()
+                asking.join()
+            }
+            assertTrue(asking.isCancelled)
+            released.countDown()
         }
     }
 
