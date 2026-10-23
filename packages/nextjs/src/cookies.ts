@@ -40,6 +40,145 @@ export function cookieNames(secure: boolean): CookieNames {
   }
 }
 
+/**
+ * The most characters one cookie of the access token holds. A browser keeps a cookie only if
+ * its name and value together are at most about 4,096 bytes (Chrome, Firefox and Safari alike)
+ * and drops a larger one **silently**, so a token that does not fit is split across cookies
+ * (`tula_at`, `tula_at_1`) instead of being written whole and lost. 3,072 leaves a kilobyte
+ * for the name (`__Host-tula_at_1`) and for the engines' slightly different counts.
+ */
+export const ACCESS_CHUNK_LENGTH = 3072
+
+/**
+ * The longest access token the app keeps in cookies: two cookies' worth. The largest token a
+ * Tula server issues (ADR 0029, "The access token and the cookie budget") is about 5,300
+ * characters; this leaves room for a long issuer URL. A longer token is not stored, and the
+ * session then lives on its refresh cookie alone (see `handlers.ts`).
+ */
+export const MAX_ACCESS_TOKEN_LENGTH = 2 * ACCESS_CHUNK_LENGTH
+
+/**
+ * The name of one cookie of the access token: the cookie itself for the first part, and
+ * `_1` after it for the second.
+ *
+ * @param base - The access cookie's name from {@link cookieNames}.
+ * @param index - The part, from 0.
+ * @returns The cookie's name.
+ *
+ * @example
+ * ```ts
+ * accessChunkName('__Host-tula_at', 1) // '__Host-tula_at_1'
+ * ```
+ */
+export function accessChunkName(base: string, index: number): string {
+  return index === 0 ? base : `${base}_${index}`
+}
+
+/** How many cookies an access token may be spread over. */
+const MAX_ACCESS_CHUNKS = MAX_ACCESS_TOKEN_LENGTH / ACCESS_CHUNK_LENGTH
+
+/**
+ * Whether a string can be kept as the access token: a cookie value that fits
+ * {@link MAX_ACCESS_TOKEN_LENGTH}.
+ *
+ * @param value - The candidate.
+ * @returns Whether it is non-empty, free of separators, quotes and control characters, and
+ *   short enough to be split into the cookies we allow.
+ *
+ * @example
+ * ```ts
+ * isAccessToken('eyJ.eyJ.sig') // true
+ * isAccessToken('a'.repeat(7000)) // false
+ * ```
+ */
+export function isAccessToken(value: string): boolean {
+  return value.length <= MAX_ACCESS_TOKEN_LENGTH && COOKIE_VALUE.test(value)
+}
+
+/**
+ * Join the access token from its cookies.
+ *
+ * The parts are read in order and stop at the first one missing. No part is trusted: the
+ * result is only ever a candidate that `verifyAccessToken` checks the signature of, so a
+ * stale or mismatched part makes the token fail to verify (and be refreshed), never be
+ * believed.
+ *
+ * @param cookies - The request's cookies by name.
+ * @param base - The access cookie's name from {@link cookieNames}.
+ * @returns The token, or `undefined` when the first cookie is missing or empty.
+ *
+ * @example
+ * ```ts
+ * readAccessToken(new Map([['tula_at', 'aaa'], ['tula_at_1', 'bbb']]), 'tula_at') // 'aaabbb'
+ * ```
+ */
+export function readAccessToken(
+  cookies: ReadonlyMap<string, string>,
+  base: string
+): string | undefined {
+  let token = cookies.get(base) || ''
+  if (token === '') {
+    return undefined
+  }
+  for (let index = 1; index < MAX_ACCESS_CHUNKS; index += 1) {
+    const part = cookies.get(accessChunkName(base, index))
+    if (!part) {
+      break
+    }
+    token += part
+  }
+  return token
+}
+
+/**
+ * What writing the access token (or removing it) does to each of its cookies.
+ *
+ * A token is split into parts of at most {@link ACCESS_CHUNK_LENGTH}. Every part that is
+ * present on the request and no longer needed is removed, so that an old, longer token never
+ * leaves a tail that a shorter one would be read with.
+ *
+ * @param base - The access cookie's name from {@link cookieNames}.
+ * @param token - The token to keep, or `null` to remove the access token.
+ * @param present - The names of the cookies the request carries.
+ * @returns The cookies to change: a value to set, or `null` to remove. The first cookie is
+ *   always listed. `null` is also returned for a token that does not fit
+ *   ({@link isAccessToken}): the old one goes and nothing replaces it.
+ *
+ * @example
+ * ```ts
+ * accessCookieChanges('tula_at', 'a'.repeat(4000), ['tula_at', 'tula_at_1'])
+ * // Map { 'tula_at' => 'aaa…', 'tula_at_1' => 'a…' }
+ * accessCookieChanges('tula_at', 'short', ['tula_at', 'tula_at_1'])
+ * // Map { 'tula_at' => 'short', 'tula_at_1' => null }
+ * ```
+ */
+export function accessCookieChanges(
+  base: string,
+  token: string | null,
+  present: Iterable<string>
+): Map<string, string | null> {
+  const kept = token !== null && isAccessToken(token) ? token : null
+  const changes = new Map<string, string | null>()
+  if (kept === null) {
+    changes.set(base, null)
+  } else {
+    for (let index = 0; index * ACCESS_CHUNK_LENGTH < kept.length; index += 1) {
+      changes.set(
+        accessChunkName(base, index),
+        kept.slice(index * ACCESS_CHUNK_LENGTH, (index + 1) * ACCESS_CHUNK_LENGTH)
+      )
+    }
+  }
+  const names = new Set(present)
+  for (let index = 1; index < MAX_ACCESS_CHUNKS; index += 1) {
+    const name = accessChunkName(base, index)
+    if (!changes.has(name) && names.has(name)) {
+      changes.set(name, null)
+    }
+  }
+  return changes
+}
+
 /** The characters RFC 6265 allows in a cookie value: nothing that could start an attribute. */
 const COOKIE_VALUE = /^[\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]+$/
 

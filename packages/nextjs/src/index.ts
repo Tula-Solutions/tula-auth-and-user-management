@@ -8,7 +8,17 @@
  *
  * Import the stylesheet once, next to the provider: `import '@tula-tech/react/styles.css'`.
  */
-export type { FlowStep, Session, TulaClient, TulaError, User } from '@tula-tech/core'
+export type { OrganizationCheck } from '@tula-tech/contract/custom-claims'
+export type {
+  ActiveOrganization,
+  CreateOrganizationInput,
+  FlowStep,
+  Session,
+  TulaClient,
+  TulaError,
+  User,
+  UserOrganization,
+} from '@tula-tech/core'
 export {
   type Appearance,
   ELEMENT_NAMES,
@@ -38,6 +48,8 @@ export {
   type UseAuthResult,
   type UseEmailLinkCallbackResult,
   type UseOAuthCallbackResult,
+  type UseOrganizationListResult,
+  type UseOrganizationResult,
   type UseResetPasswordResult,
   UserButton,
   type UserButtonProps,
@@ -51,6 +63,8 @@ export {
   useClientConfig,
   useEmailLinkCallback,
   useOAuthCallback,
+  useOrganization,
+  useOrganizationList,
   usePasswordChecklist,
   useResetPassword,
   useSession,

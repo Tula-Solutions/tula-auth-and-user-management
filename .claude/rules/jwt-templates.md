@@ -37,8 +37,10 @@ A **JWT template** is a named set of **custom claims** in an environment's setti
   namespace (of a template alone; beside a hook's stored claims, the template's part: see
   the `before_token` rule below) and logs the template's name and the byte count, never a
   value. Never truncate,
-  never raise the cap for a feature: it is what keeps `tula_at` inside a browser's cookie
-  limit (a test in `packages/nextjs/src/real-api.test.ts` measures it).
+  never raise the cap for a feature: it is what keeps the access token inside the two
+  cookies `@tula-tech/nextjs` splits it into (`tula_at`, `tula_at_1`; ADR 0029, "Amendment: the
+  organization claims and the access token's cookies"). A test in
+  `packages/nextjs/src/real-api.test.ts` measures the worst case.
 - **A template's claims are read at every issue and stored nowhere** (a hook's are stored on
   the session: "Hooks" above). `Sessions` builds them wherever it
   signs a token or answers for a stateful session, from the settings as configured now. A

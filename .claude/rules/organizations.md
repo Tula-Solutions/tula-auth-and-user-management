@@ -5,6 +5,7 @@ paths:
   - "apps/api/src/ports/organization-store.ts"
   - "apps/api/src/adapters/memory/organizations*"
   - "apps/api/src/adapters/postgres/organizations*"
+  - "apps/api/src/adapters/postgres/manager-guard*"
   - "apps/api/src/adapters/organization-store.suite.ts"
   - "packages/db/src/schema/organization*"
   - "packages/db/migrations/0036_*"
@@ -29,8 +30,14 @@ this file under "Area rules" and does not repeat it.
   methods that demote or remove a member (`changeRole`, `removeMembership`) check this inside
   the same transaction that locks the organization's row (`FOR UPDATE`) and answer
   `last_manager`; the service maps it to `organization.last_manager`. Never move the check
-  into the service, where two concurrent requests could both pass it. A user deletion does not
-  take that lock (TULA-124).
+  into the service, where two concurrent requests could both pass it. **A user deletion is
+  guarded the same way** (TULA-124): `UserRepository.delete` and `deleteTestUsersBefore` call
+  `findBlocked` (`adapters/postgres/manager-guard.ts`), which locks the user rows, then every
+  organization they belong to in id order (`FOR NO KEY UPDATE`: a `FOR UPDATE` would deadlock
+  with a membership insert's key share), then reads; the answer is `last_manager` with the
+  organization ids, and the service maps it to `user.last_organization_manager` (409). The
+  memory users repository asks the organization store through `onBeforeDelete`. A new path
+  that deletes a user goes through `UserRepository.delete`; never delete from `users` directly.
 - **Both adapters decide alike.** The memory store follows the database: an unknown user,
   organization or role is `gone`, a deleted user's memberships go with them, a deleted
   organization's memberships go with it. The shared suite (`organization-store.suite.ts`) runs
@@ -81,7 +88,8 @@ this file under "Area rules" and does not repeat it.
   key of one environment cannot add its users to another's.
 - Last manager: demote and remove both refuse, with a second manager they succeed, and the
   store suite proves it on the real database (`stores.integration.ts`). A role update that
-  strips the permission refuses alike.
+  strips the permission refuses alike, and so does deleting the user (also racing a demotion
+  of the other manager, and the purge of sign-in test users).
 - Custom roles: a stale version, a missing `If-Match`, a taken key (also `admin` and
   `member`), a role in use, the cap, a built-in role, and an agent key on every write.
 - An agent key is refused on every write and may read.

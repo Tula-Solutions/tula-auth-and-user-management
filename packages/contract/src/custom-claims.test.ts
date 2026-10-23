@@ -3,6 +3,7 @@ import {
   CUSTOM_CLAIMS_CLAIM,
   checkCustomClaims,
   customClaimsBytes,
+  hasOrganizationAccess,
   isCustomClaimKey,
   MAX_CUSTOM_CLAIM_KEY_LENGTH,
   MAX_CUSTOM_CLAIMS_BYTES,
@@ -371,6 +372,21 @@ describe('the organization claims (ADR 0065)', () => {
       ['permissions that are a string', { ...claims, org_perms: 'org:sys:memberships:read' }],
       ['a permission that is not a string', { ...claims, org_perms: ['org:a:b', 7] }],
       ['permissions that are an object', { ...claims, org_perms: { 0: 'org:a:b' } }],
+      ['an id that is not URL-safe', { ...claims, org_id: 'org 1' }],
+      ['an id of 65 characters', { ...claims, org_id: 'o'.repeat(65) }],
+      ['a role key outside its grammar', { ...claims, org_role: 'Admin' }],
+      ['a role key of 33 characters', { ...claims, org_role: `r${'x'.repeat(32)}` }],
+      ['a permission outside the grammar (dots)', { ...claims, org_perms: ['billing.read'] }],
+      ['a wildcard where a permission goes', { ...claims, org_perms: ['org:billing:*'] }],
+      ['a permission with upper case', { ...claims, org_perms: ['org:Billing:read'] }],
+      ['a permission of 101 characters', { ...claims, org_perms: [`org:a:${'b'.repeat(96)}`] }],
+      [
+        'one malformed permission among good ones',
+        {
+          ...claims,
+          org_perms: ['org:sys:memberships:read', 'not a permission'],
+        },
+      ],
     ])('%s is no organization', (_name, value) => {
       expect(readOrganizationClaims(value)).toBeNull()
     })
@@ -378,5 +394,53 @@ describe('the organization claims (ADR 0065)', () => {
     test('the custom claims namespace is no way to carry them', () => {
       expect(readOrganizationClaims({ ext: claims })).toBeNull()
     })
+  })
+})
+
+describe('hasOrganizationAccess', () => {
+  const claims = readOrganizationClaims({
+    org_id: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b',
+    org_role: 'billing_manager',
+    org_perms: ['org:billing:read', 'org:billing:write'],
+  })
+
+  test('a permission is held when the claims list that exact key', () => {
+    expect(hasOrganizationAccess(claims, { permission: 'org:billing:read' })).toBe(true)
+    expect(hasOrganizationAccess(claims, { permission: 'org:billing:write' })).toBe(true)
+  })
+
+  test.each([
+    ['another key', 'org:billing:delete'],
+    ['a wildcard', 'org:billing:*'],
+    ['a bare wildcard', '*'],
+    ['a prefix of a held key', 'org:billing'],
+    ['a held key with more after it', 'org:billing:read:all'],
+    ['a different case', 'ORG:BILLING:READ'],
+    ['the empty string', ''],
+  ])('%s is not held', (_name, permission) => {
+    expect(hasOrganizationAccess(claims, { permission })).toBe(false)
+  })
+
+  test('a role is held when it is the member’s role key, exactly', () => {
+    expect(hasOrganizationAccess(claims, { role: 'billing_manager' })).toBe(true)
+    expect(hasOrganizationAccess(claims, { role: 'admin' })).toBe(false)
+    expect(hasOrganizationAccess(claims, { role: 'billing' })).toBe(false)
+    expect(hasOrganizationAccess(claims, { role: '' })).toBe(false)
+  })
+
+  test('with no active organization nothing is held', () => {
+    expect(hasOrganizationAccess(null, { permission: 'org:billing:read' })).toBe(false)
+    expect(hasOrganizationAccess(undefined, { role: 'admin' })).toBe(false)
+  })
+
+  test.each([
+    ['neither', {}],
+    ['both', { permission: 'org:billing:read', role: 'billing_manager' }],
+    ['a permission that is not a string', { permission: 7 }],
+    ['a role that is an array', { role: ['billing_manager'] }],
+    ['null', null],
+    ['a string', 'org:billing:read'],
+  ])('a check that names %s never grants', (_name, check) => {
+    expect(hasOrganizationAccess(claims, check as never)).toBe(false)
   })
 })

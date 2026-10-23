@@ -6,7 +6,17 @@
  * Everything exported here is the package's public, versioned surface. Import the stylesheet
  * once, next to the provider: `import '@tula-tech/react/styles.css'`.
  */
-export type { FlowStep, Session, TulaClient, TulaError, User } from '@tula-tech/core'
+export type { OrganizationCheck } from '@tula-tech/contract/custom-claims'
+export type {
+  ActiveOrganization,
+  CreateOrganizationInput,
+  FlowStep,
+  Session,
+  TulaClient,
+  TulaError,
+  User,
+  UserOrganization,
+} from '@tula-tech/core'
 export {
   type Appearance,
   ELEMENT_NAMES,
@@ -51,6 +61,12 @@ export {
   type UseOAuthCallbackResult,
   useOAuthCallback,
 } from './hooks/use-oauth-callback'
+export {
+  type UseOrganizationListResult,
+  type UseOrganizationResult,
+  useOrganization,
+  useOrganizationList,
+} from './hooks/use-organization'
 export { usePasskeySupport } from './hooks/use-passkey-support'
 export {
   type PasswordChecklist,

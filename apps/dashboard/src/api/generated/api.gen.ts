@@ -2686,6 +2686,7 @@ export const ErrorCode = {
   devicenonce_required: 'device.nonce_required',
   devicebinding_not_supported: 'device.binding_not_supported',
   devicebinding_required: 'device.binding_required',
+  userlast_organization_manager: 'user.last_organization_manager',
   organizationdisabled: 'organization.disabled',
   organizationslug_taken: 'organization.slug_taken',
   organizationmember_exists: 'organization.member_exists',
@@ -7666,7 +7667,7 @@ export const getDeleteUserUrl = (userId: string,) => {
 }
 
 /**
- * Ends the user’s sessions and deletes them with everything they own.
+ * Ends the user’s sessions and deletes them with everything they own. Refused with `user.last_organization_manager` (409, `params.organizationIds`) while they are the only member who holds `org:sys:memberships:manage` of an organization: add another manager or delete the organization first. No user data is deleted then.
  * @summary Delete a user
  */
 export const deleteUser = async (userId: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {

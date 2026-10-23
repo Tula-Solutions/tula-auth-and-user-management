@@ -63,6 +63,9 @@ export class MemoryOrganizationStore implements OrganizationStore {
     this.#invitations = new Map()
     this.#activityLog = activityLog
     this.#users = users
+    users?.onBeforeDelete((environmentId, userIds) =>
+      this.#blockedDeletions(environmentId, userIds)
+    )
     users?.onDelete((environmentId, userId) => {
       for (const [key, membership] of this.#memberships) {
         if (membership.environmentId === environmentId && membership.userId === userId) {
@@ -99,6 +102,39 @@ export class MemoryOrganizationStore implements OrganizationStore {
         one.userId !== userId &&
         this.#roles.get(one.roleId)?.permissions.includes(MEMBERSHIPS_MANAGE_PERMISSION) === true
     )
+  }
+
+  /**
+   * The users among these whose deletion would leave an organization with no manager, with the
+   * ids of those organizations (ascending). As in the database, a set is judged as a whole: a
+   * manager is blocked unless someone outside the set manages the organization too.
+   */
+  #blockedDeletions(environmentId: string, userIds: readonly string[]): Map<string, string[]> {
+    const leaving = new Set(userIds)
+    const blocked = new Map<string, string[]>()
+    for (const membership of this.#memberships.values()) {
+      if (
+        membership.environmentId !== environmentId ||
+        !leaving.has(membership.userId) ||
+        !this.#manages(membership)
+      ) {
+        continue
+      }
+      const covered = [...this.#memberships.values()].some(
+        (one) =>
+          one.environmentId === environmentId &&
+          one.organizationId === membership.organizationId &&
+          !leaving.has(one.userId) &&
+          this.#manages(one)
+      )
+      if (!covered) {
+        blocked.set(
+          membership.userId,
+          [...(blocked.get(membership.userId) ?? []), membership.organizationId].sort()
+        )
+      }
+    }
+    return blocked
   }
 
   /** Whether the role of a membership holds the permission that manages members. */
