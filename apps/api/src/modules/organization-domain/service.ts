@@ -64,6 +64,13 @@ export const CODES_PER_ORGANIZATION_PER_HOUR = 10
 export const CODES_PER_ENVIRONMENT_PER_DAY = 200
 
 /**
+ * Codes one organization may ask for in a day. Well under the environment's cap, so that one
+ * organization (any user may create one where `allowUserCreated` is on) cannot spend the
+ * environment's whole allowance and lock every other organization out.
+ */
+export const CODES_PER_ORGANIZATION_PER_DAY = 30
+
+/**
  * Codes one address may be sent in an hour. The address is chosen by the asker, so without
  * this a few organizations could fill a stranger's inbox.
  */
@@ -321,6 +328,7 @@ export async function start(
   const subject = `${scope.environmentId}:${organizationId}`
   await hit(deps, `organization_domain_cooldown:${subject}`, 1, '1m')
   await hit(deps, `organization_domain:${subject}`, CODES_PER_ORGANIZATION_PER_HOUR, '1h')
+  await hit(deps, `organization_domain_day:${subject}`, CODES_PER_ORGANIZATION_PER_DAY, '1d')
   await hit(
     deps,
     `organization_domain_environment:${scope.environmentId}`,

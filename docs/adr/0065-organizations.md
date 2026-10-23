@@ -213,8 +213,9 @@ it, by the domain's `mode`.
   10 minutes; a new send replaces it and resets the counter. The client route for the check
   has a per-IP limit of its own on top (10 a minute).
 - **Sending is limited**, because the address is free text an administrator typed: one send a
-  minute and 10 an hour per organization (`CODES_PER_ORGANIZATION_PER_HOUR`), 200 a day per
-  environment, and 5 an hour per hashed address (so the code cannot be used to flood one
+  minute, 10 an hour and 30 a day per organization (`CODES_PER_ORGANIZATION_PER_HOUR`,
+  `CODES_PER_ORGANIZATION_PER_DAY`, so that one organization cannot spend the environment's
+  allowance), 200 a day per environment, and 5 an hour per hashed address (so the code cannot be used to flood one
   inbox). An organization has at most 10 domains (`organization.domain_limit`, 409).
 - **A domain is verified for one organization per environment** (`organization.domain_taken`,
   409): a partial unique index over the verified rows. Any number of organizations may have a
@@ -226,7 +227,8 @@ it, by the domain's `mode`.
   stop, underscores, wildcards and a single label are refused (422), as are a label over 63
   characters and a name over 253. The database holds the same shape in a check. A **public
   mail domain** (`PUBLIC_EMAIL_DOMAINS`, an explicit list of the large mailbox providers, the
-  internet providers that hand out addresses and the common national ones, and
+  internet providers that hand out addresses the common national ones, forwarding aliases and relays (`duck.com`, Apple's private relay)
+  and disposable inboxes, and
   `PUBLIC_EMAIL_BRANDS`, whose every country domain counts: `yahoo.co.uk`, `hotmail.fr`) is
   refused with `organization.domain_public` (422). The list is documented in the contract and
   nowhere else, and **a join never matches a public domain, even for a claim stored before the

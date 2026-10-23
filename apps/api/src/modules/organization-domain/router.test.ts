@@ -319,6 +319,20 @@ describe('claiming a domain', () => {
     expect(deps.mailer.outbox).toHaveLength(0)
   })
 
+  test('one organization spends its own daily allowance, not the environment’s', async () => {
+    const busy = await organization('busy')
+    const other = await organization('other')
+    for (let i = 0; i < Domains.CODES_PER_ORGANIZATION_PER_DAY; i += 1) {
+      await deps.rateLimiter.hit(
+        `organization_domain_day:${TENANT.environmentId}:${busy.id}`,
+        Domains.CODES_PER_ORGANIZATION_PER_DAY,
+        86_400_000
+      )
+    }
+    expect((await claim(busy.id)).status).toBe(429)
+    expect((await claim(other.id, 'other.example')).status).toBe(201)
+  })
+
   test('organizations switched off: every domain route says so and writes nothing', async () => {
     const org = await organization()
     configure({ enabled: false })
@@ -440,11 +454,12 @@ describe('verifying a domain', () => {
     expect(spent.status).toBe(429)
     expect(await codeOf(spent)).toBe('verification.too_many_attempts')
     await claim(org.id)
-    deps.clock.advance('16m')
-    const fresh = await admin('POST', `/${org.id}/domains/${pending.id}/verify`, {
-      code: emailedCode(),
-    })
-    expect([200, 410]).toContain(fresh.status)
+    const fresh = emailedCode()
+    // Past the back-off, inside the new code's ten minutes.
+    deps.clock.advance('5m')
+    expect(
+      (await admin('POST', `/${org.id}/domains/${pending.id}/verify`, { code: fresh })).status
+    ).toBe(200)
   })
 
   test('a new code replaces the old one', async () => {
@@ -716,6 +731,49 @@ describe('joining at sign-up', () => {
       }
       return id
     }
+
+    test('a verified row of a public domain joins nobody and suggests nothing', async () => {
+      const org = await organization()
+      const rowId = Bun.randomUUIDv7()
+      const none = (await import('~/modules/audit/service')).none('fixture')
+      await deps.organizationDomains.claim(
+        {
+          id: rowId,
+          ...TENANT,
+          organizationId: org.id,
+          domain: 'gmail.com',
+          mode: 'auto_join',
+          codeHash: 'h',
+          codeExpiresAt: new Date(deps.clock.now().getTime() + 60_000),
+          at: deps.clock.now(),
+          limit: 10,
+        },
+        none
+      )
+      await deps.organizationDomains.verify(
+        TENANT.environmentId,
+        org.id,
+        rowId,
+        'h',
+        deps.clock.now(),
+        none
+      )
+      const id = await userWith('lee@gmail.com', true)
+      expect(await Domains.joinOnSignUp(deps, TENANT, id, systemActor())).toBe(false)
+      expect((await Domains.suggestions(deps, TENANT, { userId: id })).data).toEqual([])
+      await expect(
+        Domains.joinSuggestion(deps, TENANT, { userId: id }, org.id, systemActor())
+      ).rejects.toMatchObject({ code: 'organization.suggestion_unavailable' })
+      await deps.organizationDomains.setMode(
+        TENANT.environmentId,
+        org.id,
+        rowId,
+        'suggest',
+        deps.clock.now(),
+        none
+      )
+      expect((await Domains.suggestions(deps, TENANT, { userId: id })).data).toEqual([])
+    })
 
     test('an unverified address never counts', async () => {
       const org = await organization()

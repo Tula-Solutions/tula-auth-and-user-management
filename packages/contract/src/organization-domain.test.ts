@@ -87,6 +87,11 @@ describe('domainRefusal', () => {
     'web.de',
     'mail.ru',
     'qq.com',
+    'duck.com',
+    'privaterelay.appleid.com',
+    'simplelogin.com',
+    'mailinator.com',
+    'yopmail.com',
   ])('%s is a public mail domain', (domain) => {
     expect(isPublicEmailDomain(domain)).toBe(true)
     expect(domainRefusal(domain)).toBe('public')
