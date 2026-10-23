@@ -6,7 +6,7 @@ import {
   type Transaction,
   withTenant,
 } from '@tula-tech/db'
-import { and, asc, count, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm'
+import { and, asc, count, eq, gt, inArray, isNotNull, isNull, lt, lte, or, sql } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import { isUniqueViolation } from '~/adapters/postgres/errors'
 import { activityOf, type Recorded } from '~/ports/activity-log'
@@ -334,13 +334,24 @@ export class PostgresOrganizationDomainStore implements OrganizationDomainStore 
     environmentId: string,
     organizationId: string,
     id: string,
-    recorded: Recorded
+    recorded: Recorded,
+    onlyLapsedAt?: Date
   ): Promise<boolean> {
     const activity = activityOf(recorded)
     return withTenant(this.db, environmentId, async (tx: Transaction) => {
       const rows = await tx
         .delete(organizationDomains)
-        .where(owned(environmentId, organizationId, id))
+        .where(
+          and(
+            owned(environmentId, organizationId, id),
+            onlyLapsedAt === undefined
+              ? undefined
+              : or(
+                  isNull(organizationDomains.expiresAt),
+                  lte(organizationDomains.expiresAt, onlyLapsedAt)
+                )
+          )
+        )
         .returning({ id: organizationDomains.id })
       if (rows.length === 0) {
         return false

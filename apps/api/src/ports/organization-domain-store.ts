@@ -212,13 +212,17 @@ export interface OrganizationDomainStore {
    * @param organizationId - The organization.
    * @param id - The domain row.
    * @param activity - Recorded in the same transaction, only if a row was deleted.
-   * @returns `false` when the organization had no such row.
+   * @param onlyLapsedAt - When given, the row is removed only if its verification has lapsed
+   *   at that time (`expiresAt` at or before it, or no date): taking over a lapsed name must not
+   *   delete a row its holder has proved again since the service looked.
+   * @returns `false` when the organization had no such row, or the row was not lapsed.
    */
   remove(
     environmentId: string,
     organizationId: string,
     id: string,
-    activity: Recorded
+    activity: Recorded,
+    onlyLapsedAt?: Date
   ): Promise<boolean>
 
   /**

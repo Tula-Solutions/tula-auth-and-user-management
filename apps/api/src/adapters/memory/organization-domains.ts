@@ -228,10 +228,20 @@ export class MemoryOrganizationDomainStore implements OrganizationDomainStore {
     environmentId: string,
     organizationId: string,
     id: string,
-    recorded: Recorded
+    recorded: Recorded,
+    onlyLapsedAt?: Date
   ): Promise<boolean> {
     const activity = activityOf(recorded)
-    if (!this.#own(environmentId, organizationId, id)) {
+    const row = this.#own(environmentId, organizationId, id)
+    if (!row) {
+      return false
+    }
+    if (
+      onlyLapsedAt !== undefined &&
+      row.verifiedAt !== null &&
+      row.expiresAt !== null &&
+      row.expiresAt.getTime() > onlyLapsedAt.getTime()
+    ) {
       return false
     }
     this.#rows.delete(id)

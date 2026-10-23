@@ -593,6 +593,8 @@ export async function verify(
     }
     // The name's earlier holder lost it: a lapsed verification is not a reason to refuse
     // whoever proves the domain now. Its members stay members.
+    // Only while it is still lapsed: its holder may have proved the domain again since the
+    // read above, and that row is not ours to delete. The unique key then decides (`taken`).
     await deps.organizationDomains.remove(
       scope.environmentId,
       holder.organizationId,
@@ -602,7 +604,8 @@ export async function verify(
         actor,
         target: { type: 'organization_domain', id: holder.id },
         data: { organizationId: holder.organizationId, domain: holder.domain },
-      })
+      }),
+      now
     )
   }
   const verifiedAt = deps.clock.now()

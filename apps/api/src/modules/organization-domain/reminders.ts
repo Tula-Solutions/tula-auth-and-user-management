@@ -180,14 +180,12 @@ async function remindGroup(
       DOMAINS_MANAGE_PERMISSION,
       REMINDER_RECIPIENTS_PER_ORGANIZATION
     )
-    let attempted = 0
     let sent = 0
     for (const userId of managerIds) {
       const user = await deps.users.findById(environmentId, userId)
       if (!user?.email || user.emailVerifiedAt === null || user.bannedAt !== null) {
         continue
       }
-      attempted += 1
       try {
         await Email.send(deps, { environmentId }, user.email, {
           type: 'organization_domain_expiring',
@@ -205,8 +203,9 @@ async function remindGroup(
       }
     }
     report.emails += sent
-    if (attempted > 0 && sent === 0) {
-      // The mailer refused every send: try again at the next run.
+    if (sent === 0) {
+      // Nobody could be told (no manager with a usable address, or the mailer refused every
+      // send): try again at the next run, so a manager added later is told before the date.
       await giveBack()
     }
   } catch (error) {

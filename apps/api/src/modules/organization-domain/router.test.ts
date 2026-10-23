@@ -1579,6 +1579,22 @@ describe('the reminder that a verification is about to lapse', () => {
     expect(reminders()).toHaveLength(1)
   })
 
+  test('an organization with nobody to tell is tried again, and a manager added later is told', async () => {
+    const org = await organization()
+    await verifiedDomain(org.id)
+    deps.clock.advance('336d')
+    expect(await Reminders.remind(deps)).toMatchObject({ emails: 0, retried: 1 })
+    const boss = await signedUp('late-boss@elsewhere.example')
+    await Organizations.addMember(
+      deps,
+      TENANT,
+      org.id,
+      { userId: boss.userId, role: 'admin' },
+      TEST_ACTOR
+    )
+    expect((await Reminders.remind(deps)).emails).toBe(1)
+  })
+
   test('organizations switched off: no reminder is taken or sent', async () => {
     const { org } = await managed()
     await verifiedDomain(org.id)

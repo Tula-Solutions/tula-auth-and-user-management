@@ -265,6 +265,38 @@ export function describeOrganizationDomainStore(
       expect(after?.expiresAt?.toISOString()).toBe(later2.toISOString())
     })
 
+    test('removing a lapsed holder is refused for a row that was verified again meanwhile', async () => {
+      const org = await ctx.organization(ctx.a)
+      const row = await verified(ctx.a, org)
+      const afterLapse = new Date(inAYear.getTime() + 1000)
+      // The holder proves the domain again between the service's look and its removal.
+      const input = claim(ctx.a, org, { at: afterLapse })
+      const again = await ctx.store.claim(
+        input,
+        activity(ctx.a, 'organization_domain.claimed', input.id)
+      )
+      expect(again.outcome).toBe('claimed')
+      await ctx.store.verify(
+        ctx.a.environmentId,
+        org,
+        row.id,
+        'hash-1',
+        afterLapse,
+        new Date(afterLapse.getTime() + 86_400_000),
+        activity(ctx.a, 'organization_domain.verified', row.id)
+      )
+      expect(
+        await ctx.store.remove(
+          ctx.a.environmentId,
+          org,
+          row.id,
+          activity(ctx.a, 'organization_domain.removed', row.id),
+          afterLapse
+        )
+      ).toBe(false)
+      expect(await ctx.store.find(ctx.a.environmentId, org, row.id)).not.toBeNull()
+    })
+
     test('a lapsed verification does not keep the name from another organization, which still cannot verify it until the row is removed', async () => {
       const first = await ctx.organization(ctx.a)
       const second = await ctx.organization(ctx.a)
