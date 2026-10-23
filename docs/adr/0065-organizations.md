@@ -82,10 +82,12 @@ contract, enforced in the schema and in the database.
 **An organization always has someone who can manage its members.** The last member who holds
 `org:sys:memberships:manage` cannot be demoted to a role without it or removed
 (`organization.last_manager`, 409). The check and the write are one transaction that locks
-the organization's row, so two concurrent demotions cannot both succeed. Known gap, deferred:
-deleting a *user* cascades their memberships and can leave an organization with none (the
-deletion bypasses the rule); Orgs 02 decides whether deleting a user must be refused or must
-promote someone.
+the organization's row, so two concurrent demotions cannot both succeed. Known gap, deferred to
+[TULA-124](https://linear.app/tula/issue/TULA-124): deleting a *user* cascades their
+memberships and can leave an organization with none (the deletion bypasses the rule), and a
+user deletion takes no organization lock, so it can also race a guarded demotion of the
+*other* manager (both pass, and nobody is left). TULA-124 decides whether deleting such a
+user must be refused or must promote someone, under the same lock.
 
 ### Settings
 
@@ -197,4 +199,4 @@ native organization screens.
   the existing rows.
 - A removal does not end the session, so a removed member's token carries the old claims for
   up to its life (about a minute). Anything that must be immediate checks the membership.
-- The last-manager rule has the gap described above until Orgs 02.
+- The last-manager rule has the gap described above until TULA-124.

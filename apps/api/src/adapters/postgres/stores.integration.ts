@@ -1,5 +1,12 @@
 import { afterAll, expect, test } from 'bun:test'
-import { environmentSettings, events, flowAttempts, proposals, withTenant } from '@tula-tech/db'
+import {
+  environmentSettings,
+  events,
+  flowAttempts,
+  proposals,
+  users,
+  withTenant,
+} from '@tula-tech/db'
 import { eq, sql } from 'drizzle-orm'
 import { describeActivityLog } from '~/adapters/activity-log.suite'
 import { describeEnvironmentSettingsStore } from '~/adapters/environment-settings-store.suite'
@@ -187,6 +194,11 @@ describeOrganizationStore('Postgres on a real server', async () => {
         .map((entry) => entry.type)
         .reverse(),
     user: async (tenant) => (tenant.environmentId === a.environmentId ? a : b).user(),
+    deleteUser: async (tenant, userId) => {
+      await withTenant(db, tenant.environmentId, (tx) =>
+        tx.delete(users).where(eq(users.id, userId))
+      )
+    },
     a: { projectId: a.projectId, environmentId: a.environmentId },
     b: { projectId: b.projectId, environmentId: b.environmentId },
   }

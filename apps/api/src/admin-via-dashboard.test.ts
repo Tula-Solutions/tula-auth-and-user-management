@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula-tech/contract'
 import { createApp } from '~/index'
 import {
   createInstanceTestDeps,
@@ -33,13 +34,22 @@ async function setup() {
     kind: 'development',
     createdAt: now,
   })
+  // Organizations are off by default and answer `organization.disabled` while they are; the
+  // walk is about credentials, so it switches them on to reach the real handlers.
+  deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+    revision: 1,
+    settings: {
+      ...DEFAULT_ENVIRONMENT_SETTINGS,
+      organizations: { ...DEFAULT_ENVIRONMENT_SETTINGS.organizations, enabled: true },
+    },
+  })
   const key = await seedApiKey(deps, SECRET_KEY)
   const app = createApp(deps)
   const cookie = await dashboardSignIn(app)
   return { deps, app, cookie, key }
 }
 
-async function code(res: { json(): Promise<unknown> }): Promise<string> {
+async function code(res: Response): Promise<string> {
   return ((await res.json()) as { code: string }).code
 }
 
@@ -95,11 +105,7 @@ describe('every admin route takes a dashboard session with an environment', asyn
       // Authorized: whatever the route then says (a 404 for the made-up id, a 422 for the empty
       // body), it is not a refusal of the credential.
       const ok = await app.request(url, init(method, withSession))
-      // An environment with organizations off answers `organization.disabled` (403) from
-      // the service, which the credential has reached.
-      if (!(ok.status === 403 && (await code(ok.clone())) === 'organization.disabled')) {
-        expect([400, 401, 403]).not.toContain(ok.status)
-      }
+      expect([400, 401, 403]).not.toContain(ok.status)
       expect(ok.status).toBeLessThan(500)
 
       // No cookie.
@@ -154,9 +160,7 @@ describe('every admin route takes a dashboard session with an environment', asyn
         url,
         init(method, { authorization: `Bearer ${SECRET_KEY}`, 'content-type': 'application/json' })
       )
-      if (!(byKey.status === 403 && (await code(byKey.clone())) === 'organization.disabled')) {
-        expect([400, 401, 403]).not.toContain(byKey.status)
-      }
+      expect([400, 401, 403]).not.toContain(byKey.status)
     })
   }
 })

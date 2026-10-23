@@ -150,6 +150,7 @@ above or below and the file it is in has none of that name, the section is in th
 | Password history (`modules/password`, see ADR 0038) | `.claude/rules/passwords.md` |
 | Password expiry (`modules/flow`, `modules/password`, see ADR 0041) | `.claude/rules/passwords.md` |
 | Native apps (`modules/native-app`, see ADR 0040) | `.claude/rules/native-apps.md` |
+| Organizations (`modules/organization`, see ADR 0065) | `.claude/rules/organizations.md` |
 | Device binding (`modules/session/device-binding.ts`, `lib/dpop.ts`, see ADR 0043) | `.claude/rules/device-binding.md` |
 | Generated native types (`packages/core/scripts/native`, see ADR 0050) | `.claude/rules/native-types.md` |
 | Swift SDK (`native/swift`, see ADR 0051) | `.claude/rules/swift.md` |
@@ -488,7 +489,7 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   digits. Tests wait for them with `Notices.settled()` and read a code from the newest email
   whose subject leads with one, not from the newest email.
 - Treat every change under
-  `modules/{flow,session,password,jwks,verification,mfa,factor,oauth,passkey,instance,control-plane,webhook,hook,phone,sms,native-app,proposal,sign-in-test}`,
+  `modules/{flow,session,password,jwks,verification,mfa,factor,oauth,passkey,instance,control-plane,webhook,hook,phone,sms,native-app,organization,proposal,sign-in-test}`,
   `modules/email/templates.ts`, `modules/message-preview`, `packages/contract/src/{email-template,sms-template}.ts`,
   `adapters/oauth/`, `adapters/sms/`, `middleware/{cors,recent-auth,instance-admin,secret-key,agent-key,dashboard-session}.ts`,
   `lib/crypto.ts`, `lib/totp.ts`, `lib/webauthn.ts`, `lib/dpop.ts`, `lib/outbound.ts`, `lib/signing-secret.ts`, `lib/dashboard-session.ts` or `lib/dashboard-files.ts` as
@@ -626,6 +627,7 @@ apps/api/src/
                       # counts by destination prefix; the dev-only inbox route),
                       # native-app (an environment's iOS and Android apps, and the two
                       # association files built from them),
+                      # organization (organizations, roles and memberships: the admin routes),
                       # message-preview (what the server would send for a draft wording),
                       # proposal (what an agent asked for, a human's approval of it and
                       # the carrying out; the agent's route and the admin routes),

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula-tech/contract'
 import { Hono } from 'hono'
 import type { AppEnv } from '~/dependencies'
 import { onError } from '~/handlers'
@@ -35,6 +36,15 @@ async function setup() {
     projectId: TEST_TENANT.projectId,
     kind: 'development',
     createdAt: deps.clock.now(),
+  })
+  // Organizations are off by default and answer `organization.disabled` while they are; the
+  // walk is about credentials, so it switches them on to reach the real handlers.
+  deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+    revision: 1,
+    settings: {
+      ...DEFAULT_ENVIRONMENT_SETTINGS,
+      organizations: { ...DEFAULT_ENVIRONMENT_SETTINGS.organizations, enabled: true },
+    },
   })
   const agent = await seedApiKey(deps, AGENT_KEY)
   await seedApiKey(deps, SECRET_KEY)
@@ -147,15 +157,7 @@ describe('an agent key reads what a secret key reads', () => {
       const res = await app.request(concrete(path), init('GET', AGENT_KEY))
       // Authorized: whatever the route then says (a 404 for the made-up id), it is not a
       // refusal of the key.
-      // An environment with organizations off answers `organization.disabled` (403) from the
-      // service, which the key has reached.
-      const body = (await res
-        .clone()
-        .json()
-        .catch(() => ({}))) as { code?: string }
-      if (!(res.status === 403 && body.code === 'organization.disabled')) {
-        expect([400, 401, 403]).not.toContain(res.status)
-      }
+      expect([400, 401, 403]).not.toContain(res.status)
       expect(res.status).toBeLessThan(500)
       // A read records nothing and changes nothing.
       expect(deps.activityLog.entries).toEqual([])

@@ -173,7 +173,7 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     webhookDeliveries: new MemoryWebhookDeliveryStore(activityLog, webhookEndpoints),
     hooks: new MemoryHookStore(activityLog),
     nativeApps: new MemoryNativeAppStore(activityLog),
-    organizations: new MemoryOrganizationStore(activityLog),
+    organizations: new MemoryOrganizationStore(activityLog, users),
     proposals: new MemoryProposalStore(activityLog, apiKeys),
     // The tier of `TEST_CONFIG`, and a resolver that knows only the names a test gives it.
     outbound: new FakeOutbound((overrides.config ?? TEST_CONFIG).tier),

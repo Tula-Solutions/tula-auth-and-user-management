@@ -1,5 +1,6 @@
 import { MEMBERSHIPS_MANAGE_PERMISSION } from '@tula-tech/contract'
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
+import type { MemoryUserRepository } from '~/adapters/memory/users'
 import { activityOf, type Recorded } from '~/ports/activity-log'
 import type {
   AddMembershipOutcome,
@@ -28,13 +29,31 @@ export class MemoryOrganizationStore implements OrganizationStore {
   readonly #roles: Map<string, OrganizationRoleRecord>
   readonly #memberships: Map<string, MembershipRecord>
   readonly #activityLog: MemoryActivityLog
+  readonly #users: MemoryUserRepository | null
 
+  /**
+   * @param activityLog - Where activity is recorded; shared with the other memory stores.
+   * @param users - The users these memberships refer to. Given, a membership for a user it
+   *   does not hold is refused (`gone`, as the foreign key does) and a deleted user's
+   *   memberships go with them (as the cascade does). Left out, any user id is accepted.
+   */
   // Assigned in the constructor for Bun coverage; see MemoryApiKeyRepository.
-  constructor(activityLog: MemoryActivityLog = new MemoryActivityLog()) {
+  constructor(
+    activityLog: MemoryActivityLog = new MemoryActivityLog(),
+    users: MemoryUserRepository | null = null
+  ) {
     this.#organizations = new Map()
     this.#roles = new Map()
     this.#memberships = new Map()
     this.#activityLog = activityLog
+    this.#users = users
+    users?.onDelete((environmentId, userId) => {
+      for (const [key, membership] of this.#memberships) {
+        if (membership.environmentId === environmentId && membership.userId === userId) {
+          this.#memberships.delete(key)
+        }
+      }
+    })
   }
 
   /** The stored organization, when it is this environment's. */
@@ -185,6 +204,9 @@ export class MemoryOrganizationStore implements OrganizationStore {
       this.#own(record.environmentId, record.organizationId) === null ||
       this.#roles.get(record.roleId)?.environmentId !== record.environmentId
     ) {
+      return { outcome: 'gone' }
+    }
+    if (this.#users && (await this.#users.findById(record.environmentId, record.userId)) === null) {
       return { outcome: 'gone' }
     }
     if (this.#membership(record.environmentId, record.organizationId, record.userId)) {

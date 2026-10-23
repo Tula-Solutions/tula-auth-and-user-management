@@ -47,6 +47,11 @@ describeOrganizationStore('Postgres', async () => {
       )
       return id
     },
+    deleteUser: async (tenant, userId) => {
+      await withTenant(testDb.db, tenant.environmentId, (tx) =>
+        tx.delete(users).where(eq(users.id, userId))
+      )
+    },
     a: { projectId: a.projectId, environmentId: a.environmentId },
     b: { projectId: b.projectId, environmentId: b.environmentId },
   }

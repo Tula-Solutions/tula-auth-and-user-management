@@ -22,6 +22,11 @@ export interface OrganizationSuiteContext {
   recorded: () => Promise<string[]>
   /** Make a user in a tenant (a database needs the row a membership refers to); returns its id. */
   user: (tenant: OrganizationSuiteTenant) => Promise<string>
+  /**
+   * Delete a user the way the users repository does; the store must drop their memberships
+   * (the database cascades, the memory store is told by the users repository).
+   */
+  deleteUser: (tenant: OrganizationSuiteTenant, userId: string) => Promise<void>
   a: OrganizationSuiteTenant
   b: OrganizationSuiteTenant
 }
@@ -381,6 +386,46 @@ export function describeOrganizationStore(
         'organization.created',
         'organization_membership.added',
       ])
+    })
+
+    test('adding a membership for an unknown user is gone', async () => {
+      const record = await stored(organization(ctx.a))
+      const { admin } = await builtIns(ctx.a)
+      const stranger: MembershipRecord = {
+        id: Bun.randomUUIDv7(),
+        projectId: ctx.a.projectId,
+        environmentId: ctx.a.environmentId,
+        organizationId: record.id,
+        userId: Bun.randomUUIDv7(),
+        roleId: admin.id,
+        roleKey: admin.key,
+        createdAt: now,
+        updatedAt: now,
+      }
+      expect(
+        await ctx.store.addMembership(
+          stranger,
+          activity(ctx.a, 'organization_membership.added', stranger.id)
+        )
+      ).toEqual({ outcome: 'gone' })
+      expect(await ctx.recorded()).toEqual(['organization.created'])
+    })
+
+    test('deleting a user removes their memberships', async () => {
+      const record = await stored(organization(ctx.a))
+      const { admin, member } = await builtIns(ctx.a)
+      const staying = await join(ctx.a, record, admin)
+      const leaving = await join(ctx.a, record, member)
+      await ctx.deleteUser(ctx.a, leaving.userId)
+      expect(await ctx.store.findMembership(ctx.a.environmentId, record.id, leaving.userId)).toBe(
+        null
+      )
+      expect(
+        await ctx.store.listMemberships(ctx.a.environmentId, record.id, { page: 1, size: 10 })
+      ).toMatchObject({ total: 1 })
+      expect(
+        await ctx.store.findMembership(ctx.a.environmentId, record.id, staying.userId)
+      ).not.toBeNull()
     })
 
     test('a member cannot be added to an organization that is gone', async () => {
