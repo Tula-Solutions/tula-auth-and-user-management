@@ -26,6 +26,8 @@ import dev.tula.auth.generated.PreparedFirstFactorStrategy
 import dev.tula.auth.runTest
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.JsonArray
+import dev.tula.auth.generated.OrganizationDomainMode
+import dev.tula.auth.generated.OrganizationDomainStatus
 import dev.tula.auth.generated.OrganizationSuggestion
 import dev.tula.auth.generated.OrganizationInvitationStatus
 import dev.tula.auth.TulaInvitationLink
@@ -3781,6 +3783,80 @@ class JourneysTest {
                     assertFalse(exchange.responseBody.contains(secret))
                 }
             }
+        }
+
+    @Test
+    @Journey("organization members and roles from the client")
+    fun `organization members - members read the list, only a manager changes it, the only manager cannot leave, and domains are claimed and proved by a manager`() =
+        journey { world ->
+            organizationsOn(world)
+            val orgId = operatorOrganization(world, "Members Org", "members-${world.freshEmail().take(8)}")
+            val manager = signUp(world)
+            val member = signUp(world)
+            val managerId = checkNotNull(signedIn(manager.device).user?.id)
+            val memberId = checkNotNull(signedIn(member.device).user?.id)
+            val memberships = "/v1/admin/organizations/$orgId/memberships"
+            World.expect(201, world.admin("POST", memberships, """{"userId":"$managerId","role":"admin"}"""))
+            World.expect(201, world.admin("POST", memberships, """{"userId":"$memberId","role":"member"}"""))
+            val asManager = manager.tula.organizations
+            val asMember = member.tula.organizations
+
+            // An organization that does not exist is not_a_member, as one that is not theirs.
+            assertEquals("organization.not_a_member", caught { asMember.members.list(managerId) }.code)
+
+            // A member reads the list, with addresses and role keys, and can do nothing else.
+            val page = asMember.members.list(orgId)
+            assertEquals(2, page.meta.totalCount)
+            assertEquals(setOf(managerId, memberId), page.data.map { it.userId }.toSet())
+            assertEquals("admin", page.data.single { it.userId == managerId }.role)
+            assertEquals(member.email, page.data.single { it.userId == memberId }.email)
+            assertEquals(manager.email, page.data.single { it.userId == managerId }.email)
+            assertEquals("organization.permission_required", caught { asMember.roles(orgId) }.code)
+            assertEquals("organization.permission_required", caught { asMember.update(orgId, name = "Mine now") }.code)
+            assertEquals("organization.permission_required", caught { asMember.remove(orgId) }.code)
+            assertEquals(
+                "organization.permission_required",
+                caught { asMember.members.changeRole(orgId, managerId, "member") }.code,
+            )
+            assertEquals("organization.permission_required", caught { asMember.members.remove(orgId, managerId) }.code)
+            assertEquals("auth.forbidden", caught { asMember.domains.list(orgId) }.code, "the domain routes name it this way")
+
+            // A manager sees the roles they may give and renames the organization.
+            assertEquals(listOf("admin", "member"), asManager.roles(orgId).data.map { it.key })
+            val renamed = asManager.update(orgId, name = "Members Org Renamed")
+            assertEquals(orgId, renamed.id)
+            assertEquals("Members Org Renamed", renamed.name)
+            assertEquals("admin", renamed.role)
+            assertEquals("organization.role_unknown", caught { asManager.members.changeRole(orgId, memberId, "nobody") }.code)
+
+            // The only manager can neither leave nor demote themselves.
+            assertEquals("organization.last_manager", caught { asManager.leave(orgId) }.code)
+            assertEquals("organization.last_manager", caught { asManager.members.changeRole(orgId, managerId, "member") }.code)
+
+            // A domain: claimed, proved with the emailed code, changed, removed.
+            val domain = "corp-${orgId.takeLast(8)}.example"
+            val claim = asManager.domains.start(orgId, domain, "ada@$domain", OrganizationDomainMode.Suggest)
+            assertEquals(OrganizationDomainStatus.Pending, claim.status)
+            assertEquals(422, caught { asManager.domains.verify(orgId, claim.id, "000000") }.status)
+            val proved = asManager.domains.verify(orgId, claim.id, world.code("ada@$domain"))
+            assertEquals(OrganizationDomainStatus.Verified, proved.status)
+            assertNotNull(proved.expiresAt)
+            assertEquals(OrganizationDomainMode.AutoJoin, asManager.domains.update(orgId, claim.id, OrganizationDomainMode.AutoJoin).mode)
+            assertEquals(listOf(claim.id), asManager.domains.list(orgId).data.map { it.id })
+            asManager.domains.remove(orgId, claim.id)
+            assertEquals(emptyList(), asManager.domains.list(orgId).data)
+
+            // With a second manager the first may leave, and is a non-member at once.
+            val promoted = asManager.members.changeRole(orgId, memberId, "admin")
+            assertEquals(memberId, promoted.userId)
+            assertEquals("admin", promoted.role)
+            asManager.leave(orgId)
+            assertEquals("organization.not_a_member", caught { asManager.members.list(orgId) }.code)
+            assertEquals(1, asMember.members.list(orgId).meta.totalCount)
+
+            // The remaining administrator deletes it, and nobody is a member of it any more.
+            asMember.remove(orgId)
+            assertEquals("organization.not_a_member", caught { asMember.members.list(orgId) }.code)
         }
 
     @Test

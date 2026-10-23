@@ -347,6 +347,73 @@ public struct TulaOrganizations: Sendable, TulaRedacted {
                 as: UserOrganization.self))
     }
 
+    /// Rename an organization, or change its slug. Needs `org:sys:organization:manage`, which
+    /// the API reads from the user's membership on every call.
+    ///
+    /// - Parameters:
+    ///   - organizationId: The organization.
+    ///   - name: A new name, or `nil` to keep it.
+    ///   - slug: A new slug, or `nil` to keep it.
+    /// - Returns: The organization with the user's role, as it is now.
+    /// - Throws: `TulaError`: `organization.not_a_member`, `organization.permission_required`,
+    ///   `organization.slug_taken`, `organization.disabled`.
+    public func update(organizationId: String, name: String? = nil, slug: String? = nil) async throws
+        -> UserOrganization
+    {
+        try TulaOrganizations.checked(
+            await context.session.authorized(
+                TulaOperations.updateMyOrganization, params: ["organizationId": organizationId],
+                body: UpdateOrganizationRequest(name: name, slug: slug), as: UserOrganization.self))
+    }
+
+    /// Delete an organization for good, with its memberships, invitations and domains. Needs
+    /// `org:sys:organization:delete`. Members' sessions leave it at their next refresh; if it
+    /// was this session's active organization, call `setActive(_:)` for another one.
+    ///
+    /// - Parameter organizationId: The organization.
+    /// - Throws: `TulaError`: `organization.not_a_member`, `organization.permission_required`,
+    ///   `organization.disabled`.
+    public func remove(organizationId: String) async throws {
+        _ = try await context.session.authorized(
+            TulaOperations.deleteMyOrganization, params: ["organizationId": organizationId],
+            as: NoAnswer.self)
+    }
+
+    /// Leave an organization: remove the signed-in user's own membership, which needs no
+    /// permission. The last member who can manage members cannot leave.
+    ///
+    /// - Parameter organizationId: The organization.
+    /// - Throws: `TulaError`: `organization.not_a_member`, `organization.last_manager`,
+    ///   `organization.disabled`.
+    public func leave(organizationId: String) async throws {
+        let userId: String
+        if case .signedIn(_, let known?) = await context.session.state {
+            userId = known.id
+        } else {
+            userId = try await context.session.authorized(TulaOperations.getMe, as: CurrentUser.self).id
+        }
+        try await members.remove(organizationId: organizationId, userId: userId)
+    }
+
+    /// The roles the user may give to an invitation or a member: those whose permissions they
+    /// hold themselves. Needs `org:sys:invitations:manage` or `org:sys:memberships:manage`.
+    ///
+    /// - Parameter organizationId: The organization.
+    /// - Returns: The roles' keys and names.
+    /// - Throws: `TulaError`: `organization.not_a_member`, `organization.permission_required`,
+    ///   `organization.disabled`.
+    public func roles(organizationId: String) async throws -> AssignableRoleList {
+        try await context.session.authorized(
+            TulaOperations.listMyOrganizationRoles, params: ["organizationId": organizationId],
+            as: AssignableRoleList.self)
+    }
+
+    /// An organization's members: reading, changing a role, removing one.
+    public var members: TulaOrganizationMembers { TulaOrganizationMembers(context: context) }
+
+    /// An organization's domains: claiming one with an emailed code and what a verified one does.
+    public var domains: TulaOrganizationDomains { TulaOrganizationDomains(context: context) }
+
     /// An organization the API answered, checked before it is handed on: a 200 that names no
     /// organization is not one.
     static func checked(_ organization: UserOrganization) throws -> UserOrganization {

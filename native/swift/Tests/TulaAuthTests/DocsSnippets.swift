@@ -256,6 +256,35 @@ enum DocsSnippets {
         // #endregion
     }
 
+    static func organizationMembers(tula: TulaClient, organizationId: String) async throws {
+        // #region organization-members
+        // The server decides from the role the user holds now, on every call.
+        let members = try await tula.organizations.members.list(organizationId: organizationId)
+        let roles = try await tula.organizations.roles(organizationId: organizationId)  // the roles the user may give
+        if let member = members.data.first, roles.data.contains(where: { $0.key == "admin" }) {
+            try await tula.organizations.members.changeRole(
+                organizationId: organizationId, userId: member.userId, role: "admin")
+        }
+        try await tula.organizations.update(organizationId: organizationId, name: "Acme Inc")
+        try await tula.organizations.leave(organizationId: organizationId)  // refused for the last manager
+        try await tula.organizations.remove(organizationId: organizationId)  // deletes it for good
+        // #endregion
+    }
+
+    static func organizationDomains(tula: TulaClient, organizationId: String, typed: String) async throws {
+        // #region organization-domains
+        // Claim a domain: a code is emailed to an address on it.
+        let claim = try await tula.organizations.domains.start(
+            organizationId: organizationId, domain: "acme.com", email: "ada@acme.com", mode: .suggest)
+        let proved = try await tula.organizations.domains.verify(
+            organizationId: organizationId, domainId: claim.id, code: typed)
+        // proved.status is .verified until proved.expiresAt; later .needsReverification.
+        _ = try await tula.organizations.domains.update(
+            organizationId: organizationId, domainId: proved.id, mode: .autoJoin)
+        try await tula.organizations.domains.remove(organizationId: organizationId, domainId: proved.id)
+        // #endregion
+    }
+
     static func suggestions(tula: TulaClient) async throws {
         // #region organization-suggestions
         // Organizations whose verified domain is the one of the user's verified address:

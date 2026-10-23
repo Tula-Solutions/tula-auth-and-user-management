@@ -1912,7 +1912,10 @@ Each request runs on a thread of the engine's own pool and is given up (the conn
 closed) when the calling coroutine is cancelled, which is how the client's timeout ends it.
 Redirects are not followed, nothing is cached and no cookie is kept.
 
-`HttpURLConnection` has no `PATCH`; the client's calls do not need one today.
+`HttpURLConnection` has no `PATCH`, so a `PATCH` call fails with `network.failed` on this
+engine: renaming an organization, giving a member another role and changing a domain's mode
+are `PATCH` routes, and an app that calls them passes an [HttpEngine] that can send one
+(over OkHttp, say). Nothing else of the client needs one.
 
 **It was tested on a desktop JVM only.** Android's `HttpURLConnection` is another
 implementation, and the API refuses a sign-in and ends a session with a `401` that has no
@@ -1922,6 +1925,180 @@ its own (over OkHttp, for one).
 
 ```kotlin
 class UrlConnectionEngine : HttpEngine
+```
+
+### `TulaOrganizationMembers`
+
+_class_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/OrganizationManagement.kt`
+
+An organization's members (ADR 0065). Reading needs `org:sys:memberships:read` or
+`:manage`; changing needs `org:sys:memberships:manage`, which the API reads from the
+user's membership on every call.
+
+```kotlin
+val page = client.organizations.members.list(org.id)
+client.organizations.members.changeRole(org.id, page.data[0].userId, "admin")
+```
+
+```kotlin
+class TulaOrganizationMembers internal constructor(private val context: FlowContext)
+```
+
+#### `TulaOrganizationMembers.list`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/OrganizationManagement.kt`
+
+The organization's members, oldest first, with each one's name, address and role key.
+Only the first page.
+
+@param organizationId The organization.
+@return The page.
+@throws TulaError `organization.not_a_member`, `organization.permission_required`,
+  `organization.disabled`.
+
+```kotlin
+suspend fun list(organizationId: String): OrganizationMemberList
+```
+
+#### `TulaOrganizationMembers.changeRole`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/OrganizationManagement.kt`
+
+Give a member another role, one whose permissions the user holds themselves. The
+member's sessions carry it from their next refresh. **A `PATCH` call: the default engine
+cannot send one** (see [UrlConnectionEngine]).
+
+@param organizationId The organization.
+@param userId The member.
+@param role The key of the new role.
+@return The member, as they are now.
+@throws TulaError `organization.permission_required`, `organization.role_unknown`,
+  `organization.role_not_assignable`, `organization.last_manager`.
+
+```kotlin
+suspend fun changeRole(organizationId: String, userId: String, role: String): OrganizationMember
+```
+
+#### `TulaOrganizationMembers.remove`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/OrganizationManagement.kt`
+
+Remove a member. The user keeps their account; to remove yourself use
+[TulaOrganizations.leave].
+
+@param organizationId The organization.
+@param userId The member.
+@throws TulaError `organization.permission_required`, `organization.last_manager`.
+
+```kotlin
+suspend fun remove(organizationId: String, userId: String)
+```
+
+### `TulaOrganizationDomains`
+
+_class_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/OrganizationManagement.kt`
+
+An organization's domains (ADR 0065, "Verified domains"): the organization claims one by a
+code emailed to an address on it, and a verified one suggests or joins the people who sign
+up with a verified address on it. Needs `org:sys:domains:manage`, which the API reads from
+the user's membership on every call.
+
+```kotlin
+val claim = client.organizations.domains.start(org.id, "acme.com", "ada@acme.com", OrganizationDomainMode.Suggest)
+client.organizations.domains.verify(org.id, claim.id, "123456")
+```
+
+```kotlin
+class TulaOrganizationDomains internal constructor(private val context: FlowContext)
+```
+
+#### `TulaOrganizationDomains.list`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/OrganizationManagement.kt`
+
+The organization's domains, oldest first: claims waiting for a code and verified ones.
+Each row's `status` is pending, verified or needs-reverification; `expiresAt` is when a
+verified claim must be proved again.
+
+@param organizationId The organization.
+@return The domains.
+@throws TulaError `organization.not_a_member`, `auth.forbidden`, `organization.disabled`.
+
+```kotlin
+suspend fun list(organizationId: String): OrganizationDomainList
+```
+
+#### `TulaOrganizationDomains.start`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/OrganizationManagement.kt`
+
+Claim a domain: email a code to an address on it. Sent again for a pending claim it
+emails a new code.
+
+@param organizationId The organization.
+@param domain The domain, such as `acme.com`.
+@param email An address on it, which receives the code.
+@param mode What a verified domain does: [OrganizationDomainMode.Suggest] or
+  [OrganizationDomainMode.AutoJoin].
+@return The claim, pending until [verify].
+@throws TulaError `organization.domain_public`, `organization.domain_taken`,
+  `organization.domain_address_mismatch`, `organization.domain_limit`, `rate_limited`.
+
+```kotlin
+suspend fun start(
+    organizationId: String,
+    domain: String,
+    email: String,
+    mode: OrganizationDomainMode,
+): OrganizationDomain
+```
+
+#### `TulaOrganizationDomains.verify`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/OrganizationManagement.kt`
+
+Prove the claim with the code that was emailed.
+
+@param organizationId The organization.
+@param domainId The claim.
+@param code The emailed code.
+@return The verified domain.
+@throws TulaError `verification.invalid_code` and its siblings, `organization.domain_taken`.
+
+```kotlin
+suspend fun verify(organizationId: String, domainId: String, code: String): OrganizationDomain
+```
+
+#### `TulaOrganizationDomains.update`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/OrganizationManagement.kt`
+
+Change what a domain does. **A `PATCH` call: the default engine cannot send one** (see
+[UrlConnectionEngine]).
+
+@param organizationId The organization.
+@param domainId The domain.
+@param mode [OrganizationDomainMode.Suggest] or [OrganizationDomainMode.AutoJoin].
+@return The domain.
+@throws TulaError `auth.forbidden`, `organization.not_a_member`.
+
+```kotlin
+suspend fun update(organizationId: String, domainId: String, mode: OrganizationDomainMode): OrganizationDomain
+```
+
+#### `TulaOrganizationDomains.remove`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/OrganizationManagement.kt`
+
+Remove a domain. Later sign-ups are neither offered nor joined to the organization;
+members stay.
+
+@param organizationId The organization.
+@param domainId The domain.
+@throws TulaError `auth.forbidden`, `organization.not_a_member`.
+
+```kotlin
+suspend fun remove(organizationId: String, domainId: String)
 ```
 
 ### `TulaOrganizationClaims`
@@ -2278,6 +2455,92 @@ again, so an organization that is no longer offered is refused whatever the list
 
 ```kotlin
 suspend fun join(organizationId: String): UserOrganization
+```
+
+#### `TulaOrganizations.update`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+Rename an organization, or change its slug. Needs `org:sys:organization:manage`, which
+the API reads from the user's membership on every call. **A `PATCH` call: the default
+engine cannot send one** (see [UrlConnectionEngine]).
+
+@param organizationId The organization.
+@param name A new name, or `null` to keep it.
+@param slug A new slug, or `null` to keep it.
+@return The organization with the user's role, as it is now.
+@throws TulaError `organization.not_a_member`, `organization.permission_required`,
+  `organization.slug_taken`, `organization.disabled`.
+
+```kotlin
+suspend fun update(organizationId: String, name: String? = null, slug: String? = null): UserOrganization
+```
+
+#### `TulaOrganizations.remove`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+Delete an organization for good, with its memberships, invitations and domains. Needs
+`org:sys:organization:delete`. Members' sessions leave it at their next refresh; if it
+was this session's active organization, call [setActive] for another one.
+
+@param organizationId The organization.
+@throws TulaError `organization.not_a_member`, `organization.permission_required`,
+  `organization.disabled`.
+
+```kotlin
+suspend fun remove(organizationId: String)
+```
+
+#### `TulaOrganizations.leave`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+Leave an organization: remove the signed-in user's own membership, which needs no
+permission. The last member who can manage members cannot leave.
+
+@param organizationId The organization.
+@throws TulaError `organization.not_a_member`, `organization.last_manager`,
+  `organization.disabled`.
+
+```kotlin
+suspend fun leave(organizationId: String)
+```
+
+#### `TulaOrganizations.roles`
+
+_fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+The roles the user may give to an invitation or a member: those whose permissions they
+hold themselves. Needs `org:sys:invitations:manage` or `org:sys:memberships:manage`.
+
+@param organizationId The organization.
+@return The roles' keys and names.
+@throws TulaError `organization.not_a_member`, `organization.permission_required`,
+  `organization.disabled`.
+
+```kotlin
+suspend fun roles(organizationId: String): AssignableRoleList
+```
+
+#### `TulaOrganizations.members`
+
+_val_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+An organization's members: reading, changing a role, removing one.
+
+```kotlin
+val members: TulaOrganizationMembers get()
+```
+
+#### `TulaOrganizations.domains`
+
+_val_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
+
+An organization's domains: claiming one with an emailed code and what a verified one does.
+
+```kotlin
+val domains: TulaOrganizationDomains get()
 ```
 
 ### `TulaOrganizationInvitations`

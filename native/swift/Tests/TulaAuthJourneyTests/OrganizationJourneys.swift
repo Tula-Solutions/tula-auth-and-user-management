@@ -351,6 +351,112 @@ final class OrganizationJourneys: JourneyTestCase {
         }
     }
 
+    // Scenario 123 from the client's side: two users, a manager and a member, each with their
+    // own session; the server decides from the role held now, on every call.
+    func testOrganizationMembersAndRolesFromTheClient() async throws {
+        try await journey(
+            "organization members and roles from the client",
+            "organizations: members read the list; only a manager renames, deletes, changes a role or removes someone; the only manager cannot leave or demote themselves; a manager who left is a non-member at once; domains are claimed, verified, changed and removed by a manager"
+        ) { s in
+            try await self.configure(s)
+            let orgId = try await self.organization(s, "Members Org", "members-\(s.freshEmail().prefix(8))")
+            let (manager, managerEmail) = try await s.signUp()
+            let (member, memberEmail) = try await s.signUp()
+            let managerId = try unwrap(await manager.user()).id
+            let memberId = try unwrap(await member.user()).id
+            let memberships = "/v1/admin/organizations/\(orgId)/memberships"
+            let madeManager = try await s.admin("POST", memberships, ["userId": managerId, "role": "admin"])
+            XCTAssertEqual(madeManager.status, 201)
+            let madeMember = try await s.admin("POST", memberships, ["userId": memberId, "role": "member"])
+            XCTAssertEqual(madeMember.status, 201)
+            let asManager = manager.tula.organizations
+            let asMember = member.tula.organizations
+
+            // An organization that does not exist is not_a_member, as one that is not theirs.
+            let missing = try await caught { try await asMember.members.list(organizationId: managerId) }
+            XCTAssertEqual(missing.code, "organization.not_a_member")
+
+            // A member reads the list, with addresses and role keys, and can do nothing else.
+            let page = try await asMember.members.list(organizationId: orgId)
+            XCTAssertEqual(page.meta.totalCount, 2)
+            XCTAssertEqual(Set(page.data.map(\.userId)), [managerId, memberId])
+            XCTAssertEqual(page.data.first { $0.userId == managerId }?.role, "admin")
+            XCTAssertEqual(page.data.first { $0.userId == memberId }?.email, memberEmail)
+            XCTAssertEqual(page.data.first { $0.userId == managerId }?.email, managerEmail)
+            let noRoles = try await caught { try await asMember.roles(organizationId: orgId) }
+            XCTAssertEqual(noRoles.code, "organization.permission_required")
+            let noRename = try await caught { try await asMember.update(organizationId: orgId, name: "Mine now") }
+            XCTAssertEqual(noRename.code, "organization.permission_required")
+            let noDelete = try await caught { try await asMember.remove(organizationId: orgId) }
+            XCTAssertEqual(noDelete.code, "organization.permission_required")
+            let noChange = try await caught {
+                try await asMember.members.changeRole(organizationId: orgId, userId: managerId, role: "member")
+            }
+            XCTAssertEqual(noChange.code, "organization.permission_required")
+            let noRemove = try await caught { try await asMember.members.remove(organizationId: orgId, userId: managerId) }
+            XCTAssertEqual(noRemove.code, "organization.permission_required")
+            let noDomains = try await caught { try await asMember.domains.list(organizationId: orgId) }
+            XCTAssertEqual(noDomains.code, "auth.forbidden", "the domain routes name a missing permission this way")
+
+            // A manager sees the roles they may give and renames the organization.
+            let roles = try await asManager.roles(organizationId: orgId)
+            XCTAssertEqual(roles.data.map(\.key), ["admin", "member"])
+            let renamed = try await asManager.update(organizationId: orgId, name: "Members Org Renamed")
+            XCTAssertEqual(renamed.id, orgId)
+            XCTAssertEqual(renamed.name, "Members Org Renamed")
+            XCTAssertEqual(renamed.role, "admin")
+            let unknown = try await caught {
+                try await asManager.members.changeRole(organizationId: orgId, userId: memberId, role: "nobody")
+            }
+            XCTAssertEqual(unknown.code, "organization.role_unknown")
+
+            // The only manager can neither leave nor demote themselves.
+            let stuck = try await caught { try await asManager.leave(organizationId: orgId) }
+            XCTAssertEqual(stuck.code, "organization.last_manager")
+            let demote = try await caught {
+                try await asManager.members.changeRole(organizationId: orgId, userId: managerId, role: "member")
+            }
+            XCTAssertEqual(demote.code, "organization.last_manager")
+
+            // A domain: claimed, proved with the emailed code, changed, removed.
+            let domain = "corp-\(orgId.suffix(8)).example"
+            let claim = try await asManager.domains.start(
+                organizationId: orgId, domain: domain, email: "ada@\(domain)", mode: .suggest)
+            XCTAssertEqual(claim.status, .pending)
+            let wrong = try await caught {
+                try await asManager.domains.verify(organizationId: orgId, domainId: claim.id, code: "000000")
+            }
+            XCTAssertEqual(wrong.status, 422)
+            let proved = try await asManager.domains.verify(
+                organizationId: orgId, domainId: claim.id, code: try await s.code("ada@\(domain)"))
+            XCTAssertEqual(proved.status, .verified)
+            XCTAssertNotNil(proved.expiresAt)
+            let changedMode = try await asManager.domains.update(
+                organizationId: orgId, domainId: claim.id, mode: .autoJoin)
+            XCTAssertEqual(changedMode.mode, .autoJoin)
+            let domains = try await asManager.domains.list(organizationId: orgId)
+            XCTAssertEqual(domains.data.map(\.id), [claim.id])
+            try await asManager.domains.remove(organizationId: orgId, domainId: claim.id)
+            let none = try await asManager.domains.list(organizationId: orgId)
+            XCTAssertEqual(none.data, [])
+
+            // With a second manager the first may leave, and is a non-member at once.
+            let promoted = try await asManager.members.changeRole(organizationId: orgId, userId: memberId, role: "admin")
+            XCTAssertEqual(promoted.userId, memberId)
+            XCTAssertEqual(promoted.role, "admin")
+            try await asManager.leave(organizationId: orgId)
+            let gone = try await caught { try await asManager.members.list(organizationId: orgId) }
+            XCTAssertEqual(gone.code, "organization.not_a_member")
+            let remaining = try await asMember.members.list(organizationId: orgId)
+            XCTAssertEqual(remaining.meta.totalCount, 1)
+
+            // The remaining administrator deletes it, and nobody is a member of it any more.
+            try await asMember.remove(organizationId: orgId)
+            let deleted = try await caught { try await asMember.members.list(organizationId: orgId) }
+            XCTAssertEqual(deleted.code, "organization.not_a_member")
+        }
+    }
+
     func testVerifiedDomainsSuggestAndAutoJoin() async throws {
         try await journey(
             "verified domains: suggest and auto-join",

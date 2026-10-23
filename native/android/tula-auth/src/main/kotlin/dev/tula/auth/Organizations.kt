@@ -2,6 +2,7 @@ package dev.tula.auth
 
 import dev.tula.auth.generated.AcceptedInvitation
 import dev.tula.auth.generated.ActiveOrganization
+import dev.tula.auth.generated.AssignableRoleList
 import dev.tula.auth.generated.CreateOrganizationInvitationRequest
 import dev.tula.auth.generated.CreateOrganizationRequest
 import dev.tula.auth.generated.InvitationPreview
@@ -11,6 +12,7 @@ import dev.tula.auth.generated.OrganizationInvitationList
 import dev.tula.auth.generated.OrganizationSuggestionList
 import dev.tula.auth.generated.TulaJson
 import dev.tula.auth.generated.TulaOperations
+import dev.tula.auth.generated.UpdateOrganizationRequest
 import dev.tula.auth.generated.UserOrganization
 import dev.tula.auth.generated.UserOrganizationList
 import kotlinx.serialization.SerializationException
@@ -388,6 +390,84 @@ class TulaOrganizations internal constructor(private val context: FlowContext) {
             ),
         ),
     )
+
+    /**
+     * Rename an organization, or change its slug. Needs `org:sys:organization:manage`, which
+     * the API reads from the user's membership on every call. **A `PATCH` call: the default
+     * engine cannot send one** (see [UrlConnectionEngine]).
+     *
+     * @param organizationId The organization.
+     * @param name A new name, or `null` to keep it.
+     * @param slug A new slug, or `null` to keep it.
+     * @return The organization with the user's role, as it is now.
+     * @throws TulaError `organization.not_a_member`, `organization.permission_required`,
+     *   `organization.slug_taken`, `organization.disabled`.
+     */
+    suspend fun update(organizationId: String, name: String? = null, slug: String? = null): UserOrganization = checked(
+        context.transport.decode(
+            UserOrganization.serializer(),
+            context.session.authorized(
+                TulaOperations.updateMyOrganization,
+                CallInput(
+                    params = mapOf("organizationId" to organizationId),
+                    body = encode(UpdateOrganizationRequest.serializer(), UpdateOrganizationRequest(name, slug)),
+                ),
+            ),
+        ),
+    )
+
+    /**
+     * Delete an organization for good, with its memberships, invitations and domains. Needs
+     * `org:sys:organization:delete`. Members' sessions leave it at their next refresh; if it
+     * was this session's active organization, call [setActive] for another one.
+     *
+     * @param organizationId The organization.
+     * @throws TulaError `organization.not_a_member`, `organization.permission_required`,
+     *   `organization.disabled`.
+     */
+    suspend fun remove(organizationId: String) {
+        context.session.authorized(
+            TulaOperations.deleteMyOrganization,
+            CallInput(params = mapOf("organizationId" to organizationId)),
+        )
+    }
+
+    /**
+     * Leave an organization: remove the signed-in user's own membership, which needs no
+     * permission. The last member who can manage members cannot leave.
+     *
+     * @param organizationId The organization.
+     * @throws TulaError `organization.not_a_member`, `organization.last_manager`,
+     *   `organization.disabled`.
+     */
+    suspend fun leave(organizationId: String) {
+        val known = (context.session.state.value as? AuthState.SignedIn)?.user
+        val userId = (known ?: context.session.fetchUser()).id
+        members.remove(organizationId, userId)
+    }
+
+    /**
+     * The roles the user may give to an invitation or a member: those whose permissions they
+     * hold themselves. Needs `org:sys:invitations:manage` or `org:sys:memberships:manage`.
+     *
+     * @param organizationId The organization.
+     * @return The roles' keys and names.
+     * @throws TulaError `organization.not_a_member`, `organization.permission_required`,
+     *   `organization.disabled`.
+     */
+    suspend fun roles(organizationId: String): AssignableRoleList = context.transport.decode(
+        AssignableRoleList.serializer(),
+        context.session.authorized(
+            TulaOperations.listMyOrganizationRoles,
+            CallInput(params = mapOf("organizationId" to organizationId)),
+        ),
+    )
+
+    /** An organization's members: reading, changing a role, removing one. */
+    val members: TulaOrganizationMembers get() = TulaOrganizationMembers(context)
+
+    /** An organization's domains: claiming one with an emailed code and what a verified one does. */
+    val domains: TulaOrganizationDomains get() = TulaOrganizationDomains(context)
 
     /** An organization the API answered, checked before it is handed on: a 200 that names none is not one. */
     private fun checked(organization: UserOrganization): UserOrganization {

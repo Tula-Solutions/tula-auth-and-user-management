@@ -38,7 +38,7 @@ does not want to draw its own ([Screens](#screens), below). The reasoning is in
 | An expired password | The new password, as the last step of the sign-in. |
 | Session | Kept in the Android Keystore's care, refreshed when needed, ended by sign-out; bound to a device key where the app passes a key store. |
 | The signed-in user | Step-up, the authenticator app and backup codes, a texted code as the second step, passkeys (list, add, remove), a phone number (add, prove, remove), connected provider accounts, a password change, the session list, ending one session or all the others. |
-| Organizations | The user's organizations, creating one, the active organization and its claims, an invitation (preview, accept, decline), the organizations a verified address is offered. |
+| Organizations | The user's organizations, creating, renaming, leaving or deleting one, the active organization and its claims, its members and roles, its domains, an invitation (preview, accept, decline), the organizations a verified address is offered. |
 
 Not yet: an emailed link (the code in the same email is the way) and renaming a passkey
 (both TULA-76: the rename is a `PATCH`, which the default HTTP engine cannot send). A step
@@ -521,11 +521,56 @@ offered.data.firstOrNull()?.let { first ->
 ```
 <!-- /snippet -->
 
-Members, roles and invitations are managed by administrators (the dashboard, or
-`@tula-tech/admin` on your server). `tula.organizations.invitations` also has `list`,
-`invite` and `revoke` for a signed-in member whose role may do it; the server decides.
-The three journeys of these calls ran against the real API from a JVM; nothing here was
-run on a device.
+A member manages an organization with the role they hold: the server decides, from the
+membership it reads on every call, and answers `organization.permission_required` (or
+`auth.forbidden` for the domain routes) for what the role may not do. A role you changed is
+carried by the member's sessions from their next refresh.
+
+<!-- snippet: native/android/tula-auth/src/test/kotlin/dev/tula/auth/DocsSnippets.kt#organization-members -->
+```kotlin
+// The server decides from the role the user holds now, on every call.
+val members = tula.organizations.members.list(organizationId)
+val roles = tula.organizations.roles(organizationId) // the roles the user may give
+val first = members.data.firstOrNull()
+if (first != null && roles.data.any { it.key == "admin" }) {
+    tula.organizations.members.changeRole(organizationId, first.userId, "admin")
+}
+tula.organizations.update(organizationId, name = "Acme Inc")
+tula.organizations.leave(organizationId) // refused for the last manager
+tula.organizations.remove(organizationId) // deletes it for good
+```
+<!-- /snippet -->
+
+**Renaming an organization, giving a member another role and changing a domain's mode are
+`PATCH` calls, and the default engine cannot send one**: `HttpURLConnection` has no `PATCH`,
+so they fail with `network.failed` until the client is given an `HttpEngine` that can (over
+OkHttp, say; see "Requests"). The journeys run them with such an engine.
+
+`members.list` is the first page only. `leave` is refused with `organization.last_manager`
+for the one member who can manage members, and the same code refuses demoting or removing
+that member. Deleting an organization removes its memberships, invitations and domains; a
+session that had it active keeps working and reads the personal account (or the next
+organization you choose) from its next refresh.
+
+An administrator claims a domain by a code emailed to an address on it; a verified domain
+suggests the organization to people whose verified address is on it, or joins them
+(`mode`). A row's `status` is pending, verified or needs-reverification; a verified claim
+must be proved again after `expiresAt`:
+
+<!-- snippet: native/android/tula-auth/src/test/kotlin/dev/tula/auth/DocsSnippets.kt#organization-domains -->
+```kotlin
+// Claim a domain: a code is emailed to an address on it.
+val claim = tula.organizations.domains.start(organizationId, "acme.com", "ada@acme.com", OrganizationDomainMode.Suggest)
+val proved = tula.organizations.domains.verify(organizationId, claim.id, typed)
+// proved.status is Verified until proved.expiresAt; later NeedsReverification.
+tula.organizations.domains.update(organizationId, proved.id, OrganizationDomainMode.AutoJoin)
+tula.organizations.domains.remove(organizationId, proved.id)
+```
+<!-- /snippet -->
+
+`tula.organizations.invitations` also has `list`, `invite` and `revoke` for a signed-in
+member whose role may do it; the server decides. The journeys of these calls ran against
+the real API from a JVM; nothing here was run on a device.
 
 ## Requests
 
@@ -540,7 +585,9 @@ session the server ended is never seen as ended.
 An app that would rather not depend on that passes an engine of its own:
 `TulaClient(…, http = …)` takes an `HttpEngine`, which is one `suspend` function from a
 request to an answer. Over OkHttp it follows no redirect, keeps no cookie, and hands back
-every status with its body, a `401` included.
+every status with its body, a `401` included. `HttpURLConnection` also has no `PATCH`: an
+engine of your own is how the calls that rename an organization, change a member's role or
+change a domain's mode (the three `PATCH` routes) are sent.
 
 ## Screens
 
