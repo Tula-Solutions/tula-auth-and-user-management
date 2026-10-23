@@ -2592,6 +2592,29 @@ One field-level problem inside a `validation.failed` (or password) error.
 const FieldErrorSchema
 ```
 
+### `FirebaseScryptParams`
+
+_type_, defined in `packages/contract/src/user.ts`
+
+A Firebase project's password hash parameters.
+
+```ts
+export type FirebaseScryptParams = z.infer<typeof FirebaseScryptParamsSchema>
+```
+
+### `FirebaseScryptParamsSchema`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+A Firebase project's password hash parameters, from `firebase auth:export` or the console's
+"password hash parameters" (ADR 0066). Given once per call and used by every row whose
+algorithm is `firebase_scrypt`. All four are secrets of the source project: the signer key
+above all. They are sealed where stored, and never returned, logged or recorded.
+
+```ts
+const FirebaseScryptParamsSchema
+```
+
 ### `FirstFactorAttemptRequest`
 
 _type_, defined in `packages/contract/src/flow.ts`
@@ -3625,10 +3648,15 @@ A password hash made by another system, in a tagged form.
 `algorithm` names the format and decides how `hash` is read and checked. It is a plain
 string on the wire so that a name this server does not know is refused for that row
 (`import.unsupported_algorithm`) and not for the whole call, and so that a later algorithm
-(`firebase_scrypt`, `pbkdf2_sha256`) is an addition, not a break. Today: `bcrypt`
+is an addition, not a break. Today: `bcrypt`
 (`$2a$`, `$2b$`, `$2y$`; cost 10 to 14), `argon2id` and `argon2i` (PHC strings; at least
-19 MiB and 2 passes). `params` is for algorithms whose hash does not carry its own
-parameters; those three do, so it is ignored for them.
+19 MiB and 2 passes), `pbkdf2_sha256` (Django's `pbkdf2_sha256$iterations$salt$hash`, a PHC
+or passlib `$pbkdf2-sha256$…` string, or a base64 derived key with `params`
+`{ iterations, salt }`, the salt base64; 100,000 to 2,000,000 iterations) and
+`firebase_scrypt` (Firebase's `passwordHash`, base64, with `params` `{ salt }`, the user's
+`salt` from the export, base64; the project's own parameters come once in the request's
+`firebaseScrypt`). `params` is for algorithms whose hash does not carry its own parameters;
+bcrypt and argon2 do, so it is ignored for them.
 
 The hash is never returned by any route.
 
@@ -3711,6 +3739,8 @@ _constant_, defined in `packages/contract/src/user.ts`
 
 A call of `POST /v1/admin/users/import`: up to {@link MAX_IMPORT_ROWS} users. A row that is
 wrong is refused alone; a request that is not this shape at all is refused whole.
+`firebaseScrypt` carries the Firebase project's parameters for the rows that use them; a
+`firebase_scrypt` row of a call without it is refused alone.
 
 ```ts
 const ImportUsersRequestSchema

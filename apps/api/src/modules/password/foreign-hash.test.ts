@@ -32,7 +32,11 @@ describe('parse: what is accepted', () => {
     ['argon2id', argon('argon2id', 'm=19456,t=2,p=1')],
     ['argon2id', argon('argon2id', 'm=262144,t=10,p=8')],
   ])('%s: %s', (algorithm, hash) => {
-    expect(Foreign.parse(algorithm, hash)).toEqual({ ok: true, algorithm } as Foreign.ParsedHash)
+    expect(Foreign.parse(algorithm, hash)).toEqual({
+      ok: true,
+      algorithm,
+      stored: hash,
+    } as Foreign.ParsedHash)
   })
 })
 
