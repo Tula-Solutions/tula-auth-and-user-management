@@ -541,11 +541,6 @@ tula.organizations.remove(organizationId) // deletes it for good
 ```
 <!-- /snippet -->
 
-**Renaming an organization, giving a member another role and changing a domain's mode are
-`PATCH` calls, and the default engine cannot send one**: `HttpURLConnection` has no `PATCH`,
-so they fail with `network.failed` until the client is given an `HttpEngine` that can (over
-OkHttp, say; see "Requests"). The journeys run them with such an engine.
-
 `members.list` is the first page only. `leave` is refused with `organization.last_manager`
 for the one member who can manage members, and the same code refuses demoting or removing
 that member. Deleting an organization removes its memberships, invitations and domains; a
@@ -585,9 +580,7 @@ session the server ended is never seen as ended.
 An app that would rather not depend on that passes an engine of its own:
 `TulaClient(…, http = …)` takes an `HttpEngine`, which is one `suspend` function from a
 request to an answer. Over OkHttp it follows no redirect, keeps no cookie, and hands back
-every status with its body, a `401` included. `HttpURLConnection` also has no `PATCH`: an
-engine of your own is how the calls that rename an organization, change a member's role or
-change a domain's mode (the three `PATCH` routes) are sent.
+every status with its body, a `401` included.
 
 ## Screens
 

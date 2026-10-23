@@ -1912,10 +1912,9 @@ Each request runs on a thread of the engine's own pool and is given up (the conn
 closed) when the calling coroutine is cancelled, which is how the client's timeout ends it.
 Redirects are not followed, nothing is cached and no cookie is kept.
 
-`HttpURLConnection` has no `PATCH`, so a `PATCH` call fails with `network.failed` on this
-engine: renaming an organization, giving a member another role and changing a domain's mode
-are `PATCH` routes, and an app that calls them passes an [HttpEngine] that can send one
-(over OkHttp, say). Nothing else of the client needs one.
+A desktop JVM's `HttpURLConnection` has no `PATCH`, so a `PATCH` request (renaming an
+organization, giving a member another role, changing a domain's mode) goes through the JDK's
+`java.net.http` client there; on Android it goes through `HttpURLConnection`, which accepts it.
 
 **It was tested on a desktop JVM only.** Android's `HttpURLConnection` is another
 implementation, and the API refuses a sign-in and ends a session with a `401` that has no
@@ -1965,9 +1964,7 @@ suspend fun list(organizationId: String): OrganizationMemberList
 _fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/OrganizationManagement.kt`
 
 Give a member another role, one whose permissions the user holds themselves. The
-member's sessions carry it from their next refresh. **A `PATCH` call: the default engine
-cannot send one** (see [UrlConnectionEngine]).
-
+member's sessions carry it from their next refresh.     *
 @param organizationId The organization.
 @param userId The member.
 @param role The key of the new role.
@@ -2073,9 +2070,7 @@ suspend fun verify(organizationId: String, domainId: String, code: String): Orga
 
 _fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/OrganizationManagement.kt`
 
-Change what a domain does. **A `PATCH` call: the default engine cannot send one** (see
-[UrlConnectionEngine]).
-
+Change what a domain does.     *
 @param organizationId The organization.
 @param domainId The domain.
 @param mode [OrganizationDomainMode.Suggest] or [OrganizationDomainMode.AutoJoin].
@@ -2462,9 +2457,7 @@ suspend fun join(organizationId: String): UserOrganization
 _fun_, defined in `native/android/tula-auth/src/main/kotlin/dev/tula/auth/Organizations.kt`
 
 Rename an organization, or change its slug. Needs `org:sys:organization:manage`, which
-the API reads from the user's membership on every call. **A `PATCH` call: the default
-engine cannot send one** (see [UrlConnectionEngine]).
-
+the API reads from the user's membership on every call.     *
 @param organizationId The organization.
 @param name A new name, or `null` to keep it.
 @param slug A new slug, or `null` to keep it.

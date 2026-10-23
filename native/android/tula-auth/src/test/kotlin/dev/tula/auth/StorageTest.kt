@@ -419,6 +419,38 @@ class StorageTest {
     }
 
     @Test
+    fun `the default engine sends a PATCH with its body and reads the answer, a 403 included`() {
+        // HttpURLConnection on a desktop JVM refuses PATCH; renaming an organization, a
+        // member's role and a domain's mode are PATCH routes (TULA-130).
+        var seen = ""
+        serve({ exchange ->
+            seen = listOf(
+                exchange.requestMethod,
+                exchange.requestURI.path,
+                exchange.requestHeaders.getFirst("authorization"),
+                exchange.requestBody.readBytes().toString(Charsets.UTF_8),
+            ).joinToString(" | ")
+            if (exchange.requestURI.path == "/refused") {
+                exchange.reply(403, """{"code":"organization.permission_required"}""", mapOf("Retry-After" to "3"))
+            } else {
+                exchange.reply(200, """{"ok":true}""")
+            }
+        }) { base ->
+            val engine = UrlConnectionEngine()
+            val headers = mapOf("authorization" to "Bearer t", "content-type" to "application/json")
+            val response = engine.send(HttpRequest("PATCH", "$base/org", headers, """{"name":"Zoë"}""", 5_000))
+            assertEquals("""PATCH | /org | Bearer t | {"name":"Zoë"}""", seen)
+            assertEquals(200, response.status)
+            assertEquals("""{"ok":true}""", response.body)
+
+            val refused = engine.send(HttpRequest("PATCH", "$base/refused", headers, "{}", 5_000))
+            assertEquals(403, refused.status)
+            assertEquals("""{"code":"organization.permission_required"}""", refused.body)
+            assertEquals("3", refused.headers["retry-after"])
+        }
+    }
+
+    @Test
     fun `the default engine hands back an error answer, an empty one and a redirect as they are`() {
         serve({ exchange ->
             when (exchange.requestURI.path) {

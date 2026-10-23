@@ -393,9 +393,7 @@ class TulaOrganizations internal constructor(private val context: FlowContext) {
 
     /**
      * Rename an organization, or change its slug. Needs `org:sys:organization:manage`, which
-     * the API reads from the user's membership on every call. **A `PATCH` call: the default
-     * engine cannot send one** (see [UrlConnectionEngine]).
-     *
+     * the API reads from the user's membership on every call.     *
      * @param organizationId The organization.
      * @param name A new name, or `null` to keep it.
      * @param slug A new slug, or `null` to keep it.
