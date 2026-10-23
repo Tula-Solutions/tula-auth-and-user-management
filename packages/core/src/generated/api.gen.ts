@@ -3,6 +3,14 @@
 
 /** Schemas of the client API (`/v1/client/*`), by their name in the OpenAPI document. */
 export interface Schemas {
+  AcceptedInvitation: {
+    id: string
+    name: string
+    slug: string
+    role: string
+    permissions: string[]
+    createdAt: string
+  }
   ActiveOrganization: {
     sessionId: string
     organizationId: string | null
@@ -36,6 +44,11 @@ export interface Schemas {
     phone?: {
       enabled: boolean
     }
+  }
+  CreateOrganizationInvitationRequest: {
+    email: string
+    role: Schemas['OrganizationRoleKey']
+    redirectUrl: string
   }
   CreateOrganizationRequest: {
     name: string
@@ -73,7 +86,7 @@ export interface Schemas {
     status: 'verified'
   }
   EmailVerificationStrategy: 'email_code' | 'email_link'
-  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'email.already_set' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.reused' | 'password.not_set' | 'import.unsupported_algorithm' | 'import.hash_malformed' | 'import.hash_parameters_too_weak' | 'import.hash_parameters_too_costly' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.enrolment_needs_other_sign_in' | 'mfa.needs_other_sign_in' | 'mfa.sms_not_allowed' | 'mfa.phone_number_required' | 'mfa.required_by_policy' | 'oauth.access_denied' | 'oauth.provider_error' | 'oauth.state_invalid' | 'oauth.ticket_invalid' | 'oauth.different_browser' | 'oauth.email_missing' | 'oauth.email_unverified' | 'oauth.account_exists' | 'oauth.identity_in_use' | 'oauth.already_linked' | 'identity.last_sign_in_method' | 'webhook.url_not_allowed' | 'webhook.cannot_redeliver' | 'webhook.rotation_refused' | 'hook.denied' | 'hook.unavailable' | 'hook.url_not_allowed' | 'passkey.registration_failed' | 'passkey.already_registered' | 'passkey.limit_reached' | 'passkey.last_sign_in_method' | 'phone.invalid' | 'sms.disabled' | 'sms.country_not_allowed' | 'sms.unavailable' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'session.limit_reached' | 'device.proof_invalid' | 'device.nonce_required' | 'device.binding_not_supported' | 'device.binding_required' | 'user.last_organization_manager' | 'organization.disabled' | 'organization.slug_taken' | 'organization.member_exists' | 'organization.last_manager' | 'organization.role_unknown' | 'organization.not_a_member' | 'organization.creation_disabled' | 'organization.limit_reached' | 'organization.personal_account_disabled' | 'organization.role_exists' | 'organization.role_in_use' | 'organization.role_built_in' | 'organization.role_limit' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
+  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'email.already_set' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.reused' | 'password.not_set' | 'import.unsupported_algorithm' | 'import.hash_malformed' | 'import.hash_parameters_too_weak' | 'import.hash_parameters_too_costly' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.enrolment_needs_other_sign_in' | 'mfa.needs_other_sign_in' | 'mfa.sms_not_allowed' | 'mfa.phone_number_required' | 'mfa.required_by_policy' | 'oauth.access_denied' | 'oauth.provider_error' | 'oauth.state_invalid' | 'oauth.ticket_invalid' | 'oauth.different_browser' | 'oauth.email_missing' | 'oauth.email_unverified' | 'oauth.account_exists' | 'oauth.identity_in_use' | 'oauth.already_linked' | 'identity.last_sign_in_method' | 'webhook.url_not_allowed' | 'webhook.cannot_redeliver' | 'webhook.rotation_refused' | 'hook.denied' | 'hook.unavailable' | 'hook.url_not_allowed' | 'passkey.registration_failed' | 'passkey.already_registered' | 'passkey.limit_reached' | 'passkey.last_sign_in_method' | 'phone.invalid' | 'sms.disabled' | 'sms.country_not_allowed' | 'sms.unavailable' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'session.limit_reached' | 'device.proof_invalid' | 'device.nonce_required' | 'device.binding_not_supported' | 'device.binding_required' | 'user.last_organization_manager' | 'organization.disabled' | 'organization.slug_taken' | 'organization.member_exists' | 'organization.last_manager' | 'organization.role_unknown' | 'organization.not_a_member' | 'organization.creation_disabled' | 'organization.limit_reached' | 'organization.personal_account_disabled' | 'organization.role_exists' | 'organization.role_in_use' | 'organization.role_built_in' | 'organization.role_limit' | 'organization.permission_required' | 'organization.role_not_assignable' | 'organization.invitation_exists' | 'organization.invitation_not_found' | 'organization.invitation_expired' | 'organization.invitation_revoked' | 'organization.invitation_used' | 'organization.invitation_wrong_account' | 'organization.invitation_email_unverified' | 'organization.invitation_role_gone' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
   ErrorEnvelope: {
     status: number
     code: Schemas['ErrorCode']
@@ -194,6 +207,15 @@ export interface Schemas {
   IdentityList: {
     data: Schemas['Identity'][]
   }
+  InvitationPreview: {
+    organizationName: string
+    role: string
+    email: string
+    expiresAt: string
+  }
+  InvitationTokenRequest: {
+    token: string
+  }
   MfaPolicy: 'off' | 'optional' | 'required'
   NewPasswordReason: 'expired'
   NewPasswordRequest: {
@@ -214,6 +236,21 @@ export interface Schemas {
     provider: Schemas['OAuthProvider']
     redirectUrl: string
   }
+  OrganizationInvitation: {
+    id: string
+    organizationId: string
+    email: string
+    role: string
+    status: 'pending' | 'accepted' | 'declined' | 'revoked' | 'expired'
+    invitedBy: string | null
+    expiresAt: string
+    createdAt: string
+  }
+  OrganizationInvitationList: {
+    meta: Schemas['PaginationMeta']
+    data: Schemas['OrganizationInvitation'][]
+  }
+  OrganizationRoleKey: string
   OrganizationSlug: string
   PaginationMeta: {
     totalCount: number
@@ -465,6 +502,8 @@ export interface Schemas {
 
 /** Path parameters, JSON body and success response of every client operation. */
 export interface Operations {
+  /** Accept an invitation (`POST /v1/client/me/organization-invitations/accept`). */
+  acceptOrganizationInvitation: { params: Record<string, never>; body: Schemas['InvitationTokenRequest']; response: Schemas['AcceptedInvitation'] }
   /** Prove an emailed or texted first factor (`POST /v1/client/sign-ins/{attemptId}/first-factor/attempt`). */
   attemptSignInFirstFactor: { params: { attemptId: string }; body: Schemas['FirstFactorAttemptRequest']; response: Schemas['FlowAttempt'] }
   /** Change my password (`POST /v1/client/me/password`). */
@@ -481,6 +520,8 @@ export interface Operations {
   confirmTotpEnrolment: { params: Record<string, never>; body: Schemas['TotpConfirmRequest']; response: Schemas['BackupCodes'] }
   /** Create an organization (`POST /v1/client/me/organizations`). */
   createMyOrganization: { params: Record<string, never>; body: Schemas['CreateOrganizationRequest']; response: Schemas['UserOrganization'] }
+  /** Decline an invitation (`POST /v1/client/me/organization-invitations/decline`). */
+  declineOrganizationInvitation: { params: Record<string, never>; body: Schemas['InvitationTokenRequest']; response: undefined }
   /** Disconnect a provider account (`DELETE /v1/client/me/identities/{identityId}`). */
   deleteMyIdentity: { params: { identityId: string }; body: undefined; response: undefined }
   /** Stop using a texted code as my second factor (`DELETE /v1/client/me/factors/sms`). */
@@ -507,8 +548,12 @@ export interface Operations {
   getSignInSecondFactorPasskeyOptions: { params: { attemptId: string }; body: undefined; response: Schemas['PasskeyRequestOptions'] }
   /** Get the options to step up with a passkey (`POST /v1/client/sessions/step-up/passkey`). */
   getStepUpPasskeyOptions: { params: Record<string, never>; body: undefined; response: Schemas['PasskeyRequestOptions'] }
+  /** Invite an address to an organization (`POST /v1/client/me/organizations/{organizationId}/invitations`). */
+  inviteToMyOrganization: { params: { organizationId: string }; body: Schemas['CreateOrganizationInvitationRequest']; response: Schemas['OrganizationInvitation'] }
   /** List my connected accounts (`GET /v1/client/me/identities`). */
   listMyIdentities: { params: Record<string, never>; body: undefined; response: Schemas['IdentityList'] }
+  /** List an organization’s invitations (`GET /v1/client/me/organizations/{organizationId}/invitations`). */
+  listMyOrganizationInvitations: { params: { organizationId: string }; body: undefined; response: Schemas['OrganizationInvitationList'] }
   /** List my organizations (`GET /v1/client/me/organizations`). */
   listMyOrganizations: { params: Record<string, never>; body: undefined; response: Schemas['UserOrganizationList'] }
   /** List my passkeys (`GET /v1/client/me/passkeys`). */
@@ -521,6 +566,8 @@ export interface Operations {
   prepareSignInFirstFactor: { params: { attemptId: string }; body: Schemas['FirstFactorPrepareRequest']; response: Schemas['FlowAttempt'] }
   /** Ask for a texted second-factor code (`POST /v1/client/sign-ins/{attemptId}/second-factor/prepare`). */
   prepareSignInSecondFactor: { params: { attemptId: string }; body: Schemas['SecondFactorPrepareRequest']; response: Schemas['FlowAttempt'] }
+  /** Preview an invitation (`POST /v1/client/organization-invitations/preview`). */
+  previewOrganizationInvitation: { params: Record<string, never>; body: Schemas['InvitationTokenRequest']; response: Schemas['InvitationPreview'] }
   /** Refresh a session (`POST /v1/client/sessions/refresh`). */
   refreshSession: { params: Record<string, never>; body: Schemas['RefreshTokenRequest']; response: Schemas['SessionTokens'] }
   /** Make new backup codes (`POST /v1/client/me/factors/backup-codes`). */
@@ -541,6 +588,8 @@ export interface Operations {
   resendSignInCode: { params: { attemptId: string }; body: undefined; response: Schemas['FlowAttempt'] }
   /** Resend the email code (`POST /v1/client/sign-ups/{attemptId}/resend-code`). */
   resendSignUpCode: { params: { attemptId: string }; body: undefined; response: Schemas['FlowAttempt'] }
+  /** Revoke an invitation (`DELETE /v1/client/me/organizations/{organizationId}/invitations/{invitationId}`). */
+  revokeMyOrganizationInvitation: { params: { organizationId: string; invitationId: string }; body: undefined; response: undefined }
   /** Sign out my other devices (`POST /v1/client/sessions/revoke-others`). */
   revokeOtherSessions: { params: Record<string, never>; body: undefined; response: Schemas['RevokedSessions'] }
   /** Sign out one of my devices (`DELETE /v1/client/sessions/{sessionId}`). */
@@ -619,6 +668,7 @@ export interface OperationRoute {
 
 /** Method, path and authentication of every client operation, by operation id. */
 export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } = {
+  acceptOrganizationInvitation: { method: 'POST', path: '/v1/client/me/organization-invitations/accept', session: true },
   attemptSignInFirstFactor: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/first-factor/attempt', session: false },
   changeMyPassword: { method: 'POST', path: '/v1/client/me/password', session: true },
   confirmPasswordResetTotpEnrolment: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/factor-enrolment/totp/confirm', session: false },
@@ -627,6 +677,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   confirmSmsFactorEnrolment: { method: 'POST', path: '/v1/client/me/factors/sms/confirm', session: true },
   confirmTotpEnrolment: { method: 'POST', path: '/v1/client/me/factors/totp/confirm', session: true },
   createMyOrganization: { method: 'POST', path: '/v1/client/me/organizations', session: true },
+  declineOrganizationInvitation: { method: 'POST', path: '/v1/client/me/organization-invitations/decline', session: true },
   deleteMyIdentity: { method: 'DELETE', path: '/v1/client/me/identities/{identityId}', session: true },
   disableSmsFactor: { method: 'DELETE', path: '/v1/client/me/factors/sms', session: true },
   disableTotp: { method: 'DELETE', path: '/v1/client/me/factors/totp', session: true },
@@ -640,13 +691,16 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   getPasswordResetSecondFactorPasskeyOptions: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/second-factor/passkey/options', session: false },
   getSignInSecondFactorPasskeyOptions: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/second-factor/passkey/options', session: false },
   getStepUpPasskeyOptions: { method: 'POST', path: '/v1/client/sessions/step-up/passkey', session: true },
+  inviteToMyOrganization: { method: 'POST', path: '/v1/client/me/organizations/{organizationId}/invitations', session: true },
   listMyIdentities: { method: 'GET', path: '/v1/client/me/identities', session: true },
+  listMyOrganizationInvitations: { method: 'GET', path: '/v1/client/me/organizations/{organizationId}/invitations', session: true },
   listMyOrganizations: { method: 'GET', path: '/v1/client/me/organizations', session: true },
   listMyPasskeys: { method: 'GET', path: '/v1/client/me/passkeys', session: true },
   listSessions: { method: 'GET', path: '/v1/client/sessions', session: true },
   preparePasswordResetSecondFactor: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/second-factor/prepare', session: false },
   prepareSignInFirstFactor: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/first-factor/prepare', session: false },
   prepareSignInSecondFactor: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/second-factor/prepare', session: false },
+  previewOrganizationInvitation: { method: 'POST', path: '/v1/client/organization-invitations/preview', session: false },
   refreshSession: { method: 'POST', path: '/v1/client/sessions/refresh', session: false },
   regenerateBackupCodes: { method: 'POST', path: '/v1/client/me/factors/backup-codes', session: true },
   removePasskey: { method: 'DELETE', path: '/v1/client/me/passkeys/{passkeyId}', session: true },
@@ -657,6 +711,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   resendPasswordResetCode: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/resend-code', session: false },
   resendSignInCode: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/resend-code', session: false },
   resendSignUpCode: { method: 'POST', path: '/v1/client/sign-ups/{attemptId}/resend-code', session: false },
+  revokeMyOrganizationInvitation: { method: 'DELETE', path: '/v1/client/me/organizations/{organizationId}/invitations/{invitationId}', session: true },
   revokeOtherSessions: { method: 'POST', path: '/v1/client/sessions/revoke-others', session: true },
   revokeSession: { method: 'DELETE', path: '/v1/client/sessions/{sessionId}', session: true },
   sendStepUpEmailCode: { method: 'POST', path: '/v1/client/sessions/step-up/email-code', session: true },

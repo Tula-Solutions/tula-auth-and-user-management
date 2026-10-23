@@ -45,6 +45,7 @@ describe('conformance scenarios, in process', () => {
       'admin organization roles',
       'environment settings',
       'my organizations and the active organization',
+      'organization invitations',
       'attempt binding',
       'email code sign-in',
       'email link sign-in',

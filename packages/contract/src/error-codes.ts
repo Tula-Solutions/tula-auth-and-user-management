@@ -436,6 +436,57 @@ export const ERROR_DEFINITIONS = {
     status: 409,
     message: 'This environment has the most custom roles it can have.',
   },
+  // Invitations to an organization (ADR 0065, Orgs 04). `permission_required`: the signed-in
+  // user is a member but their role lacks the permission the route needs (`params.permission`).
+  // `role_not_assignable`: an inviter may only invite to a role whose permissions they hold
+  // all of themselves. `invitation_exists`: the address has a pending invitation to this
+  // organization already. `invitation_not_found`: no invitation has this token (or id).
+  // `invitation_expired`, `invitation_revoked` and `invitation_used` (already accepted or
+  // declined): the invitation can no longer be accepted; ask for a new one.
+  // `invitation_wrong_account`: it was sent to another address than the signed-in account's.
+  // `invitation_email_unverified`: the account's address is the invited one but is not
+  // verified, and an unproven address joins nothing. `invitation_role_gone`: the role it names
+  // was deleted after it was sent; it is refused and not given another role.
+  'organization.permission_required': {
+    status: 403,
+    message: 'Your role does not allow that.',
+  },
+  'organization.role_not_assignable': {
+    status: 403,
+    message: 'You can only invite to a role no stronger than yours.',
+  },
+  'organization.invitation_exists': {
+    status: 409,
+    message: 'That address already has a pending invitation.',
+  },
+  'organization.invitation_not_found': {
+    status: 404,
+    message: 'This invitation does not exist.',
+  },
+  'organization.invitation_expired': {
+    status: 410,
+    message: 'This invitation has expired.',
+  },
+  'organization.invitation_revoked': {
+    status: 410,
+    message: 'This invitation was withdrawn.',
+  },
+  'organization.invitation_used': {
+    status: 410,
+    message: 'This invitation was already used.',
+  },
+  'organization.invitation_wrong_account': {
+    status: 403,
+    message: 'This invitation was sent to another email address.',
+  },
+  'organization.invitation_email_unverified': {
+    status: 403,
+    message: 'Verify your email address to accept this invitation.',
+  },
+  'organization.invitation_role_gone': {
+    status: 409,
+    message: 'The role this invitation offers no longer exists.',
+  },
 
   rate_limited: { status: 429, message: 'Too many requests. Try again shortly.' },
   'request.malformed': { status: 400, message: 'The request could not be read.' },

@@ -63,6 +63,7 @@ export type {
   SignInFlow,
   SignUpFlow,
 } from './flows'
+export { type InvitationLink, readInvitationLink } from './invitation'
 export type { Identity, OAuthCallbackOutcome, OAuthProvider } from './oauth'
 export { isRetryableOAuthError } from './oauth'
 export type {
@@ -81,12 +82,14 @@ export {
 export { memoryStorage, type TokenStorage } from './storage'
 export type { DeviceKeySource } from './transport'
 export type {
+  AcceptedInvitation,
   ActiveOrganization,
   AuthState,
   BackupCodes,
   ClientConfig,
   ClientKind,
   CreateOrganizationInput,
+  CreateOrganizationInvitationInput,
   EmailCodeSent,
   FactorEnrolmentMethod,
   Factors,
@@ -94,7 +97,10 @@ export type {
   FirstFactorStrategy,
   FlowKind,
   FlowStep,
+  InvitationPreview,
   MfaPolicy,
+  OrganizationInvitation,
+  OrganizationInvitationList,
   Passkey,
   PasswordPolicy,
   PhoneCodeSent,

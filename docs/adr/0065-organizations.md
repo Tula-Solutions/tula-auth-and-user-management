@@ -210,6 +210,60 @@ signed-in session **whose verified email equals the invited address** (a link fo
 someone else joins nothing). Invitations are limited per organization per hour and per
 environment per day; the retention job purges the expired ones.
 
+#### As built in Orgs 04 (TULA-115)
+
+- **Routes.** Admin, behind `secretKey()` (an agent key reads, nothing else):
+  `GET|POST /v1/admin/organizations/:id/invitations` and
+  `DELETE …/invitations/:invitationId`. Signed-in members, under `/v1/client`: the same three
+  at `/me/organizations/:organizationId/invitations`, `POST /me/organization-invitations/accept`
+  and `…/decline`, and the one route with no session, `POST /organization-invitations/preview`
+  (the token in the body, the answer the organization's name, the role key, the invited address
+  and the expiry, so that a sign-up can be prefilled). A token is always sent in a body, never
+  in a path or a query.
+- **The link** is `<redirectUrl>#tula_invitation=<token>` (`ORGANIZATION_INVITATION_TOKEN_PARAM`).
+  The fragment is never sent to a server, so the token reaches neither a proxy's log nor a
+  `Referer`. `redirectUrl` must be one of the environment's allowed redirect URLs, matched
+  exactly, and a custom scheme is refused (the link is opened from an email in a browser).
+- **States.** `pending`, `accepted`, `declined`, `revoked`, and `expired`, which is not stored:
+  a pending invitation past its expiry (7 days, `INVITATION_EXPIRY_DAYS`). One pending
+  invitation per organization and normalized address (a partial unique index); inviting
+  an address whose pending invitation has lapsed replaces it in the same transaction.
+- **Who may invite.** A signed-in member needs `org:sys:invitations:manage`, read from a fresh
+  membership on every call (`organization.not_a_member`, `organization.permission_required`).
+  They may offer only a role whose permissions are a subset of their own
+  (`organization.role_not_assignable`), so that an inviter cannot grant what they lack. The
+  admin API has no such limit.
+- **Who may answer.** Accepting and declining need a session whose email, normalized, equals the
+  invited address (`organization.invitation_wrong_account`) **and is verified**
+  (`organization.invitation_email_unverified`). Token states answer
+  `organization.invitation_not_found` (404) and, for a token that can no longer be used,
+  `organization.invitation_expired`, `…_revoked` and `…_used` (410). Accepting uses the
+  invitation and creates the membership in one transaction, with the audit entries; a user who
+  is a member already answers `organization.member_exists` and the invitation stays pending.
+- **A role deleted after the invitation was sent.** The invitation stores the role's key, not a
+  foreign key, so deleting a role is never blocked by a pending invitation. On accepting, a key
+  that no longer exists answers `organization.invitation_role_gone` (409) and the invitation
+  stays pending: it is **never** given the default role instead, because that would grant
+  access the inviter did not choose. The inviter withdraws it and invites again.
+- **Limits.** Per IP: 60 reads and 20 writes a minute per route. Per organization: 50
+  invitations an hour (`INVITATIONS_PER_ORGANIZATION_PER_HOUR`); per environment: 1000 a day
+  (`INVITATIONS_PER_ENVIRONMENT_PER_DAY`), counted for the admin API as well. The keys hold ids
+  only.
+- **The email** is sent through `Email.send` from `modules/organization/mailer.ts`. If the send
+  fails the invitation is revoked (best effort) and the error is raised; nothing is logged with
+  the link. An operator's template for it has the placeholders `link` (required), `appName` and
+  `expiresInDays`; there is none for the organization or the address.
+- **Events and audit.** `organization_invitation.created`, `.accepted`, `.declined` and
+  `.revoked`, target `organization_invitation` (the invitation's id). Their data holds the
+  organization id and the role key (and the user's id for accepted and declined), never the
+  address. Accepting also writes the membership's `organization_membership.added`.
+- **Retention.** The retention job deletes an invitation 7 days after its expiry whatever
+  became of it (`EXPIRED_INVITATION_RETENTION`), in batches through
+  `deleteExpiredInvitations`. The row holds an address; the audit log keeps the ids.
+- **SDKs.** `@tula-tech/core` gets `client.organizations.invitations` (invite, list, revoke,
+  accept, decline, preview). The Swift and Kotlin clients are `not_built` in
+  `conformance/client-journeys.json` until TULA-121.
+
 ### Verified domains
 
 *(Orgs 05.)* A domain is verified by **an emailed code sent to an address at the domain**,

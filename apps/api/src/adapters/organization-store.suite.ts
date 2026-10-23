@@ -3,6 +3,7 @@ import { BUILT_IN_ROLES } from '@tula-tech/contract'
 import * as Audit from '~/modules/audit/service'
 import type { Activity } from '~/ports/activity-log'
 import type {
+  InvitationRecord,
   MembershipRecord,
   OrganizationRecord,
   OrganizationRoleRecord,
@@ -110,6 +111,10 @@ export function describeOrganizationStore(
     | 'organization_role.created'
     | 'organization_role.updated'
     | 'organization_role.deleted'
+    | 'organization_invitation.created'
+    | 'organization_invitation.accepted'
+    | 'organization_invitation.declined'
+    | 'organization_invitation.revoked'
 
   /** An activity of the given type, about the given id, with data that passes the contract. */
   function activity(tenant: OrganizationSuiteTenant, type: Type, id: string): Activity {
@@ -170,7 +175,69 @@ export function describeOrganizationStore(
           target: roleTarget,
           data: { role: 'billing' },
         })
+      case 'organization_invitation.created':
+      case 'organization_invitation.revoked':
+        return Audit.entry(deps, scope, {
+          type,
+          actor,
+          target: { type: 'organization_invitation', id },
+          data: { organizationId: id, role: 'member' },
+        })
+      case 'organization_invitation.accepted':
+      case 'organization_invitation.declined':
+        return Audit.entry(deps, scope, {
+          type,
+          actor,
+          target: { type: 'organization_invitation', id },
+          data: { organizationId: id, role: 'member', userId: user },
+        })
     }
+  }
+
+  const inAWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
+
+  /** An invitation of a tenant's organization, not stored yet. */
+  function invitation(
+    tenant: OrganizationSuiteTenant,
+    org: OrganizationRecord,
+    overrides: Partial<InvitationRecord> = {}
+  ): InvitationRecord {
+    return {
+      id: Bun.randomUUIDv7(),
+      projectId: tenant.projectId,
+      environmentId: tenant.environmentId,
+      organizationId: org.id,
+      email: 'Ada@Example.com',
+      emailNormalized: 'ada@example.com',
+      roleKey: 'member',
+      tokenHash: Bun.randomUUIDv7().replaceAll('-', ''),
+      status: 'pending',
+      invitedBy: null,
+      expiresAt: inAWeek,
+      resolvedAt: null,
+      resolvedBy: null,
+      createdAt: now,
+      updatedAt: now,
+      ...overrides,
+    }
+  }
+
+  /** Store an invitation, failing the test if it was not stored. */
+  async function invited(
+    tenant: OrganizationSuiteTenant,
+    org: OrganizationRecord,
+    overrides: Partial<InvitationRecord> = {}
+  ): Promise<InvitationRecord> {
+    const record = invitation(tenant, org, overrides)
+    const result = await ctx.store.insertInvitation(
+      record,
+      now,
+      activity(tenant, 'organization_invitation.created', org.id)
+    )
+    if (result.outcome !== 'created') {
+      throw new Error(`the invitation was not stored: ${result.outcome}`)
+    }
+    return result.record
   }
 
   /** A custom role of a tenant, not stored yet. */
@@ -1479,6 +1546,533 @@ export function describeOrganizationStore(
       expect(
         await ctx.store.findUserMembership(ctx.b.environmentId, record.id, joined.userId)
       ).toBeNull()
+    })
+
+    describe('invitations', () => {
+      async function setup2() {
+        const roleSet = await builtIns(ctx.a)
+        const org = await stored(organization(ctx.a))
+        return { ...roleSet, org }
+      }
+
+      test('stores an invitation, finds it by id and by token hash, and records it', async () => {
+        const { org } = await setup2()
+        const record = await invited(ctx.a, org)
+        expect(record).toEqual(
+          invitation(ctx.a, org, { id: record.id, tokenHash: record.tokenHash })
+        )
+        expect(await ctx.store.findInvitation(ctx.a.environmentId, org.id, record.id)).toEqual(
+          record
+        )
+        expect(
+          await ctx.store.findInvitationByTokenHash(ctx.a.environmentId, record.tokenHash)
+        ).toEqual(record)
+        expect(await ctx.recorded()).toContain('organization_invitation.created')
+      })
+
+      test('an invitation is found in its own environment and its own organization only', async () => {
+        const { org } = await setup2()
+        const other = await stored(organization(ctx.a, { slug: 'other' }))
+        const record = await invited(ctx.a, org)
+        expect(await ctx.store.findInvitation(ctx.a.environmentId, other.id, record.id)).toBeNull()
+        expect(await ctx.store.findInvitation(ctx.b.environmentId, org.id, record.id)).toBeNull()
+        expect(
+          await ctx.store.findInvitationByTokenHash(ctx.b.environmentId, record.tokenHash)
+        ).toBeNull()
+        expect(await ctx.store.findInvitationByTokenHash(ctx.a.environmentId, 'nope')).toBeNull()
+      })
+
+      test('a second pending invitation to the same address is not stored and not recorded', async () => {
+        const { org } = await setup2()
+        await invited(ctx.a, org)
+        const before = (await ctx.recorded()).length
+        const second = invitation(ctx.a, org, { email: ' ADA@example.com ' })
+        expect(
+          await ctx.store.insertInvitation(
+            second,
+            now,
+            activity(ctx.a, 'organization_invitation.created', org.id)
+          )
+        ).toEqual({ outcome: 'exists' })
+        expect(
+          await ctx.store.findInvitationByTokenHash(ctx.a.environmentId, second.tokenHash)
+        ).toBeNull()
+        expect((await ctx.recorded()).length).toBe(before)
+      })
+
+      test('the same address may be invited to another organization and by another environment', async () => {
+        const { org } = await setup2()
+        const other = await stored(organization(ctx.a, { slug: 'other' }))
+        await invited(ctx.a, org)
+        await invited(ctx.a, other)
+        const foreign = await stored(organization(ctx.b))
+        await invited(ctx.b, foreign)
+      })
+
+      test('a pending invitation that has expired is replaced by a new one, in one step', async () => {
+        const { org } = await setup2()
+        const lapsed = await invited(ctx.a, org, { expiresAt: new Date(now.getTime() + 1000) })
+        const later_ = new Date(now.getTime() + 2000)
+        const fresh = invitation(ctx.a, org, { expiresAt: inAWeek })
+        expect(
+          await ctx.store.insertInvitation(
+            fresh,
+            later_,
+            activity(ctx.a, 'organization_invitation.created', org.id)
+          )
+        ).toEqual({ outcome: 'created', record: fresh })
+        expect(await ctx.store.findInvitation(ctx.a.environmentId, org.id, lapsed.id)).toBeNull()
+      })
+
+      test('an address whose earlier invitation was answered may be invited again', async () => {
+        const { org } = await setup2()
+        const first = await invited(ctx.a, org)
+        await ctx.store.revokeInvitation(
+          ctx.a.environmentId,
+          org.id,
+          first.id,
+          now,
+          activity(ctx.a, 'organization_invitation.revoked', org.id)
+        )
+        await invited(ctx.a, org)
+      })
+
+      test('an invitation to an organization that does not exist is gone', async () => {
+        await setup2()
+        const ghost = organization(ctx.a, { slug: 'ghost' })
+        expect(
+          await ctx.store.insertInvitation(
+            invitation(ctx.a, ghost),
+            now,
+            activity(ctx.a, 'organization_invitation.created', ghost.id)
+          )
+        ).toEqual({ outcome: 'gone' })
+      })
+
+      test('lists pending, expired and answered invitations apart, newest first, a page at a time', async () => {
+        const { org } = await setup2()
+        const first = await invited(ctx.a, org, {
+          email: 'a@example.com',
+          emailNormalized: 'a@example.com',
+          createdAt: now,
+        })
+        const second = await invited(ctx.a, org, {
+          email: 'b@example.com',
+          emailNormalized: 'b@example.com',
+          createdAt: later,
+        })
+        const lapsed = await invited(ctx.a, org, {
+          email: 'c@example.com',
+          emailNormalized: 'c@example.com',
+          expiresAt: new Date(now.getTime() + 1000),
+        })
+        const revoked = await invited(ctx.a, org, {
+          email: 'd@example.com',
+          emailNormalized: 'd@example.com',
+        })
+        await ctx.store.revokeInvitation(
+          ctx.a.environmentId,
+          org.id,
+          revoked.id,
+          now,
+          activity(ctx.a, 'organization_invitation.revoked', org.id)
+        )
+        const at = new Date(now.getTime() + 5000)
+        const ids = async (status: 'pending' | 'expired' | 'revoked' | 'accepted') =>
+          (
+            await ctx.store.listInvitations(ctx.a.environmentId, org.id, status, at, {
+              page: 1,
+              size: 10,
+            })
+          ).records.map((row) => row.id)
+        expect(await ids('pending')).toEqual([second.id, first.id])
+        expect(await ids('expired')).toEqual([lapsed.id])
+        expect(await ids('revoked')).toEqual([revoked.id])
+        expect(await ids('accepted')).toEqual([])
+        const paged = await ctx.store.listInvitations(ctx.a.environmentId, org.id, 'pending', at, {
+          page: 2,
+          size: 1,
+        })
+        expect(paged.total).toBe(2)
+        expect(paged.records.map((row) => row.id)).toEqual([first.id])
+        // Nothing of another environment or organization is listed.
+        expect(
+          await ctx.store.listInvitations(ctx.b.environmentId, org.id, 'pending', at, {
+            page: 1,
+            size: 10,
+          })
+        ).toEqual({ records: [], total: 0 })
+      })
+
+      test('a revoked invitation is used up: it cannot be revoked, declined or accepted again', async () => {
+        const { org, member } = await setup2()
+        const record = await invited(ctx.a, org)
+        const userId = await ctx.user(ctx.a)
+        const done = await ctx.store.revokeInvitation(
+          ctx.a.environmentId,
+          org.id,
+          record.id,
+          later,
+          activity(ctx.a, 'organization_invitation.revoked', org.id)
+        )
+        expect(done).toEqual({
+          outcome: 'done',
+          record: { ...record, status: 'revoked', resolvedAt: later, updatedAt: later },
+        })
+        const before = (await ctx.recorded()).length
+        const gone = {
+          outcome: 'unavailable' as const,
+          record: (done as { record: InvitationRecord }).record,
+        }
+        expect(
+          await ctx.store.revokeInvitation(
+            ctx.a.environmentId,
+            org.id,
+            record.id,
+            later,
+            activity(ctx.a, 'organization_invitation.revoked', org.id)
+          )
+        ).toEqual(gone)
+        expect(
+          await ctx.store.declineInvitation(
+            ctx.a.environmentId,
+            record.id,
+            userId,
+            later,
+            activity(ctx.a, 'organization_invitation.declined', org.id)
+          )
+        ).toEqual(gone)
+        const membership: MembershipRecord = {
+          id: Bun.randomUUIDv7(),
+          projectId: ctx.a.projectId,
+          environmentId: ctx.a.environmentId,
+          organizationId: org.id,
+          userId,
+          roleId: member.id,
+          roleKey: member.key,
+          createdAt: later,
+          updatedAt: later,
+        }
+        expect(
+          await ctx.store.acceptInvitation(ctx.a.environmentId, record.id, membership, later, {
+            invitation: activity(ctx.a, 'organization_invitation.accepted', org.id),
+            membership: activity(ctx.a, 'organization_membership.added', membership.id),
+          })
+        ).toEqual(gone)
+        expect(await ctx.store.findUserMembership(ctx.a.environmentId, org.id, userId)).toBeNull()
+        // Nothing was recorded by the refusals.
+        expect((await ctx.recorded()).length).toBe(before)
+      })
+
+      test('an invitation of another organization or environment cannot be revoked', async () => {
+        const { org } = await setup2()
+        const other = await stored(organization(ctx.a, { slug: 'other' }))
+        const record = await invited(ctx.a, org)
+        const activityOf = activity(ctx.a, 'organization_invitation.revoked', org.id)
+        expect(
+          await ctx.store.revokeInvitation(
+            ctx.a.environmentId,
+            other.id,
+            record.id,
+            now,
+            activityOf
+          )
+        ).toEqual({ outcome: 'not_found' })
+        expect(
+          await ctx.store.revokeInvitation(ctx.b.environmentId, org.id, record.id, now, activityOf)
+        ).toEqual({ outcome: 'not_found' })
+        expect(
+          (await ctx.store.findInvitation(ctx.a.environmentId, org.id, record.id))?.status
+        ).toBe('pending')
+      })
+
+      test('an expired invitation cannot be revoked, declined or accepted', async () => {
+        const { org, member } = await setup2()
+        const record = await invited(ctx.a, org, { expiresAt: new Date(now.getTime() + 1000) })
+        const userId = await ctx.user(ctx.a)
+        const at = new Date(now.getTime() + 2000)
+        const expired = { outcome: 'unavailable' as const, record }
+        expect(
+          await ctx.store.revokeInvitation(
+            ctx.a.environmentId,
+            org.id,
+            record.id,
+            at,
+            activity(ctx.a, 'organization_invitation.revoked', org.id)
+          )
+        ).toEqual(expired)
+        expect(
+          await ctx.store.declineInvitation(
+            ctx.a.environmentId,
+            record.id,
+            userId,
+            at,
+            activity(ctx.a, 'organization_invitation.declined', org.id)
+          )
+        ).toEqual(expired)
+        const membership: MembershipRecord = {
+          id: Bun.randomUUIDv7(),
+          projectId: ctx.a.projectId,
+          environmentId: ctx.a.environmentId,
+          organizationId: org.id,
+          userId,
+          roleId: member.id,
+          roleKey: member.key,
+          createdAt: at,
+          updatedAt: at,
+        }
+        expect(
+          await ctx.store.acceptInvitation(ctx.a.environmentId, record.id, membership, at, {
+            invitation: activity(ctx.a, 'organization_invitation.accepted', org.id),
+            membership: activity(ctx.a, 'organization_membership.added', membership.id),
+          })
+        ).toEqual(expired)
+        expect(await ctx.store.findUserMembership(ctx.a.environmentId, org.id, userId)).toBeNull()
+      })
+
+      test('declining uses the invitation up and names who declined', async () => {
+        const { org } = await setup2()
+        const record = await invited(ctx.a, org)
+        const userId = await ctx.user(ctx.a)
+        expect(
+          await ctx.store.declineInvitation(
+            ctx.a.environmentId,
+            record.id,
+            userId,
+            later,
+            activity(ctx.a, 'organization_invitation.declined', org.id)
+          )
+        ).toEqual({
+          outcome: 'done',
+          record: {
+            ...record,
+            status: 'declined',
+            resolvedAt: later,
+            resolvedBy: userId,
+            updatedAt: later,
+          },
+        })
+        expect(await ctx.recorded()).toContain('organization_invitation.declined')
+        expect(
+          await ctx.store.declineInvitation(
+            ctx.a.environmentId,
+            Bun.randomUUIDv7(),
+            userId,
+            later,
+            activity(ctx.a, 'organization_invitation.declined', org.id)
+          )
+        ).toEqual({ outcome: 'not_found' })
+      })
+
+      test('accepting uses the invitation up and stores the membership, with both records', async () => {
+        const { org, member } = await setup2()
+        const record = await invited(ctx.a, org)
+        const userId = await ctx.user(ctx.a)
+        const membership: MembershipRecord = {
+          id: Bun.randomUUIDv7(),
+          projectId: ctx.a.projectId,
+          environmentId: ctx.a.environmentId,
+          organizationId: org.id,
+          userId,
+          roleId: member.id,
+          roleKey: member.key,
+          createdAt: later,
+          updatedAt: later,
+        }
+        const result = await ctx.store.acceptInvitation(
+          ctx.a.environmentId,
+          record.id,
+          membership,
+          later,
+          {
+            invitation: activity(ctx.a, 'organization_invitation.accepted', org.id),
+            membership: activity(ctx.a, 'organization_membership.added', membership.id),
+          }
+        )
+        expect(result).toEqual({
+          outcome: 'accepted',
+          record: {
+            ...record,
+            status: 'accepted',
+            resolvedAt: later,
+            resolvedBy: userId,
+            updatedAt: later,
+          },
+          membership,
+        })
+        expect(
+          (await ctx.store.findUserMembership(ctx.a.environmentId, org.id, userId))?.membership
+        ).toEqual(membership)
+        const types = await ctx.recorded()
+        expect(types).toContain('organization_invitation.accepted')
+        expect(types).toContain('organization_membership.added')
+      })
+
+      test('two acceptances at once make one membership', async () => {
+        const { org, member } = await setup2()
+        const record = await invited(ctx.a, org)
+        const userId = await ctx.user(ctx.a)
+        const accept = () => {
+          const membership: MembershipRecord = {
+            id: Bun.randomUUIDv7(),
+            projectId: ctx.a.projectId,
+            environmentId: ctx.a.environmentId,
+            organizationId: org.id,
+            userId,
+            roleId: member.id,
+            roleKey: member.key,
+            createdAt: later,
+            updatedAt: later,
+          }
+          return ctx.store.acceptInvitation(ctx.a.environmentId, record.id, membership, later, {
+            invitation: activity(ctx.a, 'organization_invitation.accepted', org.id),
+            membership: activity(ctx.a, 'organization_membership.added', membership.id),
+          })
+        }
+        const outcomes = (await Promise.all([accept(), accept()])).map((result) => result.outcome)
+        expect(outcomes.filter((outcome) => outcome === 'accepted')).toHaveLength(1)
+        expect(
+          (await ctx.store.listMemberships(ctx.a.environmentId, org.id, { page: 1, size: 10 }))
+            .total
+        ).toBe(1)
+      })
+
+      test('a user who is a member already is a duplicate: the invitation stays pending', async () => {
+        const { org, member } = await setup2()
+        const joined = await join(ctx.a, org, member)
+        const record = await invited(ctx.a, org)
+        const before = (await ctx.recorded()).length
+        const membership: MembershipRecord = {
+          ...joined,
+          id: Bun.randomUUIDv7(),
+          createdAt: later,
+          updatedAt: later,
+        }
+        expect(
+          await ctx.store.acceptInvitation(ctx.a.environmentId, record.id, membership, later, {
+            invitation: activity(ctx.a, 'organization_invitation.accepted', org.id),
+            membership: activity(ctx.a, 'organization_membership.added', membership.id),
+          })
+        ).toEqual({ outcome: 'duplicate' })
+        expect(
+          (await ctx.store.findInvitation(ctx.a.environmentId, org.id, record.id))?.status
+        ).toBe('pending')
+        expect((await ctx.recorded()).length).toBe(before)
+      })
+
+      test('a user or a role that is gone is gone: the invitation stays pending', async () => {
+        const { org, member } = await setup2()
+        const record = await invited(ctx.a, org)
+        const stranger: MembershipRecord = {
+          id: Bun.randomUUIDv7(),
+          projectId: ctx.a.projectId,
+          environmentId: ctx.a.environmentId,
+          organizationId: org.id,
+          userId: Bun.randomUUIDv7(),
+          roleId: member.id,
+          roleKey: member.key,
+          createdAt: later,
+          updatedAt: later,
+        }
+        expect(
+          await ctx.store.acceptInvitation(ctx.a.environmentId, record.id, stranger, later, {
+            invitation: activity(ctx.a, 'organization_invitation.accepted', org.id),
+            membership: activity(ctx.a, 'organization_membership.added', stranger.id),
+          })
+        ).toEqual({ outcome: 'gone' })
+        const userId = await ctx.user(ctx.a)
+        const noRole: MembershipRecord = { ...stranger, userId, roleId: Bun.randomUUIDv7() }
+        expect(
+          await ctx.store.acceptInvitation(ctx.a.environmentId, record.id, noRole, later, {
+            invitation: activity(ctx.a, 'organization_invitation.accepted', org.id),
+            membership: activity(ctx.a, 'organization_membership.added', noRole.id),
+          })
+        ).toEqual({ outcome: 'gone' })
+        expect(
+          (await ctx.store.findInvitation(ctx.a.environmentId, org.id, record.id))?.status
+        ).toBe('pending')
+      })
+
+      test('an unknown invitation is not found when accepted', async () => {
+        const { org, member } = await setup2()
+        const userId = await ctx.user(ctx.a)
+        const membership: MembershipRecord = {
+          id: Bun.randomUUIDv7(),
+          projectId: ctx.a.projectId,
+          environmentId: ctx.a.environmentId,
+          organizationId: org.id,
+          userId,
+          roleId: member.id,
+          roleKey: member.key,
+          createdAt: later,
+          updatedAt: later,
+        }
+        expect(
+          await ctx.store.acceptInvitation(
+            ctx.a.environmentId,
+            Bun.randomUUIDv7(),
+            membership,
+            later,
+            {
+              invitation: activity(ctx.a, 'organization_invitation.accepted', org.id),
+              membership: activity(ctx.a, 'organization_membership.added', membership.id),
+            }
+          )
+        ).toEqual({ outcome: 'not_found' })
+      })
+
+      test('deleting the organization deletes its invitations', async () => {
+        const { org } = await setup2()
+        const record = await invited(ctx.a, org)
+        await ctx.store.delete(
+          ctx.a.environmentId,
+          org.id,
+          activity(ctx.a, 'organization.deleted', org.id)
+        )
+        expect(
+          await ctx.store.findInvitationByTokenHash(ctx.a.environmentId, record.tokenHash)
+        ).toBeNull()
+      })
+
+      test('the purge deletes invitations that expired before the cutoff, whatever became of them, a batch at a time', async () => {
+        const { org } = await setup2()
+        const old = new Date(now.getTime() + 1000)
+        const a = await invited(ctx.a, org, {
+          email: 'a@example.com',
+          emailNormalized: 'a@example.com',
+          expiresAt: old,
+        })
+        const b = await invited(ctx.a, org, {
+          email: 'b@example.com',
+          emailNormalized: 'b@example.com',
+          expiresAt: old,
+        })
+        await ctx.store.revokeInvitation(
+          ctx.a.environmentId,
+          org.id,
+          b.id,
+          now,
+          activity(ctx.a, 'organization_invitation.revoked', org.id)
+        )
+        const keep = await invited(ctx.a, org, {
+          email: 'c@example.com',
+          emailNormalized: 'c@example.com',
+          expiresAt: inAWeek,
+        })
+        const foreign = await stored(organization(ctx.b))
+        const other = await invited(ctx.b, foreign, { expiresAt: old })
+        const cutoff = new Date(now.getTime() + 60_000)
+        expect(await ctx.store.deleteExpiredInvitations(ctx.a.environmentId, cutoff, 1)).toBe(1)
+        expect(await ctx.store.deleteExpiredInvitations(ctx.a.environmentId, cutoff, 10)).toBe(1)
+        expect(await ctx.store.deleteExpiredInvitations(ctx.a.environmentId, cutoff, 10)).toBe(0)
+        expect(await ctx.store.findInvitation(ctx.a.environmentId, org.id, a.id)).toBeNull()
+        expect(await ctx.store.findInvitation(ctx.a.environmentId, org.id, b.id)).toBeNull()
+        expect(await ctx.store.findInvitation(ctx.a.environmentId, org.id, keep.id)).not.toBeNull()
+        // Another environment's rows are not touched by this environment's purge.
+        expect(
+          await ctx.store.findInvitation(ctx.b.environmentId, foreign.id, other.id)
+        ).not.toBeNull()
+      })
     })
   })
 }

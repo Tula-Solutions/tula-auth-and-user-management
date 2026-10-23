@@ -2242,3 +2242,149 @@ describe('the active organization (ADR 0065)', () => {
     expect(b.tula.state).toMatchObject({ status: 'signed-in', organizationId: ORG })
   })
 })
+
+describe('organization invitations (ADR 0065, Orgs 04)', () => {
+  const ORG = '01980000-0000-7000-8000-000000000001'
+  const INVITATION = '01980000-0000-7000-8000-000000000002'
+  const LIST = `GET /v1/client/me/organizations/${ORG}/invitations`
+  const INVITE = `POST /v1/client/me/organizations/${ORG}/invitations`
+  const REVOKE = `DELETE /v1/client/me/organizations/${ORG}/invitations/${INVITATION}`
+  const PREVIEW = 'POST /v1/client/organization-invitations/preview'
+  const ACCEPT = 'POST /v1/client/me/organization-invitations/accept'
+  const DECLINE = 'POST /v1/client/me/organization-invitations/decline'
+  const invitation = {
+    id: INVITATION,
+    organizationId: ORG,
+    email: 'ada@example.com',
+    role: 'member',
+    status: 'pending' as const,
+    invitedBy: null,
+    expiresAt: '2030-01-08T00:00:00.000Z',
+    createdAt: '2030-01-01T00:00:00.000Z',
+  }
+
+  test('invite sends the address, the role and the redirect URL, signed in as the user', async () => {
+    const w = world()
+    w.api.on(INVITE, () => json(201, invitation))
+    const { tula } = await signedIn(w)
+    const input = {
+      email: 'ada@example.com',
+      role: 'member',
+      redirectUrl: 'https://app.example.com/join',
+    }
+    expect(await tula.organizations.invitations.invite(ORG, input)).toEqual(invitation)
+    expect(w.api.calls(INVITE)[0]?.body).toEqual(input)
+    expect(bearer(w, INVITE)).toEqual([`Bearer ${accessToken('access_1')}`])
+  })
+
+  test('list and revoke address the organization and the invitation', async () => {
+    const w = world()
+    const page = {
+      meta: { totalCount: 1, totalPages: 1, page: 1, perPage: 20 },
+      data: [invitation],
+    }
+    w.api.on(LIST, () => json(200, page))
+    w.api.on(REVOKE, () => new Response(null, { status: 204 }))
+    const { tula } = await signedIn(w)
+    expect(await tula.organizations.invitations.list(ORG)).toEqual(page)
+    expect(await tula.organizations.invitations.revoke(ORG, INVITATION)).toBeUndefined()
+    expect(w.api.calls(REVOKE)).toHaveLength(1)
+  })
+
+  test('accept and decline send the token in the body, signed in', async () => {
+    const w = world()
+    const joined = {
+      id: ORG,
+      name: 'Acme',
+      slug: 'acme',
+      role: 'member',
+      permissions: ['org:sys:memberships:read'],
+      createdAt: '2030-01-01T00:00:00.000Z',
+    }
+    w.api.on(ACCEPT, () => json(200, joined))
+    w.api.on(DECLINE, () => new Response(null, { status: 204 }))
+    const { tula } = await signedIn(w)
+    expect(await tula.organizations.invitations.accept('the-token')).toEqual(joined)
+    expect(await tula.organizations.invitations.decline('the-token')).toBeUndefined()
+    expect(w.api.calls(ACCEPT)[0]?.body).toEqual({ token: 'the-token' })
+    expect(w.api.calls(DECLINE)[0]?.body).toEqual({ token: 'the-token' })
+    // The token is in the body only, never in the address.
+    for (const request of [...w.api.calls(ACCEPT), ...w.api.calls(DECLINE)]) {
+      expect(request.path).not.toContain('the-token')
+    }
+    expect(bearer(w, ACCEPT)).toEqual([`Bearer ${accessToken('access_1')}`])
+  })
+
+  test('preview needs no session: signed out, it sends no Authorization header', async () => {
+    const w = world()
+    const shown = {
+      organizationName: 'Acme',
+      role: 'member',
+      email: 'ada@example.com',
+      expiresAt: '2030-01-08T00:00:00.000Z',
+    }
+    w.api.on(PREVIEW, () => json(200, shown))
+    const { tula } = tab(w, 'server')
+    await tula.load()
+    expect(tula.state).toEqual({ status: 'signed-out' })
+    expect(await tula.organizations.invitations.preview('the-token')).toEqual(shown)
+    expect(w.api.calls(PREVIEW)[0]?.body).toEqual({ token: 'the-token' })
+    expect(bearer(w, PREVIEW)).toEqual([null])
+  })
+
+  test.each([
+    ['accept', 'organization.invitation_wrong_account', 403],
+    ['accept', 'organization.invitation_email_unverified', 403],
+    ['accept', 'organization.invitation_role_gone', 409],
+    ['accept', 'organization.invitation_used', 410],
+    ['decline', 'organization.invitation_expired', 410],
+    ['decline', 'organization.invitation_revoked', 410],
+    ['decline', 'organization.invitation_not_found', 404],
+  ] as const)(
+    '%s refused with %s is a TulaError and the session lives on',
+    async (action, code, status) => {
+      const w = world()
+      w.api.on(ACCEPT, () => failure(status, code))
+      w.api.on(DECLINE, () => failure(status, code))
+      const { tula } = await signedIn(w)
+      expect(await caught(tula.organizations.invitations[action]('the-token'))).toMatchObject({
+        code,
+        status,
+      })
+      expect(tula.state.status).toBe('signed-in')
+      expect(w.refreshes()).toBe(1)
+    }
+  )
+
+  test('a refused invitation is a TulaError with the code and the params of the inviting side', async () => {
+    const w = world()
+    w.api.on(INVITE, () =>
+      failure(403, 'organization.permission_required', {
+        params: { permission: 'org:sys:invitations:manage' },
+      })
+    )
+    const { tula } = await signedIn(w)
+    const error = await caught(
+      tula.organizations.invitations.invite(ORG, {
+        email: 'ada@example.com',
+        role: 'member',
+        redirectUrl: 'https://app.example.com/join',
+      })
+    )
+    expect(error).toMatchObject({
+      code: 'organization.permission_required',
+      params: { permission: 'org:sys:invitations:manage' },
+    })
+    expect(tula.state.status).toBe('signed-in')
+  })
+
+  test('signed out, the session calls say so without a request', async () => {
+    const w = world()
+    const { tula } = tab(w, 'server')
+    await tula.load()
+    expect(await caught(tula.organizations.invitations.accept('the-token'))).toMatchObject({
+      code: 'auth.unauthenticated',
+    })
+    expect(w.api.calls(ACCEPT)).toHaveLength(0)
+  })
+})

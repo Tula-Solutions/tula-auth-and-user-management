@@ -1,6 +1,7 @@
-import { MEMBERSHIPS_MANAGE_PERMISSION } from '@tula-tech/contract'
+import { type InvitationStatus, MEMBERSHIPS_MANAGE_PERMISSION } from '@tula-tech/contract'
 import {
   type Database,
+  organizationInvitations,
   organizationMemberships,
   organizationRoles,
   organizations,
@@ -8,7 +9,7 @@ import {
   users,
   withTenant,
 } from '@tula-tech/db'
-import { and, arrayContains, asc, count, desc, eq, inArray, ne, sql } from 'drizzle-orm'
+import { and, arrayContains, asc, count, desc, eq, gt, inArray, lte, ne, sql } from 'drizzle-orm'
 import { recordActivity } from '~/adapters/postgres/activity'
 import {
   isCheckViolation,
@@ -17,10 +18,13 @@ import {
 } from '~/adapters/postgres/errors'
 import { activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import type {
+  AcceptInvitationOutcome,
   AddMembershipOutcome,
   ChangeMembershipOutcome,
   CreateOwnedOutcome,
   DeleteRoleOutcome,
+  InsertInvitationOutcome,
+  InvitationRecord,
   MembershipRecord,
   OrganizationChanges,
   OrganizationRecord,
@@ -29,6 +33,7 @@ import type {
   OwnedOrganization,
   Page,
   PageCriteria,
+  ResolveInvitationOutcome,
   RoleChanges,
   UpdateOrganizationOutcome,
   UpdateRoleOutcome,
@@ -44,6 +49,92 @@ const organizationColumns = {
   createdBy: organizations.createdBy,
   createdAt: organizations.createdAt,
   updatedAt: organizations.updatedAt,
+}
+
+const invitationColumns = {
+  id: organizationInvitations.id,
+  projectId: organizationInvitations.projectId,
+  environmentId: organizationInvitations.environmentId,
+  organizationId: organizationInvitations.organizationId,
+  email: organizationInvitations.email,
+  emailNormalized: organizationInvitations.emailNormalized,
+  roleKey: organizationInvitations.roleKey,
+  tokenHash: organizationInvitations.tokenHash,
+  status: organizationInvitations.status,
+  invitedBy: organizationInvitations.invitedBy,
+  expiresAt: organizationInvitations.expiresAt,
+  resolvedAt: organizationInvitations.resolvedAt,
+  resolvedBy: organizationInvitations.resolvedBy,
+  createdAt: organizationInvitations.createdAt,
+  updatedAt: organizationInvitations.updatedAt,
+}
+
+/** A row of `organization_invitations` as the port's record (a check holds the status to four words). */
+function invitationOf(row: { [K in keyof typeof invitationColumns]: unknown }): InvitationRecord {
+  return row as InvitationRecord
+}
+
+/** The condition a status filter of the invitation list puts on a row. */
+function invitationFilter(status: InvitationStatus, now: Date) {
+  switch (status) {
+    case 'pending':
+      return and(
+        eq(organizationInvitations.status, 'pending'),
+        gt(organizationInvitations.expiresAt, now)
+      )
+    case 'expired':
+      return and(
+        eq(organizationInvitations.status, 'pending'),
+        lte(organizationInvitations.expiresAt, now)
+      )
+    default:
+      return eq(organizationInvitations.status, status)
+  }
+}
+
+/** The invitation as it is now, for a resolution that found it unavailable. */
+async function readInvitation(
+  tx: Transaction,
+  environmentId: string,
+  where: ReturnType<typeof and>
+): Promise<InvitationRecord | null> {
+  const [row] = await tx
+    .select(invitationColumns)
+    .from(organizationInvitations)
+    .where(and(eq(organizationInvitations.environmentId, environmentId), where))
+    .limit(1)
+  return row ? invitationOf(row) : null
+}
+
+/**
+ * Move a pending, unexpired invitation to a final state inside an open transaction. The
+ * `WHERE` holds both conditions, so of two resolutions at once exactly one updates a row.
+ */
+async function resolveInvitation(
+  tx: Transaction,
+  environmentId: string,
+  where: ReturnType<typeof and>,
+  status: 'accepted' | 'declined' | 'revoked',
+  resolvedBy: string | null,
+  now: Date
+): Promise<ResolveInvitationOutcome> {
+  const [row] = await tx
+    .update(organizationInvitations)
+    .set({ status, resolvedAt: now, resolvedBy, updatedAt: now })
+    .where(
+      and(
+        eq(organizationInvitations.environmentId, environmentId),
+        where,
+        eq(organizationInvitations.status, 'pending'),
+        gt(organizationInvitations.expiresAt, now)
+      )
+    )
+    .returning(invitationColumns)
+  if (row) {
+    return { outcome: 'done', record: invitationOf(row) }
+  }
+  const current = await readInvitation(tx, environmentId, where)
+  return current ? { outcome: 'unavailable', record: current } : { outcome: 'not_found' }
 }
 
 const roleColumns = {
@@ -793,6 +884,221 @@ export class PostgresOrganizationStore implements OrganizationStore {
       }
       throw error
     }
+  }
+
+  /** @inheritdoc */
+  async insertInvitation(
+    record: InvitationRecord,
+    now: Date,
+    recorded: Recorded
+  ): Promise<InsertInvitationOutcome> {
+    const activity = activityOf(recorded)
+    try {
+      return await withTenant(this.db, record.environmentId, async (tx) => {
+        // A pending invitation that has expired still holds the one-pending-per-address key.
+        await tx
+          .delete(organizationInvitations)
+          .where(
+            and(
+              eq(organizationInvitations.environmentId, record.environmentId),
+              eq(organizationInvitations.organizationId, record.organizationId),
+              eq(organizationInvitations.emailNormalized, record.emailNormalized),
+              eq(organizationInvitations.status, 'pending'),
+              lte(organizationInvitations.expiresAt, now)
+            )
+          )
+        await tx.insert(organizationInvitations).values(record)
+        await recordActivity(tx, activity ? [activity] : [])
+        return { outcome: 'created', record } as const
+      })
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        return { outcome: 'exists' }
+      }
+      if (isForeignKeyViolation(error)) {
+        return { outcome: 'gone' }
+      }
+      throw error
+    }
+  }
+
+  /** @inheritdoc */
+  async listInvitations(
+    environmentId: string,
+    organizationId: string,
+    status: InvitationStatus,
+    now: Date,
+    { page, size }: PageCriteria
+  ): Promise<Page<InvitationRecord>> {
+    const where = and(
+      eq(organizationInvitations.environmentId, environmentId),
+      eq(organizationInvitations.organizationId, organizationId),
+      invitationFilter(status, now)
+    )
+    return withTenant(this.db, environmentId, async (tx) => {
+      const rows = await tx
+        .select(invitationColumns)
+        .from(organizationInvitations)
+        .where(where)
+        .orderBy(desc(organizationInvitations.createdAt), desc(organizationInvitations.id))
+        .limit(size)
+        .offset((page - 1) * size)
+      const [total] = await tx.select({ value: count() }).from(organizationInvitations).where(where)
+      return { records: rows.map(invitationOf), total: total?.value ?? 0 }
+    })
+  }
+
+  /** @inheritdoc */
+  async findInvitation(
+    environmentId: string,
+    organizationId: string,
+    id: string
+  ): Promise<InvitationRecord | null> {
+    return withTenant(this.db, environmentId, (tx) =>
+      readInvitation(
+        tx,
+        environmentId,
+        and(
+          eq(organizationInvitations.organizationId, organizationId),
+          eq(organizationInvitations.id, id)
+        )
+      )
+    )
+  }
+
+  /** @inheritdoc */
+  async findInvitationByTokenHash(
+    environmentId: string,
+    tokenHash: string
+  ): Promise<InvitationRecord | null> {
+    return withTenant(this.db, environmentId, (tx) =>
+      readInvitation(tx, environmentId, eq(organizationInvitations.tokenHash, tokenHash))
+    )
+  }
+
+  /** @inheritdoc */
+  async revokeInvitation(
+    environmentId: string,
+    organizationId: string,
+    id: string,
+    now: Date,
+    recorded: Recorded
+  ): Promise<ResolveInvitationOutcome> {
+    const activity = activityOf(recorded)
+    return withTenant(this.db, environmentId, async (tx) => {
+      const result = await resolveInvitation(
+        tx,
+        environmentId,
+        and(
+          eq(organizationInvitations.organizationId, organizationId),
+          eq(organizationInvitations.id, id)
+        ),
+        'revoked',
+        null,
+        now
+      )
+      if (result.outcome === 'done') {
+        await recordActivity(tx, activity ? [activity] : [])
+      }
+      return result
+    })
+  }
+
+  /** @inheritdoc */
+  async declineInvitation(
+    environmentId: string,
+    id: string,
+    userId: string,
+    now: Date,
+    recorded: Recorded
+  ): Promise<ResolveInvitationOutcome> {
+    const activity = activityOf(recorded)
+    return withTenant(this.db, environmentId, async (tx) => {
+      const result = await resolveInvitation(
+        tx,
+        environmentId,
+        eq(organizationInvitations.id, id),
+        'declined',
+        userId,
+        now
+      )
+      if (result.outcome === 'done') {
+        await recordActivity(tx, activity ? [activity] : [])
+      }
+      return result
+    })
+  }
+
+  /** @inheritdoc */
+  async acceptInvitation(
+    environmentId: string,
+    id: string,
+    membership: MembershipRecord,
+    now: Date,
+    activities: { invitation: Recorded; membership: Recorded }
+  ): Promise<AcceptInvitationOutcome> {
+    const { roleKey: _roleKey, ...row } = membership
+    try {
+      return await withTenant(this.db, environmentId, async (tx) => {
+        const result = await resolveInvitation(
+          tx,
+          environmentId,
+          eq(organizationInvitations.id, id),
+          'accepted',
+          membership.userId,
+          now
+        )
+        if (result.outcome !== 'done') {
+          return result
+        }
+        // A unique violation here (the user is a member) or a foreign-key one (the user or the
+        // role is gone) rolls the whole transaction back: the invitation is not used up.
+        await tx.insert(organizationMemberships).values(row)
+        await recordActivity(tx, recordedOf([activities.invitation, activities.membership]))
+        return { outcome: 'accepted', record: result.record, membership } as const
+      })
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        return { outcome: 'duplicate' }
+      }
+      if (isForeignKeyViolation(error)) {
+        return { outcome: 'gone' }
+      }
+      throw error
+    }
+  }
+
+  /** @inheritdoc */
+  async deleteExpiredInvitations(
+    environmentId: string,
+    before: Date,
+    limit: number
+  ): Promise<number> {
+    const rows = await withTenant(this.db, environmentId, (tx) =>
+      tx
+        .delete(organizationInvitations)
+        .where(
+          and(
+            eq(organizationInvitations.environmentId, environmentId),
+            // DELETE has no LIMIT in Postgres: pick the batch in a subquery.
+            inArray(
+              organizationInvitations.id,
+              tx
+                .select({ id: organizationInvitations.id })
+                .from(organizationInvitations)
+                .where(
+                  and(
+                    eq(organizationInvitations.environmentId, environmentId),
+                    lte(organizationInvitations.expiresAt, before)
+                  )
+                )
+                .limit(limit)
+            )
+          )
+        )
+        .returning({ id: organizationInvitations.id })
+    )
+    return rows.length
   }
 
   /** @inheritdoc */

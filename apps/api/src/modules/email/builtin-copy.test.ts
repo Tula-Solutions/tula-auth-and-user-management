@@ -63,6 +63,24 @@ const MESSAGES: [string, EmailMessage][] = [
   ],
   ['new_sign_in with no address', { type: 'new_sign_in', device: 'Safari', at, ipAddress: null }],
   ['email_added', { type: 'email_added', at }],
+  [
+    'organization_invitation',
+    {
+      type: 'organization_invitation',
+      organizationName: 'Acme <Robotics> & Sons',
+      linkUrl: 'https://app.acme.test/join#tula_invitation=tok',
+      ttlDays: 7,
+    },
+  ],
+  [
+    'organization_invitation for one day',
+    {
+      type: 'organization_invitation',
+      organizationName: 'Acme',
+      linkUrl: 'https://app.acme.test/join#tula_invitation=tok',
+      ttlDays: 1,
+    },
+  ],
 ]
 
 const BRANDS: [string, EmailBrand][] = [
