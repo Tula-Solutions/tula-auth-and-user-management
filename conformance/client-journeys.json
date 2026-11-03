@@ -1764,9 +1764,7 @@
     },
     "sso home-realm discovery is by domain": {
       "core": {
-        "decision": "not_built",
-        "ticket": "TULA-141",
-        "reason": "`@tula-tech/core` has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-141 builds the start and this journey."
+        "decision": "journey"
       },
       "expo": {
         "decision": "not_built",
@@ -1786,9 +1784,7 @@
     },
     "sso oidc sign-in": {
       "core": {
-        "decision": "not_built",
-        "ticket": "TULA-141",
-        "reason": "`@tula-tech/core` has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-141 builds the start and this journey."
+        "decision": "journey"
       },
       "expo": {
         "decision": "not_built",
