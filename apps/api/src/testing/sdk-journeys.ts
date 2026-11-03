@@ -3274,6 +3274,124 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
         }
       })
 
+      journey(
+        "organization admin manages the organization's single sign-on",
+        "org SSO: the holder of the permission lists, creates, starts a test of and tries to turn on a connection; a member without it is refused, and a connection that is not the organization's is not found",
+        async () => {
+          const s = await oauthServer()
+          const read = await s.admin('GET', '/v1/admin/settings')
+          const { settings } = (await read.json()) as { settings: EnvironmentSettings }
+          const saved = await s.admin(
+            'PUT',
+            '/v1/admin/settings',
+            {
+              ...settings,
+              organizations: {
+                enabled: true,
+                allowUserCreated: true,
+                maxCreatedPerUser: 1,
+                creatorRole: 'admin',
+                defaultRole: 'member',
+                personalAccount: true,
+              },
+              sso: { enabled: true },
+            },
+            { 'if-match': read.headers.get('etag') ?? '' }
+          )
+          expect(saved.status).toBe(200)
+
+          const owner = await signUp(s)
+          const ada = await signUp(s)
+          const org = await owner.tula.organizations.create({ name: 'Acme', slug: 'acme' })
+          await s.admin('POST', `/v1/admin/organizations/${org.id}/memberships`, {
+            userId: (await ada.tula.user.get()).id,
+            role: 'member',
+          })
+
+          expect((await caught(ada.tula.organizations.sso.list(org.id))).code).toBe(
+            'organization.permission_required'
+          )
+          expect((await owner.tula.organizations.sso.list(org.id)).connections).toEqual([])
+
+          const metadataXml = await (await s.navigate('/v1/dev/sso/saml/metadata')).text()
+          const made = await owner.tula.organizations.sso.create(org.id, {
+            protocol: 'saml',
+            name: 'Mock SAML IdP',
+            saml: { metadataXml },
+          })
+          expect(made).toMatchObject({ status: 'draft', tested: false })
+          expect((await caught(ada.tula.organizations.sso.get(org.id, made.id))).code).toBe(
+            'organization.permission_required'
+          )
+          expect(
+            (
+              await caught(
+                owner.tula.organizations.sso.update(org.id, made.id, { status: 'active' })
+              )
+            ).code
+          ).toBe('sso.domain_not_verified')
+          expect(
+            (
+              await caught(
+                owner.tula.organizations.sso.testResult(org.id, made.id, Bun.randomUUIDv7())
+              )
+            ).code
+          ).toBe('sso.test_not_found')
+        }
+      )
+
+      journey(
+        'single sign-on client routes refuse a member without the permission',
+        'org SSO: a member without org:sys:sso:manage is refused at create, change, test and delete, the permission read from the membership on every call',
+        async () => {
+          const s = await oauthServer()
+          const read = await s.admin('GET', '/v1/admin/settings')
+          const { settings } = (await read.json()) as { settings: EnvironmentSettings }
+          const saved = await s.admin(
+            'PUT',
+            '/v1/admin/settings',
+            {
+              ...settings,
+              organizations: {
+                enabled: true,
+                allowUserCreated: true,
+                maxCreatedPerUser: 1,
+                creatorRole: 'admin',
+                defaultRole: 'member',
+                personalAccount: true,
+              },
+              sso: { enabled: true },
+            },
+            { 'if-match': read.headers.get('etag') ?? '' }
+          )
+          expect(saved.status).toBe(200)
+
+          const owner = await signUp(s)
+          const ada = await signUp(s)
+          const org = await owner.tula.organizations.create({ name: 'Acme', slug: 'acme' })
+          await s.admin('POST', `/v1/admin/organizations/${org.id}/memberships`, {
+            userId: (await ada.tula.user.get()).id,
+            role: 'member',
+          })
+          const metadataXml = await (await s.navigate('/v1/dev/sso/saml/metadata')).text()
+          const made = await owner.tula.organizations.sso.create(org.id, {
+            protocol: 'saml',
+            name: 'Mock SAML IdP',
+            saml: { metadataXml },
+          })
+          const sso = ada.tula.organizations.sso
+          for (const refused of [
+            () => sso.create(org.id, { protocol: 'saml', name: 'x', saml: { metadataXml } }),
+            () => sso.update(org.id, made.id, { name: 'x' }),
+            () => sso.startTest(org.id, made.id, 'http://localhost/cb'),
+            () => sso.remove(org.id, made.id),
+          ]) {
+            expect((await caught(refused())).code).toBe('organization.permission_required')
+          }
+          expect((await owner.tula.organizations.sso.list(org.id)).connections).toHaveLength(1)
+        }
+      )
+
       /** A server with an active OIDC connection bound to a verified domain of an organization. */
       async function ssoServer(
         protocol: 'oidc' | 'saml' = 'oidc',

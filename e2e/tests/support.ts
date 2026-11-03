@@ -116,6 +116,8 @@ export interface TestSettings {
   }
   /** Organizations (ADR 0065); off when left out. */
   organizations?: { enabled: boolean; allowUserCreated?: boolean }
+  /** Enterprise single sign-on (ADR 0067). Off when left out. */
+  sso?: { enabled: boolean }
   /** Addresses to change (an invitation's link leads to an allowed redirect URL). */
   urls?: { allowedRedirectUrls?: string[] }
 }

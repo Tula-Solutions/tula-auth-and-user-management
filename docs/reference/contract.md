@@ -1059,6 +1059,27 @@ server generates it. `failureMode: 'allow'` is recorded as a weakening.
 const CreateHookRequestSchema
 ```
 
+### `CreateMySsoConnectionRequest`
+
+_type_, defined in `packages/contract/src/sso-connection.ts`
+
+The body an organization admin creates a connection with.
+
+```ts
+export type CreateMySsoConnectionRequest = z.infer<typeof CreateMySsoConnectionRequestSchema>
+```
+
+### `CreateMySsoConnectionRequestSchema`
+
+_constant_, defined in `packages/contract/src/sso-connection.ts`
+
+The body a signed-in organization admin creates a connection with: the admin body without
+`organizationId`, which is the organization of the path (a client cannot name another).
+
+```ts
+const CreateMySsoConnectionRequestSchema: z.ZodObject<Omit<Shape, Extract<keyof Shape, keyof M>>, z.core.$strict>
+```
+
 ### `CreateNativeAppRequest`
 
 _type_, defined in `packages/contract/src/native-app.ts`

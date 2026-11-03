@@ -48,6 +48,9 @@ object TulaOperations {
     /** Create an organization (`POST /v1/client/me/organizations`). Body: [CreateOrganizationRequest]. Answers [UserOrganization]. */
     val createMyOrganization: TulaOperation = TulaOperation("createMyOrganization", "POST", "/v1/client/me/organizations", true)
 
+    /** Create an SSO connection (`POST /v1/client/me/organizations/{organizationId}/sso-connections`). Body: [CreateMySsoConnectionRequest]. Answers [SsoConnection]. */
+    val createMyOrganizationSsoConnection: TulaOperation = TulaOperation("createMyOrganizationSsoConnection", "POST", "/v1/client/me/organizations/{organizationId}/sso-connections", true)
+
     /** Decline an invitation addressed to me (`POST /v1/client/me/organization-invitations/{invitationId}/decline`). No body. Answers no body. */
     val declineMyOrganizationInvitation: TulaOperation = TulaOperation("declineMyOrganizationInvitation", "POST", "/v1/client/me/organization-invitations/{invitationId}/decline", true)
 
@@ -59,6 +62,9 @@ object TulaOperations {
 
     /** Delete an organization (`DELETE /v1/client/me/organizations/{organizationId}`). No body. Answers no body. */
     val deleteMyOrganization: TulaOperation = TulaOperation("deleteMyOrganization", "DELETE", "/v1/client/me/organizations/{organizationId}", true)
+
+    /** Delete an SSO connection (`DELETE /v1/client/me/organizations/{organizationId}/sso-connections/{id}`). No body. Answers no body. */
+    val deleteMyOrganizationSsoConnection: TulaOperation = TulaOperation("deleteMyOrganizationSsoConnection", "DELETE", "/v1/client/me/organizations/{organizationId}/sso-connections/{id}", true)
 
     /** Stop using a texted code as my second factor (`DELETE /v1/client/me/factors/sms`). No body. Answers no body. */
     val disableSmsFactor: TulaOperation = TulaOperation("disableSmsFactor", "DELETE", "/v1/client/me/factors/sms", true)
@@ -83,6 +89,15 @@ object TulaOperations {
 
     /** Get my second factors (`GET /v1/client/me/factors`). No body. Answers [Factors]. */
     val getMyFactors: TulaOperation = TulaOperation("getMyFactors", "GET", "/v1/client/me/factors", true)
+
+    /** Get an SSO connection (`GET /v1/client/me/organizations/{organizationId}/sso-connections/{id}`). No body. Answers [SsoConnection]. */
+    val getMyOrganizationSsoConnection: TulaOperation = TulaOperation("getMyOrganizationSsoConnection", "GET", "/v1/client/me/organizations/{organizationId}/sso-connections/{id}", true)
+
+    /** Read the result of a test sign-in (`GET /v1/client/me/organizations/{organizationId}/sso-connections/{id}/tests/{testId}`). No body. Answers [SsoTestResult]. */
+    val getMyOrganizationSsoConnectionTest: TulaOperation = TulaOperation("getMyOrganizationSsoConnectionTest", "GET", "/v1/client/me/organizations/{organizationId}/sso-connections/{id}/tests/{testId}", true)
+
+    /** Get the IdP group to role mapping (`GET /v1/client/me/organizations/{organizationId}/sso-connections/{id}/group-roles`). No body. Answers [SsoGroupRoles]. */
+    val getMyOrganizationSsoGroupRoles: TulaOperation = TulaOperation("getMyOrganizationSsoGroupRoles", "GET", "/v1/client/me/organizations/{organizationId}/sso-connections/{id}/group-roles", true)
 
     /** Password policy (`GET /v1/client/password-policy`). No body. Answers [PasswordPolicy]. */
     val getPasswordPolicy: TulaOperation = TulaOperation("getPasswordPolicy", "GET", "/v1/client/password-policy", false)
@@ -117,6 +132,9 @@ object TulaOperations {
     /** List the roles the caller may give (`GET /v1/client/me/organizations/{organizationId}/roles`). No body. Answers [AssignableRoleList]. */
     val listMyOrganizationRoles: TulaOperation = TulaOperation("listMyOrganizationRoles", "GET", "/v1/client/me/organizations/{organizationId}/roles", true)
 
+    /** List my organization's SSO connections (`GET /v1/client/me/organizations/{organizationId}/sso-connections`). No body. Answers [SsoConnectionList]. */
+    val listMyOrganizationSsoConnections: TulaOperation = TulaOperation("listMyOrganizationSsoConnections", "GET", "/v1/client/me/organizations/{organizationId}/sso-connections", true)
+
     /** List the organizations I am suggested (`GET /v1/client/me/organizations/suggestions`). No body. Answers [OrganizationSuggestionList]. */
     val listMyOrganizationSuggestions: TulaOperation = TulaOperation("listMyOrganizationSuggestions", "GET", "/v1/client/me/organizations/suggestions", true)
 
@@ -144,6 +162,9 @@ object TulaOperations {
     /** Preview an invitation (`POST /v1/client/organization-invitations/preview`). Body: [InvitationTokenRequest]. Answers [InvitationPreview]. */
     val previewOrganizationInvitation: TulaOperation = TulaOperation("previewOrganizationInvitation", "POST", "/v1/client/organization-invitations/preview", false)
 
+    /** Read a SAML connection's metadata address again (`POST /v1/client/me/organizations/{organizationId}/sso-connections/{id}/refresh-metadata`). No body. Answers [SsoConnection]. */
+    val refreshMyOrganizationSsoMetadata: TulaOperation = TulaOperation("refreshMyOrganizationSsoMetadata", "POST", "/v1/client/me/organizations/{organizationId}/sso-connections/{id}/refresh-metadata", true)
+
     /** Refresh a session (`POST /v1/client/sessions/refresh`). Body: [RefreshTokenRequest]. Answers [SessionTokens]. */
     val refreshSession: TulaOperation = TulaOperation("refreshSession", "POST", "/v1/client/sessions/refresh", false)
 
@@ -164,6 +185,9 @@ object TulaOperations {
 
     /** Rename a passkey (`PATCH /v1/client/me/passkeys/{passkeyId}`). Body: [PasskeyRenameRequest]. Answers [Passkey]. */
     val renamePasskey: TulaOperation = TulaOperation("renamePasskey", "PATCH", "/v1/client/me/passkeys/{passkeyId}", true)
+
+    /** Replace the IdP group to role mapping (`PUT /v1/client/me/organizations/{organizationId}/sso-connections/{id}/group-roles`). Body: [SsoGroupRoles]. Answers [SsoGroupRoles]. */
+    val replaceMyOrganizationSsoGroupRoles: TulaOperation = TulaOperation("replaceMyOrganizationSsoGroupRoles", "PUT", "/v1/client/me/organizations/{organizationId}/sso-connections/{id}/group-roles", true)
 
     /** Email a code to an address to add to my account (`POST /v1/client/me/email`). Body: [EmailAddressRequest]. Answers [EmailCodeSent]. */
     val requestEmailAddressCode: TulaOperation = TulaOperation("requestEmailAddressCode", "POST", "/v1/client/me/email", true)
@@ -209,6 +233,9 @@ object TulaOperations {
 
     /** Claim a domain for an organization (`POST /v1/client/me/organizations/{id}/domains`). Body: [StartOrganizationDomainRequest]. Answers [OrganizationDomain]. */
     val startMyOrganizationDomain: TulaOperation = TulaOperation("startMyOrganizationDomain", "POST", "/v1/client/me/organizations/{id}/domains", true)
+
+    /** Start a test sign-in of an SSO connection (`POST /v1/client/me/organizations/{organizationId}/sso-connections/{id}/tests`). Body: [SsoTestStartRequest]. Answers [SsoTestStart]. */
+    val startMyOrganizationSsoConnectionTest: TulaOperation = TulaOperation("startMyOrganizationSsoConnectionTest", "POST", "/v1/client/me/organizations/{organizationId}/sso-connections/{id}/tests", true)
 
     /** Start signing in with an OAuth provider (`POST /v1/client/sign-ins/oauth`). Body: [OAuthStartRequest]. Answers [OAuthStart]. */
     val startOAuthSignIn: TulaOperation = TulaOperation("startOAuthSignIn", "POST", "/v1/client/sign-ins/oauth", false)
@@ -279,6 +306,9 @@ object TulaOperations {
     /** Change a member's role (`PATCH /v1/client/me/organizations/{organizationId}/members/{userId}`). Body: [UpdateOrganizationMemberRequest]. Answers [OrganizationMember]. */
     val updateMyOrganizationMember: TulaOperation = TulaOperation("updateMyOrganizationMember", "PATCH", "/v1/client/me/organizations/{organizationId}/members/{userId}", true)
 
+    /** Change an SSO connection (`PATCH /v1/client/me/organizations/{organizationId}/sso-connections/{id}`). Body: [UpdateSsoConnectionRequest]. Answers [SsoConnection]. */
+    val updateMyOrganizationSsoConnection: TulaOperation = TulaOperation("updateMyOrganizationSsoConnection", "PATCH", "/v1/client/me/organizations/{organizationId}/sso-connections/{id}", true)
+
     /** Confirm the address with its code (`POST /v1/client/me/email/verify`). Body: [EmailAddressVerifyRequest]. Answers [CurrentUser]. */
     val verifyEmailAddress: TulaOperation = TulaOperation("verifyEmailAddress", "POST", "/v1/client/me/email/verify", true)
 
@@ -309,10 +339,12 @@ object TulaOperations {
         confirmSmsFactorEnrolment,
         confirmTotpEnrolment,
         createMyOrganization,
+        createMyOrganizationSsoConnection,
         declineMyOrganizationInvitation,
         declineOrganizationInvitation,
         deleteMyIdentity,
         deleteMyOrganization,
+        deleteMyOrganizationSsoConnection,
         disableSmsFactor,
         disableTotp,
         exchangeIdentityLinkTicket,
@@ -321,6 +353,9 @@ object TulaOperations {
         getClientConfig,
         getMe,
         getMyFactors,
+        getMyOrganizationSsoConnection,
+        getMyOrganizationSsoConnectionTest,
+        getMyOrganizationSsoGroupRoles,
         getPasswordPolicy,
         getPasswordResetSecondFactorPasskeyOptions,
         getSignInSecondFactorPasskeyOptions,
@@ -332,6 +367,7 @@ object TulaOperations {
         listMyOrganizationInvitations,
         listMyOrganizationMembers,
         listMyOrganizationRoles,
+        listMyOrganizationSsoConnections,
         listMyOrganizationSuggestions,
         listMyOrganizations,
         listMyPasskeys,
@@ -341,6 +377,7 @@ object TulaOperations {
         prepareSignInFirstFactor,
         prepareSignInSecondFactor,
         previewOrganizationInvitation,
+        refreshMyOrganizationSsoMetadata,
         refreshSession,
         regenerateBackupCodes,
         removeMyOrganizationDomain,
@@ -348,6 +385,7 @@ object TulaOperations {
         removePasskey,
         removePhoneNumber,
         renamePasskey,
+        replaceMyOrganizationSsoGroupRoles,
         requestEmailAddressCode,
         requestPhoneCode,
         resendPasswordResetCode,
@@ -363,6 +401,7 @@ object TulaOperations {
         startIdTokenSignIn,
         startIdentityLink,
         startMyOrganizationDomain,
+        startMyOrganizationSsoConnectionTest,
         startOAuthSignIn,
         startPasskeyRegistration,
         startPasskeySignIn,
@@ -386,6 +425,7 @@ object TulaOperations {
         updateMyOrganization,
         updateMyOrganizationDomain,
         updateMyOrganizationMember,
+        updateMyOrganizationSsoConnection,
         verifyEmailAddress,
         verifyMyOrganizationDomain,
         verifyPhoneNumber,

@@ -446,6 +446,16 @@ export const HANDLERS: Handlers = {
   submitSignInNewPassword: () => unsupported('submitSignInNewPassword'),
   startIdTokenSignIn: () => unsupported('startIdTokenSignIn'),
   startSsoSignIn: () => unsupported('startSsoSignIn'),
+  listMyOrganizationSsoConnections: () => unsupported('listMyOrganizationSsoConnections'),
+  createMyOrganizationSsoConnection: () => unsupported('createMyOrganizationSsoConnection'),
+  getMyOrganizationSsoConnection: () => unsupported('getMyOrganizationSsoConnection'),
+  updateMyOrganizationSsoConnection: () => unsupported('updateMyOrganizationSsoConnection'),
+  refreshMyOrganizationSsoMetadata: () => unsupported('refreshMyOrganizationSsoMetadata'),
+  deleteMyOrganizationSsoConnection: () => unsupported('deleteMyOrganizationSsoConnection'),
+  getMyOrganizationSsoGroupRoles: () => unsupported('getMyOrganizationSsoGroupRoles'),
+  replaceMyOrganizationSsoGroupRoles: () => unsupported('replaceMyOrganizationSsoGroupRoles'),
+  startMyOrganizationSsoConnectionTest: () => unsupported('startMyOrganizationSsoConnectionTest'),
+  getMyOrganizationSsoConnectionTest: () => unsupported('getMyOrganizationSsoConnectionTest'),
   submitSignInIdToken: () => unsupported('submitSignInIdToken'),
 
   // Passkeys -----------------------------------------------------------------------------------
