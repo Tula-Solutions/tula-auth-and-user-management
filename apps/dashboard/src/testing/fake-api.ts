@@ -724,6 +724,17 @@ export function installFakeApi() {
         ]),
     ],
     ['GET', /^\/v1\/admin\/audit-logs$/, () => page(state.audit)],
+    [
+      'POST',
+      /^\/v1\/admin\/audit-logs\/export$/,
+      (call) => {
+        const body = call.body as { format?: string }
+        return new Response(body.format === 'csv' ? 'id\r\naudit-1\r\n' : '{"id":"audit-1"}\n', {
+          status: 200,
+          headers: { 'content-type': 'application/octet-stream' },
+        })
+      },
+    ],
     ...webhookRoutes(state),
     ...hookRoutes(state),
     ...nativeAppRoutes(state),
