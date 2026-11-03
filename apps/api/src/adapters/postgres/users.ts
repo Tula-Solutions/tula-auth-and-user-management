@@ -76,6 +76,7 @@ const columns = {
   phoneNumber: users.phoneNumber,
   phoneNumberVerifiedAt: users.phoneNumberVerifiedAt,
   smsFactorEnabledAt: users.smsFactorEnabledAt,
+  managedByConnectionId: users.managedByConnectionId,
 }
 
 /** Escape `LIKE` wildcards so a search term only ever matches literally. */

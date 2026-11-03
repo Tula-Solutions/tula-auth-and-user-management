@@ -240,6 +240,9 @@ object TulaOperations {
     /** Start making a texted code my second factor (`POST /v1/client/me/factors/sms`). No body. Answers [SmsFactorCode]. */
     val startSmsFactorEnrolment: TulaOperation = TulaOperation("startSmsFactorEnrolment", "POST", "/v1/client/me/factors/sms", true)
 
+    /** Continue with the identity provider of the address's domain (`POST /v1/client/sign-ins/{attemptId}/sso`). Body: [SsoStartRequest]. Answers [OAuthStart]. */
+    val startSsoSignIn: TulaOperation = TulaOperation("startSsoSignIn", "POST", "/v1/client/sign-ins/{attemptId}/sso", false)
+
     /** Start enrolling an authenticator app (`POST /v1/client/me/factors/totp`). No body. Answers [TotpEnrolment]. */
     val startTotpEnrolment: TulaOperation = TulaOperation("startTotpEnrolment", "POST", "/v1/client/me/factors/totp", true)
 
@@ -370,6 +373,7 @@ object TulaOperations {
         startSignUp,
         startSignUpTotpEnrolment,
         startSmsFactorEnrolment,
+        startSsoSignIn,
         startTotpEnrolment,
         stepUpSession,
         submitPasswordReset,

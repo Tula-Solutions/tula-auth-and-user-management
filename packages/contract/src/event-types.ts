@@ -46,6 +46,9 @@ export const ACTIVITY_TYPES = [
   // `provider` says which, `method` how (`auto`, `profile`).
   'user.identity_linked',
   'user.identity_unlinked',
+  // An account given its identity at an SSO connection (ADR 0067): `connectionId` says which,
+  // `method` whether it was matched by address or created just in time.
+  'user.sso_linked',
   // An email address stored on a user who had none (ADR 0059); `method` says who did it and
   // `verified` whether its holder proved it. The address itself is never in an event.
   'user.email_added',
@@ -101,6 +104,11 @@ export const ACTIVITY_TYPES = [
   'native_app.created',
   'native_app.updated',
   'native_app.deleted',
+  // An organization's single sign-on connection (ADR 0067). Ids, protocol, status and field
+  // names only: never the issuer, the client id or secret, or a domain.
+  'sso_connection.created',
+  'sso_connection.updated',
+  'sso_connection.deleted',
   // An organization and its members (ADR 0065). The events carry ids and role keys only:
   // never the organization's name or slug, and never a member's address or name.
   'organization.created',
@@ -184,6 +192,7 @@ export const EVENT_TARGET_TYPES = {
   'user.identity_linked': 'user',
   'user.email_added': 'user',
   'user.identity_unlinked': 'user',
+  'user.sso_linked': 'user',
   'user.passkey_added': 'user',
   'user.passkey_renamed': 'user',
   'user.passkey_removed': 'user',
@@ -215,6 +224,9 @@ export const EVENT_TARGET_TYPES = {
   'native_app.created': 'native_app',
   'native_app.updated': 'native_app',
   'native_app.deleted': 'native_app',
+  'sso_connection.created': 'sso_connection',
+  'sso_connection.updated': 'sso_connection',
+  'sso_connection.deleted': 'sso_connection',
   'organization.created': 'organization',
   'organization.updated': 'organization',
   'organization.deleted': 'organization',

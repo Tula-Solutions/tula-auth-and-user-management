@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { check, index, jsonb, text, timestamp, unique } from 'drizzle-orm/pg-core'
+import { check, index, jsonb, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core'
 import { primaryKey, timestamps } from '../mixins'
 import { tenantColumns, tenantConstraints, tenantParentKey } from '../tenant-columns'
 import { tula } from './pg-schema'
@@ -50,6 +50,8 @@ export const users = tula.table(
     externalId: text('external_id'),
     /** What an import kept with the user (at most 4 KiB as JSON); `{}` for every other user. */
     metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
+    /** The SSO connection that provisioned and manages this account (ADR 0067); null for every other user. */
+    managedByConnectionId: uuid('managed_by_connection_id'),
     ...timestamps(),
   },
   (t) => [

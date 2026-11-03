@@ -44,6 +44,7 @@ async function setup() {
     settings: {
       ...DEFAULT_ENVIRONMENT_SETTINGS,
       organizations: { ...DEFAULT_ENVIRONMENT_SETTINGS.organizations, enabled: true },
+      sso: { enabled: true },
     },
   })
   const agent = await seedApiKey(deps, AGENT_KEY)

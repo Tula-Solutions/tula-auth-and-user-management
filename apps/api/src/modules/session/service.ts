@@ -22,6 +22,7 @@ import {
   type SessionProfile,
   type SessionSettings,
   type SessionTokens,
+  SSO_CONNECTION_CLAIM,
 } from '@tula-tech/contract'
 import { SignJWT } from 'jose'
 import type { Deps, Tenant } from '~/dependencies'
@@ -214,7 +215,8 @@ type ClaimSource = Pick<
   | 'authMethods'
   | 'createdAt'
   | 'deviceThumbprint'
->
+> &
+  Partial<Pick<SessionRecord, 'ssoConnectionId'>>
 
 /** A session's profile as configured now, with the settings it was read from. */
 interface Configured extends NamedSessionProfile {
@@ -373,6 +375,8 @@ function claimsOf(
     // Only for a session bound to a device key (ADR 0043): absent, never `null`, so that the
     // token of a session that is not bound is what it always was.
     ...(session.deviceThumbprint && { cnf: { jkt: session.deviceThumbprint } }),
+    // Only for a session signed in through an SSO connection (ADR 0067): absent otherwise.
+    ...(session.ssoConnectionId && { [SSO_CONNECTION_CLAIM]: session.ssoConnectionId }),
     // Absent, never empty: a session without custom claims is what it always was.
     ...(custom && { [CUSTOM_CLAIMS_CLAIM]: custom }),
     // All three or none (ADR 0065): a session acting in no organization is what it always was.
@@ -536,6 +540,8 @@ export interface CreateInput {
    * accepted a proof for. `null` or absent for a session that is not bound.
    */
   deviceThumbprint?: string | null
+  /** The SSO connection the sign-in went through (ADR 0067): the token's `sso_conn` claim. */
+  ssoConnectionId?: string | null
 }
 
 /**
@@ -645,6 +651,7 @@ export async function create(
     authMethods,
     hookClaims: hook.claims,
     deviceThumbprint,
+    ssoConnectionId: input.ssoConnectionId ?? null,
     createdAt: now,
   }
   const root = {

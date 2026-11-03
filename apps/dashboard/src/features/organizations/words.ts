@@ -141,6 +141,10 @@ const SYSTEM_WORDS: Record<SystemPermission, { label: string; description: strin
     label: 'Manage domains',
     description: 'Add and verify the organization’s email domains.',
   },
+  'org:sys:sso:manage': {
+    label: 'Manage single sign-on',
+    description: 'Set up, activate and disable the organization’s SSO connections.',
+  },
 }
 
 /**

@@ -732,6 +732,44 @@ export const WaitStepSchema = z
   .meta({ ref: 'ConformanceWaitStep' })
 
 /** One step of a scenario. */
+/**
+ * Play the user at the server's mock enterprise identity provider (an OIDC SSO connection,
+ * ADR 0067), or learn its issuer. With `captureIssuer`, the variable receives the issuer a
+ * connection names to sign in through the mock: an address the server can reach itself.
+ * With `authorizationUrl` (the `authorizationUrl` of `…/sso`), the runner signs in at the
+ * mock as `email` and follows the connection's callback, as for an `oauth` step. Needs the
+ * mock provider (`OAUTH_MOCK_PROVIDER=true`).
+ */
+export const SsoStepSchema = z
+  .object({
+    name: z.string().min(1),
+    sso: z
+      .object({
+        /** Variable that receives the mock identity provider's issuer. */
+        captureIssuer: z.string().optional(),
+        /** The `authorizationUrl` of an SSO start, e.g. `{{authorizationUrl}}`. */
+        authorizationUrl: z.string().optional(),
+        /** The address the identity provider reports. */
+        email: z.string().optional(),
+        /** The provider's id for the account. Derived from the address when left out. */
+        subject: z.string().optional(),
+        /** The provider reports the address with `email_verified: false`. */
+        unverified: z.boolean().optional(),
+        /** Variable that receives the ticket. The step fails when the callback sent an error. */
+        captureTicket: z.string().optional(),
+        /** Variable that receives the attempt id. */
+        captureAttempt: z.string().optional(),
+        /** The contract error code the callback must send instead of a ticket. */
+        expectError: z.string().optional(),
+      })
+      .strict()
+      .refine((sso) => (sso.captureIssuer === undefined) !== (sso.authorizationUrl === undefined), {
+        message: 'an sso step takes either `captureIssuer` or `authorizationUrl`',
+      }),
+  })
+  .strict()
+  .meta({ ref: 'ConformanceSsoStep' })
+
 export const StepSchema = z
   .union([
     RequestStepSchema,
@@ -741,6 +779,7 @@ export const StepSchema = z
     SmsCodeStepSchema,
     TotpStepSchema,
     OAuthStepSchema,
+    SsoStepSchema,
     IdTokenStepSchema,
     PasskeyStepSchema,
     WebhookStepSchema,

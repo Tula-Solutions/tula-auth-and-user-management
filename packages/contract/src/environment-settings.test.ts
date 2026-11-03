@@ -70,6 +70,7 @@ describe('EnvironmentSettingsSchema', () => {
       urls: { allowedOrigins: [], allowedRedirectUrls: [] },
       audit: { retentionDays: null },
       agents: { proposalsInProduction: false, testSignIn: null },
+      sso: { enabled: false },
       organizations: {
         enabled: false,
         allowUserCreated: false,
@@ -442,6 +443,7 @@ describe('EnvironmentSettingsInputSchema', () => {
       urls: { allowedRedirectUrls: [] },
       audit: { retentionDays: null },
       agents: { proposalsInProduction: false, testSignIn: null },
+      sso: { enabled: false },
       organizations: {
         enabled: false,
         allowUserCreated: false,

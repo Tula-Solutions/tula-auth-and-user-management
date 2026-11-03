@@ -38,6 +38,7 @@ const sessionColumns = {
   hookClaims: sessions.hookClaims,
   deviceThumbprint: sessions.deviceThumbprint,
   activeOrganizationId: sessions.activeOrganizationId,
+  ssoConnectionId: sessions.ssoConnectionId,
   revokedAt: sessions.revokedAt,
   revokeReason: sessions.revokeReason,
   createdAt: sessions.createdAt,

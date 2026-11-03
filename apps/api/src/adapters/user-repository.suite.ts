@@ -74,6 +74,7 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         bannedAt: null,
         lastSignInAt: null,
         phoneNumber: null,
+        managedByConnectionId: null,
         phoneNumberVerifiedAt: null,
         smsFactorEnabledAt: null,
       }
@@ -375,6 +376,7 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         ).toBe(true)
         expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toMatchObject({
           phoneNumber: null,
+          managedByConnectionId: null,
           smsFactorEnabledAt: null,
         })
         expect((await auditOf(ctx.a, input.id)).sort()).toEqual([
@@ -444,6 +446,7 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         await ctx.users.create(input, Audit.none('fixture'))
         expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toMatchObject({
           phoneNumber: null,
+          managedByConnectionId: null,
           phoneNumberVerifiedAt: null,
         })
       })

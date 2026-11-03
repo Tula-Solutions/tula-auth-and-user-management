@@ -154,8 +154,11 @@ import { join } from 'node:path'
  * to 18,821: the query's part of `CallInput` costs nothing, the rest is the transport writing
  * a search string onto the address. The budget moved by exactly those 63 bytes, from 18,762 to
  * 18,825: the room is the 4 bytes it was.
+ * Single sign-on (TULA-138) added its twelve error codes and the `sso` first factor: 264 bytes, from
+ * 18,821 to 19,085, and its start operation 13 more, to 19,098. The budget moved by exactly those,
+ * to 19,102: the room is the 4 bytes it was.
  */
-const GZIP_BUDGET_BYTES = 18_825
+const GZIP_BUDGET_BYTES = 19_102
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

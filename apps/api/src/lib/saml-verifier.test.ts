@@ -184,7 +184,9 @@ describe('the mock SAML signer', () => {
         continue
       }
       const text = await Bun.file(`${import.meta.dir}/../${file}`).text()
-      if (/mock-saml/.test(text)) {
+      // The mock keys are also the dev-only OIDC provider's signing key (modules/sso/dev-router.ts, mounted
+      // only with the mock provider); the signer itself is imported by nothing else.
+      if (/mock-saml(?!-keys)/.test(text)) {
         importers.push(file)
       }
     }

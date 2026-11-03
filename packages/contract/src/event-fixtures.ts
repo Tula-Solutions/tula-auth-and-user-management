@@ -13,6 +13,7 @@ const SIGNING_KEY = '0199c2f4-7a15-7d88-86f7-9a4b5e1d2c06'
 const WEBHOOK_ENDPOINT = '0199c2f4-7a18-7abb-99ca-cd7e8b4a5f09'
 const HOOK = '0199c2f4-7a19-7bcc-8adb-de8f9c5b6a10'
 const NATIVE_APP = '0199c2f4-7a1a-7cdd-9bec-ef9a0d6c7b11'
+const SSO_CONNECTION = '0199c2f4-7a1a-7cdd-9bec-ef9a0d6c7b9c'
 const PROPOSAL = '0199c2f4-7a1b-7dee-8cfd-f0ab1e7d8c12'
 const ORGANIZATION = '0199c2f4-7a1d-7f00-8e1f-12cd3a9f0e14'
 const MEMBERSHIP = '0199c2f4-7a1e-7011-9f2a-23de4b0a1f15'
@@ -39,6 +40,7 @@ const aboutEnvironment = { type: 'environment', id: ENVIRONMENT } as const
 const aboutWebhookEndpoint = { type: 'webhook_endpoint', id: WEBHOOK_ENDPOINT } as const
 const aboutHook = { type: 'hook', id: HOOK } as const
 const aboutNativeApp = { type: 'native_app', id: NATIVE_APP } as const
+const aboutSsoConnection = { type: 'sso_connection', id: SSO_CONNECTION } as const
 const aboutOrganization = { type: 'organization', id: ORGANIZATION } as const
 const aboutMembership = { type: 'organization_membership', id: MEMBERSHIP } as const
 const aboutRole = { type: 'organization_role', id: ORGANIZATION_ROLE } as const
@@ -183,6 +185,15 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     actor: user,
     target: aboutUser,
     data: { provider: 'google', method: 'auto' },
+  },
+  'user.sso_linked': {
+    id: eventId(122),
+    type: 'user.sso_linked',
+    schemaVersion,
+    occurredAt,
+    actor: user,
+    target: aboutUser,
+    data: { connectionId: '0190a1b2-0000-7000-8000-0000000000c1', method: 'email' },
   },
   'user.identity_unlinked': {
     id: eventId(12),
@@ -505,6 +516,33 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     actor: admin,
     target: aboutNativeApp,
     data: { platform: 'android' },
+  },
+  'sso_connection.created': {
+    id: eventId(119),
+    type: 'sso_connection.created',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutSsoConnection,
+    data: { protocol: 'oidc', status: 'draft', domains: 1 },
+  },
+  'sso_connection.updated': {
+    id: eventId(120),
+    type: 'sso_connection.updated',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutSsoConnection,
+    data: { protocol: 'oidc', changed: ['status'], status: 'disabled', weakened: true },
+  },
+  'sso_connection.deleted': {
+    id: eventId(121),
+    type: 'sso_connection.deleted',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutSsoConnection,
+    data: { protocol: 'oidc' },
   },
   'organization.created': {
     id: eventId(46),

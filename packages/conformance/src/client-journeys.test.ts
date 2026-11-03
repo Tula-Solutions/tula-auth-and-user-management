@@ -101,12 +101,17 @@ describe('the committed list', () => {
     }
     // TULA-76: the native clients' emailed link. TULA-130: member management in the native clients.
     // TULA-132: the invitee's own list of invitations in the native clients.
-    expect(Object.fromEntries(perTicket)).toEqual({ 'TULA-130': 1, 'TULA-132': 1, 'TULA-76': 1 })
+    expect(Object.fromEntries(perTicket)).toEqual({
+      'TULA-130': 1,
+      'TULA-132': 1,
+      'TULA-142': 2,
+      'TULA-76': 1,
+    })
   })
 
   test('what each client has not built yet: nothing for @tula-tech/core, and for @tula-tech/expo a number per ticket that only this line lets change', async () => {
     const list = await loadClientJourneys()
-    expect(notBuilt(list, 'core')).toEqual([])
+    expect(notBuilt(list, 'core').map((entry) => entry.ticket)).toEqual(['TULA-141', 'TULA-141'])
     const perTicket = new Map<string, number>()
     for (const { ticket } of notBuilt(list, 'expo')) {
       perTicket.set(ticket, (perTicket.get(ticket) ?? 0) + 1)
@@ -115,7 +120,8 @@ describe('the committed list', () => {
     // the emailed link (refused, not handled). TULA-55 built device binding, and took its
     // eight with it. TULA-73 built the emailed link, the last one. A scenario the package
     // cannot run yet comes back here with its ticket and its number.
-    expect(Object.fromEntries(perTicket)).toEqual({})
+    // The SSO start (ADR 0067) is built by TULA-142.
+    expect(Object.fromEntries(perTicket)).toEqual({ 'TULA-142': 2 })
   })
 })
 
