@@ -16,6 +16,9 @@ export const SCIM_TOKEN_RATE_LIMIT = 600
 /** Requests per minute all the tokens of one organization may make together. */
 export const SCIM_ORGANIZATION_RATE_LIMIT = 1200
 
+/** Requests per minute one IP may make to `/v1/scim/v2`, counted before the token is checked. */
+export const SCIM_IP_RATE_LIMIT = 1200
+
 /** What `scimToken()` adds to the context: the organization the token provisions for. */
 export interface ScimVariables {
   scim: { organizationId: string; tokenId: string }
