@@ -178,6 +178,14 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   `words.test.ts`. A certificate ending within 30 days is a warning and an ended one an
   alert (`certificateStanding`). The fake (`src/testing/fake-sso.ts`) is held to the
   contract by `fake-sso.test.ts`.
+- **The SCIM section** (`features/scim`, on the organization's page, `/v1/admin/scim-tokens`)
+  follows the one-time-secret rules above: the token is shown once in its dialog with the
+  base URL, and gone after it closes or the environment changes; revoking asks first
+  (`ConfirmDialog`, the token's name typed in production); the list says last used ("Never")
+  and revoked-at. The base URL is `window.location.origin` + `/v1/scim/v2` (the dashboard
+  has no `PUBLIC_URL`; behind a proxy that differs, the operator reads the right one from
+  their identity provider's setup). The fake (`src/testing/fake-scim.ts`) is held to the
+  contract by `fake-scim.test.ts`.
 - **The proposals screen** (`features/proposals`, [ADR 0053](../../docs/adr/0053-proposals.md),
   "The dashboard's Proposals screen") lists what an agent asked for and approves with the
   dashboard's session. **It approves what it showed**: the request's operation and target
