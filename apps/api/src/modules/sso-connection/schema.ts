@@ -6,6 +6,10 @@ export {
   SsoConnectionListSchema,
   SsoConnectionSchema,
   SsoGroupRolesSchema,
+  SsoTestIdParamSchema,
+  SsoTestResultSchema,
+  SsoTestStartRequestSchema,
+  SsoTestStartSchema,
   UpdateSsoConnectionRequestSchema,
 } from '@tula-tech/contract'
 

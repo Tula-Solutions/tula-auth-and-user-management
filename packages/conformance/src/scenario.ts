@@ -761,6 +761,8 @@ export const SsoStepSchema = z
         captureTicket: z.string().optional(),
         /** Variable that receives the attempt id. */
         captureAttempt: z.string().optional(),
+        /** Variable that receives the id of a test sign-in (`#tula_test=<id>`, TULA-145). */
+        captureTest: z.string().optional(),
         /** The contract error code the callback must send instead of a ticket. */
         expectError: z.string().optional(),
         /** Variable that receives the mock identity provider's SAML metadata document. */

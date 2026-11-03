@@ -9,6 +9,7 @@ import type {
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, NotFoundError } from '~/exceptions'
 import type { Actor } from '~/lib/actor'
+import { sha256Hex } from '~/lib/crypto'
 import * as Outbound from '~/lib/outbound'
 import {
   type IdpMetadata,
@@ -80,6 +81,45 @@ export function samlUrls(
   }
 }
 
+/**
+ * A fingerprint of everything a test sign-in exercises: the protocol, the provider's values,
+ * the client, the role, the domains and the attribute mapping. A passing test is good for exactly the settings that
+ * hash to the value it stored, so any change to them is a reset with nothing to clear.
+ *
+ * @param record - A connection, or what it would be after a change.
+ * @returns A SHA-256 hex digest.
+ */
+export function fingerprint(
+  record: Pick<
+    SsoConnectionRecord,
+    | 'protocol'
+    | 'issuer'
+    | 'clientId'
+    | 'clientSecretSealed'
+    | 'saml'
+    | 'defaultRole'
+    | 'domains'
+    | 'attributeMapping'
+  >
+): string {
+  return sha256Hex(
+    JSON.stringify([
+      record.protocol,
+      record.issuer,
+      record.clientId,
+      record.clientSecretSealed,
+      record.saml && [
+        record.saml.idpEntityId,
+        record.saml.ssoUrl,
+        record.saml.certificates.map((c) => c.pem),
+      ],
+      record.defaultRole,
+      [...record.domains].sort(),
+      record.attributeMapping,
+    ])
+  )
+}
+
 function view(
   config: { publicUrl: string },
   record: SsoConnectionRecord,
@@ -111,6 +151,7 @@ function view(
     breakGlassRole: record.breakGlassRole,
     trustIdpMfa: record.trustIdpMfa,
     domains: record.domains,
+    tested: record.testedFingerprint === fingerprint(record),
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
   }
@@ -198,6 +239,14 @@ export async function resolveSaml(
         ssoUrl: input.ssoUrl,
         certificates: input.certificates,
       }
+    }
+    // The browser is sent here: plain http is for the local tier only, as for any address we call.
+    const scheme = URL.canParse(values.ssoUrl) ? new URL(values.ssoUrl).protocol : null
+    if (scheme === null) {
+      throw new AuthError('sso.saml_invalid', { reason: 'sso_url' })
+    }
+    if (scheme !== 'https:' && !(scheme === 'http:' && deps.outbound.tier === 'local')) {
+      throw new AuthError('sso.url_not_https')
     }
     return {
       idpEntityId: values.idpEntityId,
@@ -361,6 +410,7 @@ export async function create(
       breakGlassRole: null,
       trustIdpMfa: false,
       domains,
+      testedFingerprint: null,
       createdAt: activity.occurredAt,
       updatedAt: activity.occurredAt,
     },
@@ -450,6 +500,44 @@ export async function putGroupRoles(
     activity
   )
   return { mappings: input.mappings }
+}
+
+/**
+ * Record that a test sign-in passed against the connection's settings as they were when it
+ * started. A connection changed since then has another fingerprint and is not marked.
+ *
+ * @param deps - The connection store and clock.
+ * @param tenant - The environment.
+ * @param id - The connection.
+ * @param tested - The fingerprint the test ran against.
+ * @param actor - Who started the test, for the audit log.
+ * @returns Whether the mark was written: `false` when the settings changed meanwhile.
+ */
+export async function markTested(
+  deps: Pick<Deps, 'ssoConnections' | 'ids' | 'clock'>,
+  tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
+  id: string,
+  tested: string,
+  actor: Actor
+): Promise<boolean> {
+  const current = await deps.ssoConnections.find(tenant.environmentId, id)
+  if (!current || fingerprint(current) !== tested) {
+    return false
+  }
+  const activity = Audit.entry(deps, tenant, {
+    type: 'sso_connection.updated',
+    actor,
+    target: { type: 'sso_connection', id },
+    data: { protocol: current.protocol, changed: ['test'], status: current.status },
+  })
+  const result = await deps.ssoConnections.update(
+    tenant.environmentId,
+    id,
+    { testedFingerprint: tested },
+    activity.occurredAt,
+    activity
+  )
+  return typeof result !== 'string'
 }
 
 /** The life of a connection never goes back to a draft. */
@@ -599,6 +687,14 @@ export async function update(
   }
   if (status === 'active' && (changes.domains ?? current.domains).length === 0) {
     throw new AuthError('sso.domain_not_verified')
+  }
+  // Going live needs a passing test of exactly these settings (a change in this same request counts).
+  if (
+    status === 'active' &&
+    current.status !== 'active' &&
+    fingerprint({ ...current, ...changes }) !== current.testedFingerprint
+  ) {
+    throw new AuthError('sso.test_required')
   }
   if (changed.length === 0) {
     return view(deps.config, current, deps.clock.now())

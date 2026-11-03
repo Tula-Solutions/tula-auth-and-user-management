@@ -79,6 +79,12 @@ export const ssoConnections = tula.table(
     breakGlassRole: text('break_glass_role'),
     /** Trust the identity provider for MFA: an SSO sign-in skips Tula's second step. */
     trustIdpMfa: boolean('trust_idp_mfa').notNull().default(false),
+    /**
+     * Fingerprint of the settings a passing test sign-in ran against (TULA-145). A connection
+     * can be activated only while its current settings hash to this, so any change to them
+     * is a reset with nothing to clear.
+     */
+    testedFingerprint: text('tested_fingerprint'),
     ...timestamps(),
   },
   (t) => [

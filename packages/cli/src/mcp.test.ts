@@ -279,6 +279,7 @@ async function seed() {
       breakGlassRole: null,
       trustIdpMfa: false,
       attributeMapping: null,
+      testedFingerprint: null,
       domains: [],
       createdAt: deps.clock.now(),
       updatedAt: deps.clock.now(),

@@ -90,6 +90,19 @@ and passes the same table of refusals.
   in the mapping table; it is never in an audit entry, an event payload or a log line. Saving the
   mapping is the existing `sso_connection.updated` event with `changed: ['groupRoles']`, which says
   that it changed and not what it holds. At most 200 values of 256 characters are read from a profile.
+## Test sign-in and activation (TULA-145)
+
+- A test round is a flow attempt of kind `sign_in` marked by `state.ssoTest`, with a secret nobody
+  holds; it needed no new flow kind. The callback stops before `finish()`: no session, user, identity
+  or membership is created, and no assertion or token is kept in the result.
+- This is the one place a refusal reason is shown. Each verifier failure maps to a contract reason
+  code (`SSO_TEST_REASONS`) and a sentence for the person setting the connection up; a real sign-in
+  still says only `sso.provider_error`.
+- The connection stores `testedFingerprint`, a SHA-256 of the settings a sign-in depends on. `tested`
+  is true only while it matches, so any such change needs a new test. Activation without it is
+  `sso.test_required` (409).
+- A SAML SSO URL and an OIDC authorization endpoint are https, `http` only in the `local` tier
+  (`sso.url_not_https` on save; `discovery_failed` when discovery names one).
 
 ## SCIM (TULA-143)
 

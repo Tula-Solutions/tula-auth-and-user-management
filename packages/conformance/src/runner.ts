@@ -943,6 +943,7 @@ async function followCallback(
     captureTicket?: string
     expectError?: string
     captureAttempt?: string
+    captureTest?: string
   },
   variables: Record<string, string>,
   /** The callback's answer, when the caller has already made the request (a SAML ACS post). */
@@ -980,6 +981,13 @@ async function followCallback(
   }
   if (oauth.captureAttempt) {
     variables[oauth.captureAttempt] = params.get('tula_attempt') ?? ''
+  }
+  if (oauth.captureTest) {
+    const test = params.get('tula_test')
+    if (!test) {
+      throw new Error('the callback sent no test id')
+    }
+    variables[oauth.captureTest] = test
   }
 }
 
@@ -1056,6 +1064,7 @@ async function runSamlSignIn(
     captureTicket?: string
     expectError?: string
     captureAttempt?: string
+    captureTest?: string
     expectReplayRefused?: boolean
   },
   variables: Record<string, string>

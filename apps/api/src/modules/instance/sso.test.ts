@@ -129,6 +129,7 @@ async function connect(
     breakGlassRole: null,
     trustIdpMfa: false,
     attributeMapping: null,
+    testedFingerprint: null,
     domains: [domain],
     createdAt: now,
     updatedAt: now,

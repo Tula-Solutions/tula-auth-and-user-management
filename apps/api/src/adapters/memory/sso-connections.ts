@@ -125,6 +125,7 @@ export class MemorySsoConnectionStore implements SsoConnectionStore {
       trustIdpMfa: changes.trustIdpMfa ?? record.trustIdpMfa,
       domains: changes.domains ? [...changes.domains].sort() : record.domains,
       status: changes.status ?? record.status,
+      testedFingerprint: changes.testedFingerprint ?? record.testedFingerprint,
       updatedAt,
     }
     const renamed = next.name !== record.name

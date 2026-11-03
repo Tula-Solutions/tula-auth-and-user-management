@@ -8078,6 +8078,18 @@ The protocols a connection can speak.
 const SSO_PROTOCOLS: readonly ["oidc", "saml"]
 ```
 
+### `SSO_TEST_REASONS`
+
+_constant_, defined in `packages/contract/src/sso-test.ts`
+
+Why a test sign-in of an SSO connection failed, each with a sentence for the person setting
+the connection up (ADR 0067). **This is the one place a verifier's reason is shown:** a real
+sign-in answers `sso.provider_error` for every refusal and only logs the reason.
+
+```ts
+const SSO_TEST_REASONS
+```
+
 ### `STEP_UP_MAX_AGE_SECONDS`
 
 _constant_, defined in `packages/contract/src/tokens.ts`
@@ -9184,6 +9196,87 @@ names it. The answer is an `OAuthStart` (the provider's URL, the binding, the at
 
 ```ts
 const SsoStartRequestSchema: z.ZodObject<{ redirectUrl: z.ZodString; }, z.core.$strip>
+```
+
+### `SsoTestIdParamSchema`
+
+_constant_, defined in `packages/contract/src/sso-test.ts`
+
+The connection and test ids of a test route's path.
+
+```ts
+const SsoTestIdParamSchema: z.ZodObject<{ id: z.ZodUUID; testId: z.ZodUUID; }, z.core.$strip>
+```
+
+### `SsoTestReason`
+
+_type_, defined in `packages/contract/src/sso-test.ts`
+
+One of {@link SSO_TEST_REASONS}' codes.
+
+```ts
+export type SsoTestReason = keyof typeof SSO_TEST_REASONS
+```
+
+### `SsoTestResult`
+
+_type_, defined in `packages/contract/src/sso-test.ts`
+
+A test's result.
+
+```ts
+export type SsoTestResult = z.infer<typeof SsoTestResultSchema>
+```
+
+### `SsoTestResultSchema`
+
+_constant_, defined in `packages/contract/src/sso-test.ts`
+
+What a test sign-in found. It holds names and values the provider sent, never the raw
+assertion, a token or a signature.
+
+```ts
+const SsoTestResultSchema
+```
+
+### `SsoTestStart`
+
+_type_, defined in `packages/contract/src/sso-test.ts`
+
+A started test.
+
+```ts
+export type SsoTestStart = z.infer<typeof SsoTestStartSchema>
+```
+
+### `SsoTestStartRequest`
+
+_type_, defined in `packages/contract/src/sso-test.ts`
+
+The body that starts a test.
+
+```ts
+export type SsoTestStartRequest = z.infer<typeof SsoTestStartRequestSchema>
+```
+
+### `SsoTestStartRequestSchema`
+
+_constant_, defined in `packages/contract/src/sso-test.ts`
+
+Starts a test sign-in: where the browser returns to (an address the environment allows).
+
+```ts
+const SsoTestStartRequestSchema: z.ZodObject<{ redirectUrl: z.ZodString; }, z.core.$strip>
+```
+
+### `SsoTestStartSchema`
+
+_constant_, defined in `packages/contract/src/sso-test.ts`
+
+A started test: send the browser to `authorizationUrl`; it returns with `#tula_test=<testId>`.
+
+```ts
+const SsoTestStartSchema: z.ZodObject<{ testId: z.ZodUUID; authorizationUrl: z.ZodString; }, z.core.$strip>
 ```
 
 ### `StartOrganizationDomainRequest`

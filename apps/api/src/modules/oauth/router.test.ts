@@ -1682,6 +1682,7 @@ describe('a provider sign-in on an SSO-enforced domain (TULA-140)', () => {
         enforced,
         breakGlassRole: null,
         trustIdpMfa: false,
+        testedFingerprint: null,
         domains: ['northline.app'],
         createdAt: now,
         updatedAt: now,

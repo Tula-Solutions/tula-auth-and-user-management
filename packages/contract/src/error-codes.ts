@@ -551,6 +551,16 @@ export const ERROR_DEFINITIONS = {
     status: 409,
     message: 'A connection cannot move to that status from its current one.',
   },
+  'sso.url_not_https': {
+    status: 422,
+    message: 'The identity provider’s sign-in address must start with https.',
+  },
+  'sso.test_required': {
+    status: 409,
+    message:
+      'Run a passing test sign-in of the connection’s current settings before activating it.',
+  },
+  'sso.test_not_found': { status: 404, message: 'No such test sign-in.' },
   'sso.unavailable': { status: 400, message: 'Single sign-on is not available for that address.' },
   'sso.provider_error': { status: 401, message: 'The identity provider did not sign you in.' },
   'sso.user_not_provisioned': {

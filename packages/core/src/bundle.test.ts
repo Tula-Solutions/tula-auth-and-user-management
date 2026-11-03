@@ -162,8 +162,10 @@ import { join } from 'node:path'
  * exactly those 105 bytes, to 19,207: the room is the 4 bytes it was.
  * SAML connections (TULA-139) added the `sso.saml_invalid` code: 31 bytes, to 19,234. The budget moved
  * by exactly those, to 19,238: the room is the 4 bytes it was.
+ * The test sign-in (TULA-145) added the codes `sso.url_not_https`, `sso.test_required` and
+ * `sso.test_not_found`: 85 bytes, to 19,319. The budget moved by exactly those, to 19,323.
  */
-const GZIP_BUDGET_BYTES = 19_238
+const GZIP_BUDGET_BYTES = 19_323
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

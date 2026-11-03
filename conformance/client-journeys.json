@@ -1744,6 +1744,24 @@
         "decision": "journey"
       }
     },
+    "sso connection activates only after a passing test": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a connection’s test sign-in and its activation is done on the admin API, behind a secret key or a dashboard session, which a client SDK does not hold. `@tula-tech/admin` is the client of those routes."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "a connection’s test sign-in and its activation is done on the admin API, behind a secret key or a dashboard session, which an app does not hold."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "a connection’s test sign-in and its activation is done on the admin API, behind a secret key or a dashboard session, which the Swift client does not hold."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a connection’s test sign-in and its activation is done on the admin API, behind a secret key or a dashboard session, which the Kotlin client does not hold."
+      }
+    },
     "sso connections: create, read, update, delete": {
       "core": {
         "decision": "not_applicable",
@@ -1900,6 +1918,24 @@
         "decision": "not_built",
         "ticket": "TULA-142",
         "reason": "The Kotlin client has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      }
+    },
+    "sso test sign-in fails with its reason": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a connection’s test sign-in and its result is done on the admin API, behind a secret key or a dashboard session, which a client SDK does not hold. `@tula-tech/admin` is the client of those routes."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "a connection’s test sign-in and its result is done on the admin API, behind a secret key or a dashboard session, which an app does not hold."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "a connection’s test sign-in and its result is done on the admin API, behind a secret key or a dashboard session, which the Swift client does not hold."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a connection’s test sign-in and its result is done on the admin API, behind a secret key or a dashboard session, which the Kotlin client does not hold."
       }
     },
     "sso trust in the provider for two-step verification": {
