@@ -170,7 +170,8 @@ async function acs(response: string, relayState: string) {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
-      SAMLResponse: Buffer.from(response).toString('base64'),
+      // Exactly what an IdP posts: one base64 of the Response XML.
+      SAMLResponse: response,
       RelayState: relayState,
     }),
   })
@@ -364,10 +365,7 @@ describe('the mock identity provider (SAML)', () => {
     return {
       page,
       html,
-      response: Buffer.from(
-        /name="SAMLResponse" value="([^"]+)"/.exec(html)?.[1] ?? '',
-        'base64'
-      ).toString(),
+      response: /name="SAMLResponse" value="([^"]+)"/.exec(html)?.[1] ?? '',
     }
   }
 

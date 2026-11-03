@@ -486,9 +486,8 @@ export async function verifySaml(
     throw refused('saml', 'not_saml', 'malformed_response')
   }
   const { spEntityId, acsUrl } = samlUrls(deps.config, connection)
-  // The POST binding base64-encodes the document; the verifier reads the XML itself.
-  const xml = Buffer.from(samlResponse, 'base64').toString('utf8')
-  const verdict = await SamlVerifier.verify(deps, xml, {
+  // The verifier decodes the POST binding's base64 itself; decoding here too refused every real IdP.
+  const verdict = await SamlVerifier.verify(deps, samlResponse, {
     spEntityId,
     acsUrl,
     requestId,

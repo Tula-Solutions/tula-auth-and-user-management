@@ -154,7 +154,8 @@ async function answer(s: Awaited<ReturnType<typeof started>>, say: Say = {}) {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
-      SAMLResponse: Buffer.from(response).toString('base64'),
+      // Exactly what an IdP posts: one base64 of the Response XML.
+      SAMLResponse: response,
       RelayState: s.relayState,
     }),
   })
@@ -213,7 +214,7 @@ describe('SAML test round', () => {
     // No raw assertion and no token is kept anywhere in the result.
     const text = JSON.stringify(result)
     expect(text).not.toContain('Signature')
-    expect(text).not.toContain(Buffer.from(back.response).toString('base64'))
+    expect(text).not.toContain(back.response)
     expect(text).not.toContain('Assertion')
   })
 
