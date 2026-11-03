@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula-tech/contract'
 import { createApp } from '~/index'
 import * as Audit from '~/modules/audit/service'
@@ -214,6 +214,21 @@ describe('SCIM Groups: roles', () => {
     const a = await provision('a@acme.test')
     await scim('POST', '/Groups', group('Whatever', [a]))
     expect(await roleOf(a)).toBe('member')
+  })
+
+  test('a failure after a role change puts the role back and stores no group', async () => {
+    const a = await provision('a@acme.test')
+    const b = await provision('b@acme.test')
+    // a is the organization's only manager, so b's promotion is the change that is made.
+    await mapGroups([{ group: 'Admins', role: 'admin' }])
+    const insert = spyOn(deps.scim, 'insertGroup').mockImplementationOnce(async () => {
+      throw new Error('crash')
+    })
+    const res = await scim('POST', '/Groups', group('Admins', [a, b]))
+    insert.mockRestore()
+    expect(res.status).toBe(500)
+    expect(await roleOf(b)).toBe('member')
+    expect((await scim('GET', '/Groups')).body.totalResults).toBe(0)
   })
 
   test('removing the last manager through a group is 409 and nothing changes', async () => {

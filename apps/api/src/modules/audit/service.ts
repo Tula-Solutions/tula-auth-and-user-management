@@ -228,9 +228,11 @@ function csvRow(log: AuditLog): string {
  *
  * Keyset-paged on `(occurredAt, id)`, so memory stays at one page whatever the length and a
  * resume with the last entry's cursor (`auditExportCursor`) continues with no gap and no
- * duplicate. One request writes at most `MAX_AUDIT_EXPORT_ROWS` entries. The `audit.exported`
- * entry is written when the stream ends, **also when the reader stops early**, with the
- * number of rows actually written: the log shows what left the system.
+ * duplicate. One request writes at most `MAX_AUDIT_EXPORT_ROWS` entries. An `audit.exported`
+ * entry (`phase: 'started'`, no rows) is written before the first byte, and a second
+ * (`phase: 'finished'`) when the stream ends, **also when the reader stops early**, with the
+ * number of rows actually written: the log shows what left the system. A response cannot
+ * carry a trailer, so the first entry is the one a crash leaves.
  *
  * @param deps - Activity log, ids and clock.
  * @param scope - The project and environment.
@@ -255,6 +257,31 @@ export async function* exportEntries(
     from: input.from ? new Date(input.from) : undefined,
     to: input.to ? new Date(input.to) : undefined,
   }
+  const record = async (phase: 'started' | 'finished', rowCount: number) => {
+    const activity = entry(deps, scope, {
+      type: 'audit.exported',
+      actor,
+      target: { type: 'environment', id: scope.environmentId },
+      data: {
+        phase,
+        format: input.format,
+        rowCount,
+        resumed: cursor !== null,
+        ...(input.action && { action: input.action }),
+        ...(input.actorId && { actorId: input.actorId }),
+        ...(input.actorType && { actorType: input.actorType }),
+        ...(input.targetId && { targetId: input.targetId }),
+        ...(input.organizationId && { organizationId: input.organizationId }),
+        ...(input.from && { from: input.from }),
+        ...(input.to && { to: input.to }),
+      },
+    })
+    await deps.activityLog.append(activity)
+    return activity.id
+  }
+  // Written before a byte leaves: a stream that dies, or a reader that never returns, still
+  // leaves the filters on record. The log is append-only, so the end is a second entry.
+  const startedId = await record('started', 0)
   let rows = 0
   try {
     if (input.format === 'csv') {
@@ -264,6 +291,10 @@ export async function* exportEntries(
       const want = Math.min(EXPORT_PAGE, MAX_AUDIT_EXPORT_ROWS - rows)
       const page = await deps.activityLog.listAuditAfter(scope.environmentId, criteria, after, want)
       for (const record of page) {
+        // The export's own started entry is not part of what it exports.
+        if (record.id === startedId) {
+          continue
+        }
         const log = toAuditLog(record)
         rows += 1
         yield input.format === 'csv' ? csvRow(log) : `${JSON.stringify(log)}\n`
@@ -275,24 +306,6 @@ export async function* exportEntries(
       after = { occurredAt: last.occurredAt, id: last.id }
     }
   } finally {
-    await deps.activityLog.append(
-      entry(deps, scope, {
-        type: 'audit.exported',
-        actor,
-        target: { type: 'environment', id: scope.environmentId },
-        data: {
-          format: input.format,
-          rowCount: rows,
-          resumed: cursor !== null,
-          ...(input.action && { action: input.action }),
-          ...(input.actorId && { actorId: input.actorId }),
-          ...(input.actorType && { actorType: input.actorType }),
-          ...(input.targetId && { targetId: input.targetId }),
-          ...(input.organizationId && { organizationId: input.organizationId }),
-          ...(input.from && { from: input.from }),
-          ...(input.to && { to: input.to }),
-        },
-      })
-    )
+    await record('finished', rows)
   }
 }

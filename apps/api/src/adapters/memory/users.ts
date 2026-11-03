@@ -17,6 +17,7 @@ import type {
   NewUser,
   PasswordHistoryRule,
   PasswordOutcome,
+  ReplaceEmailRefusal,
   SignInMeans,
   SmsFactorEnableOutcome,
   StoredPasswords,
@@ -659,6 +660,30 @@ export class MemoryUserRepository implements UserRepository {
       return 'has_email'
     }
     if (this.#byEmail(environmentId, address.normalized)) {
+      return 'taken'
+    }
+    user.email = address.email
+    user.emailNormalized = address.normalized
+    user.emailVerifiedAt = address.verifiedAt === null ? null : new Date(address.verifiedAt)
+    const activity = activityOf(recorded)
+    this.#activityLog.record(activity ? [activity] : [])
+    return { ...user }
+  }
+
+  /** @inheritdoc */
+  async replaceEmail(
+    environmentId: string,
+    userId: string,
+    address: { email: string; normalized: string; verifiedAt: Date | null },
+    _at: Date,
+    recorded: Recorded
+  ): Promise<UserRecord | ReplaceEmailRefusal> {
+    const user = this.#user(environmentId, userId)
+    if (!user) {
+      return 'not_found'
+    }
+    const holder = this.#byEmail(environmentId, address.normalized)
+    if (holder && holder.id !== userId) {
       return 'taken'
     }
     user.email = address.email

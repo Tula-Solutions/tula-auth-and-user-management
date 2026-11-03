@@ -850,6 +850,7 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     actor: admin,
     target: aboutEnvironment,
     data: {
+      phase: 'finished',
       format: 'ndjson',
       rowCount: 1200,
       resumed: false,

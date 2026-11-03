@@ -82,6 +82,21 @@ describe('SCIM token admin service', () => {
     expect(made.prefix.length).toBeLessThan(made.token.length / 2)
   })
 
+  test('create answers the SCIM base URL, built from the public URL with no double slash', async () => {
+    const o = await org()
+    const withSlash = {
+      ...deps,
+      config: { ...deps.config, publicUrl: 'https://auth.example.com/' },
+    }
+    const made = await ScimTokens.create(
+      withSlash,
+      TENANT,
+      { organizationId: o.id, name: 'Okta' },
+      TEST_ACTOR
+    )
+    expect(made.scimBaseUrl).toBe('https://auth.example.com/v1/scim/v2')
+  })
+
   test('creating and revoking are recorded with ids only', async () => {
     const o = await org()
     const made = await ScimTokens.create(

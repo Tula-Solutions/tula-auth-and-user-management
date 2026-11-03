@@ -149,10 +149,17 @@ export function scimRoutes(
           createdAt: new Date().toISOString(),
         })
         state.scimTokens.push(token)
-        return new Response(JSON.stringify({ ...view(token), token: token.secret }), {
-          status: 201,
-          headers: { 'content-type': 'application/json' },
-        })
+        return new Response(
+          JSON.stringify({
+            ...view(token),
+            token: token.secret,
+            scimBaseUrl: 'http://localhost:3003/v1/scim/v2',
+          }),
+          {
+            status: 201,
+            headers: { 'content-type': 'application/json' },
+          }
+        )
       },
     ],
     [

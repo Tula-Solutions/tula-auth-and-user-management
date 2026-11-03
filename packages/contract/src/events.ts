@@ -778,8 +778,8 @@ export const EVENT_DATA_SCHEMAS = {
   ),
   'user.scim_updated': data(
     'UserScimUpdated',
-    "An organization's directory changed a user it manages (ADR 0067). Names only, never a value.",
-    { organizationId: id(), changed: z.array(z.enum(['name'])) }
+    "An organization's directory changed a user it manages (ADR 0067). Which fields (name, email), never a value.",
+    { organizationId: id(), changed: z.array(z.enum(['name', 'email'])) }
   ),
   'scim_group.created': data(
     'ScimGroupCreated',
@@ -970,6 +970,8 @@ export const EVENT_DATA_SCHEMAS = {
     'AuditExported',
     'An environment’s audit log was exported. The filters are those of the request; `rowCount` is how many entries were written (a stream that ended early counts what it wrote); `resumed` is true when the request continued an earlier export.',
     {
+      /** `started` is written before the stream (no rows yet); `finished` when it ends. */
+      phase: z.enum(['started', 'finished']).optional(),
       format: z.enum(AUDIT_EXPORT_FORMATS),
       rowCount: z.number().int().min(0),
       resumed: z.boolean(),

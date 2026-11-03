@@ -2106,10 +2106,11 @@ export type UserScimUpdatedEventDataChangedItem = typeof UserScimUpdatedEventDat
 
 export const UserScimUpdatedEventDataChangedItem = {
   name: 'name',
+  email: 'email',
 } as const;
 
 /**
- * An organization's directory changed a user it manages (ADR 0067). Names only, never a value.
+ * An organization's directory changed a user it manages (ADR 0067). Which fields (name, email), never a value.
  */
 export interface UserScimUpdatedEventData {
   /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
@@ -2124,7 +2125,7 @@ export type UserScimUpdatedEventTarget = {
 };
 
 /**
- * An organization's directory changed a user it manages (ADR 0067). Names only, never a value.
+ * An organization's directory changed a user it manages (ADR 0067). Which fields (name, email), never a value.
  */
 export interface UserScimUpdatedEvent {
   /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
@@ -3088,6 +3089,14 @@ export interface ProposalFailedEvent {
   test?: true;
 }
 
+export type AuditExportedEventDataPhase = typeof AuditExportedEventDataPhase[keyof typeof AuditExportedEventDataPhase];
+
+
+export const AuditExportedEventDataPhase = {
+  started: 'started',
+  finished: 'finished',
+} as const;
+
 export type AuditExportedEventDataFormat = typeof AuditExportedEventDataFormat[keyof typeof AuditExportedEventDataFormat];
 
 
@@ -3201,6 +3210,7 @@ export const AuditExportedEventDataActorType = {
  * An environment’s audit log was exported. The filters are those of the request; `rowCount` is how many entries were written (a stream that ended early counts what it wrote); `resumed` is true when the request continued an earlier export.
  */
 export interface AuditExportedEventData {
+  phase?: AuditExportedEventDataPhase;
   format: AuditExportedEventDataFormat;
   /**
      * @minimum 0
@@ -3574,6 +3584,7 @@ export const ErrorCode = {
   ssourl_not_https: 'sso.url_not_https',
   ssotest_required: 'sso.test_required',
   ssotest_not_found: 'sso.test_not_found',
+  ssorole_not_allowed: 'sso.role_not_allowed',
   ssounavailable: 'sso.unavailable',
   ssoprovider_error: 'sso.provider_error',
   ssouser_not_provisioned: 'sso.user_not_provisioned',
@@ -7030,6 +7041,8 @@ export interface CreatedScimToken {
   createdAt: string;
   /** The bearer token. Shown once; only its hash is stored. */
   token: string;
+  /** The base URL to give the identity provider. */
+  scimBaseUrl: string;
 }
 
 export interface CreateScimTokenRequest {
@@ -7189,6 +7202,20 @@ export interface SetupConnectionUpdate {
   /** @maxItems 20 */
   domains?: OrganizationDomainName[];
   status?: 'active';
+}
+
+export type SetupGroupRolesMappingsItem = {
+  /**
+     * @minLength 1
+     * @maxLength 256
+     */
+  group: string;
+  role: OrganizationRoleKey;
+  locked: boolean;
+};
+
+export interface SetupGroupRoles {
+  mappings: SetupGroupRolesMappingsItem[];
 }
 
 export interface SmsPrefixUsage {

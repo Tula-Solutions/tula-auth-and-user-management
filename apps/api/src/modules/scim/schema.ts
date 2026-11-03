@@ -77,7 +77,7 @@ export interface ScimUserResource {
   name: { givenName?: string; familyName?: string }
   emails: Array<{ value: string; primary: true }>
   active: boolean
-  meta: { resourceType: 'User'; created: string; lastModified: string }
+  meta: { resourceType: 'User'; created: string; lastModified: string; location: string }
 }
 
 /** A Group as an identity provider creates or replaces it. Unknown attributes are ignored. */
@@ -100,5 +100,5 @@ export interface ScimGroupResource {
   externalId?: string
   displayName: string
   members?: Array<{ value: string }>
-  meta: { resourceType: 'Group'; created: string; lastModified: string }
+  meta: { resourceType: 'Group'; created: string; lastModified: string; location: string }
 }

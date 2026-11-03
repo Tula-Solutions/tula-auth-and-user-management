@@ -11,6 +11,7 @@ import { AuthError, NotFoundError } from '~/exceptions'
 import type { Actor } from '~/lib/actor'
 import { sha256Hex } from '~/lib/crypto'
 import * as Outbound from '~/lib/outbound'
+import { publicBase } from '~/lib/public-base'
 import {
   type IdpMetadata,
   parseIdpMetadata,
@@ -73,7 +74,7 @@ export function samlUrls(
   config: { publicUrl: string },
   record: Pick<SsoConnectionRecord, 'id' | 'environmentId'>
 ): { spEntityId: string; acsUrl: string; spMetadataUrl: string } {
-  const base = `${config.publicUrl}/v1/environments/${record.environmentId}/sso/saml/${record.id}`
+  const base = `${publicBase(config)}/v1/environments/${record.environmentId}/sso/saml/${record.id}`
   return {
     spEntityId: `${base}/metadata`,
     acsUrl: `${base}/acs`,

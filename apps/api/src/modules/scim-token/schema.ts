@@ -16,6 +16,7 @@ export const ScimTokenSchema = z
 /** A new SCIM token: the one answer that holds the secret. */
 export const CreatedScimTokenSchema = ScimTokenSchema.extend({
   token: z.string().describe('The bearer token. Shown once; only its hash is stored.'),
+  scimBaseUrl: z.string().describe('The base URL to give the identity provider.'),
 }).meta({ ref: 'CreatedScimToken' })
 
 /** The tokens of one organization. */

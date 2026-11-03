@@ -8,6 +8,7 @@ import {
   organizationMemberships,
   organizations,
   proposals,
+  scimGroupMembers,
   scimGroups,
   scimTokens,
   scimUsers,
@@ -565,6 +566,11 @@ test('SSO, SCIM and setup-link tables on a real server: another environment’s 
     await tx
       .insert(scimUsers)
       .values({ id: Bun.randomUUIDv7(), ...scope, organizationId, userId, externalId: 'ext-1' })
+    const groupId = Bun.randomUUIDv7()
+    await tx
+      .insert(scimGroups)
+      .values({ id: groupId, ...scope, organizationId, displayName: 'Engineering' })
+    await tx.insert(scimGroupMembers).values({ id: Bun.randomUUIDv7(), ...scope, groupId, userId })
     await tx.insert(setupLinks).values({
       id: Bun.randomUUIDv7(),
       ...scope,
@@ -583,6 +589,8 @@ test('SSO, SCIM and setup-link tables on a real server: another environment’s 
     organizationGroupRoles,
     scimTokens,
     scimUsers,
+    scimGroups,
+    scimGroupMembers,
     setupLinks,
   ] as const
   for (const table of tables) {
@@ -598,8 +606,8 @@ test('SSO, SCIM and setup-link tables on a real server: another environment’s 
     ).toEqual([])
     expect(await db.select({ id: table.id }).from(table)).toEqual([])
     // And its writes find no row to change or delete. The group-role mapping has no UPDATE
-    // grant at all (it is replaced, migration 0053), so only its delete is tried.
-    if (table !== organizationGroupRoles) {
+    // grant at all (it is replaced, migration 0053), so only its delete is tried (a SCIM group's members likewise: select, insert, delete).
+    if (table !== organizationGroupRoles && table !== scimGroupMembers) {
       expect(
         await withTenant(db, b.environmentId, (tx) =>
           tx

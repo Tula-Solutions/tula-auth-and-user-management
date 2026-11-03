@@ -75,13 +75,29 @@
             {
               "action": "audit.exported",
               "metadata": {
-                "format": "csv"
+                "format": "csv",
+                "phase": "finished"
               }
             },
             {
               "action": "audit.exported",
               "metadata": {
-                "format": "ndjson"
+                "format": "csv",
+                "phase": "started"
+              }
+            },
+            {
+              "action": "audit.exported",
+              "metadata": {
+                "format": "ndjson",
+                "phase": "finished"
+              }
+            },
+            {
+              "action": "audit.exported",
+              "metadata": {
+                "format": "ndjson",
+                "phase": "started"
               }
             }
           ]

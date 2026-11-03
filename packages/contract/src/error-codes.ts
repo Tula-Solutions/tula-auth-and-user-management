@@ -561,6 +561,10 @@ export const ERROR_DEFINITIONS = {
       'Run a passing test sign-in of the connection’s current settings before activating it.',
   },
   'sso.test_not_found': { status: 404, message: 'No such test sign-in.' },
+  'sso.role_not_allowed': {
+    status: 403,
+    message: 'A setup link cannot map a group to a role that holds system permissions.',
+  },
   'sso.unavailable': { status: 400, message: 'Single sign-on is not available for that address.' },
   'sso.provider_error': { status: 401, message: 'The identity provider did not sign you in.' },
   'sso.user_not_provisioned': {

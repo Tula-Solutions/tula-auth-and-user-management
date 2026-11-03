@@ -3,8 +3,28 @@ import * as Organizations from '~/modules/organization/service'
 import { roleForGroups } from '~/modules/sso/service'
 import type { ScimContext } from './service'
 
-/** The role a provisioned member gets when no group of the directory is mapped to another. */
+/** The role of a provisioned member when the organization has no SSO connection at all. */
 export const MEMBER_ROLE = 'member'
+
+/**
+ * The role a provisioned member gets in no mapped group: the default role of the organization's
+ * connection, the same one an SSO sign-in gives (DECISIONS 10), so a user's role never flips
+ * between a directory push and a sign-in. The active connection; else the latest one that
+ * passed a test; else `member`.
+ *
+ * @param deps - The SSO connection store.
+ * @param ctx - The environment and the organization.
+ * @returns The role key.
+ */
+export async function defaultRole(deps: Pick<Deps, 'ssoConnections'>, ctx: ScimContext) {
+  const all = await deps.ssoConnections.list(ctx.tenant.environmentId, ctx.organizationId)
+  const newest = (rows: typeof all) =>
+    rows.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0]
+  const chosen =
+    newest(all.filter((one) => one.status === 'active')) ??
+    newest(all.filter((one) => one.testedFingerprint !== null))
+  return chosen?.defaultRole ?? MEMBER_ROLE
+}
 
 /** One member's role change a group change implies. */
 export interface RoleChange {
@@ -27,7 +47,7 @@ export async function resolve(deps: Deps, ctx: ScimContext, names: string[]) {
   return roleForGroups(
     await deps.ssoConnections.listGroupRoles(ctx.tenant.environmentId, ctx.organizationId),
     names,
-    MEMBER_ROLE
+    await defaultRole(deps, ctx)
   )
 }
 

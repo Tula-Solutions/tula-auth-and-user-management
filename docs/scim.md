@@ -35,8 +35,8 @@ each organization to 1,200 across its tokens.
 | `POST /Users` | Create a user, or link the existing user with that address. |
 | `GET /Users` | List, with `startIndex`, `count` (at most 200) and `filter=userName eq "…"` or `filter=externalId eq "…"`. Any other filter is 400 `invalidFilter`. |
 | `GET /Users/:id` | Read one. |
-| `PUT /Users/:id` | Replace: `active` and `externalId` are applied, and so are `name.givenName` and `name.familyName` for a user the directory manages. |
-| `PATCH /Users/:id` | `add`, `replace` and `remove` (any case) on `active` and `externalId`, with a path or an object value. `active` may be a boolean or the string `"True"` or `"False"`, as Entra sends it. Other attributes are accepted and ignored. |
+| `PUT /Users/:id` | Replace: `active` and `externalId` are applied, and so are `name.givenName`, `name.familyName` and `userName` (the address, on a verified domain of the organization, and not taken) for a user the directory manages. |
+| `PATCH /Users/:id` | `add`, `replace` and `remove` (any case) on `active` and `externalId`, with a path or an object value. `active` may be a boolean or the string `"True"` or `"False"`, as Entra sends it. `userName` changes the address as on a PUT. Other attributes are accepted and ignored. Every resource has `meta.location`. |
 | `DELETE /Users/:id` | Remove the user from the organization. |
 | `GET /ServiceProviderConfig`, `/ResourceTypes`, `/Schemas` | Discovery. |
 
@@ -96,10 +96,6 @@ the string `"True"` or `"False"` and patch operations with any case of `op`; Tul
 
 ## Groups
 
-> [!WARNING]
-> **TULA-150 section.** This section is written from the ticket (SCIM Groups, built in parallel) and
-> not from merged code. Check the routes and the error answers against `modules/scim` once it lands.
-
 The identity provider can push **groups** to `/v1/scim/v2/Groups`: create, get, list (with
 `filter=displayName eq "…"`, `startIndex` and `count`), replace (`PUT`), patch (members added and removed) and
 delete. `ServiceProviderConfig`, `ResourceTypes` and `Schemas` say that Groups are supported.
@@ -109,6 +105,7 @@ delete. `ServiceProviderConfig`, `ResourceTypes` and `Schemas` say that Groups a
   with the same precedence: the first mapped group in the saved order wins. A change of a group's
   members in the directory changes the member's role at their **next refresh**.
 - **An unmapped group is stored and has no effect.**
+- **A user the directory creates, or adds to a group no mapping names, gets the connection's default role**, the same as a single sign-on sign-in.
 - **Member patches** accept Okta's and Entra's shapes: `members` with `add`, `remove` and `replace`, `op`
   in any case, and `value` as an array of `{ "value": "<user id>" }`.
 - **Atomic.** A patch that would remove the organization's **last manager** is answered 409 and

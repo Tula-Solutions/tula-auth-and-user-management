@@ -2,6 +2,7 @@ import type { Deps, Tenant } from '~/dependencies'
 import { NotFoundError } from '~/exceptions'
 import type { Actor } from '~/lib/actor'
 import { parseEmail } from '~/lib/email'
+import { publicBase } from '~/lib/public-base'
 import * as Audit from '~/modules/audit/service'
 import * as Organizations from '~/modules/organization/service'
 import { lapsed } from '~/modules/organization-domain/service'
@@ -26,7 +27,7 @@ export interface ScimContext {
   actor: Actor
 }
 
-function resource(user: UserRecord, record: ScimUserRecord): ScimUserResource {
+function resource(deps: Deps, user: UserRecord, record: ScimUserRecord): ScimUserResource {
   return {
     schemas: [USER_SCHEMA],
     id: user.id,
@@ -42,6 +43,7 @@ function resource(user: UserRecord, record: ScimUserRecord): ScimUserResource {
       resourceType: 'User',
       created: record.createdAt.toISOString(),
       lastModified: record.updatedAt.toISOString(),
+      location: `${publicBase(deps.config)}/v1/scim/v2/Users/${user.id}`,
     },
   }
 }
@@ -93,13 +95,7 @@ async function hasMembership(deps: Deps, ctx: ScimContext, userId: string) {
  * organization cannot be removed: 409) and, only for an account this directory created that
  * has no other membership, bans it, which signs it out and denylists its sessions.
  */
-async function setActive(
-  deps: Deps,
-  ctx: ScimContext,
-  user: UserRecord,
-  record: ScimUserRecord,
-  active: boolean
-) {
+async function setActive(deps: Deps, ctx: ScimContext, user: UserRecord, active: boolean) {
   const { environmentId } = ctx.tenant
   const member = await deps.organizations.findMembership(environmentId, ctx.organizationId, user.id)
   const managed = user.managedByDirectoryId === ctx.organizationId
@@ -109,7 +105,7 @@ async function setActive(
         deps,
         ctx.tenant,
         ctx.organizationId,
-        { userId: user.id, role: Roles.MEMBER_ROLE },
+        { userId: user.id, role: await Roles.defaultRole(deps, ctx) },
         ctx.actor
       )
       // A user let back in gets the role their directory groups give (none mapped: unchanged).
@@ -133,18 +129,18 @@ async function setActive(
     { active },
     deps.clock.now()
   )
-  record.active = active
 }
 
 async function apply(
   deps: Deps,
   ctx: ScimContext,
   userId: string,
-  changes: { active?: boolean; externalId?: string | null; name?: NameChange }
+  changes: { active?: boolean; externalId?: string | null; name?: NameChange; userName?: string }
 ) {
   const { record, user } = await load(deps, ctx, userId)
   const { environmentId } = ctx.tenant
   await applyNames(deps, ctx, user, changes.name)
+  await applyEmail(deps, ctx, user, changes.userName)
   if (changes.externalId !== undefined && changes.externalId !== record.externalId) {
     const refusal = await deps.scim.updateUser(
       environmentId,
@@ -158,10 +154,10 @@ async function apply(
     }
   }
   if (changes.active !== undefined && changes.active !== record.active) {
-    await setActive(deps, ctx, user, record, changes.active)
+    await setActive(deps, ctx, user, changes.active)
   }
   const fresh = await load(deps, ctx, userId)
-  return resource(fresh.user, fresh.record)
+  return resource(deps, fresh.user, fresh.record)
 }
 
 /** The parts of `name` a directory sent; an absent part is left as it is. */
@@ -201,13 +197,56 @@ async function applyNames(deps: Deps, ctx: ScimContext, user: UserRecord, name?:
 }
 
 /**
+ * Apply a directory's change of `userName` to the address of an account this directory
+ * created (DECISIONS 14). A linked account's address is the person's own and is never changed
+ * here. The new address must be on a domain the organization has verified and unused in the
+ * environment (409 otherwise); the entry names the field, never the address, and no session
+ * ends.
+ */
+async function applyEmail(deps: Deps, ctx: ScimContext, user: UserRecord, userName?: string) {
+  if (userName === undefined || user.managedByDirectoryId !== ctx.organizationId) {
+    return
+  }
+  const parsed = parseEmail(userName)
+  if (!parsed) {
+    throw invalidValue('userName must be an email address.')
+  }
+  if (parsed.normalized === user.emailNormalized) {
+    return
+  }
+  if (!(await onVerifiedDomain(deps, ctx, parsed.normalized))) {
+    throw invalidValue('userName is not on a domain this organization has verified.')
+  }
+  const stored = await deps.users.replaceEmail(
+    ctx.tenant.environmentId,
+    user.id,
+    { email: parsed.email, normalized: parsed.normalized, verifiedAt: deps.clock.now() },
+    deps.clock.now(),
+    Audit.entry(deps, ctx.tenant, {
+      type: 'user.scim_updated',
+      actor: ctx.actor,
+      target: { type: 'user', id: user.id },
+      data: { organizationId: ctx.organizationId, changed: ['email'] },
+    })
+  )
+  if (stored === 'taken') {
+    throw uniqueness()
+  }
+  if (stored === 'not_found') {
+    throw new NotFoundError()
+  }
+}
+
+/**
  * Provision a user: a new account this directory manages, or an existing one on a domain the
  * organization has verified, plus the membership.
  *
  * An account created here and then refused a SCIM row (a racing duplicate `externalId`) is
- * deleted again, so the retry finds nothing to collide with. shortcut: that is a compensating
- * delete, not one transaction, so a crash between the two leaves the account; upgrade to one
- * store call.
+ * deleted again, so the retry finds nothing to collide with. That is a compensating delete,
+ * not one transaction (the two writes sit in different stores; ADR 0067, "SCIM"), so a crash
+ * between them can leave an account with no SCIM row. The repair is in this function: a
+ * retry for that address finds the account, which this directory manages and holds no row
+ * for, and completes it.
  *
  * @param deps - The dependencies.
  * @param ctx - The environment, the organization and the actor.
@@ -231,15 +270,19 @@ export async function create(deps: Deps, ctx: ScimContext, input: ScimUserInput)
   let user: UserRecord
   let method: 'created' | 'linked'
   if (existing) {
-    // A known address is never claimed by a directory unless the organization proved the domain.
-    if (
-      !verifiedDomain ||
-      (await deps.scim.findUser(environmentId, ctx.organizationId, existing.id))
-    ) {
+    const hasRecord = await deps.scim.findUser(environmentId, ctx.organizationId, existing.id)
+    if (existing.managedByDirectoryId === ctx.organizationId && !hasRecord) {
+      // Repair: an account this directory created whose SCIM row never landed (a crash between
+      // the two writes). The retry finishes the job instead of answering 409 for ever.
+      user = existing
+      method = 'created'
+    } else if (!verifiedDomain || hasRecord) {
+      // A known address is never claimed by a directory unless the organization proved the domain.
       throw uniqueness()
+    } else {
+      user = existing
+      method = 'linked'
     }
-    user = existing
-    method = 'linked'
   } else {
     user = {
       id: deps.ids.next(),
@@ -248,8 +291,8 @@ export async function create(deps: Deps, ctx: ScimContext, input: ScimUserInput)
       email: parsed.email,
       emailNormalized: parsed.normalized,
       emailVerifiedAt: verifiedDomain ? now : null,
-      firstName: input.name?.givenName?.trim() || null,
-      lastName: input.name?.familyName?.trim() || null,
+      firstName: nameOf(input.name?.givenName),
+      lastName: nameOf(input.name?.familyName),
       bannedAt: null,
       lastSignInAt: null,
       createdAt: now,
@@ -280,9 +323,8 @@ export async function create(deps: Deps, ctx: ScimContext, input: ScimUserInput)
     organizationId: ctx.organizationId,
     userId: user.id,
     externalId,
-    // Stored as the opposite of what is wanted so that `apply` below sees a change and does the
-    // work (membership, ban) through the one path.
-    active: wanted === false,
+    // Inactive until `setActive` below gives the membership (or bans) through the one path.
+    active: false,
     createdAt: now,
     updatedAt: now,
   }
@@ -305,7 +347,9 @@ export async function create(deps: Deps, ctx: ScimContext, input: ScimUserInput)
     }
     throw error
   }
-  return apply(deps, ctx, user.id, { active: wanted })
+  await setActive(deps, ctx, user, wanted)
+  const fresh = await load(deps, ctx, user.id)
+  return resource(deps, fresh.user, fresh.record)
 }
 
 /**
@@ -317,7 +361,7 @@ export async function create(deps: Deps, ctx: ScimContext, input: ScimUserInput)
  */
 export async function get(deps: Deps, ctx: ScimContext, userId: string) {
   const { record, user } = await load(deps, ctx, userId)
-  return resource(user, record)
+  return resource(deps, user, record)
 }
 
 /** Parse `userName eq "x"` / `externalId eq "x"`, the two filters identity providers send. */
@@ -388,7 +432,7 @@ export async function list(
   )
   const resources = records.flatMap((record) => {
     const user = users.get(record.userId)
-    return user ? [resource(user, record)] : []
+    return user ? [resource(deps, user, record)] : []
   })
   return {
     schemas: [LIST_SCHEMA],
@@ -401,7 +445,7 @@ export async function list(
 
 /**
  * Replace (PUT): `active`, `externalId` and, for an account the directory created, the
- * names. The address never changes.
+ * names and the address (a verified domain of the organization only).
  *
  * @param deps - The dependencies.
  * @param ctx - The environment, the organization and the actor.
@@ -414,6 +458,7 @@ export async function replace(deps: Deps, ctx: ScimContext, userId: string, inpu
   return apply(deps, ctx, userId, {
     active: input.active ?? true,
     externalId: input.externalId ?? null,
+    userName: emailOf(input).email,
     ...(input.name && { name: input.name }),
   })
 }
@@ -430,7 +475,7 @@ function flag(value: unknown): boolean {
 }
 
 /**
- * Patch: `active` and `externalId`, by path (`active`) or inside an object value without a
+ * Patch: `active`, `externalId`, `userName` and the names, by path (`active`) or inside an object value without a
  * path (Okta's and Entra's shapes), with `op` in any case. Other attributes are ignored, as
  * the directory keeps sending them whether or not a server stores them.
  *
@@ -447,7 +492,12 @@ export async function patch(
   userId: string,
   operations: Array<{ op: string; path?: string; value?: unknown }>
 ) {
-  const changes: { active?: boolean; externalId?: string | null; name?: NameChange } = {}
+  const changes: {
+    active?: boolean
+    externalId?: string | null
+    name?: NameChange
+    userName?: string
+  } = {}
   const part = (key: 'givenName' | 'familyName', value: unknown, removing: boolean) => {
     changes.name = {
       ...changes.name,
@@ -468,6 +518,8 @@ export async function patch(
       if (family !== undefined) {
         part('familyName', family, removing)
       }
+    } else if (name === 'userName' && !removing && typeof value === 'string') {
+      changes.userName = value
     } else if (name === 'active') {
       changes.active = removing ? false : flag(value)
     } else if (name === 'externalId') {

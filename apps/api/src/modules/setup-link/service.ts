@@ -8,6 +8,7 @@ import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, ConflictError, ForbiddenError, NotFoundError } from '~/exceptions'
 import type { Actor } from '~/lib/actor'
 import { randomToken, sha256Hex } from '~/lib/crypto'
+import { publicBase } from '~/lib/public-base'
 import * as Audit from '~/modules/audit/service'
 import * as SsoConnections from '~/modules/sso-connection/service'
 import type { SetupLinkRecord } from '~/ports/setup-link-store'
@@ -145,6 +146,8 @@ export async function create(
 ): Promise<CreatedSetupLink> {
   await requireOrganization(deps, tenant, input.organizationId)
   const now = deps.clock.now()
+  // shortcut: list-then-insert, so two simultaneous creates may land one past the cap; the
+  // cap keeps a list short and guards nothing, so no environment lock, until a limit is a security one.
   const live = (await deps.setupLinks.list(tenant.environmentId, input.organizationId)).filter(
     (one) => one.revokedAt === null && one.expiresAt.getTime() > now.getTime()
   )
@@ -176,7 +179,7 @@ export async function create(
     updatedAt: activity.occurredAt,
   }
   await deps.setupLinks.insert(record, activity)
-  const base = deps.config.publicUrl.replace(/\/+$/, '')
+  const base = publicBase(deps.config)
   return { ...view(record), token, url: `${base}${PORTAL_PATH}#token=${token}` }
 }
 

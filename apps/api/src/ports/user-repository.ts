@@ -172,6 +172,12 @@ export interface NewEmailAddress {
  */
 export type AddEmailRefusal = 'taken' | 'has_email' | 'not_found'
 
+/**
+ * What replacing an address did, when it stored nothing: `taken` (another user of the
+ * environment has it) or `not_found`.
+ */
+export type ReplaceEmailRefusal = 'taken' | 'not_found'
+
 /** How many accounts depend on a provider, as a store counted them. */
 export interface DependentAccounts {
   /** The accounts found that could not sign in without the provider. */
@@ -533,6 +539,26 @@ export interface UserRepository {
     at: Date,
     activity: Recorded
   ): Promise<UserRecord | AddEmailRefusal>
+
+  /**
+   * Replace the address of a user who has one (a directory renaming its own account, ADR 0067).
+   * The `email` identity follows the address; nothing else of the user changes and no session
+   * ends.
+   *
+   * @param environmentId - The user's environment.
+   * @param userId - The user.
+   * @param address - The new address, proven or not (`verifiedAt`).
+   * @param at - Update time.
+   * @param activity - Recorded in the same transaction, only if the address was stored.
+   * @returns The user as they now are, or why nothing was written.
+   */
+  replaceEmail(
+    environmentId: string,
+    userId: string,
+    address: { email: string; normalized: string; verifiedAt: Date | null },
+    at: Date,
+    activity: Recorded
+  ): Promise<UserRecord | ReplaceEmailRefusal>
 
   /**
    * Count the users who have an account of a provider connected and could not sign in
