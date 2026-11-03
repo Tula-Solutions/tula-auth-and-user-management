@@ -1,4 +1,12 @@
-import { afterEach, describe, expect, setDefaultTimeout, setSystemTime, test } from 'bun:test'
+import {
+  afterAll,
+  afterEach,
+  describe,
+  expect,
+  setDefaultTimeout,
+  setSystemTime,
+  test,
+} from 'bun:test'
 import {
   appleNonce,
   type ClientBehaviour,
@@ -3255,6 +3263,172 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
       // What only a page has: a tab's storage, an address, a cookie. An app's suite has its
       // own journeys of the same scenarios, and for it these are not declared at all.
       const page: typeof journey = app ? () => {} : journey
+
+      // Enterprise single sign-on (ADR 0067) through the mock OIDC identity provider. The
+      // server fetches the provider through the outbound guard, which needs an address: a
+      // listener on loopback that hands each request to the API.
+      const proxies: { stop(force?: boolean): void }[] = []
+      afterAll(() => {
+        for (const proxy of proxies) {
+          proxy.stop(true)
+        }
+      })
+
+      /** A server with an active OIDC connection bound to a verified domain of an organization. */
+      async function ssoServer(): Promise<Server & { domain: string }> {
+        const s = await oauthServer()
+        const proxy = Bun.serve({
+          hostname: '127.0.0.1',
+          port: 0,
+          fetch: (request) => s.navigate(pathOf(request.url), request),
+        })
+        proxies.push(proxy)
+        const read = await s.admin('GET', '/v1/admin/settings')
+        const { settings } = (await read.json()) as { settings: EnvironmentSettings }
+        const saved = await s.admin(
+          'PUT',
+          '/v1/admin/settings',
+          {
+            ...settings,
+            organizations: {
+              enabled: true,
+              allowUserCreated: false,
+              maxCreatedPerUser: 1,
+              creatorRole: 'admin',
+              defaultRole: 'member',
+              personalAccount: true,
+            },
+            sso: { enabled: true },
+          },
+          { 'if-match': read.headers.get('etag') ?? '' }
+        )
+        expect(saved.status).toBe(200)
+        const org = (await (
+          await s.admin('POST', '/v1/admin/organizations', { name: 'SSO Org', slug: 'sso-org' })
+        ).json()) as { id: string }
+        const domain = `sso-${org.id.slice(-8)}.example`
+        const base = `/v1/admin/organizations/${org.id}/domains`
+        const claimed = await s.admin('POST', base, {
+          domain,
+          email: `it@${domain}`,
+          mode: 'suggest',
+        })
+        expect(claimed.status).toBe(201)
+        const { id: domainId } = (await claimed.json()) as { id: string }
+        expect(
+          (await s.admin('POST', `${base}/${domainId}/verify`, { code: s.code(`it@${domain}`) }))
+            .status
+        ).toBe(200)
+        const created = await s.admin('POST', '/v1/admin/sso-connections', {
+          organizationId: org.id,
+          name: 'Mock IdP',
+          issuer: `http://127.0.0.1:${proxy.port}/v1/dev/sso`,
+          clientId: 'journey-sso',
+          clientSecret: 'journey-sso-secret',
+          domains: [domain],
+        })
+        expect(created.status).toBe(201)
+        const { id } = (await created.json()) as { id: string }
+        const active = await s.admin('PATCH', `/v1/admin/sso-connections/${id}`, {
+          status: 'active',
+        })
+        expect(active.status).toBe(200)
+        return Object.assign(s, { domain })
+      }
+
+      /** Play the user at the identity provider; returns where the API's callback sent the browser. */
+      async function atIdp(s: Server, authorizationUrl: string, email: string): Promise<string> {
+        const url = new URL(authorizationUrl)
+        url.searchParams.set('login_hint', email)
+        const signedIn = await s.navigate(pathOf(url.toString()))
+        expect(signedIn.status).toBe(303)
+        const callback = await s.navigate(pathOf(signedIn.headers.get('location') ?? ''))
+        expect(callback.status).toBe(303)
+        return callback.headers.get('location') ?? ''
+      }
+
+      page(
+        'sso oidc sign-in',
+        'SSO: an address on a bound domain continues with single sign-on, comes back through the callback and is signed in, the same user the next time',
+        async () => {
+          const s = await ssoServer()
+          const email = `ada@${s.domain}`
+          const signInOnce = async () => {
+            const browserTab = tab()
+            browserTab.open(SIGN_IN_PAGE)
+            const start = s.client('web')
+            const flow = await start.tula.signIn.start({ identifier: email })
+            expect(flow.step).toMatchObject({ status: 'needs_first_factor' })
+            const { url } = await flow.startSso({ redirectUrl: CALLBACK_PAGE })
+            expect(browserTab.visited.at(-1)).toBe(url)
+            // The tab keeps the binding and nothing else: no attempt secret, no token.
+            const kept = [...browserTab.entries.values()].join()
+            expect(kept).toContain('tula_ob_')
+            expect(kept).not.toContain('tula_at_')
+            const landingUrl = await atIdp(s, url, email)
+            expect(landingUrl).toStartWith(`${CALLBACK_PAGE}#tula_ticket=`)
+            const location = browserTab.open(landingUrl)
+            const landing = s.client('web', { cookies: start.cookies })
+            const outcome = await landing.tula.signIn.handleOAuthCallback()
+            expect(outcome.status).toBe('complete')
+            expect(location.href).toBe(CALLBACK_PAGE)
+            expect(browserTab.entries.size).toBe(0)
+            return landing
+          }
+          const first = await signInOnce()
+          expect(first.tula.state).toMatchObject({ status: 'signed-in', user: { email } })
+          const userId =
+            first.tula.state.status === 'signed-in' ? (first.tula.state.user?.id ?? '') : ''
+          await first.tula.session.signOut()
+          const again = await signInOnce()
+          expect(again.tula.state).toMatchObject({ status: 'signed-in', user: { id: userId } })
+        }
+      )
+
+      page(
+        'sso home-realm discovery is by domain',
+        'SSO: an address with no account and a known one on a bound domain are offered the same strategies; another domain is not offered it; an address outside the domains signs nobody in',
+        async () => {
+          const s = await ssoServer()
+          const strategiesOf = async (identifier: string) => {
+            const flow = await s.client('web').tula.signIn.start({ identifier })
+            return { flow, step: flow.step }
+          }
+          const unknown = await strategiesOf(`nobody@${s.domain}`)
+          // Make the second address a known account on the same domain.
+          const known = await signUp(s, 'web', `known@${s.domain}`)
+          await known.tula.session.signOut()
+          const knownStart = await strategiesOf(`known@${s.domain}`)
+          for (const { step } of [unknown, knownStart]) {
+            expect(step).toMatchObject({ status: 'needs_first_factor' })
+            expect(step.status === 'needs_first_factor' ? step.strategies : []).toContain('sso')
+          }
+          expect(knownStart.step).toEqual(unknown.step)
+
+          tab().open(SIGN_IN_PAGE)
+          const other = await strategiesOf('someone@elsewhere.example')
+          expect(
+            other.step.status === 'needs_first_factor' ? other.step.strategies : []
+          ).not.toContain('sso')
+          expect((await caught(other.flow.startSso({ redirectUrl: CALLBACK_PAGE }))).code).toBe(
+            'flow.invalid_step'
+          )
+
+          // The provider names an address outside the connection's domains.
+          const browserTab = tab()
+          browserTab.open(SIGN_IN_PAGE)
+          const start = s.client('web')
+          const flow = await start.tula.signIn.start({ identifier: `mallory@${s.domain}` })
+          const { url } = await flow.startSso({ redirectUrl: CALLBACK_PAGE })
+          browserTab.open(await atIdp(s, url, 'mallory@elsewhere.example'))
+          const landing = s.client('web', { cookies: start.cookies })
+          expect(await landing.tula.signIn.handleOAuthCallback()).toMatchObject({
+            status: 'error',
+            code: 'sso.email_domain_mismatch',
+          })
+          expect(landing.tula.state.status).not.toBe('signed-in')
+        }
+      )
 
       page(
         'OAuth sign-up and sign-in',
