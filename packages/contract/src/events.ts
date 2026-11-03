@@ -206,6 +206,7 @@ export const EVENT_DATA_SCHEMAS = {
       'oauth_x',
       'oauth_facebook',
       'sso',
+      'scim',
     ]),
     /**
      * Whether the account's email address was proven when it was created. `false` also for
@@ -744,6 +745,26 @@ export const EVENT_DATA_SCHEMAS = {
     'SsoConnectionDeleted',
     'A single sign-on connection was removed.',
     { protocol: z.enum(SSO_PROTOCOLS) }
+  ),
+  // SCIM (ADR 0067): ids and enums only.
+  'scim_token.created': data(
+    'ScimTokenCreated',
+    "A SCIM token was created for an organization's directory. The token is not in the event.",
+    { organizationId: id() }
+  ),
+  'scim_token.revoked': data(
+    'ScimTokenRevoked',
+    'A SCIM token was revoked: the directory it belonged to can no longer provision with it.',
+    { organizationId: id() }
+  ),
+  'user.scim_provisioned': data(
+    'UserScimProvisioned',
+    "An organization's directory created an account or took over an existing one (ADR 0067).",
+    {
+      organizationId: id(),
+      /** `created`: a new account managed by the directory. `linked`: an account that existed, matched on a verified domain. */
+      method: z.enum(['created', 'linked']),
+    }
   ),
   // Organizations (ADR 0065). Ids and role keys only: the organization's name and slug and a
   // member's address and name are operator or user text, and never in an event.

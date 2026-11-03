@@ -26,6 +26,7 @@ import { MemoryProofReplayGuard } from '~/adapters/memory/proof-replay'
 import { MemoryProposalStore } from '~/adapters/memory/proposals'
 import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
 import { MemoryRevokedSessions } from '~/adapters/memory/revoked-sessions'
+import { MemoryScimStore } from '~/adapters/memory/scim'
 import { MemorySessionStore } from '~/adapters/memory/sessions'
 import { MemorySigningKeyStore } from '~/adapters/memory/signing-keys'
 import { MemorySmsSender } from '~/adapters/memory/sms-sender'
@@ -76,6 +77,7 @@ export interface TestDeps extends Deps {
   hooks: MemoryHookStore
   nativeApps: MemoryNativeAppStore
   ssoConnections: MemorySsoConnectionStore
+  scim: MemoryScimStore
   organizations: MemoryOrganizationStore
   organizationDomains: MemoryOrganizationDomainStore
   proposals: MemoryProposalStore
@@ -179,6 +181,7 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     hooks: new MemoryHookStore(activityLog),
     nativeApps: new MemoryNativeAppStore(activityLog),
     ssoConnections: new MemorySsoConnectionStore(activityLog),
+    scim: new MemoryScimStore(activityLog),
     organizations,
     organizationDomains: new MemoryOrganizationDomainStore(activityLog, organizations),
     proposals: new MemoryProposalStore(activityLog, apiKeys),

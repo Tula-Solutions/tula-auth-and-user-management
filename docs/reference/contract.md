@@ -188,7 +188,7 @@ with the agent as the actor and the approving human beside it: ADR 0053), or the
 dashboard session's) or with the instance admin token itself (no id).
 
 ```ts
-const AUDIT_ACTOR_TYPES: readonly ["user", "admin", "system", "agent", "instance_admin"]
+const AUDIT_ACTOR_TYPES: readonly ["user", "admin", "system", "agent", "instance_admin", "directory"]
 ```
 
 ### `AUDIT_EXPORT_FORMATS`
@@ -7671,6 +7671,19 @@ it); it keeps signing beside the new one until `rotationOverlapEndsAt`.
 const RotatedWebhookSecretSchema
 ```
 
+### `SCIM_TOKEN_PREFIX`
+
+_constant_, defined in `packages/contract/src/tokens.ts`
+
+Prefix of SCIM tokens, followed by the environment id (32 hex digits, no dashes) and `_`
+(ADR 0067, "SCIM"): the bearer token an organization's identity provider presents to
+`/v1/scim/v2/*`. It opens that group and nothing else; `secretKey()` and `agentKey()`
+answer it like a wrong key.
+
+```ts
+const SCIM_TOKEN_PREFIX: "tula_scim_"
+```
+
 ### `SECRET_KEY_PREFIX`
 
 _constant_, defined in `packages/contract/src/tokens.ts`
@@ -8998,10 +9011,10 @@ export type SsoConnectionField = (typeof SSO_CONNECTION_FIELDS)[number]
 
 _constant_, defined in `packages/contract/src/sso-connection.ts`
 
-The query of the list route: the organization whose connections to list.
+The query of the list route: the organization whose connections to list; left out, the whole environment's.
 
 ```ts
-const SsoConnectionListQuerySchema: z.ZodObject<{ organizationId: z.ZodUUID; }, z.core.$strip>
+const SsoConnectionListQuerySchema: z.ZodObject<{ organizationId: z.ZodOptional<z.ZodUUID>; }, z.core.$strip>
 ```
 
 ### `SsoConnectionListSchema`

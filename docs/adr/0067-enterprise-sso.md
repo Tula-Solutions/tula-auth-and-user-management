@@ -69,6 +69,19 @@ and passes the same table of refusals.
 - Every failure is one `sso.provider_error` to the browser and the fixed reason in the log.
 - SP metadata is public per connection and built by `buildSpMetadata`; the SP entity id is its URL.
 
+## SCIM (TULA-143)
+
+An organization's directory provisions users through `/v1/scim/v2`, behind a SCIM token
+(`tula_scim_<environment>_…`, stored as a SHA-256 hash, shown once). The token is accepted by
+that middleware and refused by `secretKey()` and `agentKey()`. The routes have no OpenAPI
+description on purpose: no SDK or dashboard is generated from them. They answer RFC 7644 error
+documents. Ownership is a column, `users.managed_by_directory_id`: only a user the directory
+created, and who has no other membership, is banned or deleted by it; anyone else only loses
+the membership. Membership changes go through the Organizations service, so the last-manager
+rule of ADR 0065 holds and answers 409. The actor of an audit entry is `directory`. Limits:
+names and emails are not updated by SCIM, groups and bulk are not supported, and a create is not
+one transaction. Usage is in [docs/scim.md](../scim.md).
+
 ## Amendments
 
 - [ADR 0065](0065-organizations.md): an organization may own SSO connections (the tickets
