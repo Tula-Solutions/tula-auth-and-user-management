@@ -253,7 +253,7 @@ router.get('/saml/sso', (c) => {
   )
   return c.html(
     `<!doctype html><html><body><form method="post" action="${escapeHtml(acsUrl)}">` +
-      `<input type="hidden" name="SAMLResponse" value="${Buffer.from(response).toString('base64')}">` +
+      `<input type="hidden" name="SAMLResponse" value="${response}">` +
       `<input type="hidden" name="RelayState" value="${escapeHtml(asked.RelayState ?? '')}">` +
       `<noscript><button>Continue</button></noscript></form><script>${SUBMIT_SCRIPT}</script></body></html>`
   )

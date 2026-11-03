@@ -11,6 +11,7 @@ import { createApp } from '~/index'
 import * as logger from '~/lib/logger'
 import { base32Decode, totp } from '~/lib/totp'
 import * as Audit from '~/modules/audit/service'
+import * as Flows from '~/modules/flow/service'
 import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
 import * as Organizations from '~/modules/organization/service'
@@ -91,7 +92,7 @@ beforeAll(async () => {
     port: 0,
     async fetch(request) {
       const { pathname } = new URL(request.url)
-      if (pathname === '/.well-known/openid-configuration') {
+      if (pathname.endsWith('/.well-known/openid-configuration')) {
         return Response.json({
           issuer: idp.namedIssuer ?? idp.base,
           authorization_endpoint: idp.authorizationEndpoint ?? `${idp.base}/authorize`,
@@ -699,6 +700,19 @@ describe('the OIDC test round (TULA-145)', () => {
     expect(await deps.users.findByEmail(TENANT.environmentId, `ada@${DOMAIN}`)).toBeNull()
   })
 
+  test('the test state is never a sign-in: the flow engine refuses it and a replay signs nobody in', async () => {
+    const begun = await SsoTests.start(deps, TENANT, connectionId, REDIRECT, TEST_ACTOR)
+    const asked = consent(begun.authorizationUrl)
+    const direct = await Flows.ssoCallback(deps, connectionId, asked)
+    expect(direct).toEqual({ invalid: true })
+    const first = await callback(asked)
+    expect(first.location).toStartWith(`${REDIRECT}#tula_test=`)
+    const replay = await callback(asked)
+    expect(replay.status).toBe(400)
+    expect(replay.fragment.get('tula_ticket')).toBeNull()
+    expect(recorded().filter((t) => t.startsWith('session.') || t.startsWith('user.'))).toEqual([])
+  })
+
   test('a real sign-in with the same fault still says only sso.provider_error', async () => {
     idp.signer = 2
     expect(await codeOf()).toBe('sso.provider_error')
@@ -719,6 +733,56 @@ describe('the OIDC test round (TULA-145)', () => {
     expect(await SsoTests.result(deps, TENANT, connectionId, begun.testId)).toMatchObject({
       status: 'failed',
       reason: 'discovery_failed',
+    })
+  })
+})
+
+describe('the discovery cache', () => {
+  async function discoverIssuer(path: string) {
+    const connection = await deps.ssoConnections.find(TENANT.environmentId, connectionId)
+    // The document names another issuer, so discovery fails; it is cached by then.
+    await Sso.authorizationUrl(
+      deps,
+      { ...(connection as NonNullable<typeof connection>), issuer: `${idp.base}${path}` },
+      { state: 's', nonce: 'n', codeVerifier: 'v' }
+    ).catch(() => undefined)
+  }
+
+  test('is capped, so that many issuers cannot grow it without end', async () => {
+    Sso.forgetCached()
+    for (let i = 0; i < Sso.CACHE_MAX_ENTRIES + 25; i++) {
+      await discoverIssuer(`/t${i}`)
+    }
+    expect(Sso.cachedCount()).toBe(Sso.CACHE_MAX_ENTRIES)
+  })
+
+  test('drops expired entries when it next writes', async () => {
+    Sso.forgetCached()
+    for (let i = 0; i < 5; i++) {
+      await discoverIssuer(`/t${i}`)
+    }
+    expect(Sso.cachedCount()).toBe(5)
+    deps.clock.advance('11m')
+    await discoverIssuer('/fresh')
+    expect(Sso.cachedCount()).toBe(1)
+  })
+
+  test('an authorization endpoint over http is refused outside the local tier and allowed in it', async () => {
+    Sso.forgetCached()
+    idp.authorizationEndpoint = 'http://idp.example.test/authorize'
+    const connection = (await deps.ssoConnections.find(
+      TENANT.environmentId,
+      connectionId
+    )) as NonNullable<Awaited<ReturnType<typeof deps.ssoConnections.find>>>
+    const params = { state: 's', nonce: 'n', codeVerifier: 'v' }
+    expect(deps.outbound.tier).toBe('local')
+    expect(await Sso.authorizationUrl(deps, connection, params)).toStartWith(
+      'http://idp.example.test/authorize?'
+    )
+    const prod = { ...deps, outbound: { ...deps.outbound, tier: 'prod' as const } }
+    // `tier` is read from the object, the guard's other members are not needed to refuse here.
+    await expect(Sso.authorizationUrl(prod as never, connection, params)).rejects.toMatchObject({
+      code: 'sso.provider_error',
     })
   })
 })
