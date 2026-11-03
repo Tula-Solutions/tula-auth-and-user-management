@@ -549,9 +549,10 @@ export async function consentAtProvider(
  * so that `anyone@<domain>` continues with SSO. Enables organizations and SSO for the
  * environment: a scenario that calls it puts the settings back (`POST /__test/settings`, `{}`).
  */
-export async function bindSsoDomain(request: APIRequestContext, domain: string): Promise<void> {
+export async function bindSsoDomain(request: APIRequestContext, domain: string): Promise<string> {
   const response = await request.post(`${API_URL}/__test/sso`, { data: { domain } })
   expect(response.ok()).toBe(true)
+  return ((await response.json()) as { issuer: string }).issuer
 }
 
 /**

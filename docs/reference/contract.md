@@ -188,7 +188,7 @@ with the agent as the actor and the approving human beside it: ADR 0053), or the
 dashboard session's) or with the instance admin token itself (no id).
 
 ```ts
-const AUDIT_ACTOR_TYPES: readonly ["user", "admin", "system", "agent", "instance_admin", "directory"]
+const AUDIT_ACTOR_TYPES: readonly ["user", "admin", "system", "agent", "instance_admin", "directory", "setup_link"]
 ```
 
 ### `AUDIT_EXPORT_FORMATS`
@@ -1059,6 +1059,16 @@ server generates it. `failureMode: 'allow'` is recorded as a weakening.
 const CreateHookRequestSchema
 ```
 
+### `CreateMySetupLinkRequestSchema`
+
+_constant_, defined in `packages/contract/src/sso-setup-link.ts`
+
+The body that creates a setup link from a signed-in administrator: the organization is in the path.
+
+```ts
+const CreateMySetupLinkRequestSchema: z.ZodObject<Omit<Shape, Extract<keyof Shape, keyof M>>, z.core.$strict>
+```
+
 ### `CreateMySsoConnectionRequest`
 
 _type_, defined in `packages/contract/src/sso-connection.ts`
@@ -1192,6 +1202,26 @@ the operation's own kind ({@link PROPOSAL_OPERATION_TARGETS}).
 const CreateProposalRequestSchema
 ```
 
+### `CreateSetupLinkRequest`
+
+_type_, defined in `packages/contract/src/sso-setup-link.ts`
+
+The body that creates a setup link.
+
+```ts
+export type CreateSetupLinkRequest = z.infer<typeof CreateSetupLinkRequestSchema>
+```
+
+### `CreateSetupLinkRequestSchema`
+
+_constant_, defined in `packages/contract/src/sso-setup-link.ts`
+
+The body that creates a setup link.
+
+```ts
+const CreateSetupLinkRequestSchema
+```
+
 ### `CreateSsoConnectionRequest`
 
 _type_, defined in `packages/contract/src/sso-connection.ts`
@@ -1278,6 +1308,26 @@ the server keeps it sealed and never returns it again.
 
 ```ts
 const CreatedHookSchema
+```
+
+### `CreatedSetupLink`
+
+_type_, defined in `packages/contract/src/sso-setup-link.ts`
+
+A new setup link, with its token and address.
+
+```ts
+export type CreatedSetupLink = z.infer<typeof CreatedSetupLinkSchema>
+```
+
+### `CreatedSetupLinkSchema`
+
+_constant_, defined in `packages/contract/src/sso-setup-link.ts`
+
+A new setup link: the one answer that holds the token and the address built from it.
+
+```ts
+const CreatedSetupLinkSchema
 ```
 
 ### `CreatedWebhookEndpoint`
@@ -1487,6 +1537,16 @@ Page size when the client does not ask for one.
 
 ```ts
 const DEFAULT_PAGE_SIZE: 20
+```
+
+### `DEFAULT_SETUP_LINK_DAYS`
+
+_constant_, defined in `packages/contract/src/sso-setup-link.ts`
+
+Days a setup link lives when the request names none.
+
+```ts
+const DEFAULT_SETUP_LINK_DAYS: 7
 ```
 
 ### `DEFAULT_SMS_DAILY_MESSAGE_LIMIT`
@@ -5018,6 +5078,16 @@ const MAX_SETTING_NAME_LENGTH: 128
 name.length <= MAX_SETTING_NAME_LENGTH
 ```
 
+### `MAX_SETUP_LINK_DAYS`
+
+_constant_, defined in `packages/contract/src/sso-setup-link.ts`
+
+The longest life a setup link may be given, in days.
+
+```ts
+const MAX_SETUP_LINK_DAYS: 30
+```
+
 ### `MAX_SMS_DAILY_MESSAGE_LIMIT`
 
 _constant_, defined in `packages/contract/src/phone.ts`
@@ -7751,6 +7821,31 @@ await fetch(`${api}/v1/client/sign-ins`, {
 })
 ```
 
+### `SETUP_LINK_HEADER`
+
+_constant_, defined in `packages/contract/src/headers.ts`
+
+The header that carries a setup link's token to `/v1/setup/*` (ADR 0067). The portal reads
+the token from the page address's fragment, which a browser never sends, and puts it here:
+it is never in a path or a query, so no access log or `Referer` holds it.
+
+```ts
+const SETUP_LINK_HEADER: "x-tula-setup-token"
+```
+
+### `SETUP_LINK_TOKEN_PREFIX`
+
+_constant_, defined in `packages/contract/src/tokens.ts`
+
+Prefix of setup links' tokens, followed by the environment id (32 hex digits, no dashes) and
+`_` (ADR 0067, "Setup links"): the credential of the self-serve SSO setup portal, sent in
+`x-tula-setup-token`. It opens `/v1/setup/*` and nothing else; every other key middleware
+answers it like a wrong key, and the setup routes answer every other credential so.
+
+```ts
+const SETUP_LINK_TOKEN_PREFIX: "tula_setup_"
+```
+
 ### `SIGN_IN_METHODS_WITHOUT_SIGN_UP`
 
 _constant_, defined in `packages/contract/src/environment-settings.ts`
@@ -8569,6 +8664,96 @@ and have no revision, so a provider changed by hand does not show here.
 
 ```ts
 const SettingsManagedBySchema
+```
+
+### `SetupConnectionCreate`
+
+_type_, defined in `packages/contract/src/sso-setup-link.ts`
+
+The body that creates a connection from the portal.
+
+```ts
+export type SetupConnectionCreate = z.infer<typeof SetupConnectionCreateSchema>
+```
+
+### `SetupConnectionCreateSchema`
+
+_constant_, defined in `packages/contract/src/sso-setup-link.ts`
+
+The body that creates a connection from the portal: the organization is the link's.
+
+```ts
+const SetupConnectionCreateSchema
+```
+
+### `SetupConnectionUpdate`
+
+_type_, defined in `packages/contract/src/sso-setup-link.ts`
+
+The body that changes a connection from the portal.
+
+```ts
+export type SetupConnectionUpdate = z.infer<typeof SetupConnectionUpdateSchema>
+```
+
+### `SetupConnectionUpdateSchema`
+
+_constant_, defined in `packages/contract/src/sso-setup-link.ts`
+
+The body that changes a connection from the portal; `status` can only be `active`.
+
+```ts
+const SetupConnectionUpdateSchema
+```
+
+### `SetupLink`
+
+_type_, defined in `packages/contract/src/sso-setup-link.ts`
+
+A setup link as the admin and client routes list it.
+
+```ts
+export type SetupLink = z.infer<typeof SetupLinkSchema>
+```
+
+### `SetupLinkListSchema`
+
+_constant_, defined in `packages/contract/src/sso-setup-link.ts`
+
+The setup links of one organization.
+
+```ts
+const SetupLinkListSchema
+```
+
+### `SetupLinkSchema`
+
+_constant_, defined in `packages/contract/src/sso-setup-link.ts`
+
+A setup link as the admin and client routes list it: never the token.
+
+```ts
+const SetupLinkSchema
+```
+
+### `SetupPortal`
+
+_type_, defined in `packages/contract/src/sso-setup-link.ts`
+
+What the portal shows first.
+
+```ts
+export type SetupPortal = z.infer<typeof SetupPortalSchema>
+```
+
+### `SetupPortalSchema`
+
+_constant_, defined in `packages/contract/src/sso-setup-link.ts`
+
+What the portal shows first: the organization, its verified domains and the link's life.
+
+```ts
+const SetupPortalSchema
 ```
 
 ### `SignInMethod`
@@ -14958,6 +15143,18 @@ await fetch(`${api}/v1/client/sign-ins`, {
   headers: { [SESSION_PROFILE_HEADER]: 'admin', ...others },
   body: JSON.stringify({ identifier }),
 })
+```
+
+### `SETUP_LINK_HEADER`
+
+_constant_, defined in `packages/contract/src/headers.ts`
+
+The header that carries a setup link's token to `/v1/setup/*` (ADR 0067). The portal reads
+the token from the page address's fragment, which a browser never sends, and puts it here:
+it is never in a path or a query, so no access log or `Referer` holds it.
+
+```ts
+const SETUP_LINK_HEADER: "x-tula-setup-token"
 ```
 
 ## `@tula-tech/contract/issuer`

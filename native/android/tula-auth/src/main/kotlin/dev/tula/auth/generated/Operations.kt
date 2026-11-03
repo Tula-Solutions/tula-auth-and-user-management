@@ -48,6 +48,9 @@ object TulaOperations {
     /** Create an organization (`POST /v1/client/me/organizations`). Body: [CreateOrganizationRequest]. Answers [UserOrganization]. */
     val createMyOrganization: TulaOperation = TulaOperation("createMyOrganization", "POST", "/v1/client/me/organizations", true)
 
+    /** Create an SSO setup link for my organization (`POST /v1/client/me/organizations/{id}/setup-links`). Body: [CreateMySetupLinkRequest]. Answers [CreatedSetupLink]. */
+    val createMyOrganizationSetupLink: TulaOperation = TulaOperation("createMyOrganizationSetupLink", "POST", "/v1/client/me/organizations/{id}/setup-links", true)
+
     /** Create an SSO connection (`POST /v1/client/me/organizations/{organizationId}/sso-connections`). Body: [CreateMySsoConnectionRequest]. Answers [SsoConnection]. */
     val createMyOrganizationSsoConnection: TulaOperation = TulaOperation("createMyOrganizationSsoConnection", "POST", "/v1/client/me/organizations/{organizationId}/sso-connections", true)
 
@@ -132,6 +135,9 @@ object TulaOperations {
     /** List the roles the caller may give (`GET /v1/client/me/organizations/{organizationId}/roles`). No body. Answers [AssignableRoleList]. */
     val listMyOrganizationRoles: TulaOperation = TulaOperation("listMyOrganizationRoles", "GET", "/v1/client/me/organizations/{organizationId}/roles", true)
 
+    /** List my organization's SSO setup links (`GET /v1/client/me/organizations/{id}/setup-links`). No body. Answers [SetupLinkList]. */
+    val listMyOrganizationSetupLinks: TulaOperation = TulaOperation("listMyOrganizationSetupLinks", "GET", "/v1/client/me/organizations/{id}/setup-links", true)
+
     /** List my organization's SSO connections (`GET /v1/client/me/organizations/{organizationId}/sso-connections`). No body. Answers [SsoConnectionList]. */
     val listMyOrganizationSsoConnections: TulaOperation = TulaOperation("listMyOrganizationSsoConnections", "GET", "/v1/client/me/organizations/{organizationId}/sso-connections", true)
 
@@ -206,6 +212,9 @@ object TulaOperations {
 
     /** Revoke an invitation (`DELETE /v1/client/me/organizations/{organizationId}/invitations/{invitationId}`). No body. Answers no body. */
     val revokeMyOrganizationInvitation: TulaOperation = TulaOperation("revokeMyOrganizationInvitation", "DELETE", "/v1/client/me/organizations/{organizationId}/invitations/{invitationId}", true)
+
+    /** Revoke one of my organization's SSO setup links (`DELETE /v1/client/me/organizations/{id}/setup-links/{linkId}`). No body. Answers no body. */
+    val revokeMyOrganizationSetupLink: TulaOperation = TulaOperation("revokeMyOrganizationSetupLink", "DELETE", "/v1/client/me/organizations/{id}/setup-links/{linkId}", true)
 
     /** Sign out my other devices (`POST /v1/client/sessions/revoke-others`). No body. Answers [RevokedSessions]. */
     val revokeOtherSessions: TulaOperation = TulaOperation("revokeOtherSessions", "POST", "/v1/client/sessions/revoke-others", true)
@@ -339,6 +348,7 @@ object TulaOperations {
         confirmSmsFactorEnrolment,
         confirmTotpEnrolment,
         createMyOrganization,
+        createMyOrganizationSetupLink,
         createMyOrganizationSsoConnection,
         declineMyOrganizationInvitation,
         declineOrganizationInvitation,
@@ -367,6 +377,7 @@ object TulaOperations {
         listMyOrganizationInvitations,
         listMyOrganizationMembers,
         listMyOrganizationRoles,
+        listMyOrganizationSetupLinks,
         listMyOrganizationSsoConnections,
         listMyOrganizationSuggestions,
         listMyOrganizations,
@@ -392,6 +403,7 @@ object TulaOperations {
         resendSignInCode,
         resendSignUpCode,
         revokeMyOrganizationInvitation,
+        revokeMyOrganizationSetupLink,
         revokeOtherSessions,
         revokeSession,
         sendStepUpEmailCode,

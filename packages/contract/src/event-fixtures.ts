@@ -42,6 +42,8 @@ const aboutWebhookEndpoint = { type: 'webhook_endpoint', id: WEBHOOK_ENDPOINT } 
 const aboutHook = { type: 'hook', id: HOOK } as const
 const aboutNativeApp = { type: 'native_app', id: NATIVE_APP } as const
 const aboutSsoConnection = { type: 'sso_connection', id: SSO_CONNECTION } as const
+const SETUP_LINK = '0199c2f4-7a1b-7cde-8cfd-f0ab1e7d8cae'
+const aboutSetupLink = { type: 'setup_link', id: SETUP_LINK } as const
 const aboutScimToken = { type: 'scim_token', id: SCIM_TOKEN } as const
 const directory = { type: 'directory', id: SCIM_TOKEN } as const
 const aboutOrganization = { type: 'organization', id: ORGANIZATION } as const
@@ -554,6 +556,24 @@ export const EVENT_FIXTURES: { readonly [T in ActivityType]: EventOf<T> } = {
     occurredAt,
     actor: admin,
     target: aboutScimToken,
+    data: { organizationId: ORGANIZATION },
+  },
+  'setup_link.created': {
+    id: eventId(1440),
+    type: 'setup_link.created',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutSetupLink,
+    data: { organizationId: ORGANIZATION },
+  },
+  'setup_link.revoked': {
+    id: eventId(1441),
+    type: 'setup_link.revoked',
+    schemaVersion,
+    occurredAt,
+    actor: admin,
+    target: aboutSetupLink,
     data: { organizationId: ORGANIZATION },
   },
   'user.scim_provisioned': {

@@ -297,7 +297,8 @@ async function bindSsoDomain(body: unknown): Promise<Response> {
     throw new Error('the fixture SSO test sign-in did not pass')
   }
   await admin('PATCH', `/v1/admin/sso-connections/${connection.id}`, { status: 'active' })
-  return json({ ok: true })
+  // The issuer a connection made by hand must name to reach the mock provider (TULA-149).
+  return json({ ok: true, issuer: `http://127.0.0.1:${ssoIdp.port}/v1/dev/sso` })
 }
 
 /** Test-only routes, next to the API's own. Reached by the test runner, never by the page. */

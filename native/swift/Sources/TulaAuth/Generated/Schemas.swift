@@ -444,6 +444,36 @@ public struct ClientConfigSignUp: Codable, Hashable, Sendable {
     }
 }
 
+public struct CreateMySetupLinkRequest: Codable, Hashable, Sendable {
+    public var name: String?
+    public var expiresInDays: Int?
+
+    public init(
+        name: String? = nil,
+        expiresInDays: Int? = nil
+    ) {
+        self.name = name
+        self.expiresInDays = expiresInDays
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case expiresInDays
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.name = try container.decodeIfPresent(String.self, forKey: .name)
+        self.expiresInDays = try container.decodeIfPresent(Int.self, forKey: .expiresInDays)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(self.name, forKey: .name)
+        try container.encodeIfPresent(self.expiresInDays, forKey: .expiresInDays)
+    }
+}
+
 public struct CreateMySsoConnectionRequest: Codable, Hashable, Sendable {
     public var `protocol`: CreateMySsoConnectionRequestProtocol?
     public var name: String
@@ -585,6 +615,91 @@ public struct CreateOrganizationRequest: Codable, Hashable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(self.name, forKey: .name)
         try container.encode(self.slug, forKey: .slug)
+    }
+}
+
+public struct CreatedSetupLink: Codable, Hashable, Sendable {
+    /// Format: `uuid`.
+    public var id: String
+    /// Format: `uuid`.
+    public var organizationId: String
+    public var name: String
+    /// The start of the token, to tell links apart in a list.
+    public var prefix: String
+    /// Format: `date-time`.
+    public var expiresAt: String
+    public var revokedAt: String?
+    public var lastUsedAt: String?
+    /// Format: `date-time`.
+    public var createdAt: String
+    /// The setup token. Shown once; only its hash is stored.
+    public var token: String
+    /// The address to send to the IT administrator. The token is in its fragment.
+    public var url: String
+
+    public init(
+        id: String,
+        organizationId: String,
+        name: String,
+        prefix: String,
+        expiresAt: String,
+        revokedAt: String?,
+        lastUsedAt: String?,
+        createdAt: String,
+        token: String,
+        url: String
+    ) {
+        self.id = id
+        self.organizationId = organizationId
+        self.name = name
+        self.prefix = prefix
+        self.expiresAt = expiresAt
+        self.revokedAt = revokedAt
+        self.lastUsedAt = lastUsedAt
+        self.createdAt = createdAt
+        self.token = token
+        self.url = url
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case organizationId
+        case name
+        case prefix
+        case expiresAt
+        case revokedAt
+        case lastUsedAt
+        case createdAt
+        case token
+        case url
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.organizationId = try container.decode(String.self, forKey: .organizationId)
+        self.name = try container.decode(String.self, forKey: .name)
+        self.prefix = try container.decode(String.self, forKey: .prefix)
+        self.expiresAt = try container.decode(String.self, forKey: .expiresAt)
+        self.revokedAt = try container.decode(String?.self, forKey: .revokedAt)
+        self.lastUsedAt = try container.decode(String?.self, forKey: .lastUsedAt)
+        self.createdAt = try container.decode(String.self, forKey: .createdAt)
+        self.token = try container.decode(String.self, forKey: .token)
+        self.url = try container.decode(String.self, forKey: .url)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.id, forKey: .id)
+        try container.encode(self.organizationId, forKey: .organizationId)
+        try container.encode(self.name, forKey: .name)
+        try container.encode(self.prefix, forKey: .prefix)
+        try container.encode(self.expiresAt, forKey: .expiresAt)
+        try container.encode(self.revokedAt, forKey: .revokedAt)
+        try container.encode(self.lastUsedAt, forKey: .lastUsedAt)
+        try container.encode(self.createdAt, forKey: .createdAt)
+        try container.encode(self.token, forKey: .token)
+        try container.encode(self.url, forKey: .url)
     }
 }
 
@@ -4822,6 +4937,101 @@ public struct SetActiveOrganizationRequest: Codable, Hashable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(self.organizationId, forKey: .organizationId)
+    }
+}
+
+public struct SetupLink: Codable, Hashable, Sendable {
+    /// Format: `uuid`.
+    public var id: String
+    /// Format: `uuid`.
+    public var organizationId: String
+    public var name: String
+    /// The start of the token, to tell links apart in a list.
+    public var prefix: String
+    /// Format: `date-time`.
+    public var expiresAt: String
+    public var revokedAt: String?
+    public var lastUsedAt: String?
+    /// Format: `date-time`.
+    public var createdAt: String
+
+    public init(
+        id: String,
+        organizationId: String,
+        name: String,
+        prefix: String,
+        expiresAt: String,
+        revokedAt: String?,
+        lastUsedAt: String?,
+        createdAt: String
+    ) {
+        self.id = id
+        self.organizationId = organizationId
+        self.name = name
+        self.prefix = prefix
+        self.expiresAt = expiresAt
+        self.revokedAt = revokedAt
+        self.lastUsedAt = lastUsedAt
+        self.createdAt = createdAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case organizationId
+        case name
+        case prefix
+        case expiresAt
+        case revokedAt
+        case lastUsedAt
+        case createdAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.organizationId = try container.decode(String.self, forKey: .organizationId)
+        self.name = try container.decode(String.self, forKey: .name)
+        self.prefix = try container.decode(String.self, forKey: .prefix)
+        self.expiresAt = try container.decode(String.self, forKey: .expiresAt)
+        self.revokedAt = try container.decode(String?.self, forKey: .revokedAt)
+        self.lastUsedAt = try container.decode(String?.self, forKey: .lastUsedAt)
+        self.createdAt = try container.decode(String.self, forKey: .createdAt)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.id, forKey: .id)
+        try container.encode(self.organizationId, forKey: .organizationId)
+        try container.encode(self.name, forKey: .name)
+        try container.encode(self.prefix, forKey: .prefix)
+        try container.encode(self.expiresAt, forKey: .expiresAt)
+        try container.encode(self.revokedAt, forKey: .revokedAt)
+        try container.encode(self.lastUsedAt, forKey: .lastUsedAt)
+        try container.encode(self.createdAt, forKey: .createdAt)
+    }
+}
+
+public struct SetupLinkList: Codable, Hashable, Sendable {
+    public var links: [SetupLink]
+
+    public init(
+        links: [SetupLink]
+    ) {
+        self.links = links
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case links
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.links = try container.decode([SetupLink].self, forKey: .links)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(self.links, forKey: .links)
     }
 }
 

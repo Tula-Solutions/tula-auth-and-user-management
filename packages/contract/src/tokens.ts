@@ -202,3 +202,11 @@ export type AccessTokenClaims = z.infer<typeof AccessTokenClaimsSchema>
 export type Jwk = z.infer<typeof JwkSchema>
 /** JWK set. */
 export type Jwks = z.infer<typeof JwksSchema>
+
+/**
+ * Prefix of setup links' tokens, followed by the environment id (32 hex digits, no dashes) and
+ * `_` (ADR 0067, "Setup links"): the credential of the self-serve SSO setup portal, sent in
+ * `x-tula-setup-token`. It opens `/v1/setup/*` and nothing else; every other key middleware
+ * answers it like a wrong key, and the setup routes answer every other credential so.
+ */
+export const SETUP_LINK_TOKEN_PREFIX = 'tula_setup_'

@@ -365,6 +365,13 @@
       "when": 1793719356258,
       "tag": "0054_sso_connection_tested",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1793720254131,
+      "tag": "0056_sso_setup_links",
+      "breakpoints": true
     }
   ]
 }

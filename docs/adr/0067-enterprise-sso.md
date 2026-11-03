@@ -156,6 +156,40 @@ one transaction. Usage is in [docs/scim.md](../scim.md).
   (only `settings.sso.enabled` is), so the classification lives on that entry; the
   dashboard screen arrives with TULA-146.
 
+## Setup links and the self-serve setup portal (TULA-149)
+
+An operator (`/v1/admin/setup-links`) or an organization administrator holding
+`org:sys:sso:manage` (`/v1/client/me/organizations/:id/setup-links`) makes a setup link for one
+organization: 1 to 30 days (default 7), revocable. It opens `/dashboard/setup`, a public page of
+the dashboard build, so that the organization's IT administrator sets up SSO with no account.
+
+- **Own credential.** The token is `tula_setup_<environment>_<random>`, shown once, stored as its
+  SHA-256 hash, and every failure is `auth.invalid_key`. The setup routes accept it only, in the
+  `x-tula-setup-token` header; `secretKey()`, `agentKey()`, `scimToken()` and the dashboard
+  session never accept it and the setup routes never accept them.
+- **The token travels in the URL fragment**, which no server or referrer sees. The portal reads
+  it once, removes it with `history.replaceState`, holds it in memory only (never storage) and
+  sends it as the header, with `credentials: 'omit'`, `referrerPolicy: 'no-referrer'` and
+  `cache: 'no-store'`. The server builds the full link from `PUBLIC_URL` and returns it in the
+  create response only; the dashboard never builds it from `window.location`.
+- **Scope.** `/v1/setup/*` calls the same sso-connection functions with actor `setup_link`, for
+  the link's organization only: another organization's connection answers 404. The portal can
+  create, edit, refresh metadata, map attributes and groups, run the test sign-in and activate.
+  It **cannot change enforcement, MFA trust (`trustIdpMfa`), the break-glass role or the default
+  role**, and cannot delete a connection: those weaken the organization's posture and stay with
+  an operator or an administrator signed in. Activation needs a passing test, as everywhere.
+- **Accepted residual.** Whoever holds the link controls the identity provider they configure, so
+  they decide which groups it reports; mapped roles are bounded by the group-role mapping rules
+  and the roles the organization already has. A link is therefore as sensitive as an invitation
+  to administer sign-in: it is shown once, expires and is revoked in one click.
+- **The test sign-in** opens in a popup. The IdP returns it to `PUBLIC_URL/dashboard/setup#tula_test=<id>`
+  (the redirect is built by the server, `serverBuilt`, never taken from the request); that window
+  holds no token, posts the id on a `BroadcastChannel` and closes, and the opener polls the test.
+  The test creates nothing, as in TULA-145.
+- **Limits and audit.** Per-link and per-IP rate limits (`route-guards.test.ts`); every portal
+  change is an audit entry with actor `setup_link`; used links record `lastUsedAt`; expired links
+  are purged by the retention job.
+
 ## Organization admins manage their own SSO (TULA-148)
 
 - **Routes.** `/v1/client/me/organizations/:organizationId/sso-connections` (list, read,

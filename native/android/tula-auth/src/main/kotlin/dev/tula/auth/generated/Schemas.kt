@@ -113,6 +113,12 @@ data class ClientConfigSignUp(
 )
 
 @Serializable
+data class CreateMySetupLinkRequest(
+    val name: String? = null,
+    val expiresInDays: Long? = null,
+)
+
+@Serializable
 data class CreateMySsoConnectionRequest(
     val protocol: CreateMySsoConnectionRequestProtocol? = null,
     val name: String,
@@ -145,6 +151,27 @@ data class CreateOrganizationInvitationRequest(
 data class CreateOrganizationRequest(
     val name: String,
     val slug: OrganizationSlug,
+)
+
+@Serializable
+data class CreatedSetupLink(
+    /** Format: `uuid`. */
+    val id: String,
+    /** Format: `uuid`. */
+    val organizationId: String,
+    val name: String,
+    /** The start of the token, to tell links apart in a list. */
+    val prefix: String,
+    /** Format: `date-time`. */
+    val expiresAt: String,
+    val revokedAt: String?,
+    val lastUsedAt: String?,
+    /** Format: `date-time`. */
+    val createdAt: String,
+    /** The setup token. Shown once; only its hash is stored. */
+    val token: String,
+    /** The address to send to the IT administrator. The token is in its fragment. */
+    val url: String,
 )
 
 @Serializable
@@ -1990,6 +2017,28 @@ data class SessionTokens(
 @Serializable
 data class SetActiveOrganizationRequest(
     val organizationId: String?,
+)
+
+@Serializable
+data class SetupLink(
+    /** Format: `uuid`. */
+    val id: String,
+    /** Format: `uuid`. */
+    val organizationId: String,
+    val name: String,
+    /** The start of the token, to tell links apart in a list. */
+    val prefix: String,
+    /** Format: `date-time`. */
+    val expiresAt: String,
+    val revokedAt: String?,
+    val lastUsedAt: String?,
+    /** Format: `date-time`. */
+    val createdAt: String,
+)
+
+@Serializable
+data class SetupLinkList(
+    val links: List<SetupLink>,
 )
 
 @Serializable

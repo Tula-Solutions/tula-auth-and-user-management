@@ -28,6 +28,7 @@ import { MemoryRateLimiter } from '~/adapters/memory/rate-limiter'
 import { MemoryRevokedSessions } from '~/adapters/memory/revoked-sessions'
 import { MemoryScimStore } from '~/adapters/memory/scim'
 import { MemorySessionStore } from '~/adapters/memory/sessions'
+import { MemorySetupLinkStore } from '~/adapters/memory/setup-links'
 import { MemorySigningKeyStore } from '~/adapters/memory/signing-keys'
 import { MemorySmsSender } from '~/adapters/memory/sms-sender'
 import { MemorySmsUsageStore } from '~/adapters/memory/sms-usage'
@@ -78,6 +79,7 @@ export interface TestDeps extends Deps {
   nativeApps: MemoryNativeAppStore
   ssoConnections: MemorySsoConnectionStore
   scim: MemoryScimStore
+  setupLinks: MemorySetupLinkStore
   organizations: MemoryOrganizationStore
   organizationDomains: MemoryOrganizationDomainStore
   proposals: MemoryProposalStore
@@ -182,6 +184,7 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     nativeApps: new MemoryNativeAppStore(activityLog),
     ssoConnections: new MemorySsoConnectionStore(activityLog),
     scim: new MemoryScimStore(activityLog),
+    setupLinks: new MemorySetupLinkStore(activityLog),
     organizations,
     organizationDomains: new MemoryOrganizationDomainStore(activityLog, organizations),
     proposals: new MemoryProposalStore(activityLog, apiKeys),

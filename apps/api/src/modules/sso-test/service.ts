@@ -67,6 +67,10 @@ function failure(reason: SsoTestReason, received: Partial<Result> = {}): Result 
  * @param connectionId - The connection.
  * @param redirectUrl - The page to return the browser to; must be allowed by the environment.
  * @param actor - Who tests, for the audit entry of a pass.
+ * @param serverBuilt - `true` only when `redirectUrl` was built by the server itself (the setup
+ *   portal's page, ADR 0067): it is then not held to the environment's redirect allow-list,
+ *   which an operator's settings own and a setup link must not need or change. Never pass
+ *   an address a client sent.
  * @returns The test's id and where to send the browser. An OIDC provider whose configuration
  *   cannot be read gives a test that has already failed, and the page to return to.
  * @throws AuthError `sso.connection_not_found`, `sso.disabled`, `request.redirect_not_allowed`.
@@ -76,14 +80,17 @@ export async function start(
   tenant: Tenant,
   connectionId: string,
   redirectUrl: string,
-  actor: Actor
+  actor: Actor,
+  serverBuilt = false
 ): Promise<SsoTestStart> {
   await SsoConnections.requireEnabled(deps, tenant)
   const connection = await deps.ssoConnections.find(tenant.environmentId, connectionId)
   if (!connection) {
     throw new AuthError('sso.connection_not_found')
   }
-  const allowed = await Settings.requireRedirectUrl(deps, tenant, redirectUrl, { client: 'web' })
+  const allowed = serverBuilt
+    ? redirectUrl
+    : await Settings.requireRedirectUrl(deps, tenant, redirectUrl, { client: 'web' })
   const now = deps.clock.now()
   const id = deps.ids.next()
   const ssoState = `${tenant.environmentId}.${id}.${randomToken()}`

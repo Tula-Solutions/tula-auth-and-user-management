@@ -18,6 +18,7 @@ import { formatDateTime, isHttpsUrl } from '~/lib/format'
 import { printable, printableName } from '~/lib/printable'
 import { ConnectionDialog } from './connection-dialog'
 import { refreshSso } from './queries'
+import { SetupLinks } from './setup-links'
 import { certificateStanding, isSsoDisabled, ssoMessageFor } from './words'
 
 const STATUS_WORDS = { draft: 'Draft', active: 'Active', disabled: 'Disabled' } as const
@@ -326,6 +327,7 @@ export function SsoSection({ organizationId, organizationName: typed }: SsoSecti
           }
         </QueryState>
       )}
+      {off ? null : <SetupLinks organizationId={organizationId} />}
       <ConnectionDialog
         organizationId={organizationId}
         connection={editing?.connection ?? null}

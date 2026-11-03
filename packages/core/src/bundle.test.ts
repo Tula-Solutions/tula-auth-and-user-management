@@ -166,8 +166,10 @@ import { join } from 'node:path'
  * `sso.test_not_found`: 85 bytes, to 19,319. The budget moved by exactly those, to 19,323.
  * Organization admins' SSO calls (TULA-148: ten client operations, `organizations.sso`) added 284
  * bytes, to 19,603. The budget moved by exactly those, to 19,607: the room is the 4 bytes it was.
+ * Setup links (TULA-149: three client operations on `organizations.sso`'s neighbour, and their error
+ * codes) added 46 bytes, to 19,653. The budget moved by exactly those, to 19,657.
  */
-const GZIP_BUDGET_BYTES = 19_607
+const GZIP_BUDGET_BYTES = 19_657
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

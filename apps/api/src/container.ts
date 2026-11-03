@@ -37,6 +37,7 @@ import { PostgresPasskeyStore } from '~/adapters/postgres/passkeys'
 import { PostgresProposalStore } from '~/adapters/postgres/proposals'
 import { PostgresScimStore } from '~/adapters/postgres/scim'
 import { PostgresSessionStore } from '~/adapters/postgres/sessions'
+import { PostgresSetupLinkStore } from '~/adapters/postgres/setup-links'
 import { PostgresSigningKeyStore } from '~/adapters/postgres/signing-keys'
 import { PostgresSmsUsageStore } from '~/adapters/postgres/sms-usage'
 import { PostgresSsoConnectionStore } from '~/adapters/postgres/sso-connections'
@@ -274,6 +275,7 @@ export function createContainer(env: Env, role: ProcessRole = 'api'): Container 
     nativeApps: new PostgresNativeAppStore(database.db),
     ssoConnections: new PostgresSsoConnectionStore(database.db),
     scim: new PostgresScimStore(database.db),
+    setupLinks: new PostgresSetupLinkStore(database.db),
     organizations: new PostgresOrganizationStore(database.db),
     organizationDomains: new PostgresOrganizationDomainStore(database.db),
     proposals: new PostgresProposalStore(database.db),

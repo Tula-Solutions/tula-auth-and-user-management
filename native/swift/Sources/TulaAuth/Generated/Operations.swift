@@ -48,6 +48,9 @@ public enum TulaOperations {
     /// Create an organization (`POST /v1/client/me/organizations`). Body: `CreateOrganizationRequest`. Answers `UserOrganization`.
     public static let createMyOrganization = TulaOperation(id: "createMyOrganization", method: "POST", path: "/v1/client/me/organizations", requiresSession: true)
 
+    /// Create an SSO setup link for my organization (`POST /v1/client/me/organizations/{id}/setup-links`). Body: `CreateMySetupLinkRequest`. Answers `CreatedSetupLink`.
+    public static let createMyOrganizationSetupLink = TulaOperation(id: "createMyOrganizationSetupLink", method: "POST", path: "/v1/client/me/organizations/{id}/setup-links", requiresSession: true)
+
     /// Create an SSO connection (`POST /v1/client/me/organizations/{organizationId}/sso-connections`). Body: `CreateMySsoConnectionRequest`. Answers `SsoConnection`.
     public static let createMyOrganizationSsoConnection = TulaOperation(id: "createMyOrganizationSsoConnection", method: "POST", path: "/v1/client/me/organizations/{organizationId}/sso-connections", requiresSession: true)
 
@@ -132,6 +135,9 @@ public enum TulaOperations {
     /// List the roles the caller may give (`GET /v1/client/me/organizations/{organizationId}/roles`). No body. Answers `AssignableRoleList`.
     public static let listMyOrganizationRoles = TulaOperation(id: "listMyOrganizationRoles", method: "GET", path: "/v1/client/me/organizations/{organizationId}/roles", requiresSession: true)
 
+    /// List my organization's SSO setup links (`GET /v1/client/me/organizations/{id}/setup-links`). No body. Answers `SetupLinkList`.
+    public static let listMyOrganizationSetupLinks = TulaOperation(id: "listMyOrganizationSetupLinks", method: "GET", path: "/v1/client/me/organizations/{id}/setup-links", requiresSession: true)
+
     /// List my organization's SSO connections (`GET /v1/client/me/organizations/{organizationId}/sso-connections`). No body. Answers `SsoConnectionList`.
     public static let listMyOrganizationSsoConnections = TulaOperation(id: "listMyOrganizationSsoConnections", method: "GET", path: "/v1/client/me/organizations/{organizationId}/sso-connections", requiresSession: true)
 
@@ -206,6 +212,9 @@ public enum TulaOperations {
 
     /// Revoke an invitation (`DELETE /v1/client/me/organizations/{organizationId}/invitations/{invitationId}`). No body. Answers no body.
     public static let revokeMyOrganizationInvitation = TulaOperation(id: "revokeMyOrganizationInvitation", method: "DELETE", path: "/v1/client/me/organizations/{organizationId}/invitations/{invitationId}", requiresSession: true)
+
+    /// Revoke one of my organization's SSO setup links (`DELETE /v1/client/me/organizations/{id}/setup-links/{linkId}`). No body. Answers no body.
+    public static let revokeMyOrganizationSetupLink = TulaOperation(id: "revokeMyOrganizationSetupLink", method: "DELETE", path: "/v1/client/me/organizations/{id}/setup-links/{linkId}", requiresSession: true)
 
     /// Sign out my other devices (`POST /v1/client/sessions/revoke-others`). No body. Answers `RevokedSessions`.
     public static let revokeOtherSessions = TulaOperation(id: "revokeOtherSessions", method: "POST", path: "/v1/client/sessions/revoke-others", requiresSession: true)
@@ -339,6 +348,7 @@ public enum TulaOperations {
         confirmSmsFactorEnrolment,
         confirmTotpEnrolment,
         createMyOrganization,
+        createMyOrganizationSetupLink,
         createMyOrganizationSsoConnection,
         declineMyOrganizationInvitation,
         declineOrganizationInvitation,
@@ -367,6 +377,7 @@ public enum TulaOperations {
         listMyOrganizationInvitations,
         listMyOrganizationMembers,
         listMyOrganizationRoles,
+        listMyOrganizationSetupLinks,
         listMyOrganizationSsoConnections,
         listMyOrganizationSuggestions,
         listMyOrganizations,
@@ -392,6 +403,7 @@ public enum TulaOperations {
         resendSignInCode,
         resendSignUpCode,
         revokeMyOrganizationInvitation,
+        revokeMyOrganizationSetupLink,
         revokeOtherSessions,
         revokeSession,
         sendStepUpEmailCode,

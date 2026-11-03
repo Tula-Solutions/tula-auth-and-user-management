@@ -757,6 +757,16 @@ export const EVENT_DATA_SCHEMAS = {
     'A SCIM token was revoked: the directory it belonged to can no longer provision with it.',
     { organizationId: id() }
   ),
+  'setup_link.created': data(
+    'SetupLinkCreated',
+    'A setup link was created for an organization (ADR 0067). The token is not in the event.',
+    { organizationId: id() }
+  ),
+  'setup_link.revoked': data(
+    'SetupLinkRevoked',
+    'A setup link was revoked: the portal it opened refuses it from the next request.',
+    { organizationId: id() }
+  ),
   'user.scim_provisioned': data(
     'UserScimProvisioned',
     "An organization's directory created an account or took over an existing one (ADR 0067).",

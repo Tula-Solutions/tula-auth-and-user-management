@@ -1650,6 +1650,60 @@
         "reason": "the marker is set and read on the admin API with a secret key, which a client SDK never holds; `@tula-tech/admin` and the `tula` CLI are driven against it in their packages’ `real-api.test.ts`."
       }
     },
+    "setup links: create, use, revoke": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a setup link is made on the admin API with a secret key and used by an organization’s IT administrator in the dashboard’s setup page; `@tula-tech/core` holds no setup token and calls no setup route."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "a setup link is made on the admin API with a secret key and used by an organization’s IT administrator in the dashboard’s setup page; `@tula-tech/expo` holds no setup token and calls no setup route."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "a setup link is made on the admin API with a secret key and used by an organization’s IT administrator in the dashboard’s setup page; the Swift client holds no setup token and calls no setup route."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a setup link is made on the admin API with a secret key and used by an organization’s IT administrator in the dashboard’s setup page; the Kotlin client holds no setup token and calls no setup route."
+      }
+    },
+    "setup portal: a link is confined to its organization": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a setup link is made on the admin API with a secret key and used by an organization’s IT administrator in the dashboard’s setup page; `@tula-tech/core` holds no setup token and calls no setup route."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "a setup link is made on the admin API with a secret key and used by an organization’s IT administrator in the dashboard’s setup page; `@tula-tech/expo` holds no setup token and calls no setup route."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "a setup link is made on the admin API with a secret key and used by an organization’s IT administrator in the dashboard’s setup page; the Swift client holds no setup token and calls no setup route."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a setup link is made on the admin API with a secret key and used by an organization’s IT administrator in the dashboard’s setup page; the Kotlin client holds no setup token and calls no setup route."
+      }
+    },
+    "setup portal: a whole OIDC setup with a link": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a setup link is made on the admin API with a secret key and used by an organization’s IT administrator in the dashboard’s setup page; `@tula-tech/core` holds no setup token and calls no setup route."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "a setup link is made on the admin API with a secret key and used by an organization’s IT administrator in the dashboard’s setup page; `@tula-tech/expo` holds no setup token and calls no setup route."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "a setup link is made on the admin API with a secret key and used by an organization’s IT administrator in the dashboard’s setup page; the Swift client holds no setup token and calls no setup route."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a setup link is made on the admin API with a secret key and used by an organization’s IT administrator in the dashboard’s setup page; the Kotlin client holds no setup token and calls no setup route."
+      }
+    },
     "sign in with a texted code": {
       "core": {
         "decision": "journey"
