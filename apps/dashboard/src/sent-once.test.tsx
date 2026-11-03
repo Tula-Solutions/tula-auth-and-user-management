@@ -271,11 +271,14 @@ describe('a confirmed change is sent once, however slow the list is to come back
       }
       api.state.settings.settings.sso = { enabled: true }
       api.state.organizations.push(fakeOrganization({ id: acme, name: 'Acme Corp', slug: 'acme' }))
-      api.state.ssoConnections.push(fakeSsoConnection({ organizationId: acme }))
+      api.state.ssoConnections.push(fakeSsoConnection({ organizationId: acme, tested: true }))
       const current = start(`${DEV_PATH}/organizations/${acme}`, { api })
       await current.user.click(await screen.findByRole('button', { name: 'Activate Okta' }))
       await confirmTwice(current, 'Activate', '/v1/admin/sso-connections')
       expect(api.state.ssoConnections[0]?.status).toBe('active')
+      // An active connection is not deleted: it is disabled first.
+      await current.user.click(await screen.findByRole('button', { name: 'Disable Okta' }))
+      await confirmTwice(current, 'Disable', '/v1/admin/sso-connections')
       await current.user.click(await screen.findByRole('button', { name: 'Delete Okta' }))
       await confirmTwice(current, 'Delete connection', '/v1/admin/sso-connections')
       expect(api.state.ssoConnections).toHaveLength(0)

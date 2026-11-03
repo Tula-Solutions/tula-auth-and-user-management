@@ -1,10 +1,11 @@
-import type {
-  CreateSsoConnectionRequest,
-  SamlSettingsInput,
-  SsoConnection,
-  SsoConnectionField,
-  SsoGroupRoles,
-  UpdateSsoConnectionRequest,
+import {
+  type CreateSsoConnectionRequest,
+  type SamlSettingsInput,
+  type SsoConnection,
+  type SsoConnectionField,
+  type SsoGroupRoles,
+  ssoWeakenings,
+  type UpdateSsoConnectionRequest,
 } from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, NotFoundError } from '~/exceptions'
@@ -146,6 +147,8 @@ function view(
       })),
       ...samlUrls(config, record),
     },
+    redirectUri:
+      record.protocol === 'oidc' ? `${publicBase(config)}/v1/sso/callback/${record.id}` : null,
     attributeMapping: record.attributeMapping,
     defaultRole: record.defaultRole,
     enforced: record.enforced,
@@ -556,16 +559,7 @@ function transitionAllowed(from: SsoConnectionStatus, to: SsoConnectionStatus): 
  * @returns `true` when the change is a weakening.
  */
 export function weakens(current: SsoConnectionRecord, changes: SsoConnectionChanges): boolean {
-  const changedFields = Object.keys(changes).filter((key) => key !== 'name' && key !== 'status')
-  return (
-    changes.status === 'active' ||
-    (current.status === 'active' &&
-      changedFields.some((key) => !['enforced', 'breakGlassRole', 'trustIdpMfa'].includes(key))) ||
-    (changes.enforced === false && current.enforced) ||
-    (changes.trustIdpMfa === true && !current.trustIdpMfa) ||
-    (typeof changes.breakGlassRole === 'string' &&
-      changes.breakGlassRole !== current.breakGlassRole)
-  )
+  return ssoWeakenings(current, changes).length > 0
 }
 
 /**

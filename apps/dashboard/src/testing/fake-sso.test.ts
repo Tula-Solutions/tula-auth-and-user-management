@@ -90,17 +90,17 @@ describe('the fake SSO routes', () => {
     expect((await call('POST', ROOT, OIDC)).status).toBe(403)
   })
 
-  test('a connection people signed in through is not deleted', async () => {
+  test('an active connection is not deleted', async () => {
     const current = arranged()
     const { body } = await call('POST', ROOT, OIDC)
     const stored = current.state.ssoConnections[0]
     if (stored) {
-      stored.used = true
+      stored.status = 'active'
     }
     const refused = await call('DELETE', `${ROOT}/${body.id}`)
     expect(refused.body.code).toBe('sso.connection_in_use')
     if (stored) {
-      stored.used = false
+      stored.status = 'disabled'
     }
     expect((await call('DELETE', `${ROOT}/${body.id}`)).status).toBe(204)
   })

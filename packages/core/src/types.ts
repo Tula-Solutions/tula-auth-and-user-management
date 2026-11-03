@@ -410,6 +410,18 @@ export type OrganizationSsoTestStart = Schemas['SsoTestStart']
 /** A test sign-in's result. */
 export type OrganizationSsoTestResult = Schemas['SsoTestResult']
 
+/** An SSO setup link of an organization, as listed (never its token). */
+export type OrganizationSetupLink = Schemas['SetupLink']
+
+/** The setup links of an organization. */
+export type OrganizationSetupLinkList = Schemas['SetupLinkList']
+
+/** A new setup link: the `token` and `url` are shown once. */
+export type CreatedOrganizationSetupLink = Schemas['CreatedSetupLink']
+
+/** The body of `organizations.sso.createSetupLink()`. */
+export type CreateOrganizationSetupLinkInput = Schemas['CreateMySetupLinkRequest']
+
 /** What `organizations.setActive()` answers: the session's active organization now. */
 export type ActiveOrganization = Schemas['ActiveOrganization']
 

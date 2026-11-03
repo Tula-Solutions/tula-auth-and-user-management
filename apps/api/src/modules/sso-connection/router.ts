@@ -3,12 +3,15 @@ import { describeRoute, resolver, validator } from 'hono-openapi'
 import type { AppEnv } from '~/dependencies'
 import { validationHook } from '~/handlers'
 import { adminActor } from '~/lib/actor'
+import { publicBase } from '~/lib/public-base'
 import { adminRateLimit, byEnvironment, rateLimit } from '~/middleware/rate-limit'
 import { secretKey } from '~/middleware/secret-key'
+import { PORTAL_PATH } from '~/modules/setup-link/service'
 import * as SsoConnections from '~/modules/sso-connection/service'
 import * as SsoTests from '~/modules/sso-test/service'
 import * as openapi from '~/openapi'
 import {
+  AdminSsoTestStartRequestSchema,
   CreateSsoConnectionRequestSchema,
   SsoConnectionIdParamSchema,
   SsoConnectionListQuerySchema,
@@ -17,7 +20,6 @@ import {
   SsoGroupRolesSchema,
   SsoTestIdParamSchema,
   SsoTestResultSchema,
-  SsoTestStartRequestSchema,
   SsoTestStartSchema,
   UpdateSsoConnectionRequestSchema,
 } from './schema'
@@ -281,7 +283,7 @@ router.post(
     description:
       'Starts the whole sign-in round through the identity provider without creating a ' +
       'session, user, identity or membership. Send the browser to `authorizationUrl`; it ' +
-      'returns to `redirectUrl` (an address the environment allows) with `#tula_test=<testId>`, ' +
+      'returns to `redirectUrl` (an address the environment allows; left out, the server’s own setup page) with `#tula_test=<testId>`, ' +
       'and the result is read with `GET /:id/tests/:testId`. A passing test of the ' +
       'connection’s current settings is required to activate it.',
     security: openapi.security.admin,
@@ -296,14 +298,18 @@ router.post(
   secretKey(),
   rateLimit({ name: 'sso_test', limit: TEST_RATE_LIMIT, window: '1m', key: byEnvironment }),
   validator('param', SsoConnectionIdParamSchema, validationHook),
-  validator('json', SsoTestStartRequestSchema, validationHook),
+  validator('json', AdminSsoTestStartRequestSchema, validationHook),
   async (c) => {
+    const { redirectUrl } = c.req.valid('json')
+    // No address sent: the server's own setup page, built from PUBLIC_URL, so it is not held
+    // to the environment's list (the dashboard's popup round, like the setup portal's).
     const started = await SsoTests.start(
       c.get('deps'),
       c.get('tenant'),
       c.req.valid('param').id,
-      c.req.valid('json').redirectUrl,
-      adminActor(c)
+      redirectUrl ?? `${publicBase(c.get('deps').config)}${PORTAL_PATH}`,
+      adminActor(c),
+      redirectUrl === undefined
     )
     return c.json(SsoTestStartSchema.parse(started), 201)
   }

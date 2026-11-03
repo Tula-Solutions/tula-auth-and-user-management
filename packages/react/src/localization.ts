@@ -627,6 +627,19 @@ export interface TulaLocalization {
     domainModeChanged: string
     ssoTitle: string
     ssoIntro: string
+    setupLinkTitle: string
+    setupLinkIntro: string
+    setupLinkNameLabel: string
+    setupLinkCreate: string
+    setupLinkShownOnce: string
+    setupLinkAddressLabel: string
+    setupLinkDone: string
+    setupLinkExpires: string
+    setupLinkRevokedState: string
+    setupLinkRevoke: string
+    setupLinkRevokeConfirm: string
+    setupLinkRevokeConfirmButton: string
+    setupLinkRevoked: string
     ssoLoading: string
     ssoEmpty: string
     ssoNameLabel: string
@@ -1255,6 +1268,21 @@ export const EN_LOCALIZATION: TulaLocalization = {
     ssoTitle: 'Single sign-on',
     ssoIntro:
       'Let people sign in with your identity provider. A new connection is a draft and signs nobody in until you turn it on. The client secret is never shown again once saved.',
+    setupLinkTitle: 'Setup links',
+    setupLinkIntro:
+      'Send an address to the person who runs your identity provider so they can set up a connection without an account here. Setup links are OpenID Connect only: add a SAML connection yourself or in the dashboard.',
+    setupLinkNameLabel: 'Link name',
+    setupLinkCreate: 'Create setup link',
+    setupLinkShownOnce:
+      'Copy this address now. It is shown once and cannot be read again; anyone who has it can set up a connection until it ends.',
+    setupLinkAddressLabel: 'Setup link address',
+    setupLinkDone: 'Done',
+    setupLinkExpires: 'Ends on {date}',
+    setupLinkRevokedState: 'Revoked',
+    setupLinkRevoke: 'Revoke {name}',
+    setupLinkRevokeConfirm: 'Revoke {name}? The address stops working at once.',
+    setupLinkRevokeConfirmButton: 'Yes, revoke',
+    setupLinkRevoked: '{name} was revoked.',
     ssoLoading: 'Loading connections…',
     ssoEmpty: 'No connections yet.',
     ssoNameLabel: 'Name',

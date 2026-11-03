@@ -5339,6 +5339,7 @@ public struct SsoConnection: Codable, Hashable, Sendable {
     public var clientId: String
     public var clientSecretSet: Bool
     public var saml: SamlConnection?
+    public var redirectUri: String?
     public var attributeMapping: SsoAttributeMapping?
     public var defaultRole: String
     public var enforced: Bool
@@ -5361,6 +5362,7 @@ public struct SsoConnection: Codable, Hashable, Sendable {
         clientId: String,
         clientSecretSet: Bool,
         saml: SamlConnection?,
+        redirectUri: String?,
         attributeMapping: SsoAttributeMapping?,
         defaultRole: String,
         enforced: Bool,
@@ -5380,6 +5382,7 @@ public struct SsoConnection: Codable, Hashable, Sendable {
         self.clientId = clientId
         self.clientSecretSet = clientSecretSet
         self.saml = saml
+        self.redirectUri = redirectUri
         self.attributeMapping = attributeMapping
         self.defaultRole = defaultRole
         self.enforced = enforced
@@ -5401,6 +5404,7 @@ public struct SsoConnection: Codable, Hashable, Sendable {
         case clientId
         case clientSecretSet
         case saml
+        case redirectUri
         case attributeMapping
         case defaultRole
         case enforced
@@ -5423,6 +5427,7 @@ public struct SsoConnection: Codable, Hashable, Sendable {
         self.clientId = try container.decode(String.self, forKey: .clientId)
         self.clientSecretSet = try container.decode(Bool.self, forKey: .clientSecretSet)
         self.saml = try container.decode(SamlConnection?.self, forKey: .saml)
+        self.redirectUri = try container.decode(String?.self, forKey: .redirectUri)
         self.attributeMapping = try container.decode(SsoAttributeMapping?.self, forKey: .attributeMapping)
         self.defaultRole = try container.decode(String.self, forKey: .defaultRole)
         self.enforced = try container.decode(Bool.self, forKey: .enforced)
@@ -5445,6 +5450,7 @@ public struct SsoConnection: Codable, Hashable, Sendable {
         try container.encode(self.clientId, forKey: .clientId)
         try container.encode(self.clientSecretSet, forKey: .clientSecretSet)
         try container.encode(self.saml, forKey: .saml)
+        try container.encode(self.redirectUri, forKey: .redirectUri)
         try container.encode(self.attributeMapping, forKey: .attributeMapping)
         try container.encode(self.defaultRole, forKey: .defaultRole)
         try container.encode(self.enforced, forKey: .enforced)

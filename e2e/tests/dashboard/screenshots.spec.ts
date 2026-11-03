@@ -225,7 +225,8 @@ test('the dashboard’s screens, in light, dark and at a phone’s width', async
 
   // SCIM provisioning, on the same organization: one token that has not been used yet.
   await send('POST', '/v1/admin/scim-tokens', { organizationId: ssoId, name: 'Okta provisioning' })
-  await page.reload()
+  // Not a reload: after the setup portal the page is still on the (now revoked) link's address.
+  await open(page, `${ENVIRONMENT_PATH}/organizations/${ssoId}`, 'SSO Org')
   const scim = page.getByRole('table', { name: 'SCIM tokens' })
   await expect(scim).toBeVisible()
   await scim.scrollIntoViewIfNeeded()

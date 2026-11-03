@@ -1128,13 +1128,13 @@
       },
       "swift": {
         "decision": "not_built",
-        "ticket": "TULA-130",
-        "reason": "the Swift client has no call for an organization's single sign-on yet (the connections, a test sign-in of one, turning one on); they are built there with member and organization management (TULA-130)."
+        "ticket": "TULA-142",
+        "reason": "the Swift client has no call for an organization's single sign-on yet (the connections, a test sign-in of one, turning one on); they are built there by TULA-142 (the SSO start and the other single sign-on calls in the native clients)."
       },
       "kotlin": {
         "decision": "not_built",
-        "ticket": "TULA-130",
-        "reason": "the Kotlin client has no call for an organization's single sign-on yet (the connections, a test sign-in of one, turning one on); they are built there with member and organization management (TULA-130)."
+        "ticket": "TULA-142",
+        "reason": "the Kotlin client has no call for an organization's single sign-on yet (the connections, a test sign-in of one, turning one on); they are built there by TULA-142 (the SSO start and the other single sign-on calls in the native clients)."
       }
     },
     "organization invitations": {
@@ -1879,13 +1879,13 @@
       },
       "swift": {
         "decision": "not_built",
-        "ticket": "TULA-130",
-        "reason": "the Swift client has no call for an organization's single sign-on yet (the connections, a test sign-in of one, turning one on); they are built there with member and organization management (TULA-130)."
+        "ticket": "TULA-142",
+        "reason": "the Swift client has no call for an organization's single sign-on yet (the connections, a test sign-in of one, turning one on); they are built there by TULA-142 (the SSO start and the other single sign-on calls in the native clients)."
       },
       "kotlin": {
         "decision": "not_built",
-        "ticket": "TULA-130",
-        "reason": "the Kotlin client has no call for an organization's single sign-on yet (the connections, a test sign-in of one, turning one on); they are built there with member and organization management (TULA-130)."
+        "ticket": "TULA-142",
+        "reason": "the Kotlin client has no call for an organization's single sign-on yet (the connections, a test sign-in of one, turning one on); they are built there by TULA-142 (the SSO start and the other single sign-on calls in the native clients)."
       }
     },
     "sso a used connection is deleted once disabled and its users sign in another way": {

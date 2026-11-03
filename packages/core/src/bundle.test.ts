@@ -173,9 +173,11 @@ import { join } from 'node:path'
 
  * Managed accounts (DECISIONS 11: the `user.managed` code, and the longer `sso.connection_in_use`
  * message) added 27 bytes on top of that, to 19,721. The budget moved by exactly those, to 19,725.
+ * The member setup-link client calls (`setupLinks`, `createSetupLink`, `revokeSetupLink`, Phase 4
+ * review) added 42 bytes, to 19,763. The budget moved by exactly those, to 19,767.
 
  */
-const GZIP_BUDGET_BYTES = 19_725
+const GZIP_BUDGET_BYTES = 19_767
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

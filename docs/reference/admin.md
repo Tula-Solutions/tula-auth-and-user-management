@@ -389,7 +389,7 @@ export interface Operations {
   /** Claim a domain for an organization (`POST /v1/admin/organizations/{id}/domains`). */
   startOrganizationDomain: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: Schemas['StartOrganizationDomainRequest']; response: Schemas['OrganizationDomain'] }
   /** Start a test sign-in of an SSO connection (`POST /v1/admin/sso-connections/{id}/tests`). */
-  startSsoConnectionTest: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: Schemas['SsoTestStartRequest']; response: Schemas['SsoTestStart'] }
+  startSsoConnectionTest: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: Schemas['AdminSsoTestStartRequest']; response: Schemas['SsoTestStart'] }
   /** Unban a user (`POST /v1/admin/users/{userId}/unban`). */
   unbanUser: { params: { userId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['User'] }
   /** Change a hook (`PATCH /v1/admin/hooks/{id}`). */
@@ -493,6 +493,9 @@ export interface Schemas {
     deviceBound: boolean
     userId: string
     active: boolean
+  }
+  AdminSsoTestStartRequest: {
+    redirectUrl?: string
   }
   AndroidApp: {
     id: string
@@ -2370,6 +2373,7 @@ export interface Schemas {
     clientId: string
     clientSecretSet: boolean
     saml: Schemas['SamlConnection'] | null
+    redirectUri: string | null
     attributeMapping: Schemas['SsoAttributeMapping'] | null
     defaultRole: string
     enforced: boolean
@@ -2462,9 +2466,6 @@ export interface Schemas {
   SsoTestStart: {
     testId: string
     authorizationUrl: string
-  }
-  SsoTestStartRequest: {
-    redirectUrl: string
   }
   StartOrganizationDomainRequest: {
     domain: Schemas['OrganizationDomainName']

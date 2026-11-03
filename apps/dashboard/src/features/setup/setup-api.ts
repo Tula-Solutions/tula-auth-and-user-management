@@ -6,6 +6,9 @@ import { ApiError, fromEnvelope } from '~/api/errors'
 // the link's token travels in `x-tula-setup-token` alone. The token is held in memory only:
 // it is never written to web storage, the address or a log.
 
+/** The channel a returning test window uses to tell the opener which test came back. */
+export const SETUP_TEST_CHANNEL = 'tula-setup-test'
+
 let held: string | null = null
 
 /** What the address held when the page opened: a link's token, or a test sign-in's return. */

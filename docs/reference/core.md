@@ -220,6 +220,16 @@ The body of `organizations.invitations.invite()`: the address, a role's key and 
 export type CreateOrganizationInvitationInput = Schemas['CreateOrganizationInvitationRequest']
 ```
 
+### `CreateOrganizationSetupLinkInput`
+
+_type_, defined in `packages/core/src/types.ts`
+
+The body of `organizations.sso.createSetupLink()`.
+
+```ts
+export type CreateOrganizationSetupLinkInput = Schemas['CreateMySetupLinkRequest']
+```
+
 ### `CreateOrganizationSsoConnectionInput`
 
 _type_, defined in `packages/core/src/types.ts`
@@ -228,6 +238,16 @@ The body of `organizations.sso.create()`: the organization is the one of the cal
 
 ```ts
 export type CreateOrganizationSsoConnectionInput = Schemas['CreateMySsoConnectionRequest']
+```
+
+### `CreatedOrganizationSetupLink`
+
+_type_, defined in `packages/core/src/types.ts`
+
+A new setup link: the `token` and `url` are shown once.
+
+```ts
+export type CreatedOrganizationSetupLink = Schemas['CreatedSetupLink']
 ```
 
 ### `DEFAULT_TIMEOUT_MS`
@@ -1034,6 +1054,26 @@ A page of an organization's members.
 
 ```ts
 export type OrganizationMemberList = Schemas['OrganizationMemberList']
+```
+
+### `OrganizationSetupLink`
+
+_type_, defined in `packages/core/src/types.ts`
+
+An SSO setup link of an organization, as listed (never its token).
+
+```ts
+export type OrganizationSetupLink = Schemas['SetupLink']
+```
+
+### `OrganizationSetupLinkList`
+
+_type_, defined in `packages/core/src/types.ts`
+
+The setup links of an organization.
+
+```ts
+export type OrganizationSetupLinkList = Schemas['SetupLinkList']
 ```
 
 ### `OrganizationSsoConnection`
@@ -2712,6 +2752,47 @@ export interface TulaClient {
         id: string,
         testId: string
       ): Promise<OrganizationSsoTestResult>
+      /**
+       * The organization's SSO setup links, newest first; never their tokens. A link lets an
+       * IT administrator without an account set up an OpenID Connect connection (not SAML).
+       *
+       * @param organizationId - The organization.
+       * @returns The links.
+       * @throws TulaError `organization.not_a_member`, `organization.permission_required`, `sso.disabled`.
+       * @example
+       * ```ts
+       * const { links } = await tula.organizations.sso.setupLinks(org.id)
+       * ```
+       */
+      setupLinks(organizationId: string): Promise<OrganizationSetupLinkList>
+      /**
+       * Make a setup link. The answer holds the link's `url` once; it is not stored.
+       *
+       * @param organizationId - The organization.
+       * @param input - The link's name and life in days.
+       * @returns The link, with its token and address.
+       * @throws TulaError those of {@link setupLinks}.
+       * @example
+       * ```ts
+       * const { url } = await tula.organizations.sso.createSetupLink(org.id, { name: 'Acme IT' })
+       * ```
+       */
+      createSetupLink(
+        organizationId: string,
+        input?: CreateOrganizationSetupLinkInput
+      ): Promise<CreatedOrganizationSetupLink>
+      /**
+       * End a setup link now.
+       *
+       * @param organizationId - The organization.
+       * @param linkId - The link.
+       * @throws TulaError those of {@link setupLinks}.
+       * @example
+       * ```ts
+       * await tula.organizations.sso.revokeSetupLink(org.id, link.id)
+       * ```
+       */
+      revokeSetupLink(organizationId: string, linkId: string): Promise<void>
     }
     /**
      * Invitations by email (ADR 0065, Orgs 04). The inviting calls need the permission

@@ -23,7 +23,7 @@ users and groups provisioned over SCIM. An operator can export the audit log.
 | TULA-145 | SSO 07 | Test sign-in for a connection, and activation only after a passing test |
 | TULA-146 | SSO 08 | Dashboard SSO tab on the organization detail |
 | TULA-141 | SSO 09 | "Continue with SSO" in `<SignIn>` (core, React, Next.js) |
-| TULA-148 | SSO 10 | Org admins manage SSO (`org:sys:manage_sso`, client routes, `<OrganizationProfile>`) |
+| TULA-148 | SSO 10 | Org admins manage SSO (`org:sys:sso:manage`, client routes, `<OrganizationProfile>`) |
 | TULA-149 | SSO 11 | Setup links and the self-serve SSO setup portal |
 | TULA-142 | SSO 12 | SSO sign-in in the Swift, Kotlin and Expo clients |
 | TULA-143 | SSO 13 | SCIM 2.0 Users and SCIM tokens per organization |

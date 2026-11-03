@@ -2079,6 +2079,47 @@ export interface TulaClient {
         id: string,
         testId: string
       ): Promise<OrganizationSsoTestResult>
+      /**
+       * The organization's SSO setup links, newest first; never their tokens. A link lets an
+       * IT administrator without an account set up an OpenID Connect connection (not SAML).
+       *
+       * @param organizationId - The organization.
+       * @returns The links.
+       * @throws TulaError `organization.not_a_member`, `organization.permission_required`, `sso.disabled`.
+       * @example
+       * ```ts
+       * const { links } = await tula.organizations.sso.setupLinks(org.id)
+       * ```
+       */
+      setupLinks(organizationId: string): Promise<OrganizationSetupLinkList>
+      /**
+       * Make a setup link. The answer holds the link's `url` once; it is not stored.
+       *
+       * @param organizationId - The organization.
+       * @param input - The link's name and life in days.
+       * @returns The link, with its token and address.
+       * @throws TulaError those of {@link setupLinks}.
+       * @example
+       * ```ts
+       * const { url } = await tula.organizations.sso.createSetupLink(org.id, { name: 'Acme IT' })
+       * ```
+       */
+      createSetupLink(
+        organizationId: string,
+        input?: CreateOrganizationSetupLinkInput
+      ): Promise<CreatedOrganizationSetupLink>
+      /**
+       * End a setup link now.
+       *
+       * @param organizationId - The organization.
+       * @param linkId - The link.
+       * @throws TulaError those of {@link setupLinks}.
+       * @example
+       * ```ts
+       * await tula.organizations.sso.revokeSetupLink(org.id, link.id)
+       * ```
+       */
+      revokeSetupLink(organizationId: string, linkId: string): Promise<void>
     }
     /**
      * Invitations by email (ADR 0065, Orgs 04). The inviting calls need the permission
@@ -3242,6 +3283,19 @@ export interface TulaLocalization {
     domainModeChanged: string
     ssoTitle: string
     ssoIntro: string
+    setupLinkTitle: string
+    setupLinkIntro: string
+    setupLinkNameLabel: string
+    setupLinkCreate: string
+    setupLinkShownOnce: string
+    setupLinkAddressLabel: string
+    setupLinkDone: string
+    setupLinkExpires: string
+    setupLinkRevokedState: string
+    setupLinkRevoke: string
+    setupLinkRevokeConfirm: string
+    setupLinkRevokeConfirmButton: string
+    setupLinkRevoked: string
     ssoLoading: string
     ssoEmpty: string
     ssoNameLabel: string

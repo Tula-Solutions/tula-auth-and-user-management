@@ -395,6 +395,17 @@ always `false`.
 const AdminSessionSchema
 ```
 
+### `AdminSsoTestStartRequestSchema`
+
+_constant_, defined in `packages/contract/src/sso-test.ts`
+
+The administrator's start of a test sign-in. Left out, `redirectUrl` is the server's own
+setup page, which needs no entry in the environment's list: the dashboard cannot know it.
+
+```ts
+const AdminSsoTestStartRequestSchema: z.ZodObject<{ redirectUrl: z.ZodOptional<z.ZodString>; }, z.core.$strip>
+```
+
 ### `AndroidApp`
 
 _type_, defined in `packages/contract/src/native-app.ts`
@@ -9526,6 +9537,21 @@ A started test: send the browser to `authorizationUrl`; it returns with `#tula_t
 const SsoTestStartSchema: z.ZodObject<{ testId: z.ZodUUID; authorizationUrl: z.ZodString; }, z.core.$strip>
 ```
 
+### `SsoWeakening`
+
+_type_, defined in `packages/contract/src/sso-connection.ts`
+
+One way a change to a connection lets more people sign in, or asks less of them (ADR 0067).
+
+```ts
+export type SsoWeakening =
+| 'activate'
+| 'active_content'
+| 'enforcement_off'
+| 'trust_idp_mfa'
+| 'break_glass_role'
+```
+
 ### `StartOrganizationDomainRequest`
 
 _type_, defined in `packages/contract/src/organization-domain.ts`
@@ -13589,6 +13615,34 @@ export function smsTemplateProblems(
 ```ts
 smsTemplateProblems('sign_in', { text: 'Your sign-in code.' })
 // [{ field: 'text', code: 'missing_placeholder', placeholder: 'code', message: … }]
+```
+
+### `ssoWeakenings`
+
+_function_, defined in `packages/contract/src/sso-connection.ts`
+
+What a change to a connection lets through that it did not before. The one copy of the rule:
+the server's audit entry says `weakened: true` for exactly these, and the dashboard asks
+first and words each (ADR 0067). A name, or a field left `undefined`, is no change.
+
+```ts
+export function ssoWeakenings(
+  current: Pick<SsoConnection, 'status' | 'enforced' | 'breakGlassRole' | 'trustIdpMfa'>,
+  fields: object
+): SsoWeakening[]
+```
+
+**Parameters**
+
+- `current`: The connection as it is.
+- `changes`: The fields being changed.
+
+**Returns** The weakenings, in a fixed order; empty when nothing is weakened.
+
+**Example**
+
+```ts
+ssoWeakenings({ status: 'draft', enforced: true, breakGlassRole: null, trustIdpMfa: false }, { status: 'active' }) // ['activate']
 ```
 
 ### `stepUpWindowSeconds`

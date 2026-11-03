@@ -139,8 +139,16 @@ organization), in the sections below **Domains**:
 - **Setup links** (on the same section) lists the organization's links and has **Create a setup link**.
   The new link's address is shown once, in a dialog (*Copy this setup link now*), and is not shown
   again; each link can be revoked.
-- The test sign-in and the group-to-role mapping are not drawn in the dashboard yet; use the admin API
-  (the snippets on this page) or the setup portal.
+- **Run test sign-in** opens the identity provider in a window and shows what came back: the attributes
+  and groups received, how they mapped, or why it failed. It creates nothing. A connection can be
+  **activated** only after a test has passed with its current settings; changing its provider values
+  clears that.
+- **Mapping** edits the attribute names (an empty field uses the provider preset's usual name) and the
+  group-to-role list, first match wins. Only the organization's own roles are offered: a group cannot be
+  mapped to a system role.
+- Changes that let more people in (activating, changing an active connection, turning enforcement off,
+  trusting the provider's two-step verification, naming a break-glass role) ask first, in the words of
+  the contract's `ssoWeakenings`, and in production ask for the connection's name to be typed.
 
 ## Enforcement and break-glass
 

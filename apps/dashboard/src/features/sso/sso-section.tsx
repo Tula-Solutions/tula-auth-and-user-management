@@ -17,8 +17,10 @@ import { EnvironmentLink } from '~/features/shell/environment-link'
 import { formatDateTime, isHttpsUrl } from '~/lib/format'
 import { printable, printableName } from '~/lib/printable'
 import { ConnectionDialog } from './connection-dialog'
+import { MappingDialog } from './mapping-dialog'
 import { refreshSso } from './queries'
 import { SetupLinks } from './setup-links'
+import { TestSignIn } from './test-signin'
 import { certificateStanding, isSsoDisabled, ssoMessageFor } from './words'
 
 const STATUS_WORDS = { draft: 'Draft', active: 'Active', disabled: 'Disabled' } as const
@@ -101,11 +103,13 @@ function Certificates({ saml }: { saml: NonNullable<SsoConnection['saml']> }) {
 function Card({
   connection,
   onEdit,
+  onMapping,
   onStatus,
   onDelete,
 }: {
   connection: SsoConnection
   onEdit: () => void
+  onMapping: () => void
   onStatus: (status: 'active' | 'disabled') => void
   onDelete: () => void
 }) {
@@ -126,6 +130,14 @@ function Card({
           <ActionButton variant='outline' size='sm' aria-label={`Edit ${name}`} onClick={onEdit}>
             Edit
           </ActionButton>
+          <ActionButton
+            variant='outline'
+            size='sm'
+            aria-label={`Mapping for ${name}`}
+            onClick={onMapping}
+          >
+            Mapping
+          </ActionButton>
           {connection.status === 'active' ? (
             <ActionButton
               variant='outline'
@@ -140,6 +152,8 @@ function Card({
               variant='outline'
               size='sm'
               aria-label={`Activate ${name}`}
+              aria-describedby={connection.tested ? undefined : `untested-${connection.id}`}
+              disabled={!connection.tested}
               onClick={() => onStatus('active')}
             >
               Activate
@@ -155,6 +169,13 @@ function Card({
           </ActionButton>
         </div>
       </div>
+      {connection.status !== 'active' && !connection.tested ? (
+        <p id={`untested-${connection.id}`} className='text-sm text-muted-foreground'>
+          Activating needs a passing test sign-in with the connection’s current settings. Changing
+          the settings asks for a new test.
+        </p>
+      ) : null}
+      <TestSignIn connection={connection} />
       {standings.includes('expired') ? (
         <p role='alert' className='text-sm font-medium text-destructive'>
           Warning: a signing certificate of this connection has expired. Sign-ins signed with it are
@@ -237,6 +258,7 @@ export function SsoSection({ organizationId, organizationName: typed }: SsoSecti
     status: 'active' | 'disabled'
   } | null>(null)
   const [deleting, setDeleting] = useState<SsoConnection | null>(null)
+  const [mapping, setMapping] = useState<SsoConnection | null>(null)
 
   function closeSwitch() {
     update.reset()
@@ -318,6 +340,7 @@ export function SsoSection({ organizationId, organizationName: typed }: SsoSecti
                     key={`${environment.id}:${connection.id}`}
                     connection={connection}
                     onEdit={() => setEditing({ connection })}
+                    onMapping={() => setMapping(connection)}
                     onStatus={(status) => setSwitching({ connection, status })}
                     onDelete={() => setDeleting(connection)}
                   />
@@ -334,6 +357,9 @@ export function SsoSection({ organizationId, organizationName: typed }: SsoSecti
         open={editing !== null}
         onClose={() => setEditing(null)}
       />
+      {mapping ? (
+        <MappingDialog connection={mapping} open onClose={() => setMapping(null)} />
+      ) : null}
       <ConfirmDialog
         open={switching !== null}
         title={`${switching?.status === 'active' ? 'Activate' : 'Disable'} ${

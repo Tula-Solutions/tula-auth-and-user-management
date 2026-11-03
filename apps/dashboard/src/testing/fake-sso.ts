@@ -3,6 +3,7 @@ import {
   CreateSsoConnectionRequestSchema,
   type SetupLink,
   type SsoConnection,
+  SsoGroupRolesSchema,
   UpdateSsoConnectionRequestSchema,
 } from '@tula-tech/contract'
 import { z } from 'zod'
@@ -43,6 +44,12 @@ export interface FakeSsoState {
   setupLinks: (SetupLink & { environmentId: string })[]
   /** When the certificate of a SAML connection made through the fake ends. */
   ssoCertificateEnd: string
+  /** The test sign-ins started, by id, with the connection each is of. */
+  ssoTests: { testId: string; connectionId: string }[]
+  /** What a started test reads as: a test sets it before the window "returns". */
+  ssoTestOutcome: 'pending' | 'passed' | 'failed'
+  /** The group to role mapping, by connection id. */
+  ssoGroupRoles: Record<string, { group: string; role: string }[]>
 }
 
 /** What the routes ask of the rest of the fake. */
@@ -76,6 +83,7 @@ export function fakeSsoConnection(overrides: Partial<FakeSsoConnection> = {}): F
     clientId: protocol === 'oidc' ? 'client-1' : '',
     clientSecretSet: protocol === 'oidc',
     saml: null,
+    redirectUri: protocol === 'oidc' ? `${SP_BASE}/v1/sso/callback/${id}` : null,
     defaultRole: 'member',
     enforced: false,
     breakGlassRole: null,
@@ -308,7 +316,15 @@ export function ssoRoutes(
             return refused
           }
         }
+        if (changes.status === 'active' && !connection.tested) {
+          return failure(409, 'sso.test_required', 'Run a passing test sign-in first.')
+        }
         const { saml, clientSecret, ...plain } = changes
+        // A change to what a test exercises resets its pass, as the server's fingerprint does.
+        const exercised = ['issuer', 'clientId', 'defaultRole', 'domains', 'attributeMapping']
+        if (clientSecret !== undefined || saml || exercised.some((key) => key in plain)) {
+          connection.tested = false
+        }
         Object.assign(connection, plain, { updatedAt: NOW })
         if (clientSecret !== undefined) {
           connection.secret = clientSecret
@@ -318,6 +334,93 @@ export function ssoRoutes(
           connection.saml = samlView(connection.id, connection.environmentId, connection.saml)
         }
         return view(connection)
+      },
+    ],
+    [
+      'POST',
+      /^\/v1\/admin\/sso-connections\/([^/]+)\/tests$/,
+      (call, match) => {
+        if (!context.enabled()) {
+          return off()
+        }
+        const connection = find(call, match[1] ?? '')
+        if (!connection) {
+          return notFound()
+        }
+        made += 1
+        const testId = `00000000-0000-7000-8000-c${String(made).padStart(11, '0')}`
+        state.ssoTests.push({ testId, connectionId: connection.id })
+        return new Response(
+          JSON.stringify({ testId, authorizationUrl: 'https://login.example.com/authorize?s=1' }),
+          { status: 201, headers: { 'content-type': 'application/json' } }
+        )
+      },
+    ],
+    [
+      'GET',
+      /^\/v1\/admin\/sso-connections\/([^/]+)\/tests\/([^/]+)$/,
+      (call, match) => {
+        if (!context.enabled()) {
+          return off()
+        }
+        const connection = find(call, match[1] ?? '')
+        const test = state.ssoTests.find(
+          (entry) => entry.testId === match[2] && entry.connectionId === connection?.id
+        )
+        if (!connection || !test) {
+          return failure(404, 'sso.test_not_found', 'No such test sign-in.')
+        }
+        const outcome = state.ssoTestOutcome
+        if (outcome === 'passed') {
+          connection.tested = true
+        }
+        return {
+          testId: test.testId,
+          status: outcome,
+          reason: outcome === 'failed' ? 'wrong_audience' : null,
+          message: outcome === 'failed' ? 'The response was meant for another application.' : null,
+          attributes: outcome === 'passed' ? [{ name: 'email', values: ['ada@acme.com'] }] : [],
+          groups: outcome === 'passed' ? ['engineering'] : [],
+          mapped:
+            outcome === 'passed'
+              ? {
+                  email: 'ada@acme.com',
+                  givenName: 'Ada',
+                  familyName: 'Lovelace',
+                  emailOnVerifiedDomain: true,
+                }
+              : null,
+        }
+      },
+    ],
+    [
+      'GET',
+      /^\/v1\/admin\/sso-connections\/([^/]+)\/group-roles$/,
+      (call, match) => {
+        if (!context.enabled()) {
+          return off()
+        }
+        const connection = find(call, match[1] ?? '')
+        return connection ? { mappings: state.ssoGroupRoles[connection.id] ?? [] } : notFound()
+      },
+    ],
+    [
+      'PUT',
+      /^\/v1\/admin\/sso-connections\/([^/]+)\/group-roles$/,
+      (call, match) => {
+        if (!context.enabled()) {
+          return off()
+        }
+        const connection = find(call, match[1] ?? '')
+        const body = SsoGroupRolesSchema.safeParse(call.body ?? {})
+        if (!body.success) {
+          return invalid(body.error)
+        }
+        if (!connection) {
+          return notFound()
+        }
+        state.ssoGroupRoles[connection.id] = body.data.mappings
+        return { mappings: body.data.mappings }
       },
     ],
     [
@@ -331,8 +434,8 @@ export function ssoRoutes(
         if (!connection) {
           return notFound()
         }
-        if (connection.used) {
-          return failure(409, 'sso.connection_in_use', 'People have signed in through it.')
+        if (connection.status === 'active') {
+          return failure(409, 'sso.connection_in_use', 'The connection is active.')
         }
         state.ssoConnections = state.ssoConnections.filter((entry) => entry !== connection)
         return new Response(null, { status: 204 })

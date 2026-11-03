@@ -176,6 +176,20 @@ test('the profile: an admin opens single sign-on, sees none, and is asked for wh
   await expect(page.getByText('Fill in this field.').first()).toBeVisible()
   await accessibleInBothSchemes(page, 'Organization profile: single sign-on, fields missing')
   await expect(page.getByText('No connections yet.')).toBeVisible()
+
+  // A setup link: OIDC only is said, the address is shown once and gone after "Done".
+  await expect(page.getByText(/OpenID Connect only/)).toBeVisible()
+  await page.getByLabel('Link name').fill('Acme IT')
+  await page.getByRole('button', { name: 'Create setup link' }).click()
+  const address = page.getByLabel('Setup link address')
+  await expect(address).toHaveValue(/\/dashboard\/setup#token=tula_setup_/)
+  await accessibleInBothSchemes(page, 'Organization profile: single sign-on, a new setup link')
+  await page.getByRole('button', { name: 'Done' }).click()
+  await expect(address).toHaveCount(0)
+  await expect(page.getByText('Acme IT', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Revoke Acme IT' }).click()
+  await page.getByRole('button', { name: 'Yes, revoke' }).click()
+  await expect(page.getByText('Acme IT was revoked.')).toBeVisible()
 })
 
 test('a visitor without a session is sent to sign in, and a user is told when organizations are off', async ({
