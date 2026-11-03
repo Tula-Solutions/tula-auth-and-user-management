@@ -3,6 +3,7 @@ import type {
   SamlSettingsInput,
   SsoConnection,
   SsoConnectionField,
+  SsoGroupRoles,
   UpdateSsoConnectionRequest,
 } from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
@@ -104,6 +105,7 @@ function view(
       })),
       ...samlUrls(config, record),
     },
+    attributeMapping: record.attributeMapping,
     defaultRole: record.defaultRole,
     enforced: record.enforced,
     breakGlassRole: record.breakGlassRole,
@@ -353,6 +355,7 @@ export async function create(
       clientId: input.clientId ?? '',
       clientSecretSealed: sealed,
       saml,
+      attributeMapping: input.attributeMapping ?? null,
       defaultRole: input.defaultRole,
       enforced: false,
       breakGlassRole: null,
@@ -370,6 +373,83 @@ export async function create(
     throw new AuthError('sso.domain_taken')
   }
   return view(deps.config, stored, deps.clock.now())
+}
+
+/**
+ * Read the group to role mapping of a connection's organization.
+ *
+ * @param deps - Stores and settings.
+ * @param tenant - The environment.
+ * @param id - The connection.
+ * @returns The mappings in precedence order.
+ * @throws AuthError `sso.connection_not_found`.
+ */
+export async function getGroupRoles(
+  deps: Pick<Deps, 'ssoConnections' | 'environmentSettings' | 'config'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  id: string
+): Promise<SsoGroupRoles> {
+  await requireEnabled(deps, tenant)
+  const connection = await requireConnection(deps, tenant, id)
+  return {
+    mappings: await deps.ssoConnections.listGroupRoles(
+      tenant.environmentId,
+      connection.organizationId
+    ),
+  }
+}
+
+/**
+ * Replace the group to role mapping of a connection's organization. It is held per
+ * organization, so SCIM Groups read the same one. The order is the precedence.
+ *
+ * Group names are directory data: the audit entry records that the mapping changed, never a
+ * group, a count of groups or a role.
+ *
+ * @param deps - Stores, ids and clock.
+ * @param tenant - The environment.
+ * @param id - The connection whose organization is meant.
+ * @param input - The whole new mapping.
+ * @param actor - Who changes it, for the audit log.
+ * @returns The mapping as saved.
+ * @throws AuthError `sso.connection_not_found`, `organization.role_unknown` for a role that
+ *   does not exist, `request.malformed` for a group named twice.
+ */
+export async function putGroupRoles(
+  deps: Pick<
+    Deps,
+    'ssoConnections' | 'organizations' | 'environmentSettings' | 'config' | 'ids' | 'clock'
+  >,
+  tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
+  id: string,
+  input: SsoGroupRoles,
+  actor: Actor
+): Promise<SsoGroupRoles> {
+  await requireEnabled(deps, tenant)
+  const connection = await requireConnection(deps, tenant, id)
+  if (new Set(input.mappings.map((one) => one.group)).size !== input.mappings.length) {
+    throw new AuthError('request.malformed')
+  }
+  for (const role of new Set(input.mappings.map((one) => one.role))) {
+    await Organizations.requireRole(deps, tenant, role)
+  }
+  const activity = Audit.entry(deps, tenant, {
+    type: 'sso_connection.updated',
+    actor,
+    target: { type: 'sso_connection', id },
+    data: { protocol: connection.protocol, changed: ['groupRoles'], status: connection.status },
+  })
+  await deps.ssoConnections.replaceGroupRoles(
+    {
+      projectId: tenant.projectId,
+      environmentId: tenant.environmentId,
+      organizationId: connection.organizationId,
+      mappings: input.mappings,
+    },
+    activity.occurredAt,
+    activity
+  )
+  return { mappings: input.mappings }
 }
 
 /** The life of a connection never goes back to a draft. */
@@ -474,6 +554,13 @@ export async function update(
       secretAad(tenant.environmentId, id)
     )
     changed.push('clientSecret')
+  }
+  if (
+    input.attributeMapping !== undefined &&
+    JSON.stringify(input.attributeMapping) !== JSON.stringify(current.attributeMapping ?? {})
+  ) {
+    changes.attributeMapping = input.attributeMapping
+    changed.push('attributeMapping')
   }
   if (input.defaultRole !== undefined && input.defaultRole !== current.defaultRole) {
     await Organizations.requireRole(deps, tenant, input.defaultRole)

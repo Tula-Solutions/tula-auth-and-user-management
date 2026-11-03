@@ -1854,6 +1854,8 @@ export const SsoConnectionUpdatedEventDataChangedItem = {
   trustIdpMfa: 'trustIdpMfa',
   domains: 'domains',
   status: 'status',
+  attributeMapping: 'attributeMapping',
+  groupRoles: 'groupRoles',
 } as const;
 
 export type SsoConnectionUpdatedEventDataStatus = typeof SsoConnectionUpdatedEventDataStatus[keyof typeof SsoConnectionUpdatedEventDataStatus];
@@ -1872,7 +1874,7 @@ export interface SsoConnectionUpdatedEventData {
   protocol: SsoConnectionUpdatedEventDataProtocol;
   /**
      * @minItems 1
-     * @maxItems 11
+     * @maxItems 13
      */
   changed: SsoConnectionUpdatedEventDataChangedItem[];
   status: SsoConnectionUpdatedEventDataStatus;
@@ -6456,6 +6458,43 @@ export interface SamlConnection {
   spMetadataUrl: string;
 }
 
+export type SsoAttributeMappingIdp = typeof SsoAttributeMappingIdp[keyof typeof SsoAttributeMappingIdp];
+
+
+export const SsoAttributeMappingIdp = {
+  okta: 'okta',
+  entra: 'entra',
+  google_workspace: 'google_workspace',
+  jumpcloud: 'jumpcloud',
+  onelogin: 'onelogin',
+  ping: 'ping',
+  generic: 'generic',
+} as const;
+
+export interface SsoAttributeMapping {
+  idp?: SsoAttributeMappingIdp;
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  email?: string;
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  firstName?: string;
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  lastName?: string;
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  groups?: string;
+}
+
 export type SsoConnectionProtocol = typeof SsoConnectionProtocol[keyof typeof SsoConnectionProtocol];
 
 
@@ -6485,6 +6524,7 @@ export interface SsoConnection {
   clientId: string;
   clientSecretSet: boolean;
   saml: SamlConnection | null;
+  attributeMapping: SsoAttributeMapping | null;
   defaultRole: string;
   enforced: boolean;
   /** @nullable */
@@ -6555,9 +6595,24 @@ export interface CreateSsoConnectionRequest {
      */
   clientSecret?: string;
   saml?: SamlSettingsInput;
+  attributeMapping?: SsoAttributeMapping;
   defaultRole?: OrganizationRoleKey;
   /** @maxItems 20 */
   domains?: OrganizationDomainName[];
+}
+
+export type SsoGroupRolesMappingsItem = {
+  /**
+     * @minLength 1
+     * @maxLength 256
+     */
+  group: string;
+  role: OrganizationRoleKey;
+};
+
+export interface SsoGroupRoles {
+  /** @maxItems 100 */
+  mappings: SsoGroupRolesMappingsItem[];
 }
 
 export type UpdateSsoConnectionRequestStatus = typeof UpdateSsoConnectionRequestStatus[keyof typeof UpdateSsoConnectionRequestStatus];
@@ -6588,6 +6643,7 @@ export interface UpdateSsoConnectionRequest {
      */
   clientSecret?: string;
   saml?: SamlSettingsInput;
+  attributeMapping?: SsoAttributeMapping;
   defaultRole?: OrganizationRoleKey;
   enforced?: boolean;
   breakGlassRole?: OrganizationRoleKey | null;
@@ -14683,6 +14739,198 @@ export const useDeleteSsoConnection = <TError = ErrorEnvelope,
         TContext
       > => {
       return useMutation(getDeleteSsoConnectionMutationOptions(options), queryClient);
+    }
+
+export const getGetSsoGroupRolesUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/sso-connections/${id}/group-roles`
+}
+
+/**
+ * The mapping of the connection's organization, in precedence order: the first of a user's groups in this list decides their role. SCIM Groups use the same mapping.
+ * @summary Get an organization's IdP group to role mapping
+ */
+export const getSsoGroupRoles = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoGroupRoles> => {
+
+  return dashboardFetch<SsoGroupRoles>(getGetSsoGroupRolesUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSsoGroupRolesQueryKey = (id: string,) => {
+    return [
+    `/v1/admin/sso-connections/${id}/group-roles`
+    ] as const;
+    }
+
+
+export const getGetSsoGroupRolesQueryOptions = <TData = Awaited<ReturnType<typeof getSsoGroupRoles>>, TError = ErrorEnvelope>(id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoGroupRoles>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSsoGroupRolesQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSsoGroupRoles>>> = ({ signal }) => getSsoGroupRoles(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSsoGroupRoles>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSsoGroupRolesQueryResult = NonNullable<Awaited<ReturnType<typeof getSsoGroupRoles>>>
+export type GetSsoGroupRolesQueryError = ErrorEnvelope
+
+
+export function useGetSsoGroupRoles<TData = Awaited<ReturnType<typeof getSsoGroupRoles>>, TError = ErrorEnvelope>(
+ id: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoGroupRoles>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSsoGroupRoles>>,
+          TError,
+          Awaited<ReturnType<typeof getSsoGroupRoles>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSsoGroupRoles<TData = Awaited<ReturnType<typeof getSsoGroupRoles>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoGroupRoles>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSsoGroupRoles>>,
+          TError,
+          Awaited<ReturnType<typeof getSsoGroupRoles>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSsoGroupRoles<TData = Awaited<ReturnType<typeof getSsoGroupRoles>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoGroupRoles>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get an organization's IdP group to role mapping
+ */
+
+export function useGetSsoGroupRoles<TData = Awaited<ReturnType<typeof getSsoGroupRoles>>, TError = ErrorEnvelope>(
+ id: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoGroupRoles>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetSsoGroupRolesQueryOptions(id,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getReplaceSsoGroupRolesUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/sso-connections/${id}/group-roles`
+}
+
+/**
+ * Replaces the whole mapping. A role that does not exist is refused (`organization.role_unknown`); a group named twice is `request.malformed`. At each single sign-on the member's role is set from it, and a user in no mapped group gets the connection's `defaultRole`. The audit entry says only that the mapping changed.
+ * @summary Replace an organization's IdP group to role mapping
+ */
+export const replaceSsoGroupRoles = async (id: string,
+    ssoGroupRoles: SsoGroupRoles, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoGroupRoles> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<SsoGroupRoles>(getReplaceSsoGroupRolesUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(ssoGroupRoles)
+  }
+);}
+
+
+
+
+
+export const getReplaceSsoGroupRolesMutationKey = () => ['replaceSsoGroupRoles'] as const;
+
+export const getReplaceSsoGroupRolesMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof replaceSsoGroupRoles>>, TError,ReplaceSsoGroupRolesMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof replaceSsoGroupRoles>>, TError,ReplaceSsoGroupRolesMutationVariables, TContext> => {
+
+const mutationKey = getReplaceSsoGroupRolesMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof replaceSsoGroupRoles>>, ReplaceSsoGroupRolesMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  replaceSsoGroupRoles(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReplaceSsoGroupRolesMutationResult = NonNullable<Awaited<ReturnType<typeof replaceSsoGroupRoles>>>
+    export type ReplaceSsoGroupRolesMutationBody = SsoGroupRoles
+    export type ReplaceSsoGroupRolesMutationError = ErrorEnvelope
+    export type ReplaceSsoGroupRolesMutationVariables = {id: string;data: SsoGroupRoles}
+
+    /**
+ * @summary Replace an organization's IdP group to role mapping
+ */
+export const useReplaceSsoGroupRoles = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof replaceSsoGroupRoles>>, TError,ReplaceSsoGroupRolesMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof replaceSsoGroupRoles>>,
+        TError,
+        ReplaceSsoGroupRolesMutationVariables,
+        TContext
+      > => {
+      return useMutation(getReplaceSsoGroupRolesMutationOptions(options), queryClient);
     }
 
 export const getRefreshSsoConnectionMetadataUrl = (id: string,) => {

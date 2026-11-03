@@ -3,6 +3,7 @@ import {
   boolean,
   check,
   index,
+  integer,
   jsonb,
   text,
   timestamp,
@@ -58,6 +59,17 @@ export const ssoConnections = tula.table(
       ssoUrl: string
       metadataUrl: string | null
       certificates: { pem: string; notAfter: string }[]
+    }>(),
+    /**
+     * Which IdP attribute or claim carries the email, names and groups, and the IdP the defaults
+     * are those of (ADR 0067). `null` is the protocol's generic defaults.
+     */
+    attributeMapping: jsonb('attribute_mapping').$type<{
+      idp?: string
+      email?: string
+      firstName?: string
+      lastName?: string
+      groups?: string
     }>(),
     /** The role key a user provisioned by this connection gets in the organization. */
     defaultRole: text('default_role').notNull(),
@@ -138,3 +150,40 @@ export type SsoConnectionRow = typeof ssoConnections.$inferSelect
 export type SsoConnectionDomainRow = typeof ssoConnectionDomains.$inferSelect
 /** An SSO identity row. */
 export type SsoIdentityRow = typeof ssoIdentities.$inferSelect
+
+/**
+ * An organization's IdP group to role mapping (ADR 0067), one row per group, in precedence
+ * order (`position`, lowest first). Held per organization, not per connection, so that SCIM
+ * Groups read the same table. A group name is directory data: it is never in an audit entry,
+ * an event or a log line. `role_key` is not a foreign key: a role deleted later is skipped at
+ * sign-in, and the membership keeps its role.
+ */
+export const organizationGroupRoles = tula.table(
+  'organization_group_roles',
+  {
+    id: primaryKey(),
+    ...tenantColumns(),
+    organizationId: uuid('organization_id').notNull(),
+    groupName: text('group_name').notNull(),
+    roleKey: text('role_key').notNull(),
+    position: integer('position').notNull(),
+    ...timestamps(),
+  },
+  (t) => [
+    unique('organization_group_roles_group_key').on(t.organizationId, t.groupName),
+    tenantForeignKey(
+      'organization_group_roles_organization_fk',
+      t,
+      t.organizationId,
+      organizations
+    ),
+    check(
+      'organization_group_roles_name_bounds',
+      sql`char_length(${t.groupName}) between 1 and 256`
+    ),
+    ...tenantConstraints('organization_group_roles', t),
+  ]
+)
+
+/** An organization's group to role row. */
+export type OrganizationGroupRoleRow = typeof organizationGroupRoles.$inferSelect

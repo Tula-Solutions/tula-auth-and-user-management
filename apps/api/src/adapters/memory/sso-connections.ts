@@ -1,6 +1,7 @@
 import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import { activityOf, type Recorded } from '~/ports/activity-log'
 import type {
+  GroupRole,
   SsoConnectionChanges,
   SsoConnectionRecord,
   SsoConnectionStore,
@@ -13,6 +14,7 @@ export class MemorySsoConnectionStore implements SsoConnectionStore {
   readonly #records: Map<string, SsoConnectionRecord>
   readonly #identities: Map<string, SsoIdentityRecord & { environmentId: string }>
   readonly #activityLog: MemoryActivityLog
+  readonly #groupRoles = new Map<string, GroupRole[]>()
 
   // Assigned in the constructor for Bun coverage; see MemoryApiKeyRepository.
   constructor(activityLog: MemoryActivityLog = new MemoryActivityLog()) {
@@ -115,6 +117,7 @@ export class MemorySsoConnectionStore implements SsoConnectionStore {
       clientId: changes.clientId ?? record.clientId,
       clientSecretSealed: changes.clientSecretSealed ?? record.clientSecretSealed,
       saml: changes.saml ?? record.saml,
+      attributeMapping: changes.attributeMapping ?? record.attributeMapping,
       defaultRole: changes.defaultRole ?? record.defaultRole,
       enforced: changes.enforced ?? record.enforced,
       breakGlassRole:
@@ -140,6 +143,25 @@ export class MemorySsoConnectionStore implements SsoConnectionStore {
     this.#records.set(id, next)
     this.#activityLog.record(activity ? [activity] : [])
     return structuredClone(next)
+  }
+
+  /** @inheritdoc */
+  async listGroupRoles(environmentId: string, organizationId: string): Promise<GroupRole[]> {
+    return structuredClone(this.#groupRoles.get(`${environmentId}:${organizationId}`) ?? [])
+  }
+
+  /** @inheritdoc */
+  async replaceGroupRoles(
+    record: { environmentId: string; organizationId: string; mappings: GroupRole[] },
+    _at: Date,
+    recorded: Recorded
+  ): Promise<void> {
+    const activity = activityOf(recorded)
+    this.#groupRoles.set(
+      `${record.environmentId}:${record.organizationId}`,
+      structuredClone(record.mappings)
+    )
+    this.#activityLog.record(activity ? [activity] : [])
   }
 
   /** @inheritdoc */
