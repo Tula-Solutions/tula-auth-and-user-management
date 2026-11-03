@@ -778,8 +778,8 @@ export const EVENT_DATA_SCHEMAS = {
   ),
   'user.scim_updated': data(
     'UserScimUpdated',
-    "An organization's directory changed a user it manages (ADR 0067). Names only, never a value.",
-    { organizationId: id(), changed: z.array(z.enum(['name'])) }
+    "An organization's directory changed a user it manages (ADR 0067). Which fields (name, email), never a value.",
+    { organizationId: id(), changed: z.array(z.enum(['name', 'email'])) }
   ),
   'scim_group.created': data(
     'ScimGroupCreated',

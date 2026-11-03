@@ -49,6 +49,7 @@ import type {
   NewUser,
   PasswordHistoryRule,
   PasswordOutcome,
+  ReplaceEmailRefusal,
   SignInMeans,
   SmsFactorEnableOutcome,
   StoredPasswords,
@@ -1056,6 +1057,50 @@ export class PostgresUserRepository implements UserRepository {
     } catch (error) {
       // users_environment_email_key, or the email identity's twin: another user has the
       // address. The transaction wrote nothing.
+      if (isUniqueViolation(error)) {
+        return 'taken'
+      }
+      throw error
+    }
+  }
+
+  /** @inheritdoc */
+  async replaceEmail(
+    environmentId: string,
+    userId: string,
+    address: { email: string; normalized: string; verifiedAt: Date | null },
+    at: Date,
+    recorded: Recorded
+  ): Promise<UserRecord | ReplaceEmailRefusal> {
+    try {
+      return await withTenant(this.db, environmentId, async (tx) => {
+        const [changed] = await tx
+          .update(users)
+          .set({
+            email: address.email,
+            emailNormalized: address.normalized,
+            emailVerifiedAt: address.verifiedAt,
+            updatedAt: at,
+          })
+          .where(and(eq(users.id, userId), eq(users.environmentId, environmentId)))
+          .returning(columns)
+        if (!changed) {
+          return 'not_found'
+        }
+        await tx
+          .update(identities)
+          .set({ providerSubject: address.normalized, updatedAt: at })
+          .where(
+            and(
+              eq(identities.userId, userId),
+              eq(identities.environmentId, environmentId),
+              eq(identities.provider, 'email')
+            )
+          )
+        await recordActivity(tx, recordedOf([recorded]))
+        return changed
+      })
+    } catch (error) {
       if (isUniqueViolation(error)) {
         return 'taken'
       }

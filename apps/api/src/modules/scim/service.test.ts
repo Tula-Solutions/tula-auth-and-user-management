@@ -3,6 +3,7 @@ import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula-tech/contract'
 import { createApp } from '~/index'
 import * as Audit from '~/modules/audit/service'
 import * as Organizations from '~/modules/organization/service'
+import * as OrganizationRoles from '~/modules/organization-role/service'
 import * as ScimTokens from '~/modules/scim-token/service'
 import * as Sessions from '~/modules/session/service'
 import * as Users from '~/modules/user/service'
@@ -406,5 +407,120 @@ describe('create is one unit, and a directory rename reaches the user', () => {
     await scim('POST', '/Users', okta('lee@acme.test'))
     await scim('PUT', `/Users/${existing.id}`, okta('lee@acme.test', { name: { givenName: 'X' } }))
     expect((await deps.users.findById(TENANT.environmentId, existing.id))?.firstName).toBe('Lee')
+  })
+})
+
+describe('the default role is the connection’s (DECISIONS 10)', () => {
+  async function connection(status: 'active' | 'draft', defaultRole: string, tested: boolean) {
+    const now = deps.clock.now()
+    await deps.ssoConnections.insert(
+      {
+        id: Bun.randomUUIDv7(),
+        ...TENANT,
+        organizationId: orgId,
+        protocol: 'oidc',
+        saml: null,
+        name: `c-${defaultRole}-${status}-${tested}`,
+        status,
+        issuer: 'https://idp.example',
+        clientId: 'c',
+        clientSecretSealed: 's',
+        attributeMapping: null,
+        defaultRole,
+        enforced: false,
+        breakGlassRole: null,
+        trustIdpMfa: false,
+        domains: [],
+        testedFingerprint: tested ? 'f' : null,
+        createdAt: now,
+        updatedAt: now,
+      },
+      Audit.none('fixture')
+    )
+  }
+  const roleOf = async (userId: string) =>
+    (await deps.organizations.findMembership(TENANT.environmentId, orgId, userId))?.roleKey
+  const viewer = () =>
+    OrganizationRoles.create(
+      deps,
+      TENANT,
+      { key: 'viewer', name: 'Viewer', permissions: [] },
+      TEST_ACTOR
+    )
+
+  test('a provisioned member gets the active connection’s default role, mapped groups or not', async () => {
+    await viewer()
+    await connection('active', 'viewer', true)
+    expect(await roleOf(await provision('a@acme.test'))).toBe('viewer')
+    await deps.ssoConnections.replaceGroupRoles(
+      { ...TENANT, organizationId: orgId, mappings: [{ group: 'Admins', role: 'admin' }] },
+      deps.clock.now(),
+      Audit.none('fixture')
+    )
+    const id = await provision('b@acme.test')
+    const other = await scim('POST', '/Groups', {
+      schemas: ['urn:ietf:params:scim:schemas:core:2.0:Group'],
+      displayName: 'Other',
+      members: [{ value: id }],
+    })
+    expect(other.status).toBe(201)
+    expect(await roleOf(id)).toBe('viewer')
+  })
+
+  test('no active connection: the latest tested one; none at all: member', async () => {
+    expect(await roleOf(await provision('a@acme.test'))).toBe('member')
+    await viewer()
+    await connection('draft', 'viewer', false)
+    expect(await roleOf(await provision('b@acme.test'))).toBe('member')
+    await connection('draft', 'viewer', true)
+    expect(await roleOf(await provision('c@acme.test'))).toBe('viewer')
+  })
+})
+
+describe('a directory renames the address of an account it manages (DECISIONS 14)', () => {
+  const emailOf = async (id: string) => (await deps.users.findById(TENANT.environmentId, id))?.email
+
+  test('PUT and PATCH change it on a verified domain, audited without the address, sessions kept', async () => {
+    await verifiedDomain(orgId, 'acme.test')
+    const id = await provision('maya@acme.test')
+    const put = await scim('PUT', `/Users/${id}`, okta('maya.o@acme.test'))
+    expect(put.status).toBe(200)
+    expect(put.body.userName).toBe('maya.o@acme.test')
+    expect(await emailOf(id)).toBe('maya.o@acme.test')
+    const patch = await scim('PATCH', `/Users/${id}`, {
+      schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+      Operations: [{ op: 'Replace', path: 'userName', value: 'maya.k@acme.test' }],
+    })
+    expect(patch.body.userName).toBe('maya.k@acme.test')
+    const entries = (await deps.activityLog.listAudit(TENANT.environmentId, { page: 1, size: 100 }))
+      .entries
+    expect(entries.map((e) => e.type)).toContain('user.scim_updated')
+    expect(JSON.stringify(entries)).not.toContain('maya.k@acme.test')
+  })
+
+  test('off the verified domains it is a 400 and nothing changes; a taken address is a 409', async () => {
+    await verifiedDomain(orgId, 'acme.test')
+    const id = await provision('maya@acme.test')
+    await provision('lee@acme.test')
+    const off = await scim('PUT', `/Users/${id}`, okta('maya@elsewhere.test'))
+    expect(off.status).toBe(400)
+    const taken = await scim('PUT', `/Users/${id}`, okta('lee@acme.test'))
+    expect(taken.body).toMatchObject({ status: '409', scimType: 'uniqueness' })
+    expect(await emailOf(id)).toBe('maya@acme.test')
+  })
+
+  test('an account the directory only linked keeps its address', async () => {
+    await verifiedDomain(orgId, 'acme.test')
+    const existing = await Users.create(
+      deps,
+      TENANT,
+      { email: 'lee@acme.test', emailVerified: true },
+      TEST_ACTOR
+    )
+    const id = (await scim('POST', '/Users', okta('lee@acme.test'))).body.id as string
+    expect(id).toBe(existing.id)
+    const put = await scim('PUT', `/Users/${id}`, okta('lee2@acme.test'))
+    expect(put.status).toBe(200)
+    expect(await emailOf(id)).toBe('lee@acme.test')
   })
 })

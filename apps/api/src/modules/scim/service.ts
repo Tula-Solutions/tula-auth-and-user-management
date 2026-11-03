@@ -109,7 +109,7 @@ async function setActive(
         deps,
         ctx.tenant,
         ctx.organizationId,
-        { userId: user.id, role: Roles.MEMBER_ROLE },
+        { userId: user.id, role: await Roles.defaultRole(deps, ctx) },
         ctx.actor
       )
       // A user let back in gets the role their directory groups give (none mapped: unchanged).
@@ -140,11 +140,12 @@ async function apply(
   deps: Deps,
   ctx: ScimContext,
   userId: string,
-  changes: { active?: boolean; externalId?: string | null; name?: NameChange }
+  changes: { active?: boolean; externalId?: string | null; name?: NameChange; userName?: string }
 ) {
   const { record, user } = await load(deps, ctx, userId)
   const { environmentId } = ctx.tenant
   await applyNames(deps, ctx, user, changes.name)
+  await applyEmail(deps, ctx, user, changes.userName)
   if (changes.externalId !== undefined && changes.externalId !== record.externalId) {
     const refusal = await deps.scim.updateUser(
       environmentId,
@@ -198,6 +199,47 @@ async function applyNames(deps: Deps, ctx: ScimContext, user: UserRecord, name?:
       data: { organizationId: ctx.organizationId, changed },
     })
   )
+}
+
+/**
+ * Apply a directory's change of `userName` to the address of an account this directory
+ * created (DECISIONS 14). A linked account's address is the person's own and is never changed
+ * here. The new address must be on a domain the organization has verified and unused in the
+ * environment (409 otherwise); the entry names the field, never the address, and no session
+ * ends.
+ */
+async function applyEmail(deps: Deps, ctx: ScimContext, user: UserRecord, userName?: string) {
+  if (userName === undefined || user.managedByDirectoryId !== ctx.organizationId) {
+    return
+  }
+  const parsed = parseEmail(userName)
+  if (!parsed) {
+    throw invalidValue('userName must be an email address.')
+  }
+  if (parsed.normalized === user.emailNormalized) {
+    return
+  }
+  if (!(await onVerifiedDomain(deps, ctx, parsed.normalized))) {
+    throw invalidValue('userName is not on a domain this organization has verified.')
+  }
+  const stored = await deps.users.replaceEmail(
+    ctx.tenant.environmentId,
+    user.id,
+    { email: parsed.email, normalized: parsed.normalized, verifiedAt: deps.clock.now() },
+    deps.clock.now(),
+    Audit.entry(deps, ctx.tenant, {
+      type: 'user.scim_updated',
+      actor: ctx.actor,
+      target: { type: 'user', id: user.id },
+      data: { organizationId: ctx.organizationId, changed: ['email'] },
+    })
+  )
+  if (stored === 'taken') {
+    throw uniqueness()
+  }
+  if (stored === 'not_found') {
+    throw new NotFoundError()
+  }
 }
 
 /**
@@ -401,7 +443,7 @@ export async function list(
 
 /**
  * Replace (PUT): `active`, `externalId` and, for an account the directory created, the
- * names. The address never changes.
+ * names and the address (a verified domain of the organization only).
  *
  * @param deps - The dependencies.
  * @param ctx - The environment, the organization and the actor.
@@ -414,6 +456,7 @@ export async function replace(deps: Deps, ctx: ScimContext, userId: string, inpu
   return apply(deps, ctx, userId, {
     active: input.active ?? true,
     externalId: input.externalId ?? null,
+    userName: emailOf(input).email,
     ...(input.name && { name: input.name }),
   })
 }
@@ -430,7 +473,7 @@ function flag(value: unknown): boolean {
 }
 
 /**
- * Patch: `active` and `externalId`, by path (`active`) or inside an object value without a
+ * Patch: `active`, `externalId`, `userName` and the names, by path (`active`) or inside an object value without a
  * path (Okta's and Entra's shapes), with `op` in any case. Other attributes are ignored, as
  * the directory keeps sending them whether or not a server stores them.
  *
@@ -447,7 +490,12 @@ export async function patch(
   userId: string,
   operations: Array<{ op: string; path?: string; value?: unknown }>
 ) {
-  const changes: { active?: boolean; externalId?: string | null; name?: NameChange } = {}
+  const changes: {
+    active?: boolean
+    externalId?: string | null
+    name?: NameChange
+    userName?: string
+  } = {}
   const part = (key: 'givenName' | 'familyName', value: unknown, removing: boolean) => {
     changes.name = {
       ...changes.name,
@@ -468,6 +516,8 @@ export async function patch(
       if (family !== undefined) {
         part('familyName', family, removing)
       }
+    } else if (name === 'userName' && !removing && typeof value === 'string') {
+      changes.userName = value
     } else if (name === 'active') {
       changes.active = removing ? false : flag(value)
     } else if (name === 'externalId') {

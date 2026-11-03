@@ -2098,6 +2098,48 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
             ).toEqual(['x'])
           })
 
+          test('replaceEmail swaps the address, recorded once; a held address is refused', async () => {
+            const maya = user(ctx.a)
+            const nelly = user(ctx.a)
+            await ctx.users.create(maya, Audit.none('fixture'))
+            await ctx.users.create(nelly, Audit.none('fixture'))
+            const next = address()
+            const stored = await ctx.users.replaceEmail(
+              ctx.a.environmentId,
+              nelly.id,
+              next,
+              later(5),
+              activity(ctx.a, 'user.scim_updated', nelly.id)
+            )
+            expect(stored).toMatchObject({ id: nelly.id, emailNormalized: next.normalized })
+            expect((await ctx.users.findByEmail(ctx.a.environmentId, next.normalized))?.id).toBe(
+              nelly.id
+            )
+            expect(
+              await ctx.users.findByEmail(ctx.a.environmentId, nelly.emailNormalized!)
+            ).toBeNull()
+            expect(await auditOf(ctx.a, nelly.id)).toEqual(['user.scim_updated'])
+            expect(
+              await ctx.users.replaceEmail(
+                ctx.a.environmentId,
+                nelly.id,
+                { ...address(), email: maya.email!, normalized: maya.emailNormalized! },
+                later(6),
+                activity(ctx.a, 'user.scim_updated', nelly.id)
+              )
+            ).toBe('taken')
+            expect(await auditOf(ctx.a, nelly.id)).toEqual(['user.scim_updated'])
+            expect(
+              await ctx.users.replaceEmail(
+                ctx.a.environmentId,
+                Bun.randomUUIDv7(),
+                address(),
+                later(6),
+                Audit.none('fixture')
+              )
+            ).toBe('not_found')
+          })
+
           test('an address nobody proved is stored unverified', async () => {
             const nelly = addressless()
             await ctx.users.create(nelly, Audit.none('fixture'))
