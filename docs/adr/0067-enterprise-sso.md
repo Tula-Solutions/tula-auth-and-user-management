@@ -56,6 +56,19 @@ fails if any file outside tests imports it.
 Only `saml-verifier.ts` imports the two packages. A replacement keeps `verify`'s signature
 and passes the same table of refusals.
 
+## SAML connections (TULA-139)
+
+- A SAML connection is a row of the same table with a `saml` JSON column (entity id, SSO URL, metadata
+  URL, up to two certificates each with its own `notAfter`). Metadata is read, not trusted: a DTD or
+  entity is refused, only signing keys are taken, and its own signature is **not** verified (the operator
+  chose where it comes from; every response is still verified against the stored certificates). A
+  metadata URL goes through `Outbound.request`.
+- The ACS accepts only a response to an AuthnRequest this server made (the request id is held in the
+  attempt's state); `RelayState` is the flow state. `verify` in `lib/saml-verifier.ts` is the only
+  acceptor; its replay guard (`proofReplay`) is the shared port, so two instances share it.
+- Every failure is one `sso.provider_error` to the browser and the fixed reason in the log.
+- SP metadata is public per connection and built by `buildSpMetadata`; the SP entity id is its URL.
+
 ## Amendments
 
 - [ADR 0065](0065-organizations.md): an organization may own SSO connections (the tickets
