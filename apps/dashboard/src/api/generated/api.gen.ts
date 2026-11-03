@@ -7158,6 +7158,14 @@ export interface SetupConnectionCreate {
   domains?: OrganizationDomainName[];
 }
 
+export interface SetupScimTokenCreate {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+}
+
 export interface SetupConnectionUpdate {
   /**
      * @minLength 1
