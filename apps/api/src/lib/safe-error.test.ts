@@ -1,8 +1,18 @@
 import { describe, expect, test } from 'bun:test'
 import { DrizzleQueryError } from 'drizzle-orm/errors'
-import { describeError, describeMailFailure, errorReason } from '~/lib/safe-error'
+import { describeError, describeMailFailure, errorName, errorReason } from '~/lib/safe-error'
 
 const EMAIL = 'maya@northline.app'
+
+describe('errorName', () => {
+  test('names an Error by its class and never quotes its message', () => {
+    expect(errorName(new TypeError(`bad ${EMAIL}`))).toBe('TypeError')
+  })
+
+  test.each([['text'], [null], [undefined], [42]])('%p that is no Error is "unknown"', (value) => {
+    expect(errorName(value)).toBe('unknown')
+  })
+})
 const HASH = '$argon2id$v=19$m=65536,t=2,p=1$c2FsdA$aGFzaA'
 
 /** What the Postgres driver throws: a message that can quote input, plus SQLSTATE fields. */

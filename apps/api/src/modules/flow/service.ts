@@ -56,6 +56,8 @@ import { ipBucket } from '~/lib/client-ip'
 import { randomToken, sha256Hex, timingSafeEqual } from '~/lib/crypto'
 import { maskEmail, normalizeEmail, parseEmail, type TestAddressPermit } from '~/lib/email'
 import * as logger from '~/lib/logger'
+import { errorName } from '~/lib/safe-error'
+import { UUID_PATTERN } from '~/lib/uuid'
 import * as WebAuthn from '~/lib/webauthn'
 import * as Audit from '~/modules/audit/service'
 import * as Factors from '~/modules/factor/service'
@@ -937,7 +939,7 @@ async function finish(
     // Bookkeeping only: the session exists, so failing here would throw its tokens away.
     logger.warn('could not record the sign-in time', {
       environmentId: tenant.environmentId,
-      err: error instanceof Error ? error.name : 'unknown',
+      err: errorName(error),
     })
   }
   return {
@@ -1444,7 +1446,7 @@ async function completeEmailFactor(
       // can read.
       logger.warn('could not mark the email verified after an email sign-in', {
         environmentId: tenant.environmentId,
-        err: error instanceof Error ? error.name : 'unknown',
+        err: errorName(error),
       })
     }
   }
@@ -1920,7 +1922,7 @@ async function attemptSmsCode(
     // Bookkeeping only: the number then lapses a little earlier than it had to.
     logger.warn('could not record that a phone number was proven again', {
       environmentId: tenant.environmentId,
-      err: error instanceof Error ? error.name : 'unknown',
+      err: errorName(error),
     })
   }
   if (parked === null) {
@@ -2024,9 +2026,6 @@ export async function verifyEmailLink(
   }
   return { status: 'verified' }
 }
-
-/** The parts of an OAuth `state`: which environment and attempt it belongs to. */
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 /**
  * The fragment an OAuth callback sends the app's page.
@@ -2242,8 +2241,8 @@ export async function oauthCallback(
     !environmentId ||
     !attemptId ||
     !random ||
-    !UUID.test(environmentId) ||
-    !UUID.test(attemptId)
+    !UUID_PATTERN.test(environmentId) ||
+    !UUID_PATTERN.test(attemptId)
   ) {
     return { invalid: true }
   }
@@ -2729,8 +2728,8 @@ export async function ssoCallback(
     !environmentId ||
     !attemptId ||
     !random ||
-    !UUID.test(environmentId) ||
-    !UUID.test(attemptId)
+    !UUID_PATTERN.test(environmentId) ||
+    !UUID_PATTERN.test(attemptId)
   ) {
     return { invalid: true }
   }
@@ -2799,7 +2798,7 @@ export async function ssoCallback(
     // A JSON error would strand the browser on the API: the app's page shows this one.
     logger.warn('an SSO callback failed', {
       environmentId,
-      failure: error instanceof Error ? error.name : 'unknown',
+      failure: errorName(error),
     })
     return failed('sso.provider_error')
   }
@@ -3283,7 +3282,7 @@ async function clearSignUp(
         logger.warn('could not end a sign-up attempt after its hook refused it', {
           environmentId: tenant.environmentId,
           attemptId: attempt.id,
-          err: cleanup instanceof Error ? cleanup.name : 'unknown',
+          err: errorName(cleanup),
         })
       }
     }
@@ -3444,7 +3443,7 @@ export async function resetPassword(
       // Their next sign-in asks them to verify the address instead.
       logger.warn('could not mark the email verified after a password reset', {
         environmentId: tenant.environmentId,
-        err: error instanceof Error ? error.name : 'unknown',
+        err: errorName(error),
       })
     }
   }
@@ -4226,7 +4225,7 @@ export async function confirmFactorEnrolment(
       // the authenticator and makes new codes, or an administrator resets them.
       logger.warn('could not undo an enrolment whose attempt did not complete', {
         environmentId: tenant.environmentId,
-        err: undo instanceof Error ? undo.name : 'unknown',
+        err: errorName(undo),
       })
     }
     throw error

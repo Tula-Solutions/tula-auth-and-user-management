@@ -29,6 +29,7 @@ import {
 import { type Actor, cleanOrigin, type Origin } from '~/lib/actor'
 import { parseEmail } from '~/lib/email'
 import * as logger from '~/lib/logger'
+import { errorName } from '~/lib/safe-error'
 import * as Audit from '~/modules/audit/service'
 import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
@@ -1025,7 +1026,7 @@ export async function resetPassword(
     // The password is stored; a lockout left in place only delays the next sign-in.
     logger.warn('could not clear the sign-in lockout after a password reset', {
       environmentId: scope.environmentId,
-      err: error instanceof Error ? error.name : 'unknown',
+      err: errorName(error),
     })
   }
 }
