@@ -69,6 +69,10 @@ export function parseIdpMetadata(xml: string): IdpMetadata {
   if (xml.length > 512 * 1024) {
     throw new SamlMetadataError('malformed')
   }
+  // Before any parser sees it, as the response verifier does: a DTD is where entities live.
+  if (/<!\s*(DOCTYPE|ENTITY)/i.test(xml)) {
+    throw new SamlMetadataError('forbidden_xml')
+  }
   let root: Element | null
   let doctype: unknown
   try {
