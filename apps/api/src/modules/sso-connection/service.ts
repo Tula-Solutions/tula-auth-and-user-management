@@ -239,13 +239,13 @@ async function requireOwnDomains(
  *
  * @param deps - Stores and settings.
  * @param tenant - The environment.
- * @param organizationId - The organization.
- * @returns Its connections, oldest first.
+ * @param organizationId - The organization; left out, every connection of the environment.
+ * @returns The connections, oldest first.
  */
 export async function list(
   deps: Pick<Deps, 'ssoConnections' | 'environmentSettings' | 'config' | 'clock'>,
   tenant: Pick<Tenant, 'environmentId'>,
-  organizationId: string
+  organizationId?: string
 ): Promise<SsoConnection[]> {
   await requireEnabled(deps, tenant)
   return (await deps.ssoConnections.list(tenant.environmentId, organizationId)).map((r) =>

@@ -2640,7 +2640,7 @@ export interface Operations {
   /** List signing keys (`GET /v1/admin/signing-keys`). */
   listSigningKeys: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['SigningKeyList'] }
   /** List an organization’s SSO connections (`GET /v1/admin/sso-connections`). */
-  listSsoConnections: { params: Record<string, never>; query: { organizationId: string }; headers: Record<string, never>; body: undefined; response: Schemas['SsoConnectionList'] }
+  listSsoConnections: { params: Record<string, never>; query: { organizationId?: string }; headers: Record<string, never>; body: undefined; response: Schemas['SsoConnectionList'] }
   /** List the organizations a user belongs to (`GET /v1/admin/users/{userId}/organizations`). */
   listUserOrganizations: { params: { userId: string }; query: { page?: number; size?: number }; headers: Record<string, never>; body: undefined; response: Schemas['UserMembershipList'] }
   /** List users (`GET /v1/admin/users`). */

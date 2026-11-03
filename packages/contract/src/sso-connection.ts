@@ -127,8 +127,8 @@ export const SsoConnectionListSchema = z
   .object({ connections: z.array(SsoConnectionSchema) })
   .meta({ ref: 'SsoConnectionList' })
 
-/** The query of the list route: the organization whose connections to list. */
-export const SsoConnectionListQuerySchema = z.object({ organizationId: z.uuid() })
+/** The query of the list route: the organization whose connections to list; left out, the whole environment's. */
+export const SsoConnectionListQuerySchema = z.object({ organizationId: z.uuid().optional() })
 
 /** The identity provider values of a SAML connection, as given. */
 export type SamlSettingsInput = z.infer<typeof SamlSettingsInputSchema>

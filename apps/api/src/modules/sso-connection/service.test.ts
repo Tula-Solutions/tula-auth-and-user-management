@@ -495,3 +495,21 @@ describe('SAML connections', () => {
     ).rejects.toMatchObject({ code: 'request.malformed' })
   })
 })
+
+describe('SSO connection list without an organization', () => {
+  test('answers the whole environment, and an agent key may read it', async () => {
+    await seedApiKey(deps, AK)
+    const first = await org('acme')
+    const second = await org('beta')
+    await Sso.create(deps, TENANT, input(first.id, { domains: [] }), TEST_ACTOR)
+    await Sso.create(deps, TENANT, input(second.id, { name: 'Other', domains: [] }), TEST_ACTOR)
+    expect((await Sso.list(deps, TENANT)).map((c) => c.organizationId).sort()).toEqual(
+      [first.id, second.id].sort()
+    )
+    const response = await createApp(deps).request('/v1/admin/sso-connections', {
+      headers: { authorization: `Bearer ${AK}` },
+    })
+    expect(response.status).toBe(200)
+    expect(((await response.json()) as { connections: unknown[] }).connections).toHaveLength(2)
+  })
+})

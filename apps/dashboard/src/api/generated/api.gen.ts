@@ -7301,7 +7301,7 @@ export type ListSsoConnectionsParams = {
 /**
  * @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
  */
-organizationId: string;
+organizationId?: string;
 };
 
 export type ListScimTokensParams = {
@@ -14220,7 +14220,7 @@ export const useDeleteNativeApp = <TError = ErrorEnvelope,
       return useMutation(getDeleteNativeAppMutationOptions(options), queryClient);
     }
 
-export const getListSsoConnectionsUrl = (params: ListSsoConnectionsParams,) => {
+export const getListSsoConnectionsUrl = (params?: ListSsoConnectionsParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
@@ -14236,10 +14236,10 @@ export const getListSsoConnectionsUrl = (params: ListSsoConnectionsParams,) => {
 }
 
 /**
- * The single sign-on connections of one organization, oldest first.
+ * The single sign-on connections of one organization, or of the whole environment when `organizationId` is left out, oldest first.
  * @summary List an organization’s SSO connections
  */
-export const listSsoConnections = async (params: ListSsoConnectionsParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoConnectionList> => {
+export const listSsoConnections = async (params?: ListSsoConnectionsParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoConnectionList> => {
 
   return dashboardFetch<SsoConnectionList>(getListSsoConnectionsUrl(params),
   {
@@ -14261,7 +14261,7 @@ export const getListSsoConnectionsQueryKey = (params?: ListSsoConnectionsParams,
     }
 
 
-export const getListSsoConnectionsQueryOptions = <TData = Awaited<ReturnType<typeof listSsoConnections>>, TError = ErrorEnvelope>(params: ListSsoConnectionsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSsoConnections>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+export const getListSsoConnectionsQueryOptions = <TData = Awaited<ReturnType<typeof listSsoConnections>>, TError = ErrorEnvelope>(params?: ListSsoConnectionsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSsoConnections>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -14284,7 +14284,7 @@ export type ListSsoConnectionsQueryError = ErrorEnvelope
 
 
 export function useListSsoConnections<TData = Awaited<ReturnType<typeof listSsoConnections>>, TError = ErrorEnvelope>(
- params: ListSsoConnectionsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSsoConnections>>, TError, TData>> & Pick<
+ params: undefined |  ListSsoConnectionsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSsoConnections>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listSsoConnections>>,
           TError,
@@ -14294,7 +14294,7 @@ export function useListSsoConnections<TData = Awaited<ReturnType<typeof listSsoC
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useListSsoConnections<TData = Awaited<ReturnType<typeof listSsoConnections>>, TError = ErrorEnvelope>(
- params: ListSsoConnectionsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSsoConnections>>, TError, TData>> & Pick<
+ params?: ListSsoConnectionsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSsoConnections>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listSsoConnections>>,
           TError,
@@ -14304,7 +14304,7 @@ export function useListSsoConnections<TData = Awaited<ReturnType<typeof listSsoC
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useListSsoConnections<TData = Awaited<ReturnType<typeof listSsoConnections>>, TError = ErrorEnvelope>(
- params: ListSsoConnectionsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSsoConnections>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ params?: ListSsoConnectionsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSsoConnections>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
@@ -14312,7 +14312,7 @@ export function useListSsoConnections<TData = Awaited<ReturnType<typeof listSsoC
  */
 
 export function useListSsoConnections<TData = Awaited<ReturnType<typeof listSsoConnections>>, TError = ErrorEnvelope>(
- params: ListSsoConnectionsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSsoConnections>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ params?: ListSsoConnectionsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSsoConnections>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
