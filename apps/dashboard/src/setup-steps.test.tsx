@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { SsoConnection } from '~/api/generated/api.gen'
-import { resetSetup } from '~/features/setup/setup-api'
+import { resetSetup, SETUP_TEST_CHANNEL } from '~/features/setup/setup-api'
 import { SetupScreen } from '~/features/setup/setup-screen'
 
 const TOKEN = 'tula_setup_0123456789abcdef0123456789abcdef_secretvalue'
@@ -233,5 +233,82 @@ describe('the setup portal, step by step', () => {
     await screen.findByText('urn:sp')
     await screen.findByText('Download the service provider metadata')
     spy.mockRestore()
+  })
+
+  test('a message from the window the provider returned to reads the test at once', async () => {
+    const open = spyOn(window, 'open').mockImplementation(() => null)
+    let reads = 0
+    const { spy } = stub(connection(), (call) => {
+      if (call.method === 'POST' && call.url.endsWith('/tests')) {
+        return { testId: 'T9', authorizationUrl: 'https://idp.example.com/authorize' }
+      }
+      if (call.url.endsWith('/tests/T9')) {
+        reads += 1
+        return { status: 'passed', groups: [] }
+      }
+      return undefined
+    })
+    const user = userEvent.setup()
+    render(<SetupScreen />)
+    await user.click(await screen.findByRole('button', { name: 'Run a test sign-in' }))
+    await screen.findByText('Open the test sign-in')
+    expect(reads).toBe(0)
+    // A message about another test is ignored; the one about this test reads it.
+    const channel = new BroadcastChannel(SETUP_TEST_CHANNEL)
+    channel.postMessage({ testId: 'other' })
+    channel.postMessage({ testId: 'T9' })
+    channel.close()
+    await screen.findByText(/The test passed/, undefined, { timeout: 1000 })
+    expect(reads).toBe(1)
+    open.mockRestore()
+    spy.mockRestore()
+  })
+
+  test('a metadata file is read into the pasted metadata and sent', async () => {
+    const calls: Call[] = []
+    const fresh = spyOn(globalThis, 'fetch').mockImplementation((async (
+      input: RequestInfo | URL,
+      init?: RequestInit
+    ) => {
+      const url = String(input)
+      calls.push({
+        url,
+        method: init?.method ?? 'GET',
+        body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
+      })
+      const body =
+        url === '/v1/setup'
+          ? {
+              organization: { id: 'o', name: 'Acme' },
+              domains: [],
+              expiresAt: '2030-01-01T00:00:00.000Z',
+              connections: [],
+            }
+          : connection({ protocol: 'saml' })
+      return new Response(JSON.stringify(body), { status: 200 })
+    }) as typeof fetch)
+    const user = userEvent.setup()
+    render(<SetupScreen />)
+    await screen.findByText(/Set up single sign-on for Acme/)
+    await user.selectOptions(screen.getByLabelText('Protocol'), 'saml')
+    await user.type(screen.getByLabelText('Connection name'), 'Entra')
+    await user.selectOptions(
+      screen.getByLabelText('How do you give the provider’s details?'),
+      'xml'
+    )
+    const xml = '<EntityDescriptor entityID="urn:idp"/>'
+    await user.upload(
+      screen.getByLabelText('Metadata file'),
+      new File([xml], 'metadata.xml', { type: 'text/xml' })
+    )
+    await waitFor(() =>
+      expect((screen.getByLabelText('Metadata XML') as HTMLTextAreaElement).value).toBe(xml)
+    )
+    await user.click(screen.getByRole('button', { name: 'Create connection' }))
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true))
+    expect(calls.find((c) => c.method === 'POST')?.body).toMatchObject({
+      saml: { metadataXml: xml },
+    })
+    fresh.mockRestore()
   })
 })
