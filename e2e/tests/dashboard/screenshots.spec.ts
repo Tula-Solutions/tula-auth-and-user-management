@@ -210,6 +210,18 @@ test('the dashboard’s screens, in light, dark and at a phone’s width', async
   await shot(page, 'organization-sso')
   await card.scrollIntoViewIfNeeded()
   await shot(page, 'organization-sso-dark', 'dark')
+  const made = await page.request.post(`${API_URL}/v1/admin/setup-links`, {
+    headers: dashboard,
+    data: { organizationId: ssoId, name: 'Screenshot', expiresInDays: 1 },
+  })
+  const setupLink = (await made.json()) as { id: string; url: string }
+  await page.context().clearCookies()
+  await page.goto(setupLink.url)
+  await expect(page.getByText(/Set up single sign-on for SSO Org/)).toBeVisible()
+  await shot(page, 'setup-portal')
+  await shot(page, 'setup-portal-dark', 'dark')
+  await signIn(page)
+  await send('DELETE', `/v1/admin/setup-links/${setupLink.id}?organizationId=${ssoId}`)
   const connections = await page.request.get(
     `${API_URL}/v1/admin/sso-connections?organizationId=${ssoId}`,
     { headers: dashboard }
