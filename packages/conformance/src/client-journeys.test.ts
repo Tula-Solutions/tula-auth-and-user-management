@@ -104,7 +104,7 @@ describe('the committed list', () => {
     expect(Object.fromEntries(perTicket)).toEqual({
       'TULA-130': 1,
       'TULA-132': 1,
-      'TULA-142': 2,
+      'TULA-142': 4,
       'TULA-76': 1,
     })
   })
@@ -121,7 +121,7 @@ describe('the committed list', () => {
     // eight with it. TULA-73 built the emailed link, the last one. A scenario the package
     // cannot run yet comes back here with its ticket and its number.
     // The SSO start (ADR 0067) is built by TULA-142.
-    expect(Object.fromEntries(perTicket)).toEqual({ 'TULA-142': 2 })
+    expect(Object.fromEntries(perTicket)).toEqual({ 'TULA-142': 4 })
   })
 })
 

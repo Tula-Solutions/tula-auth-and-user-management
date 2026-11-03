@@ -761,11 +761,26 @@ export const SsoStepSchema = z
         captureAttempt: z.string().optional(),
         /** The contract error code the callback must send instead of a ticket. */
         expectError: z.string().optional(),
+        /** Variable that receives the mock identity provider's SAML metadata document. */
+        captureSamlMetadata: z.string().optional(),
+        /** SAML only: the failure the mock identity provider produces (a `MockSamlFailure`). */
+        failure: z.string().optional(),
+        /** SAML only: which of the mock's signing keys signs (`a`, `b` or `c`). */
+        key: z.enum(['a', 'b', 'c']).optional(),
+        /** SAML only: the same assertion, posted a second time, must be refused. */
+        expectReplayRefused: z.boolean().optional(),
       })
       .strict()
-      .refine((sso) => (sso.captureIssuer === undefined) !== (sso.authorizationUrl === undefined), {
-        message: 'an sso step takes either `captureIssuer` or `authorizationUrl`',
-      }),
+      .refine(
+        (sso) =>
+          [sso.captureIssuer, sso.captureSamlMetadata, sso.authorizationUrl].filter(
+            (v) => v !== undefined
+          ).length === 1,
+        {
+          message:
+            'an sso step takes one of `captureIssuer`, `captureSamlMetadata` or `authorizationUrl`',
+        }
+      ),
   })
   .strict()
   .meta({ ref: 'ConformanceSsoStep' })

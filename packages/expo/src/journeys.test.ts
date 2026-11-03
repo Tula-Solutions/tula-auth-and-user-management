@@ -284,7 +284,7 @@ const {
   deviceKey: true,
   // A scenario this package cannot run yet goes here with its ticket, in the change that says
   // `not_built` in the list: the SSO sign-in (ADR 0067), which TULA-142 builds.
-  notBuilt: { 'TULA-142': 2 },
+  notBuilt: { 'TULA-142': 4 },
   sources: [import.meta.path],
 })
 

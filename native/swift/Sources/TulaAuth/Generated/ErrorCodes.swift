@@ -118,6 +118,7 @@ public enum ErrorCode: Codable, Hashable, Sendable {
     case ssoDomainTaken
     case ssoDomainNotVerified
     case ssoIssuerNotAllowed
+    case ssoSamlInvalid
     case ssoConnectionInUse
     case ssoInvalidTransition
     case ssoUnavailable
@@ -254,6 +255,7 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         .ssoDomainTaken,
         .ssoDomainNotVerified,
         .ssoIssuerNotAllowed,
+        .ssoSamlInvalid,
         .ssoConnectionInUse,
         .ssoInvalidTransition,
         .ssoUnavailable,
@@ -390,6 +392,7 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case "sso.domain_taken": self = .ssoDomainTaken
         case "sso.domain_not_verified": self = .ssoDomainNotVerified
         case "sso.issuer_not_allowed": self = .ssoIssuerNotAllowed
+        case "sso.saml_invalid": self = .ssoSamlInvalid
         case "sso.connection_in_use": self = .ssoConnectionInUse
         case "sso.invalid_transition": self = .ssoInvalidTransition
         case "sso.unavailable": self = .ssoUnavailable
@@ -528,6 +531,7 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case .ssoDomainTaken: return "sso.domain_taken"
         case .ssoDomainNotVerified: return "sso.domain_not_verified"
         case .ssoIssuerNotAllowed: return "sso.issuer_not_allowed"
+        case .ssoSamlInvalid: return "sso.saml_invalid"
         case .ssoConnectionInUse: return "sso.connection_in_use"
         case .ssoInvalidTransition: return "sso.invalid_transition"
         case .ssoUnavailable: return "sso.unavailable"
@@ -917,6 +921,9 @@ public enum TulaErrorDefinitions {
     /// `sso.issuer_not_allowed`
     public static let ssoIssuerNotAllowed = TulaErrorDefinition(code: .ssoIssuerNotAllowed, status: 422, message: "The issuer is not an address the server may call.")
 
+    /// `sso.saml_invalid`
+    public static let ssoSamlInvalid = TulaErrorDefinition(code: .ssoSamlInvalid, status: 422, message: "The SAML settings could not be read or are incomplete.")
+
     /// `sso.connection_in_use`
     public static let ssoConnectionInUse = TulaErrorDefinition(code: .ssoConnectionInUse, status: 409, message: "The connection has signed users in; disable it instead.")
 
@@ -1088,6 +1095,7 @@ public enum TulaErrorDefinitions {
         ssoDomainTaken,
         ssoDomainNotVerified,
         ssoIssuerNotAllowed,
+        ssoSamlInvalid,
         ssoConnectionInUse,
         ssoInvalidTransition,
         ssoUnavailable,

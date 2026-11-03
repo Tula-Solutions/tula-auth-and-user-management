@@ -77,6 +77,7 @@ test('row-level security hides another environment’s connection from a direct 
       environmentId: a.environmentId,
       organizationId,
       protocol: 'oidc',
+      saml: null,
       name: 'Okta',
       issuer: 'https://idp.example.com',
       clientId: 'c',

@@ -468,6 +468,10 @@ sealed class ErrorCode {
         override val rawValue: String = "sso.issuer_not_allowed"
     }
 
+    object SsoSamlInvalid : ErrorCode() {
+        override val rawValue: String = "sso.saml_invalid"
+    }
+
     object SsoConnectionInUse : ErrorCode() {
         override val rawValue: String = "sso.connection_in_use"
     }
@@ -667,6 +671,7 @@ sealed class ErrorCode {
                 SsoDomainTaken,
                 SsoDomainNotVerified,
                 SsoIssuerNotAllowed,
+                SsoSamlInvalid,
                 SsoConnectionInUse,
                 SsoInvalidTransition,
                 SsoUnavailable,
@@ -803,6 +808,7 @@ sealed class ErrorCode {
             "sso.domain_taken" -> SsoDomainTaken
             "sso.domain_not_verified" -> SsoDomainNotVerified
             "sso.issuer_not_allowed" -> SsoIssuerNotAllowed
+            "sso.saml_invalid" -> SsoSamlInvalid
             "sso.connection_in_use" -> SsoConnectionInUse
             "sso.invalid_transition" -> SsoInvalidTransition
             "sso.unavailable" -> SsoUnavailable
@@ -1187,6 +1193,9 @@ object TulaErrorDefinitions {
     /** `sso.issuer_not_allowed` */
     val ssoIssuerNotAllowed: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoIssuerNotAllowed, 422, "The issuer is not an address the server may call.")
 
+    /** `sso.saml_invalid` */
+    val ssoSamlInvalid: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoSamlInvalid, 422, "The SAML settings could not be read or are incomplete.")
+
     /** `sso.connection_in_use` */
     val ssoConnectionInUse: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoConnectionInUse, 409, "The connection has signed users in; disable it instead.")
 
@@ -1358,6 +1367,7 @@ object TulaErrorDefinitions {
         ssoDomainTaken,
         ssoDomainNotVerified,
         ssoIssuerNotAllowed,
+        ssoSamlInvalid,
         ssoConnectionInUse,
         ssoInvalidTransition,
         ssoUnavailable,

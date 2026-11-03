@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula-tech/contract'
+import { MOCK_SAML_KEYS } from '~/adapters/oauth/mock-saml'
 import { createApp } from '~/index'
 import * as Audit from '~/modules/audit/service'
 import * as Organizations from '~/modules/organization/service'
@@ -241,5 +242,199 @@ describe('SSO connection routes', () => {
     const created = await call('POST', '', SK, input(o.id, { domains: [] }))
     expect(created.status).toBe(201)
     expect(JSON.stringify(await created.json())).not.toContain('super-secret-value')
+  })
+})
+
+describe('SAML connections', () => {
+  const bare = (pem: string) => pem.replace(/-----[A-Z ]+-----/g, '').replace(/\s+/g, '')
+  const metadata = (head = '') =>
+    `${head}<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" entityID="https://idp.example.test/e">` +
+    '<md:IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">' +
+    `<md:KeyDescriptor use="signing"><ds:KeyInfo><ds:X509Data><ds:X509Certificate>${bare(MOCK_SAML_KEYS.a.certificate)}</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor>` +
+    '<md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.test/sso"/>' +
+    '</md:IDPSSODescriptor></md:EntityDescriptor>'
+  const saml = (organizationId: string, saml: Record<string, unknown>, extra = {}) =>
+    ({
+      organizationId,
+      protocol: 'saml' as const,
+      name: 'Okta SAML',
+      defaultRole: 'member',
+      domains: ['acme.test'],
+      saml,
+      ...extra,
+    }) as never
+
+  test('metadata XML gives the settings, with an expiry kept per certificate', async () => {
+    const o = await org()
+    await verified(o.id, 'acme.test')
+    const made = await Sso.create(deps, TENANT, saml(o.id, { metadataXml: metadata() }), TEST_ACTOR)
+    expect(made.protocol).toBe('saml')
+    expect(made.clientSecretSet).toBe(false)
+    expect(made.saml).toMatchObject({
+      idpEntityId: 'https://idp.example.test/e',
+      ssoUrl: 'https://idp.example.test/sso',
+      acsUrl: expect.stringContaining(`/sso/saml/${made.id}/acs`),
+      spEntityId: expect.stringContaining(`/sso/saml/${made.id}/metadata`),
+    })
+    expect(made.saml?.certificates).toHaveLength(1)
+    expect(made.saml?.certificates[0]).toMatchObject({ expired: false })
+    expect(made.saml?.certificates[0]?.notAfter).toBeString()
+    const stored = await deps.ssoConnections.find(TENANT.environmentId, made.id)
+    expect(new Date(stored?.saml?.certificates[0]?.notAfter ?? '').getTime()).toBeGreaterThan(0)
+  })
+
+  test('a certificate past its expiry is shown as expired', async () => {
+    const o = await org()
+    await verified(o.id, 'acme.test')
+    const made = await Sso.create(deps, TENANT, saml(o.id, { metadataXml: metadata() }), TEST_ACTOR)
+    for (let i = 0; i < 101; i++) {
+      deps.clock.advance('365d')
+    }
+    const read = await Sso.get(deps, TENANT, made.id)
+    expect(read.saml?.certificates[0]?.expired).toBe(true)
+  })
+
+  test('values by hand take one or two certificates, and not three', async () => {
+    const o = await org()
+    await verified(o.id, 'acme.test')
+    const pems = [MOCK_SAML_KEYS.a.certificate, MOCK_SAML_KEYS.b.certificate]
+    const made = await Sso.create(
+      deps,
+      TENANT,
+      saml(o.id, {
+        idpEntityId: 'https://idp.example.test/e',
+        ssoUrl: 'https://idp.example.test/sso',
+        certificates: pems,
+      }),
+      TEST_ACTOR
+    )
+    expect(made.saml?.certificates).toHaveLength(2)
+    await expect(
+      Sso.create(
+        deps,
+        TENANT,
+        saml(
+          o.id,
+          { idpEntityId: 'x', ssoUrl: 'https://idp.example.test/sso', certificates: ['garbage'] },
+          { name: 'Two' }
+        ),
+        TEST_ACTOR
+      )
+    ).rejects.toMatchObject({ code: 'sso.saml_invalid' })
+  })
+
+  test('metadata with a DTD or an entity is refused', async () => {
+    const o = await org()
+    await verified(o.id, 'acme.test')
+    await expect(
+      Sso.create(
+        deps,
+        TENANT,
+        saml(o.id, {
+          metadataXml: metadata('<!DOCTYPE x [<!ENTITY e SYSTEM "file:///etc/passwd">]>'),
+        }),
+        TEST_ACTOR
+      )
+    ).rejects.toMatchObject({ code: 'sso.saml_invalid', params: { reason: 'forbidden_xml' } })
+  })
+
+  test('no source, or two, is refused', async () => {
+    const o = await org()
+    await verified(o.id, 'acme.test')
+    await expect(Sso.create(deps, TENANT, saml(o.id, {}), TEST_ACTOR)).rejects.toMatchObject({
+      code: 'sso.saml_invalid',
+    })
+    await expect(
+      Sso.create(
+        deps,
+        TENANT,
+        saml(o.id, { metadataXml: metadata(), metadataUrl: 'https://idp.example.test/m' }),
+        TEST_ACTOR
+      )
+    ).rejects.toMatchObject({ code: 'sso.saml_invalid' })
+  })
+
+  test('OIDC fields on a SAML connection are malformed', async () => {
+    const o = await org()
+    await verified(o.id, 'acme.test')
+    await expect(
+      Sso.create(
+        deps,
+        TENANT,
+        saml(o.id, { metadataXml: metadata() }, { clientId: 'c' }),
+        TEST_ACTOR
+      )
+    ).rejects.toMatchObject({ code: 'request.malformed' })
+  })
+
+  test('a metadata address at a private address is refused', async () => {
+    const o = await org()
+    await verified(o.id, 'acme.test')
+    deps.outbound.point('internal.example.test', '10.0.0.5')
+    await expect(
+      Sso.create(
+        deps,
+        TENANT,
+        saml(o.id, { metadataUrl: 'https://internal.example.test/m' }),
+        TEST_ACTOR
+      )
+    ).rejects.toMatchObject({ code: 'sso.issuer_not_allowed' })
+  })
+
+  test('a metadata address is fetched, kept, and refreshed from the same address', async () => {
+    const o = await org()
+    await verified(o.id, 'acme.test')
+    let body = metadata()
+    let status = 200
+    const server = Bun.serve({ port: 0, fetch: () => new Response(body, { status }) })
+    try {
+      deps.outbound.point('localhost', '127.0.0.1')
+      const url = `http://localhost:${server.port}/metadata`
+      const made = await Sso.create(deps, TENANT, saml(o.id, { metadataUrl: url }), TEST_ACTOR)
+      expect(made.saml?.metadataUrl).toBe(url)
+      body = metadata().replace('/sso"', '/sso2"')
+      const refreshed = await Sso.refreshMetadata(deps, TENANT, made.id, TEST_ACTOR)
+      expect(refreshed.saml?.ssoUrl).toBe('https://idp.example.test/sso2')
+      status = 500
+      await expect(Sso.refreshMetadata(deps, TENANT, made.id, TEST_ACTOR)).rejects.toMatchObject({
+        code: 'sso.saml_invalid',
+        params: { reason: 'fetch_failed' },
+      })
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  test('refresh needs a metadata address, and an update swaps the certificates', async () => {
+    const o = await org()
+    await verified(o.id, 'acme.test')
+    const made = await Sso.create(deps, TENANT, saml(o.id, { metadataXml: metadata() }), TEST_ACTOR)
+    await expect(Sso.refreshMetadata(deps, TENANT, made.id, TEST_ACTOR)).rejects.toMatchObject({
+      code: 'sso.saml_invalid',
+      params: { reason: 'no_metadata_url' },
+    })
+    const updated = await Sso.update(
+      deps,
+      TENANT,
+      made.id,
+      {
+        saml: {
+          idpEntityId: 'https://idp.example.test/e',
+          ssoUrl: 'https://idp.example.test/sso',
+          certificates: [MOCK_SAML_KEYS.a.certificate, MOCK_SAML_KEYS.b.certificate],
+        },
+      } as never,
+      TEST_ACTOR
+    )
+    expect(updated.saml?.certificates).toHaveLength(2)
+  })
+
+  test('SAML settings on an OIDC connection are malformed', async () => {
+    const o = await org()
+    await verified(o.id, 'acme.test')
+    const made = await Sso.create(deps, TENANT, input(o.id), TEST_ACTOR)
+    await expect(
+      Sso.update(deps, TENANT, made.id, { saml: { metadataXml: metadata() } } as never, TEST_ACTOR)
+    ).rejects.toMatchObject({ code: 'request.malformed' })
   })
 })

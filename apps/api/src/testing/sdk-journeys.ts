@@ -3275,7 +3275,9 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
       })
 
       /** A server with an active OIDC connection bound to a verified domain of an organization. */
-      async function ssoServer(): Promise<Server & { domain: string }> {
+      async function ssoServer(
+        protocol: 'oidc' | 'saml' = 'oidc'
+      ): Promise<Server & { domain: string }> {
         const s = await oauthServer()
         const proxy = Bun.serve({
           hostname: '127.0.0.1',
@@ -3319,14 +3321,28 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
           (await s.admin('POST', `${base}/${domainId}/verify`, { code: s.code(`it@${domain}`) }))
             .status
         ).toBe(200)
-        const created = await s.admin('POST', '/v1/admin/sso-connections', {
-          organizationId: org.id,
-          name: 'Mock IdP',
-          issuer: `http://127.0.0.1:${proxy.port}/v1/dev/sso`,
-          clientId: 'journey-sso',
-          clientSecret: 'journey-sso-secret',
-          domains: [domain],
-        })
+        const metadataXml =
+          protocol === 'saml' ? await (await s.navigate('/v1/dev/sso/saml/metadata')).text() : ''
+        const created = await s.admin(
+          'POST',
+          '/v1/admin/sso-connections',
+          protocol === 'saml'
+            ? {
+                organizationId: org.id,
+                protocol: 'saml',
+                name: 'Mock SAML IdP',
+                saml: { metadataXml },
+                domains: [domain],
+              }
+            : {
+                organizationId: org.id,
+                name: 'Mock IdP',
+                issuer: `http://127.0.0.1:${proxy.port}/v1/dev/sso`,
+                clientId: 'journey-sso',
+                clientSecret: 'journey-sso-secret',
+                domains: [domain],
+              }
+        )
         expect(created.status).toBe(201)
         const { id } = (await created.json()) as { id: string }
         const active = await s.admin('PATCH', `/v1/admin/sso-connections/${id}`, {
@@ -3346,6 +3362,90 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
         expect(callback.status).toBe(303)
         return callback.headers.get('location') ?? ''
       }
+
+      function postForm(s: Server, path: string, form: URLSearchParams): Promise<Response> {
+        return s.navigate(path, {
+          method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          body: form.toString(),
+        })
+      }
+
+      /**
+       * Play the user at the mock SAML identity provider: load its page, post the form it holds to
+       * the assertion consumer service. Returns the form and the redirect the service answered.
+       */
+      async function atSamlIdp(
+        s: Server,
+        authorizationUrl: string,
+        email: string
+      ): Promise<{ acs: string; form: URLSearchParams; landing: string }> {
+        const url = new URL(authorizationUrl)
+        url.searchParams.set('login_hint', email)
+        const shown = await s.navigate(pathOf(url.toString()))
+        expect(shown.status).toBe(200)
+        const html = await shown.text()
+        const action = /<form[^>]*action="([^"]+)"/.exec(html)?.[1] ?? ''
+        expect(action).not.toBe('')
+        const form = new URLSearchParams()
+        for (const input of html.matchAll(/<input[^>]*name="([^"]+)"[^>]*value="([^"]*)"/g)) {
+          form.set(
+            input[1] ?? '',
+            (input[2] ?? '').replaceAll('&amp;', '&').replaceAll('&#39;', "'")
+          )
+        }
+        const acs = pathOf(action.replaceAll('&amp;', '&'))
+        const posted = await postForm(s, acs, form)
+        expect(posted.status).toBe(303)
+        return { acs, form, landing: posted.headers.get('location') ?? '' }
+      }
+
+      page(
+        'sso saml sign-in',
+        'SSO: a SAML connection signs a user in through the assertion consumer service and the same ticket exchange as any provider',
+        async () => {
+          const s = await ssoServer('saml')
+          const email = `ada@${s.domain}`
+          const browserTab = tab()
+          browserTab.open(SIGN_IN_PAGE)
+          const start = s.client('web')
+          const flow = await start.tula.signIn.start({ identifier: email })
+          expect(flow.step).toMatchObject({ status: 'needs_first_factor' })
+          const { url } = await flow.startSso({ redirectUrl: CALLBACK_PAGE })
+          const kept = [...browserTab.entries.values()].join()
+          expect(kept).toContain('tula_ob_')
+          expect(kept).not.toContain('tula_at_')
+          const { landing: landingUrl } = await atSamlIdp(s, url, email)
+          expect(landingUrl).toStartWith(`${CALLBACK_PAGE}#tula_ticket=`)
+          browserTab.open(landingUrl)
+          const landing = s.client('web', { cookies: start.cookies })
+          expect((await landing.tula.signIn.handleOAuthCallback()).status).toBe('complete')
+          expect(landing.tula.state).toMatchObject({ status: 'signed-in', user: { email } })
+          expect(browserTab.entries.size).toBe(0)
+        }
+      )
+
+      page(
+        'sso saml replay refused',
+        'SSO: a SAML response is accepted once; posted again it is refused and gives no ticket',
+        async () => {
+          const s = await ssoServer('saml')
+          const email = `ada@${s.domain}`
+          const browserTab = tab()
+          browserTab.open(SIGN_IN_PAGE)
+          const start = s.client('web')
+          const flow = await start.tula.signIn.start({ identifier: email })
+          const { url } = await flow.startSso({ redirectUrl: CALLBACK_PAGE })
+          const { acs, form, landing: landingUrl } = await atSamlIdp(s, url, email)
+          expect(landingUrl).toStartWith(`${CALLBACK_PAGE}#tula_ticket=`)
+          const again = await postForm(s, acs, form)
+          expect(again.headers.get('location') ?? '').not.toContain('tula_ticket')
+          expect(again.status === 400 || again.status === 303).toBe(true)
+          browserTab.open(landingUrl)
+          const landing = s.client('web', { cookies: start.cookies })
+          expect((await landing.tula.signIn.handleOAuthCallback()).status).toBe('complete')
+        }
+      )
 
       page(
         'sso oidc sign-in',

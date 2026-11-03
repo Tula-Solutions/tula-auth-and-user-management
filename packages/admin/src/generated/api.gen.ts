@@ -206,11 +206,12 @@ export interface Schemas {
   }
   CreateSsoConnectionRequest: {
     organizationId: string
-    protocol?: 'oidc'
+    protocol?: 'oidc' | 'saml'
     name: string
-    issuer: string
-    clientId: string
-    clientSecret: string
+    issuer?: string
+    clientId?: string
+    clientSecret?: string
+    saml?: Schemas['SamlSettingsInput']
     defaultRole?: Schemas['OrganizationRoleKey']
     domains?: Schemas['OrganizationDomainName'][]
   }
@@ -508,7 +509,7 @@ export interface Schemas {
     managedBy?: string | null
     outsideConfig?: boolean
   }
-  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'email.already_set' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.reused' | 'password.not_set' | 'import.unsupported_algorithm' | 'import.hash_malformed' | 'import.hash_parameters_too_weak' | 'import.hash_parameters_too_costly' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.enrolment_needs_other_sign_in' | 'mfa.needs_other_sign_in' | 'mfa.sms_not_allowed' | 'mfa.phone_number_required' | 'mfa.required_by_policy' | 'oauth.access_denied' | 'oauth.provider_error' | 'oauth.state_invalid' | 'oauth.ticket_invalid' | 'oauth.different_browser' | 'oauth.email_missing' | 'oauth.email_unverified' | 'oauth.account_exists' | 'oauth.identity_in_use' | 'oauth.already_linked' | 'identity.last_sign_in_method' | 'webhook.url_not_allowed' | 'webhook.cannot_redeliver' | 'webhook.rotation_refused' | 'hook.denied' | 'hook.unavailable' | 'hook.url_not_allowed' | 'passkey.registration_failed' | 'passkey.already_registered' | 'passkey.limit_reached' | 'passkey.last_sign_in_method' | 'phone.invalid' | 'sms.disabled' | 'sms.country_not_allowed' | 'sms.unavailable' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'session.limit_reached' | 'device.proof_invalid' | 'device.nonce_required' | 'device.binding_not_supported' | 'device.binding_required' | 'user.last_organization_manager' | 'organization.disabled' | 'organization.slug_taken' | 'organization.member_exists' | 'organization.last_manager' | 'organization.role_unknown' | 'organization.not_a_member' | 'organization.creation_disabled' | 'organization.limit_reached' | 'organization.personal_account_disabled' | 'organization.role_exists' | 'organization.role_in_use' | 'organization.role_built_in' | 'organization.role_limit' | 'organization.permission_required' | 'organization.role_not_assignable' | 'organization.invitation_exists' | 'organization.invitation_not_found' | 'organization.invitation_expired' | 'organization.invitation_revoked' | 'organization.invitation_used' | 'organization.invitation_wrong_account' | 'organization.invitation_email_unverified' | 'organization.invitation_role_gone' | 'organization.domain_public' | 'organization.domain_taken' | 'organization.domain_address_mismatch' | 'organization.domain_limit' | 'organization.suggestion_unavailable' | 'sso.disabled' | 'sso.connection_not_found' | 'sso.name_taken' | 'sso.domain_taken' | 'sso.domain_not_verified' | 'sso.issuer_not_allowed' | 'sso.connection_in_use' | 'sso.invalid_transition' | 'sso.unavailable' | 'sso.provider_error' | 'sso.user_not_provisioned' | 'sso.email_domain_mismatch' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
+  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'email.already_set' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.reused' | 'password.not_set' | 'import.unsupported_algorithm' | 'import.hash_malformed' | 'import.hash_parameters_too_weak' | 'import.hash_parameters_too_costly' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.enrolment_needs_other_sign_in' | 'mfa.needs_other_sign_in' | 'mfa.sms_not_allowed' | 'mfa.phone_number_required' | 'mfa.required_by_policy' | 'oauth.access_denied' | 'oauth.provider_error' | 'oauth.state_invalid' | 'oauth.ticket_invalid' | 'oauth.different_browser' | 'oauth.email_missing' | 'oauth.email_unverified' | 'oauth.account_exists' | 'oauth.identity_in_use' | 'oauth.already_linked' | 'identity.last_sign_in_method' | 'webhook.url_not_allowed' | 'webhook.cannot_redeliver' | 'webhook.rotation_refused' | 'hook.denied' | 'hook.unavailable' | 'hook.url_not_allowed' | 'passkey.registration_failed' | 'passkey.already_registered' | 'passkey.limit_reached' | 'passkey.last_sign_in_method' | 'phone.invalid' | 'sms.disabled' | 'sms.country_not_allowed' | 'sms.unavailable' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'session.limit_reached' | 'device.proof_invalid' | 'device.nonce_required' | 'device.binding_not_supported' | 'device.binding_required' | 'user.last_organization_manager' | 'organization.disabled' | 'organization.slug_taken' | 'organization.member_exists' | 'organization.last_manager' | 'organization.role_unknown' | 'organization.not_a_member' | 'organization.creation_disabled' | 'organization.limit_reached' | 'organization.personal_account_disabled' | 'organization.role_exists' | 'organization.role_in_use' | 'organization.role_built_in' | 'organization.role_limit' | 'organization.permission_required' | 'organization.role_not_assignable' | 'organization.invitation_exists' | 'organization.invitation_not_found' | 'organization.invitation_expired' | 'organization.invitation_revoked' | 'organization.invitation_used' | 'organization.invitation_wrong_account' | 'organization.invitation_email_unverified' | 'organization.invitation_role_gone' | 'organization.domain_public' | 'organization.domain_taken' | 'organization.domain_address_mismatch' | 'organization.domain_limit' | 'organization.suggestion_unavailable' | 'sso.disabled' | 'sso.connection_not_found' | 'sso.name_taken' | 'sso.domain_taken' | 'sso.domain_not_verified' | 'sso.issuer_not_allowed' | 'sso.saml_invalid' | 'sso.connection_in_use' | 'sso.invalid_transition' | 'sso.unavailable' | 'sso.provider_error' | 'sso.user_not_provisioned' | 'sso.email_domain_mismatch' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
   ErrorEnvelope: {
     status: number
     code: Schemas['ErrorCode']
@@ -1455,6 +1456,26 @@ export interface Schemas {
     /** The new signing secret. Store it now: it is shown only once. */
     secret: string
   }
+  SamlConnection: {
+    idpEntityId: string
+    ssoUrl: string
+    metadataUrl: string | null
+    certificates: {
+      fingerprint: string
+      notAfter: string
+      expired: boolean
+    }[]
+    spEntityId: string
+    acsUrl: string
+    spMetadataUrl: string
+  }
+  SamlSettingsInput: {
+    metadataXml?: string
+    metadataUrl?: string
+    idpEntityId?: string
+    ssoUrl?: string
+    certificates?: string[]
+  }
   SendTestWebhookRequest: {
     eventType: 'user.created' | 'user.imported' | 'user.email_verified' | 'user.banned' | 'user.unbanned' | 'user.deleted' | 'user.password_changed' | 'user.mfa_enabled' | 'user.mfa_disabled' | 'user.backup_codes_regenerated' | 'user.backup_code_used' | 'user.identity_linked' | 'user.identity_unlinked' | 'user.sso_linked' | 'user.email_added' | 'user.passkey_added' | 'user.passkey_renamed' | 'user.passkey_removed' | 'user.passkey_counter_regressed' | 'user.phone_number_added' | 'user.phone_number_removed' | 'user.sms_factor_enabled' | 'user.sms_factor_removed' | 'session.created' | 'session.revoked' | 'session.reuse_detected' | 'session.stepped_up' | 'session.refresh_proof_refused' | 'api_key.created' | 'api_key.revoked' | 'signing_key.rotated' | 'environment.settings_updated' | 'oauth_provider.updated' | 'oauth_provider.deleted' | 'webhook_endpoint.created' | 'webhook_endpoint.updated' | 'webhook_endpoint.deleted' | 'webhook_endpoint.disabled' | 'webhook_endpoint.secret_rotated' | 'webhook_endpoint.previous_secret_revoked' | 'hook.created' | 'hook.updated' | 'hook.deleted' | 'native_app.created' | 'native_app.updated' | 'native_app.deleted' | 'sso_connection.created' | 'sso_connection.updated' | 'sso_connection.deleted' | 'organization.created' | 'organization.updated' | 'organization.deleted' | 'organization_membership.added' | 'organization_membership.role_changed' | 'organization_membership.removed' | 'organization_role.created' | 'organization_role.updated' | 'organization_role.deleted' | 'organization_domain.claimed' | 'organization_domain.verified' | 'organization_domain.updated' | 'organization_domain.removed' | 'organization_invitation.created' | 'organization_invitation.accepted' | 'organization_invitation.declined' | 'organization_invitation.revoked' | 'proposal.created' | 'proposal.approved' | 'proposal.executed' | 'proposal.failed' | 'audit.exported' | 'sign_in_test.started' | 'sign_in_test.finished'
   }
@@ -1707,12 +1728,13 @@ export interface Schemas {
   SsoConnection: {
     id: string
     organizationId: string
-    protocol: 'oidc'
+    protocol: 'oidc' | 'saml'
     name: string
     status: 'draft' | 'active' | 'disabled'
     issuer: string
     clientId: string
-    clientSecretSet: true
+    clientSecretSet: boolean
+    saml: Schemas['SamlConnection'] | null
     defaultRole: string
     domains: string[]
     createdAt: string
@@ -1732,7 +1754,7 @@ export interface Schemas {
     test?: true
   }
   SsoConnectionCreatedEventData: {
-    protocol: 'oidc'
+    protocol: 'oidc' | 'saml'
     status: 'draft' | 'active' | 'disabled'
     domains: number
   }
@@ -1750,7 +1772,7 @@ export interface Schemas {
     test?: true
   }
   SsoConnectionDeletedEventData: {
-    protocol: 'oidc'
+    protocol: 'oidc' | 'saml'
   }
   SsoConnectionList: {
     connections: Schemas['SsoConnection'][]
@@ -1769,8 +1791,8 @@ export interface Schemas {
     test?: true
   }
   SsoConnectionUpdatedEventData: {
-    protocol: 'oidc'
-    changed: ('name' | 'issuer' | 'clientId' | 'clientSecret' | 'defaultRole' | 'domains' | 'status')[]
+    protocol: 'oidc' | 'saml'
+    changed: ('name' | 'issuer' | 'clientId' | 'clientSecret' | 'saml' | 'defaultRole' | 'domains' | 'status')[]
     status: 'draft' | 'active' | 'disabled'
     weakened?: boolean
   }
@@ -1813,6 +1835,7 @@ export interface Schemas {
     issuer?: string
     clientId?: string
     clientSecret?: string
+    saml?: Schemas['SamlSettingsInput']
     defaultRole?: Schemas['OrganizationRoleKey']
     domains?: Schemas['OrganizationDomainName'][]
     status?: 'draft' | 'active' | 'disabled'
@@ -2544,6 +2567,8 @@ export interface Operations {
   previewMessage: { params: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Schemas['MessagePreviewRequest']; response: Schemas['MessagePreview'] }
   /** Send a delivery again (`POST /v1/admin/webhook-endpoints/{id}/deliveries/{deliveryId}/redeliver`). */
   redeliverWebhook: { params: { id: string; deliveryId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['WebhookSendResult'] }
+  /** Read a SAML connection’s metadata address again (`POST /v1/admin/sso-connections/{id}/refresh-metadata`). */
+  refreshSsoConnectionMetadata: { params: { id: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: Schemas['SsoConnection'] }
   /** Remove a domain (`DELETE /v1/admin/organizations/{id}/domains/{domainId}`). */
   removeOrganizationDomain: { params: { id: string; domainId: string }; query: Record<string, never>; headers: Record<string, never>; body: undefined; response: undefined }
   /** Remove a member from an organization (`DELETE /v1/admin/organizations/{id}/memberships/{userId}`). */
@@ -2672,6 +2697,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   listWebhookEndpoints: { method: 'GET', path: '/v1/admin/webhook-endpoints' },
   previewMessage: { method: 'POST', path: '/v1/admin/message-preview' },
   redeliverWebhook: { method: 'POST', path: '/v1/admin/webhook-endpoints/{id}/deliveries/{deliveryId}/redeliver' },
+  refreshSsoConnectionMetadata: { method: 'POST', path: '/v1/admin/sso-connections/{id}/refresh-metadata' },
   removeOrganizationDomain: { method: 'DELETE', path: '/v1/admin/organizations/{id}/domains/{domainId}' },
   removeOrganizationMember: { method: 'DELETE', path: '/v1/admin/organizations/{id}/memberships/{userId}' },
   replaceEnvironmentSettings: { method: 'PUT', path: '/v1/admin/settings' },

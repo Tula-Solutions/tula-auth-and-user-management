@@ -3,6 +3,7 @@ import {
   boolean,
   check,
   index,
+  jsonb,
   text,
   timestamp,
   unique,
@@ -23,8 +24,8 @@ import { users } from './users'
 /** Where a connection is in its life (ADR 0067): only an `active` one signs anybody in. */
 export const SSO_CONNECTION_STATUSES = ['draft', 'active', 'disabled'] as const
 
-/** The protocols a connection can speak. SAML (TULA-139) adds one. */
-export const SSO_PROTOCOLS = ['oidc'] as const
+/** The protocols a connection can speak. */
+export const SSO_PROTOCOLS = ['oidc', 'saml'] as const
 
 /**
  * An organization's enterprise single sign-on connection (ADR 0067).
@@ -47,6 +48,17 @@ export const ssoConnections = tula.table(
     clientId: text('client_id').notNull(),
     /** Sealed with `~/lib/secret-box`; never returned by a route. */
     clientSecretSealed: text('client_secret_sealed').notNull(),
+    /**
+     * A SAML connection's identity provider values: entity id, SSO URL, metadata URL and up to
+     * two signing certificates with the expiry of each. `null` for an OIDC connection. A SAML
+     * row keeps `issuer` as the entity id and `''` in the two client columns.
+     */
+    saml: jsonb('saml').$type<{
+      idpEntityId: string
+      ssoUrl: string
+      metadataUrl: string | null
+      certificates: { pem: string; notAfter: string }[]
+    }>(),
     /** The role key a user provisioned by this connection gets in the organization. */
     defaultRole: text('default_role').notNull(),
     ...timestamps(),
@@ -56,7 +68,8 @@ export const ssoConnections = tula.table(
     tenantForeignKey('sso_connections_organization_fk', t, t.organizationId, organizations),
     index('sso_connections_organization_idx').on(t.environmentId, t.organizationId),
     check('sso_connections_status_known', sql`${t.status} in ('draft', 'active', 'disabled')`),
-    check('sso_connections_protocol_known', sql`${t.protocol} in ('oidc')`),
+    check('sso_connections_protocol_known', sql`${t.protocol} in ('oidc', 'saml')`),
+    check('sso_connections_saml_iff_saml', sql`(${t.protocol} = 'saml') = (${t.saml} is not null)`),
     check('sso_connections_name_bounds', sql`char_length(${t.name}) between 1 and 100`),
     tenantParentKey('sso_connections', t),
     ...tenantConstraints('sso_connections', t),

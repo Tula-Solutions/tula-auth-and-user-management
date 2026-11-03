@@ -54,6 +54,8 @@ describe('conformance scenarios, in process', () => {
       'sso oidc sign-in',
       'sso home-realm discovery is by domain',
       'attempt binding',
+      'sso saml sign-in',
+      'sso saml replay refused',
       'email code sign-in',
       'email link sign-in',
       'passwordless sign-up',

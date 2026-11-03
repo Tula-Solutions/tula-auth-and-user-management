@@ -16,8 +16,8 @@ export const SSO_CONNECTION_STATUSES = ['draft', 'active', 'disabled'] as const
 /** One of {@link SSO_CONNECTION_STATUSES}. */
 export type SsoConnectionStatus = (typeof SSO_CONNECTION_STATUSES)[number]
 
-/** The protocols a connection can speak. SAML is added here when it exists. */
-export const SSO_PROTOCOLS = ['oidc'] as const
+/** The protocols a connection can speak. */
+export const SSO_PROTOCOLS = ['oidc', 'saml'] as const
 
 /** One of {@link SSO_PROTOCOLS}. */
 export type SsoProtocol = (typeof SSO_PROTOCOLS)[number]
@@ -28,6 +28,7 @@ export const SSO_CONNECTION_FIELDS = [
   'issuer',
   'clientId',
   'clientSecret',
+  'saml',
   'defaultRole',
   'domains',
   'status',
@@ -38,3 +39,6 @@ export type SsoConnectionField = (typeof SSO_CONNECTION_FIELDS)[number]
 
 /** How many domains one connection can be bound to. */
 export const MAX_SSO_CONNECTION_DOMAINS = 20
+
+/** How many signing certificates a SAML connection holds: the current one and the next. */
+export const MAX_SAML_CERTIFICATES = 2

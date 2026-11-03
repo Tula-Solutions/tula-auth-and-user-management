@@ -944,9 +944,11 @@ async function followCallback(
     expectError?: string
     captureAttempt?: string
   },
-  variables: Record<string, string>
+  variables: Record<string, string>,
+  /** The callback's answer, when the caller has already made the request (a SAML ACS post). */
+  already?: { status: number; location: string | null }
 ): Promise<void> {
-  const answered = await hop(target, callback, origin)
+  const answered = already ?? (await hop(target, callback, origin))
   const fragment = answered.location?.split('#')[1]
   if (answered.status !== 303 || fragment === undefined) {
     throw new Error(`the callback answered ${answered.status}, not a redirect with a fragment`)
@@ -997,8 +999,26 @@ async function runSso(
     variables[sso.captureIssuer] = await ssoIssuer(target)
     return
   }
+  if (sso.captureSamlMetadata !== undefined) {
+    const response = await target.fetch(
+      new Request(`${target.baseUrl}${pathOf(`${await ssoIssuer(target)}/saml/metadata`)}`)
+    )
+    if (response.status !== 200) {
+      throw new Error(`the mock identity provider's metadata answered ${response.status}`)
+    }
+    variables[sso.captureSamlMetadata] = await response.text()
+    return
+  }
   const authorization = new URL(sso.authorizationUrl ?? '')
   authorization.searchParams.set('login_hint', sso.email ?? '')
+  for (const [name, value] of [
+    ['failure', sso.failure],
+    ['key', sso.key],
+  ] as const) {
+    if (value !== undefined) {
+      authorization.searchParams.set(name, value)
+    }
+  }
   if (sso.subject !== undefined) {
     authorization.searchParams.set('subject', sso.subject)
   }
@@ -1006,6 +1026,10 @@ async function runSso(
     authorization.searchParams.set('unverified', '1')
   }
   const origin = variables.origin ?? ''
+  if (authorization.pathname.endsWith('/saml/sso')) {
+    await runSamlSignIn(target, authorization, origin, sso, variables)
+    return
+  }
   // The mock is served by the API itself: asked on the target, whatever address it named.
   const signedIn = await hop(target, pathOf(authorization.toString()), origin)
   if (signedIn.status !== 303 || !signedIn.location) {
@@ -1014,6 +1038,55 @@ async function runSso(
     )
   }
   await followCallback(target, pathOf(signedIn.location), origin, sso, variables)
+}
+
+/**
+ * Play the browser at the mock SAML identity provider: load its page, post the form it holds
+ * to the assertion consumer service, and follow the redirect that answers. With
+ * `expectReplayRefused` the same form is posted again and must be refused.
+ */
+async function runSamlSignIn(
+  target: Target,
+  authorization: URL,
+  origin: string,
+  sso: {
+    captureTicket?: string
+    expectError?: string
+    captureAttempt?: string
+    expectReplayRefused?: boolean
+  },
+  variables: Record<string, string>
+): Promise<void> {
+  const page = await target.fetch(
+    new Request(`${target.baseUrl}${pathOf(authorization.toString())}`, {
+      headers: { 'x-forwarded-for': origin, 'user-agent': 'tula-conformance/1' },
+    })
+  )
+  const html = await page.text()
+  const action = /<form[^>]*action="([^"]+)"/.exec(html)?.[1]
+  if (page.status !== 200 || !action) {
+    throw new Error(
+      `the mock identity provider answered ${page.status} without a form (is OAUTH_MOCK_PROVIDER on?)`
+    )
+  }
+  const form = new URLSearchParams()
+  for (const input of html.matchAll(/<input[^>]*name="([^"]+)"[^>]*value="([^"]*)"/g)) {
+    form.set(input[1] ?? '', (input[2] ?? '').replaceAll('&amp;', '&').replaceAll('&#39;', "'"))
+  }
+  const acs = pathOf(action.replaceAll('&amp;', '&'))
+  const posted = await hop(target, acs, origin, form)
+  if (posted.status !== 303 || !posted.location) {
+    throw new Error(`the assertion consumer service answered ${posted.status} without a redirect`)
+  }
+  await followCallback(target, acs, origin, sso, variables, posted)
+  if (sso.expectReplayRefused) {
+    // Spent state gives the static page (400); a redirect must carry an error and no ticket.
+    const again = await hop(target, acs, origin, form)
+    const params = new URLSearchParams(again.location?.split('#')[1] ?? '')
+    if (again.status !== 400 && (again.status !== 303 || params.has('tula_ticket'))) {
+      throw new Error(`the replayed assertion was not refused (status ${again.status})`)
+    }
+  }
 }
 
 async function linkFor(target: Target, to: string): Promise<string> {

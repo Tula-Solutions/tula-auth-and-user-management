@@ -1185,7 +1185,7 @@ export type CreateSsoConnectionRequest = z.infer<typeof CreateSsoConnectionReque
 
 _constant_, defined in `packages/contract/src/sso-connection.ts`
 
-The body that creates a connection, as a draft.
+The body that creates a connection, as a draft. An OIDC one takes `issuer`, `clientId` and `clientSecret`; a SAML one `saml`.
 
 ```ts
 const CreateSsoConnectionRequestSchema
@@ -4941,6 +4941,16 @@ Longest refresh grace window a profile may set.
 const MAX_REUSE_GRACE_PERIOD: Duration
 ```
 
+### `MAX_SAML_CERTIFICATES`
+
+_constant_, defined in `packages/contract/src/sso.ts`
+
+How many signing certificates a SAML connection holds: the current one and the next.
+
+```ts
+const MAX_SAML_CERTIFICATES: 2
+```
+
 ### `MAX_SESSIONS_PER_USER`
 
 _constant_, defined in `packages/contract/src/session-profile.ts`
@@ -7979,7 +7989,7 @@ _constant_, defined in `packages/contract/src/sso.ts`
 The fields of a connection an update can change; the event names them, never a value.
 
 ```ts
-const SSO_CONNECTION_FIELDS: readonly ["name", "issuer", "clientId", "clientSecret", "defaultRole", "domains", "status"]
+const SSO_CONNECTION_FIELDS: readonly ["name", "issuer", "clientId", "clientSecret", "saml", "defaultRole", "domains", "status"]
 ```
 
 ### `SSO_CONNECTION_STATUSES`
@@ -8014,10 +8024,10 @@ const SSO_MANAGE_PERMISSION: SystemPermission
 
 _constant_, defined in `packages/contract/src/sso.ts`
 
-The protocols a connection can speak. SAML is added here when it exists.
+The protocols a connection can speak.
 
 ```ts
-const SSO_PROTOCOLS: readonly ["oidc"]
+const SSO_PROTOCOLS: readonly ["oidc", "saml"]
 ```
 
 ### `STEP_UP_MAX_AGE_SECONDS`
@@ -8042,6 +8052,39 @@ also give a role.
 
 ```ts
 const SYSTEM_PERMISSIONS
+```
+
+### `SamlConnectionViewSchema`
+
+_constant_, defined in `packages/contract/src/sso-connection.ts`
+
+A SAML connection's identity provider values and the service provider values to give the IdP.
+
+```ts
+const SamlConnectionViewSchema
+```
+
+### `SamlSettingsInput`
+
+_type_, defined in `packages/contract/src/sso-connection.ts`
+
+The identity provider values of a SAML connection, as given.
+
+```ts
+export type SamlSettingsInput = z.infer<typeof SamlSettingsInputSchema>
+```
+
+### `SamlSettingsInputSchema`
+
+_constant_, defined in `packages/contract/src/sso-connection.ts`
+
+The identity provider values of a SAML connection, given in one of three ways: the IdP's
+metadata XML pasted (`metadataXml`), a metadata address the server fetches (`metadataUrl`),
+or by hand (`idpEntityId`, `ssoUrl` and one or two `certificates`, PEM or bare base64).
+Whether exactly one way was used is checked by the service (`sso.saml_invalid`).
+
+```ts
+const SamlSettingsInputSchema
 ```
 
 ### `SecondFactorMethod`

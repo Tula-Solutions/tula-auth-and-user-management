@@ -160,8 +160,10 @@ import { join } from 'node:path'
  * `flow.startSso` (TULA-141: the start step, the kept binding and the redirect, on the OAuth
  * round trip's own functions) added 105 bytes, from 19,098 to 19,203. The budget moved by
  * exactly those 105 bytes, to 19,207: the room is the 4 bytes it was.
+ * SAML connections (TULA-139) added the `sso.saml_invalid` code: 31 bytes, to 19,234. The budget moved
+ * by exactly those, to 19,238: the room is the 4 bytes it was.
  */
-const GZIP_BUDGET_BYTES = 19_207
+const GZIP_BUDGET_BYTES = 19_238
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

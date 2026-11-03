@@ -1,5 +1,6 @@
 import type {
   CreateSsoConnectionRequest,
+  SamlSettingsInput,
   SsoConnection,
   SsoConnectionField,
   UpdateSsoConnectionRequest,
@@ -8,11 +9,18 @@ import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, NotFoundError } from '~/exceptions'
 import type { Actor } from '~/lib/actor'
 import * as Outbound from '~/lib/outbound'
+import {
+  type IdpMetadata,
+  parseIdpMetadata,
+  readCertificate,
+  SamlMetadataError,
+} from '~/lib/saml-metadata'
 import * as Audit from '~/modules/audit/service'
 import * as Organizations from '~/modules/organization/service'
 import { lapsed } from '~/modules/organization-domain/service'
 import * as Settings from '~/modules/settings/service'
 import type {
+  SamlSettings,
   SsoConnectionChanges,
   SsoConnectionRecord,
   SsoConnectionStatus,
@@ -51,7 +59,31 @@ export async function requireEnabled(
   }
 }
 
-function view(record: SsoConnectionRecord): SsoConnection {
+/**
+ * The service provider values of a SAML connection, stable for its life: what the operator
+ * gives the identity provider. The entity id is the metadata's own address.
+ *
+ * @param config - The public URL.
+ * @param record - The connection.
+ * @returns The entity id, the assertion consumer service URL and the metadata URL.
+ */
+export function samlUrls(
+  config: { publicUrl: string },
+  record: Pick<SsoConnectionRecord, 'id' | 'environmentId'>
+): { spEntityId: string; acsUrl: string; spMetadataUrl: string } {
+  const base = `${config.publicUrl}/v1/environments/${record.environmentId}/sso/saml/${record.id}`
+  return {
+    spEntityId: `${base}/metadata`,
+    acsUrl: `${base}/acs`,
+    spMetadataUrl: `${base}/metadata`,
+  }
+}
+
+function view(
+  config: { publicUrl: string },
+  record: SsoConnectionRecord,
+  now: Date
+): SsoConnection {
   return {
     id: record.id,
     organizationId: record.organizationId,
@@ -60,7 +92,18 @@ function view(record: SsoConnectionRecord): SsoConnection {
     status: record.status,
     issuer: record.issuer,
     clientId: record.clientId,
-    clientSecretSet: true,
+    clientSecretSet: record.protocol === 'oidc',
+    saml: record.saml && {
+      idpEntityId: record.saml.idpEntityId,
+      ssoUrl: record.saml.ssoUrl,
+      metadataUrl: record.saml.metadataUrl,
+      certificates: record.saml.certificates.map((c) => ({
+        fingerprint: readCertificate(c.pem).fingerprint,
+        notAfter: c.notAfter,
+        expired: new Date(c.notAfter).getTime() <= now.getTime(),
+      })),
+      ...samlUrls(config, record),
+    },
     defaultRole: record.defaultRole,
     domains: record.domains,
     createdAt: record.createdAt.toISOString(),
@@ -87,6 +130,82 @@ async function requireCallableIssuer(deps: Pick<Deps, 'outbound'>, issuer: strin
   } catch (error) {
     if (error instanceof Outbound.OutboundError) {
       throw new AuthError('sso.issuer_not_allowed', { reason: error.reason })
+    }
+    throw error
+  }
+}
+
+const MAX_METADATA_BYTES = 512 * 1024
+
+/**
+ * Turn the three ways of giving a SAML identity provider's values into stored settings:
+ * pasted metadata, a metadata address fetched through `Outbound.request` (so a private
+ * address is refused), or the values by hand. Exactly one way per call. Each certificate is
+ * read for its expiry, which is kept.
+ *
+ * @param deps - The outbound guard.
+ * @param input - What the operator gave.
+ * @returns The settings to store.
+ * @throws AuthError `sso.saml_invalid` (`params.reason`, a fixed word) or
+ *   `sso.issuer_not_allowed` for a metadata address the server may not call.
+ */
+export async function resolveSaml(
+  deps: Pick<Deps, 'outbound'>,
+  input: SamlSettingsInput
+): Promise<SamlSettings> {
+  const manual = [input.idpEntityId, input.ssoUrl, input.certificates].some((v) => v !== undefined)
+  if (
+    [input.metadataXml !== undefined, input.metadataUrl !== undefined, manual].filter(Boolean)
+      .length !== 1
+  ) {
+    throw new AuthError('sso.saml_invalid', { reason: 'one_source' })
+  }
+  try {
+    let metadataUrl: string | null = null
+    let values: IdpMetadata
+    if (input.metadataUrl !== undefined) {
+      const address = input.metadataUrl
+      metadataUrl = address
+      let answer: Outbound.OutboundResponse
+      try {
+        answer = await Outbound.request(deps.outbound, address, {
+          headers: { accept: 'application/samlmetadata+xml, application/xml, text/xml' },
+          maxResponseBytes: MAX_METADATA_BYTES,
+        })
+      } catch (error) {
+        if (error instanceof Outbound.OutboundError) {
+          throw new AuthError('sso.issuer_not_allowed', { reason: error.reason })
+        }
+        throw error
+      }
+      if (answer.status !== 200) {
+        throw new AuthError('sso.saml_invalid', { reason: 'fetch_failed' })
+      }
+      values = parseIdpMetadata(new TextDecoder().decode(answer.body))
+    } else if (input.metadataXml !== undefined) {
+      values = parseIdpMetadata(input.metadataXml)
+    } else {
+      if (!input.idpEntityId || !input.ssoUrl || !input.certificates?.length) {
+        throw new AuthError('sso.saml_invalid', { reason: 'incomplete' })
+      }
+      values = {
+        idpEntityId: input.idpEntityId,
+        ssoUrl: input.ssoUrl,
+        certificates: input.certificates,
+      }
+    }
+    return {
+      idpEntityId: values.idpEntityId,
+      ssoUrl: values.ssoUrl,
+      metadataUrl,
+      certificates: values.certificates.map((cert) => {
+        const read = readCertificate(cert)
+        return { pem: read.pem, notAfter: read.notAfter.toISOString() }
+      }),
+    }
+  } catch (error) {
+    if (error instanceof SamlMetadataError) {
+      throw new AuthError('sso.saml_invalid', { reason: error.reason })
     }
     throw error
   }
@@ -121,12 +240,14 @@ async function requireOwnDomains(
  * @returns Its connections, oldest first.
  */
 export async function list(
-  deps: Pick<Deps, 'ssoConnections' | 'environmentSettings' | 'config'>,
+  deps: Pick<Deps, 'ssoConnections' | 'environmentSettings' | 'config' | 'clock'>,
   tenant: Pick<Tenant, 'environmentId'>,
   organizationId: string
 ): Promise<SsoConnection[]> {
   await requireEnabled(deps, tenant)
-  return (await deps.ssoConnections.list(tenant.environmentId, organizationId)).map(view)
+  return (await deps.ssoConnections.list(tenant.environmentId, organizationId)).map((r) =>
+    view(deps.config, r, deps.clock.now())
+  )
 }
 
 /**
@@ -139,12 +260,12 @@ export async function list(
  * @throws AuthError `sso.connection_not_found`.
  */
 export async function get(
-  deps: Pick<Deps, 'ssoConnections' | 'environmentSettings' | 'config'>,
+  deps: Pick<Deps, 'ssoConnections' | 'environmentSettings' | 'config' | 'clock'>,
   tenant: Pick<Tenant, 'environmentId'>,
   id: string
 ): Promise<SsoConnection> {
   await requireEnabled(deps, tenant)
-  return view(await requireConnection(deps, tenant, id))
+  return view(deps.config, await requireConnection(deps, tenant, id), deps.clock.now())
 }
 
 /**
@@ -158,7 +279,8 @@ export async function get(
  * @param input - The connection.
  * @param actor - Who creates it, for the audit log.
  * @returns The connection.
- * @throws AuthError `sso.issuer_not_allowed`, `sso.domain_not_verified`, `sso.name_taken`.
+ * @throws AuthError `sso.issuer_not_allowed`, `sso.domain_not_verified`, `sso.name_taken`,
+ *   `sso.saml_invalid`, `request.malformed` (the fields of the other protocol).
  * @throws NotFoundError when the organization is not this environment's.
  */
 export async function create(
@@ -183,14 +305,31 @@ export async function create(
     throw new NotFoundError()
   }
   await Organizations.requireRole(deps, tenant, input.defaultRole)
-  await requireCallableIssuer(deps, input.issuer)
+  let saml: SamlSettings | null = null
+  if (input.protocol === 'saml') {
+    if (
+      input.issuer !== undefined ||
+      input.clientId !== undefined ||
+      input.clientSecret !== undefined
+    ) {
+      throw new AuthError('request.malformed')
+    }
+    saml = await resolveSaml(deps, input.saml ?? {})
+  } else {
+    if (!input.issuer || !input.clientId || !input.clientSecret || input.saml !== undefined) {
+      throw new AuthError('request.malformed')
+    }
+    await requireCallableIssuer(deps, input.issuer)
+  }
   const domains = await requireOwnDomains(deps, tenant, input.organizationId, input.domains)
   const id = deps.ids.next()
-  const sealed = await deps.secretBox.seal(
-    SECRET_PURPOSE,
-    new TextEncoder().encode(input.clientSecret),
-    secretAad(tenant.environmentId, id)
-  )
+  const sealed = input.clientSecret
+    ? await deps.secretBox.seal(
+        SECRET_PURPOSE,
+        new TextEncoder().encode(input.clientSecret),
+        secretAad(tenant.environmentId, id)
+      )
+    : ''
   const activity = Audit.entry(deps, tenant, {
     type: 'sso_connection.created',
     actor,
@@ -206,9 +345,11 @@ export async function create(
       protocol: input.protocol,
       name: input.name,
       status: 'draft',
-      issuer: input.issuer,
-      clientId: input.clientId,
+      // A SAML row keeps the identity provider's entity id here and no client at all.
+      issuer: saml ? saml.idpEntityId : (input.issuer ?? ''),
+      clientId: input.clientId ?? '',
       clientSecretSealed: sealed,
+      saml,
       defaultRole: input.defaultRole,
       domains,
       createdAt: activity.occurredAt,
@@ -222,7 +363,7 @@ export async function create(
   if (stored === 'domain_taken') {
     throw new AuthError('sso.domain_taken')
   }
-  return view(stored)
+  return view(deps.config, stored, deps.clock.now())
 }
 
 /** The life of a connection never goes back to a draft. */
@@ -272,6 +413,23 @@ export async function update(
     changes.name = input.name
     changed.push('name')
   }
+  if (
+    current.protocol === 'saml' &&
+    (input.issuer !== undefined || input.clientId !== undefined || input.clientSecret !== undefined)
+  ) {
+    throw new AuthError('request.malformed')
+  }
+  if (current.protocol === 'oidc' && input.saml !== undefined) {
+    throw new AuthError('request.malformed')
+  }
+  if (input.saml !== undefined) {
+    const next = await resolveSaml(deps, input.saml)
+    if (JSON.stringify(next) !== JSON.stringify(current.saml)) {
+      changes.saml = next
+      changes.issuer = next.idpEntityId
+      changed.push('saml')
+    }
+  }
   if (input.issuer !== undefined && input.issuer !== current.issuer) {
     await requireCallableIssuer(deps, input.issuer)
     changes.issuer = input.issuer
@@ -313,7 +471,7 @@ export async function update(
     throw new AuthError('sso.domain_not_verified')
   }
   if (changed.length === 0) {
-    return view(current)
+    return view(deps.config, current, deps.clock.now())
   }
   const widens =
     changes.status === 'active' ||
@@ -345,7 +503,33 @@ export async function update(
   if (result === 'domain_taken') {
     throw new AuthError('sso.domain_taken')
   }
-  return view(result)
+  return view(deps.config, result, deps.clock.now())
+}
+
+/**
+ * Read a SAML connection's identity provider values again from its metadata address, so a
+ * rotated certificate or a moved SSO URL is taken on demand.
+ *
+ * @param deps - As {@link update}.
+ * @param tenant - The environment.
+ * @param id - The connection.
+ * @param actor - Who asks, for the audit log.
+ * @returns The connection as it is now.
+ * @throws AuthError `sso.connection_not_found`, `sso.saml_invalid` (`reason: 'no_metadata_url'`
+ *   when the values were not given by an address), and those of {@link resolveSaml}.
+ */
+export async function refreshMetadata(
+  deps: Parameters<typeof update>[0],
+  tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
+  id: string,
+  actor: Actor
+): Promise<SsoConnection> {
+  await requireEnabled(deps, tenant)
+  const url = (await requireConnection(deps, tenant, id)).saml?.metadataUrl
+  if (!url) {
+    throw new AuthError('sso.saml_invalid', { reason: 'no_metadata_url' })
+  }
+  return update(deps, tenant, id, { saml: { metadataUrl: url } }, actor)
 }
 
 /**
