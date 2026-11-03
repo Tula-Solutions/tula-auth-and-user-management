@@ -332,6 +332,10 @@ sealed class ErrorCode {
         override val rawValue: String = "user.last_organization_manager"
     }
 
+    object UserManaged : ErrorCode() {
+        override val rawValue: String = "user.managed"
+    }
+
     object OrganizationDisabled : ErrorCode() {
         override val rawValue: String = "organization.disabled"
     }
@@ -649,6 +653,7 @@ sealed class ErrorCode {
                 DeviceBindingNotSupported,
                 DeviceBindingRequired,
                 UserLastOrganizationManager,
+                UserManaged,
                 OrganizationDisabled,
                 OrganizationSlugTaken,
                 OrganizationMemberExists,
@@ -789,6 +794,7 @@ sealed class ErrorCode {
             "device.binding_not_supported" -> DeviceBindingNotSupported
             "device.binding_required" -> DeviceBindingRequired
             "user.last_organization_manager" -> UserLastOrganizationManager
+            "user.managed" -> UserManaged
             "organization.disabled" -> OrganizationDisabled
             "organization.slug_taken" -> OrganizationSlugTaken
             "organization.member_exists" -> OrganizationMemberExists
@@ -1109,6 +1115,9 @@ object TulaErrorDefinitions {
     /** `user.last_organization_manager` */
     val userLastOrganizationManager: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.UserLastOrganizationManager, 409, "This user is the only manager of an organization. Add another manager or delete the organization first.")
 
+    /** `user.managed` */
+    val userManaged: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.UserManaged, 403, "This account is managed by your organization. Ask your administrator to change it.")
+
     /** `organization.disabled` */
     val organizationDisabled: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationDisabled, 403, "Organizations are not enabled for this environment.")
 
@@ -1360,6 +1369,7 @@ object TulaErrorDefinitions {
         deviceBindingNotSupported,
         deviceBindingRequired,
         userLastOrganizationManager,
+        userManaged,
         organizationDisabled,
         organizationSlugTaken,
         organizationMemberExists,

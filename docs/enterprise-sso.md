@@ -255,6 +255,8 @@ SSO signs people in; [SCIM](scim.md) creates, updates and deactivates them, and
 or a directory-provisioned user is an audit entry, and
 [Exporting the audit log](audit-export.md#single-sign-on-and-provisioning-events) lists them.
 
+An account a connection or a directory manages cannot change its password from a client while that connection exists or the directory has a live SCIM token: the call answers `user.managed` (403). Administrators can, and deleting the connection lifts the lock.
+
 ## Limits you should know
 
 - SAML is SP-initiated only: an IdP-initiated response is refused. Assertions must be signed, with RSA and

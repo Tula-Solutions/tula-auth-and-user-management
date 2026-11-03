@@ -7805,6 +7805,7 @@
           "device.binding_not_supported",
           "device.binding_required",
           "user.last_organization_manager",
+          "user.managed",
           "organization.disabled",
           "organization.slug_taken",
           "organization.member_exists",
@@ -26657,7 +26658,7 @@
           "Users"
         ],
         "summary": "Change my password",
-        "description": "Requires the current password. On success the user’s other sessions end and this device stays signed in. A wrong current password answers `auth.invalid_credentials`. An account that has no password answers `password.not_set` (409): a first password is set through a password reset. A user with two-step verification must also have proven their second factor in the last ten minutes: otherwise `auth.step_up_required` (403).",
+        "description": "Requires the current password. On success the user’s other sessions end and this device stays signed in. A wrong current password answers `auth.invalid_credentials`. An account that has no password answers `password.not_set` (409): a first password is set through a password reset. A user with two-step verification must also have proven their second factor in the last ten minutes: otherwise `auth.step_up_required` (403). An account managed by an active SSO connection or SCIM directory answers `user.managed` (403).",
         "security": [
           {
             "publishableKey": [],

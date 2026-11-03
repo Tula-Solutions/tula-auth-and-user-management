@@ -38,6 +38,7 @@ import * as Foreign from '~/modules/password/foreign-hash'
 import * as Passwords from '~/modules/password/service'
 import * as Sessions from '~/modules/session/service'
 import * as Settings from '~/modules/settings/service'
+import { requireNotManaged } from '~/modules/user/managed'
 import { CREDENTIAL_LOCKOUT, signInLockKey } from '~/ports/lockout'
 import {
   InvalidUserDataError,
@@ -1126,11 +1127,12 @@ export async function replaceExpiredPassword(
  * @param origin - Where the request came from, for the audit log.
  * @throws AuthError `auth.invalid_credentials` when the current password is wrong, or
  *   `password.not_set` (409) when the account has no password.
+ * @throws AuthError `user.managed` (403) when an active SSO connection or SCIM directory manages the account.
  * @throws RateLimitError while the user is locked out after repeated wrong guesses.
  * @throws ServiceException a `password.*` code when the new password fails the policy.
  */
 export async function changePassword(
-  deps: PasswordDeps & Pick<Deps, 'lockout'>,
+  deps: PasswordDeps & Pick<Deps, 'lockout' | 'ssoConnections' | 'scim'>,
   scope: Scope,
   self: { userId: string; sessionId: string },
   input: ChangePasswordRequest,
@@ -1138,6 +1140,10 @@ export async function changePassword(
 ): Promise<void> {
   const actor: Actor = { type: 'user', id: self.userId, ...cleanOrigin(origin) }
   const user = await deps.users.findById(scope.environmentId, self.userId)
+  if (user) {
+    // The identity provider owns a managed account's password (decision 11).
+    await requireNotManaged(deps, scope.environmentId, user)
+  }
   const found = user ? await Passwords.ofUser(deps, scope.environmentId, user) : null
   // An account with no address has no password either, and gets the same answer.
   if (user?.emailNormalized === null || (found && found.passwordHash === null)) {
