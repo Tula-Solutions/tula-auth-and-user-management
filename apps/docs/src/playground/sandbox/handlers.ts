@@ -995,4 +995,7 @@ export const HANDLERS: Handlers = {
   startSmsFactorEnrolment: () => unsupported('startSmsFactorEnrolment'),
   confirmSmsFactorEnrolment: () => unsupported('confirmSmsFactorEnrolment'),
   disableSmsFactor: () => unsupported('disableSmsFactor'),
+  listMyOrganizationSetupLinks: () => unsupported('listMyOrganizationSetupLinks'),
+  createMyOrganizationSetupLink: () => unsupported('createMyOrganizationSetupLink'),
+  revokeMyOrganizationSetupLink: () => unsupported('revokeMyOrganizationSetupLink'),
 }

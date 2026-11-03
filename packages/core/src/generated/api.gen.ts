@@ -57,6 +57,10 @@ export interface Schemas {
       personalAccount: boolean
     }
   }
+  CreateMySetupLinkRequest: {
+    name?: string
+    expiresInDays?: number
+  }
   CreateOrganizationInvitationRequest: {
     email: string
     role: Schemas['OrganizationRoleKey']
@@ -65,6 +69,21 @@ export interface Schemas {
   CreateOrganizationRequest: {
     name: string
     slug: Schemas['OrganizationSlug']
+  }
+  CreatedSetupLink: {
+    id: string
+    organizationId: string
+    name: string
+    /** The start of the token, to tell links apart in a list. */
+    prefix: string
+    expiresAt: string
+    revokedAt: string | null
+    lastUsedAt: string | null
+    createdAt: string
+    /** The setup token. Shown once; only its hash is stored. */
+    token: string
+    /** The address to send to the IT administrator. The token is in its fragment. */
+    url: string
   }
   CurrentUser: {
     id: string
@@ -491,6 +510,20 @@ export interface Schemas {
   SetActiveOrganizationRequest: {
     organizationId: string | null
   }
+  SetupLink: {
+    id: string
+    organizationId: string
+    name: string
+    /** The start of the token, to tell links apart in a list. */
+    prefix: string
+    expiresAt: string
+    revokedAt: string | null
+    lastUsedAt: string | null
+    createdAt: string
+  }
+  SetupLinkList: {
+    links: Schemas['SetupLink'][]
+  }
   SignInStartRequest: {
     identifier: string
   }
@@ -601,6 +634,8 @@ export interface Operations {
   confirmTotpEnrolment: { params: Record<string, never>; body: Schemas['TotpConfirmRequest']; response: Schemas['BackupCodes'] }
   /** Create an organization (`POST /v1/client/me/organizations`). */
   createMyOrganization: { params: Record<string, never>; body: Schemas['CreateOrganizationRequest']; response: Schemas['UserOrganization'] }
+  /** Create an SSO setup link for my organization (`POST /v1/client/me/organizations/{id}/setup-links`). */
+  createMyOrganizationSetupLink: { params: { id: string }; body: Schemas['CreateMySetupLinkRequest']; response: Schemas['CreatedSetupLink'] }
   /** Decline an invitation addressed to me (`POST /v1/client/me/organization-invitations/{invitationId}/decline`). */
   declineMyOrganizationInvitation: { params: { invitationId: string }; body: undefined; response: undefined }
   /** Decline an invitation (`POST /v1/client/me/organization-invitations/decline`). */
@@ -649,6 +684,8 @@ export interface Operations {
   listMyOrganizationRoles: { params: { organizationId: string }; body: undefined; response: Schemas['AssignableRoleList'] }
   /** List my organizations (`GET /v1/client/me/organizations`). */
   listMyOrganizations: { params: Record<string, never>; query: { page?: number; size?: number }; body: undefined; response: Schemas['UserOrganizationList'] }
+  /** List my organization’s SSO setup links (`GET /v1/client/me/organizations/{id}/setup-links`). */
+  listMyOrganizationSetupLinks: { params: { id: string }; body: undefined; response: Schemas['SetupLinkList'] }
   /** List the organizations I am suggested (`GET /v1/client/me/organizations/suggestions`). */
   listMyOrganizationSuggestions: { params: Record<string, never>; body: undefined; response: Schemas['OrganizationSuggestionList'] }
   /** List my passkeys (`GET /v1/client/me/passkeys`). */
@@ -691,6 +728,8 @@ export interface Operations {
   resendSignUpCode: { params: { attemptId: string }; body: undefined; response: Schemas['FlowAttempt'] }
   /** Revoke an invitation (`DELETE /v1/client/me/organizations/{organizationId}/invitations/{invitationId}`). */
   revokeMyOrganizationInvitation: { params: { organizationId: string; invitationId: string }; body: undefined; response: undefined }
+  /** Revoke one of my organization’s SSO setup links (`DELETE /v1/client/me/organizations/{id}/setup-links/{linkId}`). */
+  revokeMyOrganizationSetupLink: { params: { id: string; linkId: string }; body: undefined; response: undefined }
   /** Sign out my other devices (`POST /v1/client/sessions/revoke-others`). */
   revokeOtherSessions: { params: Record<string, never>; body: undefined; response: Schemas['RevokedSessions'] }
   /** Sign out one of my devices (`DELETE /v1/client/sessions/{sessionId}`). */
@@ -791,6 +830,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   confirmSmsFactorEnrolment: { method: 'POST', path: '/v1/client/me/factors/sms/confirm', session: true },
   confirmTotpEnrolment: { method: 'POST', path: '/v1/client/me/factors/totp/confirm', session: true },
   createMyOrganization: { method: 'POST', path: '/v1/client/me/organizations', session: true },
+  createMyOrganizationSetupLink: { method: 'POST', path: '/v1/client/me/organizations/{id}/setup-links', session: true },
   declineMyOrganizationInvitation: { method: 'POST', path: '/v1/client/me/organization-invitations/{invitationId}/decline', session: true },
   declineOrganizationInvitation: { method: 'POST', path: '/v1/client/me/organization-invitations/decline', session: true },
   deleteMyIdentity: { method: 'DELETE', path: '/v1/client/me/identities/{identityId}', session: true },
@@ -815,6 +855,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   listMyOrganizationMembers: { method: 'GET', path: '/v1/client/me/organizations/{organizationId}/members', session: true },
   listMyOrganizationRoles: { method: 'GET', path: '/v1/client/me/organizations/{organizationId}/roles', session: true },
   listMyOrganizations: { method: 'GET', path: '/v1/client/me/organizations', session: true },
+  listMyOrganizationSetupLinks: { method: 'GET', path: '/v1/client/me/organizations/{id}/setup-links', session: true },
   listMyOrganizationSuggestions: { method: 'GET', path: '/v1/client/me/organizations/suggestions', session: true },
   listMyPasskeys: { method: 'GET', path: '/v1/client/me/passkeys', session: true },
   listMyPendingOrganizationInvitations: { method: 'GET', path: '/v1/client/me/organization-invitations', session: true },
@@ -836,6 +877,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   resendSignInCode: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/resend-code', session: false },
   resendSignUpCode: { method: 'POST', path: '/v1/client/sign-ups/{attemptId}/resend-code', session: false },
   revokeMyOrganizationInvitation: { method: 'DELETE', path: '/v1/client/me/organizations/{organizationId}/invitations/{invitationId}', session: true },
+  revokeMyOrganizationSetupLink: { method: 'DELETE', path: '/v1/client/me/organizations/{id}/setup-links/{linkId}', session: true },
   revokeOtherSessions: { method: 'POST', path: '/v1/client/sessions/revoke-others', session: true },
   revokeSession: { method: 'DELETE', path: '/v1/client/sessions/{sessionId}', session: true },
   sendStepUpEmailCode: { method: 'POST', path: '/v1/client/sessions/step-up/email-code', session: true },

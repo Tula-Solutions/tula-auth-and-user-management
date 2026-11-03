@@ -1,0 +1,411 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "setup portal: a link is confined to its organization",
+  "description": "A setup link reads and changes only its own organization's connections: another organization's link finds none and is told the connection does not exist on every route; a missing or made-up token is one answer; the portal reaches no user or setting.",
+  "needsSecretKey": true,
+  "variables": {
+    "suffix": {
+      "generate": "snowflake"
+    }
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "appSettings": "settings.app",
+        "passwordSettings": "settings.password",
+        "signInSettings": "settings.signIn",
+        "signUpSettings": "settings.signUp",
+        "urlsSettings": "settings.urls",
+        "auditSettings": "settings.audit",
+        "notificationsSettings": "settings.notifications",
+        "mfaSettings": "settings.mfa",
+        "passkeysSettings": "settings.passkeys",
+        "smsSettings": "settings.sms",
+        "emailsSettings": "settings.emails"
+      }
+    },
+    {
+      "name": "an administrator switches organizations and single sign-on on",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{appSettings}}"
+          },
+          "password": {
+            "$json": "{{passwordSettings}}"
+          },
+          "signIn": {
+            "$json": "{{signInSettings}}"
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "$json": "{{urlsSettings}}"
+          },
+          "audit": {
+            "$json": "{{auditSettings}}"
+          },
+          "notifications": {
+            "$json": "{{notificationsSettings}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "$json": "{{passkeysSettings}}"
+          },
+          "sms": {
+            "$json": "{{smsSettings}}"
+          },
+          "emails": {
+            "$json": "{{emailsSettings}}"
+          },
+          "organizations": {
+            "enabled": true,
+            "allowUserCreated": false,
+            "maxCreatedPerUser": 1,
+            "creatorRole": "admin",
+            "defaultRole": "member",
+            "personalAccount": true
+          },
+          "sso": {
+            "enabled": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "sso": {
+              "enabled": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "an administrator creates an organization",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations",
+        "auth": "secret",
+        "body": {
+          "name": "A Org",
+          "slug": "a-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "orgA": "id"
+      }
+    },
+    {
+      "name": "and another organization",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations",
+        "auth": "secret",
+        "body": {
+          "name": "B Org",
+          "slug": "b-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "orgB": "id"
+      }
+    },
+    {
+      "name": "learn the mock identity provider's issuer",
+      "sso": {
+        "captureIssuer": "issuer"
+      }
+    },
+    {
+      "name": "an administrator creates a setup link for the organization",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/setup-links",
+        "auth": "secret",
+        "body": {
+          "organizationId": "{{orgA}}",
+          "name": "IT admin"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "token": "$any",
+          "url": "$any",
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "tokenA": "token",
+        "linkA": "id"
+      }
+    },
+    {
+      "name": "an administrator creates a setup link for the organization",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/setup-links",
+        "auth": "secret",
+        "body": {
+          "organizationId": "{{orgB}}",
+          "name": "IT admin"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "token": "$any",
+          "url": "$any",
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "tokenB": "token",
+        "linkB": "id"
+      }
+    },
+    {
+      "name": "the link of the first creates a connection",
+      "request": {
+        "method": "POST",
+        "path": "/v1/setup/connections",
+        "auth": "none",
+        "headers": {
+          "x-tula-setup-token": "{{tokenA}}"
+        },
+        "body": {
+          "name": "Mock IdP",
+          "issuer": "{{issuer}}",
+          "clientId": "conformance-sso",
+          "clientSecret": "conformance-sso-secret"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "organizationId": "{{orgA}}"
+        }
+      },
+      "capture": {
+        "connectionId": "id"
+      }
+    },
+    {
+      "name": "the link of the other organization does not see it",
+      "request": {
+        "method": "GET",
+        "path": "/v1/setup",
+        "auth": "none",
+        "headers": {
+          "x-tula-setup-token": "{{tokenB}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "organization": {
+            "id": "{{orgB}}"
+          },
+          "connections": []
+        }
+      }
+    },
+    {
+      "name": "and cannot read it",
+      "request": {
+        "method": "GET",
+        "path": "/v1/setup/connections/{{connectionId}}",
+        "auth": "none",
+        "headers": {
+          "x-tula-setup-token": "{{tokenB}}"
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "code": "sso.connection_not_found"
+        }
+      }
+    },
+    {
+      "name": "nor change it",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/setup/connections/{{connectionId}}",
+        "auth": "none",
+        "headers": {
+          "x-tula-setup-token": "{{tokenB}}"
+        },
+        "body": {
+          "name": "x"
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "code": "sso.connection_not_found"
+        }
+      }
+    },
+    {
+      "name": "nor test it",
+      "request": {
+        "method": "POST",
+        "path": "/v1/setup/connections/{{connectionId}}/tests",
+        "auth": "none",
+        "headers": {
+          "x-tula-setup-token": "{{tokenB}}"
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "code": "sso.connection_not_found"
+        }
+      }
+    },
+    {
+      "name": "nor read its group roles",
+      "request": {
+        "method": "GET",
+        "path": "/v1/setup/connections/{{connectionId}}/group-roles",
+        "auth": "none",
+        "headers": {
+          "x-tula-setup-token": "{{tokenB}}"
+        }
+      },
+      "expect": {
+        "status": 404,
+        "body": {
+          "code": "sso.connection_not_found"
+        }
+      }
+    },
+    {
+      "name": "a missing token is one answer",
+      "request": {
+        "method": "GET",
+        "path": "/v1/setup",
+        "auth": "none"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "auth.invalid_key"
+        }
+      }
+    },
+    {
+      "name": "a made-up token is the same answer",
+      "request": {
+        "method": "GET",
+        "path": "/v1/setup",
+        "auth": "none",
+        "headers": {
+          "x-tula-setup-token": "tula_setup_nonsense"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "auth.invalid_key"
+        }
+      }
+    },
+    {
+      "name": "the portal has no route to users or settings",
+      "request": {
+        "method": "GET",
+        "path": "/v1/setup/settings",
+        "auth": "none",
+        "headers": {
+          "x-tula-setup-token": "{{tokenA}}"
+        }
+      },
+      "expect": {
+        "status": 404
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "delete the connection",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/sso-connections/{{connectionId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

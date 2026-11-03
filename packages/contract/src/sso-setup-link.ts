@@ -61,6 +61,11 @@ export const CreateSetupLinkRequestSchema = z
   })
   .meta({ ref: 'CreateSetupLinkRequest' })
 
+/** The body that creates a setup link from a signed-in administrator: the organization is in the path. */
+export const CreateMySetupLinkRequestSchema = CreateSetupLinkRequestSchema.omit({
+  organizationId: true,
+}).meta({ ref: 'CreateMySetupLinkRequest' })
+
 /** The body that creates a connection from the portal: the organization is the link's. */
 export const SetupConnectionCreateSchema = z
   .strictObject({
@@ -99,3 +104,16 @@ export const SetupPortalSchema = z
     connections: z.array(SsoConnectionSchema),
   })
   .meta({ ref: 'SetupPortal' })
+
+/** A setup link as the admin and client routes list it. */
+export type SetupLink = z.infer<typeof SetupLinkSchema>
+/** A new setup link, with its token and address. */
+export type CreatedSetupLink = z.infer<typeof CreatedSetupLinkSchema>
+/** The body that creates a setup link. */
+export type CreateSetupLinkRequest = z.infer<typeof CreateSetupLinkRequestSchema>
+/** The body that creates a connection from the portal. */
+export type SetupConnectionCreate = z.infer<typeof SetupConnectionCreateSchema>
+/** The body that changes a connection from the portal. */
+export type SetupConnectionUpdate = z.infer<typeof SetupConnectionUpdateSchema>
+/** What the portal shows first. */
+export type SetupPortal = z.infer<typeof SetupPortalSchema>

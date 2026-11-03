@@ -6850,6 +6850,147 @@ export interface CreateScimTokenRequest {
   name: string;
 }
 
+export interface SetupLink {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  name: string;
+  /** The start of the token, to tell links apart in a list. */
+  prefix: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  expiresAt: string;
+  revokedAt: string | null;
+  lastUsedAt: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+}
+
+export interface SetupLinkList {
+  links: SetupLink[];
+}
+
+export interface CreatedSetupLink {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  name: string;
+  /** The start of the token, to tell links apart in a list. */
+  prefix: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  expiresAt: string;
+  revokedAt: string | null;
+  lastUsedAt: string | null;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  createdAt: string;
+  /** The setup token. Shown once; only its hash is stored. */
+  token: string;
+  /** The address to send to the IT administrator. The token is in its fragment. */
+  url: string;
+}
+
+export interface CreateSetupLinkRequest {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name?: string;
+  /**
+     * @minimum 1
+     * @maximum 30
+     */
+  expiresInDays?: number;
+}
+
+export interface CreateMySetupLinkRequest {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name?: string;
+  /**
+     * @minimum 1
+     * @maximum 30
+     */
+  expiresInDays?: number;
+}
+
+export type SetupPortalOrganization = {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  name: string;
+};
+
+export interface SetupPortal {
+  organization: SetupPortalOrganization;
+  /** The organization’s verified domains. */
+  domains: string[];
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  expiresAt: string;
+  connections: SsoConnection[];
+}
+
+export type SetupConnectionCreateProtocol = typeof SetupConnectionCreateProtocol[keyof typeof SetupConnectionCreateProtocol];
+
+
+export const SetupConnectionCreateProtocol = {
+  oidc: 'oidc',
+  saml: 'saml',
+} as const;
+
+export interface SetupConnectionCreate {
+  protocol?: SetupConnectionCreateProtocol;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+  /** @maxLength 2048 */
+  issuer?: string;
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  clientId?: string;
+  /**
+     * @minLength 1
+     * @maxLength 4096
+     */
+  clientSecret?: string;
+  saml?: SamlSettingsInput;
+  attributeMapping?: SsoAttributeMapping;
+  /** @maxItems 20 */
+  domains?: OrganizationDomainName[];
+}
+
+export interface SetupConnectionUpdate {
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name?: string;
+  /** @maxLength 2048 */
+  issuer?: string;
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  clientId?: string;
+  /**
+     * @minLength 1
+     * @maxLength 4096
+     */
+  clientSecret?: string;
+  saml?: SamlSettingsInput;
+  attributeMapping?: SsoAttributeMapping;
+  /** @maxItems 20 */
+  domains?: OrganizationDomainName[];
+  status?: 'active';
+}
+
 export interface SmsPrefixUsage {
   /** @pattern ^\+[0-9]{1,4}$ */
   prefix: string;
@@ -7522,6 +7663,20 @@ organizationId: string;
 };
 
 export type RevokeScimTokenParams = {
+/**
+ * @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+ */
+organizationId: string;
+};
+
+export type ListSetupLinksParams = {
+/**
+ * @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+ */
+organizationId: string;
+};
+
+export type RevokeSetupLinkParams = {
 /**
  * @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
  */
@@ -15642,6 +15797,288 @@ export const useRevokeScimToken = <TError = ErrorEnvelope,
         TContext
       > => {
       return useMutation(getRevokeScimTokenMutationOptions(options), queryClient);
+    }
+
+export const getListSetupLinksUrl = (params: ListSetupLinksParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/setup-links?${stringifiedParams}` : `/v1/admin/setup-links`
+}
+
+/**
+ * The links of one organization, revoked and expired ones included, newest first. No tokens.
+ * @summary List an organization’s SSO setup links
+ */
+export const listSetupLinks = async (params: ListSetupLinksParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<SetupLinkList> => {
+
+  return dashboardFetch<SetupLinkList>(getListSetupLinksUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSetupLinksQueryKey = (params?: ListSetupLinksParams,) => {
+    return [
+    `/v1/admin/setup-links`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListSetupLinksQueryOptions = <TData = Awaited<ReturnType<typeof listSetupLinks>>, TError = ErrorEnvelope>(params: ListSetupLinksParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSetupLinks>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSetupLinksQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSetupLinks>>> = ({ signal }) => listSetupLinks(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSetupLinks>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListSetupLinksQueryResult = NonNullable<Awaited<ReturnType<typeof listSetupLinks>>>
+export type ListSetupLinksQueryError = ErrorEnvelope
+
+
+export function useListSetupLinks<TData = Awaited<ReturnType<typeof listSetupLinks>>, TError = ErrorEnvelope>(
+ params: ListSetupLinksParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSetupLinks>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSetupLinks>>,
+          TError,
+          Awaited<ReturnType<typeof listSetupLinks>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListSetupLinks<TData = Awaited<ReturnType<typeof listSetupLinks>>, TError = ErrorEnvelope>(
+ params: ListSetupLinksParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSetupLinks>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSetupLinks>>,
+          TError,
+          Awaited<ReturnType<typeof listSetupLinks>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListSetupLinks<TData = Awaited<ReturnType<typeof listSetupLinks>>, TError = ErrorEnvelope>(
+ params: ListSetupLinksParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSetupLinks>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List an organization’s SSO setup links
+ */
+
+export function useListSetupLinks<TData = Awaited<ReturnType<typeof listSetupLinks>>, TError = ErrorEnvelope>(
+ params: ListSetupLinksParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listSetupLinks>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListSetupLinksQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateSetupLinkUrl = () => {
+
+
+
+
+  return `/v1/admin/setup-links`
+}
+
+/**
+ * Creates a link that lets an organization’s IT administrator set up single sign-on at `/dashboard/setup` without an account. It lives 7 days unless `expiresInDays` (1 to 30) says otherwise and can be revoked. The token and the address, built from `PUBLIC_URL` with the token in its fragment, are in this answer and nowhere else: only the token’s hash is stored. An organization holds at most ten live links (`resource.conflict`, 409).
+ * @summary Create an SSO setup link
+ */
+export const createSetupLink = async (createSetupLinkRequest: CreateSetupLinkRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<CreatedSetupLink> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<CreatedSetupLink>(getCreateSetupLinkUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createSetupLinkRequest)
+  }
+);}
+
+
+
+
+
+export const getCreateSetupLinkMutationKey = () => ['createSetupLink'] as const;
+
+export const getCreateSetupLinkMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSetupLink>>, TError,CreateSetupLinkMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createSetupLink>>, TError,CreateSetupLinkMutationVariables, TContext> => {
+
+const mutationKey = getCreateSetupLinkMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSetupLink>>, CreateSetupLinkMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createSetupLink(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateSetupLinkMutationResult = NonNullable<Awaited<ReturnType<typeof createSetupLink>>>
+    export type CreateSetupLinkMutationBody = CreateSetupLinkRequest
+    export type CreateSetupLinkMutationError = ErrorEnvelope
+    export type CreateSetupLinkMutationVariables = {data: CreateSetupLinkRequest}
+
+    /**
+ * @summary Create an SSO setup link
+ */
+export const useCreateSetupLink = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSetupLink>>, TError,CreateSetupLinkMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createSetupLink>>,
+        TError,
+        CreateSetupLinkMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateSetupLinkMutationOptions(options), queryClient);
+    }
+
+export const getRevokeSetupLinkUrl = (id: string,
+    params: RevokeSetupLinkParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/v1/admin/setup-links/${id}?${stringifiedParams}` : `/v1/admin/setup-links/${id}`
+}
+
+/**
+ * Revokes a link that is not revoked yet. Whoever holds it is refused from the next request; connections made through it stay.
+ * @summary Revoke an SSO setup link
+ */
+export const revokeSetupLink = async (id: string,
+    params: RevokeSetupLinkParams, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {
+
+  return dashboardFetch<void>(getRevokeSetupLinkUrl(id,params),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRevokeSetupLinkMutationKey = () => ['revokeSetupLink'] as const;
+
+export const getRevokeSetupLinkMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeSetupLink>>, TError,RevokeSetupLinkMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof revokeSetupLink>>, TError,RevokeSetupLinkMutationVariables, TContext> => {
+
+const mutationKey = getRevokeSetupLinkMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokeSetupLink>>, RevokeSetupLinkMutationVariables> = (props) => {
+          const {id,params} = props ?? {};
+
+          return  revokeSetupLink(id,params,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevokeSetupLinkMutationResult = NonNullable<Awaited<ReturnType<typeof revokeSetupLink>>>
+
+    export type RevokeSetupLinkMutationError = ErrorEnvelope
+    export type RevokeSetupLinkMutationVariables = {id: string;params: RevokeSetupLinkParams}
+
+    /**
+ * @summary Revoke an SSO setup link
+ */
+export const useRevokeSetupLink = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeSetupLink>>, TError,RevokeSetupLinkMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof revokeSetupLink>>,
+        TError,
+        RevokeSetupLinkMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRevokeSetupLinkMutationOptions(options), queryClient);
     }
 
 export const getGetSmsUsageUrl = (params?: GetSmsUsageParams,) => {
