@@ -156,6 +156,7 @@ const FIRST_FACTOR_FORMS: FirstFactorForms = {
   email_link: EmailLinkScreen,
   passkey: PasskeyScreen,
   sms_code: SmsCodeScreen,
+  sso: SsoScreen,
 }
 
 // What people type between a number's digits, and the shape of what is left: the server's
@@ -636,6 +637,32 @@ function EmailLinkScreen(props: FirstFactorFormProps) {
   return <EmailFactorScreen {...props} strategy='email_link' />
 }
 
+/**
+ * The `sso` first factor: one button that sends the user to their organization's identity
+ * provider. No password is asked for, here or after it.
+ */
+function SsoScreen(props: FirstFactorFormProps) {
+  const { t } = useUi()
+  const { signIn } = props
+  const placed = placeErrors(signIn.error, fieldResolver([]))
+  return (
+    <Card title={t.signIn.sso} subtitle={t.signIn.ssoPrompt} focusTitle={props.focusTitle}>
+      <IdentityRow email={props.email} onChange={props.onChangeEmail} />
+      <Form
+        onSubmit={() => void props.startSso?.()}
+        failure={signIn.error}
+        blocked={signIn.isPending}
+      >
+        <FormError {...rateLimitedAlert(placed.form, 0, t)} />
+        <Button type='submit' pending={signIn.isPending}>
+          {t.signIn.sso}
+        </Button>
+      </Form>
+      {props.alternatives}
+    </Card>
+  )
+}
+
 /** The label of the button that switches to a strategy. */
 function strategyLabel(
   strategy: FirstFactorStrategy,
@@ -652,6 +679,8 @@ function strategyLabel(
       return t.passkey.signIn
     case 'sms_code':
       return t.signIn.smsCode
+    case 'sso':
+      return t.signIn.sso
     default:
       return null
   }
@@ -659,15 +688,20 @@ function strategyLabel(
 
 /** `needs_first_factor`: one form per strategy the server offered that this version knows. */
 function FirstFactorScreen(
-  props: Omit<FirstFactorFormProps, 'prepared' | 'alternatives' | 'sendEmail' | 'sendText'> & {
+  props: Omit<
+    FirstFactorFormProps,
+    'prepared' | 'alternatives' | 'sendEmail' | 'sendText' | 'startSso'
+  > & {
     step: FirstFactorStep
     /** The page an emailed link leads to, as the developer gave it. */
     emailLinkUrl?: string
+    /** The page the identity provider returns to, as the developer gave it. */
+    oauthCallbackUrl?: string
     onRestart(): void
   }
 ) {
   const { el, t } = useUi()
-  const { step, onRestart, emailLinkUrl: _emailLinkUrl, ...form } = props
+  const { step, onRestart, emailLinkUrl: _emailLinkUrl, oauthCallbackUrl, ...form } = props
   const { signIn } = props
   const { prepared } = step
   // Whether a link could be honoured here is a fact about the browser (storage) and about the
@@ -767,6 +801,10 @@ function FirstFactorScreen(
       prepared={prepared}
       sendEmail={sendEmail}
       sendText={() => signIn.prepareFirstFactor({ strategy: 'sms_code' })}
+      startSso={async () => {
+        const redirectUrl = resolveLinkUrl(oauthCallbackUrl)
+        return redirectUrl === null ? null : signIn.startSso({ redirectUrl })
+      }}
       alternatives={alternatives}
     />
   )
@@ -1185,6 +1223,7 @@ function SignInScreens(props: SignInProps) {
     onForgotPassword: toReset,
     onChangeEmail: toSignIn,
     emailLinkUrl,
+    oauthCallbackUrl: props.oauthCallbackUrl ?? navigation.oauthCallbackUrl,
   }
   const identifier = (
     <IdentifierScreen

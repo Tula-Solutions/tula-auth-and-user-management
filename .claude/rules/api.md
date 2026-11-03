@@ -35,6 +35,10 @@ what those sections do not say; the rules of one area are in that area's file ("
   CDN: serve it from an installed, exactly pinned package.
 - Whether this process makes webhook deliveries is `deps.config.deliversWebhooks`, never a
   second reading of the environment (`webhooks.md`).
+- **The one router without `describeRoute()` is SCIM** (`modules/scim`, `/v1/scim/v2/*`, ADR 0067): a
+  directory's protocol, not this API's contract, so it is not in `openapi.json` and no SDK is
+  generated from it; `docs/scim.md` documents it. Its errors are SCIM's body, from `router.onError`.
+  No other route is exempt.
 - Never return UI hints like "show the password form" from a sign-in or sign-up route.
 - Add new error codes to `@tula-tech/contract` first.
 - Read time from `deps.clock.now()` and ids from `deps.ids`, never `Date.now()` / `crypto.randomUUID()`

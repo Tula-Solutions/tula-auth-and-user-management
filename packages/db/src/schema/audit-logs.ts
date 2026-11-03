@@ -8,7 +8,15 @@ import { tula } from './pg-schema'
  * Who performed an audited action. `agent` tags MCP/AI actions (business plan §4.5);
  * `instance_admin` is the deployment's operator, through the dashboard (ADR 0032).
  */
-export const AUDIT_ACTOR_TYPES = ['user', 'admin', 'system', 'agent', 'instance_admin'] as const
+export const AUDIT_ACTOR_TYPES = [
+  'user',
+  'admin',
+  'system',
+  'agent',
+  'instance_admin',
+  'directory',
+  'setup_link',
+] as const
 
 /**
  * The youngest entry the runtime role may delete, as a Postgres interval: the shortest audit

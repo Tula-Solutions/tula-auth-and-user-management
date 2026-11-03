@@ -4,6 +4,7 @@ import {
   INVITATIONS_MANAGE_PERMISSION,
   MEMBERSHIPS_MANAGE_PERMISSION,
   MEMBERSHIPS_READ_PERMISSION,
+  SSO_MANAGE_PERMISSION,
 } from '@tula-tech/contract/organization-permissions'
 import { type KeyboardEvent, useCallback, useEffect, useId, useRef, useState } from 'react'
 import type { Appearance } from '../appearance'
@@ -18,6 +19,7 @@ import { GeneralSection } from './organization-general'
 import { InvitationsSection } from './organization-invitations'
 import { MembersSection } from './organization-members'
 import { Notice, useGuard, useTargetOrganization } from './organization-shared'
+import { SsoSection } from './organization-sso'
 import { Heading, type HeadingLevel, Root, Status, useScreenChanged, useUi } from './ui'
 
 /**
@@ -33,6 +35,7 @@ export const ORGANIZATION_PROFILE_SECTIONS = [
   'members',
   'invitations',
   'domains',
+  'sso',
 ] as const
 
 /** One of {@link ORGANIZATION_PROFILE_SECTIONS}. */
@@ -80,6 +83,8 @@ function tabLabel(tab: OrganizationProfileSection, t: ReturnType<typeof useUi>['
       return t.organizationProfile.tabInvitations
     case 'domains':
       return t.organizationProfile.tabDomains
+    case 'sso':
+      return t.organizationProfile.tabSso
     default:
       return t.organizationProfile.tabGeneral
   }
@@ -98,6 +103,8 @@ function visibleTabs(has: (check: OrganizationCheck) => boolean): OrganizationPr
         return has({ permission: INVITATIONS_MANAGE_PERMISSION })
       case 'domains':
         return has({ permission: DOMAINS_MANAGE_PERMISSION })
+      case 'sso':
+        return has({ permission: SSO_MANAGE_PERMISSION })
       default:
         return true
     }
@@ -322,6 +329,7 @@ export function OrganizationProfileSections(
           <InvitationsSection {...section} invitationUrl={props.invitationUrl} />
         ) : null}
         {current === 'domains' ? <DomainsSection {...section} /> : null}
+        {current === 'sso' ? <SsoSection {...section} /> : null}
         {current === 'general' ? <GeneralSection {...section} onGone={onGone} /> : null}
       </div>
     </section>
@@ -330,8 +338,8 @@ export function OrganizationProfileSections(
 
 /**
  * Manage an organization: General (its details, rename, leave, delete), Members (roles,
- * removal), Invitations (invite, revoke) and Domains (claim, verify with the emailed code, what
- * a verified domain does). A tab is drawn only where the user's role holds its permission, and
+ * removal), Invitations (invite, revoke), Domains (claim, verify with the emailed code, what
+ * a verified domain does) and Single sign-on (connections, on/off, enforcement). A tab is drawn only where the user's role holds its permission, and
  * the server checks every call again: a refusal because the role changed (or the membership
  * ended) reads the user's organizations again, says the permissions changed, and a user who is
  * no longer a member is told so.

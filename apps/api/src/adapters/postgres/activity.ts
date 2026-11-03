@@ -1,7 +1,14 @@
 import { auditLogs, type Database, events, type Transaction, withTenant } from '@tula-tech/db'
-import { and, asc, count, desc, eq, gte, inArray, lt } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gt, gte, inArray, lt, or, sql } from 'drizzle-orm'
 import { eventPayload } from '~/lib/event-payload'
-import type { Activity, ActivityLog, AuditCriteria, AuditEntry } from '~/ports/activity-log'
+import type {
+  Activity,
+  ActivityLog,
+  AuditCriteria,
+  AuditEntry,
+  AuditExportCriteria,
+  AuditKey,
+} from '~/ports/activity-log'
 
 /**
  * Rows per insert statement. Postgres allows 65,535 bind parameters per statement and an audit
@@ -105,6 +112,67 @@ export class PostgresActivityLog implements ActivityLog {
         totalCount: total?.value ?? 0,
       }
     })
+  }
+
+  /** @inheritdoc */
+  async listAuditAfter(
+    environmentId: string,
+    criteria: AuditExportCriteria,
+    after: AuditKey | null,
+    limit: number
+  ): Promise<AuditEntry[]> {
+    const where = and(
+      eq(auditLogs.environmentId, environmentId),
+      criteria.action ? eq(auditLogs.action, criteria.action) : undefined,
+      criteria.actorId ? eq(auditLogs.actorId, criteria.actorId) : undefined,
+      criteria.targetId ? eq(auditLogs.targetId, criteria.targetId) : undefined,
+      criteria.actorType ? eq(auditLogs.actorType, criteria.actorType) : undefined,
+      criteria.from ? gte(auditLogs.occurredAt, criteria.from) : undefined,
+      criteria.to ? lt(auditLogs.occurredAt, criteria.to) : undefined,
+      criteria.organizationId
+        ? or(
+            sql`${auditLogs.metadata}->>'organizationId' = ${criteria.organizationId}`,
+            and(
+              eq(auditLogs.targetType, 'organization'),
+              eq(auditLogs.targetId, criteria.organizationId)
+            )
+          )
+        : undefined,
+      after
+        ? or(
+            gt(auditLogs.occurredAt, after.occurredAt),
+            and(eq(auditLogs.occurredAt, after.occurredAt), gt(auditLogs.id, after.id))
+          )
+        : undefined
+    )
+    return withTenant(this.db, environmentId, async (tx) => {
+      const rows = await tx
+        .select()
+        .from(auditLogs)
+        .where(where)
+        .orderBy(asc(auditLogs.occurredAt), asc(auditLogs.id))
+        .limit(limit)
+      return rows.map((row) => ({
+        id: row.id,
+        projectId: row.projectId,
+        environmentId: row.environmentId,
+        type: row.action,
+        actor: { type: row.actorType, id: row.actorId },
+        target:
+          row.targetType !== null && row.targetId !== null
+            ? { type: row.targetType, id: row.targetId }
+            : null,
+        ipAddress: row.ipAddress,
+        userAgent: row.userAgent,
+        data: row.metadata,
+        occurredAt: row.occurredAt,
+      }))
+    })
+  }
+
+  /** @inheritdoc */
+  async append(activity: Activity): Promise<void> {
+    await withTenant(this.db, activity.environmentId, (tx) => recordActivity(tx, [activity]))
   }
 
   /** @inheritdoc */

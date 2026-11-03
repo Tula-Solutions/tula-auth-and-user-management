@@ -38,6 +38,7 @@ export const SWIFT_JOURNEY_TESTS = join(import.meta.dir, '../Tests/TulaAuthJourn
 export const SWIFT_NOT_BUILT: Readonly<Record<string, number>> = {
   'TULA-130': 1,
   'TULA-132': 1,
+  'TULA-142': 13,
   'TULA-56': 1,
 }
 

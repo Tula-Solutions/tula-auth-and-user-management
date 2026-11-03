@@ -74,6 +74,8 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         bannedAt: null,
         lastSignInAt: null,
         phoneNumber: null,
+        managedByConnectionId: null,
+        managedByDirectoryId: null,
         phoneNumberVerifiedAt: null,
         smsFactorEnabledAt: null,
       }
@@ -375,6 +377,8 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         ).toBe(true)
         expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toMatchObject({
           phoneNumber: null,
+          managedByConnectionId: null,
+          managedByDirectoryId: null,
           smsFactorEnabledAt: null,
         })
         expect((await auditOf(ctx.a, input.id)).sort()).toEqual([
@@ -444,6 +448,8 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         await ctx.users.create(input, Audit.none('fixture'))
         expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toMatchObject({
           phoneNumber: null,
+          managedByConnectionId: null,
+          managedByDirectoryId: null,
           phoneNumberVerifiedAt: null,
         })
       })
@@ -1564,6 +1570,39 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
       expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toEqual(record(input))
     })
 
+    test('sets the names, and another environment, or a missing user, changes nothing', async () => {
+      const input = user(ctx.a)
+      await ctx.users.create(input, Audit.none('fixture'))
+      const names = { firstName: 'Maya', lastName: null }
+      const set = await ctx.users.setNames(
+        ctx.a.environmentId,
+        input.id,
+        names,
+        later(1),
+        Audit.none('fixture')
+      )
+      expect(set).toMatchObject(names)
+      expect(
+        await ctx.users.setNames(
+          ctx.b.environmentId,
+          input.id,
+          { firstName: 'X', lastName: 'Y' },
+          later(1),
+          Audit.none('fixture')
+        )
+      ).toBeNull()
+      expect(
+        await ctx.users.setNames(
+          ctx.a.environmentId,
+          Bun.randomUUIDv7(),
+          names,
+          later(1),
+          Audit.none('fixture')
+        )
+      ).toBeNull()
+      expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toMatchObject(names)
+    })
+
     test('one environment cannot read or change another’s users', async () => {
       const input = user(ctx.a, { emailVerifiedAt: null })
       await ctx.users.create(input, Audit.none('fixture'))
@@ -2057,6 +2096,48 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
                 (entry) => entry.provider
               )
             ).toEqual(['x'])
+          })
+
+          test('replaceEmail swaps the address, recorded once; a held address is refused', async () => {
+            const maya = user(ctx.a)
+            const nelly = user(ctx.a)
+            await ctx.users.create(maya, Audit.none('fixture'))
+            await ctx.users.create(nelly, Audit.none('fixture'))
+            const next = address()
+            const stored = await ctx.users.replaceEmail(
+              ctx.a.environmentId,
+              nelly.id,
+              next,
+              later(5),
+              activity(ctx.a, 'user.scim_updated', nelly.id)
+            )
+            expect(stored).toMatchObject({ id: nelly.id, emailNormalized: next.normalized })
+            expect((await ctx.users.findByEmail(ctx.a.environmentId, next.normalized))?.id).toBe(
+              nelly.id
+            )
+            expect(
+              await ctx.users.findByEmail(ctx.a.environmentId, nelly.emailNormalized ?? '')
+            ).toBeNull()
+            expect(await auditOf(ctx.a, nelly.id)).toEqual(['user.scim_updated'])
+            expect(
+              await ctx.users.replaceEmail(
+                ctx.a.environmentId,
+                nelly.id,
+                { ...address(), email: maya.email ?? '', normalized: maya.emailNormalized ?? '' },
+                later(6),
+                activity(ctx.a, 'user.scim_updated', nelly.id)
+              )
+            ).toBe('taken')
+            expect(await auditOf(ctx.a, nelly.id)).toEqual(['user.scim_updated'])
+            expect(
+              await ctx.users.replaceEmail(
+                ctx.a.environmentId,
+                Bun.randomUUIDv7(),
+                address(),
+                later(6),
+                Audit.none('fixture')
+              )
+            ).toBe('not_found')
           })
 
           test('an address nobody proved is stored unverified', async () => {

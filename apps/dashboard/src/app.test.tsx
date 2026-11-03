@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import { act, screen, waitFor, within } from '@testing-library/react'
 import { FAKE_TOKEN, failure, fakeWebhookEndpoint, IDS, installFakeApi } from '~/testing/fake-api'
 import {
@@ -1061,6 +1061,36 @@ describe('the other screens', () => {
     })
     await user.click(screen.getByRole('button', { name: 'Clear filters' }))
     await waitFor(() => expect(location()).toBe(`${DEV_PATH}/audit-log`))
+  })
+
+  test('the audit log exports the filtered range as a file, and the instance log cannot', async () => {
+    const created = spyOn(URL, 'createObjectURL').mockReturnValue('blob:audit')
+    const revoked = spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    const click = spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    try {
+      const { user, api } = start(`${DEV_PATH}/audit-log?action=user.banned&from=2026-10-01`)
+      await heading('Audit log')
+      await user.click(await screen.findByRole('button', { name: 'Export CSV' }))
+      await waitFor(() => expect(click).toHaveBeenCalledTimes(1))
+      const call = api.callsTo('POST', '/v1/admin/audit-logs/export').at(-1)
+      expect(call?.body).toEqual({
+        format: 'csv',
+        action: 'user.banned',
+        from: '2026-10-01T00:00:00.000Z',
+      })
+      expect(created).toHaveBeenCalledTimes(1)
+      expect(revoked).toHaveBeenCalledWith('blob:audit')
+    } finally {
+      created.mockRestore()
+      revoked.mockRestore()
+      click.mockRestore()
+    }
+  })
+
+  test('the instance audit log has no export', async () => {
+    start('/instance/audit-log')
+    await heading('Instance audit log')
+    expect(screen.queryByRole('button', { name: 'Export CSV' })).toBeNull()
   })
 
   test('the instance audit log has no actor-type filter and asks the instance route', async () => {

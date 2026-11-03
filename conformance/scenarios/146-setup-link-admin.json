@@ -1,0 +1,325 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "setup links: create, use, revoke",
+  "description": "An administrator creates a setup link for an organization (ADR 0067): the token is shown once and not in the list, it opens the setup portal for that organization and nothing else, a secret key and a bearer token do not open the portal, and a revoked link is refused.",
+  "needsSecretKey": true,
+  "variables": {
+    "suffix": {
+      "generate": "snowflake"
+    }
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "appSettings": "settings.app",
+        "passwordSettings": "settings.password",
+        "signInSettings": "settings.signIn",
+        "signUpSettings": "settings.signUp",
+        "urlsSettings": "settings.urls",
+        "auditSettings": "settings.audit",
+        "notificationsSettings": "settings.notifications",
+        "mfaSettings": "settings.mfa",
+        "passkeysSettings": "settings.passkeys",
+        "smsSettings": "settings.sms",
+        "emailsSettings": "settings.emails"
+      }
+    },
+    {
+      "name": "an administrator switches organizations and single sign-on on",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{appSettings}}"
+          },
+          "password": {
+            "$json": "{{passwordSettings}}"
+          },
+          "signIn": {
+            "$json": "{{signInSettings}}"
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "$json": "{{urlsSettings}}"
+          },
+          "audit": {
+            "$json": "{{auditSettings}}"
+          },
+          "notifications": {
+            "$json": "{{notificationsSettings}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "$json": "{{passkeysSettings}}"
+          },
+          "sms": {
+            "$json": "{{smsSettings}}"
+          },
+          "emails": {
+            "$json": "{{emailsSettings}}"
+          },
+          "organizations": {
+            "enabled": true,
+            "allowUserCreated": false,
+            "maxCreatedPerUser": 1,
+            "creatorRole": "admin",
+            "defaultRole": "member",
+            "personalAccount": true
+          },
+          "sso": {
+            "enabled": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "sso": {
+              "enabled": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "an administrator creates an organization",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations",
+        "auth": "secret",
+        "body": {
+          "name": "SSO Org",
+          "slug": "sso-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "orgId": "id"
+      }
+    },
+    {
+      "name": "an administrator creates a setup link for the organization",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/setup-links",
+        "auth": "secret",
+        "body": {
+          "organizationId": "{{orgId}}",
+          "name": "IT admin"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "token": "$any",
+          "url": "$any",
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "setupToken": "token",
+        "setupLinkId": "id"
+      }
+    },
+    {
+      "name": "the list shows the link and never its token",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/setup-links?organizationId={{orgId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "links": [
+            {
+              "id": "{{setupLinkId}}",
+              "token": "$absent"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "the token opens the portal for that organization",
+      "request": {
+        "method": "GET",
+        "path": "/v1/setup",
+        "auth": "none",
+        "headers": {
+          "x-tula-setup-token": "{{setupToken}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "organization": {
+            "id": "{{orgId}}"
+          },
+          "connections": []
+        }
+      }
+    },
+    {
+      "name": "a secret key does not open the portal",
+      "request": {
+        "method": "GET",
+        "path": "/v1/setup",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "auth.invalid_key"
+        }
+      }
+    },
+    {
+      "name": "the token is not a bearer credential for the portal",
+      "request": {
+        "method": "GET",
+        "path": "/v1/setup",
+        "auth": "none",
+        "accessToken": "{{setupToken}}"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "auth.invalid_key"
+        }
+      }
+    },
+    {
+      "name": "the token opens no admin route",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/setup-links?organizationId={{orgId}}",
+        "auth": "none",
+        "accessToken": "{{setupToken}}"
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "auth.invalid_key"
+        }
+      }
+    },
+    {
+      "name": "the token opens no admin route in its own header either",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/sso-connections?organizationId={{orgId}}",
+        "auth": "none",
+        "headers": {
+          "x-tula-setup-token": "{{setupToken}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "auth.invalid_key"
+        }
+      }
+    },
+    {
+      "name": "an administrator revokes the link",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/setup-links/{{setupLinkId}}?organizationId={{orgId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "a revoked link is refused",
+      "request": {
+        "method": "GET",
+        "path": "/v1/setup",
+        "auth": "none",
+        "headers": {
+          "x-tula-setup-token": "{{setupToken}}"
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "code": "auth.invalid_key"
+        }
+      }
+    },
+    {
+      "name": "a second revocation is not found",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/setup-links/{{setupLinkId}}?organizationId={{orgId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 404
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

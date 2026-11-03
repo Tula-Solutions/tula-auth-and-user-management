@@ -401,6 +401,8 @@ export const HOOK_SIGN_UP_METHODS = [
   'password',
   'passwordless',
   ...OAUTH_PROVIDERS.map((provider) => `oauth_${provider}` as const),
+  // A first sign-in through an organization's SSO connection (ADR 0067).
+  'sso',
 ] as const
 
 /**

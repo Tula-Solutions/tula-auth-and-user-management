@@ -1,6 +1,8 @@
 import {
   ActivityTypeSchema,
   AUDIT_ACTOR_TYPES,
+  AUDIT_EXPORT_FORMATS,
+  AuditExportCursorSchema,
   DEFAULT_PAGE_SIZE,
   MAX_PAGE_SIZE,
 } from '@tula-tech/contract'
@@ -28,3 +30,17 @@ export const AuditLogQuerySchema = z
     size: z.coerce.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE),
   })
   .meta({ ref: 'AuditLogQuery' })
+
+/**
+ * The body of an audit export: the list's filters, an organization, a format and, to resume
+ * an earlier export, the cursor of the last entry it wrote.
+ */
+export const AuditExportRequestSchema = AuditLogQuerySchema.omit({ page: true, size: true })
+  .extend({
+    /** Only entries about this organization (its own, or those that name it). */
+    organizationId: z.uuid().optional(),
+    format: z.enum(AUDIT_EXPORT_FORMATS).default('ndjson'),
+    /** Continue after this entry: `<occurredAt>~<id>` of the last one an export wrote. */
+    after: AuditExportCursorSchema.optional(),
+  })
+  .meta({ ref: 'AuditExportRequest' })

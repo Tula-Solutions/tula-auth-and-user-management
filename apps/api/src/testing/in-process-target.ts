@@ -45,6 +45,7 @@ export async function inProcessTarget(): Promise<Target & { deps: TestDeps }> {
   await seedApiKey(deps, PUBLISHABLE_KEY)
   await seedApiKey(deps, SECRET_KEY)
   const app = createApp(deps)
+  let proxy: ReturnType<typeof Bun.serve> | undefined
   // A second instance of the same deployment: its own app over the same stores, as two
   // processes share one Postgres and one Redis. `multi-instance.test.ts` covers the Redis
   // adapters themselves; here the point is that the shared scenario runs in process too.
@@ -122,6 +123,13 @@ export async function inProcessTarget(): Promise<Target & { deps: TestDeps }> {
         throw new Error('no text message was sent to that number')
       }
       return text
+    },
+    // The mock identity provider is the app's own route, and the server fetches it through
+    // the outbound guard, which needs an address: a listener on loopback that hands each
+    // request to this app. Started on the first `sso` step only.
+    ssoIssuer: async () => {
+      proxy ??= Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: (r) => app.request(r) })
+      return `http://127.0.0.1:${proxy.port}/v1/dev/sso`
     },
     wait: async (ms) => {
       deps.clock.advance(ms)

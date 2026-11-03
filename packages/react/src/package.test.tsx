@@ -274,8 +274,17 @@ describe('what @tula-tech/react costs a browser bundle', () => {
    * which the page an invitation link leads to reads) took it to 69,138 bytes, 11,634 more: three
    * screens with a dozen states each, not one control. The budget moved by exactly those bytes, to
    * 69,574, so the 436 bytes of room are still what is left.
+   * Single sign-on (TULA-138) added its error codes and the `sso` first factor: 677 bytes, to 69,815.
+   * The budget moved by exactly those, to 70,251: the room is still 436.
+   * The test sign-in (TULA-145) added three error codes: 490 bytes, to 70,305. The budget moved
+   * by exactly those, to 70,741.
+   * The organization admins' Single sign-on tab (TULA-148: connections, on/off, enforcement,
+   * delete, the create form and its words) added 1,805 bytes, to 72,110. The budget moved by
+   * exactly those, to 72,546: the room is still 436.
+   * The tab's setup links (create, list, revoke and their words) added 1,080 bytes, to 73,190. The
+   * budget moved by exactly those, to 73,626: the room is still 436.
    */
-  const GZIP_BUDGET_BYTES = 69_574
+  const GZIP_BUDGET_BYTES = 73_626
   /**
    * The QR encoder, in a chunk of its own: loaded when an enrolment is first drawn, so an app
    * that never shows one does not pay for it.

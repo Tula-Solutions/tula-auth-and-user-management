@@ -64,6 +64,14 @@ const routes: ReadonlyArray<readonly [path: string, router: Hono<AppEnv>]> = [
   ['/v1/client/me/organizations', (await import('~/modules/organization/member-router')).default],
   ['/v1/admin/users', (await import('~/modules/organization/user-router')).default],
   ['/v1', (await import('~/modules/native-app/router')).default],
+  ['/v1/admin/sso-connections', (await import('~/modules/sso-connection/router')).default],
+  ['/v1/client/me/organizations', (await import('~/modules/sso-connection/member-router')).default],
+  ['/v1/admin/scim-tokens', (await import('~/modules/scim-token/router')).default],
+  ['/v1/admin/setup-links', (await import('~/modules/setup-link/router')).default],
+  ['/v1/client/me/organizations', (await import('~/modules/setup-link/me-router')).default],
+  ['/v1/setup', (await import('~/modules/setup-link/portal-router')).default],
+  ['/v1/scim/v2', (await import('~/modules/scim/router')).default],
+  ['/v1', (await import('~/modules/sso/router')).default],
   ['/v1/admin/sms', (await import('~/modules/sms/router')).default],
   ['/v1/admin/message-preview', (await import('~/modules/message-preview/router')).default],
   ['/v1', (await import('~/modules/proposal/router')).default],
@@ -75,6 +83,8 @@ const routes: ReadonlyArray<readonly [path: string, router: Hono<AppEnv>]> = [
 // Mounted only where the deployment runs the mock OAuth provider (`ENVIRONMENT=local` with
 // `OAUTH_MOCK_PROVIDER=true`): in every other deployment the paths do not exist.
 const devOAuthRouter = (await import('~/modules/oauth/dev-router')).default
+// The mock enterprise identity provider (ADR 0067), behind the same gate.
+const devSsoRouter = (await import('~/modules/sso/dev-router')).default
 
 // Mounted only where the deployment has the development SMS inbox (`ENVIRONMENT=local` with
 // `SMS_PROVIDER=dev`): in every other deployment the path does not exist.
@@ -145,6 +155,7 @@ export function createApp(deps: Deps): Hono<AppEnv> {
   }
   if (deps.config.oauthMock && deps.config.tier === 'local') {
     app.route('/v1/dev/oauth', devOAuthRouter)
+    app.route('/v1/dev/sso', devSsoRouter)
   }
   if (deps.smsInbox !== null && deps.config.tier === 'local') {
     app.route('/v1/dev/sms', devSmsRouter)

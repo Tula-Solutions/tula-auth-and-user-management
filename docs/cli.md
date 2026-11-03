@@ -245,6 +245,7 @@ tula doctor --json             # for a pipeline
 | `native_app_identities` | server | Every native app registered (in the 200 oldest environments) is well formed: a bundle ID, a package name, a team ID, certificate fingerprints and link paths this version would accept, and an Android app with at least one fingerprint. A failure counts the apps that are not; the API's log names them by id. It does **not** show that an identifier is the one your app really has: a bundle ID with a typing mistake in it is still a bundle ID. `skipped` with no app registered ([native-apps.md](native-apps.md#checking-with-tula-doctor)). |
 | `native_app_files` | server | The two association files. What the server builds for each environment names exactly its registered apps (an app's link paths included: `applinks` and `handle_all_urls` are expected where an app has a path, and nowhere else), and for a sample (one file per platform) the server fetches its own copy at `PUBLIC_URL`: HTTP 200, `application/json`, no redirect, the body it built. A redirect, another status or an answer that is not JSON is a failure. A `401` or a `403` is a warning: an access wall or a firewall in front of the API's own host answered, which says nothing about what your apps' domain serves. A body that differs is a warning too (a cache may keep a copy for five minutes), and so is no answer. A loopback `PUBLIC_URL` is not fetched. It never requests **your** domain: `ok` is about the server's own copies, not about whether Apple or Android can reach them where your app looks. `skipped` with no app registered. |
 | `native_app_passkeys` | server | Where an environment has native apps and passkeys are on: the relying party (`passkeys.rpId`) is a domain a platform can associate with an app, so not `localhost` or a loopback name. Otherwise a warning, never a failure: the apps there cannot use passkeys. Passkeys switched off is `ok` and said with a count (the apps there use the association files for saved passwords only), so `--strict` does not fail it. With `ENVIRONMENT=local` a `localhost` or `*.localhost` relying party is `ok` too, with a note that no platform can associate an app with it; a relying party that is not set or is no domain name is a warning in every tier. It does not look at whether that domain serves the association files. `skipped` with no app registered. |
+| `sso_connections` | server | Active enterprise SSO connections of the 200 oldest environments. A signing certificate that has ended is a failure; one that ends within 30 days, a metadata address that does not answer 2xx, and a bound domain its organization no longer has verified are warnings. The server requests a connection's metadata address, if it has one, like any address an operator typed (public hosts only, no redirect followed; at most 10 a run, and a run that stopped there says so). It prints counts, never a connection's name, domain or address. `skipped` with no active connection. |
 | `server_checks` | here | Appears when the server's checks could not run, with why. |
 
 The server's checks need the instance admin token: set `TULA_ADMIN_TOKEN` in the API's
@@ -459,6 +460,29 @@ One guide per provider says what to export and what is and is not carried:
 
 Exit codes: 0 done and nothing refused (or a report with nothing to refuse), 2 something was
 refused (an answer, not a failure), 1 an error. The progress file keeps what was done.
+
+## `tula audit export`
+
+```sh
+tula audit export --from 2026-01-01 --to 2026-02-01 > january.ndjson
+tula audit export --format csv --resume "$CURSOR" >> january.csv
+```
+
+Streams the environment's audit log to standard output, oldest entry first
+([Exporting the audit log](audit-export.md) says what the server sends and records).
+
+| Option | |
+| --- | --- |
+| `--format <ndjson\|csv>` | The default is `ndjson`. |
+| `--from <date>`, `--to <date>` | Only entries at or after, and before, these times (ISO 8601). |
+| `--action <type>`, `--organization <id>` | Only one kind of entry; only an organization's. |
+| `--resume <cursor>` | Continue after the entry a stopped export last wrote. |
+| `--env`, `--api-url`, `--insecure-http`, `--secret-key-file` | As for the other commands. |
+
+- **The cursor is printed on standard error** when the export ends, so that a redirected
+  file holds only entries. Pass it to `--resume` and append to the same file; a CSV resumed
+  has its header row again, so skip it.
+- Exit codes: 0 done, 1 an error (the cursor of what was written is still printed).
 
 ## `tula diff` and `tula apply`
 

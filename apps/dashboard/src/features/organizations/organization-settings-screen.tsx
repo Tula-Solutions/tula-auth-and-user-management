@@ -66,6 +66,7 @@ function OrganizationFields({ draft, update, errors }: SettingsEditor) {
       ...current,
       organizations: { ...current.organizations, ...patch },
     }))
+  const sso = draft.sso ?? {}
   return (
     <>
       <Section
@@ -132,6 +133,19 @@ function OrganizationFields({ draft, update, errors }: SettingsEditor) {
             onChange={(defaultRole) => change({ defaultRole })}
           />
         </div>
+      </Section>
+      <Section
+        title='Single sign-on'
+        description='Enterprise connections (SAML and OIDC) that sign in people on an organization’s verified domains. The connections are managed on each organization.'
+      >
+        <SwitchRow
+          label='Single sign-on is on'
+          description='Off, the connection routes answer that single sign-on is off, no identifier is offered it and a connection’s callback signs nobody in. Nothing stored is deleted.'
+          checked={sso.enabled ?? false}
+          onChange={(enabled) =>
+            update((current) => ({ ...current, sso: { ...current.sso, enabled } }))
+          }
+        />
       </Section>
     </>
   )

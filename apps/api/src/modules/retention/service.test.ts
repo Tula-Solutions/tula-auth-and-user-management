@@ -344,6 +344,47 @@ describe('purge', () => {
     expect(await Retention.purge(deps)).toMatchObject({ invitations: 1 })
   })
 
+  test('removes setup links thirty days after their expiry, revoked or not, per environment', async () => {
+    async function link(scope: Tenant, name: string, expiresAt: Date, revoked = false) {
+      const id = deps.ids.next()
+      await deps.setupLinks.insert(
+        {
+          id,
+          projectId: scope.projectId,
+          environmentId: scope.environmentId,
+          organizationId: deps.ids.next(),
+          name,
+          prefix: 'tula_setup_',
+          tokenHash: `hash-${name}`,
+          expiresAt,
+          revokedAt: revoked ? deps.clock.now() : null,
+          lastUsedAt: null,
+          createdByType: 'admin',
+          createdById: null,
+          createdAt: deps.clock.now(),
+          updatedAt: deps.clock.now(),
+        },
+        Audit.none('fixture')
+      )
+      return `hash-${name}`
+    }
+    const lapsed = await link(tenant, 'old', from(-30 * DAY - 1))
+    const revoked = await link(tenant, 'revoked', from(-31 * DAY), true)
+    const recent = await link(tenant, 'recent', from(-30 * DAY + 1000))
+    const open = await link(tenant, 'open', from(DAY))
+    const theirs = await link(otherTenant, 'theirs', from(-40 * DAY))
+    expect(await Retention.purge(deps)).toMatchObject({ setupLinks: 3, failed: 0 })
+    const find = (scope: Tenant, hash: string) =>
+      deps.setupLinks.findByHash(scope.environmentId, hash)
+    expect(await find(tenant, lapsed)).toBeNull()
+    expect(await find(tenant, revoked)).toBeNull()
+    expect(await find(otherTenant, theirs)).toBeNull()
+    expect(await find(tenant, recent)).not.toBeNull()
+    expect(await find(tenant, open)).not.toBeNull()
+    deps.clock.advance('1d')
+    expect(await Retention.purge(deps)).toMatchObject({ setupLinks: 1 })
+  })
+
   test('removes expired flow attempts in every environment, with their pending password hashes', async () => {
     const abandoned = await flowAttempt(tenant, from(10 * 60_000))
     const other = await flowAttempt(otherTenant, from(10 * 60_000))
@@ -369,6 +410,7 @@ describe('purge', () => {
       proposals: 0,
       hookCallCounts: 0,
       invitations: 0,
+      setupLinks: 0,
       testUsers: 0,
       domainClaims: 0,
     })
@@ -459,6 +501,7 @@ describe('purge', () => {
       proposals: 0,
       hookCallCounts: 0,
       invitations: 0,
+      setupLinks: 0,
       testUsers: 0,
       domainClaims: 0,
     })
@@ -513,6 +556,7 @@ describe('purge', () => {
           proposals: 0,
           hookCallCounts: 0,
           invitations: 0,
+          setupLinks: 0,
           testUsers: 0,
           domainClaims: 0,
         },
@@ -766,6 +810,7 @@ describe('purge', () => {
       proposals: 0,
       hookCallCounts: 0,
       invitations: 0,
+      setupLinks: 0,
       testUsers: 0,
       domainClaims: 0,
     })
@@ -1232,6 +1277,7 @@ describe('run', () => {
           proposals: 0,
           hookCallCounts: 0,
           invitations: 0,
+          setupLinks: 0,
           testUsers: 0,
           domainClaims: 0,
         },
@@ -1270,6 +1316,7 @@ describe('run', () => {
         proposals: 0,
         hookCallCounts: 0,
         invitations: 0,
+        setupLinks: 0,
         testUsers: 0,
         domainClaims: 0,
       },

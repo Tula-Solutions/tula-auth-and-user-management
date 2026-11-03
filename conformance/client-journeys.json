@@ -758,6 +758,24 @@
         "decision": "journey"
       }
     },
+    "audit log export": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the export is a stream on the admin API, behind a secret key or a dashboard session, neither of which a client SDK holds; `@tula-tech/admin` is the client of that route and tests it."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "the export is a stream on the admin API, behind a secret key or a dashboard session; an app holds a publishable key and a user’s session and reaches neither."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "the export is a stream on the admin API, behind a secret key or a dashboard session; the Swift client talks to `/v1/client/*` only and reaches neither."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the export is a stream on the admin API, behind a secret key or a dashboard session; the Kotlin client talks to `/v1/client/*` only and reaches neither."
+      }
+    },
     "authenticator code replay": {
       "core": {
         "decision": "journey"
@@ -1099,6 +1117,24 @@
       "kotlin": {
         "decision": "not_applicable",
         "reason": "an environment’s native apps are registered on the admin API with a secret key or a dashboard session, and the two association files are fetched by Apple and Android from the app’s own domain, not by an SDK: no client SDK calls either."
+      }
+    },
+    "organization admin manages the organization's single sign-on": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "the Swift client has no call for an organization's single sign-on yet (the connections, a test sign-in of one, turning one on); they are built there by TULA-142 (the SSO start and the other single sign-on calls in the native clients)."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "the Kotlin client has no call for an organization's single sign-on yet (the connections, a test sign-in of one, turning one on); they are built there by TULA-142 (the SSO start and the other single sign-on calls in the native clients)."
       }
     },
     "organization invitations": {
@@ -1446,6 +1482,168 @@
         "decision": "journey"
       }
     },
+    "scim groups: Entra patch shapes": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; `@tula-tech/core` holds no SCIM token and calls no SCIM route."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; `@tula-tech/expo` holds no SCIM token and calls no SCIM route."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; the Swift client holds no SCIM token and calls no SCIM route."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; the Kotlin client holds no SCIM token and calls no SCIM route."
+      }
+    },
+    "scim groups: Okta shapes, filters and a duplicate": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; `@tula-tech/core` holds no SCIM token and calls no SCIM route."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; `@tula-tech/expo` holds no SCIM token and calls no SCIM route."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; the Swift client holds no SCIM token and calls no SCIM route."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; the Kotlin client holds no SCIM token and calls no SCIM route."
+      }
+    },
+    "scim groups: roles follow the group and keep the last manager": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; `@tula-tech/core` holds no SCIM token and calls no SCIM route."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; `@tula-tech/expo` holds no SCIM token and calls no SCIM route."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; the Swift client holds no SCIM token and calls no SCIM route."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; the Kotlin client holds no SCIM token and calls no SCIM route."
+      }
+    },
+    "scim tokens: create, use, revoke": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; `@tula-tech/core` holds no SCIM token and calls no SCIM route."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; `@tula-tech/expo` holds no SCIM token and calls no SCIM route."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; the Swift client holds no SCIM token and calls no SCIM route."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; the Kotlin client holds no SCIM token and calls no SCIM route."
+      }
+    },
+    "scim users: Entra patch shapes": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; `@tula-tech/core` holds no SCIM token and calls no SCIM route."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; `@tula-tech/expo` holds no SCIM token and calls no SCIM route."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; the Swift client holds no SCIM token and calls no SCIM route."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; the Kotlin client holds no SCIM token and calls no SCIM route."
+      }
+    },
+    "scim users: Okta shapes, filters and a duplicate": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; `@tula-tech/core` holds no SCIM token and calls no SCIM route."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; `@tula-tech/expo` holds no SCIM token and calls no SCIM route."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; the Swift client holds no SCIM token and calls no SCIM route."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; the Kotlin client holds no SCIM token and calls no SCIM route."
+      }
+    },
+    "scim users: ownership and the last manager": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; `@tula-tech/core` holds no SCIM token and calls no SCIM route."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; `@tula-tech/expo` holds no SCIM token and calls no SCIM route."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; the Swift client holds no SCIM token and calls no SCIM route."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; the Kotlin client holds no SCIM token and calls no SCIM route."
+      }
+    },
+    "scim users: paging, unsupported filters and discovery": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; `@tula-tech/core` holds no SCIM token and calls no SCIM route."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; `@tula-tech/expo` holds no SCIM token and calls no SCIM route."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; the Swift client holds no SCIM token and calls no SCIM route."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; the Kotlin client holds no SCIM token and calls no SCIM route."
+      }
+    },
+    "scim: malformed requests and unknown users": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; `@tula-tech/core` holds no SCIM token and calls no SCIM route."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; `@tula-tech/expo` holds no SCIM token and calls no SCIM route."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; the Swift client holds no SCIM token and calls no SCIM route."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the SCIM group is called by an organization’s identity provider with a SCIM token set up on the admin API; the Kotlin client holds no SCIM token and calls no SCIM route."
+      }
+    },
     "second factor lockout": {
       "core": {
         "decision": "journey"
@@ -1504,6 +1702,60 @@
       "kotlin": {
         "decision": "not_applicable",
         "reason": "the marker is set and read on the admin API with a secret key, which a client SDK never holds; `@tula-tech/admin` and the `tula` CLI are driven against it in their packages’ `real-api.test.ts`."
+      }
+    },
+    "setup links: create, use, revoke": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a setup link is made on the admin API with a secret key and used by an organization’s IT administrator in the dashboard’s setup page; `@tula-tech/core` holds no setup token and calls no setup route."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "a setup link is made on the admin API with a secret key and used by an organization’s IT administrator in the dashboard’s setup page; `@tula-tech/expo` holds no setup token and calls no setup route."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "a setup link is made on the admin API with a secret key and used by an organization’s IT administrator in the dashboard’s setup page; the Swift client holds no setup token and calls no setup route."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a setup link is made on the admin API with a secret key and used by an organization’s IT administrator in the dashboard’s setup page; the Kotlin client holds no setup token and calls no setup route."
+      }
+    },
+    "setup portal: a link is confined to its organization": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a setup link is made on the admin API with a secret key and used by an organization’s IT administrator in the dashboard’s setup page; `@tula-tech/core` holds no setup token and calls no setup route."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "a setup link is made on the admin API with a secret key and used by an organization’s IT administrator in the dashboard’s setup page; `@tula-tech/expo` holds no setup token and calls no setup route."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "a setup link is made on the admin API with a secret key and used by an organization’s IT administrator in the dashboard’s setup page; the Swift client holds no setup token and calls no setup route."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a setup link is made on the admin API with a secret key and used by an organization’s IT administrator in the dashboard’s setup page; the Kotlin client holds no setup token and calls no setup route."
+      }
+    },
+    "setup portal: a whole OIDC setup with a link": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a setup link is made on the admin API with a secret key and used by an organization’s IT administrator in the dashboard’s setup page; `@tula-tech/core` holds no setup token and calls no setup route."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "a setup link is made on the admin API with a secret key and used by an organization’s IT administrator in the dashboard’s setup page; `@tula-tech/expo` holds no setup token and calls no setup route."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "a setup link is made on the admin API with a secret key and used by an organization’s IT administrator in the dashboard’s setup page; the Swift client holds no setup token and calls no setup route."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a setup link is made on the admin API with a secret key and used by an organization’s IT administrator in the dashboard’s setup page; the Kotlin client holds no setup token and calls no setup route."
       }
     },
     "sign in with a texted code": {
@@ -1616,6 +1868,298 @@
       },
       "kotlin": {
         "decision": "journey"
+      }
+    },
+    "single sign-on client routes refuse a member without the permission": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "the Swift client has no call for an organization's single sign-on yet (the connections, a test sign-in of one, turning one on); they are built there by TULA-142 (the SSO start and the other single sign-on calls in the native clients)."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "the Kotlin client has no call for an organization's single sign-on yet (the connections, a test sign-in of one, turning one on); they are built there by TULA-142 (the SSO start and the other single sign-on calls in the native clients)."
+      }
+    },
+    "sso a used connection is deleted once disabled and its users sign in another way": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "`@tula-tech/expo` has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      },
+      "swift": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "The Swift client has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "The Kotlin client has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      }
+    },
+    "sso connection activates only after a passing test": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a connection’s test sign-in and its activation is done on the admin API, behind a secret key or a dashboard session, which a client SDK does not hold. `@tula-tech/admin` is the client of those routes."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "a connection’s test sign-in and its activation is done on the admin API, behind a secret key or a dashboard session, which an app does not hold."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "a connection’s test sign-in and its activation is done on the admin API, behind a secret key or a dashboard session, which the Swift client does not hold."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a connection’s test sign-in and its activation is done on the admin API, behind a secret key or a dashboard session, which the Kotlin client does not hold."
+      }
+    },
+    "sso connections: create, read, update, delete": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "connections are managed on the admin API, behind a secret key or a dashboard session, neither of which a client SDK holds; `@tula-tech/admin` is the client of those routes."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "connections are managed on the admin API, behind a secret key or a dashboard session; an app holds a publishable key and a user’s session and reaches neither."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "connections are managed on the admin API, behind a secret key or a dashboard session; the Swift client talks to `/v1/client/*` only and reaches neither."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "connections are managed on the admin API, behind a secret key or a dashboard session; the Kotlin client talks to `/v1/client/*` only and reaches neither."
+      }
+    },
+    "sso enforcement closes sign-up and password reset to the domain": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "`@tula-tech/expo` has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      },
+      "swift": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "The Swift client has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "The Kotlin client has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      }
+    },
+    "sso enforcement removes the other first factors of a domain": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "`@tula-tech/expo` has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      },
+      "swift": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "The Swift client has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "The Kotlin client has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      }
+    },
+    "sso group roles follow the identity provider": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "`@tula-tech/expo` has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      },
+      "swift": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "The Swift client has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "The Kotlin client has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      }
+    },
+    "sso group roles keep the last manager": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "`@tula-tech/expo` has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      },
+      "swift": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "The Swift client has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "The Kotlin client has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      }
+    },
+    "sso home-realm discovery is by domain": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "`@tula-tech/expo` has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      },
+      "swift": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "The Swift client has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "The Kotlin client has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      }
+    },
+    "sso managed account cannot change its password from the client": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "`@tula-tech/expo` has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      },
+      "swift": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "The Swift client has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "The Kotlin client has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      }
+    },
+    "sso oidc sign-in": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "`@tula-tech/expo` has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      },
+      "swift": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "The Swift client has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "The Kotlin client has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      }
+    },
+    "sso saml replay refused": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "`@tula-tech/expo` has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      },
+      "swift": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "The Swift client has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "The Kotlin client has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      }
+    },
+    "sso saml sign-in": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "`@tula-tech/expo` has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      },
+      "swift": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "The Swift client has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "The Kotlin client has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      }
+    },
+    "sso test sign-in fails with its reason": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a connection’s test sign-in and its result is done on the admin API, behind a secret key or a dashboard session, which a client SDK does not hold. `@tula-tech/admin` is the client of those routes."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "a connection’s test sign-in and its result is done on the admin API, behind a secret key or a dashboard session, which an app does not hold."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "a connection’s test sign-in and its result is done on the admin API, behind a secret key or a dashboard session, which the Swift client does not hold."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a connection’s test sign-in and its result is done on the admin API, behind a secret key or a dashboard session, which the Kotlin client does not hold."
+      }
+    },
+    "sso trust in the provider for two-step verification": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "`@tula-tech/expo` has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      },
+      "swift": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "The Swift client has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-142",
+        "reason": "The Kotlin client has no call that starts the single-sign-on step of a sign-in (`POST /v1/client/sign-ins/:attemptId/sso`) yet: a step that offers `sso` is handed on as it was sent, and the round trip's return is the provider sign-in's own ticket and binding. TULA-142 builds the start and this journey."
       }
     },
     "stateful session": {

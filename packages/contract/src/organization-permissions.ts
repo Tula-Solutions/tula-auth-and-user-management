@@ -59,6 +59,7 @@ export const SYSTEM_PERMISSIONS = [
   'org:sys:memberships:manage',
   'org:sys:invitations:manage',
   'org:sys:domains:manage',
+  'org:sys:sso:manage',
 ] as const
 
 /** One of {@link SYSTEM_PERMISSIONS}. */
@@ -103,6 +104,12 @@ export const ORGANIZATION_DELETE_PERMISSION: SystemPermission = 'org:sys:organiz
  * routes (ADR 0065, Orgs 07). `org:sys:memberships:manage` also reads it.
  */
 export const MEMBERSHIPS_READ_PERMISSION: SystemPermission = 'org:sys:memberships:read'
+
+/**
+ * The permission that lets a member manage the organization's single sign-on connections
+ * (ADR 0067). Read from the membership now, never from a token's claims alone.
+ */
+export const SSO_MANAGE_PERMISSION: SystemPermission = 'org:sys:sso:manage'
 
 /** A built-in role: its key, its name and the permissions it holds. */
 export interface BuiltInRole {

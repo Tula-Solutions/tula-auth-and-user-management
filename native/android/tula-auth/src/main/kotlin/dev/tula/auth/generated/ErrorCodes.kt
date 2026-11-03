@@ -332,6 +332,10 @@ sealed class ErrorCode {
         override val rawValue: String = "user.last_organization_manager"
     }
 
+    object UserManaged : ErrorCode() {
+        override val rawValue: String = "user.managed"
+    }
+
     object OrganizationDisabled : ErrorCode() {
         override val rawValue: String = "organization.disabled"
     }
@@ -442,6 +446,74 @@ sealed class ErrorCode {
 
     object OrganizationSuggestionUnavailable : ErrorCode() {
         override val rawValue: String = "organization.suggestion_unavailable"
+    }
+
+    object SsoDisabled : ErrorCode() {
+        override val rawValue: String = "sso.disabled"
+    }
+
+    object SsoConnectionNotFound : ErrorCode() {
+        override val rawValue: String = "sso.connection_not_found"
+    }
+
+    object SsoNameTaken : ErrorCode() {
+        override val rawValue: String = "sso.name_taken"
+    }
+
+    object SsoDomainTaken : ErrorCode() {
+        override val rawValue: String = "sso.domain_taken"
+    }
+
+    object SsoDomainNotVerified : ErrorCode() {
+        override val rawValue: String = "sso.domain_not_verified"
+    }
+
+    object SsoIssuerNotAllowed : ErrorCode() {
+        override val rawValue: String = "sso.issuer_not_allowed"
+    }
+
+    object SsoSamlInvalid : ErrorCode() {
+        override val rawValue: String = "sso.saml_invalid"
+    }
+
+    object SsoConnectionInUse : ErrorCode() {
+        override val rawValue: String = "sso.connection_in_use"
+    }
+
+    object SsoInvalidTransition : ErrorCode() {
+        override val rawValue: String = "sso.invalid_transition"
+    }
+
+    object SsoUrlNotHttps : ErrorCode() {
+        override val rawValue: String = "sso.url_not_https"
+    }
+
+    object SsoTestRequired : ErrorCode() {
+        override val rawValue: String = "sso.test_required"
+    }
+
+    object SsoTestNotFound : ErrorCode() {
+        override val rawValue: String = "sso.test_not_found"
+    }
+
+    object SsoRoleNotAllowed : ErrorCode() {
+        override val rawValue: String = "sso.role_not_allowed"
+    }
+
+    object SsoUnavailable : ErrorCode() {
+        override val rawValue: String = "sso.unavailable"
+    }
+
+    object SsoProviderError : ErrorCode() {
+        override val rawValue: String = "sso.provider_error"
+    }
+
+    object SsoUserNotProvisioned : ErrorCode() {
+        override val rawValue: String = "sso.user_not_provisioned"
+    }
+
+    object SsoEmailDomainMismatch : ErrorCode() {
+        override val rawValue: String = "sso.email_domain_mismatch"
     }
 
     object RateLimited : ErrorCode() {
@@ -585,6 +657,7 @@ sealed class ErrorCode {
                 DeviceBindingNotSupported,
                 DeviceBindingRequired,
                 UserLastOrganizationManager,
+                UserManaged,
                 OrganizationDisabled,
                 OrganizationSlugTaken,
                 OrganizationMemberExists,
@@ -613,6 +686,23 @@ sealed class ErrorCode {
                 OrganizationDomainAddressMismatch,
                 OrganizationDomainLimit,
                 OrganizationSuggestionUnavailable,
+                SsoDisabled,
+                SsoConnectionNotFound,
+                SsoNameTaken,
+                SsoDomainTaken,
+                SsoDomainNotVerified,
+                SsoIssuerNotAllowed,
+                SsoSamlInvalid,
+                SsoConnectionInUse,
+                SsoInvalidTransition,
+                SsoUrlNotHttps,
+                SsoTestRequired,
+                SsoTestNotFound,
+                SsoRoleNotAllowed,
+                SsoUnavailable,
+                SsoProviderError,
+                SsoUserNotProvisioned,
+                SsoEmailDomainMismatch,
                 RateLimited,
                 RequestMalformed,
                 RequestTooLarge,
@@ -709,6 +799,7 @@ sealed class ErrorCode {
             "device.binding_not_supported" -> DeviceBindingNotSupported
             "device.binding_required" -> DeviceBindingRequired
             "user.last_organization_manager" -> UserLastOrganizationManager
+            "user.managed" -> UserManaged
             "organization.disabled" -> OrganizationDisabled
             "organization.slug_taken" -> OrganizationSlugTaken
             "organization.member_exists" -> OrganizationMemberExists
@@ -737,6 +828,23 @@ sealed class ErrorCode {
             "organization.domain_address_mismatch" -> OrganizationDomainAddressMismatch
             "organization.domain_limit" -> OrganizationDomainLimit
             "organization.suggestion_unavailable" -> OrganizationSuggestionUnavailable
+            "sso.disabled" -> SsoDisabled
+            "sso.connection_not_found" -> SsoConnectionNotFound
+            "sso.name_taken" -> SsoNameTaken
+            "sso.domain_taken" -> SsoDomainTaken
+            "sso.domain_not_verified" -> SsoDomainNotVerified
+            "sso.issuer_not_allowed" -> SsoIssuerNotAllowed
+            "sso.saml_invalid" -> SsoSamlInvalid
+            "sso.connection_in_use" -> SsoConnectionInUse
+            "sso.invalid_transition" -> SsoInvalidTransition
+            "sso.url_not_https" -> SsoUrlNotHttps
+            "sso.test_required" -> SsoTestRequired
+            "sso.test_not_found" -> SsoTestNotFound
+            "sso.role_not_allowed" -> SsoRoleNotAllowed
+            "sso.unavailable" -> SsoUnavailable
+            "sso.provider_error" -> SsoProviderError
+            "sso.user_not_provisioned" -> SsoUserNotProvisioned
+            "sso.email_domain_mismatch" -> SsoEmailDomainMismatch
             "rate_limited" -> RateLimited
             "request.malformed" -> RequestMalformed
             "request.too_large" -> RequestTooLarge
@@ -1013,6 +1121,9 @@ object TulaErrorDefinitions {
     /** `user.last_organization_manager` */
     val userLastOrganizationManager: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.UserLastOrganizationManager, 409, "This user is the only manager of an organization. Add another manager or delete the organization first.")
 
+    /** `user.managed` */
+    val userManaged: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.UserManaged, 403, "This account is managed by your organization. Ask your administrator to change it.")
+
     /** `organization.disabled` */
     val organizationDisabled: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationDisabled, 403, "Organizations are not enabled for this environment.")
 
@@ -1096,6 +1207,57 @@ object TulaErrorDefinitions {
 
     /** `organization.suggestion_unavailable` */
     val organizationSuggestionUnavailable: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationSuggestionUnavailable, 403, "You cannot join that organization.")
+
+    /** `sso.disabled` */
+    val ssoDisabled: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoDisabled, 403, "Single sign-on is not enabled for this environment.")
+
+    /** `sso.connection_not_found` */
+    val ssoConnectionNotFound: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoConnectionNotFound, 404, "No such single sign-on connection.")
+
+    /** `sso.name_taken` */
+    val ssoNameTaken: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoNameTaken, 409, "The organization already has a connection with that name.")
+
+    /** `sso.domain_taken` */
+    val ssoDomainTaken: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoDomainTaken, 409, "Another active connection already serves one of those domains.")
+
+    /** `sso.domain_not_verified` */
+    val ssoDomainNotVerified: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoDomainNotVerified, 422, "Every domain must be one of the organization's verified domains.")
+
+    /** `sso.issuer_not_allowed` */
+    val ssoIssuerNotAllowed: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoIssuerNotAllowed, 422, "The issuer is not an address the server may call.")
+
+    /** `sso.saml_invalid` */
+    val ssoSamlInvalid: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoSamlInvalid, 422, "The SAML settings could not be read or are incomplete.")
+
+    /** `sso.connection_in_use` */
+    val ssoConnectionInUse: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoConnectionInUse, 409, "The connection is active; disable it before deleting it.")
+
+    /** `sso.invalid_transition` */
+    val ssoInvalidTransition: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoInvalidTransition, 409, "A connection cannot move to that status from its current one.")
+
+    /** `sso.url_not_https` */
+    val ssoUrlNotHttps: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoUrlNotHttps, 422, "The identity provider\u2019s sign-in address must start with https.")
+
+    /** `sso.test_required` */
+    val ssoTestRequired: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoTestRequired, 409, "Run a passing test sign-in of the connection\u2019s current settings before activating it.")
+
+    /** `sso.test_not_found` */
+    val ssoTestNotFound: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoTestNotFound, 404, "No such test sign-in.")
+
+    /** `sso.role_not_allowed` */
+    val ssoRoleNotAllowed: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoRoleNotAllowed, 403, "A setup link cannot map a group to a role that holds system permissions.")
+
+    /** `sso.unavailable` */
+    val ssoUnavailable: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoUnavailable, 400, "Single sign-on is not available for that address.")
+
+    /** `sso.provider_error` */
+    val ssoProviderError: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoProviderError, 401, "The identity provider did not sign you in.")
+
+    /** `sso.user_not_provisioned` */
+    val ssoUserNotProvisioned: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoUserNotProvisioned, 403, "Your account has not been set up for this organization. Ask its administrator.")
+
+    /** `sso.email_domain_mismatch` */
+    val ssoEmailDomainMismatch: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoEmailDomainMismatch, 403, "Your email address is not on this connection's domains.")
 
     /** `rate_limited` */
     val rateLimited: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.RateLimited, 429, "Too many requests. Try again shortly.")
@@ -1216,6 +1378,7 @@ object TulaErrorDefinitions {
         deviceBindingNotSupported,
         deviceBindingRequired,
         userLastOrganizationManager,
+        userManaged,
         organizationDisabled,
         organizationSlugTaken,
         organizationMemberExists,
@@ -1244,6 +1407,23 @@ object TulaErrorDefinitions {
         organizationDomainAddressMismatch,
         organizationDomainLimit,
         organizationSuggestionUnavailable,
+        ssoDisabled,
+        ssoConnectionNotFound,
+        ssoNameTaken,
+        ssoDomainTaken,
+        ssoDomainNotVerified,
+        ssoIssuerNotAllowed,
+        ssoSamlInvalid,
+        ssoConnectionInUse,
+        ssoInvalidTransition,
+        ssoUrlNotHttps,
+        ssoTestRequired,
+        ssoTestNotFound,
+        ssoRoleNotAllowed,
+        ssoUnavailable,
+        ssoProviderError,
+        ssoUserNotProvisioned,
+        ssoEmailDomainMismatch,
         rateLimited,
         requestMalformed,
         requestTooLarge,

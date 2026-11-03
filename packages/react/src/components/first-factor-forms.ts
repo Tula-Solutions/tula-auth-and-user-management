@@ -34,6 +34,8 @@ export interface FirstFactorFormProps {
   sendEmail?(strategy: 'email_code' | 'email_link'): Promise<FlowStep | null>
   /** Ask the server to text the code of `sms_code` (again, for a fresh one). */
   sendText?(): Promise<FlowStep | null>
+  /** Start single sign-on (`sso`): replaces the page with the identity provider's. */
+  startSso?(): Promise<FlowStep | null>
   /** The other ways to sign in the attempt offers, drawn under the form. */
   alternatives?: ReactNode
 }

@@ -8,6 +8,7 @@ import type { Environment } from './environment'
 import { clientError, formatMessage, isTulaError, type Messages, TulaError } from './errors'
 import type { Schemas } from './generated/api.gen'
 import { isCodes, isTotpEnrolment } from './mfa'
+import { type OAuthContext, startSso } from './oauth'
 import {
   isPasskeySignInStart,
   isRequestOptions,
@@ -368,6 +369,23 @@ export interface SignInFlow extends Flow<'sign_in'>, FactorEnrolmentActions, Sec
    *   server refuses with.
    */
   waitForEmailLink(options?: { signal?: AbortSignal }): Promise<FlowStep>
+  /**
+   * Continue with single sign-on (step `needs_first_factor` offering `sso`: the address's
+   * domain is bound to an active connection). Keeps the round trip's binding for this tab and
+   * navigates to the identity provider, unless `navigate` is `false`. The provider returns to
+   * `redirectUrl`; call `signIn.handleOAuthCallback()` on that page, as after a provider.
+   *
+   * @param input - The page to come back to (one of the allowed redirect URLs, same origin as
+   *   this page), and `navigate: false` to navigate yourself.
+   * @returns The identity provider's URL.
+   * @throws TulaError `request.redirect_not_allowed`, `sso.*` codes, `link.cross_origin` and
+   *   `storage.failed` (raised by the client, no request sent).
+   * @example
+   * ```ts
+   * await flow.startSso({ redirectUrl: `${location.origin}/oauth/callback` })
+   * ```
+   */
+  startSso(input: { redirectUrl: string; navigate?: boolean }): Promise<{ url: string }>
 }
 
 /**
@@ -726,7 +744,7 @@ export async function signUpFlow(context: FlowContext, started: FlowAttempt): Pr
  * @returns The flow object.
  */
 export async function signInFlow(
-  context: FlowContext,
+  context: OAuthContext,
   started: FlowAttempt,
   first?: (bound: Binding) => Promise<FlowAttempt>
 ): Promise<SignInFlow> {
@@ -773,6 +791,7 @@ export async function signInFlow(
         transport.call('attemptSignInFirstFactor', { ...bound, body: input })
       ),
     waitForEmailLink: (options) => waiting.wait(options?.signal),
+    startSso: (input) => attempt.exclusive((bound) => startSso(context, bound, input)),
     discard() {
       attempt.discard()
       waiting.stop()
@@ -1048,7 +1067,7 @@ async function askForPasskey(
  *   the API answers (`auth.invalid_credentials`, `auth.method_disabled`, …).
  */
 export async function passkeySignIn(
-  context: FlowContext,
+  context: OAuthContext,
   request: PasskeyRequest = {}
 ): Promise<SignInFlow> {
   const authenticator = context.passkeys()
@@ -1125,7 +1144,7 @@ export interface IdTokenName {
  *   not `ios` or `android` (for Apple: not `ios`), `response.invalid`.
  */
 export async function idTokenSignIn(
-  context: FlowContext,
+  context: OAuthContext,
   provider: IdTokenProvider
 ): Promise<IdTokenSignIn> {
   const started: unknown = await context.transport.call('startIdTokenSignIn', {

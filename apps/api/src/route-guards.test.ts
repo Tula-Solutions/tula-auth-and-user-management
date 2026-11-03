@@ -181,3 +181,20 @@ describe('the client routes that change state', async () => {
     }
   })
 })
+
+describe('an SSO connection’s callback', () => {
+  test('is limited per IP and per connection, before anything is looked up', async () => {
+    const { deps, app } = await setup()
+    const hit = spyOn(deps.rateLimiter, 'hit')
+    const found = spyOn(deps.flowAttempts, 'findById')
+    const response = await app.request(`/v1/sso/callback/${SOME_ID}?state=x&code=y`)
+    const keys = hit.mock.calls.map(([key]) => key)
+    hit.mockRestore()
+    expect(response.status).toBe(400)
+    expect(keys.some((key) => key.startsWith('sso_callback:ip:'))).toBe(true)
+    expect(keys).toContain(`sso_callback_connection:${SOME_ID}`)
+    // A state of the wrong shape is refused before any attempt is read.
+    expect(found).not.toHaveBeenCalled()
+    found.mockRestore()
+  })
+})

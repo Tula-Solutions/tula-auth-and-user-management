@@ -4,6 +4,7 @@ import {
   HookAnswerSchema,
   HookClaimsAnswerSchema,
   HookQuestionSchema,
+  SETUP_LINK_HEADER,
   TulaEventSchema,
 } from '@tula-tech/contract'
 import type { GenerateSpecOptions } from 'hono-openapi'
@@ -153,11 +154,20 @@ export function documentAgentReads(
  * - `instance`: the instance admin token (`TULA_ADMIN_TOKEN`) or a dashboard session, for
  *   `/v1/instance/*`.
  * - `agent`: an agent key only, for `/v1/agent/*` (ADR 0053).
+ * - `setup`: a setup link's token in `x-tula-setup-token`, for `/v1/setup/*` (ADR 0067).
  * - `instanceToken`: the instance admin token only.
  * - `dashboard`: a dashboard session only.
  */
 export const security: Record<
-  'public' | 'client' | 'session' | 'admin' | 'agent' | 'instance' | 'instanceToken' | 'dashboard',
+  | 'public'
+  | 'client'
+  | 'session'
+  | 'admin'
+  | 'agent'
+  | 'setup'
+  | 'instance'
+  | 'instanceToken'
+  | 'dashboard',
   SecurityRequirement[]
 > = {
   public: [],
@@ -165,6 +175,7 @@ export const security: Record<
   session: [{ publishableKey: [], accessToken: [] }],
   admin: [{ secretKey: [] }, { dashboardSession: [] }],
   agent: [{ agentKey: [] }],
+  setup: [{ setupLink: [] }],
   instance: [{ instanceAdminToken: [] }, { dashboardSession: [] }],
   instanceToken: [{ instanceAdminToken: [] }],
   dashboard: [{ dashboardSession: [] }],
@@ -233,9 +244,21 @@ export const documentation: GenerateSpecOptions['documentation'] = {
       description:
         'The companies and teams an environment’s users belong to, and the roles they hold in them (admin). Off until the environment’s `organizations.enabled` setting is on.',
     },
+    {
+      name: 'SSO setup links',
+      description:
+        'Links that let an organization’s IT administrator set up single sign-on without an account (ADR 0067): created by an operator or an organization administrator, used at `/v1/setup/*`.',
+    },
   ],
   components: {
     securitySchemes: {
+      setupLink: {
+        type: 'apiKey',
+        in: 'header',
+        name: SETUP_LINK_HEADER,
+        description:
+          'A setup link token `tula_setup_<env>_…`, shown once when the link is created. It opens `/v1/setup/*` for one organization and nothing else; no other credential is accepted there and it is accepted nowhere else.',
+      },
       publishableKey: {
         type: 'apiKey',
         in: 'header',

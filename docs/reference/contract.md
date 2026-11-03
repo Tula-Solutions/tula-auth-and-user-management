@@ -188,7 +188,17 @@ with the agent as the actor and the approving human beside it: ADR 0053), or the
 dashboard session's) or with the instance admin token itself (no id).
 
 ```ts
-const AUDIT_ACTOR_TYPES: readonly ["user", "admin", "system", "agent", "instance_admin"]
+const AUDIT_ACTOR_TYPES: readonly ["user", "admin", "system", "agent", "instance_admin", "directory", "setup_link"]
+```
+
+### `AUDIT_EXPORT_FORMATS`
+
+_constant_, defined in `packages/contract/src/audit.ts`
+
+The formats an audit export is written in: one JSON object per line, or CSV.
+
+```ts
+const AUDIT_EXPORT_FORMATS: readonly ["ndjson", "csv"]
 ```
 
 ### `AUDIT_TARGET_TYPES`
@@ -385,6 +395,17 @@ always `false`.
 const AdminSessionSchema
 ```
 
+### `AdminSsoTestStartRequestSchema`
+
+_constant_, defined in `packages/contract/src/sso-test.ts`
+
+The administrator's start of a test sign-in. Left out, `redirectUrl` is the server's own
+setup page, which needs no entry in the environment's list: the dashboard cannot know it.
+
+```ts
+const AdminSsoTestStartRequestSchema: z.ZodObject<{ redirectUrl: z.ZodOptional<z.ZodString>; }, z.core.$strip>
+```
+
 ### `AndroidApp`
 
 _type_, defined in `packages/contract/src/native-app.ts`
@@ -549,6 +570,28 @@ Who performed an action.
 
 ```ts
 export type AuditActorType = (typeof AUDIT_ACTOR_TYPES)[number]
+```
+
+### `AuditExportCursorSchema`
+
+_constant_, defined in `packages/contract/src/audit.ts`
+
+A position in an audit export: the `occurredAt` and the `id` of the last entry written,
+which is the key the export is ordered and paged by. An export asked to continue `after` it
+writes the entries that follow it, with no gap and no duplicate.
+
+```ts
+const AuditExportCursorSchema: z.ZodString
+```
+
+### `AuditExportFormat`
+
+_type_, defined in `packages/contract/src/audit.ts`
+
+One of {@link AUDIT_EXPORT_FORMATS}.
+
+```ts
+export type AuditExportFormat = (typeof AUDIT_EXPORT_FORMATS)[number]
 ```
 
 ### `AuditLog`
@@ -1027,6 +1070,37 @@ server generates it. `failureMode: 'allow'` is recorded as a weakening.
 const CreateHookRequestSchema
 ```
 
+### `CreateMySetupLinkRequestSchema`
+
+_constant_, defined in `packages/contract/src/sso-setup-link.ts`
+
+The body that creates a setup link from a signed-in administrator: the organization is in the path.
+
+```ts
+const CreateMySetupLinkRequestSchema: z.ZodObject<Omit<Shape, Extract<keyof Shape, keyof M>>, z.core.$strict>
+```
+
+### `CreateMySsoConnectionRequest`
+
+_type_, defined in `packages/contract/src/sso-connection.ts`
+
+The body an organization admin creates a connection with.
+
+```ts
+export type CreateMySsoConnectionRequest = z.infer<typeof CreateMySsoConnectionRequestSchema>
+```
+
+### `CreateMySsoConnectionRequestSchema`
+
+_constant_, defined in `packages/contract/src/sso-connection.ts`
+
+The body a signed-in organization admin creates a connection with: the admin body without
+`organizationId`, which is the organization of the path (a client cannot name another).
+
+```ts
+const CreateMySsoConnectionRequestSchema: z.ZodObject<Omit<Shape, Extract<keyof Shape, keyof M>>, z.core.$strict>
+```
+
 ### `CreateNativeAppRequest`
 
 _type_, defined in `packages/contract/src/native-app.ts`
@@ -1139,6 +1213,46 @@ the operation's own kind ({@link PROPOSAL_OPERATION_TARGETS}).
 const CreateProposalRequestSchema
 ```
 
+### `CreateSetupLinkRequest`
+
+_type_, defined in `packages/contract/src/sso-setup-link.ts`
+
+The body that creates a setup link.
+
+```ts
+export type CreateSetupLinkRequest = z.infer<typeof CreateSetupLinkRequestSchema>
+```
+
+### `CreateSetupLinkRequestSchema`
+
+_constant_, defined in `packages/contract/src/sso-setup-link.ts`
+
+The body that creates a setup link.
+
+```ts
+const CreateSetupLinkRequestSchema
+```
+
+### `CreateSsoConnectionRequest`
+
+_type_, defined in `packages/contract/src/sso-connection.ts`
+
+The body that creates a connection.
+
+```ts
+export type CreateSsoConnectionRequest = z.infer<typeof CreateSsoConnectionRequestSchema>
+```
+
+### `CreateSsoConnectionRequestSchema`
+
+_constant_, defined in `packages/contract/src/sso-connection.ts`
+
+The body that creates a connection, as a draft. An OIDC one takes `issuer`, `clientId` and `clientSecret`; a SAML one `saml`.
+
+```ts
+const CreateSsoConnectionRequestSchema
+```
+
 ### `CreateUserRequest`
 
 _type_, defined in `packages/contract/src/user.ts`
@@ -1205,6 +1319,26 @@ the server keeps it sealed and never returns it again.
 
 ```ts
 const CreatedHookSchema
+```
+
+### `CreatedSetupLink`
+
+_type_, defined in `packages/contract/src/sso-setup-link.ts`
+
+A new setup link, with its token and address.
+
+```ts
+export type CreatedSetupLink = z.infer<typeof CreatedSetupLinkSchema>
+```
+
+### `CreatedSetupLinkSchema`
+
+_constant_, defined in `packages/contract/src/sso-setup-link.ts`
+
+A new setup link: the one answer that holds the token and the address built from it.
+
+```ts
+const CreatedSetupLinkSchema
 ```
 
 ### `CreatedWebhookEndpoint`
@@ -1414,6 +1548,16 @@ Page size when the client does not ask for one.
 
 ```ts
 const DEFAULT_PAGE_SIZE: 20
+```
+
+### `DEFAULT_SETUP_LINK_DAYS`
+
+_constant_, defined in `packages/contract/src/sso-setup-link.ts`
+
+Days a setup link lives when the request names none.
+
+```ts
+const DEFAULT_SETUP_LINK_DAYS: 7
 ```
 
 ### `DEFAULT_SMS_DAILY_MESSAGE_LIMIT`
@@ -3305,7 +3449,7 @@ How a sign-up is being made, as a `hook.before_sign_up` question says it: with a
 without one (an emailed code proved the address), or by a first sign-in with a provider.
 
 ```ts
-const HOOK_SIGN_UP_METHODS: readonly ["password", "passwordless", ...any[]]
+const HOOK_SIGN_UP_METHODS: readonly ["password", "passwordless", ...any[], "sso"]
 ```
 
 **Example**
@@ -4406,6 +4550,16 @@ Longest app name, in characters. It is put in email subjects, so it stays short.
 const MAX_APP_NAME_LENGTH: 64
 ```
 
+### `MAX_AUDIT_EXPORT_ROWS`
+
+_constant_, defined in `packages/contract/src/audit.ts`
+
+The most entries one export request returns; a longer trail is fetched by resuming.
+
+```ts
+const MAX_AUDIT_EXPORT_ROWS: 100000
+```
+
 ### `MAX_AUDIT_RETENTION_DAYS`
 
 _constant_, defined in `packages/contract/src/environment-settings.ts`
@@ -4879,6 +5033,16 @@ Longest refresh grace window a profile may set.
 const MAX_REUSE_GRACE_PERIOD: Duration
 ```
 
+### `MAX_SAML_CERTIFICATES`
+
+_constant_, defined in `packages/contract/src/sso.ts`
+
+How many signing certificates a SAML connection holds: the current one and the next.
+
+```ts
+const MAX_SAML_CERTIFICATES: 2
+```
+
 ### `MAX_SESSIONS_PER_USER`
 
 _constant_, defined in `packages/contract/src/session-profile.ts`
@@ -4925,6 +5089,16 @@ const MAX_SETTING_NAME_LENGTH: 128
 name.length <= MAX_SETTING_NAME_LENGTH
 ```
 
+### `MAX_SETUP_LINK_DAYS`
+
+_constant_, defined in `packages/contract/src/sso-setup-link.ts`
+
+The longest life a setup link may be given, in days.
+
+```ts
+const MAX_SETUP_LINK_DAYS: 30
+```
+
 ### `MAX_SMS_DAILY_MESSAGE_LIMIT`
 
 _constant_, defined in `packages/contract/src/phone.ts`
@@ -4954,6 +5128,26 @@ characters instead of 153: the same worst case is then seven segments.
 
 ```ts
 const MAX_SMS_TEMPLATE_LENGTH: 140
+```
+
+### `MAX_SSO_CONNECTION_DOMAINS`
+
+_constant_, defined in `packages/contract/src/sso.ts`
+
+How many domains one connection can be bound to.
+
+```ts
+const MAX_SSO_CONNECTION_DOMAINS: 20
+```
+
+### `MAX_SSO_GROUP_ROLES`
+
+_constant_, defined in `packages/contract/src/sso.ts`
+
+How many IdP groups one organization can map to roles.
+
+```ts
+const MAX_SSO_GROUP_ROLES: 100
 ```
 
 ### `MAX_STEP_UP_AFTER`
@@ -7589,6 +7783,19 @@ it); it keeps signing beside the new one until `rotationOverlapEndsAt`.
 const RotatedWebhookSecretSchema
 ```
 
+### `SCIM_TOKEN_PREFIX`
+
+_constant_, defined in `packages/contract/src/tokens.ts`
+
+Prefix of SCIM tokens, followed by the environment id (32 hex digits, no dashes) and `_`
+(ADR 0067, "SCIM"): the bearer token an organization's identity provider presents to
+`/v1/scim/v2/*`. It opens that group and nothing else; `secretKey()` and `agentKey()`
+answer it like a wrong key.
+
+```ts
+const SCIM_TOKEN_PREFIX: "tula_scim_"
+```
+
 ### `SECRET_KEY_PREFIX`
 
 _constant_, defined in `packages/contract/src/tokens.ts`
@@ -7623,6 +7830,31 @@ await fetch(`${api}/v1/client/sign-ins`, {
   headers: { [SESSION_PROFILE_HEADER]: 'admin', ...others },
   body: JSON.stringify({ identifier }),
 })
+```
+
+### `SETUP_LINK_HEADER`
+
+_constant_, defined in `packages/contract/src/headers.ts`
+
+The header that carries a setup link's token to `/v1/setup/*` (ADR 0067). The portal reads
+the token from the page address's fragment, which a browser never sends, and puts it here:
+it is never in a path or a query, so no access log or `Referer` holds it.
+
+```ts
+const SETUP_LINK_HEADER: "x-tula-setup-token"
+```
+
+### `SETUP_LINK_TOKEN_PREFIX`
+
+_constant_, defined in `packages/contract/src/tokens.ts`
+
+Prefix of setup links' tokens, followed by the environment id (32 hex digits, no dashes) and
+`_` (ADR 0067, "Setup links"): the credential of the self-serve SSO setup portal, sent in
+`x-tula-setup-token`. It opens `/v1/setup/*` and nothing else; every other key middleware
+answers it like a wrong key, and the setup routes answer every other credential so.
+
+```ts
+const SETUP_LINK_TOKEN_PREFIX: "tula_setup_"
 ```
 
 ### `SIGN_IN_METHODS_WITHOUT_SIGN_UP`
@@ -7890,6 +8122,101 @@ How many prefixes one answer of it lists at most.
 const SMS_USAGE_MAX_PREFIXES: 100
 ```
 
+### `SSO_ATTRIBUTE_DEFAULTS`
+
+_constant_, defined in `packages/contract/src/sso-attributes.ts`
+
+The default names per protocol and identity provider. An IdP lets its administrator name
+SAML attributes freely, so these are the names its own documentation suggests; a connection
+overrides any of them.
+
+```ts
+const SSO_ATTRIBUTE_DEFAULTS: Record<
+  SsoProtocol,
+  Record<SsoIdpPreset, SsoAttributeNames>
+>
+```
+
+### `SSO_CONNECTION_CLAIM`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The access token's claim naming the SSO connection a session was signed in through (ADR 0067).
+
+```ts
+const SSO_CONNECTION_CLAIM: "sso_conn"
+```
+
+### `SSO_CONNECTION_FIELDS`
+
+_constant_, defined in `packages/contract/src/sso.ts`
+
+The fields of a connection an update can change; the event names them, never a value.
+
+```ts
+const SSO_CONNECTION_FIELDS
+```
+
+### `SSO_CONNECTION_STATUSES`
+
+_constant_, defined in `packages/contract/src/sso.ts`
+
+Where a connection is in its life. A `draft` is being set up, an `active` one signs users in
+and a `disabled` one is kept (its identities stay) but offered to nobody.
+
+```ts
+const SSO_CONNECTION_STATUSES: readonly ["draft", "active", "disabled"]
+```
+
+**Example**
+
+```ts
+const status: SsoConnectionStatus = SSO_CONNECTION_STATUSES[0] // 'draft'
+```
+
+### `SSO_IDP_PRESETS`
+
+_constant_, defined in `packages/contract/src/sso-attributes.ts`
+
+The identity providers whose default attribute names are built in.
+
+```ts
+const SSO_IDP_PRESETS: readonly ["okta", "entra", "google_workspace", "jumpcloud", "onelogin", "ping", "generic"]
+```
+
+### `SSO_MANAGE_PERMISSION`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permission that lets a member manage the organization's single sign-on connections
+(ADR 0067). Read from the membership now, never from a token's claims alone.
+
+```ts
+const SSO_MANAGE_PERMISSION: SystemPermission
+```
+
+### `SSO_PROTOCOLS`
+
+_constant_, defined in `packages/contract/src/sso.ts`
+
+The protocols a connection can speak.
+
+```ts
+const SSO_PROTOCOLS: readonly ["oidc", "saml"]
+```
+
+### `SSO_TEST_REASONS`
+
+_constant_, defined in `packages/contract/src/sso-test.ts`
+
+Why a test sign-in of an SSO connection failed, each with a sentence for the person setting
+the connection up (ADR 0067). **This is the one place a verifier's reason is shown:** a real
+sign-in answers `sso.provider_error` for every refusal and only logs the reason.
+
+```ts
+const SSO_TEST_REASONS
+```
+
 ### `STEP_UP_MAX_AGE_SECONDS`
 
 _constant_, defined in `packages/contract/src/tokens.ts`
@@ -7912,6 +8239,39 @@ also give a role.
 
 ```ts
 const SYSTEM_PERMISSIONS
+```
+
+### `SamlConnectionViewSchema`
+
+_constant_, defined in `packages/contract/src/sso-connection.ts`
+
+A SAML connection's identity provider values and the service provider values to give the IdP.
+
+```ts
+const SamlConnectionViewSchema
+```
+
+### `SamlSettingsInput`
+
+_type_, defined in `packages/contract/src/sso-connection.ts`
+
+The identity provider values of a SAML connection, as given.
+
+```ts
+export type SamlSettingsInput = z.infer<typeof SamlSettingsInputSchema>
+```
+
+### `SamlSettingsInputSchema`
+
+_constant_, defined in `packages/contract/src/sso-connection.ts`
+
+The identity provider values of a SAML connection, given in one of three ways: the IdP's
+metadata XML pasted (`metadataXml`), a metadata address the server fetches (`metadataUrl`),
+or by hand (`idpEntityId`, `ssoUrl` and one or two `certificates`, PEM or bare base64).
+Whether exactly one way was used is checked by the service (`sso.saml_invalid`).
+
+```ts
+const SamlSettingsInputSchema
 ```
 
 ### `SecondFactorMethod`
@@ -8315,6 +8675,137 @@ and have no revision, so a provider changed by hand does not show here.
 
 ```ts
 const SettingsManagedBySchema
+```
+
+### `SetupConnectionCreate`
+
+_type_, defined in `packages/contract/src/sso-setup-link.ts`
+
+The body that creates a connection from the portal.
+
+```ts
+export type SetupConnectionCreate = z.infer<typeof SetupConnectionCreateSchema>
+```
+
+### `SetupConnectionCreateSchema`
+
+_constant_, defined in `packages/contract/src/sso-setup-link.ts`
+
+The body that creates a connection from the portal: the organization is the link's.
+
+```ts
+const SetupConnectionCreateSchema
+```
+
+### `SetupConnectionUpdate`
+
+_type_, defined in `packages/contract/src/sso-setup-link.ts`
+
+The body that changes a connection from the portal.
+
+```ts
+export type SetupConnectionUpdate = z.infer<typeof SetupConnectionUpdateSchema>
+```
+
+### `SetupConnectionUpdateSchema`
+
+_constant_, defined in `packages/contract/src/sso-setup-link.ts`
+
+The body that changes a connection from the portal; `status` can only be `active`.
+
+```ts
+const SetupConnectionUpdateSchema
+```
+
+### `SetupGroupRoles`
+
+_type_, defined in `packages/contract/src/sso-connection.ts`
+
+The group to role mapping as a setup link's portal sees it.
+
+```ts
+export type SetupGroupRoles = z.infer<typeof SetupGroupRolesSchema>
+```
+
+### `SetupGroupRolesSchema`
+
+_constant_, defined in `packages/contract/src/sso-connection.ts`
+
+The mapping as a setup link's portal sees it: `locked` marks a mapping to a role with a
+system permission (`org:sys:*`), which the portal shows and cannot change (ADR 0067).
+
+```ts
+const SetupGroupRolesSchema
+```
+
+### `SetupLink`
+
+_type_, defined in `packages/contract/src/sso-setup-link.ts`
+
+A setup link as the admin and client routes list it.
+
+```ts
+export type SetupLink = z.infer<typeof SetupLinkSchema>
+```
+
+### `SetupLinkListSchema`
+
+_constant_, defined in `packages/contract/src/sso-setup-link.ts`
+
+The setup links of one organization.
+
+```ts
+const SetupLinkListSchema
+```
+
+### `SetupLinkSchema`
+
+_constant_, defined in `packages/contract/src/sso-setup-link.ts`
+
+A setup link as the admin and client routes list it: never the token.
+
+```ts
+const SetupLinkSchema
+```
+
+### `SetupPortal`
+
+_type_, defined in `packages/contract/src/sso-setup-link.ts`
+
+What the portal shows first.
+
+```ts
+export type SetupPortal = z.infer<typeof SetupPortalSchema>
+```
+
+### `SetupPortalSchema`
+
+_constant_, defined in `packages/contract/src/sso-setup-link.ts`
+
+What the portal shows first: the organization, its verified domains and the link's life.
+
+```ts
+const SetupPortalSchema
+```
+
+### `SetupScimTokenCreate`
+
+_type_, defined in `packages/contract/src/sso-setup-link.ts`
+
+The body that creates a SCIM token from the portal.
+
+```ts
+export type SetupScimTokenCreate = z.infer<typeof SetupScimTokenCreateSchema>
+```
+
+### `SetupScimTokenCreateSchema`
+
+_constant_, defined in `packages/contract/src/sso-setup-link.ts`
+
+The body that creates a SCIM token from the portal: the organization is the link's.
+
+```ts
+const SetupScimTokenCreateSchema: z.ZodObject<{ name: z.ZodString; }, z.core.$strict>
 ```
 
 ### `SignInMethod`
@@ -8799,6 +9290,266 @@ Counts only. No phone number, and nothing about who asked.
 
 ```ts
 const SmsUsageSchema
+```
+
+### `SsoAttributeMapping`
+
+_interface_, defined in `packages/contract/src/sso-attributes.ts`
+
+The names an operator can override; each is one attribute or claim name.
+
+```ts
+export interface SsoAttributeMapping {
+  idp?: SsoIdpPreset
+  email?: string
+  firstName?: string
+  lastName?: string
+  groups?: string
+}
+```
+
+### `SsoAttributeMappingSchema`
+
+_constant_, defined in `packages/contract/src/sso-connection.ts`
+
+Which attribute or claim carries each field; one left out uses the IdP preset's default.
+
+```ts
+const SsoAttributeMappingSchema
+```
+
+### `SsoAttributeNames`
+
+_interface_, defined in `packages/contract/src/sso-attributes.ts`
+
+The attribute or claim names read for each field, first one present wins.
+
+```ts
+export interface SsoAttributeNames {
+  email: string[]
+  firstName: string[]
+  lastName: string[]
+  groups: string[]
+}
+```
+
+### `SsoConnection`
+
+_type_, defined in `packages/contract/src/sso-connection.ts`
+
+A connection as the admin API returns it.
+
+```ts
+export type SsoConnection = z.infer<typeof SsoConnectionSchema>
+```
+
+### `SsoConnectionField`
+
+_type_, defined in `packages/contract/src/sso.ts`
+
+One of {@link SSO_CONNECTION_FIELDS}.
+
+```ts
+export type SsoConnectionField = (typeof SSO_CONNECTION_FIELDS)[number]
+```
+
+### `SsoConnectionListQuerySchema`
+
+_constant_, defined in `packages/contract/src/sso-connection.ts`
+
+The query of the list route: the organization whose connections to list; left out, the whole environment's.
+
+```ts
+const SsoConnectionListQuerySchema: z.ZodObject<{ organizationId: z.ZodOptional<z.ZodUUID>; }, z.core.$strip>
+```
+
+### `SsoConnectionListSchema`
+
+_constant_, defined in `packages/contract/src/sso-connection.ts`
+
+A list of connections.
+
+```ts
+const SsoConnectionListSchema
+```
+
+### `SsoConnectionSchema`
+
+_constant_, defined in `packages/contract/src/sso-connection.ts`
+
+A connection as the admin API returns it. Never carries the client secret.
+
+```ts
+const SsoConnectionSchema
+```
+
+### `SsoConnectionStatus`
+
+_type_, defined in `packages/contract/src/sso.ts`
+
+One of {@link SSO_CONNECTION_STATUSES}.
+
+```ts
+export type SsoConnectionStatus = (typeof SSO_CONNECTION_STATUSES)[number]
+```
+
+### `SsoGroupRoles`
+
+_type_, defined in `packages/contract/src/sso-connection.ts`
+
+The group to role mapping of an organization.
+
+```ts
+export type SsoGroupRoles = z.infer<typeof SsoGroupRolesSchema>
+```
+
+### `SsoGroupRolesSchema`
+
+_constant_, defined in `packages/contract/src/sso-connection.ts`
+
+An organization's IdP group to role mapping. The order is the precedence: a user in several
+mapped groups gets the role of the first of their groups in this list (ADR 0067).
+
+```ts
+const SsoGroupRolesSchema
+```
+
+### `SsoIdpPreset`
+
+_type_, defined in `packages/contract/src/sso-attributes.ts`
+
+One of {@link SSO_IDP_PRESETS}; `generic` is "generic SAML" or "generic OIDC" by protocol.
+
+```ts
+export type SsoIdpPreset = (typeof SSO_IDP_PRESETS)[number]
+```
+
+### `SsoProtocol`
+
+_type_, defined in `packages/contract/src/sso.ts`
+
+One of {@link SSO_PROTOCOLS}.
+
+```ts
+export type SsoProtocol = (typeof SSO_PROTOCOLS)[number]
+```
+
+### `SsoStartRequest`
+
+_type_, defined in `packages/contract/src/sso-connection.ts`
+
+Single sign-on start request body.
+
+```ts
+export type SsoStartRequest = z.infer<typeof SsoStartRequestSchema>
+```
+
+### `SsoStartRequestSchema`
+
+_constant_, defined in `packages/contract/src/sso-connection.ts`
+
+Start a single sign-on step of a sign-in attempt: where the app's page is that the browser
+returns to. The connection is the one the attempt's email domain is bound to; the client never
+names it. The answer is an `OAuthStart` (the provider's URL, the binding, the attempt).
+
+```ts
+const SsoStartRequestSchema: z.ZodObject<{ redirectUrl: z.ZodString; }, z.core.$strip>
+```
+
+### `SsoTestIdParamSchema`
+
+_constant_, defined in `packages/contract/src/sso-test.ts`
+
+The connection and test ids of a test route's path.
+
+```ts
+const SsoTestIdParamSchema: z.ZodObject<{ id: z.ZodUUID; testId: z.ZodUUID; }, z.core.$strip>
+```
+
+### `SsoTestReason`
+
+_type_, defined in `packages/contract/src/sso-test.ts`
+
+One of {@link SSO_TEST_REASONS}' codes.
+
+```ts
+export type SsoTestReason = keyof typeof SSO_TEST_REASONS
+```
+
+### `SsoTestResult`
+
+_type_, defined in `packages/contract/src/sso-test.ts`
+
+A test's result.
+
+```ts
+export type SsoTestResult = z.infer<typeof SsoTestResultSchema>
+```
+
+### `SsoTestResultSchema`
+
+_constant_, defined in `packages/contract/src/sso-test.ts`
+
+What a test sign-in found. It holds names and values the provider sent, never the raw
+assertion, a token or a signature.
+
+```ts
+const SsoTestResultSchema
+```
+
+### `SsoTestStart`
+
+_type_, defined in `packages/contract/src/sso-test.ts`
+
+A started test.
+
+```ts
+export type SsoTestStart = z.infer<typeof SsoTestStartSchema>
+```
+
+### `SsoTestStartRequest`
+
+_type_, defined in `packages/contract/src/sso-test.ts`
+
+The body that starts a test.
+
+```ts
+export type SsoTestStartRequest = z.infer<typeof SsoTestStartRequestSchema>
+```
+
+### `SsoTestStartRequestSchema`
+
+_constant_, defined in `packages/contract/src/sso-test.ts`
+
+Starts a test sign-in: where the browser returns to (an address the environment allows).
+
+```ts
+const SsoTestStartRequestSchema: z.ZodObject<{ redirectUrl: z.ZodString; }, z.core.$strip>
+```
+
+### `SsoTestStartSchema`
+
+_constant_, defined in `packages/contract/src/sso-test.ts`
+
+A started test: send the browser to `authorizationUrl`; it returns with `#tula_test=<testId>`.
+
+```ts
+const SsoTestStartSchema: z.ZodObject<{ testId: z.ZodUUID; authorizationUrl: z.ZodString; }, z.core.$strip>
+```
+
+### `SsoWeakening`
+
+_type_, defined in `packages/contract/src/sso-connection.ts`
+
+One way a change to a connection lets more people sign in, or asks less of them (ADR 0067).
+
+```ts
+export type SsoWeakening =
+| 'activate'
+| 'active_content'
+| 'enforcement_off'
+| 'trust_idp_mfa'
+| 'break_glass_role'
 ```
 
 ### `StartOrganizationDomainRequest`
@@ -9407,6 +10158,26 @@ one field.
 
 ```ts
 const UpdateOrganizationRoleRequestSchema
+```
+
+### `UpdateSsoConnectionRequest`
+
+_type_, defined in `packages/contract/src/sso-connection.ts`
+
+The body that changes a connection.
+
+```ts
+export type UpdateSsoConnectionRequest = z.infer<typeof UpdateSsoConnectionRequestSchema>
+```
+
+### `UpdateSsoConnectionRequestSchema`
+
+_constant_, defined in `packages/contract/src/sso-connection.ts`
+
+The body that changes a connection: every field is optional and an absent one is kept.
+
+```ts
+const UpdateSsoConnectionRequestSchema
 ```
 
 ### `UpdateWebhookEndpointRequest`
@@ -10149,6 +10920,22 @@ assetLinks([{ platform: 'android', packageName: 'com.example.app', sha256CertFin
 // [{ relation: ['delegate_permission/common.get_login_creds'], target: { … } }]
 ```
 
+### `auditExportCursor`
+
+_function_, defined in `packages/contract/src/audit.ts`
+
+The cursor that resumes an export after an entry.
+
+```ts
+export function auditExportCursor(entry: { id: string; occurredAt: string }): string
+```
+
+**Parameters**
+
+- `entry`: The last entry an export wrote (its `occurredAt` and `id`).
+
+**Returns** The value for the export's `after` parameter.
+
 ### `bindsCodeWithPkce`
 
 _function_, defined in `packages/contract/src/redirect-url.ts`
@@ -10481,6 +11268,27 @@ export function durationToMs(duration: string): number
 ```ts
 durationToMs('7d') // 604800000
 ```
+
+### `effectiveAttributeNames`
+
+_function_, defined in `packages/contract/src/sso-attributes.ts`
+
+The names a connection reads: its preset's defaults (the protocol's generic ones when it has
+none), each replaced by the connection's own override.
+
+```ts
+export function effectiveAttributeNames(
+  protocol: SsoProtocol,
+  mapping: SsoAttributeMapping | null
+): SsoAttributeNames
+```
+
+**Parameters**
+
+- `protocol`: The connection's protocol.
+- `mapping`: The connection's mapping, or `null`.
+
+**Returns** The names to read for each field.
 
 ### `emailTemplateParagraphs`
 
@@ -11953,6 +12761,22 @@ export function ownClientIdAmong(clientId: string, additionalClientIds: readonly
 ownClientIdAmong('1-web.apps.googleusercontent.com', ['1-ios.apps.googleusercontent.com']) // -1
 ```
 
+### `parseAuditExportCursor`
+
+_function_, defined in `packages/contract/src/audit.ts`
+
+Take a cursor apart.
+
+```ts
+export function parseAuditExportCursor(cursor: string): { occurredAt: string; id: string } | null
+```
+
+**Parameters**
+
+- `cursor`: A value of {@link AuditExportCursorSchema}.
+
+**Returns** The instant and the entry id, or `null` when it is not a cursor.
+
 ### `parseEmailTemplate`
 
 _function_, defined in `packages/contract/src/email-template.ts`
@@ -12793,6 +13617,34 @@ smsTemplateProblems('sign_in', { text: 'Your sign-in code.' })
 // [{ field: 'text', code: 'missing_placeholder', placeholder: 'code', message: … }]
 ```
 
+### `ssoWeakenings`
+
+_function_, defined in `packages/contract/src/sso-connection.ts`
+
+What a change to a connection lets through that it did not before. The one copy of the rule:
+the server's audit entry says `weakened: true` for exactly these, and the dashboard asks
+first and words each (ADR 0067). A name, or a field left `undefined`, is no change.
+
+```ts
+export function ssoWeakenings(
+  current: Pick<SsoConnection, 'status' | 'enforced' | 'breakGlassRole' | 'trustIdpMfa'>,
+  fields: object
+): SsoWeakening[]
+```
+
+**Parameters**
+
+- `current`: The connection as it is.
+- `changes`: The fields being changed.
+
+**Returns** The weakenings, in a fixed order; empty when nothing is weakened.
+
+**Example**
+
+```ts
+ssoWeakenings({ status: 'draft', enforced: true, breakGlassRole: null, trustIdpMfa: false }, { status: 'active' }) // ['activate']
+```
+
 ### `stepUpWindowSeconds`
 
 _function_, defined in `packages/contract/src/session-profile.ts`
@@ -13282,6 +14134,16 @@ const RESERVED_CLAIM_NAMES
 
 ```ts
 RESERVED_CLAIM_NAMES.includes('sub') // true
+```
+
+### `SSO_CONNECTION_CLAIM`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The access token's claim naming the SSO connection a session was signed in through (ADR 0067).
+
+```ts
+const SSO_CONNECTION_CLAIM: "sso_conn"
 ```
 
 ### `checkCustomClaims`
@@ -14378,6 +15240,18 @@ await fetch(`${api}/v1/client/sign-ins`, {
 })
 ```
 
+### `SETUP_LINK_HEADER`
+
+_constant_, defined in `packages/contract/src/headers.ts`
+
+The header that carries a setup link's token to `/v1/setup/*` (ADR 0067). The portal reads
+the token from the page address's fragment, which a browser never sends, and puts it here:
+it is never in a path or a query, so no access log or `Referer` holds it.
+
+```ts
+const SETUP_LINK_HEADER: "x-tula-setup-token"
+```
+
 ## `@tula-tech/contract/issuer`
 
 Source: `packages/contract/src/issuer.ts`
@@ -14891,6 +15765,17 @@ Why a custom role may not hold a permission key.
 
 ```ts
 export type RolePermissionRefusal = 'grammar' | 'reserved'
+```
+
+### `SSO_MANAGE_PERMISSION`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permission that lets a member manage the organization's single sign-on connections
+(ADR 0067). Read from the membership now, never from a token's claims alone.
+
+```ts
+const SSO_MANAGE_PERMISSION: SystemPermission
 ```
 
 ### `SYSTEM_PERMISSIONS`

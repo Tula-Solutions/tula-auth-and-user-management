@@ -91,6 +91,13 @@ export const EXPIRED_DOMAIN_CLAIM_RETENTION = '1h'
 export const EXPIRED_INVITATION_RETENTION = '7d'
 
 /**
+ * How long a setup link is kept after its expiry, whatever became of it (ADR 0067, "Setup
+ * links"). A while, so that the operator's list still shows a link that lapsed last week; the
+ * link itself is refused from the moment it expires. The audit log keeps the ids.
+ */
+export const EXPIRED_SETUP_LINK_RETENTION = '30d'
+
+/**
  * How often the retention job runs. Expired sign-up attempts hold the hash of a password that
  * was never used, so they should not outlive their expiry by long; the other tables only need
  * a daily pass, and an idle pass costs a handful of indexed queries per environment.
@@ -142,6 +149,8 @@ export interface RetentionCounts {
   domainClaims: number
   /** Organization invitations that expired more than {@link EXPIRED_INVITATION_RETENTION} ago. */
   invitations: number
+  /** Setup links that expired more than {@link EXPIRED_SETUP_LINK_RETENTION} ago. */
+  setupLinks: number
 }
 
 /** The outcome of one retention run. Counts only: nothing here identifies a user. */
@@ -168,6 +177,7 @@ type RetentionDeps = Pick<
   | 'hooks'
   | 'organizationDomains'
   | 'organizations'
+  | 'setupLinks'
   | 'users'
   | 'environmentSettings'
   | 'config'
@@ -349,6 +359,7 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
   const hookCountsBefore = hourOf(new Date(now.getTime() - durationToMs(HOOK_CALL_COUNT_RETENTION)))
   const domainClaimsBefore = new Date(now.getTime() - durationToMs(EXPIRED_DOMAIN_CLAIM_RETENTION))
   const invitationsBefore = new Date(now.getTime() - durationToMs(EXPIRED_INVITATION_RETENTION))
+  const setupLinksBefore = new Date(now.getTime() - durationToMs(EXPIRED_SETUP_LINK_RETENTION))
   const report: RetentionReport = {
     environments: 0,
     failed: 0,
@@ -368,6 +379,7 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
     testUsers: 0,
     domainClaims: 0,
     invitations: 0,
+    setupLinks: 0,
   }
   // The instance audit log belongs to no environment, and its period is the deployment's:
   // anyone who can reach the sign-in can add to it, so it always has an end. An environment's
@@ -427,6 +439,9 @@ export async function purge(deps: RetentionDeps): Promise<RetentionReport> {
       )
       report.invitations += await drain((limit) =>
         deps.organizations.deleteExpiredInvitations(id, invitationsBefore, limit)
+      )
+      report.setupLinks += await drain((limit) =>
+        deps.setupLinks.deleteExpiredBefore(id, setupLinksBefore, limit)
       )
     } catch (error) {
       report.failed += 1
@@ -494,7 +509,8 @@ export async function run(
     report.proposals +
     report.hookCallCounts +
     report.testUsers +
-    report.domainClaims
+    report.domainClaims +
+    report.setupLinks
   // An idle run is routine; one that deleted something, or could not, is worth a line.
   const log = report.failed > 0 ? logger.warn : removed > 0 ? logger.info : logger.debug
   log('retention run finished', { ...report })

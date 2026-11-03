@@ -46,6 +46,9 @@ export const ACTIVITY_TYPES = [
   // `provider` says which, `method` how (`auto`, `profile`).
   'user.identity_linked',
   'user.identity_unlinked',
+  // An account given its identity at an SSO connection (ADR 0067): `connectionId` says which,
+  // `method` whether it was matched by address or created just in time.
+  'user.sso_linked',
   // An email address stored on a user who had none (ADR 0059); `method` says who did it and
   // `verified` whether its holder proved it. The address itself is never in an event.
   'user.email_added',
@@ -101,6 +104,24 @@ export const ACTIVITY_TYPES = [
   'native_app.created',
   'native_app.updated',
   'native_app.deleted',
+  // An organization's single sign-on connection (ADR 0067). Ids, protocol, status and field
+  // names only: never the issuer, the client id or secret, or a domain.
+  'sso_connection.created',
+  'sso_connection.updated',
+  'sso_connection.deleted',
+  // A SCIM token of an organization's directory and the users the directory provisions (ADR 0067).
+  // Ids and enums only: never a token, a user name or an address.
+  'scim_token.created',
+  'scim_token.revoked',
+  'setup_link.created',
+  'setup_link.revoked',
+  'user.scim_provisioned',
+  'user.scim_updated',
+  // A group a directory pushed (ADR 0067). Ids and field names only: a group's name is
+  // directory data and is never in an event.
+  'scim_group.created',
+  'scim_group.updated',
+  'scim_group.deleted',
   // An organization and its members (ADR 0065). The events carry ids and role keys only:
   // never the organization's name or slug, and never a member's address or name.
   'organization.created',
@@ -129,6 +150,8 @@ export const ACTIVITY_TYPES = [
   'proposal.approved',
   'proposal.executed',
   'proposal.failed',
+  // An export of the audit log (TULA-137): who read the trail, with which filters, how many entries.
+  'audit.exported',
   // A sign-in test (ADR 0058): the server signed a throwaway user up and in for an agent (or
   // for a secret key) and deleted it. `finished` says what it came to and names the user.
   'sign_in_test.started',
@@ -182,6 +205,7 @@ export const EVENT_TARGET_TYPES = {
   'user.identity_linked': 'user',
   'user.email_added': 'user',
   'user.identity_unlinked': 'user',
+  'user.sso_linked': 'user',
   'user.passkey_added': 'user',
   'user.passkey_renamed': 'user',
   'user.passkey_removed': 'user',
@@ -213,6 +237,18 @@ export const EVENT_TARGET_TYPES = {
   'native_app.created': 'native_app',
   'native_app.updated': 'native_app',
   'native_app.deleted': 'native_app',
+  'sso_connection.created': 'sso_connection',
+  'sso_connection.updated': 'sso_connection',
+  'sso_connection.deleted': 'sso_connection',
+  'scim_token.created': 'scim_token',
+  'scim_token.revoked': 'scim_token',
+  'setup_link.created': 'setup_link',
+  'setup_link.revoked': 'setup_link',
+  'user.scim_provisioned': 'user',
+  'user.scim_updated': 'user',
+  'scim_group.created': 'scim_group',
+  'scim_group.updated': 'scim_group',
+  'scim_group.deleted': 'scim_group',
   'organization.created': 'organization',
   'organization.updated': 'organization',
   'organization.deleted': 'organization',
@@ -234,6 +270,7 @@ export const EVENT_TARGET_TYPES = {
   'proposal.approved': 'proposal',
   'proposal.executed': 'proposal',
   'proposal.failed': 'proposal',
+  'audit.exported': 'environment',
   'sign_in_test.started': 'environment',
   'sign_in_test.finished': 'environment',
 } as const satisfies Record<ActivityType, AuditTargetType>

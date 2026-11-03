@@ -1089,11 +1089,12 @@ function canonical(value: unknown): unknown {
  * version of a file nobody touched.
  */
 function withoutUnusedDefaults(environment: EnvironmentConfig): unknown {
-  const { sessions, sms, signIn, emails, mfa, agents, organizations, ...settings } =
+  const { sessions, sms, signIn, emails, mfa, agents, organizations, sso, ...settings } =
     environment.settings
   const ownOrganizations =
     JSON.stringify(canonical(organizations)) !==
     JSON.stringify(canonical(DEFAULT_ENVIRONMENT_SETTINGS.organizations))
+  const ownSso = sso.enabled
   const { smsCode: smsSecondStep, ...mfaBefore } = mfa
   const { jwtTemplates, ...rest } = sessions
   const { smsCode, ...methods } = signIn.methods
@@ -1152,6 +1153,8 @@ function withoutUnusedDefaults(environment: EnvironmentConfig): unknown {
       // Organizations arrived after all of these (ADR 0065): written only when the section
       // is not the default one, which is off.
       ...(ownOrganizations && { organizations }),
+      // Single sign-on arrived after them (ADR 0067): written only when it is on.
+      ...(ownSso && { sso }),
     },
   }
 }

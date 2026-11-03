@@ -389,6 +389,39 @@ export type OrganizationDomainList = Schemas['OrganizationDomainList']
 /** The body of `organizations.domains.start()`: the domain, an address on it and the mode. */
 export type StartOrganizationDomainInput = Schemas['StartOrganizationDomainRequest']
 
+/** An SSO connection of an organization, as its admins see it: never with the client secret. */
+export type OrganizationSsoConnection = Schemas['SsoConnection']
+
+/** An organization's SSO connections. */
+export type OrganizationSsoConnectionList = Schemas['SsoConnectionList']
+
+/** The body of `organizations.sso.create()`: the organization is the one of the call. */
+export type CreateOrganizationSsoConnectionInput = Schemas['CreateMySsoConnectionRequest']
+
+/** The fields `organizations.sso.update()` changes; an absent one is kept. */
+export type UpdateOrganizationSsoConnectionInput = Schemas['UpdateSsoConnectionRequest']
+
+/** An organization's IdP group to role mapping, in precedence order. */
+export type OrganizationSsoGroupRoles = Schemas['SsoGroupRoles']
+
+/** A started test sign-in: where to send the browser, and the id it returns with. */
+export type OrganizationSsoTestStart = Schemas['SsoTestStart']
+
+/** A test sign-in's result. */
+export type OrganizationSsoTestResult = Schemas['SsoTestResult']
+
+/** An SSO setup link of an organization, as listed (never its token). */
+export type OrganizationSetupLink = Schemas['SetupLink']
+
+/** The setup links of an organization. */
+export type OrganizationSetupLinkList = Schemas['SetupLinkList']
+
+/** A new setup link: the `token` and `url` are shown once. */
+export type CreatedOrganizationSetupLink = Schemas['CreatedSetupLink']
+
+/** The body of `organizations.sso.createSetupLink()`. */
+export type CreateOrganizationSetupLinkInput = Schemas['CreateMySetupLinkRequest']
+
 /** What `organizations.setActive()` answers: the session's active organization now. */
 export type ActiveOrganization = Schemas['ActiveOrganization']
 

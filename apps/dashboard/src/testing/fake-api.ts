@@ -15,6 +15,8 @@ import {
   organizationRoutes,
 } from './fake-organizations'
 import { type FakeProposalState, proposalRoutes } from './fake-proposals'
+import { type FakeScimState, scimRoutes } from './fake-scim'
+import { type FakeSsoState, ssoRoutes } from './fake-sso'
 import { type FakeWebhookState, webhookRoutes } from './fake-webhooks'
 
 export { type FakeHook, fakeHook } from './fake-hooks'
@@ -33,6 +35,8 @@ export {
   fakeRole,
 } from './fake-organizations'
 export { FAKE_AGENT_KEY_ID, type FakeProposal, fakeProposal } from './fake-proposals'
+export { type FakeScimToken, fakeScimToken } from './fake-scim'
+export { type FakeSsoConnection, fakeSsoConnection } from './fake-sso'
 
 export {
   type FakeWebhookDelivery,
@@ -236,6 +240,8 @@ export interface FakeState
     FakeHookState,
     FakeNativeAppState,
     FakeOrganizationState,
+    FakeSsoState,
+    FakeScimState,
     FakeProposalState {
   /** Whether `TULA_ADMIN_TOKEN` is set (the instance routes exist). */
   adminToken: boolean
@@ -389,6 +395,13 @@ function initialState(): FakeState {
     roles: [],
     invitations: [],
     domains: [],
+    ssoConnections: [],
+    setupLinks: [],
+    ssoCertificateEnd: '2027-10-23T12:00:00.000Z',
+    ssoTests: [],
+    ssoTestOutcome: 'passed',
+    ssoGroupRoles: {},
+    scimTokens: [],
     proposals: [],
     proposalNow: NOW,
     webhookWorkerSeparate: false,
@@ -724,6 +737,17 @@ export function installFakeApi() {
         ]),
     ],
     ['GET', /^\/v1\/admin\/audit-logs$/, () => page(state.audit)],
+    [
+      'POST',
+      /^\/v1\/admin\/audit-logs\/export$/,
+      (call) => {
+        const body = call.body as { format?: string }
+        return new Response(body.format === 'csv' ? 'id\r\naudit-1\r\n' : '{"id":"audit-1"}\n', {
+          status: 200,
+          headers: { 'content-type': 'application/octet-stream' },
+        })
+      },
+    ],
     ...webhookRoutes(state),
     ...hookRoutes(state),
     ...nativeAppRoutes(state),
@@ -731,6 +755,15 @@ export function installFakeApi() {
       enabled: () => state.settings.settings.organizations?.enabled ?? false,
       redirectUrls: () => state.settings.settings.urls.allowedRedirectUrls,
       userExists: (userId) => state.users.some((user) => user.id === userId),
+    }),
+    ...ssoRoutes(state, {
+      enabled: () => state.settings.settings.sso?.enabled ?? false,
+      organizations: () => state.organizations,
+      domains: () => state.domains,
+    }),
+    ...scimRoutes(state, {
+      enabled: () => state.settings.settings.organizations?.enabled ?? false,
+      organizations: () => state.organizations,
     }),
     ...proposalRoutes(state),
     ['GET', /^\/v1\/admin\/settings$/, () => structuredClone(state.settings)],
