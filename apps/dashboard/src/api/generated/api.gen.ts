@@ -6653,6 +6653,40 @@ export interface UpdateSsoConnectionRequest {
   status?: UpdateSsoConnectionRequestStatus;
 }
 
+export type CreateMySsoConnectionRequestProtocol = typeof CreateMySsoConnectionRequestProtocol[keyof typeof CreateMySsoConnectionRequestProtocol];
+
+
+export const CreateMySsoConnectionRequestProtocol = {
+  oidc: 'oidc',
+  saml: 'saml',
+} as const;
+
+export interface CreateMySsoConnectionRequest {
+  protocol?: CreateMySsoConnectionRequestProtocol;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  name: string;
+  /** @maxLength 2048 */
+  issuer?: string;
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  clientId?: string;
+  /**
+     * @minLength 1
+     * @maxLength 4096
+     */
+  clientSecret?: string;
+  saml?: SamlSettingsInput;
+  attributeMapping?: SsoAttributeMapping;
+  defaultRole?: OrganizationRoleKey;
+  /** @maxItems 20 */
+  domains?: OrganizationDomainName[];
+}
+
 export interface ScimToken {
   /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
   id: string;

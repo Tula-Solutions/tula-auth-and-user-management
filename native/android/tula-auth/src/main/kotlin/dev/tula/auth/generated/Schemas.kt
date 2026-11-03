@@ -113,6 +113,28 @@ data class ClientConfigSignUp(
 )
 
 @Serializable
+data class CreateMySsoConnectionRequest(
+    val protocol: CreateMySsoConnectionRequestProtocol? = null,
+    val name: String,
+    /** Format: `uri`. */
+    val issuer: String? = null,
+    val clientId: String? = null,
+    val clientSecret: String? = null,
+    val saml: SamlSettingsInput? = null,
+    val attributeMapping: SsoAttributeMapping? = null,
+    val defaultRole: OrganizationRoleKey? = null,
+    val domains: List<OrganizationDomainName>? = null,
+)
+
+@Serializable
+enum class CreateMySsoConnectionRequestProtocol(val rawValue: String) {
+    @SerialName("oidc")
+    Oidc("oidc"),
+    @SerialName("saml")
+    Saml("saml"),
+}
+
+@Serializable
 data class CreateOrganizationInvitationRequest(
     val email: String,
     val role: OrganizationRoleKey,
@@ -1684,6 +1706,36 @@ data class RevokedSessions(
     val revoked: Long,
 )
 
+@Serializable
+data class SamlConnection(
+    val idpEntityId: String,
+    val ssoUrl: String,
+    val metadataUrl: String?,
+    val certificates: List<SamlConnectionCertificatesItem>,
+    val spEntityId: String,
+    val acsUrl: String,
+    val spMetadataUrl: String,
+)
+
+@Serializable
+data class SamlConnectionCertificatesItem(
+    val fingerprint: String,
+    /** Format: `date-time`. */
+    val notAfter: String,
+    val expired: Boolean,
+)
+
+@Serializable
+data class SamlSettingsInput(
+    val metadataXml: String? = null,
+    /** Format: `uri`. */
+    val metadataUrl: String? = null,
+    val idpEntityId: String? = null,
+    /** Format: `uri`. */
+    val ssoUrl: String? = null,
+    val certificates: List<String>? = null,
+)
+
 @Serializable(with = SecondFactorMethodSerializer::class)
 sealed class SecondFactorMethod {
     /** The value as the API writes it. */
@@ -2021,6 +2073,248 @@ data class SmsFactorConfirmRequest(
 )
 
 @Serializable
+data class SsoAttributeMapping(
+    val idp: SsoAttributeMappingIdp? = null,
+    val email: String? = null,
+    val firstName: String? = null,
+    val lastName: String? = null,
+    val groups: String? = null,
+)
+
+@Serializable(with = SsoAttributeMappingIdpSerializer::class)
+sealed class SsoAttributeMappingIdp {
+    /** The value as the API writes it. */
+    abstract val rawValue: String
+
+    override fun toString(): String = rawValue
+
+    object Okta : SsoAttributeMappingIdp() {
+        override val rawValue: String = "okta"
+    }
+
+    object Entra : SsoAttributeMappingIdp() {
+        override val rawValue: String = "entra"
+    }
+
+    object GoogleWorkspace : SsoAttributeMappingIdp() {
+        override val rawValue: String = "google_workspace"
+    }
+
+    object Jumpcloud : SsoAttributeMappingIdp() {
+        override val rawValue: String = "jumpcloud"
+    }
+
+    object Onelogin : SsoAttributeMappingIdp() {
+        override val rawValue: String = "onelogin"
+    }
+
+    object Ping : SsoAttributeMappingIdp() {
+        override val rawValue: String = "ping"
+    }
+
+    object Generic : SsoAttributeMappingIdp() {
+        override val rawValue: String = "generic"
+    }
+
+    /** A value this version does not know, as the API wrote it. Made by [of] only. */
+    class Unknown internal constructor(override val rawValue: String) : SsoAttributeMappingIdp() {
+        override fun equals(other: Any?): Boolean = other is Unknown && other.rawValue == rawValue
+
+        override fun hashCode(): Int = rawValue.hashCode()
+    }
+
+    companion object {
+        /** Every value this version knows. */
+        val known: List<SsoAttributeMappingIdp> by lazy {
+            listOf(
+                Okta,
+                Entra,
+                GoogleWorkspace,
+                Jumpcloud,
+                Onelogin,
+                Ping,
+                Generic,
+            )
+        }
+
+        /** The value for a string of the API: [Unknown] for one this version does not know. */
+        fun of(rawValue: String): SsoAttributeMappingIdp = when (rawValue) {
+            "okta" -> Okta
+            "entra" -> Entra
+            "google_workspace" -> GoogleWorkspace
+            "jumpcloud" -> Jumpcloud
+            "onelogin" -> Onelogin
+            "ping" -> Ping
+            "generic" -> Generic
+            else -> Unknown(rawValue)
+        }
+    }
+}
+
+/** Reads and writes [SsoAttributeMappingIdp] as its string, whatever the string is. */
+object SsoAttributeMappingIdpSerializer : KSerializer<SsoAttributeMappingIdp> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("dev.tula.auth.generated.SsoAttributeMappingIdp", PrimitiveKind.STRING)
+
+    override fun deserialize(decoder: Decoder): SsoAttributeMappingIdp = SsoAttributeMappingIdp.of(decoder.decodeString())
+
+    override fun serialize(encoder: Encoder, value: SsoAttributeMappingIdp) {
+        encoder.encodeString(value.rawValue)
+    }
+}
+
+@Serializable
+data class SsoConnection(
+    /** Format: `uuid`. */
+    val id: String,
+    /** Format: `uuid`. */
+    val organizationId: String,
+    val protocol: SsoConnectionProtocol,
+    val name: String,
+    val status: SsoConnectionStatus,
+    val issuer: String,
+    val clientId: String,
+    val clientSecretSet: Boolean,
+    val saml: SamlConnection?,
+    val attributeMapping: SsoAttributeMapping?,
+    val defaultRole: String,
+    val enforced: Boolean,
+    val breakGlassRole: String?,
+    val trustIdpMfa: Boolean,
+    val domains: List<String>,
+    /** Format: `date-time`. */
+    val createdAt: String,
+    /** Format: `date-time`. */
+    val updatedAt: String,
+)
+
+@Serializable
+data class SsoConnectionList(
+    val connections: List<SsoConnection>,
+)
+
+@Serializable(with = SsoConnectionProtocolSerializer::class)
+sealed class SsoConnectionProtocol {
+    /** The value as the API writes it. */
+    abstract val rawValue: String
+
+    override fun toString(): String = rawValue
+
+    object Oidc : SsoConnectionProtocol() {
+        override val rawValue: String = "oidc"
+    }
+
+    object Saml : SsoConnectionProtocol() {
+        override val rawValue: String = "saml"
+    }
+
+    /** A value this version does not know, as the API wrote it. Made by [of] only. */
+    class Unknown internal constructor(override val rawValue: String) : SsoConnectionProtocol() {
+        override fun equals(other: Any?): Boolean = other is Unknown && other.rawValue == rawValue
+
+        override fun hashCode(): Int = rawValue.hashCode()
+    }
+
+    companion object {
+        /** Every value this version knows. */
+        val known: List<SsoConnectionProtocol> by lazy {
+            listOf(
+                Oidc,
+                Saml,
+            )
+        }
+
+        /** The value for a string of the API: [Unknown] for one this version does not know. */
+        fun of(rawValue: String): SsoConnectionProtocol = when (rawValue) {
+            "oidc" -> Oidc
+            "saml" -> Saml
+            else -> Unknown(rawValue)
+        }
+    }
+}
+
+/** Reads and writes [SsoConnectionProtocol] as its string, whatever the string is. */
+object SsoConnectionProtocolSerializer : KSerializer<SsoConnectionProtocol> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("dev.tula.auth.generated.SsoConnectionProtocol", PrimitiveKind.STRING)
+
+    override fun deserialize(decoder: Decoder): SsoConnectionProtocol = SsoConnectionProtocol.of(decoder.decodeString())
+
+    override fun serialize(encoder: Encoder, value: SsoConnectionProtocol) {
+        encoder.encodeString(value.rawValue)
+    }
+}
+
+@Serializable(with = SsoConnectionStatusSerializer::class)
+sealed class SsoConnectionStatus {
+    /** The value as the API writes it. */
+    abstract val rawValue: String
+
+    override fun toString(): String = rawValue
+
+    object Draft : SsoConnectionStatus() {
+        override val rawValue: String = "draft"
+    }
+
+    object Active : SsoConnectionStatus() {
+        override val rawValue: String = "active"
+    }
+
+    object Disabled : SsoConnectionStatus() {
+        override val rawValue: String = "disabled"
+    }
+
+    /** A value this version does not know, as the API wrote it. Made by [of] only. */
+    class Unknown internal constructor(override val rawValue: String) : SsoConnectionStatus() {
+        override fun equals(other: Any?): Boolean = other is Unknown && other.rawValue == rawValue
+
+        override fun hashCode(): Int = rawValue.hashCode()
+    }
+
+    companion object {
+        /** Every value this version knows. */
+        val known: List<SsoConnectionStatus> by lazy {
+            listOf(
+                Draft,
+                Active,
+                Disabled,
+            )
+        }
+
+        /** The value for a string of the API: [Unknown] for one this version does not know. */
+        fun of(rawValue: String): SsoConnectionStatus = when (rawValue) {
+            "draft" -> Draft
+            "active" -> Active
+            "disabled" -> Disabled
+            else -> Unknown(rawValue)
+        }
+    }
+}
+
+/** Reads and writes [SsoConnectionStatus] as its string, whatever the string is. */
+object SsoConnectionStatusSerializer : KSerializer<SsoConnectionStatus> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("dev.tula.auth.generated.SsoConnectionStatus", PrimitiveKind.STRING)
+
+    override fun deserialize(decoder: Decoder): SsoConnectionStatus = SsoConnectionStatus.of(decoder.decodeString())
+
+    override fun serialize(encoder: Encoder, value: SsoConnectionStatus) {
+        encoder.encodeString(value.rawValue)
+    }
+}
+
+@Serializable
+data class SsoGroupRoles(
+    val mappings: List<SsoGroupRolesMappingsItem>,
+)
+
+@Serializable
+data class SsoGroupRolesMappingsItem(
+    val group: String,
+    val role: OrganizationRoleKey,
+)
+
+@Serializable
 data class SsoStartRequest(
     val redirectUrl: String,
 )
@@ -2184,6 +2478,33 @@ data class UpdateOrganizationRequest(
     val name: String? = null,
     val slug: OrganizationSlug? = null,
 )
+
+@Serializable
+data class UpdateSsoConnectionRequest(
+    val name: String? = null,
+    /** Format: `uri`. */
+    val issuer: String? = null,
+    val clientId: String? = null,
+    val clientSecret: String? = null,
+    val saml: SamlSettingsInput? = null,
+    val attributeMapping: SsoAttributeMapping? = null,
+    val defaultRole: OrganizationRoleKey? = null,
+    val enforced: Boolean? = null,
+    val breakGlassRole: OrganizationRoleKey? = null,
+    val trustIdpMfa: Boolean? = null,
+    val domains: List<OrganizationDomainName>? = null,
+    val status: UpdateSsoConnectionRequestStatus? = null,
+)
+
+@Serializable
+enum class UpdateSsoConnectionRequestStatus(val rawValue: String) {
+    @SerialName("draft")
+    Draft("draft"),
+    @SerialName("active")
+    Active("active"),
+    @SerialName("disabled")
+    Disabled("disabled"),
+}
 
 @Serializable
 data class UserOrganization(

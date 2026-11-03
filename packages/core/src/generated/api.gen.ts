@@ -57,6 +57,17 @@ export interface Schemas {
       personalAccount: boolean
     }
   }
+  CreateMySsoConnectionRequest: {
+    protocol?: 'oidc' | 'saml'
+    name: string
+    issuer?: string
+    clientId?: string
+    clientSecret?: string
+    saml?: Schemas['SamlSettingsInput']
+    attributeMapping?: Schemas['SsoAttributeMapping']
+    defaultRole?: Schemas['OrganizationRoleKey']
+    domains?: Schemas['OrganizationDomainName'][]
+  }
   CreateOrganizationInvitationRequest: {
     email: string
     role: Schemas['OrganizationRoleKey']
@@ -450,6 +461,26 @@ export interface Schemas {
   RevokedSessions: {
     revoked: number
   }
+  SamlConnection: {
+    idpEntityId: string
+    ssoUrl: string
+    metadataUrl: string | null
+    certificates: {
+      fingerprint: string
+      notAfter: string
+      expired: boolean
+    }[]
+    spEntityId: string
+    acsUrl: string
+    spMetadataUrl: string
+  }
+  SamlSettingsInput: {
+    metadataXml?: string
+    metadataUrl?: string
+    idpEntityId?: string
+    ssoUrl?: string
+    certificates?: string[]
+  }
   SecondFactorMethod: 'totp' | 'passkey' | 'backup_code' | 'sms_code'
   SecondFactorPrepareRequest: {
     method: Schemas['PreparedSecondFactorMethod']
@@ -509,6 +540,41 @@ export interface Schemas {
   SmsFactorConfirmRequest: {
     code: string
   }
+  SsoAttributeMapping: {
+    idp?: 'okta' | 'entra' | 'google_workspace' | 'jumpcloud' | 'onelogin' | 'ping' | 'generic'
+    email?: string
+    firstName?: string
+    lastName?: string
+    groups?: string
+  }
+  SsoConnection: {
+    id: string
+    organizationId: string
+    protocol: 'oidc' | 'saml'
+    name: string
+    status: 'draft' | 'active' | 'disabled'
+    issuer: string
+    clientId: string
+    clientSecretSet: boolean
+    saml: Schemas['SamlConnection'] | null
+    attributeMapping: Schemas['SsoAttributeMapping'] | null
+    defaultRole: string
+    enforced: boolean
+    breakGlassRole: string | null
+    trustIdpMfa: boolean
+    domains: string[]
+    createdAt: string
+    updatedAt: string
+  }
+  SsoConnectionList: {
+    connections: Schemas['SsoConnection'][]
+  }
+  SsoGroupRoles: {
+    mappings: {
+      group: string
+      role: Schemas['OrganizationRoleKey']
+    }[]
+  }
   SsoStartRequest: {
     redirectUrl: string
   }
@@ -558,6 +624,20 @@ export interface Schemas {
     name?: string
     slug?: Schemas['OrganizationSlug']
   }
+  UpdateSsoConnectionRequest: {
+    name?: string
+    issuer?: string
+    clientId?: string
+    clientSecret?: string
+    saml?: Schemas['SamlSettingsInput']
+    attributeMapping?: Schemas['SsoAttributeMapping']
+    defaultRole?: Schemas['OrganizationRoleKey']
+    enforced?: boolean
+    breakGlassRole?: Schemas['OrganizationRoleKey'] | null
+    trustIdpMfa?: boolean
+    domains?: Schemas['OrganizationDomainName'][]
+    status?: 'draft' | 'active' | 'disabled'
+  }
   UserOrganization: {
     id: string
     name: string
@@ -601,6 +681,8 @@ export interface Operations {
   confirmTotpEnrolment: { params: Record<string, never>; body: Schemas['TotpConfirmRequest']; response: Schemas['BackupCodes'] }
   /** Create an organization (`POST /v1/client/me/organizations`). */
   createMyOrganization: { params: Record<string, never>; body: Schemas['CreateOrganizationRequest']; response: Schemas['UserOrganization'] }
+  /** Create an SSO connection (`POST /v1/client/me/organizations/{organizationId}/sso-connections`). */
+  createMyOrganizationSsoConnection: { params: { organizationId: string }; body: Schemas['CreateMySsoConnectionRequest']; response: Schemas['SsoConnection'] }
   /** Decline an invitation addressed to me (`POST /v1/client/me/organization-invitations/{invitationId}/decline`). */
   declineMyOrganizationInvitation: { params: { invitationId: string }; body: undefined; response: undefined }
   /** Decline an invitation (`POST /v1/client/me/organization-invitations/decline`). */
@@ -609,6 +691,8 @@ export interface Operations {
   deleteMyIdentity: { params: { identityId: string }; body: undefined; response: undefined }
   /** Delete an organization (`DELETE /v1/client/me/organizations/{organizationId}`). */
   deleteMyOrganization: { params: { organizationId: string }; body: undefined; response: undefined }
+  /** Delete an SSO connection (`DELETE /v1/client/me/organizations/{organizationId}/sso-connections/{id}`). */
+  deleteMyOrganizationSsoConnection: { params: { organizationId: string; id: string }; body: undefined; response: undefined }
   /** Stop using a texted code as my second factor (`DELETE /v1/client/me/factors/sms`). */
   disableSmsFactor: { params: Record<string, never>; body: undefined; response: undefined }
   /** Turn two-step verification off (`DELETE /v1/client/me/factors/totp`). */
@@ -625,6 +709,10 @@ export interface Operations {
   getMe: { params: Record<string, never>; body: undefined; response: Schemas['CurrentUser'] }
   /** Get my second factors (`GET /v1/client/me/factors`). */
   getMyFactors: { params: Record<string, never>; body: undefined; response: Schemas['Factors'] }
+  /** Get an SSO connection (`GET /v1/client/me/organizations/{organizationId}/sso-connections/{id}`). */
+  getMyOrganizationSsoConnection: { params: { organizationId: string; id: string }; body: undefined; response: Schemas['SsoConnection'] }
+  /** Get the IdP group to role mapping (`GET /v1/client/me/organizations/{organizationId}/sso-connections/{id}/group-roles`). */
+  getMyOrganizationSsoGroupRoles: { params: { organizationId: string; id: string }; body: undefined; response: Schemas['SsoGroupRoles'] }
   /** Password policy (`GET /v1/client/password-policy`). */
   getPasswordPolicy: { params: Record<string, never>; body: undefined; response: Schemas['PasswordPolicy'] }
   /** Get the options for a passkey second factor (`POST /v1/client/password-resets/{attemptId}/second-factor/passkey/options`). */
@@ -649,6 +737,8 @@ export interface Operations {
   listMyOrganizationRoles: { params: { organizationId: string }; body: undefined; response: Schemas['AssignableRoleList'] }
   /** List my organizations (`GET /v1/client/me/organizations`). */
   listMyOrganizations: { params: Record<string, never>; query: { page?: number; size?: number }; body: undefined; response: Schemas['UserOrganizationList'] }
+  /** List my organization’s SSO connections (`GET /v1/client/me/organizations/{organizationId}/sso-connections`). */
+  listMyOrganizationSsoConnections: { params: { organizationId: string }; body: undefined; response: Schemas['SsoConnectionList'] }
   /** List the organizations I am suggested (`GET /v1/client/me/organizations/suggestions`). */
   listMyOrganizationSuggestions: { params: Record<string, never>; body: undefined; response: Schemas['OrganizationSuggestionList'] }
   /** List my passkeys (`GET /v1/client/me/passkeys`). */
@@ -665,6 +755,8 @@ export interface Operations {
   prepareSignInSecondFactor: { params: { attemptId: string }; body: Schemas['SecondFactorPrepareRequest']; response: Schemas['FlowAttempt'] }
   /** Preview an invitation (`POST /v1/client/organization-invitations/preview`). */
   previewOrganizationInvitation: { params: Record<string, never>; body: Schemas['InvitationTokenRequest']; response: Schemas['InvitationPreview'] }
+  /** Read a SAML connection’s metadata address again (`POST /v1/client/me/organizations/{organizationId}/sso-connections/{id}/refresh-metadata`). */
+  refreshMyOrganizationSsoMetadata: { params: { organizationId: string; id: string }; body: undefined; response: Schemas['SsoConnection'] }
   /** Refresh a session (`POST /v1/client/sessions/refresh`). */
   refreshSession: { params: Record<string, never>; body: Schemas['RefreshTokenRequest']; response: Schemas['SessionTokens'] }
   /** Make new backup codes (`POST /v1/client/me/factors/backup-codes`). */
@@ -679,6 +771,8 @@ export interface Operations {
   removePhoneNumber: { params: Record<string, never>; body: undefined; response: undefined }
   /** Rename a passkey (`PATCH /v1/client/me/passkeys/{passkeyId}`). */
   renamePasskey: { params: { passkeyId: string }; body: Schemas['PasskeyRenameRequest']; response: Schemas['Passkey'] }
+  /** Replace the IdP group to role mapping (`PUT /v1/client/me/organizations/{organizationId}/sso-connections/{id}/group-roles`). */
+  replaceMyOrganizationSsoGroupRoles: { params: { organizationId: string; id: string }; body: Schemas['SsoGroupRoles']; response: Schemas['SsoGroupRoles'] }
   /** Email a code to an address to add to my account (`POST /v1/client/me/email`). */
   requestEmailAddressCode: { params: Record<string, never>; body: Schemas['EmailAddressRequest']; response: Schemas['EmailCodeSent'] }
   /** Text a code to a phone number (`POST /v1/client/me/phone`). */
@@ -755,6 +849,8 @@ export interface Operations {
   updateMyOrganizationDomain: { params: { id: string; domainId: string }; body: Schemas['UpdateOrganizationDomainRequest']; response: Schemas['OrganizationDomain'] }
   /** Change a member’s role (`PATCH /v1/client/me/organizations/{organizationId}/members/{userId}`). */
   updateMyOrganizationMember: { params: { organizationId: string; userId: string }; body: Schemas['UpdateOrganizationMemberRequest']; response: Schemas['OrganizationMember'] }
+  /** Change an SSO connection (`PATCH /v1/client/me/organizations/{organizationId}/sso-connections/{id}`). */
+  updateMyOrganizationSsoConnection: { params: { organizationId: string; id: string }; body: Schemas['UpdateSsoConnectionRequest']; response: Schemas['SsoConnection'] }
   /** Confirm the address with its code (`POST /v1/client/me/email/verify`). */
   verifyEmailAddress: { params: Record<string, never>; body: Schemas['EmailAddressVerifyRequest']; response: Schemas['CurrentUser'] }
   /** Verify a claimed domain (`POST /v1/client/me/organizations/{id}/domains/{domainId}/verify`). */
@@ -791,10 +887,12 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   confirmSmsFactorEnrolment: { method: 'POST', path: '/v1/client/me/factors/sms/confirm', session: true },
   confirmTotpEnrolment: { method: 'POST', path: '/v1/client/me/factors/totp/confirm', session: true },
   createMyOrganization: { method: 'POST', path: '/v1/client/me/organizations', session: true },
+  createMyOrganizationSsoConnection: { method: 'POST', path: '/v1/client/me/organizations/{organizationId}/sso-connections', session: true },
   declineMyOrganizationInvitation: { method: 'POST', path: '/v1/client/me/organization-invitations/{invitationId}/decline', session: true },
   declineOrganizationInvitation: { method: 'POST', path: '/v1/client/me/organization-invitations/decline', session: true },
   deleteMyIdentity: { method: 'DELETE', path: '/v1/client/me/identities/{identityId}', session: true },
   deleteMyOrganization: { method: 'DELETE', path: '/v1/client/me/organizations/{organizationId}', session: true },
+  deleteMyOrganizationSsoConnection: { method: 'DELETE', path: '/v1/client/me/organizations/{organizationId}/sso-connections/{id}', session: true },
   disableSmsFactor: { method: 'DELETE', path: '/v1/client/me/factors/sms', session: true },
   disableTotp: { method: 'DELETE', path: '/v1/client/me/factors/totp', session: true },
   exchangeIdentityLinkTicket: { method: 'POST', path: '/v1/client/me/identities/oauth/exchange', session: true },
@@ -803,6 +901,8 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   getClientConfig: { method: 'GET', path: '/v1/client/config', session: false },
   getMe: { method: 'GET', path: '/v1/client/me', session: true },
   getMyFactors: { method: 'GET', path: '/v1/client/me/factors', session: true },
+  getMyOrganizationSsoConnection: { method: 'GET', path: '/v1/client/me/organizations/{organizationId}/sso-connections/{id}', session: true },
+  getMyOrganizationSsoGroupRoles: { method: 'GET', path: '/v1/client/me/organizations/{organizationId}/sso-connections/{id}/group-roles', session: true },
   getPasswordPolicy: { method: 'GET', path: '/v1/client/password-policy', session: false },
   getPasswordResetSecondFactorPasskeyOptions: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/second-factor/passkey/options', session: false },
   getSignInSecondFactorPasskeyOptions: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/second-factor/passkey/options', session: false },
@@ -815,6 +915,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   listMyOrganizationMembers: { method: 'GET', path: '/v1/client/me/organizations/{organizationId}/members', session: true },
   listMyOrganizationRoles: { method: 'GET', path: '/v1/client/me/organizations/{organizationId}/roles', session: true },
   listMyOrganizations: { method: 'GET', path: '/v1/client/me/organizations', session: true },
+  listMyOrganizationSsoConnections: { method: 'GET', path: '/v1/client/me/organizations/{organizationId}/sso-connections', session: true },
   listMyOrganizationSuggestions: { method: 'GET', path: '/v1/client/me/organizations/suggestions', session: true },
   listMyPasskeys: { method: 'GET', path: '/v1/client/me/passkeys', session: true },
   listMyPendingOrganizationInvitations: { method: 'GET', path: '/v1/client/me/organization-invitations', session: true },
@@ -823,6 +924,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   prepareSignInFirstFactor: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/first-factor/prepare', session: false },
   prepareSignInSecondFactor: { method: 'POST', path: '/v1/client/sign-ins/{attemptId}/second-factor/prepare', session: false },
   previewOrganizationInvitation: { method: 'POST', path: '/v1/client/organization-invitations/preview', session: false },
+  refreshMyOrganizationSsoMetadata: { method: 'POST', path: '/v1/client/me/organizations/{organizationId}/sso-connections/{id}/refresh-metadata', session: true },
   refreshSession: { method: 'POST', path: '/v1/client/sessions/refresh', session: false },
   regenerateBackupCodes: { method: 'POST', path: '/v1/client/me/factors/backup-codes', session: true },
   removeMyOrganizationDomain: { method: 'DELETE', path: '/v1/client/me/organizations/{id}/domains/{domainId}', session: true },
@@ -830,6 +932,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   removePasskey: { method: 'DELETE', path: '/v1/client/me/passkeys/{passkeyId}', session: true },
   removePhoneNumber: { method: 'DELETE', path: '/v1/client/me/phone', session: true },
   renamePasskey: { method: 'PATCH', path: '/v1/client/me/passkeys/{passkeyId}', session: true },
+  replaceMyOrganizationSsoGroupRoles: { method: 'PUT', path: '/v1/client/me/organizations/{organizationId}/sso-connections/{id}/group-roles', session: true },
   requestEmailAddressCode: { method: 'POST', path: '/v1/client/me/email', session: true },
   requestPhoneCode: { method: 'POST', path: '/v1/client/me/phone', session: true },
   resendPasswordResetCode: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/resend-code', session: false },
@@ -868,6 +971,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   updateMyOrganization: { method: 'PATCH', path: '/v1/client/me/organizations/{organizationId}', session: true },
   updateMyOrganizationDomain: { method: 'PATCH', path: '/v1/client/me/organizations/{id}/domains/{domainId}', session: true },
   updateMyOrganizationMember: { method: 'PATCH', path: '/v1/client/me/organizations/{organizationId}/members/{userId}', session: true },
+  updateMyOrganizationSsoConnection: { method: 'PATCH', path: '/v1/client/me/organizations/{organizationId}/sso-connections/{id}', session: true },
   verifyEmailAddress: { method: 'POST', path: '/v1/client/me/email/verify', session: true },
   verifyMyOrganizationDomain: { method: 'POST', path: '/v1/client/me/organizations/{id}/domains/{domainId}/verify', session: true },
   verifyPhoneNumber: { method: 'POST', path: '/v1/client/me/phone/verify', session: true },
