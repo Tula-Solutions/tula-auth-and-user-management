@@ -492,6 +492,10 @@ sealed class ErrorCode {
         override val rawValue: String = "sso.test_not_found"
     }
 
+    object SsoRoleNotAllowed : ErrorCode() {
+        override val rawValue: String = "sso.role_not_allowed"
+    }
+
     object SsoUnavailable : ErrorCode() {
         override val rawValue: String = "sso.unavailable"
     }
@@ -689,6 +693,7 @@ sealed class ErrorCode {
                 SsoUrlNotHttps,
                 SsoTestRequired,
                 SsoTestNotFound,
+                SsoRoleNotAllowed,
                 SsoUnavailable,
                 SsoProviderError,
                 SsoUserNotProvisioned,
@@ -829,6 +834,7 @@ sealed class ErrorCode {
             "sso.url_not_https" -> SsoUrlNotHttps
             "sso.test_required" -> SsoTestRequired
             "sso.test_not_found" -> SsoTestNotFound
+            "sso.role_not_allowed" -> SsoRoleNotAllowed
             "sso.unavailable" -> SsoUnavailable
             "sso.provider_error" -> SsoProviderError
             "sso.user_not_provisioned" -> SsoUserNotProvisioned
@@ -1229,6 +1235,9 @@ object TulaErrorDefinitions {
     /** `sso.test_not_found` */
     val ssoTestNotFound: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoTestNotFound, 404, "No such test sign-in.")
 
+    /** `sso.role_not_allowed` */
+    val ssoRoleNotAllowed: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoRoleNotAllowed, 403, "A setup link cannot map a group to a role that holds system permissions.")
+
     /** `sso.unavailable` */
     val ssoUnavailable: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoUnavailable, 400, "Single sign-on is not available for that address.")
 
@@ -1400,6 +1409,7 @@ object TulaErrorDefinitions {
         ssoUrlNotHttps,
         ssoTestRequired,
         ssoTestNotFound,
+        ssoRoleNotAllowed,
         ssoUnavailable,
         ssoProviderError,
         ssoUserNotProvisioned,

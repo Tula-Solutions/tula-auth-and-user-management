@@ -4593,7 +4593,8 @@
             "items": {
               "type": "string",
               "enum": [
-                "name"
+                "name",
+                "email"
               ]
             }
           }
@@ -4602,7 +4603,7 @@
           "organizationId",
           "changed"
         ],
-        "description": "An organization's directory changed a user it manages (ADR 0067). Names only, never a value."
+        "description": "An organization's directory changed a user it manages (ADR 0067). Which fields (name, email), never a value."
       },
       "UserScimUpdatedEvent": {
         "type": "object",
@@ -4663,7 +4664,7 @@
           "target",
           "data"
         ],
-        "description": "An organization's directory changed a user it manages (ADR 0067). Names only, never a value."
+        "description": "An organization's directory changed a user it manages (ADR 0067). Which fields (name, email), never a value."
       },
       "ScimGroupCreatedEventData": {
         "type": "object",
@@ -7845,6 +7846,7 @@
           "sso.url_not_https",
           "sso.test_required",
           "sso.test_not_found",
+          "sso.role_not_allowed",
           "sso.unavailable",
           "sso.provider_error",
           "sso.user_not_provisioned",
@@ -16368,6 +16370,40 @@
             "const": "active"
           }
         },
+        "additionalProperties": false
+      },
+      "SetupGroupRoles": {
+        "type": "object",
+        "properties": {
+          "mappings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "group": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256
+                },
+                "role": {
+                  "$ref": "#/components/schemas/OrganizationRoleKey"
+                },
+                "locked": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "group",
+                "role",
+                "locked"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "mappings"
+        ],
         "additionalProperties": false
       },
       "SmsPrefixUsage": {
@@ -45564,7 +45600,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SsoGroupRoles"
+                  "$ref": "#/components/schemas/SetupGroupRoles"
                 }
               }
             }
@@ -45689,7 +45725,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SsoGroupRoles"
+                  "$ref": "#/components/schemas/SetupGroupRoles"
                 }
               }
             }

@@ -13,8 +13,11 @@ import * as logger from '~/lib/logger'
 import { setupLink } from '~/middleware/setup-link'
 import * as Audit from '~/modules/audit/service'
 import * as Organizations from '~/modules/organization/service'
+import * as OrganizationRoles from '~/modules/organization-role/service'
+import * as Portal from '~/modules/setup-link/portal'
 import * as SetupLinks from '~/modules/setup-link/service'
 import * as Sso from '~/modules/sso/service'
+import * as SsoConnections from '~/modules/sso-connection/service'
 import * as Users from '~/modules/user/service'
 import {
   createInstanceTestDeps,
@@ -448,6 +451,84 @@ describe('setup portal', () => {
     }
     const untouched = await deps.ssoConnections.find(TENANT.environmentId, foreign.id)
     expect(untouched?.name).toBe('Okta')
+  })
+
+  test('a link maps groups to unprivileged roles only; privileged mappings are locked and kept', async () => {
+    const o = await org()
+    const made = await link(o.id)
+    const c = await connect(made.token)
+    const path = `/connections/${c.id}/group-roles`
+    const put = (mappings: Array<{ group: string; role: string }>) =>
+      portal(made.token, path, { method: 'PUT', ...body({ mappings }) })
+    await OrganizationRoles.create(
+      deps,
+      TENANT,
+      { key: 'viewer', name: 'Viewer', permissions: [] },
+      TEST_ACTOR
+    )
+    await OrganizationRoles.create(
+      deps,
+      TENANT,
+      { key: 'billing', name: 'Billing', permissions: ['org:sys:memberships:manage'] },
+      TEST_ACTOR
+    )
+    expect((await put([{ group: 'Staff', role: 'viewer' }])).status).toBe(200)
+    expect((await put([{ group: 'Staff', role: 'member' }])).status).toBe(200)
+    for (const role of ['admin', 'billing']) {
+      const refused = await put([{ group: 'Staff', role }])
+      expect(refused.status).toBe(403)
+      expect(((await refused.json()) as { code: string }).code).toBe('sso.role_not_allowed')
+    }
+    // Nothing the refused calls asked for was saved.
+    expect(
+      (await deps.ssoConnections.listGroupRoles(TENANT.environmentId, o.id)).map((m) => m.role)
+    ).toEqual(['member'])
+    // The operator can still map a privileged role, and the portal then sees it locked and keeps it.
+    await SsoConnections.putGroupRoles(
+      deps,
+      TENANT,
+      c.id,
+      {
+        mappings: [
+          { group: 'Owners', role: 'admin' },
+          { group: 'Staff', role: 'member' },
+        ],
+      },
+      TEST_ACTOR
+    )
+    const shown = (await (await portal(made.token, path)).json()) as {
+      mappings: Array<{ group: string; role: string; locked: boolean }>
+    }
+    expect(shown.mappings).toEqual([
+      { group: 'Owners', role: 'admin', locked: true },
+      { group: 'Staff', role: 'member', locked: false },
+    ])
+    expect((await put([{ group: 'Staff', role: 'viewer' }])).status).toBe(200)
+    expect(await deps.ssoConnections.listGroupRoles(TENANT.environmentId, o.id)).toEqual([
+      { group: 'Owners', role: 'admin' },
+      { group: 'Staff', role: 'viewer' },
+    ])
+  })
+
+  test('a SCIM token request cannot name another organization', async () => {
+    const o = await org()
+    const other = await org('other')
+    const made = await link(o.id)
+    const res = await portal(made.token, '/scim-tokens', {
+      method: 'POST',
+      ...body({ name: 'Okta', organizationId: other.id }),
+    })
+    expect(res.status).toBe(422)
+    // And the service itself, given the extra key by a caller that forgot the schema, ignores it.
+    await Portal.createScimToken(
+      deps,
+      TENANT,
+      { organizationId: o.id, expiresAt: made.expiresAt as never },
+      { name: 'Okta', organizationId: other.id } as never,
+      TEST_ACTOR
+    )
+    expect(await deps.scim.listTokens(TENANT.environmentId, other.id)).toEqual([])
+    expect(await deps.scim.listTokens(TENANT.environmentId, o.id)).toHaveLength(1)
   })
 
   test('the portal cannot weaken: enforcement, MFA trust, break-glass and role are refused', async () => {

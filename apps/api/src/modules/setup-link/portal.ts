@@ -1,6 +1,7 @@
 import type {
   SetupConnectionCreate,
   SetupConnectionUpdate,
+  SetupGroupRoles,
   SetupPortal,
   SetupScimTokenCreate,
   SsoConnection,
@@ -12,6 +13,7 @@ import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, NotFoundError } from '~/exceptions'
 import type { Actor } from '~/lib/actor'
 import { publicBase } from '~/lib/public-base'
+import * as Organizations from '~/modules/organization/service'
 import * as ScimTokens from '~/modules/scim-token/service'
 import * as SsoConnections from '~/modules/sso-connection/service'
 import * as SsoTests from '~/modules/sso-test/service'
@@ -130,7 +132,7 @@ export async function createScimToken(
   input: SetupScimTokenCreate,
   actor: Actor
 ): Promise<Awaited<ReturnType<typeof ScimTokens.create>>> {
-  return ScimTokens.create(deps, tenant, { organizationId: scope.organizationId, ...input }, actor)
+  return ScimTokens.create(deps, tenant, { ...input, organizationId: scope.organizationId }, actor)
 }
 
 /**
@@ -202,7 +204,29 @@ export async function refreshMetadata(
 }
 
 /**
- * Read the group to role mapping of one of the link's organization's connections.
+ * Whether a role holds a system permission that does more than read (`org:sys:*` not ending in
+ * `:read`); a role that does not exist does not. The built-in `member` holds
+ * `org:sys:memberships:read` only and stays mappable: it is what a connection gives anyone.
+ */
+async function isPrivileged(
+  deps: Pick<Deps, 'organizations' | 'ids' | 'clock'>,
+  tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
+  role: string
+): Promise<boolean> {
+  try {
+    const found = await Organizations.requireRole(deps, tenant, role)
+    return found.permissions.some((key) => key.startsWith('org:sys:') && !key.endsWith(':read'))
+  } catch (error) {
+    if (error instanceof AuthError && error.code === 'organization.role_unknown') {
+      return false
+    }
+    throw error
+  }
+}
+
+/**
+ * Read the group to role mapping of one of the link's organization's connections, with the
+ * mappings to privileged roles marked `locked`.
  *
  * @param deps - Stores and settings.
  * @param tenant - The environment.
@@ -212,19 +236,31 @@ export async function refreshMetadata(
  * @throws AuthError `sso.connection_not_found` for another organization's.
  */
 export async function getGroupRoles(
-  deps: Pick<Deps, 'ssoConnections' | 'environmentSettings' | 'config'>,
-  tenant: Pick<Tenant, 'environmentId'>,
+  deps: Pick<
+    Deps,
+    'ssoConnections' | 'organizations' | 'environmentSettings' | 'config' | 'ids' | 'clock'
+  >,
+  tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
   scope: Scope,
   id: string
-): Promise<SsoGroupRoles> {
+): Promise<SetupGroupRoles> {
   await requireOwn(deps, tenant, scope, id)
-  return SsoConnections.getGroupRoles(deps, tenant, id)
+  const { mappings } = await SsoConnections.getGroupRoles(deps, tenant, id)
+  return {
+    mappings: await Promise.all(
+      mappings.map(async (one) => ({ ...one, locked: await isPrivileged(deps, tenant, one.role) }))
+    ),
+  }
 }
 
 /**
- * Replace the group to role mapping. Residual risk (ADR 0067): the link's holder controls
- * the identity provider, so they decide which of its groups become which role; the operator
- * who made the link trusted them with that.
+ * Replace the group to role mapping, without granting privilege (DECISIONS 9). A link may map
+ * a group only to a role that holds no `org:sys:*` permission: a leaked or forwarded link must
+ * not let its holder make their own IdP group the organization's administrators. A mapping
+ * to a privileged role that is already saved is kept as it is (the portal shows it locked),
+ * whether or not the request repeats it, and goes first so the order of precedence stays the
+ * operator's. The operator and `org:sys:sso:manage` members use the admin and client routes,
+ * which have no such limit.
  *
  * @param deps - What `SsoConnections.putGroupRoles` needs.
  * @param tenant - The environment.
@@ -233,7 +269,8 @@ export async function getGroupRoles(
  * @param input - The mappings.
  * @param actor - The `setup_link` actor.
  * @returns The mappings as saved.
- * @throws AuthError `sso.connection_not_found` for another organization's.
+ * @throws AuthError `sso.connection_not_found` for another organization's;
+ *   `sso.role_not_allowed` for a mapping to a privileged role that is not already saved.
  */
 export async function putGroupRoles(
   deps: Parameters<typeof SsoConnections.putGroupRoles>[0],
@@ -242,9 +279,29 @@ export async function putGroupRoles(
   id: string,
   input: SsoGroupRoles,
   actor: Actor
-): Promise<SsoGroupRoles> {
+): Promise<SetupGroupRoles> {
   await requireOwn(deps, tenant, scope, id)
-  return SsoConnections.putGroupRoles(deps, tenant, id, input, actor)
+  const saved = await deps.ssoConnections.listGroupRoles(tenant.environmentId, scope.organizationId)
+  const locked: typeof saved = []
+  for (const one of saved) {
+    if (await isPrivileged(deps, tenant, one.role)) {
+      locked.push(one)
+    }
+  }
+  const held = (one: { group: string; role: string }) =>
+    locked.some((kept) => kept.group === one.group && kept.role === one.role)
+  const sent: typeof saved = []
+  for (const one of input.mappings) {
+    if (held(one)) {
+      continue
+    }
+    if (await isPrivileged(deps, tenant, one.role)) {
+      throw new AuthError('sso.role_not_allowed')
+    }
+    sent.push(one)
+  }
+  await SsoConnections.putGroupRoles(deps, tenant, id, { mappings: [...locked, ...sent] }, actor)
+  return getGroupRoles(deps, tenant, scope, id)
 }
 
 /**

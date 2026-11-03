@@ -124,6 +124,7 @@ public enum ErrorCode: Codable, Hashable, Sendable {
     case ssoUrlNotHttps
     case ssoTestRequired
     case ssoTestNotFound
+    case ssoRoleNotAllowed
     case ssoUnavailable
     case ssoProviderError
     case ssoUserNotProvisioned
@@ -264,6 +265,7 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         .ssoUrlNotHttps,
         .ssoTestRequired,
         .ssoTestNotFound,
+        .ssoRoleNotAllowed,
         .ssoUnavailable,
         .ssoProviderError,
         .ssoUserNotProvisioned,
@@ -404,6 +406,7 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case "sso.url_not_https": self = .ssoUrlNotHttps
         case "sso.test_required": self = .ssoTestRequired
         case "sso.test_not_found": self = .ssoTestNotFound
+        case "sso.role_not_allowed": self = .ssoRoleNotAllowed
         case "sso.unavailable": self = .ssoUnavailable
         case "sso.provider_error": self = .ssoProviderError
         case "sso.user_not_provisioned": self = .ssoUserNotProvisioned
@@ -546,6 +549,7 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case .ssoUrlNotHttps: return "sso.url_not_https"
         case .ssoTestRequired: return "sso.test_required"
         case .ssoTestNotFound: return "sso.test_not_found"
+        case .ssoRoleNotAllowed: return "sso.role_not_allowed"
         case .ssoUnavailable: return "sso.unavailable"
         case .ssoProviderError: return "sso.provider_error"
         case .ssoUserNotProvisioned: return "sso.user_not_provisioned"
@@ -951,6 +955,9 @@ public enum TulaErrorDefinitions {
     /// `sso.test_not_found`
     public static let ssoTestNotFound = TulaErrorDefinition(code: .ssoTestNotFound, status: 404, message: "No such test sign-in.")
 
+    /// `sso.role_not_allowed`
+    public static let ssoRoleNotAllowed = TulaErrorDefinition(code: .ssoRoleNotAllowed, status: 403, message: "A setup link cannot map a group to a role that holds system permissions.")
+
     /// `sso.unavailable`
     public static let ssoUnavailable = TulaErrorDefinition(code: .ssoUnavailable, status: 400, message: "Single sign-on is not available for that address.")
 
@@ -1122,6 +1129,7 @@ public enum TulaErrorDefinitions {
         ssoUrlNotHttps,
         ssoTestRequired,
         ssoTestNotFound,
+        ssoRoleNotAllowed,
         ssoUnavailable,
         ssoProviderError,
         ssoUserNotProvisioned,

@@ -79,6 +79,25 @@ export const SsoGroupRolesSchema = z
 /** The group to role mapping of an organization. */
 export type SsoGroupRoles = z.infer<typeof SsoGroupRolesSchema>
 
+/**
+ * The mapping as a setup link's portal sees it: `locked` marks a mapping to a role with a
+ * system permission (`org:sys:*`), which the portal shows and cannot change (ADR 0067).
+ */
+export const SetupGroupRolesSchema = z
+  .strictObject({
+    mappings: z.array(
+      z.strictObject({
+        group: z.string().min(1).max(256),
+        role: RoleKeySchema,
+        locked: z.boolean(),
+      })
+    ),
+  })
+  .meta({ ref: 'SetupGroupRoles' })
+
+/** The group to role mapping as a setup link's portal sees it. */
+export type SetupGroupRoles = z.infer<typeof SetupGroupRolesSchema>
+
 /** The body that creates a connection, as a draft. An OIDC one takes `issuer`, `clientId` and `clientSecret`; a SAML one `saml`. */
 export const CreateSsoConnectionRequestSchema = z
   .strictObject({

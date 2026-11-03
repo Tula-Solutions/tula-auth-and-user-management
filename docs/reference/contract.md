@@ -8706,6 +8706,27 @@ The body that changes a connection from the portal; `status` can only be `active
 const SetupConnectionUpdateSchema
 ```
 
+### `SetupGroupRoles`
+
+_type_, defined in `packages/contract/src/sso-connection.ts`
+
+The group to role mapping as a setup link's portal sees it.
+
+```ts
+export type SetupGroupRoles = z.infer<typeof SetupGroupRolesSchema>
+```
+
+### `SetupGroupRolesSchema`
+
+_constant_, defined in `packages/contract/src/sso-connection.ts`
+
+The mapping as a setup link's portal sees it: `locked` marks a mapping to a role with a
+system permission (`org:sys:*`), which the portal shows and cannot change (ADR 0067).
+
+```ts
+const SetupGroupRolesSchema
+```
+
 ### `SetupLink`
 
 _type_, defined in `packages/contract/src/sso-setup-link.ts`

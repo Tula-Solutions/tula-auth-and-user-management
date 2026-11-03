@@ -1,6 +1,7 @@
 import {
   SetupConnectionCreateSchema,
   SetupConnectionUpdateSchema,
+  SetupGroupRolesSchema,
   SetupPortalSchema,
   SetupScimTokenCreateSchema,
   SsoConnectionSchema,
@@ -267,7 +268,7 @@ router.get(
     summary: 'Get the organization’s IdP group to role mapping',
     security: openapi.security.setup,
     responses: {
-      200: { description: 'The mapping.', content: json(SsoGroupRolesSchema) },
+      200: { description: 'The mapping.', content: json(SetupGroupRolesSchema) },
       ...errors,
     },
   }),
@@ -277,7 +278,7 @@ router.get(
   validator('param', SsoConnectionIdParamSchema, validationHook),
   async (c) =>
     c.json(
-      SsoGroupRolesSchema.parse(
+      SetupGroupRolesSchema.parse(
         await Portal.getGroupRoles(
           c.get('deps'),
           c.get('tenant'),
@@ -299,7 +300,7 @@ router.put(
       'groups become which role (ADR 0067); the operator who made the link trusted them with it.',
     security: openapi.security.setup,
     responses: {
-      200: { description: 'The mapping as saved.', content: json(SsoGroupRolesSchema) },
+      200: { description: 'The mapping as saved.', content: json(SetupGroupRolesSchema) },
       413: openapi.responses[413],
       ...errors,
     },
@@ -311,7 +312,7 @@ router.put(
   validator('json', SsoGroupRolesSchema, validationHook),
   async (c) =>
     c.json(
-      SsoGroupRolesSchema.parse(
+      SetupGroupRolesSchema.parse(
         await Portal.putGroupRoles(
           c.get('deps'),
           c.get('tenant'),
