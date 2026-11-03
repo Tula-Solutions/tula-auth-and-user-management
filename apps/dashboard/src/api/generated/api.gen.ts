@@ -6910,9 +6910,9 @@ export interface SsoTestStart {
   authorizationUrl: string;
 }
 
-export interface SsoTestStartRequest {
+export interface AdminSsoTestStartRequest {
   /** @maxLength 2048 */
-  redirectUrl: string;
+  redirectUrl?: string;
 }
 
 export type SsoTestResultStatus = typeof SsoTestResultStatus[keyof typeof SsoTestResultStatus];
@@ -7010,6 +7010,11 @@ export interface CreateMySsoConnectionRequest {
   defaultRole?: OrganizationRoleKey;
   /** @maxItems 20 */
   domains?: OrganizationDomainName[];
+}
+
+export interface SsoTestStartRequest {
+  /** @maxLength 2048 */
+  redirectUrl: string;
 }
 
 export interface ScimToken {
@@ -15556,11 +15561,11 @@ export const getStartSsoConnectionTestUrl = (id: string,) => {
 }
 
 /**
- * Starts the whole sign-in round through the identity provider without creating a session, user, identity or membership. Send the browser to `authorizationUrl`; it returns to `redirectUrl` (an address the environment allows) with `#tula_test=<testId>`, and the result is read with `GET /:id/tests/:testId`. A passing test of the connection’s current settings is required to activate it.
+ * Starts the whole sign-in round through the identity provider without creating a session, user, identity or membership. Send the browser to `authorizationUrl`; it returns to `redirectUrl` (an address the environment allows; left out, the server’s own setup page) with `#tula_test=<testId>`, and the result is read with `GET /:id/tests/:testId`. A passing test of the connection’s current settings is required to activate it.
  * @summary Start a test sign-in of an SSO connection
  */
 export const startSsoConnectionTest = async (id: string,
-    ssoTestStartRequest: SsoTestStartRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoTestStart> => {
+    adminSsoTestStartRequest: AdminSsoTestStartRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoTestStart> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -15581,7 +15586,7 @@ return dashboardFetch<SsoTestStart>(getStartSsoConnectionTestUrl(id),
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(ssoTestStartRequest)
+    body: JSON.stringify(adminSsoTestStartRequest)
   }
 );}
 
@@ -15619,9 +15624,9 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type StartSsoConnectionTestMutationResult = NonNullable<Awaited<ReturnType<typeof startSsoConnectionTest>>>
-    export type StartSsoConnectionTestMutationBody = SsoTestStartRequest
+    export type StartSsoConnectionTestMutationBody = AdminSsoTestStartRequest
     export type StartSsoConnectionTestMutationError = ErrorEnvelope
-    export type StartSsoConnectionTestMutationVariables = {id: string;data: SsoTestStartRequest}
+    export type StartSsoConnectionTestMutationVariables = {id: string;data: AdminSsoTestStartRequest}
 
     /**
  * @summary Start a test sign-in of an SSO connection

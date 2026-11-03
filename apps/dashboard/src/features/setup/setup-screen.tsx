@@ -20,10 +20,7 @@ import { SelectField, TextField } from '~/components/field'
 import { PageHeader, Section } from '~/components/page'
 import { LoadingState } from '~/components/states'
 import { printableName } from '~/lib/printable'
-import { boot, setupRequest } from './setup-api'
-
-/** The channel a returning test window uses to tell the setup tab which test came back. */
-export const SETUP_TEST_CHANNEL = 'tula-setup-test'
+import { boot, SETUP_TEST_CHANNEL, setupRequest } from './setup-api'
 
 /** How often the setup tab asks for the result of a test it started, in milliseconds. */
 const POLL_MS = 1500

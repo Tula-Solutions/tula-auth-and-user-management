@@ -34,6 +34,10 @@ const SENTENCES: Record<string, string> = {
   'sso.saml_invalid':
     'The identity provider values were not accepted. Give the metadata (pasted or as an address) or the entity id, sign-in URL and certificate.',
   'sso.connection_in_use': 'This connection is active. Disable it before deleting it.',
+  'sso.test_required':
+    'Run a test sign-in that passes with the connection’s current settings before activating it.',
+  'sso.role_not_allowed':
+    'A group cannot be mapped to a system role. Choose one of the organization’s own roles.',
   'sso.invalid_transition': 'The connection cannot move to that status from where it is.',
 }
 

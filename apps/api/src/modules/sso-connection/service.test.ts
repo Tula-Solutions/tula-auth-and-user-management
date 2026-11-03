@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula-tech/contract'
 import { FakeOutbound } from '~/adapters/memory/outbound'
 import { MOCK_SAML_KEYS } from '~/adapters/oauth/mock-saml'
 import { createApp } from '~/index'
 import * as Audit from '~/modules/audit/service'
 import * as Organizations from '~/modules/organization/service'
+import * as SsoProvider from '~/modules/sso/service'
 import * as Sso from '~/modules/sso-connection/service'
 import {
   createInstanceTestDeps,
@@ -360,6 +361,30 @@ describe('SSO connection routes', () => {
     const created = await call('POST', '', SK, input(o.id, { domains: [] }))
     expect(created.status).toBe(201)
     expect(JSON.stringify(await created.json())).not.toContain('super-secret-value')
+  })
+})
+
+describe('the admin test sign-in without a return address', () => {
+  test('returns to the server-built setup page, no allow-listed redirect needed', async () => {
+    await seedApiKey(deps, SK)
+    const o = await org()
+    await verified(o.id, 'acme.test')
+    const made = await Sso.create(deps, TENANT, input(o.id), TEST_ACTOR)
+    const authorize = spyOn(SsoProvider, 'authorizationUrl').mockResolvedValue(
+      `${ISSUER}/authorize?s=1`
+    )
+    const res = await createApp(deps).request(`/v1/admin/sso-connections/${made.id}/tests`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${SK}`, 'content-type': 'application/json' },
+      body: '{}',
+    })
+    authorize.mockRestore()
+    expect(res.status).toBe(201)
+    const started = (await res.json()) as { testId: string }
+    const attempt = await deps.flowAttempts.findById(TENANT.environmentId, started.testId)
+    expect(JSON.stringify(attempt?.state)).toContain(
+      `${deps.config.publicUrl.replace(/\/+$/, '')}/dashboard/setup`
+    )
   })
 })
 

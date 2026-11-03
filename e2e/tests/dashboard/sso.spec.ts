@@ -130,3 +130,27 @@ test('the settings screen has the single sign-on switch, on', async ({ page }) =
   await expect(page.getByRole('switch', { name: 'Single sign-on is on' })).toBeChecked()
   await expectScreenAccessible(page, 'organization settings with single sign-on')
 })
+
+test('a test sign-in from the dashboard passes through the setup page and unlocks Activate', async ({
+  page,
+  context,
+}) => {
+  // The mock provider signs in whoever the login hint names; a popup is a page of the context.
+  await context.route('**/v1/dev/sso/authorize*', (route) => {
+    const url = new URL(route.request().url())
+    url.searchParams.set('login_hint', `tester@${DOMAIN}`)
+    return route.continue({ url: url.toString() })
+  })
+  await open(page, `${ENVIRONMENT_PATH}/organizations/${await organizationId(page)}`, 'SSO Org')
+  await page.getByRole('button', { name: 'Disable Mock IdP' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Disable' }).click()
+  const card = page.getByRole('listitem', { name: 'Connection Mock IdP' })
+  await expect(card.getByText('Disabled')).toBeVisible()
+  const popup = page.waitForEvent('popup')
+  await card.getByRole('button', { name: 'Run test sign-in for Mock IdP' }).click()
+  await popup
+  await expect(card.getByText(/The test passed/)).toBeVisible({ timeout: 20_000 })
+  await expect(card.getByText(/on a verified domain/)).toBeVisible()
+  await expect(card.getByRole('button', { name: 'Activate Mock IdP' })).toBeEnabled()
+  await expectScreenAccessible(page, 'connection with a passed test sign-in')
+})

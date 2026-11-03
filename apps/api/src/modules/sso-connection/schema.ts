@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 export {
+  AdminSsoTestStartRequestSchema,
   CreateSsoConnectionRequestSchema,
   SsoConnectionListQuerySchema,
   SsoConnectionListSchema,

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import { screen, waitFor, within } from '@testing-library/react'
 import {
   type FakeApi,
@@ -310,13 +310,13 @@ describe('the SSO section', () => {
   })
 
   test('activating says it is recorded as a weakening', async () => {
-    const { user } = start(arranged({ connections: [{ name: 'Okta' }] }))
+    const { user } = start(arranged({ connections: [{ name: 'Okta', tested: true }] }))
     await user.click(await screen.findByRole('button', { name: 'Activate Okta' }))
     expect(dialog().textContent).toContain('recorded in the audit log as a weakening')
   })
 
   test('activates and disables a connection after a confirmation', async () => {
-    const api = arranged({ connections: [{ name: 'Okta' }] })
+    const api = arranged({ connections: [{ name: 'Okta', tested: true }] })
     const { user } = start(api)
     await user.click(await screen.findByRole('button', { name: 'Activate Okta' }))
     await user.click(within(dialog()).getByRole('button', { name: 'Activate' }))
@@ -330,7 +330,7 @@ describe('the SSO section', () => {
 
   test('deletes a connection, and says when it cannot be deleted', async () => {
     const api = arranged({
-      connections: [{ name: 'Okta' }, { name: 'Used', used: true }],
+      connections: [{ name: 'Okta' }, { name: 'Used', status: 'active', tested: true }],
     })
     const { user } = start(api)
     await user.click(await screen.findByRole('button', { name: 'Delete Used' }))
@@ -357,5 +357,89 @@ describe('the SSO section', () => {
     await user.click(await screen.findByRole('switch', { name: 'Single sign-on is on' }))
     await user.click(screen.getByRole('button', { name: /^Save/ }))
     await waitFor(() => expect(api.state.settings.settings.sso?.enabled).toBe(true))
+  })
+})
+
+describe('the test sign-in and the mapping', () => {
+  const popup = () => ({ location: { href: '' }, close() {} })
+
+  test('Activate is unavailable until a test passed, and says why', async () => {
+    start(arranged({ connections: [{ name: 'Okta' }] }))
+    const activate = (await screen.findByRole('button', {
+      name: 'Activate Okta',
+    })) as HTMLButtonElement
+    expect(activate.disabled).toBe(true)
+    expect(
+      document.getElementById(activate.getAttribute('aria-describedby') ?? '')?.textContent
+    ).toContain('passing test sign-in')
+  })
+
+  test('a passing test shows the mapped email and groups and unlocks Activate', async () => {
+    const window_ = popup()
+    const open = spyOn(window, 'open').mockImplementation(() => window_ as unknown as Window)
+    const api = arranged({ connections: [{ name: 'Okta' }] })
+    const { user } = start(api)
+    await user.click(await screen.findByRole('button', { name: 'Run test sign-in for Okta' }))
+    expect(await screen.findByText(/The test passed/, undefined, { timeout: 8000 })).toBeTruthy()
+    expect(screen.getByText(/on a verified domain/)).toBeTruthy()
+    expect(screen.getByText(/Groups received: engineering/)).toBeTruthy()
+    expect(window_.location.href).toBe('https://login.example.com/authorize?s=1')
+    await waitFor(() =>
+      expect(
+        (screen.getByRole('button', { name: 'Activate Okta' }) as HTMLButtonElement).disabled
+      ).toBe(false)
+    )
+    open.mockRestore()
+  })
+
+  test('a failed test says why and keeps Activate unavailable', async () => {
+    const open = spyOn(window, 'open').mockImplementation(() => popup() as unknown as Window)
+    const api = arranged({ connections: [{ name: 'Okta' }] })
+    api.state.ssoTestOutcome = 'failed'
+    const { user } = start(api)
+    await user.click(await screen.findByRole('button', { name: 'Run test sign-in for Okta' }))
+    expect(
+      await screen.findByText(/meant for another application/, undefined, { timeout: 8000 })
+    ).toBeTruthy()
+    expect(
+      (screen.getByRole('button', { name: 'Activate Okta' }) as HTMLButtonElement).disabled
+    ).toBe(true)
+    open.mockRestore()
+  })
+
+  test('a blocked window gives a link to the test', async () => {
+    const open = spyOn(window, 'open').mockImplementation(() => null)
+    const { user } = start(arranged({ connections: [{ name: 'Okta' }] }))
+    await user.click(await screen.findByRole('button', { name: 'Run test sign-in for Okta' }))
+    expect(await screen.findByText('Open the test sign-in')).toBeTruthy()
+    open.mockRestore()
+  })
+
+  test('saves attribute names and group roles; a system role is not offered', async () => {
+    const api = arranged({ connections: [{ name: 'Okta' }] })
+    const { user } = start(api)
+    await user.click(await screen.findByRole('button', { name: 'Mapping for Okta' }))
+    await user.type(within(dialog()).getByLabelText('Email'), 'mail')
+    await user.click(within(dialog()).getByRole('button', { name: 'Add a group' }))
+    await user.type(within(dialog()).getByLabelText('Group 1'), 'admins')
+    const role = within(dialog()).getByLabelText('Role for group 1')
+    expect(within(role).queryByText(/org:sys/)).toBeNull()
+    await user.selectOptions(role, 'admin')
+    await user.click(within(dialog()).getByRole('button', { name: 'Save mapping' }))
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    expect(sent(api, 'PATCH')[0]?.body).toEqual({
+      attributeMapping: { idp: 'generic', email: 'mail' },
+    })
+    expect(sent(api, 'PUT')[0]?.body).toEqual({ mappings: [{ group: 'admins', role: 'admin' }] })
+  })
+
+  test('changing the mapping of an active connection asks first', async () => {
+    const api = arranged({ connections: [{ name: 'Okta', status: 'active', tested: true }] })
+    const { user } = start(api)
+    await user.click(await screen.findByRole('button', { name: 'Mapping for Okta' }))
+    await user.type(within(dialog()).getByLabelText('Email'), 'mail')
+    await user.click(within(dialog()).getByRole('button', { name: 'Save mapping' }))
+    expect(within(dialog()).getByTestId('weakening').textContent).toContain('who can sign in')
+    expect(sent(api, 'PATCH')).toHaveLength(0)
   })
 })

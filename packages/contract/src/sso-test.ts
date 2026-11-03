@@ -55,6 +55,14 @@ export const SsoTestStartRequestSchema = z
   .object({ redirectUrl: z.string().max(2048) })
   .meta({ ref: 'SsoTestStartRequest' })
 
+/**
+ * The administrator's start of a test sign-in. Left out, `redirectUrl` is the server's own
+ * setup page, which needs no entry in the environment's list: the dashboard cannot know it.
+ */
+export const AdminSsoTestStartRequestSchema = z
+  .object({ redirectUrl: z.string().max(2048).optional() })
+  .meta({ ref: 'AdminSsoTestStartRequest' })
+
 /** A started test: send the browser to `authorizationUrl`; it returns with `#tula_test=<testId>`. */
 export const SsoTestStartSchema = z
   .object({ testId: z.uuid(), authorizationUrl: z.string() })
