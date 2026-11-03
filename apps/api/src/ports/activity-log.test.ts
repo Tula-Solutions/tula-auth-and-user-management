@@ -54,6 +54,13 @@ declare const nativeApp: NativeAppRecord
 declare const organization: OrganizationRecord
 declare const settings: Parameters<EnvironmentSettingsStore['replace']>[2]
 
+async function _append(log: MemoryActivityLog): Promise<void> {
+  // @ts-expect-error an export is recorded by saying what, never by appending nothing
+  await log.append()
+  // @ts-expect-error `Audit.none` is not an activity: a standalone write is always recorded
+  await log.append(Audit.none('fixture'))
+}
+
 async function _users(users: UserRepository): Promise<void> {
   // @ts-expect-error a user cannot be created without saying what is recorded
   await users.create(user)
@@ -450,6 +457,7 @@ async function _organizations(store: OrganizationStore): Promise<void> {
 describe('what a store is told about the audit entry of a write', () => {
   test('the type-level assertions above are compiled, not run', () => {
     for (const unused of [
+      _append,
       _users,
       _sessions,
       _passkeys,

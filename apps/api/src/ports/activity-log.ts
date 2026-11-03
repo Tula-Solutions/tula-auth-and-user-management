@@ -143,7 +143,49 @@ export interface AuditCriteria {
  * transaction of the change it records. Nothing changes an entry, and the one thing that
  * removes one is {@link ActivityLog.deleteAuditBefore}.
  */
+/** Which entries an export reads: the list's filters, and an organization. */
+export type AuditExportCriteria = Omit<AuditCriteria, 'page' | 'size'> & {
+  /**
+   * Only entries about this organization: the entry's target is the organization, or its
+   * `organizationId` detail names it.
+   */
+  organizationId?: string
+}
+
+/** A position in the export order, `(occurredAt, id)` ascending: the last entry already read. */
+export interface AuditKey {
+  occurredAt: Date
+  id: string
+}
+
 export interface ActivityLog {
+  /**
+   * Read the next entries of an export: the matches after a position, **oldest first**,
+   * ordered by `(occurredAt, id)`. Keyset paging, not an offset, so a long export costs the
+   * same at its end as at its start and an entry written meanwhile (always later) can not
+   * shift a page.
+   *
+   * @param environmentId - The environment to read.
+   * @param criteria - The filters.
+   * @param after - Read only entries after this position; `null` starts at the oldest.
+   * @param limit - The most entries to return.
+   * @returns The entries.
+   */
+  listAuditAfter(
+    environmentId: string,
+    criteria: AuditExportCriteria,
+    after: AuditKey | null,
+    limit: number
+  ): Promise<AuditEntry[]>
+
+  /**
+   * Record an activity that is the whole of its write (the entry of an export: reading
+   * changes nothing). Writes the audit entry and its outbox event in one transaction.
+   *
+   * @param activity - What to record.
+   */
+  append(activity: Activity): Promise<void>
+
   /**
    * @param environmentId - The environment to list.
    * @param criteria - Filters and paging.

@@ -1257,7 +1257,7 @@ export interface OAuthProviderDeletedEvent {
 export interface WebhookEndpointCreatedEventData {
   /**
      * @minimum 1
-     * @maximum 71
+     * @maximum 72
      */
   eventTypes: number;
   enabled: boolean;
@@ -2738,6 +2738,150 @@ export interface ProposalFailedEvent {
   test?: true;
 }
 
+export type AuditExportedEventDataFormat = typeof AuditExportedEventDataFormat[keyof typeof AuditExportedEventDataFormat];
+
+
+export const AuditExportedEventDataFormat = {
+  ndjson: 'ndjson',
+  csv: 'csv',
+} as const;
+
+export type AuditExportedEventDataAction = typeof AuditExportedEventDataAction[keyof typeof AuditExportedEventDataAction];
+
+
+export const AuditExportedEventDataAction = {
+  usercreated: 'user.created',
+  userimported: 'user.imported',
+  useremail_verified: 'user.email_verified',
+  userbanned: 'user.banned',
+  userunbanned: 'user.unbanned',
+  userdeleted: 'user.deleted',
+  userpassword_changed: 'user.password_changed',
+  usermfa_enabled: 'user.mfa_enabled',
+  usermfa_disabled: 'user.mfa_disabled',
+  userbackup_codes_regenerated: 'user.backup_codes_regenerated',
+  userbackup_code_used: 'user.backup_code_used',
+  useridentity_linked: 'user.identity_linked',
+  useridentity_unlinked: 'user.identity_unlinked',
+  useremail_added: 'user.email_added',
+  userpasskey_added: 'user.passkey_added',
+  userpasskey_renamed: 'user.passkey_renamed',
+  userpasskey_removed: 'user.passkey_removed',
+  userpasskey_counter_regressed: 'user.passkey_counter_regressed',
+  userphone_number_added: 'user.phone_number_added',
+  userphone_number_removed: 'user.phone_number_removed',
+  usersms_factor_enabled: 'user.sms_factor_enabled',
+  usersms_factor_removed: 'user.sms_factor_removed',
+  sessioncreated: 'session.created',
+  sessionrevoked: 'session.revoked',
+  sessionreuse_detected: 'session.reuse_detected',
+  sessionstepped_up: 'session.stepped_up',
+  sessionrefresh_proof_refused: 'session.refresh_proof_refused',
+  api_keycreated: 'api_key.created',
+  api_keyrevoked: 'api_key.revoked',
+  signing_keyrotated: 'signing_key.rotated',
+  environmentsettings_updated: 'environment.settings_updated',
+  oauth_providerupdated: 'oauth_provider.updated',
+  oauth_providerdeleted: 'oauth_provider.deleted',
+  webhook_endpointcreated: 'webhook_endpoint.created',
+  webhook_endpointupdated: 'webhook_endpoint.updated',
+  webhook_endpointdeleted: 'webhook_endpoint.deleted',
+  webhook_endpointdisabled: 'webhook_endpoint.disabled',
+  webhook_endpointsecret_rotated: 'webhook_endpoint.secret_rotated',
+  webhook_endpointprevious_secret_revoked: 'webhook_endpoint.previous_secret_revoked',
+  hookcreated: 'hook.created',
+  hookupdated: 'hook.updated',
+  hookdeleted: 'hook.deleted',
+  native_appcreated: 'native_app.created',
+  native_appupdated: 'native_app.updated',
+  native_appdeleted: 'native_app.deleted',
+  sso_connectioncreated: 'sso_connection.created',
+  sso_connectionupdated: 'sso_connection.updated',
+  sso_connectiondeleted: 'sso_connection.deleted',
+  organizationcreated: 'organization.created',
+  organizationupdated: 'organization.updated',
+  organizationdeleted: 'organization.deleted',
+  organization_membershipadded: 'organization_membership.added',
+  organization_membershiprole_changed: 'organization_membership.role_changed',
+  organization_membershipremoved: 'organization_membership.removed',
+  organization_rolecreated: 'organization_role.created',
+  organization_roleupdated: 'organization_role.updated',
+  organization_roledeleted: 'organization_role.deleted',
+  organization_domainclaimed: 'organization_domain.claimed',
+  organization_domainverified: 'organization_domain.verified',
+  organization_domainupdated: 'organization_domain.updated',
+  organization_domainremoved: 'organization_domain.removed',
+  organization_invitationcreated: 'organization_invitation.created',
+  organization_invitationaccepted: 'organization_invitation.accepted',
+  organization_invitationdeclined: 'organization_invitation.declined',
+  organization_invitationrevoked: 'organization_invitation.revoked',
+  proposalcreated: 'proposal.created',
+  proposalapproved: 'proposal.approved',
+  proposalexecuted: 'proposal.executed',
+  proposalfailed: 'proposal.failed',
+  auditexported: 'audit.exported',
+  sign_in_teststarted: 'sign_in_test.started',
+  sign_in_testfinished: 'sign_in_test.finished',
+} as const;
+
+export type AuditExportedEventDataActorType = typeof AuditExportedEventDataActorType[keyof typeof AuditExportedEventDataActorType];
+
+
+export const AuditExportedEventDataActorType = {
+  user: 'user',
+  admin: 'admin',
+  system: 'system',
+  agent: 'agent',
+  instance_admin: 'instance_admin',
+} as const;
+
+/**
+ * An environment’s audit log was exported. The filters are those of the request; `rowCount` is how many entries were written (a stream that ended early counts what it wrote); `resumed` is true when the request continued an earlier export.
+ */
+export interface AuditExportedEventData {
+  format: AuditExportedEventDataFormat;
+  /**
+     * @minimum 0
+     * @maximum 9007199254740991
+     */
+  rowCount: number;
+  resumed: boolean;
+  action?: AuditExportedEventDataAction;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  actorId?: string;
+  actorType?: AuditExportedEventDataActorType;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  targetId?: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId?: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$ */
+  from?: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$ */
+  to?: string;
+}
+
+export type AuditExportedEventTarget = {
+  type: 'environment';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An environment’s audit log was exported. The filters are those of the request; `rowCount` is how many entries were written (a stream that ended early counts what it wrote); `resumed` is true when the request continued an earlier export.
+ */
+export interface AuditExportedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'audit.exported';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: AuditExportedEventTarget;
+  data: AuditExportedEventData;
+  test?: true;
+}
+
 /**
  * A sign-in test began: the server is about to sign a throwaway user up and in through the environment’s flow, and delete it.
  */
@@ -2815,7 +2959,7 @@ export interface SignInTestFinishedEvent {
   test?: true;
 }
 
-export type TulaEvent = UserCreatedEvent | UserImportedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserEmailAddedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | SsoConnectionCreatedEvent | SsoConnectionUpdatedEvent | SsoConnectionDeletedEvent | OrganizationCreatedEvent | OrganizationUpdatedEvent | OrganizationDeletedEvent | OrganizationMembershipAddedEvent | OrganizationMembershipRoleChangedEvent | OrganizationMembershipRemovedEvent | OrganizationRoleCreatedEvent | OrganizationRoleUpdatedEvent | OrganizationRoleDeletedEvent | OrganizationDomainClaimedEvent | OrganizationDomainVerifiedEvent | OrganizationDomainUpdatedEvent | OrganizationDomainRemovedEvent | OrganizationInvitationCreatedEvent | OrganizationInvitationAcceptedEvent | OrganizationInvitationDeclinedEvent | OrganizationInvitationRevokedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
+export type TulaEvent = UserCreatedEvent | UserImportedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserEmailAddedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | SsoConnectionCreatedEvent | SsoConnectionUpdatedEvent | SsoConnectionDeletedEvent | OrganizationCreatedEvent | OrganizationUpdatedEvent | OrganizationDeletedEvent | OrganizationMembershipAddedEvent | OrganizationMembershipRoleChangedEvent | OrganizationMembershipRemovedEvent | OrganizationRoleCreatedEvent | OrganizationRoleUpdatedEvent | OrganizationRoleDeletedEvent | OrganizationDomainClaimedEvent | OrganizationDomainVerifiedEvent | OrganizationDomainUpdatedEvent | OrganizationDomainRemovedEvent | OrganizationInvitationCreatedEvent | OrganizationInvitationAcceptedEvent | OrganizationInvitationDeclinedEvent | OrganizationInvitationRevokedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent | AuditExportedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
 
 export type HookBeforeSignUpDataMethod = typeof HookBeforeSignUpDataMethod[keyof typeof HookBeforeSignUpDataMethod];
 
@@ -4218,6 +4362,7 @@ export const ActivityType = {
   proposalapproved: 'proposal.approved',
   proposalexecuted: 'proposal.executed',
   proposalfailed: 'proposal.failed',
+  auditexported: 'audit.exported',
   sign_in_teststarted: 'sign_in_test.started',
   sign_in_testfinished: 'sign_in_test.finished',
 } as const;
@@ -4254,6 +4399,43 @@ export interface AuditLogQuery {
      * @maximum 100
      */
   size?: number;
+}
+
+export type AuditExportRequestActorType = typeof AuditExportRequestActorType[keyof typeof AuditExportRequestActorType];
+
+
+export const AuditExportRequestActorType = {
+  user: 'user',
+  admin: 'admin',
+  system: 'system',
+  agent: 'agent',
+  instance_admin: 'instance_admin',
+} as const;
+
+export type AuditExportRequestFormat = typeof AuditExportRequestFormat[keyof typeof AuditExportRequestFormat];
+
+
+export const AuditExportRequestFormat = {
+  ndjson: 'ndjson',
+  csv: 'csv',
+} as const;
+
+export interface AuditExportRequest {
+  action?: ActivityType;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  actorId?: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  targetId?: string;
+  actorType?: AuditExportRequestActorType;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$ */
+  from?: string;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|([+-](?:[01]\d|2[0-3]):[0-5]\d)))$ */
+  to?: string;
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId?: string;
+  format?: AuditExportRequestFormat;
+  /** @pattern ^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)~([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$ */
+  after?: string;
 }
 
 export type SignUpPasswordMode = typeof SignUpPasswordMode[keyof typeof SignUpPasswordMode];
@@ -5095,6 +5277,7 @@ export const CreateWebhookEndpointRequestEventTypesItem = {
   proposalapproved: 'proposal.approved',
   proposalexecuted: 'proposal.executed',
   proposalfailed: 'proposal.failed',
+  auditexported: 'audit.exported',
   sign_in_teststarted: 'sign_in_test.started',
   sign_in_testfinished: 'sign_in_test.finished',
 } as const;
@@ -5108,7 +5291,7 @@ export interface CreateWebhookEndpointRequest {
   url: string;
   /**
      * @minItems 1
-     * @maxItems 71
+     * @maxItems 72
      */
   eventTypes: CreateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -5187,6 +5370,7 @@ export const UpdateWebhookEndpointRequestEventTypesItem = {
   proposalapproved: 'proposal.approved',
   proposalexecuted: 'proposal.executed',
   proposalfailed: 'proposal.failed',
+  auditexported: 'audit.exported',
   sign_in_teststarted: 'sign_in_test.started',
   sign_in_testfinished: 'sign_in_test.finished',
 } as const;
@@ -5200,7 +5384,7 @@ export interface UpdateWebhookEndpointRequest {
   url?: string;
   /**
      * @minItems 1
-     * @maxItems 71
+     * @maxItems 72
      */
   eventTypes?: UpdateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -5397,6 +5581,7 @@ export const SendTestWebhookRequestEventType = {
   proposalapproved: 'proposal.approved',
   proposalexecuted: 'proposal.executed',
   proposalfailed: 'proposal.failed',
+  auditexported: 'audit.exported',
   sign_in_teststarted: 'sign_in_test.started',
   sign_in_testfinished: 'sign_in_test.finished',
 } as const;
@@ -9022,6 +9207,95 @@ export function useListAuditLogs<TData = Awaited<ReturnType<typeof listAuditLogs
 
 
 
+
+export const getExportAuditLogsUrl = () => {
+
+
+
+
+  return `/v1/admin/audit-logs/export`
+}
+
+/**
+ * Streams the secret key’s environment’s audit log, **oldest first**, as NDJSON (one entry per line, the fields of the list) or CSV (a header, then one row per entry; a cell that a spreadsheet would run as a formula is prefixed with `'`). Takes the list’s filters and `organizationId`. One request writes at most 100,000 entries: to continue, send `after` with the last entry’s `occurredAt` and `id` joined by `~`. Every export is itself recorded (`audit.exported`) with its filters and row count. A POST because it writes that entry, which also means an agent key is refused.
+ * @summary Export the audit log
+ */
+export const exportAuditLogs = async (auditExportRequest: AuditExportRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<Response> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<Response>(getExportAuditLogsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(auditExportRequest)
+  }
+);}
+
+
+
+
+
+export const getExportAuditLogsMutationKey = () => ['exportAuditLogs'] as const;
+
+export const getExportAuditLogsMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof exportAuditLogs>>, TError,ExportAuditLogsMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof exportAuditLogs>>, TError,ExportAuditLogsMutationVariables, TContext> => {
+
+const mutationKey = getExportAuditLogsMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof exportAuditLogs>>, ExportAuditLogsMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  exportAuditLogs(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ExportAuditLogsMutationResult = NonNullable<Awaited<ReturnType<typeof exportAuditLogs>>>
+    export type ExportAuditLogsMutationBody = AuditExportRequest
+    export type ExportAuditLogsMutationError = ErrorEnvelope
+    export type ExportAuditLogsMutationVariables = {data: AuditExportRequest}
+
+    /**
+ * @summary Export the audit log
+ */
+export const useExportAuditLogs = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof exportAuditLogs>>, TError,ExportAuditLogsMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof exportAuditLogs>>,
+        TError,
+        ExportAuditLogsMutationVariables,
+        TContext
+      > => {
+      return useMutation(getExportAuditLogsMutationOptions(options), queryClient);
+    }
 
 export const getGetEnvironmentSettingsUrl = () => {
 

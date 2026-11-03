@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { AUDIT_ACTOR_TYPES, type AuditActorType } from './audit'
+import { AUDIT_ACTOR_TYPES, AUDIT_EXPORT_FORMATS, type AuditActorType } from './audit'
 import { CONFIG_TOOL_PATTERN } from './environment-settings'
 import {
   ACTIVITY_TYPES,
@@ -895,6 +895,24 @@ export const EVENT_DATA_SCHEMAS = {
       approvedBy: ProposalApproverSchema,
       /** Why, in one of the server’s fixed words. */
       reason: z.enum(PROPOSAL_FAILURE_REASONS),
+    }
+  ),
+  // An export of the audit log (TULA-137). Ids, enums, instants and a count: the filters the
+  // export was asked with, never a value of the entries it holds.
+  'audit.exported': data(
+    'AuditExported',
+    'An environment’s audit log was exported. The filters are those of the request; `rowCount` is how many entries were written (a stream that ended early counts what it wrote); `resumed` is true when the request continued an earlier export.',
+    {
+      format: z.enum(AUDIT_EXPORT_FORMATS),
+      rowCount: z.number().int().min(0),
+      resumed: z.boolean(),
+      action: z.enum(ACTIVITY_TYPES).optional(),
+      actorId: id().optional(),
+      actorType: z.enum(AUDIT_ACTOR_TYPES).optional(),
+      targetId: id().optional(),
+      organizationId: id().optional(),
+      from: z.iso.datetime({ offset: true }).optional(),
+      to: z.iso.datetime({ offset: true }).optional(),
     }
   ),
   // A sign-in test (ADR 0058). The actor is who asked for it: an agent, or an administrator
