@@ -1075,6 +1075,9 @@ export async function signUp(
     throw new InvalidEmailError()
   }
   const { email, normalized: identifier } = parsed
+  // Domain-level, whoever asks: an account is made on an enforced domain by single sign-on
+  // alone (decision 12), and the answer says nothing about the address.
+  await Sso.requireNotEnforced(deps, tenant, identifier, 'sign_up')
   const passwordless = input.password === undefined
   if (passwordless && (await Settings.current(deps, tenant)).signUp.password !== 'optional') {
     throw new ValidationError({
@@ -3110,6 +3113,10 @@ export async function verifyEmail(
   const event = { type: 'email_verified' } as const
   // Throws `flow.invalid_step` unless the attempt is waiting on email verification.
   assertAccepts(attempt.kind, attempt.status, event)
+  // A sign-up begun before the domain was enforced creates no account afterwards.
+  if (attempt.kind === 'sign_up') {
+    await Sso.requireNotEnforced(deps, tenant, attempt.identifier, 'sign_up')
+  }
   // A sign-in reaches this step after a password or a passkey (an email factor verifies the
   // address itself): the switch that must still be on is the one of the factor it proved.
   await requireProvenMethod(deps, tenant, attempt, state, context)
@@ -3318,7 +3325,10 @@ export async function startPasswordReset(
   const { email, normalized: identifier } = parsed
   await requirePasswordMethod(deps, tenant)
   await chargeEnvironment(deps, tenant, 'passwordReset')
-  const user = await deps.users.findByEmail(tenant.environmentId, identifier)
+  // On an enforced domain only a break-glass member is mailed a code; everyone else gets the
+  // decoy, so the answer is the same for any address (decision 12).
+  const found = await deps.users.findByEmail(tenant.environmentId, identifier)
+  const user = found && !(await Sso.refuses(deps, tenant, identifier, 'password')) ? found : null
   const state: State = { ...asked(context), email, ...(!user && { decoy: true }) }
   const { attempt, secret } = await start(deps, tenant, {
     kind: 'password_reset',
@@ -3389,7 +3399,12 @@ export async function resetPassword(
     !state.decoy && attempt.userId
       ? await deps.users.findById(tenant.environmentId, attempt.userId)
       : null
-  if (!user || user.emailNormalized !== attempt.identifier) {
+  if (
+    !user ||
+    user.emailNormalized !== attempt.identifier ||
+    // Enforcement switched on after the code was sent: only a break-glass member may finish.
+    (await Sso.refuses(deps, tenant, attempt.identifier, 'password'))
+  ) {
     // Someone guessed the decoy code of a reset for an address with no account, or the account
     // was deleted or moved to another address meanwhile: a code proves control of the address
     // it was sent to, not of the account. Answer as if the guess was wrong.

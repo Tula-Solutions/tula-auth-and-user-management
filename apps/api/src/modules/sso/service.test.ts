@@ -898,6 +898,142 @@ describe('enforcement (TULA-140)', () => {
   })
 })
 
+describe('enforcement of sign-up and recovery (decision 12)', () => {
+  const PASSWORD = 'correct horse battery staple'
+  const BREAK_GLASS = 'admin'
+
+  beforeEach(() => {
+    deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+      revision: 2,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        organizations: { ...DEFAULT_ENVIRONMENT_SETTINGS.organizations, enabled: true },
+        sso: { enabled: true },
+      },
+    } as never)
+  })
+
+  async function enforce() {
+    await SsoConnections.update(
+      deps,
+      TENANT,
+      connectionId,
+      { enforced: true, breakGlassRole: BREAK_GLASS },
+      TEST_ACTOR
+    )
+  }
+
+  async function enforced() {
+    const member = await seedUser(`ada@${DOMAIN}`, true, PASSWORD)
+    await Organizations.addMember(
+      deps,
+      TENANT,
+      organizationId,
+      { userId: member, role: BREAK_GLASS },
+      TEST_ACTOR
+    )
+    await seedUser(`bob@${DOMAIN}`, true, PASSWORD)
+    await enforce()
+  }
+
+  const resetMails = (to: string) =>
+    deps.mailer.outbox.filter((mail) => mail.to === to && /\b\d{6}\b/.test(mail.text))
+
+  async function answer(res: Response) {
+    return { status: res.status, body: await res.json() }
+  }
+
+  test('sign-up is refused for an unknown address, a member and a break-glass member alike', async () => {
+    await enforced()
+    const answers = []
+    for (const email of [`new@${DOMAIN}`, `bob@${DOMAIN}`, `ada@${DOMAIN}`]) {
+      answers.push(await answer(await post('/v1/client/sign-ups', { email, password: PASSWORD })))
+    }
+    expect(answers[0]?.status).toBe(403)
+    expect((answers[0]?.body as { code: string }).code).toBe('auth.method_disabled')
+    expect(answers[1]).toEqual(answers[0])
+    expect(answers[2]).toEqual(answers[0])
+    expect(deps.mailer.outbox).toHaveLength(0)
+    expect(await deps.users.findByEmail(TENANT.environmentId, `new@${DOMAIN}`)).toBeNull()
+  })
+
+  test('a sign-up begun before enforcement cannot be verified after it', async () => {
+    const res = await post('/v1/client/sign-ups', { email: `new@${DOMAIN}`, password: PASSWORD })
+    const attempt = (await res.json()) as { id: string; attemptSecret: string }
+    const code = /\b(\d{6})\b/.exec(deps.mailer.last().text)?.[1] ?? ''
+    await enforce()
+    const verified = await post(
+      `/v1/client/sign-ups/${attempt.id}/verify-email`,
+      { code },
+      { 'x-tula-attempt': attempt.attemptSecret }
+    )
+    expect(((await verified.json()) as { code: string }).code).toBe('auth.method_disabled')
+    expect(await deps.users.findByEmail(TENANT.environmentId, `new@${DOMAIN}`)).toBeNull()
+  })
+
+  test('a passwordless sign-up is refused too, and another domain still signs up', async () => {
+    await enforced()
+    const refused = await post('/v1/client/sign-ups', { email: `new@${DOMAIN}` })
+    expect(((await refused.json()) as { code: string }).code).toBe('auth.method_disabled')
+    const open = await post('/v1/client/sign-ups', {
+      email: 'new@elsewhere.test',
+      password: PASSWORD,
+    })
+    expect(open.status).toBe(200)
+  })
+
+  test('a password reset answers alike for any address and mails a code only to a break-glass member', async () => {
+    await enforced()
+    const answers = []
+    for (const email of [`new@${DOMAIN}`, `bob@${DOMAIN}`, `ada@${DOMAIN}`]) {
+      const res = await post('/v1/client/password-resets', { email })
+      const body = (await res.json()) as { step: { status: string } }
+      answers.push({ status: res.status, step: body.step.status })
+    }
+    expect(answers[0]?.status).toBe(200)
+    expect(answers[1]).toEqual(answers[0])
+    expect(answers[2]).toEqual(answers[0])
+    expect(resetMails(`new@${DOMAIN}`)).toHaveLength(0)
+    expect(resetMails(`bob@${DOMAIN}`)).toHaveLength(0)
+    expect(resetMails(`ada@${DOMAIN}`)).toHaveLength(1)
+  })
+
+  test('a reset started before enforcement cannot be finished by a non-member, but can by a break-glass member', async () => {
+    const attempts: Record<string, { id: string; attemptSecret: string; code: string }> = {}
+    const member = await seedUser(`ada@${DOMAIN}`, true, PASSWORD)
+    await seedUser(`bob@${DOMAIN}`, true, PASSWORD)
+    for (const who of ['ada', 'bob']) {
+      const res = await post('/v1/client/password-resets', { email: `${who}@${DOMAIN}` })
+      const body = (await res.json()) as { id: string; attemptSecret: string }
+      const code = /\b(\d{6})\b/.exec(deps.mailer.last().text)?.[1] ?? ''
+      attempts[who] = { ...body, code }
+    }
+    await Organizations.addMember(
+      deps,
+      TENANT,
+      organizationId,
+      { userId: member, role: BREAK_GLASS },
+      TEST_ACTOR
+    )
+    await enforce()
+    const finish = (who: string, code: string) =>
+      post(
+        `/v1/client/password-resets/${attempts[who]?.id}/password`,
+        { code, password: 'another long passphrase 42' },
+        { 'x-tula-attempt': attempts[who]?.attemptSecret ?? '' }
+      )
+    const wrongCode = await answer(await finish('bob', '000000'))
+    const rightCode = await answer(await finish('bob', attempts.bob?.code ?? ''))
+    expect(rightCode.status).not.toBe(200)
+    expect((rightCode.body as { code: string }).code).toBe(
+      (wrongCode.body as { code: string }).code
+    )
+    const stored = await deps.users.findByEmailWithPassword(TENANT.environmentId, `bob@${DOMAIN}`)
+    expect(await Bun.password.verify(PASSWORD, stored?.passwordHash ?? '')).toBe(true)
+    expect((await finish('ada', attempts.ada?.code ?? '')).status).toBe(200)
+  })
+})
+
 describe('enforcement and a texted sign-in code', () => {
   const NUMBER = '+14155550142'
 
