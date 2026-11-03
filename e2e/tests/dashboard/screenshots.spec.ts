@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
-import { API_URL, useSettings } from '../support'
+import { API_URL, bindSsoDomain, useSettings } from '../support'
 import {
   ENVIRONMENT_ID,
   ENVIRONMENT_PATH,
@@ -190,6 +190,35 @@ test('the dashboard’s screens, in light, dark and at a phone’s width', async
   await shot(page, 'organization-settings')
   await send('DELETE', `/v1/admin/organizations/${organizationId}`)
   await send('DELETE', '/v1/admin/organization-roles/billing', undefined, { 'if-match': '"1"' })
+  await useSettings(page.request)
+
+  // Single sign-on: the fixture's organization with its active connection, taken away again.
+  await bindSsoDomain(page.request, 'northline.example')
+  const listed = await page.request.get(`${API_URL}/v1/admin/organizations?size=100`, {
+    headers: dashboard,
+  })
+  const ssoOrganization = (
+    (await listed.json()) as { data: { id: string; slug: string }[] }
+  ).data.find((entry) => entry.slug === 'sso-northline')
+  expect(ssoOrganization).toBeDefined()
+  const ssoId = ssoOrganization?.id as string
+  await open(page, `${ENVIRONMENT_PATH}/organizations/${ssoId}`, 'SSO Org')
+  await expect(page.getByRole('listitem', { name: 'Connection Mock IdP' })).toBeVisible()
+  // The section is under the members and invitations: bring it into the picture.
+  const card = page.getByRole('listitem', { name: 'Connection Mock IdP' })
+  await card.scrollIntoViewIfNeeded()
+  await shot(page, 'organization-sso')
+  await card.scrollIntoViewIfNeeded()
+  await shot(page, 'organization-sso-dark', 'dark')
+  const connections = await page.request.get(
+    `${API_URL}/v1/admin/sso-connections?organizationId=${ssoId}`,
+    { headers: dashboard }
+  )
+  for (const connection of ((await connections.json()) as { connections: { id: string }[] })
+    .connections) {
+    await send('DELETE', `/v1/admin/sso-connections/${connection.id}`)
+  }
+  await send('DELETE', `/v1/admin/organizations/${ssoId}`)
   await useSettings(page.request)
 
   await open(page, 'instance/diagnostics', 'Diagnostics')
