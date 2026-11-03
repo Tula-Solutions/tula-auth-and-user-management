@@ -758,14 +758,17 @@ export async function refreshMetadata(
 }
 
 /**
- * Delete a connection nobody has signed in through.
+ * Delete a connection that is not active, whoever has signed in through it (decision 13).
+ *
+ * Its identities and domains go with it and the users it managed keep their accounts, no
+ * longer managed; disabling an enforced connection was the weakening, so deleting adds none.
  *
  * @param deps - Stores and settings.
  * @param tenant - The environment.
  * @param id - The connection.
  * @param actor - Who deletes it, for the audit log.
- * @throws AuthError `sso.connection_not_found`, or `sso.connection_in_use` when an identity
- *   exists: disable the connection instead.
+ * @throws AuthError `sso.connection_not_found`, or `sso.connection_in_use` when the connection
+ *   is active: disable it first.
  */
 export async function remove(
   deps: Pick<Deps, 'ssoConnections' | 'ids' | 'clock' | 'environmentSettings' | 'config'>,
@@ -775,6 +778,9 @@ export async function remove(
 ): Promise<void> {
   await requireEnabled(deps, tenant)
   const current = await requireConnection(deps, tenant, id)
+  if (current.status === 'active') {
+    throw new AuthError('sso.connection_in_use')
+  }
   const activity = Audit.entry(deps, tenant, {
     type: 'sso_connection.deleted',
     actor,
@@ -784,8 +790,5 @@ export async function remove(
   const result = await deps.ssoConnections.delete(tenant.environmentId, id, activity)
   if (result === 'missing') {
     throw new AuthError('sso.connection_not_found')
-  }
-  if (result === 'in_use') {
-    throw new AuthError('sso.connection_in_use')
   }
 }

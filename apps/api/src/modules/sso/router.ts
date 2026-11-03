@@ -3,7 +3,9 @@ import { Hono } from 'hono'
 import { describeRoute } from 'hono-openapi'
 import type { AppEnv } from '~/dependencies'
 import * as logger from '~/lib/logger'
+import { errorName } from '~/lib/safe-error'
 import { buildSpMetadata } from '~/lib/saml-metadata'
+import { UUID_PATTERN } from '~/lib/uuid'
 import { byIp, rateLimit } from '~/middleware/rate-limit'
 import * as Flows from '~/modules/flow/service'
 import { OAUTH_INVALID_PAGE } from '~/modules/oauth/router'
@@ -15,8 +17,6 @@ import * as openapi from '~/openapi'
 export const SSO_CALLBACK_RATE_LIMIT = 30
 /** Requests per minute to one connection's callback, from everywhere (ADR 0067). */
 export const SSO_CONNECTION_CALLBACK_RATE_LIMIT = 300
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 // Mounted at `/v1`: the redirect URI of every OIDC connection.
 const router = new Hono<AppEnv>()
@@ -79,7 +79,7 @@ router.get(
   async (c) => {
     const { environmentId, connectionId } = c.req.param()
     const connection =
-      UUID.test(environmentId ?? '') && UUID.test(connectionId ?? '')
+      UUID_PATTERN.test(environmentId ?? '') && UUID_PATTERN.test(connectionId ?? '')
         ? await c.get('deps').ssoConnections.find(environmentId as string, connectionId as string)
         : null
     if (connection?.protocol !== 'saml') {
@@ -132,7 +132,7 @@ async function answer(c: Context<AppEnv>, input: Record<string, unknown>): Promi
   const connectionId = c.req.param('connectionId') ?? ''
   const state = field(input.state)
   // A test sign-in's state is taken by the test; anything else is a sign-in's.
-  const test = UUID.test(connectionId)
+  const test = UUID_PATTERN.test(connectionId)
     ? await SsoTests.callback(c.get('deps'), connectionId, {
         state,
         code: field(input.code),
@@ -142,7 +142,7 @@ async function answer(c: Context<AppEnv>, input: Record<string, unknown>): Promi
     : null
   const result =
     test ??
-    (UUID.test(connectionId)
+    (UUID_PATTERN.test(connectionId)
       ? await Flows.ssoCallback(c.get('deps'), connectionId, {
           state: field(input.state),
           code: field(input.code),
@@ -156,7 +156,7 @@ async function answer(c: Context<AppEnv>, input: Record<string, unknown>): Promi
     } catch (error) {
       // As the OAuth callback: the state is spent, so the static page, and the reason by name.
       logger.error('sso callback: the redirect could not be built', {
-        reason: error instanceof Error ? error.name : 'unknown',
+        reason: errorName(error),
       })
       c.header('Location', undefined)
     }

@@ -7813,6 +7813,7 @@
           "device.binding_not_supported",
           "device.binding_required",
           "user.last_organization_manager",
+          "user.managed",
           "organization.disabled",
           "organization.slug_taken",
           "organization.member_exists",
@@ -26705,7 +26706,7 @@
           "Users"
         ],
         "summary": "Change my password",
-        "description": "Requires the current password. On success the user’s other sessions end and this device stays signed in. A wrong current password answers `auth.invalid_credentials`. An account that has no password answers `password.not_set` (409): a first password is set through a password reset. A user with two-step verification must also have proven their second factor in the last ten minutes: otherwise `auth.step_up_required` (403).",
+        "description": "Requires the current password. On success the user’s other sessions end and this device stays signed in. A wrong current password answers `auth.invalid_credentials`. An account that has no password answers `password.not_set` (409): a first password is set through a password reset. A user with two-step verification must also have proven their second factor in the last ten minutes: otherwise `auth.step_up_required` (403). An account managed by an active SSO connection or SCIM directory answers `user.managed` (403).",
         "security": [
           {
             "publishableKey": [],
@@ -41230,7 +41231,7 @@
           "SSO connections"
         ],
         "summary": "Delete an SSO connection",
-        "description": "Deletes a connection nobody has signed in through. One with an identity is kept (`sso.connection_in_use`, 409): disable it instead.",
+        "description": "Deletes a connection that is not active, with its identities; the users it managed keep their accounts. An active one is kept (`sso.connection_in_use`, 409): disable it first.",
         "security": [
           {
             "secretKey": []
@@ -42645,7 +42646,7 @@
           "Organizations"
         ],
         "summary": "Delete an SSO connection",
-        "description": "Deletes a connection nobody has signed in through (`sso.connection_in_use`, 409, otherwise: disable it). Needs the permission `org:sys:sso:manage`, read from the caller’s membership on every call (never from the token’s claims): a user who is not a member answers `organization.not_a_member` and a member without it `organization.permission_required` (403). A connection of another organization is `sso.connection_not_found`. The client secret is accepted and never returned.",
+        "description": "Deletes a connection that is not active (`sso.connection_in_use`, 409, otherwise: disable it first); its users keep their accounts. Needs the permission `org:sys:sso:manage`, read from the caller’s membership on every call (never from the token’s claims): a user who is not a member answers `organization.not_a_member` and a member without it `organization.permission_required` (403). A connection of another organization is `sso.connection_not_found`. The client secret is accepted and never returned.",
         "security": [
           {
             "publishableKey": [],

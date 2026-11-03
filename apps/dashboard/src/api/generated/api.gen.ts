@@ -3544,6 +3544,7 @@ export const ErrorCode = {
   devicebinding_not_supported: 'device.binding_not_supported',
   devicebinding_required: 'device.binding_required',
   userlast_organization_manager: 'user.last_organization_manager',
+  usermanaged: 'user.managed',
   organizationdisabled: 'organization.disabled',
   organizationslug_taken: 'organization.slug_taken',
   organizationmember_exists: 'organization.member_exists',
@@ -15211,7 +15212,7 @@ export const getDeleteSsoConnectionUrl = (id: string,) => {
 }
 
 /**
- * Deletes a connection nobody has signed in through. One with an identity is kept (`sso.connection_in_use`, 409): disable it instead.
+ * Deletes a connection that is not active, with its identities; the users it managed keep their accounts. An active one is kept (`sso.connection_in_use`, 409): disable it first.
  * @summary Delete an SSO connection
  */
 export const deleteSsoConnection = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {

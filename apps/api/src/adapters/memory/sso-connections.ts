@@ -14,10 +14,17 @@ export class MemorySsoConnectionStore implements SsoConnectionStore {
   readonly #records: Map<string, SsoConnectionRecord>
   readonly #identities: Map<string, SsoIdentityRecord & { environmentId: string }>
   readonly #activityLog: MemoryActivityLog
+  readonly #users:
+    | { clearManagedByConnection(environmentId: string, connectionId: string): void }
+    | undefined
   readonly #groupRoles = new Map<string, GroupRole[]>()
 
   // Assigned in the constructor for Bun coverage; see MemoryApiKeyRepository.
-  constructor(activityLog: MemoryActivityLog = new MemoryActivityLog()) {
+  constructor(
+    activityLog: MemoryActivityLog = new MemoryActivityLog(),
+    users?: { clearManagedByConnection(environmentId: string, connectionId: string): void }
+  ) {
+    this.#users = users
     this.#records = new Map()
     this.#identities = new Map()
     this.#activityLog = activityLog
@@ -170,14 +177,17 @@ export class MemorySsoConnectionStore implements SsoConnectionStore {
     environmentId: string,
     id: string,
     recorded: Recorded
-  ): Promise<'deleted' | 'missing' | 'in_use'> {
+  ): Promise<'deleted' | 'missing'> {
     const activity = activityOf(recorded)
     if (!this.#own(environmentId, id)) {
       return 'missing'
     }
-    if ([...this.#identities.values()].some((one) => one.connectionId === id)) {
-      return 'in_use'
+    for (const [key, one] of this.#identities) {
+      if (one.connectionId === id) {
+        this.#identities.delete(key)
+      }
     }
+    this.#users?.clearManagedByConnection(environmentId, id)
     this.#records.delete(id)
     this.#activityLog.record(activity ? [activity] : [])
     return 'deleted'

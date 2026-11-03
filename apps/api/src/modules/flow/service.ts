@@ -56,6 +56,8 @@ import { ipBucket } from '~/lib/client-ip'
 import { randomToken, sha256Hex, timingSafeEqual } from '~/lib/crypto'
 import { maskEmail, normalizeEmail, parseEmail, type TestAddressPermit } from '~/lib/email'
 import * as logger from '~/lib/logger'
+import { errorName } from '~/lib/safe-error'
+import { UUID_PATTERN } from '~/lib/uuid'
 import * as WebAuthn from '~/lib/webauthn'
 import * as Audit from '~/modules/audit/service'
 import * as Factors from '~/modules/factor/service'
@@ -937,7 +939,7 @@ async function finish(
     // Bookkeeping only: the session exists, so failing here would throw its tokens away.
     logger.warn('could not record the sign-in time', {
       environmentId: tenant.environmentId,
-      err: error instanceof Error ? error.name : 'unknown',
+      err: errorName(error),
     })
   }
   return {
@@ -1061,6 +1063,8 @@ function owesNewPassword(state: Pick<State, 'expiredPasswordSetAt'>): boolean {
  *   sign-up relies on (passwords, or the email code for a sign-up without one), or
  *   `request.origin_not_allowed` for a browser attempt from an origin the environment does not
  *   allow.
+ * @throws AuthError `auth.method_disabled` when the address's domain is enforced by an organization's
+ *   single sign-on (DECISIONS 12): refused at the start, as a password sign-in there is.
  * @throws RateLimitError when the address was emailed too recently or too often.
  */
 export async function signUp(
@@ -1075,6 +1079,9 @@ export async function signUp(
     throw new InvalidEmailError()
   }
   const { email, normalized: identifier } = parsed
+  // Domain-level, whoever asks: an account is made on an enforced domain by single sign-on
+  // alone (decision 12), and the answer says nothing about the address.
+  await Sso.requireNotEnforced(deps, tenant, identifier, 'sign_up')
   const passwordless = input.password === undefined
   if (passwordless && (await Settings.current(deps, tenant)).signUp.password !== 'optional') {
     throw new ValidationError({
@@ -1441,7 +1448,7 @@ async function completeEmailFactor(
       // can read.
       logger.warn('could not mark the email verified after an email sign-in', {
         environmentId: tenant.environmentId,
-        err: error instanceof Error ? error.name : 'unknown',
+        err: errorName(error),
       })
     }
   }
@@ -1917,7 +1924,7 @@ async function attemptSmsCode(
     // Bookkeeping only: the number then lapses a little earlier than it had to.
     logger.warn('could not record that a phone number was proven again', {
       environmentId: tenant.environmentId,
-      err: error instanceof Error ? error.name : 'unknown',
+      err: errorName(error),
     })
   }
   if (parked === null) {
@@ -2021,9 +2028,6 @@ export async function verifyEmailLink(
   }
   return { status: 'verified' }
 }
-
-/** The parts of an OAuth `state`: which environment and attempt it belongs to. */
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 /**
  * The fragment an OAuth callback sends the app's page.
@@ -2239,8 +2243,8 @@ export async function oauthCallback(
     !environmentId ||
     !attemptId ||
     !random ||
-    !UUID.test(environmentId) ||
-    !UUID.test(attemptId)
+    !UUID_PATTERN.test(environmentId) ||
+    !UUID_PATTERN.test(attemptId)
   ) {
     return { invalid: true }
   }
@@ -2726,8 +2730,8 @@ export async function ssoCallback(
     !environmentId ||
     !attemptId ||
     !random ||
-    !UUID.test(environmentId) ||
-    !UUID.test(attemptId)
+    !UUID_PATTERN.test(environmentId) ||
+    !UUID_PATTERN.test(attemptId)
   ) {
     return { invalid: true }
   }
@@ -2796,7 +2800,7 @@ export async function ssoCallback(
     // A JSON error would strand the browser on the API: the app's page shows this one.
     logger.warn('an SSO callback failed', {
       environmentId,
-      failure: error instanceof Error ? error.name : 'unknown',
+      failure: errorName(error),
     })
     return failed('sso.provider_error')
   }
@@ -3097,6 +3101,8 @@ export async function exchangeOAuthLink(
  * @throws AuthError `flow.not_found`, `flow.invalid_step`, `request.origin_not_allowed`,
  *   `auth.method_disabled`, a `verification.*` code or `auth.user_banned`; for a sign-up, the
  *   `before_sign_up` hook's `hook.denied` or `hook.unavailable` (the attempt has then ended).
+ * @throws AuthError `auth.method_disabled` for a sign-up whose domain became enforced by single
+ *   sign-on after the start: no account is made.
  */
 export async function verifyEmail(
   deps: Deps,
@@ -3110,6 +3116,10 @@ export async function verifyEmail(
   const event = { type: 'email_verified' } as const
   // Throws `flow.invalid_step` unless the attempt is waiting on email verification.
   assertAccepts(attempt.kind, attempt.status, event)
+  // A sign-up begun before the domain was enforced creates no account afterwards.
+  if (attempt.kind === 'sign_up') {
+    await Sso.requireNotEnforced(deps, tenant, attempt.identifier, 'sign_up')
+  }
   // A sign-in reaches this step after a password or a passkey (an email factor verifies the
   // address itself): the switch that must still be on is the one of the factor it proved.
   await requireProvenMethod(deps, tenant, attempt, state, context)
@@ -3276,7 +3286,7 @@ async function clearSignUp(
         logger.warn('could not end a sign-up attempt after its hook refused it', {
           environmentId: tenant.environmentId,
           attemptId: attempt.id,
-          err: cleanup instanceof Error ? cleanup.name : 'unknown',
+          err: errorName(cleanup),
         })
       }
     }
@@ -3292,6 +3302,9 @@ async function clearSignUp(
  * a code nobody knows, so guesses, resends and send limits behave identically and it can never
  * complete. A banned user is sent a code like anyone else and learns of the ban only after
  * proving they own the address.
+ *
+ * An address on a domain enforced by single sign-on gets the decoy attempt of an unknown address,
+ * so the answer does not tell it apart (DECISIONS 12).
  *
  * @param deps - All dependencies.
  * @param tenant - The environment the publishable key resolved to.
@@ -3318,7 +3331,10 @@ export async function startPasswordReset(
   const { email, normalized: identifier } = parsed
   await requirePasswordMethod(deps, tenant)
   await chargeEnvironment(deps, tenant, 'passwordReset')
-  const user = await deps.users.findByEmail(tenant.environmentId, identifier)
+  // On an enforced domain only a break-glass member is mailed a code; everyone else gets the
+  // decoy, so the answer is the same for any address (decision 12).
+  const found = await deps.users.findByEmail(tenant.environmentId, identifier)
+  const user = found && !(await Sso.refuses(deps, tenant, identifier, 'password')) ? found : null
   const state: State = { ...asked(context), email, ...(!user && { decoy: true }) }
   const { attempt, secret } = await start(deps, tenant, {
     kind: 'password_reset',
@@ -3364,6 +3380,8 @@ export async function startPasswordReset(
  * @throws AuthError `flow.not_found`, `flow.invalid_step`, `request.origin_not_allowed`,
  *   `auth.method_disabled`, a `verification.*` code or `auth.user_banned`.
  * @throws ServiceException a `password.*` code when the new password fails the policy.
+ * @throws AuthError `verification.invalid_code` (as for a decoy) when the account's domain became
+ *   enforced by single sign-on after the code was sent: nothing is stored.
  */
 export async function resetPassword(
   deps: Deps,
@@ -3389,7 +3407,12 @@ export async function resetPassword(
     !state.decoy && attempt.userId
       ? await deps.users.findById(tenant.environmentId, attempt.userId)
       : null
-  if (!user || user.emailNormalized !== attempt.identifier) {
+  if (
+    !user ||
+    user.emailNormalized !== attempt.identifier ||
+    // Enforcement switched on after the code was sent: only a break-glass member may finish.
+    (await Sso.refuses(deps, tenant, attempt.identifier, 'password'))
+  ) {
     // Someone guessed the decoy code of a reset for an address with no account, or the account
     // was deleted or moved to another address meanwhile: a code proves control of the address
     // it was sent to, not of the account. Answer as if the guess was wrong.
@@ -3429,7 +3452,7 @@ export async function resetPassword(
       // Their next sign-in asks them to verify the address instead.
       logger.warn('could not mark the email verified after a password reset', {
         environmentId: tenant.environmentId,
-        err: error instanceof Error ? error.name : 'unknown',
+        err: errorName(error),
       })
     }
   }
@@ -4211,7 +4234,7 @@ export async function confirmFactorEnrolment(
       // the authenticator and makes new codes, or an administrator resets them.
       logger.warn('could not undo an enrolment whose attempt did not complete', {
         environmentId: tenant.environmentId,
-        err: undo instanceof Error ? undo.name : 'unknown',
+        err: errorName(undo),
       })
     }
     throw error

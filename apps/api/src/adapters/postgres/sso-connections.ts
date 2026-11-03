@@ -4,6 +4,7 @@ import {
   ssoConnectionDomains,
   ssoConnections,
   ssoIdentities,
+  users,
   withTenant,
 } from '@tula-tech/db'
 import { and, asc, eq, inArray } from 'drizzle-orm'
@@ -282,17 +283,15 @@ export class PostgresSsoConnectionStore implements SsoConnectionStore {
     environmentId: string,
     id: string,
     recorded: Recorded
-  ): Promise<'deleted' | 'missing' | 'in_use'> {
+  ): Promise<'deleted' | 'missing'> {
     const activity = activityOf(recorded)
     return withTenant(this.db, environmentId, async (tx) => {
-      const [identity] = await tx
-        .select({ id: ssoIdentities.id })
-        .from(ssoIdentities)
-        .where(eq(ssoIdentities.connectionId, id))
-        .limit(1)
-      if (identity) {
-        return 'in_use' as const
-      }
+      // The mark has no foreign key (migration 0048), so it is cleared by hand, with the rest.
+      await tx
+        .update(users)
+        .set({ managedByConnectionId: null })
+        .where(and(eq(users.environmentId, environmentId), eq(users.managedByConnectionId, id)))
+      await tx.delete(ssoIdentities).where(eq(ssoIdentities.connectionId, id))
       await tx.delete(ssoConnectionDomains).where(eq(ssoConnectionDomains.connectionId, id))
       const rows = await tx
         .delete(ssoConnections)

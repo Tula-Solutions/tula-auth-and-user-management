@@ -170,8 +170,12 @@ import { join } from 'node:path'
  * codes) added 46 bytes, to 19,653. The budget moved by exactly those, to 19,657.
  * The setup portal's refusal `sso.role_not_allowed` (Phase 4 review) added 41 bytes, to 19,694.
  * The budget moved by exactly those, to 19,698.
+
+ * Managed accounts (DECISIONS 11: the `user.managed` code, and the longer `sso.connection_in_use`
+ * message) added 27 bytes on top of that, to 19,721. The budget moved by exactly those, to 19,725.
+
  */
-const GZIP_BUDGET_BYTES = 19_698
+const GZIP_BUDGET_BYTES = 19_725
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({

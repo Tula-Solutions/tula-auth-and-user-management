@@ -367,6 +367,13 @@ export const ERROR_DEFINITIONS = {
     message:
       'This user is the only manager of an organization. Add another manager or delete the organization first.',
   },
+  // The account is managed by an active single sign-on connection or SCIM directory (ADR 0067,
+  // DECISIONS 11): its address and password are the identity provider's to change, so a client
+  // route that would change either refuses. Administrators' routes are not affected.
+  'user.managed': {
+    status: 403,
+    message: 'This account is managed by your organization. Ask your administrator to change it.',
+  },
   // Organizations (ADR 0065). `disabled`: the environment's `organizations.enabled` setting is
   // off, so every organization route answers this and touches nothing. It says nothing about any
   // account. `slug_taken` and `member_exists` are conflicts on the organization's unique slug and
@@ -545,7 +552,7 @@ export const ERROR_DEFINITIONS = {
   },
   'sso.connection_in_use': {
     status: 409,
-    message: 'The connection has signed users in; disable it instead.',
+    message: 'The connection is active; disable it before deleting it.',
   },
   'sso.invalid_transition': {
     status: 409,

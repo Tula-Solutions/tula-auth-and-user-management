@@ -134,7 +134,7 @@ test('the dashboard’s screens, in light, dark and at a phone’s width', async
     origin: API_URL,
   }
   const send = async (
-    method: 'POST' | 'DELETE',
+    method: 'POST' | 'PATCH' | 'DELETE',
     path: string,
     data?: unknown,
     extra: Record<string, string> = {}
@@ -238,6 +238,8 @@ test('the dashboard’s screens, in light, dark and at a phone’s width', async
   )
   for (const connection of ((await connections.json()) as { connections: { id: string }[] })
     .connections) {
+    // An active connection cannot be deleted (decision 13): disable it first.
+    await send('PATCH', `/v1/admin/sso-connections/${connection.id}`, { status: 'disabled' })
     await send('DELETE', `/v1/admin/sso-connections/${connection.id}`)
   }
   await send('DELETE', `/v1/admin/organizations/${ssoId}`)

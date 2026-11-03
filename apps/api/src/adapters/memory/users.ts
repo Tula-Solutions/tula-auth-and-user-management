@@ -56,6 +56,20 @@ export class MemoryUserRepository implements UserRepository {
   #confirmedTotp: ((environmentId: string, userId: string) => boolean) | null
   #passkeysReported: boolean
 
+  /**
+   * Forget which connection managed its users, as deleting the connection does (decision 13).
+   *
+   * @param environmentId - The environment.
+   * @param connectionId - The deleted connection.
+   */
+  clearManagedByConnection(environmentId: string, connectionId: string): void {
+    for (const user of this.#users.values()) {
+      if (user.environmentId === environmentId && user.managedByConnectionId === connectionId) {
+        user.managedByConnectionId = null
+      }
+    }
+  }
+
   /** @param activityLog - Where activity is recorded; shared with the other memory stores. */
   constructor(activityLog: MemoryActivityLog = new MemoryActivityLog()) {
     // Assigned here rather than as field initializers: Bun's per-file coverage counts

@@ -49,7 +49,7 @@ duplicate `userName` is 409 with `scimType: "uniqueness"`.
 
 | SCIM attribute | In Tula |
 | --- | --- |
-| `userName` (else the primary of `emails`) | The user's email address. It must be an address; it is **never changed** by SCIM afterwards, and a managed user cannot change it from a client. |
+| `userName` (else the primary of `emails`) | The user's email address. It must be an address; it is **never changed** by SCIM afterwards, and a managed user cannot change it from a client. A managed user cannot change their password from a client either (`user.managed`, 403) while the directory has a live token; administrators still can. |
 | `externalId` | The directory's own id, kept to find the user again (`filter=externalId eq "…"`). |
 | `name.givenName`, `name.familyName` | First and last name (at most 100 characters each). For a user the directory manages, a `PUT` or `PATCH` updates them (TULA-150); for anyone else they are left alone. |
 | `active` | `false` deactivates (below), `true` restores. |

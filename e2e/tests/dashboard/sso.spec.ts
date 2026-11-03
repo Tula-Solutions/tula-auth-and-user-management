@@ -42,6 +42,11 @@ async function clear(page: Page): Promise<void> {
       `/v1/admin/sso-connections?organizationId=${organization.id}`
     )
     for (const connection of listed.connections) {
+      // An active connection cannot be deleted (decision 13): disable it first.
+      await page.request.patch(`${API_URL}/v1/admin/sso-connections/${connection.id}`, {
+        headers: DASHBOARD,
+        data: { status: 'disabled' },
+      })
       await page.request.delete(`${API_URL}/v1/admin/sso-connections/${connection.id}`, {
         headers: DASHBOARD,
       })

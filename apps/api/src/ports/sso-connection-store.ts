@@ -151,18 +151,16 @@ export interface SsoConnectionStore {
   ): Promise<SsoConnectionRecord | SsoWriteRefusal>
 
   /**
-   * Remove a connection that no one has signed in through.
+   * Remove a connection, its domains and its identities, and clear the mark of the users it
+   * managed (they keep their accounts), in one transaction (decision 13). The caller has
+   * checked that the connection is not active.
    *
    * @param environmentId - The environment.
    * @param id - The connection.
    * @param activity - Recorded in the same transaction, only if something was removed.
-   * @returns `deleted`, `missing`, or `in_use` when an identity exists (disable it instead).
+   * @returns `deleted` or `missing`.
    */
-  delete(
-    environmentId: string,
-    id: string,
-    activity: Recorded
-  ): Promise<'deleted' | 'missing' | 'in_use'>
+  delete(environmentId: string, id: string, activity: Recorded): Promise<'deleted' | 'missing'>
 
   /**
    * @param environmentId - The environment.

@@ -98,7 +98,7 @@ mock identity provider at `/v1/dev/sso` for tests.
 | `sso.disabled` | `sso.enabled` is off. |
 | `sso.domain_not_verified` / `sso.domain_taken` | The domain is not the organization's verified domain, or another active connection serves it. |
 | `sso.issuer_not_allowed` | The issuer is not an address the server may call. |
-| `sso.invalid_transition` / `sso.connection_in_use` | Wrong status change, or delete of a connection that signed users in: disable it. |
+| `sso.invalid_transition` / `sso.connection_in_use` | Wrong status change, or delete of an active connection: disable it first. |
 | `sso.provider_error` | The provider's token or SAML response was refused (issuer, audience, nonce or request id, signature, expiry, replay). See the logs. |
 | `sso.saml_invalid` | A SAML connection's metadata or values were refused: not exactly one source, a DTD, no signing certificate, a certificate that does not parse, or the metadata URL could not be fetched. |
 | `sso.email_domain_mismatch` | The address is outside the connection's domains. |

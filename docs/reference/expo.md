@@ -1752,7 +1752,7 @@ export interface TulaClient {
        */
       refreshMetadata(organizationId: string, id: string): Promise<OrganizationSsoConnection>
       /**
-       * Delete a connection nobody has signed in through (`sso.connection_in_use` otherwise).
+       * Delete a connection that is not active (`sso.connection_in_use` otherwise); its users keep their accounts.
        *
        * @param organizationId - The organization.
        * @param id - The connection.

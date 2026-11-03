@@ -488,3 +488,33 @@ describe('the test sign-in gate', () => {
     expect(await codeOf(wrong)).toBe('sso.test_not_found')
   })
 })
+
+describe('the per-environment limits', () => {
+  for (const [name, path, bucket, limit, body] of [
+    ['refresh-metadata', 'refresh-metadata', 'sso_refresh_metadata', 10, undefined],
+    ['tests', 'tests', 'sso_test', 20, { redirectUrl: REDIRECT }],
+  ] as const) {
+    test(`${name} is limited per environment, across client addresses`, async () => {
+      const { maya, org, made } = await world()
+      Object.assign(deps.config, { trustProxy: true })
+      const from = (n: number) =>
+        app.request(`/v1/client${base(org)}/${made.id}/${path}`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-tula-client': 'ios',
+            origin: ORIGIN,
+            'x-tula-publishable-key': PK,
+            authorization: `Bearer ${maya.accessToken}`,
+            'x-forwarded-for': `203.0.113.${n}`,
+          },
+          ...(body !== undefined && { body: JSON.stringify(body) }),
+        })
+      // The bucket is filled directly: twenty real rounds outlast the test's deadline.
+      for (let n = 1; n <= limit; n++) {
+        await deps.rateLimiter.hit(`${bucket}:env:${TEST_TENANT.environmentId}`, limit, 60_000)
+      }
+      expect((await from(limit + 1)).status).toBe(429)
+    })
+  }
+})
