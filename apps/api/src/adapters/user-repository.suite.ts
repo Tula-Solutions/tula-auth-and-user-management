@@ -75,6 +75,7 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         lastSignInAt: null,
         phoneNumber: null,
         managedByConnectionId: null,
+        managedByDirectoryId: null,
         phoneNumberVerifiedAt: null,
         smsFactorEnabledAt: null,
       }
@@ -377,6 +378,7 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toMatchObject({
           phoneNumber: null,
           managedByConnectionId: null,
+          managedByDirectoryId: null,
           smsFactorEnabledAt: null,
         })
         expect((await auditOf(ctx.a, input.id)).sort()).toEqual([
@@ -447,6 +449,7 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
         expect(await ctx.users.findById(ctx.a.environmentId, input.id)).toMatchObject({
           phoneNumber: null,
           managedByConnectionId: null,
+          managedByDirectoryId: null,
           phoneNumberVerifiedAt: null,
         })
       })

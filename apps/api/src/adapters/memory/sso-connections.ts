@@ -115,6 +115,10 @@ export class MemorySsoConnectionStore implements SsoConnectionStore {
       saml: changes.saml ?? record.saml,
       attributeMapping: changes.attributeMapping ?? record.attributeMapping,
       defaultRole: changes.defaultRole ?? record.defaultRole,
+      enforced: changes.enforced ?? record.enforced,
+      breakGlassRole:
+        changes.breakGlassRole === undefined ? record.breakGlassRole : changes.breakGlassRole,
+      trustIdpMfa: changes.trustIdpMfa ?? record.trustIdpMfa,
       domains: changes.domains ? [...changes.domains].sort() : record.domains,
       status: changes.status ?? record.status,
       updatedAt,

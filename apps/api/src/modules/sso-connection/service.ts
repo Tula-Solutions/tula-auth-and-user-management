@@ -107,6 +107,9 @@ function view(
     },
     attributeMapping: record.attributeMapping,
     defaultRole: record.defaultRole,
+    enforced: record.enforced,
+    breakGlassRole: record.breakGlassRole,
+    trustIdpMfa: record.trustIdpMfa,
     domains: record.domains,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
@@ -354,6 +357,9 @@ export async function create(
       saml,
       attributeMapping: input.attributeMapping ?? null,
       defaultRole: input.defaultRole,
+      enforced: false,
+      breakGlassRole: null,
+      trustIdpMfa: false,
       domains,
       createdAt: activity.occurredAt,
       updatedAt: activity.occurredAt,
@@ -452,6 +458,28 @@ function transitionAllowed(from: SsoConnectionStatus, to: SsoConnectionStatus): 
 }
 
 /**
+ * Whether a change makes the connection ask less of a sign-in (ADR 0067): activating it, or
+ * changing what an active one accepts, and in any case switching enforcement off, trusting
+ * the provider for MFA, or naming a break-glass role. Shared by the audit entry's `weakened`.
+ *
+ * @param current - The connection as it is.
+ * @param changes - The fields being changed.
+ * @returns `true` when the change is a weakening.
+ */
+export function weakens(current: SsoConnectionRecord, changes: SsoConnectionChanges): boolean {
+  const changedFields = Object.keys(changes).filter((key) => key !== 'name' && key !== 'status')
+  return (
+    changes.status === 'active' ||
+    (current.status === 'active' &&
+      changedFields.some((key) => !['enforced', 'breakGlassRole', 'trustIdpMfa'].includes(key))) ||
+    (changes.enforced === false && current.enforced) ||
+    (changes.trustIdpMfa === true && !current.trustIdpMfa) ||
+    (typeof changes.breakGlassRole === 'string' &&
+      changes.breakGlassRole !== current.breakGlassRole)
+  )
+}
+
+/**
  * Change a connection.
  *
  * Fields left out are kept. Activating, or changing the issuer, client, secret, role or
@@ -539,6 +567,21 @@ export async function update(
     changes.defaultRole = input.defaultRole
     changed.push('defaultRole')
   }
+  if (input.enforced !== undefined && input.enforced !== current.enforced) {
+    changes.enforced = input.enforced
+    changed.push('enforced')
+  }
+  if (input.breakGlassRole !== undefined && input.breakGlassRole !== current.breakGlassRole) {
+    if (input.breakGlassRole !== null) {
+      await Organizations.requireRole(deps, tenant, input.breakGlassRole)
+    }
+    changes.breakGlassRole = input.breakGlassRole
+    changed.push('breakGlassRole')
+  }
+  if (input.trustIdpMfa !== undefined && input.trustIdpMfa !== current.trustIdpMfa) {
+    changes.trustIdpMfa = input.trustIdpMfa
+    changed.push('trustIdpMfa')
+  }
   if (input.domains !== undefined) {
     const domains = await requireOwnDomains(deps, tenant, current.organizationId, input.domains)
     if (domains.join() !== current.domains.join()) {
@@ -560,9 +603,7 @@ export async function update(
   if (changed.length === 0) {
     return view(deps.config, current, deps.clock.now())
   }
-  const widens =
-    changes.status === 'active' ||
-    (current.status === 'active' && changed.some((field) => field !== 'name' && field !== 'status'))
+  const widens = weakens(current, changes)
   const activity = Audit.entry(deps, tenant, {
     type: 'sso_connection.updated',
     actor,

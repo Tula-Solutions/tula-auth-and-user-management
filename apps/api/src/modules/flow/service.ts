@@ -552,6 +552,11 @@ const StateSchema = z.object({
    */
   /** The SSO connection that proved the first factor (ADR 0067): the session's `sso_conn`. */
   ssoConnectionId: z.string().optional(),
+  /**
+   * The identifier's domain is enforced (TULA-140): the step shows `sso` alone. `strategies`
+   * keeps the full list because a break-glass member's own routes still accept the rest.
+   */
+  ssoEnforced: z.boolean().optional(),
   sso: z
     .object({
       connectionId: z.string(),
@@ -612,7 +617,7 @@ function stepFor(
   if (attempt.status === 'needs_first_factor') {
     return {
       status: 'needs_first_factor',
-      strategies: state.strategies ?? [],
+      strategies: state.ssoEnforced ? ['sso'] : (state.strategies ?? []),
       // The identifier as it was typed at the start, masked: it says nothing about an account.
       ...(state.prepared && {
         prepared: {
@@ -1186,17 +1191,19 @@ export async function signIn(
   ]
   // Offered by the address's domain alone, never by whether an account exists: a known and an
   // unknown address on a bound domain get the same answer (home-realm discovery, ADR 0067).
-  if ((await Sso.offered(deps, tenant, normalizeEmail(input.identifier))) !== null) {
+  const connection = await Sso.offered(deps, tenant, normalizeEmail(input.identifier))
+  if (connection !== null) {
     strategies.push('sso')
   }
+  const enforced = connection?.enforced === true
   if (strategies.length === 0) {
     throw new AuthError('auth.method_disabled')
   }
-  const state: State = { ...asked(context), strategies }
+  const state: State = { ...asked(context), strategies, ...(enforced && { ssoEnforced: true }) }
   const { attempt, secret } = await start(deps, tenant, {
     kind: 'sign_in',
     status:
-      strategies.length === 1 && strategies[0] === 'password'
+      !enforced && strategies.length === 1 && strategies[0] === 'password'
         ? 'needs_password'
         : 'needs_first_factor',
     // A phone number is kept in E.164 form, whatever was typed between its digits; anything
@@ -1235,7 +1242,8 @@ export async function signIn(
  *   `needs_new_password` (`reason: 'expired'`), without tokens, for a password that is right
  *   and too old.
  * @throws AuthError `flow.not_found`, `flow.invalid_step`, `request.origin_not_allowed`,
- *   `auth.method_disabled`, `auth.invalid_credentials` or `auth.user_banned`.
+ *   `auth.invalid_credentials` (also for a non-member of an enforced SSO domain) or
+ *   `auth.user_banned`.
  * @throws RateLimitError while the identifier is locked out after repeated failures.
  */
 export async function submitPassword(
@@ -1249,6 +1257,9 @@ export async function submitPassword(
   const strategies = state.strategies ?? []
   const event = { type: 'first_factor_verified', strategy: 'password' } as const
   assertAccepts(attempt.kind, attempt.status, event, strategies)
+  // Not refused here: `auth.method_disabled` for a non-member would tell a break-glass member
+  // from anyone else. The verdict is folded into the one failure below (ADR 0067).
+  const enforcedOut = await Sso.refuses(deps, tenant, attempt.identifier, 'password')
   await requirePasswordMethod(deps, tenant)
   // Hash the identifier so lockout keys (which may live in Redis) hold no email. The attempt is
   // counted as a failure up front and cleared on success, so parallel guesses can't all slip
@@ -1271,7 +1282,8 @@ export async function submitPassword(
       password,
       found && Foreign.opener(deps, tenant.environmentId, found.user.id)
     )) ||
-    !found
+    !found ||
+    enforcedOut
   ) {
     throw new AuthError('auth.invalid_credentials')
   }
@@ -1490,6 +1502,7 @@ export async function prepareFirstFactor(
     { type: 'first_factor_verified', strategy },
     state.strategies ?? []
   )
+  await Sso.requireNotEnforced(deps, tenant, attempt.identifier, strategy)
   if (strategy === 'sms_code') {
     return prepareSmsCode(deps, tenant, attempt, state, context)
   }
@@ -1594,6 +1607,7 @@ export async function attemptFirstFactor(
     { type: 'first_factor_verified', strategy: input.strategy },
     state.strategies ?? []
   )
+  await Sso.requireNotEnforced(deps, tenant, attempt.identifier, input.strategy)
   if (input.strategy === 'sms_code') {
     return attemptSmsCode(deps, tenant, attempt, state, input.code, context)
   }
@@ -1835,6 +1849,10 @@ async function attemptSmsCode(
   if (!user || number === null || user.id !== token.userId) {
     throw new AuthError('auth.invalid_credentials')
   }
+  // The identifier is a number, on no domain: the holder's address is what an SSO domain binds.
+  if (user.emailNormalized !== null) {
+    await Sso.requireNotEnforced(deps, tenant, user.emailNormalized, 'sms_code')
+  }
   await deps.lockout.clear(lockKey)
   if (user.bannedAt !== null) {
     throw new AuthError('auth.user_banned')
@@ -1985,6 +2003,7 @@ export async function verifyEmailLink(
     throw new AuthError('verification.different_browser')
   }
   requireAllowedOrigin(state.client, context)
+  await Sso.requireNotEnforced(deps, tenant, attempt.identifier, 'email_link')
   await Settings.requireMethod(deps, tenant, 'emailLink')
   await chargeEnvironment(deps, tenant, 'verify')
   // Single use: of two tabs opening the same link, only the first gets past this.
@@ -2541,6 +2560,10 @@ export async function completeExternalSignIn(
   context: ClientContext,
   method: string
 ): Promise<FlowResult> {
+  // A provider's profile is refused for an enforced domain before any account is made or linked.
+  if (typeof provider === 'string' && profile.email !== null) {
+    await Sso.requireNotEnforced(deps, tenant, normalizeEmail(profile.email), provider)
+  }
   // Which account is decided by the provider's linking table, or by the connection's
   // matching table (ADR 0067); everything after that is the same for both.
   const { user, created } =
@@ -2552,10 +2575,17 @@ export async function completeExternalSignIn(
   if (user.bannedAt !== null) {
     throw new AuthError('auth.user_banned')
   }
-  // An account created a moment ago has no factor to prove, but the environment may require one.
-  const required: Requirement = created
-    ? { secondFactors: [], enrolmentRequired: await Factors.enrolmentRequired(deps, tenant, []) }
-    : await requirement(deps, tenant, user.id)
+  if (typeof provider === 'string' && !created && user.emailNormalized !== null) {
+    await Sso.requireNotEnforced(deps, tenant, user.emailNormalized, provider)
+  }
+  // A connection that trusts its identity provider for MFA (TULA-140) skips Tula's second step,
+  // also under `mfa.policy: required`; the session records `mfa`.
+  const trusted = typeof provider !== 'string' && provider.connection.trustIdpMfa
+  const required: Requirement = trusted
+    ? { secondFactors: [], enrolmentRequired: false }
+    : created
+      ? { secondFactors: [], enrolmentRequired: await Factors.enrolmentRequired(deps, tenant, []) }
+      : await requirement(deps, tenant, user.id)
   const next = nextStatus(
     attempt.kind,
     attempt.status,
@@ -2574,7 +2604,9 @@ export async function completeExternalSignIn(
     tenant,
     attempt,
     {
-      ...firstProven(state, strategy, method),
+      ...(trusted
+        ? firstProven(state, strategy, method, 'mfa')
+        : firstProven(state, strategy, method)),
       ...(created && { accountCreated: true }),
       ...(typeof provider !== 'string' && { ssoConnectionId: provider.connection.id }),
     },
@@ -3952,6 +3984,9 @@ export async function submitPasskey(
   }
   if (user.bannedAt !== null) {
     throw new AuthError('auth.user_banned')
+  }
+  if (user.emailNormalized !== null) {
+    await Sso.requireNotEnforced(deps, tenant, user.emailNormalized, 'passkey')
   }
   // Nothing more is asked of a user who proved a passkey: no second factor, no enrolment.
   const required: Requirement = { secondFactors: [], enrolmentRequired: false }

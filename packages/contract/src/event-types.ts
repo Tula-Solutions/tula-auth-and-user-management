@@ -109,6 +109,11 @@ export const ACTIVITY_TYPES = [
   'sso_connection.created',
   'sso_connection.updated',
   'sso_connection.deleted',
+  // A SCIM token of an organization's directory and the users the directory provisions (ADR 0067).
+  // Ids and enums only: never a token, a user name or an address.
+  'scim_token.created',
+  'scim_token.revoked',
+  'user.scim_provisioned',
   // An organization and its members (ADR 0065). The events carry ids and role keys only:
   // never the organization's name or slug, and never a member's address or name.
   'organization.created',
@@ -227,6 +232,9 @@ export const EVENT_TARGET_TYPES = {
   'sso_connection.created': 'sso_connection',
   'sso_connection.updated': 'sso_connection',
   'sso_connection.deleted': 'sso_connection',
+  'scim_token.created': 'scim_token',
+  'scim_token.revoked': 'scim_token',
+  'user.scim_provisioned': 'user',
   'organization.created': 'organization',
   'organization.updated': 'organization',
   'organization.deleted': 'organization',

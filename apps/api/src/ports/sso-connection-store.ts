@@ -42,6 +42,12 @@ export interface SsoConnectionRecord {
   attributeMapping: SsoAttributeMapping | null
   /** The role key given to a user this connection provisions. */
   defaultRole: string
+  /** Enforced: an identifier on the domains is offered `sso` only (TULA-140). */
+  enforced: boolean
+  /** The organization role whose members keep their other methods under enforcement, or `null`. */
+  breakGlassRole: string | null
+  /** Whether the identity provider's own MFA stands in for Tula's second step. */
+  trustIdpMfa: boolean
   /** The verified domains of the organization this connection is bound to, sorted. */
   domains: string[]
   createdAt: Date
@@ -57,6 +63,9 @@ export interface SsoConnectionChanges {
   clientSecretSealed?: string
   attributeMapping?: SsoAttributeMapping
   defaultRole?: string
+  enforced?: boolean
+  breakGlassRole?: string | null
+  trustIdpMfa?: boolean
   /** The whole new set of bound domains. */
   domains?: string[]
   status?: SsoConnectionStatus

@@ -1,6 +1,6 @@
 {
-  "id": "75f48b3c-ca0c-40cf-a36e-9e9000cd80ae",
-  "prevId": "97fc7cba-cc34-43a2-aa66-6f4ff2229d00",
+  "id": "79136181-d6f2-4598-be6c-3b0b8e639cc4",
+  "prevId": "0c1dd25a-b29c-40d4-b27d-a2d67bf2a66d",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4749,6 +4749,426 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "tula.scim_tokens": {
+      "name": "scim_tokens",
+      "schema": "tula",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "environment_id": {
+          "name": "environment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prefix": {
+          "name": "prefix",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_used_at": {
+          "name": "last_used_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "scim_tokens_organization_idx": {
+          "name": "scim_tokens_organization_idx",
+          "columns": [
+            {
+              "expression": "environment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "scim_tokens_environment_id_idx": {
+          "name": "scim_tokens_environment_id_idx",
+          "columns": [
+            {
+              "expression": "environment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "scim_tokens_project_id_projects_id_fk": {
+          "name": "scim_tokens_project_id_projects_id_fk",
+          "tableFrom": "scim_tokens",
+          "tableTo": "projects",
+          "schemaTo": "tula",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "scim_tokens_environment_id_environments_id_fk": {
+          "name": "scim_tokens_environment_id_environments_id_fk",
+          "tableFrom": "scim_tokens",
+          "tableTo": "environments",
+          "schemaTo": "tula",
+          "columnsFrom": [
+            "environment_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "scim_tokens_organization_fk": {
+          "name": "scim_tokens_organization_fk",
+          "tableFrom": "scim_tokens",
+          "tableTo": "organizations",
+          "schemaTo": "tula",
+          "columnsFrom": [
+            "environment_id",
+            "organization_id"
+          ],
+          "columnsTo": [
+            "environment_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "scim_tokens_environment_project_fk": {
+          "name": "scim_tokens_environment_project_fk",
+          "tableFrom": "scim_tokens",
+          "tableTo": "environments",
+          "schemaTo": "tula",
+          "columnsFrom": [
+            "environment_id",
+            "project_id"
+          ],
+          "columnsTo": [
+            "id",
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "scim_tokens_token_hash_key": {
+          "name": "scim_tokens_token_hash_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "token_hash"
+          ]
+        }
+      },
+      "policies": {
+        "scim_tokens_tenant_isolation": {
+          "name": "scim_tokens_tenant_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "environment_id = nullif(current_setting('tula.environment_id', true), '')::uuid",
+          "withCheck": "environment_id = nullif(current_setting('tula.environment_id', true), '')::uuid"
+        }
+      },
+      "checkConstraints": {
+        "scim_tokens_name_bounds": {
+          "name": "scim_tokens_name_bounds",
+          "value": "char_length(\"tula\".\"scim_tokens\".\"name\") between 1 and 100"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "tula.scim_users": {
+      "name": "scim_users",
+      "schema": "tula",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "environment_id": {
+          "name": "environment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "external_id": {
+          "name": "external_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "active": {
+          "name": "active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "scim_users_user_idx": {
+          "name": "scim_users_user_idx",
+          "columns": [
+            {
+              "expression": "environment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "scim_users_environment_id_idx": {
+          "name": "scim_users_environment_id_idx",
+          "columns": [
+            {
+              "expression": "environment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "scim_users_project_id_projects_id_fk": {
+          "name": "scim_users_project_id_projects_id_fk",
+          "tableFrom": "scim_users",
+          "tableTo": "projects",
+          "schemaTo": "tula",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "scim_users_environment_id_environments_id_fk": {
+          "name": "scim_users_environment_id_environments_id_fk",
+          "tableFrom": "scim_users",
+          "tableTo": "environments",
+          "schemaTo": "tula",
+          "columnsFrom": [
+            "environment_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "scim_users_organization_fk": {
+          "name": "scim_users_organization_fk",
+          "tableFrom": "scim_users",
+          "tableTo": "organizations",
+          "schemaTo": "tula",
+          "columnsFrom": [
+            "environment_id",
+            "organization_id"
+          ],
+          "columnsTo": [
+            "environment_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "scim_users_user_fk": {
+          "name": "scim_users_user_fk",
+          "tableFrom": "scim_users",
+          "tableTo": "users",
+          "schemaTo": "tula",
+          "columnsFrom": [
+            "environment_id",
+            "user_id"
+          ],
+          "columnsTo": [
+            "environment_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "scim_users_environment_project_fk": {
+          "name": "scim_users_environment_project_fk",
+          "tableFrom": "scim_users",
+          "tableTo": "environments",
+          "schemaTo": "tula",
+          "columnsFrom": [
+            "environment_id",
+            "project_id"
+          ],
+          "columnsTo": [
+            "id",
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "scim_users_organization_user_key": {
+          "name": "scim_users_organization_user_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "organization_id",
+            "user_id"
+          ]
+        },
+        "scim_users_organization_external_key": {
+          "name": "scim_users_organization_external_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "organization_id",
+            "external_id"
+          ]
+        }
+      },
+      "policies": {
+        "scim_users_tenant_isolation": {
+          "name": "scim_users_tenant_isolation",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "public"
+          ],
+          "using": "environment_id = nullif(current_setting('tula.environment_id', true), '')::uuid",
+          "withCheck": "environment_id = nullif(current_setting('tula.environment_id', true), '')::uuid"
+        }
+      },
+      "checkConstraints": {
+        "scim_users_external_id_bounds": {
+          "name": "scim_users_external_id_bounds",
+          "value": "\"tula\".\"scim_users\".\"external_id\" is null or char_length(\"tula\".\"scim_users\".\"external_id\") between 1 and 256"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "tula.sessions": {
       "name": "sessions",
       "schema": "tula",
@@ -5834,6 +6254,26 @@
           "primaryKey": false,
           "notNull": true
         },
+        "enforced": {
+          "name": "enforced",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "break_glass_role": {
+          "name": "break_glass_role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "trust_idp_mfa": {
+          "name": "trust_idp_mfa",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -6507,6 +6947,12 @@
         },
         "managed_by_connection_id": {
           "name": "managed_by_connection_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "managed_by_directory_id": {
+          "name": "managed_by_directory_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false

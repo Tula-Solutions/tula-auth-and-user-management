@@ -56,6 +56,8 @@ export interface UserRecord {
    * signed up any other way. Set once, at creation; enforcement (TULA-140) reads it.
    */
   managedByConnectionId?: string | null
+  /** The organization whose SCIM directory provisioned and manages the account (ADR 0067), or `null`/absent. Set once, at creation. */
+  managedByDirectoryId?: string | null
 }
 
 /**

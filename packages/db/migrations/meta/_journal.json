@@ -341,6 +341,20 @@
     {
       "idx": 49,
       "version": "7",
+      "when": 1793716986445,
+      "tag": "0050_sso_enforcement",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1793717000000,
+      "tag": "0051_scim",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
       "when": 1793717116165,
       "tag": "0053_sso_attribute_mapping",
       "breakpoints": true
