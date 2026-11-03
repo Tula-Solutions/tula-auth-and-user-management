@@ -33,8 +33,7 @@ const SENTENCES: Record<string, string> = {
   'sso.issuer_not_allowed': 'That address cannot be used: it is not a public https address.',
   'sso.saml_invalid':
     'The identity provider values were not accepted. Give the metadata (pasted or as an address) or the entity id, sign-in URL and certificate.',
-  'sso.connection_in_use':
-    'People have signed in through this connection. Disable it instead of deleting it.',
+  'sso.connection_in_use': 'This connection is active. Disable it before deleting it.',
   'sso.invalid_transition': 'The connection cannot move to that status from where it is.',
 }
 

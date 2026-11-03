@@ -944,7 +944,7 @@ public enum TulaErrorDefinitions {
     public static let ssoSamlInvalid = TulaErrorDefinition(code: .ssoSamlInvalid, status: 422, message: "The SAML settings could not be read or are incomplete.")
 
     /// `sso.connection_in_use`
-    public static let ssoConnectionInUse = TulaErrorDefinition(code: .ssoConnectionInUse, status: 409, message: "The connection has signed users in; disable it instead.")
+    public static let ssoConnectionInUse = TulaErrorDefinition(code: .ssoConnectionInUse, status: 409, message: "The connection is active; disable it before deleting it.")
 
     /// `sso.invalid_transition`
     public static let ssoInvalidTransition = TulaErrorDefinition(code: .ssoInvalidTransition, status: 409, message: "A connection cannot move to that status from its current one.")

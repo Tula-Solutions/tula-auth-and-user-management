@@ -552,7 +552,7 @@ export const ERROR_DEFINITIONS = {
   },
   'sso.connection_in_use': {
     status: 409,
-    message: 'The connection has signed users in; disable it instead.',
+    message: 'The connection is active; disable it before deleting it.',
   },
   'sso.invalid_transition': {
     status: 409,

@@ -325,7 +325,7 @@ router.delete(
     operationId: 'deleteMyOrganizationSsoConnection',
     tags: ['Organizations'],
     summary: 'Delete an SSO connection',
-    description: `Deletes a connection nobody has signed in through (\`sso.connection_in_use\`, 409, otherwise: disable it). ${needs}`,
+    description: `Deletes a connection that is not active (\`sso.connection_in_use\`, 409, otherwise: disable it first); its users keep their accounts. ${needs}`,
     security: openapi.security.session,
     responses: {
       204: { description: 'Deleted.' },

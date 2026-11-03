@@ -1224,7 +1224,7 @@ object TulaErrorDefinitions {
     val ssoSamlInvalid: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoSamlInvalid, 422, "The SAML settings could not be read or are incomplete.")
 
     /** `sso.connection_in_use` */
-    val ssoConnectionInUse: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoConnectionInUse, 409, "The connection has signed users in; disable it instead.")
+    val ssoConnectionInUse: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoConnectionInUse, 409, "The connection is active; disable it before deleting it.")
 
     /** `sso.invalid_transition` */
     val ssoInvalidTransition: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoInvalidTransition, 409, "A connection cannot move to that status from its current one.")

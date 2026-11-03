@@ -182,7 +182,7 @@ export function createTestDeps(overrides: Partial<TestDeps> = {}): TestDeps {
     webhookDeliveries: new MemoryWebhookDeliveryStore(activityLog, webhookEndpoints),
     hooks: new MemoryHookStore(activityLog),
     nativeApps: new MemoryNativeAppStore(activityLog),
-    ssoConnections: new MemorySsoConnectionStore(activityLog),
+    ssoConnections: new MemorySsoConnectionStore(activityLog, users),
     scim: new MemoryScimStore(activityLog),
     setupLinks: new MemorySetupLinkStore(activityLog),
     organizations,

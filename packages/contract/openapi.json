@@ -41183,7 +41183,7 @@
           "SSO connections"
         ],
         "summary": "Delete an SSO connection",
-        "description": "Deletes a connection nobody has signed in through. One with an identity is kept (`sso.connection_in_use`, 409): disable it instead.",
+        "description": "Deletes a connection that is not active, with its identities; the users it managed keep their accounts. An active one is kept (`sso.connection_in_use`, 409): disable it first.",
         "security": [
           {
             "secretKey": []
@@ -42598,7 +42598,7 @@
           "Organizations"
         ],
         "summary": "Delete an SSO connection",
-        "description": "Deletes a connection nobody has signed in through (`sso.connection_in_use`, 409, otherwise: disable it). Needs the permission `org:sys:sso:manage`, read from the caller’s membership on every call (never from the token’s claims): a user who is not a member answers `organization.not_a_member` and a member without it `organization.permission_required` (403). A connection of another organization is `sso.connection_not_found`. The client secret is accepted and never returned.",
+        "description": "Deletes a connection that is not active (`sso.connection_in_use`, 409, otherwise: disable it first); its users keep their accounts. Needs the permission `org:sys:sso:manage`, read from the caller’s membership on every call (never from the token’s claims): a user who is not a member answers `organization.not_a_member` and a member without it `organization.permission_required` (403). A connection of another organization is `sso.connection_not_found`. The client secret is accepted and never returned.",
         "security": [
           {
             "publishableKey": [],

@@ -504,6 +504,32 @@ describe('the matching table', () => {
   })
 })
 
+describe('deleting a connection after use (decision 13)', () => {
+  const remove = () => SsoConnections.remove(deps, TENANT, connectionId, TEST_ACTOR)
+  const subject = () =>
+    deps.ssoConnections.findIdentity(TENANT.environmentId, connectionId, 'subject-1')
+
+  test('an active connection is not deleted: disable it first', async () => {
+    await signedIn()
+    await expect(remove()).rejects.toMatchObject({ code: 'sso.connection_in_use' })
+    expect(await subject()).not.toBeNull()
+  })
+
+  test('a disabled one is deleted with its identities, and its users are no longer managed', async () => {
+    const userId = (await signedIn()).step.userId as string
+    expect((await deps.users.findById(TENANT.environmentId, userId))?.managedByConnectionId).toBe(
+      connectionId
+    )
+    await setStatus('disabled')
+    await remove()
+    expect(await subject()).toBeNull()
+    expect(
+      (await deps.users.findById(TENANT.environmentId, userId))?.managedByConnectionId ?? null
+    ).toBeNull()
+    expect(recorded()).toContain('sso_connection.deleted')
+  })
+})
+
 describe('the ID token', () => {
   test.each([
     ['a wrong issuer', { iss: 'https://evil.test' }],

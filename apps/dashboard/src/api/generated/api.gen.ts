@@ -15185,7 +15185,7 @@ export const getDeleteSsoConnectionUrl = (id: string,) => {
 }
 
 /**
- * Deletes a connection nobody has signed in through. One with an identity is kept (`sso.connection_in_use`, 409): disable it instead.
+ * Deletes a connection that is not active, with its identities; the users it managed keep their accounts. An active one is kept (`sso.connection_in_use`, 409): disable it first.
  * @summary Delete an SSO connection
  */
 export const deleteSsoConnection = async (id: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<void> => {

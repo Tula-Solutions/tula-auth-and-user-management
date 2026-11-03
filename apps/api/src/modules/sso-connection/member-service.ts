@@ -246,7 +246,7 @@ export async function refreshMetadata(
  * @param organizationId - The organization.
  * @param id - The connection.
  * @param actor - The user, for the audit log.
- * @throws As {@link get}, and `sso.connection_in_use`.
+ * @throws As {@link get}, and `sso.connection_in_use` for an active connection.
  */
 export async function remove(
   deps: Base & Parameters<typeof SsoConnections.remove>[0],
