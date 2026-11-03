@@ -1171,6 +1171,26 @@ the operation's own kind ({@link PROPOSAL_OPERATION_TARGETS}).
 const CreateProposalRequestSchema
 ```
 
+### `CreateSsoConnectionRequest`
+
+_type_, defined in `packages/contract/src/sso-connection.ts`
+
+The body that creates a connection.
+
+```ts
+export type CreateSsoConnectionRequest = z.infer<typeof CreateSsoConnectionRequestSchema>
+```
+
+### `CreateSsoConnectionRequestSchema`
+
+_constant_, defined in `packages/contract/src/sso-connection.ts`
+
+The body that creates a connection, as a draft.
+
+```ts
+const CreateSsoConnectionRequestSchema
+```
+
 ### `CreateUserRequest`
 
 _type_, defined in `packages/contract/src/user.ts`
@@ -3337,7 +3357,7 @@ How a sign-up is being made, as a `hook.before_sign_up` question says it: with a
 without one (an emailed code proved the address), or by a first sign-in with a provider.
 
 ```ts
-const HOOK_SIGN_UP_METHODS: readonly ["password", "passwordless", ...any[]]
+const HOOK_SIGN_UP_METHODS: readonly ["password", "passwordless", ...any[], "sso"]
 ```
 
 **Example**
@@ -4996,6 +5016,16 @@ characters instead of 153: the same worst case is then seven segments.
 
 ```ts
 const MAX_SMS_TEMPLATE_LENGTH: 140
+```
+
+### `MAX_SSO_CONNECTION_DOMAINS`
+
+_constant_, defined in `packages/contract/src/sso.ts`
+
+How many domains one connection can be bound to.
+
+```ts
+const MAX_SSO_CONNECTION_DOMAINS: 20
 ```
 
 ### `MAX_STEP_UP_AFTER`
@@ -7932,6 +7962,64 @@ How many prefixes one answer of it lists at most.
 const SMS_USAGE_MAX_PREFIXES: 100
 ```
 
+### `SSO_CONNECTION_CLAIM`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The access token's claim naming the SSO connection a session was signed in through (ADR 0067).
+
+```ts
+const SSO_CONNECTION_CLAIM: "sso_conn"
+```
+
+### `SSO_CONNECTION_FIELDS`
+
+_constant_, defined in `packages/contract/src/sso.ts`
+
+The fields of a connection an update can change; the event names them, never a value.
+
+```ts
+const SSO_CONNECTION_FIELDS: readonly ["name", "issuer", "clientId", "clientSecret", "defaultRole", "domains", "status"]
+```
+
+### `SSO_CONNECTION_STATUSES`
+
+_constant_, defined in `packages/contract/src/sso.ts`
+
+Where a connection is in its life. A `draft` is being set up, an `active` one signs users in
+and a `disabled` one is kept (its identities stay) but offered to nobody.
+
+```ts
+const SSO_CONNECTION_STATUSES: readonly ["draft", "active", "disabled"]
+```
+
+**Example**
+
+```ts
+const status: SsoConnectionStatus = SSO_CONNECTION_STATUSES[0] // 'draft'
+```
+
+### `SSO_MANAGE_PERMISSION`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permission that lets a member manage the organization's single sign-on connections
+(ADR 0067). Read from the membership now, never from a token's claims alone.
+
+```ts
+const SSO_MANAGE_PERMISSION: SystemPermission
+```
+
+### `SSO_PROTOCOLS`
+
+_constant_, defined in `packages/contract/src/sso.ts`
+
+The protocols a connection can speak. SAML is added here when it exists.
+
+```ts
+const SSO_PROTOCOLS: readonly ["oidc"]
+```
+
 ### `STEP_UP_MAX_AGE_SECONDS`
 
 _constant_, defined in `packages/contract/src/tokens.ts`
@@ -8843,6 +8931,98 @@ Counts only. No phone number, and nothing about who asked.
 const SmsUsageSchema
 ```
 
+### `SsoConnection`
+
+_type_, defined in `packages/contract/src/sso-connection.ts`
+
+A connection as the admin API returns it.
+
+```ts
+export type SsoConnection = z.infer<typeof SsoConnectionSchema>
+```
+
+### `SsoConnectionField`
+
+_type_, defined in `packages/contract/src/sso.ts`
+
+One of {@link SSO_CONNECTION_FIELDS}.
+
+```ts
+export type SsoConnectionField = (typeof SSO_CONNECTION_FIELDS)[number]
+```
+
+### `SsoConnectionListQuerySchema`
+
+_constant_, defined in `packages/contract/src/sso-connection.ts`
+
+The query of the list route: the organization whose connections to list.
+
+```ts
+const SsoConnectionListQuerySchema: z.ZodObject<{ organizationId: z.ZodUUID; }, z.core.$strip>
+```
+
+### `SsoConnectionListSchema`
+
+_constant_, defined in `packages/contract/src/sso-connection.ts`
+
+A list of connections.
+
+```ts
+const SsoConnectionListSchema
+```
+
+### `SsoConnectionSchema`
+
+_constant_, defined in `packages/contract/src/sso-connection.ts`
+
+A connection as the admin API returns it. Never carries the client secret.
+
+```ts
+const SsoConnectionSchema
+```
+
+### `SsoConnectionStatus`
+
+_type_, defined in `packages/contract/src/sso.ts`
+
+One of {@link SSO_CONNECTION_STATUSES}.
+
+```ts
+export type SsoConnectionStatus = (typeof SSO_CONNECTION_STATUSES)[number]
+```
+
+### `SsoProtocol`
+
+_type_, defined in `packages/contract/src/sso.ts`
+
+One of {@link SSO_PROTOCOLS}.
+
+```ts
+export type SsoProtocol = (typeof SSO_PROTOCOLS)[number]
+```
+
+### `SsoStartRequest`
+
+_type_, defined in `packages/contract/src/sso-connection.ts`
+
+Single sign-on start request body.
+
+```ts
+export type SsoStartRequest = z.infer<typeof SsoStartRequestSchema>
+```
+
+### `SsoStartRequestSchema`
+
+_constant_, defined in `packages/contract/src/sso-connection.ts`
+
+Start a single sign-on step of a sign-in attempt: where the app's page is that the browser
+returns to. The connection is the one the attempt's email domain is bound to; the client never
+names it. The answer is an `OAuthStart` (the provider's URL, the binding, the attempt).
+
+```ts
+const SsoStartRequestSchema: z.ZodObject<{ redirectUrl: z.ZodString; }, z.core.$strip>
+```
+
 ### `StartOrganizationDomainRequest`
 
 _type_, defined in `packages/contract/src/organization-domain.ts`
@@ -9449,6 +9629,26 @@ one field.
 
 ```ts
 const UpdateOrganizationRoleRequestSchema
+```
+
+### `UpdateSsoConnectionRequest`
+
+_type_, defined in `packages/contract/src/sso-connection.ts`
+
+The body that changes a connection.
+
+```ts
+export type UpdateSsoConnectionRequest = z.infer<typeof UpdateSsoConnectionRequestSchema>
+```
+
+### `UpdateSsoConnectionRequestSchema`
+
+_constant_, defined in `packages/contract/src/sso-connection.ts`
+
+The body that changes a connection: every field is optional and an absent one is kept.
+
+```ts
+const UpdateSsoConnectionRequestSchema
 ```
 
 ### `UpdateWebhookEndpointRequest`
@@ -13358,6 +13558,16 @@ const RESERVED_CLAIM_NAMES
 RESERVED_CLAIM_NAMES.includes('sub') // true
 ```
 
+### `SSO_CONNECTION_CLAIM`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The access token's claim naming the SSO connection a session was signed in through (ADR 0067).
+
+```ts
+const SSO_CONNECTION_CLAIM: "sso_conn"
+```
+
 ### `checkCustomClaims`
 
 _function_, defined in `packages/contract/src/custom-claims.ts`
@@ -14965,6 +15175,17 @@ Why a custom role may not hold a permission key.
 
 ```ts
 export type RolePermissionRefusal = 'grammar' | 'reserved'
+```
+
+### `SSO_MANAGE_PERMISSION`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permission that lets a member manage the organization's single sign-on connections
+(ADR 0067). Read from the membership now, never from a token's claims alone.
+
+```ts
+const SSO_MANAGE_PERMISSION: SystemPermission
 ```
 
 ### `SYSTEM_PERMISSIONS`

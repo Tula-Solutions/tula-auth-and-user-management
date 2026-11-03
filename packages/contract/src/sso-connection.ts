@@ -65,8 +65,11 @@ export const SsoConnectionListSchema = z
 /** The query of the list route: the organization whose connections to list. */
 export const SsoConnectionListQuerySchema = z.object({ organizationId: z.uuid() })
 
+/** The body that creates a connection. */
 export type CreateSsoConnectionRequest = z.infer<typeof CreateSsoConnectionRequestSchema>
+/** The body that changes a connection. */
 export type UpdateSsoConnectionRequest = z.infer<typeof UpdateSsoConnectionRequestSchema>
+/** A connection as the admin API returns it. */
 export type SsoConnection = z.infer<typeof SsoConnectionSchema>
 
 /**
