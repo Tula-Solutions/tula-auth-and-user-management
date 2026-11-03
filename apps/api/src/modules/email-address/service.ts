@@ -7,6 +7,7 @@ import * as logger from '~/lib/logger'
 import * as Audit from '~/modules/audit/service'
 import * as Email from '~/modules/email/service'
 import * as Notices from '~/modules/notice/service'
+import { requireNotManaged } from '~/modules/user/managed'
 import * as Users from '~/modules/user/service'
 import * as Verification from '~/modules/verification/service'
 import { CREDENTIAL_LOCKOUT } from '~/ports/lockout'
@@ -74,7 +75,7 @@ function decoyBinding(userId: string, normalized: string): string {
 
 /** The signed-in user, when they may add an address at all. */
 async function requireAddressless(
-  deps: Pick<Deps, 'users'>,
+  deps: Pick<Deps, 'users' | 'ssoConnections' | 'scim'>,
   scope: Pick<Tenant, 'environmentId'>,
   userId: string
 ): Promise<UserRecord> {
@@ -89,6 +90,8 @@ async function requireAddressless(
   if (user.email !== null) {
     throw new AuthError('email.already_set')
   }
+  // The identity provider owns a managed account's address (decision 11).
+  await requireNotManaged(deps, scope.environmentId, user)
   return user
 }
 
@@ -103,6 +106,8 @@ type RequestDeps = Pick<
   | 'environmentSettings'
   | 'config'
   | 'users'
+  | 'ssoConnections'
+  | 'scim'
 >
 
 /**
@@ -134,7 +139,8 @@ type RequestDeps = Pick<
  * @param input - The address as the user typed it.
  * @returns The masked address and when the code expires. Never the code.
  * @throws InvalidEmailError for what is not an address.
- * @throws AuthError `email.already_set` for an account that has an address, or
+ * @throws AuthError `email.already_set` for an account that has an address,
+ *   `user.managed` (403) for one an SSO connection or SCIM directory manages, or
  *   `auth.user_banned`.
  * @throws RateLimitError when a send limit is spent.
  * @throws ServiceUnavailableError when the rate limiter cannot answer (nothing is sent).
@@ -200,6 +206,8 @@ type VerifyDeps = Pick<
   | 'rateLimiter'
   | 'environmentSettings'
   | 'config'
+  | 'ssoConnections'
+  | 'scim'
 >
 
 /**

@@ -3794,6 +3794,73 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
       )
 
       page(
+        'sso enforcement closes sign-up and password reset to the domain',
+        'SSO enforcement: an enforced domain refuses a password sign-up, a reset sends no code to a member who is not break-glass and completes nothing, and a break-glass member is emailed one',
+        async () => {
+          const s = await ssoServer()
+          const ada = `ada@${s.domain}`
+          expect((await ssoRound(s, ada)).outcome.status).toBe('complete')
+          await s.patch({ enforced: true })
+          for (const email of [`newbie@${s.domain}`, ada]) {
+            const refused = await caught(
+              s.client('web').tula.signUp.start({ email, password: PASSWORD })
+            )
+            expect(refused.code).toBe('auth.method_disabled')
+          }
+          const nobody = await s
+            .client('web')
+            .tula.resetPassword.start({ email: `nobody@${s.domain}` })
+          const member = await s.client('web').tula.resetPassword.start({ email: ada })
+          expect(member.step.status).toBe(nobody.step.status)
+          expect(
+            (await caught(member.submit({ code: '000000', password: NEW_PASSWORD }))).code
+          ).toBe('verification.invalid_code')
+          await s.patch({ breakGlassRole: 'member' })
+          s.advance(61_000)
+          const glass = await s.client('web').tula.resetPassword.start({ email: ada })
+          expect(glass.step.status).toBe(nobody.step.status)
+          const done = await glass.submit({ code: s.code(ada), password: NEW_PASSWORD })
+          expect(done.status).toBe('complete')
+        }
+      )
+
+      page(
+        'sso managed account cannot change its password from the client',
+        'SSO managed account: a user the connection created is refused a password change from the client with `user.managed`',
+        async () => {
+          const s = await ssoServer()
+          const { landing } = await ssoRound(s, `ada@${s.domain}`)
+          const refused = await caught(
+            landing.tula.user.changePassword({
+              currentPassword: PASSWORD,
+              newPassword: NEW_PASSWORD,
+            })
+          )
+          expect(refused.code).toBe('user.managed')
+        }
+      )
+
+      page(
+        'sso a used connection is deleted once disabled and its users sign in another way',
+        'SSO delete: an active connection cannot be deleted; once disabled a used one can, and its users are no longer managed and reset a password',
+        async () => {
+          const s = await ssoServer()
+          const ada = `ada@${s.domain}`
+          expect((await ssoRound(s, ada)).outcome.status).toBe('complete')
+          const path = `/v1/admin/sso-connections/${s.connectionId}`
+          const active = await s.admin('DELETE', path)
+          expect(active.status).toBe(409)
+          expect(((await active.json()) as { code: string }).code).toBe('sso.connection_in_use')
+          await s.patch({ status: 'disabled' })
+          expect((await s.admin('DELETE', path)).status).toBe(204)
+          s.advance(61_000)
+          const flow = await s.client('web').tula.resetPassword.start({ email: ada })
+          const done = await flow.submit({ code: s.code(ada), password: NEW_PASSWORD })
+          expect(done.status).toBe('complete')
+        }
+      )
+
+      page(
         'sso trust in the provider for two-step verification',
         'SSO MFA trust: under a required second step a single sign-on sign-in stops at enrolment, and completes once the connection trusts the identity provider',
         async () => {
