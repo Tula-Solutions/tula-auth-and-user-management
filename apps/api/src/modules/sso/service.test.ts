@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
+import { VirtualAuthenticator } from '@tula-tech/conformance'
 import {
   type AccessTokenClaims,
   DEFAULT_ENVIRONMENT_SETTINGS,
@@ -6,9 +7,13 @@ import {
 } from '@tula-tech/contract'
 import { decodeJwt, exportJWK, generateKeyPair, type JWK, SignJWT } from 'jose'
 import { createApp } from '~/index'
+import { base32Decode, totp } from '~/lib/totp'
 import * as Audit from '~/modules/audit/service'
+import * as Mfa from '~/modules/mfa/service'
 import * as Notices from '~/modules/notice/service'
 import * as Organizations from '~/modules/organization/service'
+import * as Passkeys from '~/modules/passkey/service'
+import * as Sms from '~/modules/sms/service'
 import * as Sso from '~/modules/sso/service'
 import * as SsoConnections from '~/modules/sso-connection/service'
 import {
@@ -297,7 +302,7 @@ async function codeOf(email?: string) {
   return error ?? ((await response?.json()) as { code: string } | undefined)?.code
 }
 
-async function seedUser(email: string, verified: boolean) {
+async function seedUser(email: string, verified: boolean, password: string | null = null) {
   const id = deps.ids.next()
   await deps.users.create(
     {
@@ -311,7 +316,7 @@ async function seedUser(email: string, verified: boolean) {
       createdAt: deps.clock.now(),
       identityId: deps.ids.next(),
       credentialId: deps.ids.next(),
-      passwordHash: null,
+      passwordHash: password ? await Bun.password.hash(password, { algorithm: 'argon2id' }) : null,
     },
     Audit.none('fixture')
   )
@@ -557,5 +562,298 @@ describe('the outbound guard', () => {
     )
     expect(idp.jwksFetches).toBe(before)
     expect(deps.outbound.asked).toContain('idp.internal.test')
+  })
+})
+
+describe('enforcement (TULA-140)', () => {
+  const PASSWORD = 'correct horse battery staple'
+  const BREAK_GLASS = 'admin'
+
+  beforeEach(() => {
+    deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+      revision: 2,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        organizations: { ...DEFAULT_ENVIRONMENT_SETTINGS.organizations, enabled: true },
+        sso: { enabled: true },
+        signIn: {
+          methods: {
+            password: { enabled: true },
+            emailCode: { enabled: true },
+            emailLink: { enabled: true },
+            passkey: { enabled: false },
+            smsCode: { enabled: false },
+          },
+        },
+      },
+    } as never)
+  })
+
+  async function stepOf(response: Response | null) {
+    return ((await (response as Response).json()) as { step: { status: string } }).step.status
+  }
+
+  async function enforce(changes: {
+    enforced?: boolean
+    breakGlassRole?: string | null
+    trustIdpMfa?: boolean
+  }) {
+    await SsoConnections.update(deps, TENANT, connectionId, changes, TEST_ACTOR)
+  }
+
+  async function attemptFor(email: string) {
+    const res = await post('/v1/client/sign-ins', { identifier: email })
+    return (await res.json()) as {
+      id: string
+      attemptSecret: string
+      step: { strategies?: string[] }
+    }
+  }
+
+  async function codeAt(email: string, path: string, body: unknown) {
+    const attempt = await attemptFor(email)
+    const res = await post(`/v1/client/sign-ins/${attempt.id}/${path}`, body, {
+      'x-tula-attempt': attempt.attemptSecret,
+    })
+    return { status: res.status, body: (await res.json()) as { code?: string } }
+  }
+
+  test('offers sso only, and the same for a known and an unknown address', async () => {
+    await seedUser(`ada@${DOMAIN}`, true)
+    await enforce({ enforced: true })
+    const known = await attemptFor(`ada@${DOMAIN}`)
+    const unknown = await attemptFor(`nobody@${DOMAIN}`)
+    expect(known.step).toEqual(unknown.step)
+    expect(known.step.strategies).toEqual(['sso'])
+  })
+
+  test('an unenforced domain still offers the other methods', async () => {
+    expect((await attemptFor(`ada@${DOMAIN}`)).step.strategies).toContain('password')
+  })
+
+  for (const [strategy, path, body] of [
+    ['email_code', 'first-factor/prepare', { strategy: 'email_code' }],
+    ['email_code', 'first-factor/attempt', { strategy: 'email_code', code: '123456' }],
+    ['email_link', 'first-factor/prepare', { strategy: 'email_link', redirectUrl: REDIRECT }],
+  ] as const) {
+    test(`refuses ${strategy} at ${path} for an enforced domain, known or not`, async () => {
+      await seedUser(`ada@${DOMAIN}`, true)
+      await enforce({ enforced: true })
+      const known = await codeAt(`ada@${DOMAIN}`, path, body)
+      const unknown = await codeAt(`nobody@${DOMAIN}`, path, body)
+      expect(known.body.code).toBe('auth.method_disabled')
+      expect(unknown).toEqual(known)
+    })
+  }
+
+  test('the password step answers alike for an unknown address, a non-member and a break-glass member with a wrong password', async () => {
+    const member = await seedUser(`ada@${DOMAIN}`, true, PASSWORD)
+    await seedUser(`bob@${DOMAIN}`, true, PASSWORD)
+    await Organizations.addMember(
+      deps,
+      TENANT,
+      organizationId,
+      { userId: member, role: BREAK_GLASS },
+      TEST_ACTOR
+    )
+    await enforce({ enforced: true, breakGlassRole: BREAK_GLASS })
+    const answers = [
+      await codeAt(`nobody@${DOMAIN}`, 'password', { password: PASSWORD }),
+      // Right password, but not a member: the guard must not be visible.
+      await codeAt(`bob@${DOMAIN}`, 'password', { password: PASSWORD }),
+      await codeAt(`ada@${DOMAIN}`, 'password', { password: 'wrong wrong wrong wrong' }),
+    ]
+    for (const answer of answers) {
+      expect(answer.status).toBe(401)
+      expect(answer.body.code).toBe('auth.invalid_credentials')
+    }
+    expect(answers[1]).toEqual(answers[0])
+    expect(answers[2]).toEqual(answers[0])
+  })
+
+  test('a break-glass member signs in with the right password; no one else does', async () => {
+    const member = await seedUser(`ada@${DOMAIN}`, true, PASSWORD)
+    await Organizations.addMember(
+      deps,
+      TENANT,
+      organizationId,
+      { userId: member, role: BREAK_GLASS },
+      TEST_ACTOR
+    )
+    await enforce({ enforced: true, breakGlassRole: BREAK_GLASS })
+    expect((await codeAt(`ada@${DOMAIN}`, 'password', { password: PASSWORD })).status).toBe(200)
+  })
+
+  test('break-glass covers the password only: the answer of every other step ignores who asks', async () => {
+    const member = await seedUser(`ada@${DOMAIN}`, true, PASSWORD)
+    await Organizations.addMember(
+      deps,
+      TENANT,
+      organizationId,
+      { userId: member, role: BREAK_GLASS },
+      TEST_ACTOR
+    )
+    await enforce({ enforced: true, breakGlassRole: BREAK_GLASS })
+    const body = { strategy: 'email_code' }
+    const asMember = await codeAt(`ada@${DOMAIN}`, 'first-factor/prepare', body)
+    const asStranger = await codeAt(`nobody@${DOMAIN}`, 'first-factor/prepare', body)
+    expect(asMember.body.code).toBe('auth.method_disabled')
+    expect(asStranger).toEqual(asMember)
+  })
+
+  test('trust off stops at the second step for a user with TOTP; trust on completes with mfa', async () => {
+    const userId = await seedUser(`ada@${DOMAIN}`, true)
+    const { secret } = await Mfa.startTotp(deps, TENANT, userId)
+    await Mfa.confirmTotp(deps, TENANT, { userId }, totp(base32Decode(secret), deps.clock.now()), {
+      type: 'user',
+      id: userId,
+      ipAddress: null,
+      userAgent: null,
+    })
+    await Notices.settled()
+    deps.clock.advance('30s')
+    const off = await signIn()
+    expect(await stepOf(off.response)).toBe('needs_second_factor')
+    await enforce({ trustIdpMfa: true })
+    const on = await signedIn()
+    expect(on.step.status).toBe('complete')
+    expect([...(decodeJwt<AccessTokenClaims>(on.session.accessToken).amr ?? [])].sort()).toEqual([
+      'mfa',
+      'sso',
+    ])
+  })
+
+  test('under mfa.policy required, trust off asks for enrolment and trust on completes', async () => {
+    deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+      revision: 2,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        organizations: { ...DEFAULT_ENVIRONMENT_SETTINGS.organizations, enabled: true },
+        sso: { enabled: true },
+        mfa: { ...DEFAULT_ENVIRONMENT_SETTINGS.mfa, policy: 'required' },
+      } as never,
+    })
+    const off = await signIn()
+    expect(await stepOf(off.response)).toBe('needs_factor_enrolment')
+    await enforce({ trustIdpMfa: true })
+    expect((await signedIn(`grace@${DOMAIN}`)).step.status).toBe('complete')
+  })
+})
+
+describe('enforcement and a texted sign-in code', () => {
+  const NUMBER = '+14155550142'
+
+  /** The holder's code is right, so only the enforced domain can refuse the submission. */
+  async function submitRightCode() {
+    deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+      revision: 3,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        organizations: { ...DEFAULT_ENVIRONMENT_SETTINGS.organizations, enabled: true },
+        sso: { enabled: true },
+        signIn: {
+          methods: {
+            password: { enabled: true },
+            emailCode: { enabled: false },
+            emailLink: { enabled: false },
+            passkey: { enabled: false },
+            smsCode: { enabled: true },
+          },
+        },
+        sms: { enabled: true, allowedCountries: ['US'], dailyMessageLimit: 500, templates: {} },
+      } as never,
+    })
+    const holder = await seedUser(`ada@${DOMAIN}`, true)
+    await deps.users.setPhoneNumber(
+      TENANT.environmentId,
+      holder,
+      NUMBER,
+      deps.clock.now(),
+      Audit.none('fixture'),
+      Audit.none('fixture')
+    )
+    const start = await post('/v1/client/sign-ins', { identifier: NUMBER })
+    const attempt = (await start.json()) as { id: string; attemptSecret: string }
+    const headers = { 'x-tula-attempt': attempt.attemptSecret }
+    await post(
+      `/v1/client/sign-ins/${attempt.id}/first-factor/prepare`,
+      { strategy: 'sms_code' },
+      headers
+    )
+    await Sms.settled()
+    const code = /code is (\d{6})\./.exec(deps.sms.messages(NUMBER).at(-1)?.text ?? '')?.[1] ?? ''
+    const res = await post(
+      `/v1/client/sign-ins/${attempt.id}/first-factor/attempt`,
+      { strategy: 'sms_code', code },
+      headers
+    )
+    return { status: res.status, body: (await res.json()) as { code?: string } }
+  }
+
+  test('control: the right code signs the holder in while the domain is not enforced', async () => {
+    expect((await submitRightCode()).status).toBe(200)
+  })
+
+  test('an enforced domain refuses the holder’s right code at the route', async () => {
+    await SsoConnections.update(deps, TENANT, connectionId, { enforced: true }, TEST_ACTOR)
+    const refused = await submitRightCode()
+    expect(refused.body.code).toBe('auth.method_disabled')
+  })
+})
+
+describe('enforcement and a passkey sign-in', () => {
+  const RP_ID = 'acme.test'
+  const ORIGIN = 'https://app.acme.test'
+
+  /** A holder with a registered passkey signs in with it, so only the domain can refuse. */
+  async function passkeySignIn() {
+    deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+      revision: 4,
+      settings: {
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        organizations: { ...DEFAULT_ENVIRONMENT_SETTINGS.organizations, enabled: true },
+        sso: { enabled: true },
+        signIn: {
+          methods: { ...DEFAULT_ENVIRONMENT_SETTINGS.signIn.methods, passkey: { enabled: true } },
+        },
+        urls: { allowedOrigins: [ORIGIN], allowedRedirectUrls: [] },
+        passkeys: { rpId: RP_ID },
+      } as never,
+    })
+    const userId = await seedUser(`ada@${DOMAIN}`, true)
+    const who = { userId, sessionId: deps.ids.next() }
+    const request = { origin: ORIGIN, client: 'web' } as const
+    const authenticator = new VirtualAuthenticator()
+    const options = await Passkeys.startRegistration(deps, TENANT, who, request)
+    const credential = await authenticator.create(options, { origin: ORIGIN })
+    await Passkeys.finishRegistration(deps, TENANT, who, { credential }, request, {
+      type: 'user',
+      id: userId,
+      ipAddress: null,
+      userAgent: null,
+    })
+    const headers = { origin: ORIGIN, 'x-tula-client': 'web' }
+    const begun = await post('/v1/client/sign-ins/passkey', {}, headers)
+    const start = (await begun.json()) as {
+      attempt: { id: string; attemptSecret: string }
+      options: Parameters<VirtualAuthenticator['get']>[0]
+    }
+    const assertion = await authenticator.get(start.options, { origin: ORIGIN })
+    const res = await post(
+      `/v1/client/sign-ins/${start.attempt.id}/passkey`,
+      { credential: assertion },
+      { ...headers, 'x-tula-attempt': start.attempt.attemptSecret }
+    )
+    return { status: res.status, body: (await res.json()) as { code?: string } }
+  }
+
+  test('control: the passkey signs the holder in while the domain is not enforced', async () => {
+    expect((await passkeySignIn()).status).toBe(200)
+  })
+
+  test('an enforced domain refuses the holder’s right passkey', async () => {
+    await SsoConnections.update(deps, TENANT, connectionId, { enforced: true }, TEST_ACTOR)
+    const refused = await passkeySignIn()
+    expect(refused.body.code).toBe('auth.method_disabled')
   })
 })

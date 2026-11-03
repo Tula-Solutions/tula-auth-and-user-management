@@ -214,6 +214,63 @@ describe('SSO connection admin service', () => {
   })
 })
 
+describe('weakening classification of the enforcement fields (TULA-140)', () => {
+  const base = {
+    status: 'active',
+    enforced: true,
+    breakGlassRole: null,
+    trustIdpMfa: false,
+  } as never as Parameters<typeof Sso.weakens>[0]
+  const rows: [
+    string,
+    Partial<Parameters<typeof Sso.weakens>[0]>,
+    Parameters<typeof Sso.weakens>[1],
+    boolean,
+  ][] = [
+    ['switching enforcement off', {}, { enforced: false }, true],
+    ['leaving enforcement off', { enforced: false }, { enforced: false }, false],
+    ['switching enforcement on', { enforced: false }, { enforced: true }, false],
+    ['trusting the provider for MFA', {}, { trustIdpMfa: true }, true],
+    ['already trusting it', { trustIdpMfa: true }, { trustIdpMfa: true }, false],
+    ['no longer trusting it', { trustIdpMfa: true }, { trustIdpMfa: false }, false],
+    ['naming a break-glass role', {}, { breakGlassRole: 'admin' }, true],
+    ['keeping the same role', { breakGlassRole: 'admin' }, { breakGlassRole: 'admin' }, false],
+    ['clearing the role', { breakGlassRole: 'admin' }, { breakGlassRole: null }, false],
+    ['renaming an active connection', {}, { name: 'New' }, false],
+  ]
+  for (const [name, current, changes, expected] of rows) {
+    test(`${name} ${expected ? 'is' : 'is not'} a weakening`, () => {
+      expect(Sso.weakens({ ...base, ...current }, changes)).toBe(expected)
+    })
+  }
+
+  test('the audit entry says weakened and names the keys, not the role', async () => {
+    const o = await org()
+    await verified(o.id, 'acme.test')
+    const made = await Sso.create(deps, TENANT, input(o.id), TEST_ACTOR)
+    await Sso.update(deps, TENANT, made.id, { enforced: true }, TEST_ACTOR)
+    const on = deps.activityLog.entries.findLast((e) => e.type === 'sso_connection.updated')
+    expect(on?.data).toMatchObject({ changed: ['enforced'] })
+    expect(on?.data).not.toHaveProperty('weakened')
+    await Sso.update(deps, TENANT, made.id, { breakGlassRole: 'admin' }, TEST_ACTOR)
+    const role = deps.activityLog.entries.findLast((e) => e.type === 'sso_connection.updated')
+    expect(role?.data).toMatchObject({ changed: ['breakGlassRole'], weakened: true })
+    expect(JSON.stringify(role?.data)).not.toContain('admin')
+    await Sso.update(deps, TENANT, made.id, { enforced: false }, TEST_ACTOR)
+    const off = deps.activityLog.entries.findLast((e) => e.type === 'sso_connection.updated')
+    expect(off?.data).toMatchObject({ changed: ['enforced'], weakened: true })
+  })
+
+  test('a break-glass role that does not exist is refused', async () => {
+    const o = await org()
+    await verified(o.id, 'acme.test')
+    const made = await Sso.create(deps, TENANT, input(o.id), TEST_ACTOR)
+    await expect(
+      Sso.update(deps, TENANT, made.id, { breakGlassRole: 'nobody-role' }, TEST_ACTOR)
+    ).rejects.toMatchObject({ code: 'organization.role_unknown' })
+  })
+})
+
 function configureOther(environmentId: string) {
   deps.environmentSettings.seed(environmentId, {
     revision: 1,

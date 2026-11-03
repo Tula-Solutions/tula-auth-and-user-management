@@ -188,7 +188,7 @@ with the agent as the actor and the approving human beside it: ADR 0053), or the
 dashboard session's) or with the instance admin token itself (no id).
 
 ```ts
-const AUDIT_ACTOR_TYPES: readonly ["user", "admin", "system", "agent", "instance_admin"]
+const AUDIT_ACTOR_TYPES: readonly ["user", "admin", "system", "agent", "instance_admin", "directory"]
 ```
 
 ### `AUDIT_EXPORT_FORMATS`
@@ -7671,6 +7671,19 @@ it); it keeps signing beside the new one until `rotationOverlapEndsAt`.
 const RotatedWebhookSecretSchema
 ```
 
+### `SCIM_TOKEN_PREFIX`
+
+_constant_, defined in `packages/contract/src/tokens.ts`
+
+Prefix of SCIM tokens, followed by the environment id (32 hex digits, no dashes) and `_`
+(ADR 0067, "SCIM"): the bearer token an organization's identity provider presents to
+`/v1/scim/v2/*`. It opens that group and nothing else; `secretKey()` and `agentKey()`
+answer it like a wrong key.
+
+```ts
+const SCIM_TOKEN_PREFIX: "tula_scim_"
+```
+
 ### `SECRET_KEY_PREFIX`
 
 _constant_, defined in `packages/contract/src/tokens.ts`
@@ -7989,7 +8002,7 @@ _constant_, defined in `packages/contract/src/sso.ts`
 The fields of a connection an update can change; the event names them, never a value.
 
 ```ts
-const SSO_CONNECTION_FIELDS: readonly ["name", "issuer", "clientId", "clientSecret", "saml", "defaultRole", "domains", "status"]
+const SSO_CONNECTION_FIELDS
 ```
 
 ### `SSO_CONNECTION_STATUSES`

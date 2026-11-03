@@ -27,6 +27,14 @@ export const SECRET_KEY_PREFIX = 'tula_sk_'
 export const AGENT_KEY_PREFIX = 'tula_ak_'
 
 /**
+ * Prefix of SCIM tokens, followed by the environment id (32 hex digits, no dashes) and `_`
+ * (ADR 0067, "SCIM"): the bearer token an organization's identity provider presents to
+ * `/v1/scim/v2/*`. It opens that group and nothing else; `secretKey()` and `agentKey()`
+ * answer it like a wrong key.
+ */
+export const SCIM_TOKEN_PREFIX = 'tula_scim_'
+
+/**
  * What `amr` (RFC 8176, "authentication methods references") can hold in a Tula access token:
  *
  * - `pwd`: the password.

@@ -65,6 +65,8 @@ const routes: ReadonlyArray<readonly [path: string, router: Hono<AppEnv>]> = [
   ['/v1/admin/users', (await import('~/modules/organization/user-router')).default],
   ['/v1', (await import('~/modules/native-app/router')).default],
   ['/v1/admin/sso-connections', (await import('~/modules/sso-connection/router')).default],
+  ['/v1/admin/scim-tokens', (await import('~/modules/scim-token/router')).default],
+  ['/v1/scim/v2', (await import('~/modules/scim/router')).default],
   ['/v1', (await import('~/modules/sso/router')).default],
   ['/v1/admin/sms', (await import('~/modules/sms/router')).default],
   ['/v1/admin/message-preview', (await import('~/modules/message-preview/router')).default],
