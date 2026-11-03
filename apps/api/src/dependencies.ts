@@ -30,6 +30,7 @@ import type { ProofReplayGuard } from '~/ports/proof-replay'
 import type { ProposalStore } from '~/ports/proposal-store'
 import type { RateLimiter } from '~/ports/rate-limiter'
 import type { RevokedSessions } from '~/ports/revoked-sessions'
+import type { ScimStore } from '~/ports/scim-store'
 import type { SessionStore } from '~/ports/session-store'
 import type { SigningKeyStore } from '~/ports/signing-key-store'
 import type { SmsInbox, SmsSender } from '~/ports/sms-sender'
@@ -165,6 +166,8 @@ export interface Deps {
   nativeApps: NativeAppStore
   /** An organization's single sign-on connections, their domain bindings and identities (ADR 0067). */
   ssoConnections: SsoConnectionStore
+  /** An organization's SCIM tokens and the users its directory manages (ADR 0067). */
+  scim: ScimStore
   /** Organizations, the roles of an environment and the memberships between them and its users (ADR 0065). */
   organizations: OrganizationStore
   /** The domains organizations claim, and the codes that verify them (ADR 0065, "Verified domains"). */

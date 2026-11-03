@@ -34,6 +34,7 @@ export const EventActorType = {
   system: 'system',
   agent: 'agent',
   instance_admin: 'instance_admin',
+  directory: 'directory',
 } as const;
 
 export interface EventActor {
@@ -56,6 +57,7 @@ export const UserCreatedEventDataMethod = {
   oauth_x: 'oauth_x',
   oauth_facebook: 'oauth_facebook',
   sso: 'sso',
+  scim: 'scim',
 } as const;
 
 /**
@@ -1297,7 +1299,7 @@ export interface OAuthProviderDeletedEvent {
 export interface WebhookEndpointCreatedEventData {
   /**
      * @minimum 1
-     * @maximum 73
+     * @maximum 76
      */
   eventTypes: number;
   enabled: boolean;
@@ -1926,6 +1928,105 @@ export interface SsoConnectionDeletedEvent {
   actor: EventActor;
   target: SsoConnectionDeletedEventTarget;
   data: SsoConnectionDeletedEventData;
+  test?: true;
+}
+
+/**
+ * A SCIM token was created for an organization's directory. The token is not in the event.
+ */
+export interface ScimTokenCreatedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+}
+
+export type ScimTokenCreatedEventTarget = {
+  type: 'scim_token';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A SCIM token was created for an organization's directory. The token is not in the event.
+ */
+export interface ScimTokenCreatedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'scim_token.created';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: ScimTokenCreatedEventTarget;
+  data: ScimTokenCreatedEventData;
+  test?: true;
+}
+
+/**
+ * A SCIM token was revoked: the directory it belonged to can no longer provision with it.
+ */
+export interface ScimTokenRevokedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+}
+
+export type ScimTokenRevokedEventTarget = {
+  type: 'scim_token';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * A SCIM token was revoked: the directory it belonged to can no longer provision with it.
+ */
+export interface ScimTokenRevokedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'scim_token.revoked';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: ScimTokenRevokedEventTarget;
+  data: ScimTokenRevokedEventData;
+  test?: true;
+}
+
+export type UserScimProvisionedEventDataMethod = typeof UserScimProvisionedEventDataMethod[keyof typeof UserScimProvisionedEventDataMethod];
+
+
+export const UserScimProvisionedEventDataMethod = {
+  created: 'created',
+  linked: 'linked',
+} as const;
+
+/**
+ * An organization's directory created an account or took over an existing one (ADR 0067).
+ */
+export interface UserScimProvisionedEventData {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  organizationId: string;
+  method: UserScimProvisionedEventDataMethod;
+}
+
+export type UserScimProvisionedEventTarget = {
+  type: 'user';
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+};
+
+/**
+ * An organization's directory created an account or took over an existing one (ADR 0067).
+ */
+export interface UserScimProvisionedEvent {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  id: string;
+  type: 'user.scim_provisioned';
+  schemaVersion: 1;
+  /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
+  occurredAt: string;
+  actor: EventActor;
+  target: UserScimProvisionedEventTarget;
+  data: UserScimProvisionedEventData;
   test?: true;
 }
 
@@ -2839,6 +2940,9 @@ export const AuditExportedEventDataAction = {
   sso_connectioncreated: 'sso_connection.created',
   sso_connectionupdated: 'sso_connection.updated',
   sso_connectiondeleted: 'sso_connection.deleted',
+  scim_tokencreated: 'scim_token.created',
+  scim_tokenrevoked: 'scim_token.revoked',
+  userscim_provisioned: 'user.scim_provisioned',
   organizationcreated: 'organization.created',
   organizationupdated: 'organization.updated',
   organizationdeleted: 'organization.deleted',
@@ -2874,6 +2978,7 @@ export const AuditExportedEventDataActorType = {
   system: 'system',
   agent: 'agent',
   instance_admin: 'instance_admin',
+  directory: 'directory',
 } as const;
 
 /**
@@ -3000,7 +3105,7 @@ export interface SignInTestFinishedEvent {
   test?: true;
 }
 
-export type TulaEvent = UserCreatedEvent | UserImportedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserSsoLinkedEvent | UserEmailAddedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | SsoConnectionCreatedEvent | SsoConnectionUpdatedEvent | SsoConnectionDeletedEvent | OrganizationCreatedEvent | OrganizationUpdatedEvent | OrganizationDeletedEvent | OrganizationMembershipAddedEvent | OrganizationMembershipRoleChangedEvent | OrganizationMembershipRemovedEvent | OrganizationRoleCreatedEvent | OrganizationRoleUpdatedEvent | OrganizationRoleDeletedEvent | OrganizationDomainClaimedEvent | OrganizationDomainVerifiedEvent | OrganizationDomainUpdatedEvent | OrganizationDomainRemovedEvent | OrganizationInvitationCreatedEvent | OrganizationInvitationAcceptedEvent | OrganizationInvitationDeclinedEvent | OrganizationInvitationRevokedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent | AuditExportedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
+export type TulaEvent = UserCreatedEvent | UserImportedEvent | UserEmailVerifiedEvent | UserBannedEvent | UserUnbannedEvent | UserDeletedEvent | UserPasswordChangedEvent | UserMfaEnabledEvent | UserMfaDisabledEvent | UserBackupCodesRegeneratedEvent | UserBackupCodeUsedEvent | UserIdentityLinkedEvent | UserIdentityUnlinkedEvent | UserSsoLinkedEvent | UserEmailAddedEvent | UserPasskeyAddedEvent | UserPasskeyRenamedEvent | UserPasskeyRemovedEvent | UserPasskeyCounterRegressedEvent | UserPhoneNumberAddedEvent | UserPhoneNumberRemovedEvent | UserSmsFactorEnabledEvent | UserSmsFactorRemovedEvent | SessionCreatedEvent | SessionRevokedEvent | SessionReuseDetectedEvent | SessionSteppedUpEvent | SessionRefreshProofRefusedEvent | ApiKeyCreatedEvent | ApiKeyRevokedEvent | SigningKeyRotatedEvent | EnvironmentSettingsUpdatedEvent | OAuthProviderUpdatedEvent | OAuthProviderDeletedEvent | WebhookEndpointCreatedEvent | WebhookEndpointUpdatedEvent | WebhookEndpointDeletedEvent | WebhookEndpointDisabledEvent | WebhookEndpointSecretRotatedEvent | WebhookEndpointPreviousSecretRevokedEvent | HookCreatedEvent | HookUpdatedEvent | HookDeletedEvent | NativeAppCreatedEvent | NativeAppUpdatedEvent | NativeAppDeletedEvent | SsoConnectionCreatedEvent | SsoConnectionUpdatedEvent | SsoConnectionDeletedEvent | ScimTokenCreatedEvent | ScimTokenRevokedEvent | UserScimProvisionedEvent | OrganizationCreatedEvent | OrganizationUpdatedEvent | OrganizationDeletedEvent | OrganizationMembershipAddedEvent | OrganizationMembershipRoleChangedEvent | OrganizationMembershipRemovedEvent | OrganizationRoleCreatedEvent | OrganizationRoleUpdatedEvent | OrganizationRoleDeletedEvent | OrganizationDomainClaimedEvent | OrganizationDomainVerifiedEvent | OrganizationDomainUpdatedEvent | OrganizationDomainRemovedEvent | OrganizationInvitationCreatedEvent | OrganizationInvitationAcceptedEvent | OrganizationInvitationDeclinedEvent | OrganizationInvitationRevokedEvent | ProposalCreatedEvent | ProposalApprovedEvent | ProposalExecutedEvent | ProposalFailedEvent | AuditExportedEvent | SignInTestStartedEvent | SignInTestFinishedEvent;
 
 export type HookBeforeSignUpDataMethod = typeof HookBeforeSignUpDataMethod[keyof typeof HookBeforeSignUpDataMethod];
 
@@ -4390,6 +4495,9 @@ export const ActivityType = {
   sso_connectioncreated: 'sso_connection.created',
   sso_connectionupdated: 'sso_connection.updated',
   sso_connectiondeleted: 'sso_connection.deleted',
+  scim_tokencreated: 'scim_token.created',
+  scim_tokenrevoked: 'scim_token.revoked',
+  userscim_provisioned: 'user.scim_provisioned',
   organizationcreated: 'organization.created',
   organizationupdated: 'organization.updated',
   organizationdeleted: 'organization.deleted',
@@ -4425,6 +4533,7 @@ export const AuditLogQueryActorType = {
   system: 'system',
   agent: 'agent',
   instance_admin: 'instance_admin',
+  directory: 'directory',
 } as const;
 
 export interface AuditLogQuery {
@@ -4459,6 +4568,7 @@ export const AuditExportRequestActorType = {
   system: 'system',
   agent: 'agent',
   instance_admin: 'instance_admin',
+  directory: 'directory',
 } as const;
 
 export type AuditExportRequestFormat = typeof AuditExportRequestFormat[keyof typeof AuditExportRequestFormat];
@@ -5306,6 +5416,9 @@ export const CreateWebhookEndpointRequestEventTypesItem = {
   sso_connectioncreated: 'sso_connection.created',
   sso_connectionupdated: 'sso_connection.updated',
   sso_connectiondeleted: 'sso_connection.deleted',
+  scim_tokencreated: 'scim_token.created',
+  scim_tokenrevoked: 'scim_token.revoked',
+  userscim_provisioned: 'user.scim_provisioned',
   organizationcreated: 'organization.created',
   organizationupdated: 'organization.updated',
   organizationdeleted: 'organization.deleted',
@@ -5341,7 +5454,7 @@ export interface CreateWebhookEndpointRequest {
   url: string;
   /**
      * @minItems 1
-     * @maxItems 73
+     * @maxItems 76
      */
   eventTypes: CreateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -5400,6 +5513,9 @@ export const UpdateWebhookEndpointRequestEventTypesItem = {
   sso_connectioncreated: 'sso_connection.created',
   sso_connectionupdated: 'sso_connection.updated',
   sso_connectiondeleted: 'sso_connection.deleted',
+  scim_tokencreated: 'scim_token.created',
+  scim_tokenrevoked: 'scim_token.revoked',
+  userscim_provisioned: 'user.scim_provisioned',
   organizationcreated: 'organization.created',
   organizationupdated: 'organization.updated',
   organizationdeleted: 'organization.deleted',
@@ -5435,7 +5551,7 @@ export interface UpdateWebhookEndpointRequest {
   url?: string;
   /**
      * @minItems 1
-     * @maxItems 73
+     * @maxItems 76
      */
   eventTypes?: UpdateWebhookEndpointRequestEventTypesItem[];
   enabled?: boolean;
@@ -5612,6 +5728,9 @@ export const SendTestWebhookRequestEventType = {
   sso_connectioncreated: 'sso_connection.created',
   sso_connectionupdated: 'sso_connection.updated',
   sso_connectiondeleted: 'sso_connection.deleted',
+  scim_tokencreated: 'scim_token.created',
+  scim_tokenrevoked: 'scim_token.revoked',
+  userscim_provisioned: 'user.scim_provisioned',
   organizationcreated: 'organization.created',
   organizationupdated: 'organization.updated',
   organizationdeleted: 'organization.deleted',
@@ -6977,6 +7096,7 @@ export const ListAuditLogsActorType = {
   system: 'system',
   agent: 'agent',
   instance_admin: 'instance_admin',
+  directory: 'directory',
 } as const;
 
 export type ListWebhookDeliveriesParams = {

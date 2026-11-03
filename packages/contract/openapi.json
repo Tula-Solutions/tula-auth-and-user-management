@@ -114,7 +114,8 @@
               "admin",
               "system",
               "agent",
-              "instance_admin"
+              "instance_admin",
+              "directory"
             ]
           },
           "id": {
@@ -151,7 +152,8 @@
               "oauth_linkedin",
               "oauth_x",
               "oauth_facebook",
-              "sso"
+              "sso",
+              "scim"
             ]
           },
           "emailVerified": {
@@ -2918,7 +2920,7 @@
           "eventTypes": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 73
+            "maximum": 76
           },
           "enabled": {
             "type": "boolean"
@@ -4173,6 +4175,239 @@
           "data"
         ],
         "description": "A single sign-on connection was removed."
+      },
+      "ScimTokenCreatedEventData": {
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "organizationId"
+        ],
+        "description": "A SCIM token was created for an organization's directory. The token is not in the event."
+      },
+      "ScimTokenCreatedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "scim_token.created"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "scim_token"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/ScimTokenCreatedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "actor",
+          "target",
+          "data"
+        ],
+        "description": "A SCIM token was created for an organization's directory. The token is not in the event."
+      },
+      "ScimTokenRevokedEventData": {
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          }
+        },
+        "required": [
+          "organizationId"
+        ],
+        "description": "A SCIM token was revoked: the directory it belonged to can no longer provision with it."
+      },
+      "ScimTokenRevokedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "scim_token.revoked"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "scim_token"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/ScimTokenRevokedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "actor",
+          "target",
+          "data"
+        ],
+        "description": "A SCIM token was revoked: the directory it belonged to can no longer provision with it."
+      },
+      "UserScimProvisionedEventData": {
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "created",
+              "linked"
+            ]
+          }
+        },
+        "required": [
+          "organizationId",
+          "method"
+        ],
+        "description": "An organization's directory created an account or took over an existing one (ADR 0067)."
+      },
+      "UserScimProvisionedEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          },
+          "type": {
+            "type": "string",
+            "const": "user.scim_provisioned"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "user"
+              },
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/UserScimProvisionedEventData"
+          },
+          "test": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "schemaVersion",
+          "occurredAt",
+          "actor",
+          "target",
+          "data"
+        ],
+        "description": "An organization's directory created an account or took over an existing one (ADR 0067)."
       },
       "OrganizationCreatedEventData": {
         "type": "object",
@@ -6112,6 +6347,9 @@
               "sso_connection.created",
               "sso_connection.updated",
               "sso_connection.deleted",
+              "scim_token.created",
+              "scim_token.revoked",
+              "user.scim_provisioned",
               "organization.created",
               "organization.updated",
               "organization.deleted",
@@ -6150,7 +6388,8 @@
               "admin",
               "system",
               "agent",
-              "instance_admin"
+              "instance_admin",
+              "directory"
             ]
           },
           "targetId": {
@@ -6548,6 +6787,15 @@
           },
           {
             "$ref": "#/components/schemas/SsoConnectionDeletedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/ScimTokenCreatedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/ScimTokenRevokedEvent"
+          },
+          {
+            "$ref": "#/components/schemas/UserScimProvisionedEvent"
           },
           {
             "$ref": "#/components/schemas/OrganizationCreatedEvent"
@@ -9924,6 +10172,9 @@
           "sso_connection.created",
           "sso_connection.updated",
           "sso_connection.deleted",
+          "scim_token.created",
+          "scim_token.revoked",
+          "user.scim_provisioned",
           "organization.created",
           "organization.updated",
           "organization.deleted",
@@ -9973,7 +10224,8 @@
               "admin",
               "system",
               "agent",
-              "instance_admin"
+              "instance_admin",
+              "directory"
             ]
           },
           "from": {
@@ -10023,7 +10275,8 @@
               "admin",
               "system",
               "agent",
-              "instance_admin"
+              "instance_admin",
+              "directory"
             ]
           },
           "from": {
@@ -12067,7 +12320,7 @@
           },
           "eventTypes": {
             "minItems": 1,
-            "maxItems": 73,
+            "maxItems": 76,
             "type": "array",
             "items": {
               "type": "string",
@@ -12121,6 +12374,9 @@
                 "sso_connection.created",
                 "sso_connection.updated",
                 "sso_connection.deleted",
+                "scim_token.created",
+                "scim_token.revoked",
+                "user.scim_provisioned",
                 "organization.created",
                 "organization.updated",
                 "organization.deleted",
@@ -12170,7 +12426,7 @@
           },
           "eventTypes": {
             "minItems": 1,
-            "maxItems": 73,
+            "maxItems": 76,
             "type": "array",
             "items": {
               "type": "string",
@@ -12224,6 +12480,9 @@
                 "sso_connection.created",
                 "sso_connection.updated",
                 "sso_connection.deleted",
+                "scim_token.created",
+                "scim_token.revoked",
+                "user.scim_provisioned",
                 "organization.created",
                 "organization.updated",
                 "organization.deleted",
@@ -12687,6 +12946,9 @@
               "sso_connection.created",
               "sso_connection.updated",
               "sso_connection.deleted",
+              "scim_token.created",
+              "scim_token.revoked",
+              "user.scim_provisioned",
               "organization.created",
               "organization.updated",
               "organization.deleted",
@@ -26116,7 +26378,8 @@
                 "admin",
                 "system",
                 "agent",
-                "instance_admin"
+                "instance_admin",
+                "directory"
               ]
             }
           },

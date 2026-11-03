@@ -190,6 +190,7 @@ export class MemoryUserRepository implements UserRepository {
     this.#users.set(user.id, {
       ...record,
       managedByConnectionId: record.managedByConnectionId ?? null,
+      managedByDirectoryId: record.managedByDirectoryId ?? null,
       bannedAt: null,
       lastSignInAt: null,
       phoneNumber: null,
