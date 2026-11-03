@@ -168,8 +168,10 @@ import { join } from 'node:path'
  * bytes, to 19,603. The budget moved by exactly those, to 19,607: the room is the 4 bytes it was.
  * Setup links (TULA-149: three client operations on `organizations.sso`'s neighbour, and their error
  * codes) added 46 bytes, to 19,653. The budget moved by exactly those, to 19,657.
+ * Managed accounts (DECISIONS 11: the `user.managed` code, and the longer `sso.connection_in_use`
+ * message) added 27 bytes, to 19,680. The budget moved by exactly those, to 19,684.
  */
-const GZIP_BUDGET_BYTES = 19_657
+const GZIP_BUDGET_BYTES = 19_684
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({
