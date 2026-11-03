@@ -15,6 +15,7 @@ import {
   fakeOrganization,
   fakeProposal,
   fakeRole,
+  fakeScimToken,
   fakeSsoConnection,
   fakeWebhookDelivery,
   fakeWebhookEndpoint,
@@ -1440,6 +1441,36 @@ describe('organizations and roles', () => {
     expect(document.documentElement.outerHTML.includes('half-typed-secret')).toBe(false)
     expect(api.callsTo('PATCH', '/v1/admin/sso-connections')).toHaveLength(0)
     expect(api.state.ssoConnections.every((entry) => entry.enforced)).toBe(true)
+  })
+
+  test('a SCIM token on screen and an open revocation do not follow the operator', async () => {
+    const api = sameOrganizationInBoth()
+    api.state.scimTokens.push(
+      fakeScimToken({
+        organizationId: ORGANIZATION,
+        name: 'Dev only',
+        environmentId: IDS.development,
+      })
+    )
+    const current = start(`${DEV_PATH}/organizations/${ORGANIZATION}`, { api })
+    const { user, router, location } = current
+    await user.click(await screen.findByRole('button', { name: 'Create token' }))
+    await user.type(within(screen.getByRole('dialog')).getByLabelText('Name'), 'Okta')
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Create token' })
+    )
+    const secret = (await screen.findByTestId('created-scim-token')).textContent ?? ''
+    expect(secret).toStartWith('tula_scim_')
+
+    // The dialog is modal: the address changes by the browser's own buttons.
+    await act(() => router.navigate({ href: `${PROD_PATH}/organizations/${ORGANIZATION}` }))
+    await waitFor(() => expect(location()).toBe(`${PROD_PATH}/organizations/${ORGANIZATION}`))
+    await screen.findByRole('heading', { level: 1, name: 'Acme Corp' })
+    await waitFor(() => expect(openDialogs()).toBe(0))
+    await screen.findByText('No SCIM tokens')
+    expect(document.documentElement.outerHTML.includes(secret)).toBe(false)
+    expect(screen.queryByText('Dev only')).toBeNull()
+    expect(api.callsTo('DELETE', '/v1/admin/scim-tokens')).toHaveLength(0)
   })
 
   test('an open deletion of a connection does not survive a switch', async () => {

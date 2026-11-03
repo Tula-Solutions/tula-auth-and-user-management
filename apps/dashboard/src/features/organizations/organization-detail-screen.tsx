@@ -15,6 +15,7 @@ import { TextField } from '~/components/field'
 import { Modal } from '~/components/modal'
 import { PageHeader, Section } from '~/components/page'
 import { notify } from '~/components/toaster'
+import { ScimSection } from '~/features/scim/scim-section'
 import { useEnvironment, useEnvironmentRequest } from '~/features/shell/environment-context'
 import { SsoSection } from '~/features/sso/sso-section'
 import type { EnvironmentScope } from '~/features/users/users-screen'
@@ -254,6 +255,7 @@ export function OrganizationDetailScreen({
             <InvitationsSection organizationId={current.id} organizationName={current.name} />
             <DomainsSection organizationId={current.id} organizationName={current.name} />
             <SsoSection organizationId={current.id} organizationName={current.name} />
+            <ScimSection organizationId={current.id} organizationName={current.name} />
             <EditOrganizationDialog
               organization={current}
               open={editing}
