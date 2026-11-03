@@ -480,6 +480,60 @@ describe('confirmTotp', () => {
     expect(deps.activityLog.ofType('session.stepped_up')).toEqual([])
   })
 
+  describe('the sweep after the factor is on fails closed (TULA-155)', () => {
+    /** A session that appears after the snapshot of sessions and before the factor turns on. */
+    async function lateSession(userId: string) {
+      const original = deps.factors.findTotp.bind(deps.factors)
+      let late: Awaited<ReturnType<typeof newSession>> | undefined
+      spies.push(
+        spyOn(deps.factors, 'findTotp').mockImplementation(async (...args) => {
+          const read = await original(...args)
+          late ??= await newSession(userId)
+          return read
+        })
+      )
+      return () => late as NonNullable<typeof late>
+    }
+
+    test('one failure is retried and the late session ends', async () => {
+      const user = await seedUser()
+      const { secret } = await Mfa.startTotp(deps, tenant, user.id)
+      const late = await lateSession(user.id)
+      const real = deps.sessions.revokeByUser.bind(deps.sessions)
+      let calls = 0
+      spies.push(
+        spyOn(deps.sessions, 'revokeByUser').mockImplementation((...args) => {
+          if (++calls === 2) {
+            throw new Error('store down')
+          }
+          return real(...args)
+        })
+      )
+      await confirm(user.id, codeFor(secret))
+      expect(await deps.revokedSessions.has(late().sessionId, deps.clock.now())).toBe(true)
+      expect(await liveSessions(user.id)).toEqual([])
+    })
+
+    test('two failures reject with service.unavailable', async () => {
+      const user = await seedUser()
+      const { secret } = await Mfa.startTotp(deps, tenant, user.id)
+      await lateSession(user.id)
+      const real = deps.sessions.revokeByUser.bind(deps.sessions)
+      let calls = 0
+      spies.push(
+        spyOn(deps.sessions, 'revokeByUser').mockImplementation((...args) => {
+          if (++calls >= 2) {
+            throw new Error('store down')
+          }
+          return real(...args)
+        })
+      )
+      expect(
+        ((await confirm(user.id, codeFor(secret)).catch((e) => e)) as { code: string }).code
+      ).toBe('service.unavailable')
+    })
+  })
+
   test('the codes still reach the user when the enrolling session cannot be marked', async () => {
     const user = await seedUser()
     const session = await newSession(user.id)

@@ -865,6 +865,18 @@ export function describeSessionStore(
       ).toBeNull()
     })
 
+    test('an empty list of sessions revokes nothing', async () => {
+      const userId = await ctx.a.user()
+      const live = await seed(ctx.a, { userId })
+      expect(
+        await ctx.store.revokeByUser(ctx.a.environmentId, userId, 'mfa_changed', later(1_000), {
+          activity: () => Audit.none('fixture'),
+          onlyIds: [],
+        })
+      ).toEqual([])
+      expect((await ctx.store.findById(ctx.a.environmentId, live.session.id))?.revokedAt).toBeNull()
+    })
+
     test('purges sessions that had ended by a moment, with their token chains, in batches', async () => {
       // Times earlier than any other test's, because a shared database keeps their rows.
       const ended = later(-50 * DAY)

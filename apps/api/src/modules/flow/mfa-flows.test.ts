@@ -1327,6 +1327,12 @@ describe('enrolment inside an attempt, where the environment requires a second f
     const original = deps.factors.findTotp.bind(deps.factors)
     let calls = 0
     let winner: Promise<unknown> = Promise.resolve()
+    const real = deps.sessions.revokeByUser.bind(deps.sessions)
+    let sweeps = 0
+    const unrestricted = spyOn(deps.sessions, 'revokeByUser').mockImplementation((...args) => {
+      sweeps += args[4].onlyIds ? 0 : 1
+      return real(...args)
+    })
     // The second reader sees the factor still pending, then is held until the first request has
     // completed, so that its sweep of the user's sessions comes after the winner's session exists.
     const spy = spyOn(deps.factors, 'findTotp').mockImplementation(async (...args) => {
@@ -1343,8 +1349,11 @@ describe('enrolment inside an attempt, where the environment requires a second f
       await loser
     } finally {
       spy.mockRestore()
+      unrestricted.mockRestore()
     }
+    // The loser threw at its confirm and never reached the unrestricted sweep.
     expect(await liveSessions(userId)).toHaveLength(1)
+    expect(sweeps).toBe(1)
   })
 
   test('wrong confirmation codes lock the user out, even for the right code', async () => {
