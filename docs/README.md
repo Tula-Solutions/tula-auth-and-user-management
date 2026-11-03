@@ -45,6 +45,7 @@ by error code. Their code samples are copied from files of this repository by
 | | |
 | --- | --- |
 | [Importing users](user-import.md) | `POST /v1/admin/users/import`: up to 500 users a call with their bcrypt, argon2, PBKDF2 or Firebase scrypt password hashes, the answer for each row, the parameter minimums, what the first sign-in does, and what an import records. |
+| [Exporting the audit log](audit-export.md) | `POST /v1/admin/audit-logs/export` and `tula audit export`: NDJSON or CSV, streamed, resumable, with the CSV formula escape and the `audit.exported` entry. |
 | [Migrating from Clerk](migrate-from-clerk.md) | `tula import --from clerk`: the dashboard's CSV or the Backend API's JSON with `password_digest`, and Clerk's organizations and memberships. |
 | [Migrating from Auth0](migrate-from-auth0.md) | `tula import --from auth0`: the bulk user export and the bcrypt hashes Auth0 support sends separately. |
 | [Migrating from Firebase](migrate-from-firebase.md) | `tula import --from firebase`: `firebase auth:export` and the project's scrypt parameters, kept out of the command line. |
