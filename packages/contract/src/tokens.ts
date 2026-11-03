@@ -2,9 +2,9 @@ import { z } from 'zod'
 import {
   CUSTOM_CLAIMS_CLAIM,
   ORGANIZATION_ID_CLAIM,
-  SSO_CONNECTION_CLAIM,
   ORGANIZATION_PERMISSIONS_CLAIM,
   ORGANIZATION_ROLE_CLAIM,
+  SSO_CONNECTION_CLAIM,
 } from './custom-claims'
 
 /** Version of the access-token claim layout. Bump only with a migration plan for SDKs. */

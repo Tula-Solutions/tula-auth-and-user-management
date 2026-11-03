@@ -51,9 +51,7 @@
                 ]
               }
             },
-            "required": [
-              "generate"
-            ],
+            "required": ["generate"],
             "additionalProperties": false
           }
         ],
@@ -77,13 +75,7 @@
                 "properties": {
                   "method": {
                     "type": "string",
-                    "enum": [
-                      "GET",
-                      "POST",
-                      "PUT",
-                      "PATCH",
-                      "DELETE"
-                    ]
+                    "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
                   },
                   "path": {
                     "type": "string",
@@ -93,11 +85,7 @@
                   "auth": {
                     "default": "publishable",
                     "type": "string",
-                    "enum": [
-                      "publishable",
-                      "secret",
-                      "none"
-                    ],
+                    "enum": ["publishable", "secret", "none"],
                     "ref": "ConformanceAuth"
                   },
                   "accessToken": {
@@ -105,12 +93,7 @@
                   },
                   "client": {
                     "type": "string",
-                    "enum": [
-                      "web",
-                      "ios",
-                      "android",
-                      "server"
-                    ]
+                    "enum": ["web", "ios", "android", "server"]
                   },
                   "attempt": {
                     "type": "string"
@@ -141,23 +124,15 @@
                         "minLength": 1
                       }
                     },
-                    "required": [
-                      "key"
-                    ],
+                    "required": ["key"],
                     "additionalProperties": false
                   },
                   "instance": {
                     "type": "string",
-                    "enum": [
-                      "first",
-                      "second"
-                    ]
+                    "enum": ["first", "second"]
                   }
                 },
-                "required": [
-                  "method",
-                  "path"
-                ],
+                "required": ["method", "path"],
                 "ref": "ConformanceRequest"
               },
               "expect": {
@@ -192,9 +167,7 @@
                     "additionalProperties": {}
                   }
                 },
-                "required": [
-                  "status"
-                ],
+                "required": ["status"],
                 "ref": "ConformanceExpect"
               },
               "times": {
@@ -246,17 +219,11 @@
                     "minLength": 1
                   }
                 },
-                "required": [
-                  "match"
-                ],
+                "required": ["match"],
                 "additionalProperties": false
               }
             },
-            "required": [
-              "name",
-              "request",
-              "expect"
-            ],
+            "required": ["name", "request", "expect"],
             "additionalProperties": false,
             "ref": "ConformanceRequestStep"
           },
@@ -280,16 +247,10 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "to",
-                  "capture"
-                ]
+                "required": ["to", "capture"]
               }
             },
-            "required": [
-              "name",
-              "emailCode"
-            ],
+            "required": ["name", "emailCode"],
             "additionalProperties": false,
             "ref": "ConformanceEmailCodeStep"
           },
@@ -316,16 +277,10 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "to",
-                  "captureToken"
-                ]
+                "required": ["to", "captureToken"]
               }
             },
-            "required": [
-              "name",
-              "emailLink"
-            ],
+            "required": ["name", "emailLink"],
             "additionalProperties": false,
             "ref": "ConformanceEmailLinkStep"
           },
@@ -364,10 +319,7 @@
                         "type": "string"
                       }
                     },
-                    "required": [
-                      "name",
-                      "capture"
-                    ],
+                    "required": ["name", "capture"],
                     "additionalProperties": false
                   },
                   "subject": {
@@ -388,17 +340,11 @@
                     }
                   }
                 },
-                "required": [
-                  "to",
-                  "subjectContains"
-                ],
+                "required": ["to", "subjectContains"],
                 "additionalProperties": false
               }
             },
-            "required": [
-              "name",
-              "emailMessage"
-            ],
+            "required": ["name", "emailMessage"],
             "additionalProperties": false,
             "ref": "ConformanceEmailMessageStep"
           },
@@ -439,17 +385,11 @@
                     }
                   }
                 },
-                "required": [
-                  "to",
-                  "capture"
-                ],
+                "required": ["to", "capture"],
                 "additionalProperties": false
               }
             },
-            "required": [
-              "name",
-              "smsCode"
-            ],
+            "required": ["name", "smsCode"],
             "additionalProperties": false,
             "ref": "ConformanceSmsCodeStep"
           },
@@ -473,16 +413,10 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "secret",
-                  "capture"
-                ]
+                "required": ["secret", "capture"]
               }
             },
-            "required": [
-              "name",
-              "totp"
-            ],
+            "required": ["name", "totp"],
             "additionalProperties": false,
             "ref": "ConformanceTotpStep"
           },
@@ -539,10 +473,7 @@
                 "additionalProperties": false
               }
             },
-            "required": [
-              "name",
-              "oauth"
-            ],
+            "required": ["name", "oauth"],
             "additionalProperties": false,
             "ref": "ConformanceOAuthStep"
           },
@@ -584,10 +515,7 @@
                 "additionalProperties": false
               }
             },
-            "required": [
-              "name",
-              "sso"
-            ],
+            "required": ["name", "sso"],
             "additionalProperties": false,
             "ref": "ConformanceSsoStep"
           },
@@ -639,17 +567,11 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "audience",
-                  "capture"
-                ],
+                "required": ["audience", "capture"],
                 "additionalProperties": false
               }
             },
-            "required": [
-              "name",
-              "idToken"
-            ],
+            "required": ["name", "idToken"],
             "additionalProperties": false,
             "ref": "ConformanceIdTokenStep"
           },
@@ -694,17 +616,11 @@
                     "type": "boolean"
                   }
                 },
-                "required": [
-                  "authenticator",
-                  "capture"
-                ],
+                "required": ["authenticator", "capture"],
                 "additionalProperties": false
               }
             },
-            "required": [
-              "name",
-              "passkey"
-            ],
+            "required": ["name", "passkey"],
             "additionalProperties": false,
             "ref": "ConformancePasskeyStep"
           },
@@ -772,22 +688,15 @@
                         "maximum": 2
                       }
                     },
-                    "required": [
-                      "secret"
-                    ],
+                    "required": ["secret"],
                     "additionalProperties": false
                   }
                 },
-                "required": [
-                  "receiver"
-                ],
+                "required": ["receiver"],
                 "additionalProperties": false
               }
             },
-            "required": [
-              "name",
-              "webhook"
-            ],
+            "required": ["name", "webhook"],
             "additionalProperties": false,
             "ref": "ConformanceWebhookStep"
           },
@@ -821,9 +730,7 @@
                                 "const": "allow"
                               }
                             },
-                            "required": [
-                              "decision"
-                            ],
+                            "required": ["decision"],
                             "additionalProperties": false
                           },
                           {
@@ -838,9 +745,7 @@
                                 "pattern": "^[a-z0-9_]{1,64}$"
                               }
                             },
-                            "required": [
-                              "decision"
-                            ],
+                            "required": ["decision"],
                             "additionalProperties": false
                           }
                         ],
@@ -855,17 +760,11 @@
                               "type": "string"
                             },
                             "additionalProperties": {
-                              "type": [
-                                "string",
-                                "number",
-                                "boolean"
-                              ]
+                              "type": ["string", "number", "boolean"]
                             }
                           }
                         },
-                        "required": [
-                          "claims"
-                        ],
+                        "required": ["claims"],
                         "additionalProperties": false,
                         "ref": "HookClaimsAnswer"
                       },
@@ -878,9 +777,7 @@
                             "maximum": 599
                           }
                         },
-                        "required": [
-                          "status"
-                        ],
+                        "required": ["status"],
                         "additionalProperties": false
                       },
                       {
@@ -899,9 +796,7 @@
                           },
                           "body": {}
                         },
-                        "required": [
-                          "secret"
-                        ],
+                        "required": ["secret"],
                         "additionalProperties": false
                       },
                       {
@@ -912,24 +807,17 @@
                             "const": true
                           }
                         },
-                        "required": [
-                          "nothing"
-                        ],
+                        "required": ["nothing"],
                         "additionalProperties": false
                       }
                     ]
                   }
                 },
-                "required": [
-                  "receiver"
-                ],
+                "required": ["receiver"],
                 "additionalProperties": false
               }
             },
-            "required": [
-              "name",
-              "hook"
-            ],
+            "required": ["name", "hook"],
             "additionalProperties": false,
             "ref": "ConformanceHookStep"
           },
@@ -945,10 +833,7 @@
                 "ref": "Duration"
               }
             },
-            "required": [
-              "name",
-              "wait"
-            ],
+            "required": ["name", "wait"],
             "additionalProperties": false,
             "ref": "ConformanceWaitStep"
           }
@@ -973,13 +858,7 @@
                 "properties": {
                   "method": {
                     "type": "string",
-                    "enum": [
-                      "GET",
-                      "POST",
-                      "PUT",
-                      "PATCH",
-                      "DELETE"
-                    ]
+                    "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
                   },
                   "path": {
                     "type": "string",
@@ -989,11 +868,7 @@
                   "auth": {
                     "default": "publishable",
                     "type": "string",
-                    "enum": [
-                      "publishable",
-                      "secret",
-                      "none"
-                    ],
+                    "enum": ["publishable", "secret", "none"],
                     "ref": "ConformanceAuth"
                   },
                   "accessToken": {
@@ -1001,12 +876,7 @@
                   },
                   "client": {
                     "type": "string",
-                    "enum": [
-                      "web",
-                      "ios",
-                      "android",
-                      "server"
-                    ]
+                    "enum": ["web", "ios", "android", "server"]
                   },
                   "attempt": {
                     "type": "string"
@@ -1037,23 +907,15 @@
                         "minLength": 1
                       }
                     },
-                    "required": [
-                      "key"
-                    ],
+                    "required": ["key"],
                     "additionalProperties": false
                   },
                   "instance": {
                     "type": "string",
-                    "enum": [
-                      "first",
-                      "second"
-                    ]
+                    "enum": ["first", "second"]
                   }
                 },
-                "required": [
-                  "method",
-                  "path"
-                ],
+                "required": ["method", "path"],
                 "ref": "ConformanceRequest"
               },
               "expect": {
@@ -1088,9 +950,7 @@
                     "additionalProperties": {}
                   }
                 },
-                "required": [
-                  "status"
-                ],
+                "required": ["status"],
                 "ref": "ConformanceExpect"
               },
               "times": {
@@ -1142,17 +1002,11 @@
                     "minLength": 1
                   }
                 },
-                "required": [
-                  "match"
-                ],
+                "required": ["match"],
                 "additionalProperties": false
               }
             },
-            "required": [
-              "name",
-              "request",
-              "expect"
-            ],
+            "required": ["name", "request", "expect"],
             "additionalProperties": false,
             "ref": "ConformanceRequestStep"
           },
@@ -1176,16 +1030,10 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "to",
-                  "capture"
-                ]
+                "required": ["to", "capture"]
               }
             },
-            "required": [
-              "name",
-              "emailCode"
-            ],
+            "required": ["name", "emailCode"],
             "additionalProperties": false,
             "ref": "ConformanceEmailCodeStep"
           },
@@ -1212,16 +1060,10 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "to",
-                  "captureToken"
-                ]
+                "required": ["to", "captureToken"]
               }
             },
-            "required": [
-              "name",
-              "emailLink"
-            ],
+            "required": ["name", "emailLink"],
             "additionalProperties": false,
             "ref": "ConformanceEmailLinkStep"
           },
@@ -1260,10 +1102,7 @@
                         "type": "string"
                       }
                     },
-                    "required": [
-                      "name",
-                      "capture"
-                    ],
+                    "required": ["name", "capture"],
                     "additionalProperties": false
                   },
                   "subject": {
@@ -1284,17 +1123,11 @@
                     }
                   }
                 },
-                "required": [
-                  "to",
-                  "subjectContains"
-                ],
+                "required": ["to", "subjectContains"],
                 "additionalProperties": false
               }
             },
-            "required": [
-              "name",
-              "emailMessage"
-            ],
+            "required": ["name", "emailMessage"],
             "additionalProperties": false,
             "ref": "ConformanceEmailMessageStep"
           },
@@ -1335,17 +1168,11 @@
                     }
                   }
                 },
-                "required": [
-                  "to",
-                  "capture"
-                ],
+                "required": ["to", "capture"],
                 "additionalProperties": false
               }
             },
-            "required": [
-              "name",
-              "smsCode"
-            ],
+            "required": ["name", "smsCode"],
             "additionalProperties": false,
             "ref": "ConformanceSmsCodeStep"
           },
@@ -1369,16 +1196,10 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "secret",
-                  "capture"
-                ]
+                "required": ["secret", "capture"]
               }
             },
-            "required": [
-              "name",
-              "totp"
-            ],
+            "required": ["name", "totp"],
             "additionalProperties": false,
             "ref": "ConformanceTotpStep"
           },
@@ -1435,10 +1256,7 @@
                 "additionalProperties": false
               }
             },
-            "required": [
-              "name",
-              "oauth"
-            ],
+            "required": ["name", "oauth"],
             "additionalProperties": false,
             "ref": "ConformanceOAuthStep"
           },
@@ -1480,10 +1298,7 @@
                 "additionalProperties": false
               }
             },
-            "required": [
-              "name",
-              "sso"
-            ],
+            "required": ["name", "sso"],
             "additionalProperties": false,
             "ref": "ConformanceSsoStep"
           },
@@ -1535,17 +1350,11 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "audience",
-                  "capture"
-                ],
+                "required": ["audience", "capture"],
                 "additionalProperties": false
               }
             },
-            "required": [
-              "name",
-              "idToken"
-            ],
+            "required": ["name", "idToken"],
             "additionalProperties": false,
             "ref": "ConformanceIdTokenStep"
           },
@@ -1590,17 +1399,11 @@
                     "type": "boolean"
                   }
                 },
-                "required": [
-                  "authenticator",
-                  "capture"
-                ],
+                "required": ["authenticator", "capture"],
                 "additionalProperties": false
               }
             },
-            "required": [
-              "name",
-              "passkey"
-            ],
+            "required": ["name", "passkey"],
             "additionalProperties": false,
             "ref": "ConformancePasskeyStep"
           },
@@ -1668,22 +1471,15 @@
                         "maximum": 2
                       }
                     },
-                    "required": [
-                      "secret"
-                    ],
+                    "required": ["secret"],
                     "additionalProperties": false
                   }
                 },
-                "required": [
-                  "receiver"
-                ],
+                "required": ["receiver"],
                 "additionalProperties": false
               }
             },
-            "required": [
-              "name",
-              "webhook"
-            ],
+            "required": ["name", "webhook"],
             "additionalProperties": false,
             "ref": "ConformanceWebhookStep"
           },
@@ -1717,9 +1513,7 @@
                                 "const": "allow"
                               }
                             },
-                            "required": [
-                              "decision"
-                            ],
+                            "required": ["decision"],
                             "additionalProperties": false
                           },
                           {
@@ -1734,9 +1528,7 @@
                                 "pattern": "^[a-z0-9_]{1,64}$"
                               }
                             },
-                            "required": [
-                              "decision"
-                            ],
+                            "required": ["decision"],
                             "additionalProperties": false
                           }
                         ],
@@ -1751,17 +1543,11 @@
                               "type": "string"
                             },
                             "additionalProperties": {
-                              "type": [
-                                "string",
-                                "number",
-                                "boolean"
-                              ]
+                              "type": ["string", "number", "boolean"]
                             }
                           }
                         },
-                        "required": [
-                          "claims"
-                        ],
+                        "required": ["claims"],
                         "additionalProperties": false,
                         "ref": "HookClaimsAnswer"
                       },
@@ -1774,9 +1560,7 @@
                             "maximum": 599
                           }
                         },
-                        "required": [
-                          "status"
-                        ],
+                        "required": ["status"],
                         "additionalProperties": false
                       },
                       {
@@ -1795,9 +1579,7 @@
                           },
                           "body": {}
                         },
-                        "required": [
-                          "secret"
-                        ],
+                        "required": ["secret"],
                         "additionalProperties": false
                       },
                       {
@@ -1808,24 +1590,17 @@
                             "const": true
                           }
                         },
-                        "required": [
-                          "nothing"
-                        ],
+                        "required": ["nothing"],
                         "additionalProperties": false
                       }
                     ]
                   }
                 },
-                "required": [
-                  "receiver"
-                ],
+                "required": ["receiver"],
                 "additionalProperties": false
               }
             },
-            "required": [
-              "name",
-              "hook"
-            ],
+            "required": ["name", "hook"],
             "additionalProperties": false,
             "ref": "ConformanceHookStep"
           },
@@ -1841,10 +1616,7 @@
                 "ref": "Duration"
               }
             },
-            "required": [
-              "name",
-              "wait"
-            ],
+            "required": ["name", "wait"],
             "additionalProperties": false,
             "ref": "ConformanceWaitStep"
           }
@@ -1853,11 +1625,7 @@
       }
     }
   },
-  "required": [
-    "name",
-    "description",
-    "steps"
-  ],
+  "required": ["name", "description", "steps"],
   "additionalProperties": false,
   "ref": "ConformanceScenario"
 }

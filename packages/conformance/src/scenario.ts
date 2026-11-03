@@ -763,10 +763,9 @@ export const SsoStepSchema = z
         expectError: z.string().optional(),
       })
       .strict()
-      .refine(
-        (sso) => (sso.captureIssuer === undefined) !== (sso.authorizationUrl === undefined),
-        { message: 'an sso step takes either `captureIssuer` or `authorizationUrl`' }
-      ),
+      .refine((sso) => (sso.captureIssuer === undefined) !== (sso.authorizationUrl === undefined), {
+        message: 'an sso step takes either `captureIssuer` or `authorizationUrl`',
+      }),
   })
   .strict()
   .meta({ ref: 'ConformanceSsoStep' })

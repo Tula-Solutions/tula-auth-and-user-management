@@ -6,7 +6,6 @@ import {
   type AdminSession,
   type AuthenticationMethod,
   CUSTOM_CLAIMS_CLAIM,
-  SSO_CONNECTION_CLAIM,
   durationToMs,
   environmentIssuer,
   jwtTemplateOfProfile,
@@ -23,6 +22,7 @@ import {
   type SessionProfile,
   type SessionSettings,
   type SessionTokens,
+  SSO_CONNECTION_CLAIM,
 } from '@tula-tech/contract'
 import { SignJWT } from 'jose'
 import type { Deps, Tenant } from '~/dependencies'

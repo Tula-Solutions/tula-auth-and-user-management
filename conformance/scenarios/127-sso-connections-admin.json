@@ -189,9 +189,7 @@
           "issuer": "{{issuer}}",
           "clientId": "conformance-sso",
           "clientSecret": "conformance-sso-secret",
-          "domains": [
-            "s{{suffix}}.example"
-          ]
+          "domains": ["s{{suffix}}.example"]
         }
       },
       "expect": {
@@ -206,15 +204,11 @@
           "clientId": "conformance-sso",
           "clientSecretSet": true,
           "defaultRole": "member",
-          "domains": [
-            "s{{suffix}}.example"
-          ],
+          "domains": ["s{{suffix}}.example"],
           "createdAt": "$any",
           "updatedAt": "$any"
         },
-        "bodyExcludes": [
-          "conformance-sso-secret"
-        ]
+        "bodyExcludes": ["conformance-sso-secret"]
       },
       "capture": {
         "connectionId": "id"
@@ -234,9 +228,7 @@
           "status": "draft",
           "clientSecretSet": true
         },
-        "bodyExcludes": [
-          "conformance-sso-secret"
-        ]
+        "bodyExcludes": ["conformance-sso-secret"]
       }
     },
     {
@@ -256,9 +248,7 @@
             }
           ]
         },
-        "bodyExcludes": [
-          "conformance-sso-secret"
-        ]
+        "bodyExcludes": ["conformance-sso-secret"]
       }
     },
     {
@@ -268,9 +258,7 @@
         "path": "/v1/admin/sso-connections/{{connectionId}}",
         "auth": "secret",
         "body": {
-          "domains": [
-            "other-{{suffix}}.example"
-          ]
+          "domains": ["other-{{suffix}}.example"]
         }
       },
       "expect": {

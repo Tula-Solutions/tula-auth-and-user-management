@@ -189,9 +189,7 @@
           "issuer": "{{issuer}}",
           "clientId": "conformance-sso",
           "clientSecret": "conformance-sso-secret",
-          "domains": [
-            "s{{suffix}}.example"
-          ]
+          "domains": ["s{{suffix}}.example"]
         }
       },
       "expect": {
@@ -206,15 +204,11 @@
           "clientId": "conformance-sso",
           "clientSecretSet": true,
           "defaultRole": "member",
-          "domains": [
-            "s{{suffix}}.example"
-          ],
+          "domains": ["s{{suffix}}.example"],
           "createdAt": "$any",
           "updatedAt": "$any"
         },
-        "bodyExcludes": [
-          "conformance-sso-secret"
-        ]
+        "bodyExcludes": ["conformance-sso-secret"]
       },
       "capture": {
         "connectionId": "id"

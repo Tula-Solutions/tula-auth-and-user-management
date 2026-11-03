@@ -72,13 +72,13 @@ import * as Sessions from '~/modules/session/service'
 import * as Settings from '~/modules/settings/service'
 import * as Sms from '~/modules/sms/service'
 import * as Sso from '~/modules/sso/service'
-import type { SsoConnectionRecord } from '~/ports/sso-connection-store'
 import * as Users from '~/modules/user/service'
 import * as Verification from '~/modules/verification/service'
 import type { FlowAttemptRecord } from '~/ports/flow-attempt-store'
 import { CREDENTIAL_LOCKOUT, signInLockKey } from '~/ports/lockout'
 import { type OAuthProfile, OAuthProviderError } from '~/ports/oauth-provider'
 import { mergeAuthMethods } from '~/ports/session-store'
+import type { SsoConnectionRecord } from '~/ports/sso-connection-store'
 import type { UserRecord } from '~/ports/user-repository'
 import { sendAccountExistsNotice, sendNoAccountNotice, sendNoAccountSignInNotice } from './mailer'
 import { assertAccepts, nextStatus } from './transitions'
@@ -2481,7 +2481,16 @@ export async function exchangeOAuth(
   const redeemed = await redeemOAuthTicket(deps, tenant, input, 'sign_in', context)
   const { attempt, state, provider, connection, profile } = redeemed
   const result = connection
-    ? await completeExternalSignIn(deps, tenant, attempt, state, { connection }, profile, context, 'sso')
+    ? await completeExternalSignIn(
+        deps,
+        tenant,
+        attempt,
+        state,
+        { connection },
+        profile,
+        context,
+        'sso'
+      )
     : await completeExternalSignIn(
         deps,
         tenant,
@@ -2534,14 +2543,7 @@ export async function completeExternalSignIn(
   const { user, created } =
     typeof provider === 'string'
       ? await OAuth.resolveAccount(deps, tenant, provider, profile, context, state.client)
-      : await Sso.resolveAccount(
-          deps,
-          tenant,
-          provider.connection,
-          profile,
-          context,
-          state.client
-        )
+      : await Sso.resolveAccount(deps, tenant, provider.connection, profile, context, state.client)
   const strategy: FirstFactorStrategy =
     typeof provider === 'string' ? OAuth.strategyOf(provider) : 'sso'
   if (user.bannedAt !== null) {
