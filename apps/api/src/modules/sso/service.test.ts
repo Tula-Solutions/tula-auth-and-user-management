@@ -69,6 +69,8 @@ async function key() {
 beforeAll(async () => {
   await key()
   await key()
+  await key()
+  await key()
   server = Bun.serve({
     hostname: '127.0.0.1',
     port: 0,
@@ -216,10 +218,13 @@ async function setStatus(status: 'draft' | 'active' | 'disabled') {
 
 const HEADERS = { 'content-type': 'application/json', 'x-tula-publishable-key': PK }
 
+/** The `x-tula-client` of the requests; a test changes it to be a second device. */
+let clientKind = 'ios'
+
 async function post(path: string, body: unknown, headers: Record<string, string> = {}) {
   return app.request(path, {
     method: 'POST',
-    headers: { ...HEADERS, 'x-tula-client': 'ios', ...headers },
+    headers: { ...HEADERS, 'x-tula-client': clientKind, ...headers },
     body: JSON.stringify(body),
   })
 }
@@ -289,7 +294,7 @@ async function signedIn(email?: string) {
 
 async function codeOf(email?: string) {
   const { error, response } = await signIn(email)
-  return error ?? ((await response?.json()) as { code: string }).code
+  return error ?? ((await response?.json()) as { code: string } | undefined)?.code
 }
 
 async function seedUser(email: string, verified: boolean) {
@@ -379,7 +384,12 @@ describe('a sign-in through the connection', () => {
   })
 
   test('announces the new device and is in the session list', async () => {
-    const result = await signedIn()
+    // The account's first sign-in is never announced: the second, from another kind of device, is.
+    await signedIn()
+    clientKind = 'android'
+    const result = await signedIn().finally(() => {
+      clientKind = 'ios'
+    })
     await Notices.settled()
     expect(deps.mailer.outbox.some((mail) => mail.to === `ada@${DOMAIN}`)).toBe(true)
     const list = await app.request('/v1/client/sessions', {
@@ -512,7 +522,7 @@ describe('the ID token', () => {
     await signedIn()
     expect(idp.jwksFetches).toBe(2)
     // A key the fresh set does not have either: refused, with one more fetch and no more.
-    idp.published = [0]
+    idp.signer = 2
     expect(await codeOf()).toBe('sso.provider_error')
     expect(idp.jwksFetches).toBe(3)
   })
