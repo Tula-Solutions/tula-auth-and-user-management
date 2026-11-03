@@ -2580,6 +2580,36 @@ describe('organization members, roles and domains (ADR 0065, Orgs 07)', () => {
     expect(tula.state.status).toBe('signed-in')
   })
 
+  test('sso calls address the organization and the connection and send the bodies as given', async () => {
+    const w = world()
+    const C = '01980000-0000-7000-8000-000000000099'
+    const SSO = `${BASE}/sso-connections`
+    const connection = { id: C, organizationId: ORG, name: 'Okta', status: 'draft' }
+    w.api.on(`GET ${SSO}`, () => json(200, { connections: [connection] }))
+    w.api.on(`POST ${SSO}`, () => json(201, connection))
+    w.api.on(`GET ${SSO}/${C}`, () => json(200, connection))
+    w.api.on(`PATCH ${SSO}/${C}`, () => json(200, { ...connection, status: 'active' }))
+    w.api.on(`POST ${SSO}/${C}/refresh-metadata`, () => json(200, connection))
+    w.api.on(`DELETE ${SSO}/${C}`, () => new Response(null, { status: 204 }))
+    w.api.on(`GET ${SSO}/${C}/group-roles`, () => json(200, { mappings: [] }))
+    w.api.on(`PUT ${SSO}/${C}/group-roles`, (_req) => json(200, { mappings: [] }))
+    const { tula } = await signedIn(w)
+    const sso = tula.organizations.sso
+    expect(await sso.list(ORG)).toEqual({ connections: [connection] } as never)
+    const input = { name: 'Okta', protocol: 'oidc' } as never
+    expect(await sso.create(ORG, input)).toEqual(connection as never)
+    expect(w.api.calls(`POST ${SSO}`)[0]?.body).toEqual(input)
+    expect(await sso.get(ORG, C)).toEqual(connection as never)
+    expect(await sso.update(ORG, C, { status: 'active' })).toMatchObject({ status: 'active' })
+    expect(w.api.calls(`PATCH ${SSO}/${C}`)[0]?.body).toEqual({ status: 'active' })
+    expect(await sso.refreshMetadata(ORG, C)).toEqual(connection as never)
+    expect(await sso.remove(ORG, C)).toBeUndefined()
+    expect(await sso.groupRoles(ORG, C)).toEqual({ mappings: [] })
+    const mapping = { mappings: [{ group: 'eng', role: 'admin' }] }
+    await sso.setGroupRoles(ORG, C, mapping)
+    expect(w.api.calls(`PUT ${SSO}/${C}/group-roles`)[0]?.body).toEqual(mapping)
+  })
+
   test('domains list, start, verify, change the mode and remove', async () => {
     const w = world()
     const verified = {

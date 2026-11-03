@@ -389,6 +389,21 @@ export type OrganizationDomainList = Schemas['OrganizationDomainList']
 /** The body of `organizations.domains.start()`: the domain, an address on it and the mode. */
 export type StartOrganizationDomainInput = Schemas['StartOrganizationDomainRequest']
 
+/** An SSO connection of an organization, as its admins see it: never with the client secret. */
+export type OrganizationSsoConnection = Schemas['SsoConnection']
+
+/** An organization's SSO connections. */
+export type OrganizationSsoConnectionList = Schemas['SsoConnectionList']
+
+/** The body of `organizations.sso.create()`: the organization is the one of the call. */
+export type CreateOrganizationSsoConnectionInput = Schemas['CreateMySsoConnectionRequest']
+
+/** The fields `organizations.sso.update()` changes; an absent one is kept. */
+export type UpdateOrganizationSsoConnectionInput = Schemas['UpdateSsoConnectionRequest']
+
+/** An organization's IdP group to role mapping, in precedence order. */
+export type OrganizationSsoGroupRoles = Schemas['SsoGroupRoles']
+
 /** What `organizations.setActive()` answers: the session's active organization now. */
 export type ActiveOrganization = Schemas['ActiveOrganization']
 
