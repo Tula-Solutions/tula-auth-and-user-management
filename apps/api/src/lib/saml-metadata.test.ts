@@ -61,6 +61,13 @@ describe('parseIdpMetadata', () => {
     ).toBe('forbidden_xml')
   })
 
+  test('refuses a DTD before parsing it, even one the parser would choke on', () => {
+    expect(reason(() => parseIdpMetadata('<!DOCTYPE x [<!ENTITY e "&nope;">'))).toBe(
+      'forbidden_xml'
+    )
+    expect(reason(() => parseIdpMetadata('<!doctype x [<!ENTITY a "x">'))).toBe('forbidden_xml')
+  })
+
   test('refuses what is not usable metadata', () => {
     expect(reason(() => parseIdpMetadata('<nope'))).toBe('malformed')
     expect(reason(() => parseIdpMetadata('<a xmlns="urn:x"/>'))).toBe('malformed')

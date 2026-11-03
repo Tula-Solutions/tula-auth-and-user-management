@@ -206,6 +206,28 @@ export function forgetCached(): void {
   cache.clear()
 }
 
+/** The most documents and key sets kept: an operator-typed issuer must not grow memory without end. */
+export const CACHE_MAX_ENTRIES = 500
+
+/** How many documents and key sets are held now. For tests. */
+export function cachedCount(): number {
+  return cache.size
+}
+
+/** Keep a document, first dropping what has expired and, past the cap, the oldest. */
+function remember(url: string, value: Record<string, unknown>, now: number): void {
+  for (const [key, kept] of cache) {
+    if (kept.until <= now) {
+      cache.delete(key)
+    }
+  }
+  cache.delete(url)
+  while (cache.size >= CACHE_MAX_ENTRIES) {
+    cache.delete(cache.keys().next().value as string)
+  }
+  cache.set(url, { value, until: now + CACHE_MS })
+}
+
 async function getJson(
   deps: FetchDeps & Pick<Deps, 'clock'>,
   url: string,
@@ -227,7 +249,7 @@ async function getJson(
     throw refused('discovery', 'document', 'discovery_failed')
   }
   const value = parsed as Record<string, unknown>
-  cache.set(url, { value, until: now + CACHE_MS })
+  remember(url, value, now)
   return value
 }
 
@@ -486,9 +508,8 @@ export async function verifySaml(
     throw refused('saml', 'not_saml', 'malformed_response')
   }
   const { spEntityId, acsUrl } = samlUrls(deps.config, connection)
-  // The POST binding base64-encodes the document; the verifier reads the XML itself.
-  const xml = Buffer.from(samlResponse, 'base64').toString('utf8')
-  const verdict = await SamlVerifier.verify(deps, xml, {
+  // The verifier decodes the POST binding's base64 itself; decoding here too refused every real IdP.
+  const verdict = await SamlVerifier.verify(deps, samlResponse, {
     spEntityId,
     acsUrl,
     requestId,
