@@ -95,6 +95,11 @@ export const SetupConnectionUpdateSchema = z
   .partial()
   .meta({ ref: 'SetupConnectionUpdate' })
 
+/** The body that creates a SCIM token from the portal: the organization is the link's. */
+export const SetupScimTokenCreateSchema = z
+  .strictObject({ name: z.string().trim().min(1).max(100) })
+  .meta({ ref: 'SetupScimTokenCreate' })
+
 /** What the portal shows first: the organization, its verified domains and the link's life. */
 export const SetupPortalSchema = z
   .object({
@@ -115,5 +120,7 @@ export type CreateSetupLinkRequest = z.infer<typeof CreateSetupLinkRequestSchema
 export type SetupConnectionCreate = z.infer<typeof SetupConnectionCreateSchema>
 /** The body that changes a connection from the portal. */
 export type SetupConnectionUpdate = z.infer<typeof SetupConnectionUpdateSchema>
+/** The body that creates a SCIM token from the portal. */
+export type SetupScimTokenCreate = z.infer<typeof SetupScimTokenCreateSchema>
 /** What the portal shows first. */
 export type SetupPortal = z.infer<typeof SetupPortalSchema>

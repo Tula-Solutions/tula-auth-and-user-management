@@ -2,6 +2,7 @@ import type {
   SetupConnectionCreate,
   SetupConnectionUpdate,
   SetupPortal,
+  SetupScimTokenCreate,
   SsoConnection,
   SsoGroupRoles,
   SsoTestResult,
@@ -10,6 +11,7 @@ import type {
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, NotFoundError } from '~/exceptions'
 import type { Actor } from '~/lib/actor'
+import * as ScimTokens from '~/modules/scim-token/service'
 import * as SsoConnections from '~/modules/sso-connection/service'
 import * as SsoTests from '~/modules/sso-test/service'
 import { PORTAL_PATH } from './service'
@@ -106,6 +108,28 @@ export async function createConnection(
     { ...input, organizationId: scope.organizationId, defaultRole: 'member' },
     actor
   )
+}
+
+/**
+ * Create a SCIM token for the link's organization, so IT sets up provisioning in the same
+ * sitting. The secret is in this answer and nowhere else: the portal has no way to read it back.
+ *
+ * @param deps - What `ScimTokens.create` needs.
+ * @param tenant - The environment.
+ * @param scope - The link's organization; the request cannot name another.
+ * @param input - A name for the identity provider the token is given to.
+ * @param actor - The `setup_link` actor.
+ * @returns The token's view and its secret.
+ * @throws ConflictError when the organization holds the most live tokens allowed.
+ */
+export async function createScimToken(
+  deps: Parameters<typeof ScimTokens.create>[0],
+  tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
+  scope: Scope,
+  input: SetupScimTokenCreate,
+  actor: Actor
+): Promise<Awaited<ReturnType<typeof ScimTokens.create>>> {
+  return ScimTokens.create(deps, tenant, { organizationId: scope.organizationId, ...input }, actor)
 }
 
 /**

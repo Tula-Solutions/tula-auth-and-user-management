@@ -116,6 +116,12 @@ export const ACTIVITY_TYPES = [
   'setup_link.created',
   'setup_link.revoked',
   'user.scim_provisioned',
+  'user.scim_updated',
+  // A group a directory pushed (ADR 0067). Ids and field names only: a group's name is
+  // directory data and is never in an event.
+  'scim_group.created',
+  'scim_group.updated',
+  'scim_group.deleted',
   // An organization and its members (ADR 0065). The events carry ids and role keys only:
   // never the organization's name or slug, and never a member's address or name.
   'organization.created',
@@ -239,6 +245,10 @@ export const EVENT_TARGET_TYPES = {
   'setup_link.created': 'setup_link',
   'setup_link.revoked': 'setup_link',
   'user.scim_provisioned': 'user',
+  'user.scim_updated': 'user',
+  'scim_group.created': 'scim_group',
+  'scim_group.updated': 'scim_group',
+  'scim_group.deleted': 'scim_group',
   'organization.created': 'organization',
   'organization.updated': 'organization',
   'organization.deleted': 'organization',

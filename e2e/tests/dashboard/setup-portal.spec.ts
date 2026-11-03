@@ -174,3 +174,43 @@ test('a revoked link is shown as not valid', async ({ page, context }) => {
   await expect(page.getByText('This setup link is not valid')).toBeVisible()
   await expectScreenAccessible(page, 'setup portal, invalid link')
 })
+
+test('the portal shows a SCIM token once and never again', async ({ page, context }) => {
+  const organizations = await read<{ data: Row[] }>(page, '/v1/admin/organizations?size=100')
+  const organizationId = (
+    organizations.data.find((entry) => entry.slug === 'sso-setup-portal') as Row
+  ).id
+  const created = await page.request.post(`${API_URL}/v1/admin/setup-links`, {
+    headers: DASHBOARD,
+    data: { organizationId, name: 'Scim', expiresInDays: 7 },
+  })
+  expect(created.status()).toBe(201)
+  const link = (await created.json()) as { url: string }
+  await context.clearCookies()
+  await page.goto(link.url)
+  await expect(page.getByText(/Set up single sign-on for SSO Org/)).toBeVisible()
+
+  await page.getByLabel('Token name').fill('Okta')
+  await page.getByRole('button', { name: 'Create a SCIM token' }).click()
+  const shown = page.getByText(/^tula_scim_/)
+  await expect(shown).toBeVisible()
+  const secret = (await shown.textContent()) ?? ''
+  expect(secret).toMatch(/^tula_scim_[0-9a-f]{32}_/)
+  await expectScreenAccessible(page, 'setup portal, SCIM token shown')
+  expect(page.url()).not.toContain(secret)
+  expect(await page.evaluate(() => JSON.stringify([localStorage, sessionStorage]))).not.toContain(
+    secret
+  )
+
+  // The token opens this organization's directory.
+  const users = await page.request.get(`${API_URL}/v1/scim/v2/Users`, {
+    headers: { authorization: `Bearer ${secret}` },
+  })
+  expect(users.status()).toBe(200)
+
+  // The link's address no longer carries a token after the first load, so a reload is a
+  // link that is not valid, and the secret is gone with the page either way.
+  await page.reload()
+  await expect(page.getByText(secret)).toHaveCount(0)
+  expect(await page.content()).not.toContain(secret)
+})

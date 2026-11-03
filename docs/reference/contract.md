@@ -8756,6 +8756,26 @@ What the portal shows first: the organization, its verified domains and the link
 const SetupPortalSchema
 ```
 
+### `SetupScimTokenCreate`
+
+_type_, defined in `packages/contract/src/sso-setup-link.ts`
+
+The body that creates a SCIM token from the portal.
+
+```ts
+export type SetupScimTokenCreate = z.infer<typeof SetupScimTokenCreateSchema>
+```
+
+### `SetupScimTokenCreateSchema`
+
+_constant_, defined in `packages/contract/src/sso-setup-link.ts`
+
+The body that creates a SCIM token from the portal: the organization is the link's.
+
+```ts
+const SetupScimTokenCreateSchema: z.ZodObject<{ name: z.ZodString; }, z.core.$strict>
+```
+
 ### `SignInMethod`
 
 _type_, defined in `packages/contract/src/environment-settings.ts`

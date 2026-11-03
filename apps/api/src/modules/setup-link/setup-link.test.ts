@@ -538,3 +538,58 @@ describe('setup portal', () => {
     }
   })
 })
+
+describe('setup portal SCIM token', () => {
+  const create = (token: string, value: unknown = { name: 'Okta' }) =>
+    portal(token, '/scim-tokens', { method: 'POST', ...body(value) })
+
+  test('creates the link’s organization’s token once, no-store, recorded as the setup link', async () => {
+    const o = await org()
+    const made = await link(o.id)
+    const res = await create(made.token)
+    expect(res.status).toBe(201)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    const created = (await res.json()) as { token: string; organizationId: string; id: string }
+    expect(created.organizationId).toBe(o.id)
+    expect(created.token).toStartWith('tula_scim_')
+    const entries = deps.activityLog.entries.filter((e) => e.type === 'scim_token.created')
+    expect(entries).toHaveLength(1)
+    expect(entries[0]?.actor).toMatchObject({ type: 'setup_link', id: made.id })
+    expect(JSON.stringify(entries)).not.toContain(created.token)
+    // The portal never reads a secret back: it has no list, and its view carries none.
+    expect((await portal(made.token, '/scim-tokens')).status).toBe(404)
+    expect(JSON.stringify(await (await portal(made.token)).json())).not.toContain(created.token)
+  })
+
+  test('the organization cannot be chosen by the request', async () => {
+    const mine = await org()
+    const theirs = await org('globex')
+    const made = await link(mine.id)
+    const res = await create(made.token, { name: 'Okta', organizationId: theirs.id })
+    expect(res.status).toBe(422)
+    expect(await deps.scim.listTokens(TENANT.environmentId, theirs.id)).toHaveLength(0)
+  })
+
+  test('refuses a missing name, a stranger, a full organization and a revoked link', async () => {
+    const o = await org()
+    const made = await link(o.id)
+    expect((await create(made.token, {})).status).toBe(422)
+    expect((await create('nope')).status).toBe(401)
+    for (let i = 0; i < 10; i++) {
+      expect((await create(made.token, { name: `t${i}` })).status).toBe(201)
+    }
+    expect((await create(made.token)).status).toBe(409)
+    await SetupLinks.revoke(deps, TENANT, o.id, made.id, TEST_ACTOR)
+    expect((await create(made.token)).status).toBe(401)
+  })
+
+  test('the new token opens its own organization’s directory', async () => {
+    const o = await org()
+    const made = await link(o.id)
+    const created = (await (await create(made.token)).json()) as { token: string }
+    const res = await createApp(deps).request('/v1/scim/v2/Users', {
+      headers: { authorization: `Bearer ${created.token}` },
+    })
+    expect(res.status).toBe(200)
+  })
+})

@@ -5,6 +5,8 @@ import { z } from 'zod'
 
 /** The schema URN of a User resource. */
 export const USER_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:User'
+/** The schema URN of a Group resource. */
+export const GROUP_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:Group'
 /** The schema URN of a list answer. */
 export const LIST_SCHEMA = 'urn:ietf:params:scim:api:messages:2.0:ListResponse'
 /** The schema URN of an error answer. */
@@ -62,6 +64,8 @@ export const ScimListQuerySchema = z.object({
   filter: z.string().max(500).optional(),
   startIndex: z.coerce.number().int().optional(),
   count: z.coerce.number().int().optional(),
+  /** Entra asks for `members` to be left out of a group list. */
+  excludedAttributes: z.string().max(200).optional(),
 })
 
 /** A User resource as this server answers. */
@@ -74,4 +78,27 @@ export interface ScimUserResource {
   emails: Array<{ value: string; primary: true }>
   active: boolean
   meta: { resourceType: 'User'; created: string; lastModified: string }
+}
+
+/** A Group as an identity provider creates or replaces it. Unknown attributes are ignored. */
+export const ScimGroupInputSchema = z.looseObject({
+  displayName: z.string().trim().min(1).max(256),
+  externalId: z.string().min(1).max(255).nullish(),
+  members: z
+    .array(z.looseObject({ value: z.string().min(1).max(64) }))
+    .max(10000)
+    .optional(),
+})
+
+/** The input of a Group create or replace. */
+export type ScimGroupInput = z.infer<typeof ScimGroupInputSchema>
+
+/** A Group resource as this server answers. */
+export interface ScimGroupResource {
+  schemas: [typeof GROUP_SCHEMA]
+  id: string
+  externalId?: string
+  displayName: string
+  members?: Array<{ value: string }>
+  meta: { resourceType: 'Group'; created: string; lastModified: string }
 }

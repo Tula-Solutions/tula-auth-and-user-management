@@ -487,6 +487,27 @@ export class MemoryUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
+  async setNames(
+    environmentId: string,
+    userId: string,
+    names: { firstName: string | null; lastName: string | null },
+    _at: Date,
+    recorded: Recorded
+  ): Promise<UserRecord | null> {
+    const activity = activityOf(recorded)
+    const user = this.#user(environmentId, userId)
+    if (!user) {
+      return null
+    }
+    if (user.firstName !== names.firstName || user.lastName !== names.lastName) {
+      user.firstName = names.firstName
+      user.lastName = names.lastName
+      this.#activityLog.record(activity ? [activity] : [])
+    }
+    return { ...user }
+  }
+
+  /** @inheritdoc */
   async findByPhoneNumber(
     environmentId: string,
     phoneNumber: string,

@@ -2,6 +2,7 @@ import {
   SetupConnectionCreateSchema,
   SetupConnectionUpdateSchema,
   SetupPortalSchema,
+  SetupScimTokenCreateSchema,
   SsoConnectionSchema,
   SsoGroupRolesSchema,
   SsoTestResultSchema,
@@ -15,12 +16,16 @@ import { validationHook } from '~/handlers'
 import { setupLinkActor } from '~/lib/actor'
 import { byEnvironment, byIp, rateLimit } from '~/middleware/rate-limit'
 import { SETUP_IP_RATE_LIMIT, setupLink } from '~/middleware/setup-link'
+import { CreatedScimTokenSchema } from '~/modules/scim-token/schema'
 import { SsoConnectionIdParamSchema, SsoTestIdParamSchema } from '~/modules/sso-connection/schema'
 import * as openapi from '~/openapi'
 import * as Portal from './portal'
 
 /** Metadata refreshes a minute per environment: each one makes the server call an address. */
 const REFRESH_RATE_LIMIT = 10
+
+/** SCIM tokens a minute per environment: each one is a credential handed out. */
+const SCIM_TOKEN_RATE_LIMIT = 20
 
 /** Test sign-ins a minute per environment: each one makes the server call the provider. */
 const TEST_RATE_LIMIT = 20
@@ -112,6 +117,45 @@ router.post(
       setupLinkActor(c)
     )
     return c.json(SsoConnectionSchema.parse(created), 201)
+  }
+)
+
+router.post(
+  '/scim-tokens',
+  describeRoute({
+    operationId: 'createSetupScimToken',
+    tags: ['SSO setup links'],
+    summary: 'Create a SCIM token for the link’s organization',
+    description:
+      'The organization is the link’s. The secret is in this answer and nowhere else; the ' +
+      `portal cannot list or read a token. Limited to ${SCIM_TOKEN_RATE_LIMIT} a minute per environment.`,
+    security: openapi.security.setup,
+    responses: {
+      201: { description: 'The token and its secret.', content: json(CreatedScimTokenSchema) },
+      409: openapi.responses[409],
+      413: openapi.responses[413],
+      ...errors,
+    },
+  }),
+  noStore,
+  ipLimit,
+  setupLink(),
+  rateLimit({
+    name: 'setup_scim_token',
+    limit: SCIM_TOKEN_RATE_LIMIT,
+    window: '1m',
+    key: byEnvironment,
+  }),
+  validator('json', SetupScimTokenCreateSchema, validationHook),
+  async (c) => {
+    const created = await Portal.createScimToken(
+      c.get('deps'),
+      c.get('tenant'),
+      c.get('setupLink'),
+      c.req.valid('json'),
+      setupLinkActor(c)
+    )
+    return c.json(CreatedScimTokenSchema.parse(created), 201)
   }
 )
 

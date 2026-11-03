@@ -8,14 +8,17 @@ import {
   organizationMemberships,
   organizations,
   proposals,
+  scimGroups,
   scimTokens,
   scimUsers,
   setupLinks,
   ssoConnectionDomains,
   ssoConnections,
   ssoIdentities,
+  users,
   withTenant,
 } from '@tula-tech/db'
+
 import { and, eq, sql } from 'drizzle-orm'
 import { describeActivityLog } from '~/adapters/activity-log.suite'
 import { describeEnvironmentSettingsStore } from '~/adapters/environment-settings-store.suite'
@@ -285,6 +288,69 @@ describeOrganizationDomainStore('Postgres on a real server', async () => {
   }
 })
 
+// The SCIM store, groups included, on a real server: the unique name of a group in an
+// organization, the cascade from a user to their memberships, and the tenant boundary.
+describeScimStore('Postgres on a real server', async () => {
+  const [a, b] = [await database.tenant(), await database.tenant('production')]
+  return {
+    store: new PostgresScimStore(db),
+    recorded: async () =>
+      (await log.listAudit(a.environmentId, { page: 1, size: 200 })).entries
+        .map((entry) => entry.type)
+        .reverse(),
+    organization: async (tenant) => {
+      const id = Bun.randomUUIDv7()
+      await withTenant(db, tenant.environmentId, (tx) =>
+        tx.insert(organizations).values({
+          id,
+          projectId: tenant.projectId,
+          environmentId: tenant.environmentId,
+          name: 'Acme',
+          slug: `acme-${id.slice(-8)}`,
+        })
+      )
+      return id
+    },
+    user: (tenant) =>
+      withTenant(db, tenant.environmentId, async (tx) => {
+        const id = Bun.randomUUIDv7()
+        await tx.insert(users).values({
+          id,
+          projectId: tenant.projectId,
+          environmentId: tenant.environmentId,
+          email: `${id}@acme.test`,
+          emailNormalized: `${id}@acme.test`,
+        })
+        return id
+      }),
+    a: { projectId: a.projectId, environmentId: a.environmentId },
+    b: { projectId: b.projectId, environmentId: b.environmentId },
+  }
+})
+
+test('row-level security hides another environment’s SCIM group from a direct query', async () => {
+  const { a, b } = await tenants()
+  const organizationId = Bun.randomUUIDv7()
+  await withTenant(db, a.environmentId, async (tx) => {
+    await tx.insert(organizations).values({
+      id: organizationId,
+      projectId: a.projectId,
+      environmentId: a.environmentId,
+      name: 'Acme',
+      slug: `acme-${organizationId.slice(-8)}`,
+    })
+    await tx.insert(scimGroups).values({
+      id: Bun.randomUUIDv7(),
+      projectId: a.projectId,
+      environmentId: a.environmentId,
+      organizationId,
+      displayName: 'Engineering',
+    })
+  })
+  expect(await withTenant(db, b.environmentId, (tx) => tx.select().from(scimGroups))).toEqual([])
+  expect(await db.select().from(scimGroups)).toEqual([])
+})
+
 // Fresh tenants per test, for the same reason. On a real server the duplicate delivery of one
 // endpoint and event is a wait on the unique index, and the insert for an endpoint that was
 // just removed is the foreign key's own refusal.
@@ -430,21 +496,6 @@ describeSsoConnectionStore('Postgres on a real server', async () => {
   const [a, b] = [await database.tenant(), await database.tenant('production')]
   return {
     store: new PostgresSsoConnectionStore(db),
-    recorded: async () =>
-      (await log.listAudit(a.environmentId, { page: 1, size: 50 })).entries
-        .map((entry) => entry.type)
-        .reverse(),
-    organization: seedOrganization,
-    user: async (tenant) => (tenant.environmentId === a.environmentId ? a : b).user(),
-    a: { projectId: a.projectId, environmentId: a.environmentId },
-    b: { projectId: b.projectId, environmentId: b.environmentId },
-  }
-})
-
-describeScimStore('Postgres on a real server', async () => {
-  const [a, b] = [await database.tenant(), await database.tenant('production')]
-  return {
-    store: new PostgresScimStore(db),
     recorded: async () =>
       (await log.listAudit(a.environmentId, { page: 1, size: 50 })).entries
         .map((entry) => entry.type)

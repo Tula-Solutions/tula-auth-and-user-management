@@ -171,6 +171,47 @@ describe('the setup portal', () => {
     spy.mockRestore()
   })
 
+  test('creates a SCIM token, shows it once, keeps it out of storage and drops it on a reload', async () => {
+    openAt(`#token=${TOKEN}`)
+    const secret = 'tula_scim_00000000000000000000000000000000_scimsecretvalue0123456789'
+    const { calls, spy } = stubFetch((call) =>
+      call.method === 'POST' && call.url === '/v1/setup/scim-tokens'
+        ? {
+            status: 201,
+            body: {
+              id: CONNECTION_ID,
+              organizationId: CONNECTION_ID,
+              name: 'Okta',
+              prefix: 'tula_scim_0000',
+              lastUsedAt: null,
+              revokedAt: null,
+              createdAt: '2026-01-01T00:00:00.000Z',
+              token: secret,
+            },
+          }
+        : { status: 200, body: portal([]) }
+    )
+    const user = userEvent.setup()
+    const first = render(<SetupScreen />)
+    await screen.findByText(/Set up single sign-on for Acme/)
+    expect(document.body.textContent).not.toContain('scimsecretvalue')
+    await user.type(screen.getByLabelText('Token name'), 'Okta')
+    await user.click(screen.getByRole('button', { name: 'Create a SCIM token' }))
+    await screen.findByText(secret)
+    expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ name: 'Okta' })
+    expect(JSON.stringify({ ...localStorage })).not.toContain('scimsecretvalue')
+    expect(JSON.stringify({ ...sessionStorage })).not.toContain('scimsecretvalue')
+    expect(window.location.href).not.toContain('scimsecretvalue')
+    // Leaving the page loses it; the portal has no way to read it back.
+    first.unmount()
+    resetSetup()
+    openAt(`#token=${TOKEN}`)
+    render(<SetupScreen />)
+    await screen.findByText(/Set up single sign-on for Acme/)
+    expect(document.body.textContent).not.toContain('scimsecretvalue')
+    spy.mockRestore()
+  })
+
   test('a call without a held token is refused before any request', async () => {
     const { calls, spy } = stubFetch(() => ({ status: 200, body: {} }))
     await expect(setupRequest('')).rejects.toMatchObject({ code: 'auth.invalid_key' })

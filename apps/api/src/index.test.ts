@@ -336,6 +336,7 @@ describe('documentation routes', () => {
       '/v1/client/me/organizations/{id}/setup-links/{linkId}',
       '/v1/setup',
       '/v1/setup/connections',
+      '/v1/setup/scim-tokens',
       '/v1/setup/connections/{id}',
       '/v1/setup/connections/{id}/refresh-metadata',
       '/v1/setup/connections/{id}/group-roles',

@@ -9,9 +9,12 @@ import { byIp, rateLimit } from '~/middleware/rate-limit'
 import { SCIM_IP_RATE_LIMIT, type ScimVariables, scimToken } from '~/middleware/scim-token'
 import * as Organizations from '~/modules/organization/service'
 import { invalidValue, ScimError } from './errors'
+import * as Groups from './groups'
 import {
   ERROR_SCHEMA,
+  GROUP_SCHEMA,
   LIST_SCHEMA,
+  ScimGroupInputSchema,
   ScimListQuerySchema,
   ScimPatchSchema,
   ScimUserInputSchema,
@@ -129,6 +132,55 @@ router.delete('/Users/:id', async (c) => {
   return c.body(null, 204)
 })
 
+router.get('/Groups', async (c) => {
+  const query = ScimListQuerySchema.safeParse(c.req.query())
+  if (!query.success) {
+    throw invalidValue('startIndex and count are whole numbers.')
+  }
+  return answer(c, await Groups.list(c.get('deps'), context(c), query.data))
+})
+
+router.post('/Groups', async (c) =>
+  answer(
+    c,
+    await Groups.create(c.get('deps'), context(c), await bodyOf(c, ScimGroupInputSchema)),
+    201
+  )
+)
+
+router.get('/Groups/:id', async (c) =>
+  answer(c, await Groups.get(c.get('deps'), context(c), c.req.param('id')))
+)
+
+router.put('/Groups/:id', async (c) =>
+  answer(
+    c,
+    await Groups.replace(
+      c.get('deps'),
+      context(c),
+      c.req.param('id'),
+      await bodyOf(c, ScimGroupInputSchema)
+    )
+  )
+)
+
+router.patch('/Groups/:id', async (c) =>
+  answer(
+    c,
+    await Groups.patch(
+      c.get('deps'),
+      context(c),
+      c.req.param('id'),
+      (await bodyOf(c, ScimPatchSchema)).Operations
+    )
+  )
+)
+
+router.delete('/Groups/:id', async (c) => {
+  await Groups.remove(c.get('deps'), context(c), c.req.param('id'))
+  return c.body(null, 204)
+})
+
 const USER_TYPE = {
   schemas: ['urn:ietf:params:scim:schemas:core:2.0:ResourceType'],
   id: 'User',
@@ -167,6 +219,44 @@ const USER_DEFINITION = {
   ],
 }
 
+const GROUP_TYPE = {
+  schemas: ['urn:ietf:params:scim:schemas:core:2.0:ResourceType'],
+  id: 'Group',
+  name: 'Group',
+  endpoint: '/Groups',
+  schema: GROUP_SCHEMA,
+}
+
+const GROUP_DEFINITION = {
+  schemas: ['urn:ietf:params:scim:schemas:core:2.0:Schema'],
+  id: GROUP_SCHEMA,
+  name: 'Group',
+  description: 'A group of an organization’s directory, mapped to organization roles.',
+  attributes: [
+    {
+      name: 'displayName',
+      type: 'string',
+      multiValued: false,
+      required: true,
+      mutability: 'readWrite',
+    },
+    {
+      name: 'externalId',
+      type: 'string',
+      multiValued: false,
+      required: false,
+      mutability: 'readWrite',
+    },
+    {
+      name: 'members',
+      type: 'complex',
+      multiValued: true,
+      required: false,
+      mutability: 'readWrite',
+    },
+  ],
+}
+
 const listOf = (resources: unknown[]) => ({
   schemas: [LIST_SCHEMA],
   totalResults: resources.length,
@@ -194,8 +284,8 @@ router.get('/ServiceProviderConfig', (c) =>
   })
 )
 
-router.get('/ResourceTypes', (c) => answer(c, listOf([USER_TYPE])))
-router.get('/Schemas', (c) => answer(c, listOf([USER_DEFINITION])))
+router.get('/ResourceTypes', (c) => answer(c, listOf([USER_TYPE, GROUP_TYPE])))
+router.get('/Schemas', (c) => answer(c, listOf([USER_DEFINITION, GROUP_DEFINITION])))
 
 // The group's middleware sets the tenant and `scim` variables, so inside it the handlers see
 // them; the app mounts every router as `Hono<AppEnv>`, whose variables are those it starts with.
