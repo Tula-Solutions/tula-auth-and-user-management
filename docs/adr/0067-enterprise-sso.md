@@ -157,6 +157,31 @@ entry out of the stream.
 - [ADR 0050](0050-native-type-generation.md): native types will be generated for the SSO
   operations once their routes exist.
 
+## Review amendments (Phase 4)
+
+- **The portal cannot map a privileged role.** Through a setup link a group may be mapped only to a
+  role holding no `org:sys:*` permission; anything else is refused `sso.role_not_allowed` (403), and an
+  existing privileged mapping is shown read-only (`locked`). The operator and an organization admin with
+  `org:sys:sso:manage` can map any role. A leaked link must not let its holder make their own provider
+  group organization admins.
+- **One default role.** A SCIM-provisioned member in no mapped group gets the role a sign-in would give:
+  the default role of the organization's active connection (else the most recently tested, else `member`).
+- **Managed users are locked from the client.** While a user is managed by a connection or by a directory,
+  client routes that change the email address or the password are refused with a contract code. Admin
+  routes still can.
+- **Enforcement covers sign-up, verification and password reset.** On an enforced domain sign-up is
+  refused (`auth.method_disabled`); a reset email goes only to a break-glass member, and the answers do
+  not reveal which address exists.
+- **A connection can be deleted after use** when it is a draft or disabled; its identities and domain
+  bindings go with it and its users keep their accounts.
+- **SCIM may change the email of a user its directory manages**, only to an address on the organization's
+  verified domains and unique in the environment (409 otherwise), audited without the address.
+- **No audit-export trailer.** Trailers cannot be read from browser `fetch` or most HTTP clients, so the
+  resume cursor is derived from the last row (`auditExportCursor`; `tula audit export` prints it). The
+  export records `audit.exported` up front and again, finished, with the count.
+- **One weakening rule.** `ssoWeakenings` in `@tula-tech/contract` is the rule; the server's audit
+  `weakened` flag and the dashboard's confirmation both use it.
+
 ## Enforced connections, the break-glass role and MFA trust (TULA-140)
 
 - **Enforcement is by domain.** An active connection with `enforced: true` removes every

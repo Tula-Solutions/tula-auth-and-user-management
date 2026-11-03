@@ -12,6 +12,9 @@ this file under "Area rules" and does not repeat it. A section named in a senten
 
 ## Dashboard app (`apps/dashboard`, see ADR 0032)
 
+- **The one exception is the setup portal** (`features/setup`, route `/setup`): a page with no
+  account that calls `/v1/setup/*` with the link's token in memory through `setupRequest`
+  (`setup-api.ts`), never a generated hook, never `dashboardFetch`, and never storing the token.
 - **Every API call goes through an Orval-generated hook and `dashboardFetch`**
   (`src/api/mutator.ts`): `x-tula-dashboard: 1`, the cookie, never `Authorization`, the
   selected environment on admin calls, and one error type (`ApiError`). A 401
