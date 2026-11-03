@@ -1,5 +1,7 @@
 import {
+  CreateSetupLinkRequestSchema,
   CreateSsoConnectionRequestSchema,
+  type SetupLink,
   type SsoConnection,
   UpdateSsoConnectionRequestSchema,
 } from '@tula-tech/contract'
@@ -37,6 +39,8 @@ export interface FakeSsoConnection extends SsoConnection {
 /** The part of the fake's state the SSO routes work on. */
 export interface FakeSsoState {
   ssoConnections: FakeSsoConnection[]
+  /** The setup links, with the environment each belongs to. */
+  setupLinks: (SetupLink & { environmentId: string })[]
   /** When the certificate of a SAML connection made through the fake ends. */
   ssoCertificateEnd: string
 }
@@ -331,6 +335,72 @@ export function ssoRoutes(
           return failure(409, 'sso.connection_in_use', 'People have signed in through it.')
         }
         state.ssoConnections = state.ssoConnections.filter((entry) => entry !== connection)
+        return new Response(null, { status: 204 })
+      },
+    ],
+    [
+      'GET',
+      /^\/v1\/admin\/setup-links$/,
+      (call) => {
+        if (!context.enabled()) {
+          return off()
+        }
+        const organizationId = call.search.get('organizationId')
+        return {
+          links: state.setupLinks
+            .filter(
+              (entry) =>
+                entry.environmentId === environmentOf(call) &&
+                entry.organizationId === organizationId
+            )
+            .map(({ environmentId: _environmentId, ...link }) => link),
+        }
+      },
+    ],
+    [
+      'POST',
+      /^\/v1\/admin\/setup-links$/,
+      (call) => {
+        if (!context.enabled()) {
+          return off()
+        }
+        const body = CreateSetupLinkRequestSchema.safeParse(call.body ?? {})
+        if (!body.success) {
+          return invalid(body.error)
+        }
+        const id = `0190a000-0000-7000-8000-${String(state.setupLinks.length + 1).padStart(12, '0')}`
+        const token = `tula_setup_${environmentOf(call).replaceAll('-', '')}_fake${id.slice(-4)}`
+        const link = {
+          id,
+          organizationId: body.data.organizationId,
+          name: body.data.name,
+          prefix: token.slice(0, 16),
+          expiresAt: new Date(Date.now() + body.data.expiresInDays * 86_400_000).toISOString(),
+          revokedAt: null,
+          lastUsedAt: null,
+          createdAt: NOW,
+        }
+        state.setupLinks.unshift({ ...link, environmentId: environmentOf(call) })
+        return new Response(
+          JSON.stringify({ ...link, token, url: `${SP_BASE}/dashboard/setup#token=${token}` }),
+          { status: 201, headers: { 'content-type': 'application/json' } }
+        )
+      },
+    ],
+    [
+      'DELETE',
+      /^\/v1\/admin\/setup-links\/([^/]+)$/,
+      (call, match) => {
+        if (!context.enabled()) {
+          return off()
+        }
+        const link = state.setupLinks.find(
+          (entry) => entry.id === match[1] && entry.environmentId === environmentOf(call)
+        )
+        if (!link) {
+          return failure(404, 'resource.not_found', 'The setup link does not exist.')
+        }
+        link.revokedAt = NOW
         return new Response(null, { status: 204 })
       },
     ],

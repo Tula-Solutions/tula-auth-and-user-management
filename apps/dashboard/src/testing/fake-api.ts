@@ -393,6 +393,7 @@ function initialState(): FakeState {
     invitations: [],
     domains: [],
     ssoConnections: [],
+    setupLinks: [],
     ssoCertificateEnd: '2027-10-23T12:00:00.000Z',
     proposals: [],
     proposalNow: NOW,
