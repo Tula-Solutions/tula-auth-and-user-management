@@ -4005,7 +4005,7 @@
           },
           "changed": {
             "minItems": 1,
-            "maxItems": 8,
+            "maxItems": 11,
             "type": "array",
             "items": {
               "type": "string",
@@ -4016,6 +4016,9 @@
                 "clientSecret",
                 "saml",
                 "defaultRole",
+                "enforced",
+                "breakGlassRole",
+                "trustIdpMfa",
                 "domains",
                 "status"
               ]
@@ -14529,6 +14532,18 @@
           "defaultRole": {
             "type": "string"
           },
+          "enforced": {
+            "type": "boolean"
+          },
+          "breakGlassRole": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "trustIdpMfa": {
+            "type": "boolean"
+          },
           "domains": {
             "type": "array",
             "items": {
@@ -14557,6 +14572,9 @@
           "clientSecretSet",
           "saml",
           "defaultRole",
+          "enforced",
+          "breakGlassRole",
+          "trustIdpMfa",
           "domains",
           "createdAt",
           "updatedAt"
@@ -14697,6 +14715,22 @@
           },
           "defaultRole": {
             "$ref": "#/components/schemas/OrganizationRoleKey"
+          },
+          "enforced": {
+            "type": "boolean"
+          },
+          "breakGlassRole": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrganizationRoleKey"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "trustIdpMfa": {
+            "type": "boolean"
           },
           "domains": {
             "maxItems": 20,

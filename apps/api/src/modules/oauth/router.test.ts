@@ -18,10 +18,11 @@ import { base32Decode, totp } from '~/lib/totp'
 import * as Audit from '~/modules/audit/service'
 import * as Notices from '~/modules/notice/service'
 import { OAUTH_INVALID_PAGE } from '~/modules/oauth/router'
+import * as Organizations from '~/modules/organization/service'
 import * as DeviceBinding from '~/modules/session/device-binding'
 import { OAuthProviderError } from '~/ports/oauth-provider'
 import type { OAuthProviderRecord } from '~/ports/oauth-provider-store'
-import { createTestDeps, seedApiKey, TEST_TENANT, type TestDeps } from '~/testing'
+import { createTestDeps, seedApiKey, TEST_ACTOR, TEST_TENANT, type TestDeps } from '~/testing'
 import { DPOP_HEADER, generateSoftwareDeviceKey, jwkThumbprint, proofFor } from '~/testing/proofs'
 
 const PK = 'tula_pk_dev_publishable0000000000000000000'
@@ -1619,5 +1620,86 @@ describe('an OAuth sign-in bound to a device key (ADR 0043)', () => {
     )
     expect(res.status).toBe(401)
     expect((await json<{ code: string }>(res)).code).toBe('device.proof_invalid')
+  })
+})
+
+describe('a provider sign-in on an SSO-enforced domain (TULA-140)', () => {
+  const tenant = { projectId: TEST_TENANT.projectId, environmentId: TEST_TENANT.environmentId }
+
+  /** An organization with a verified domain and an active connection, enforced or not. */
+  async function connect(enforced: boolean) {
+    await saveSettings({
+      organizations: { enabled: true },
+      urls: { allowedRedirectUrls: [REDIRECT] },
+      sso: { enabled: true },
+    })
+    const organization = await Organizations.create(
+      deps,
+      tenant,
+      { name: 'Northline', slug: 'northline' },
+      TEST_ACTOR
+    )
+    const none = Audit.none('fixture')
+    const now = deps.clock.now()
+    const domainId = Bun.randomUUIDv7()
+    await deps.organizationDomains.claim(
+      {
+        id: domainId,
+        ...tenant,
+        organizationId: organization.id,
+        domain: 'northline.app',
+        mode: 'suggest',
+        codeHash: 'h',
+        codeExpiresAt: new Date(now.getTime() + 60_000),
+        at: now,
+        limit: 10,
+      },
+      none
+    )
+    await deps.organizationDomains.verify(
+      tenant.environmentId,
+      organization.id,
+      domainId,
+      'h',
+      now,
+      new Date(now.getTime() + 86_400_000),
+      none
+    )
+    await deps.ssoConnections.insert(
+      {
+        id: Bun.randomUUIDv7(),
+        ...tenant,
+        organizationId: organization.id,
+        protocol: 'oidc',
+        name: 'Okta',
+        status: 'active',
+        issuer: 'https://idp.example.test',
+        clientId: 'client',
+        clientSecretSealed: 'sealed',
+        saml: null,
+        defaultRole: 'member',
+        enforced,
+        breakGlassRole: null,
+        trustIdpMfa: false,
+        domains: ['northline.app'],
+        createdAt: now,
+        updatedAt: now,
+      },
+      none
+    )
+  }
+
+  test('control: the provider signs the domain in while it is not enforced', async () => {
+    await connect(false)
+    deps.oauth.google.profile = { subject: 'g-1', email: EMAIL, emailVerified: true }
+    expect((await signInWith()).res.status).toBe(200)
+  })
+
+  test('an enforced domain refuses the provider, whatever address it reports', async () => {
+    await connect(true)
+    deps.oauth.google.profile = { subject: 'g-1', email: EMAIL, emailVerified: true }
+    const { res } = await signInWith()
+    expect(await codeOf(res)).toBe('auth.method_disabled')
+    expect(await deps.users.findByEmail(TEST_TENANT.environmentId, EMAIL)).toBeNull()
   })
 })

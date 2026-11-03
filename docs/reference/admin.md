@@ -2164,6 +2164,9 @@ export interface Schemas {
     clientSecretSet: boolean
     saml: Schemas['SamlConnection'] | null
     defaultRole: string
+    enforced: boolean
+    breakGlassRole: string | null
+    trustIdpMfa: boolean
     domains: string[]
     createdAt: string
     updatedAt: string
@@ -2220,7 +2223,7 @@ export interface Schemas {
   }
   SsoConnectionUpdatedEventData: {
     protocol: 'oidc' | 'saml'
-    changed: ('name' | 'issuer' | 'clientId' | 'clientSecret' | 'saml' | 'defaultRole' | 'domains' | 'status')[]
+    changed: ('name' | 'issuer' | 'clientId' | 'clientSecret' | 'saml' | 'defaultRole' | 'enforced' | 'breakGlassRole' | 'trustIdpMfa' | 'domains' | 'status')[]
     status: 'draft' | 'active' | 'disabled'
     weakened?: boolean
   }
@@ -2265,6 +2268,9 @@ export interface Schemas {
     clientSecret?: string
     saml?: Schemas['SamlSettingsInput']
     defaultRole?: Schemas['OrganizationRoleKey']
+    enforced?: boolean
+    breakGlassRole?: Schemas['OrganizationRoleKey'] | null
+    trustIdpMfa?: boolean
     domains?: Schemas['OrganizationDomainName'][]
     status?: 'draft' | 'active' | 'disabled'
   }

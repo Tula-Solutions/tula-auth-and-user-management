@@ -7989,7 +7989,7 @@ _constant_, defined in `packages/contract/src/sso.ts`
 The fields of a connection an update can change; the event names them, never a value.
 
 ```ts
-const SSO_CONNECTION_FIELDS: readonly ["name", "issuer", "clientId", "clientSecret", "saml", "defaultRole", "domains", "status"]
+const SSO_CONNECTION_FIELDS
 ```
 
 ### `SSO_CONNECTION_STATUSES`

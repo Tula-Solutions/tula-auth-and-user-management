@@ -56,6 +56,8 @@ describe('conformance scenarios, in process', () => {
       'attempt binding',
       'sso saml sign-in',
       'sso saml replay refused',
+      'sso enforcement removes the other first factors of a domain',
+      'sso trust in the provider for two-step verification',
       'email code sign-in',
       'email link sign-in',
       'passwordless sign-up',
