@@ -49,7 +49,13 @@ test('create an organization, see it active on the server, manage it', async ({
   await expect(page).toHaveURL(/\/team\/profile$/)
 
   const tabs = page.getByRole('tablist', { name: 'Organization settings' })
-  await expect(tabs.getByRole('tab')).toHaveText(['General', 'Members', 'Invitations', 'Domains'])
+  await expect(tabs.getByRole('tab')).toHaveText([
+    'General',
+    'Members',
+    'Invitations',
+    'Domains',
+    'Single sign-on',
+  ])
   await accessibleInBothSchemes(page, 'organization profile: general')
   await page.getByLabel('Name', { exact: true }).fill(`${name} Inc`)
   await page.getByRole('button', { name: 'Save changes' }).click()
