@@ -798,3 +798,26 @@ describe('what the adapter is handed', () => {
     }
   )
 })
+
+describe('the shared completion of an external sign-in', () => {
+  test('records the proven method it is given, not a fixed one', async () => {
+    const { id } = await started()
+    const attempt = await deps.flowAttempts.findById(TEST_TENANT.environmentId, id)
+    if (attempt === null) {
+      throw new Error('the started attempt is missing')
+    }
+    const result = await Flows.completeExternalSignIn(
+      deps,
+      { ...TEST_TENANT, apiKeyId: 'key-test' },
+      attempt,
+      attempt.state as Parameters<typeof Flows.completeExternalSignIn>[3],
+      'google',
+      { subject: 'saml-subject-1', email: EMAIL, emailVerified: true },
+      { client: 'android', userAgent: null, ipAddress: null, originAllowed: true },
+      'saml'
+    )
+    expect(result.attempt.step.status).toBe('complete')
+    const claims = decodeJwt<AccessTokenClaims>(result.tokens?.accessToken as string)
+    expect(claims.amr).toEqual(['saml'])
+  })
+})
