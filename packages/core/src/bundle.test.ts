@@ -157,8 +157,11 @@ import { join } from 'node:path'
  * Single sign-on (TULA-138) added its twelve error codes and the `sso` first factor: 264 bytes, from
  * 18,821 to 19,085, and its start operation 13 more, to 19,098. The budget moved by exactly those,
  * to 19,102: the room is the 4 bytes it was.
+ * `flow.startSso` (TULA-141: the start step, the kept binding and the redirect, on the OAuth
+ * round trip's own functions) added 105 bytes, from 19,098 to 19,203. The budget moved by
+ * exactly those 105 bytes, to 19,207: the room is the 4 bytes it was.
  */
-const GZIP_BUDGET_BYTES = 19_102
+const GZIP_BUDGET_BYTES = 19_207
 
 async function bundle(source: string): Promise<string> {
   const built = await Bun.build({
