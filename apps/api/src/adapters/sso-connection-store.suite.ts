@@ -136,6 +136,17 @@ export function describeSsoConnectionStore(
       expect(await ctx.recorded()).toEqual(['sso_connection.created'])
     })
 
+    test('lists the whole environment when no organization is named', async () => {
+      const other = await ctx.organization(ctx.a)
+      const one = connection(ctx.a, org, { name: 'one', domains: ['one.test'] })
+      const two = connection(ctx.a, other, { name: 'two', domains: ['two.test'] })
+      await insert(one)
+      await insert(two)
+      const ids = (await ctx.store.list(ctx.a.environmentId)).map((r) => r.id).sort()
+      expect(ids).toEqual([one.id, two.id].sort())
+      expect(await ctx.store.list(ctx.b.environmentId)).toEqual([])
+    })
+
     test('another environment sees nothing', async () => {
       const record = connection(ctx.a, org)
       await insert(record)

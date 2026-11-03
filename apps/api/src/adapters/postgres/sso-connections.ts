@@ -73,7 +73,7 @@ export class PostgresSsoConnectionStore implements SsoConnectionStore {
   }
 
   /** @inheritdoc */
-  async list(environmentId: string, organizationId: string): Promise<SsoConnectionRecord[]> {
+  async list(environmentId: string, organizationId?: string): Promise<SsoConnectionRecord[]> {
     return withTenant(this.db, environmentId, async (tx) =>
       this.#withDomains(
         tx,
@@ -83,7 +83,9 @@ export class PostgresSsoConnectionStore implements SsoConnectionStore {
           .where(
             and(
               eq(ssoConnections.environmentId, environmentId),
-              eq(ssoConnections.organizationId, organizationId)
+              organizationId === undefined
+                ? undefined
+                : eq(ssoConnections.organizationId, organizationId)
             )
           )
           .orderBy(asc(ssoConnections.createdAt), asc(ssoConnections.id))

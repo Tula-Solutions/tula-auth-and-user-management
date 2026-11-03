@@ -8998,10 +8998,10 @@ export type SsoConnectionField = (typeof SSO_CONNECTION_FIELDS)[number]
 
 _constant_, defined in `packages/contract/src/sso-connection.ts`
 
-The query of the list route: the organization whose connections to list.
+The query of the list route: the organization whose connections to list; left out, the whole environment's.
 
 ```ts
-const SsoConnectionListQuerySchema: z.ZodObject<{ organizationId: z.ZodUUID; }, z.core.$strip>
+const SsoConnectionListQuerySchema: z.ZodObject<{ organizationId: z.ZodOptional<z.ZodUUID>; }, z.core.$strip>
 ```
 
 ### `SsoConnectionListSchema`

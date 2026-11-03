@@ -70,6 +70,7 @@ describe('Instance.diagnostics', () => {
       'native_app_identities',
       'native_app_files',
       'native_app_passkeys',
+      'sso_connections',
     ])
     // No native app is registered.
     for (const id of ['native_app_identities', 'native_app_files', 'native_app_passkeys']) {

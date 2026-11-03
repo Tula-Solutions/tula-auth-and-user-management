@@ -51,6 +51,7 @@ let app: ReturnType<typeof createApp>
 let dir: string
 /** The organization `seed()` makes, for the organization tools' arguments. */
 let seededOrganizationId = ''
+let seededSsoConnectionId = ''
 const closers: (() => Promise<void>)[] = []
 
 beforeEach(async () => {
@@ -249,6 +250,7 @@ async function seed() {
       ...current.settings,
       app: { ...current.settings.app, name: 'Northline' },
       organizations: { ...current.settings.organizations, enabled: true },
+      sso: { enabled: true },
     },
     { 'if-match': `"${current.revision}"` }
   )
@@ -259,6 +261,26 @@ async function seed() {
   })
   expect(organization.status).toBe(201)
   seededOrganizationId = ((await organization.json()) as { id: string }).id
+  seededSsoConnectionId = deps.ids.next()
+  await deps.ssoConnections.insert(
+    {
+      id: seededSsoConnectionId,
+      ...tenant,
+      organizationId: seededOrganizationId,
+      protocol: 'oidc',
+      name: 'Acme SSO',
+      status: 'active',
+      issuer: 'https://idp.example.test',
+      clientId: 'CANARY-sso-client-id',
+      clientSecretSealed: 'CANARY-sealed-secret',
+      saml: null,
+      defaultRole: 'member',
+      domains: [],
+      createdAt: deps.clock.now(),
+      updatedAt: deps.clock.now(),
+    },
+    Audit.none('fixture')
+  )
   const membership = await admin(
     'POST',
     `/v1/admin/organizations/${seededOrganizationId}/memberships`,
@@ -281,6 +303,8 @@ async function seed() {
     CREDENTIAL_ID,
     PUBLIC_KEY,
     'CANARY-user-handle',
+    'CANARY-sso-client-id',
+    'CANARY-sealed-secret',
     GOOGLE_SECRET,
     session.accessToken,
     session.refreshToken,
@@ -311,6 +335,8 @@ const args = (
   list_organizations: {},
   list_organization_members: { organizationId: seededOrganizationId },
   list_organization_roles: {},
+  list_sso_connections: {},
+  get_sso_connection: { connectionId: seededSsoConnectionId },
   run_doctor: {},
   propose_ban_user: { userId },
   propose_unban_user: { userId },
@@ -398,7 +424,9 @@ describe('tula mcp against the real API', () => {
     const updated = (audit.structured.data as { action: string; metadata: object }[]).find(
       (entry) => entry.action === 'environment.settings_updated'
     )
-    expect(updated?.metadata).toMatchObject({ changed: ['app.name', 'organizations.enabled'] })
+    expect(updated?.metadata).toMatchObject({
+      changed: ['app.name', 'organizations.enabled', 'sso.enabled'],
+    })
     const filtered = await call(client, 'list_audit_entries', { action: 'session.created' })
     expect((filtered.structured.data as unknown[]).length).toBe(1)
 
@@ -506,7 +534,7 @@ describe('tula mcp against the real API', () => {
     )
     for (const request of w.requests.filter((one) => one.startsWith('GET '))) {
       expect(request).toMatch(
-        /^GET \/v1\/(admin\/(settings|users(\/[^/]+(\/(authentication|sessions))?)?|audit-logs|oauth-providers|organizations(\/[^/]+\/memberships)?|organization-roles)|instance\/diagnostics|status)$/
+        /^GET \/v1\/(admin\/(settings|users(\/[^/]+(\/(authentication|sessions))?)?|audit-logs|oauth-providers|organizations(\/[^/]+\/memberships)?|organization-roles|sso-connections(\/[^/]+)?)|instance\/diagnostics|status)$/
       )
     }
   })
@@ -1176,7 +1204,7 @@ describe('tula mcp: the wire', () => {
     // Nothing went through the CLI's own standard output writer either.
     expect(w.stdout()).toBe('')
     expect(w.stderr()).toContain(
-      'tula mcp: 20 tools; one changes live data while it runs (test_signin, where the environment allows it). Read tools: configured. Propose tools: not configured.'
+      'tula mcp: 22 tools; one changes live data while it runs (test_signin, where the environment allows it). Read tools: configured. Propose tools: not configured.'
     )
     expect(w.stderr()).toContain('tula mcp: list_users ok')
     expect(run.wire() + w.stderr()).not.toContain(SECRET_KEY)

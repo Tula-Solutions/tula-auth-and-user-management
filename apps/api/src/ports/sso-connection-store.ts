@@ -77,10 +77,10 @@ export interface SsoIdentityRecord {
 export interface SsoConnectionStore {
   /**
    * @param environmentId - The environment.
-   * @param organizationId - The organization whose connections to list.
-   * @returns Its connections, oldest first.
+   * @param organizationId - The organization whose connections to list; omitted, the whole environment's.
+   * @returns The connections, oldest first.
    */
-  list(environmentId: string, organizationId: string): Promise<SsoConnectionRecord[]>
+  list(environmentId: string, organizationId?: string): Promise<SsoConnectionRecord[]>
 
   /**
    * @param environmentId - The environment.

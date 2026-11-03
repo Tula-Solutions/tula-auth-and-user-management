@@ -41,9 +41,13 @@ export class MemorySsoConnectionStore implements SsoConnectionStore {
   }
 
   /** @inheritdoc */
-  async list(environmentId: string, organizationId: string): Promise<SsoConnectionRecord[]> {
+  async list(environmentId: string, organizationId?: string): Promise<SsoConnectionRecord[]> {
     return [...this.#records.values()]
-      .filter((one) => one.environmentId === environmentId && one.organizationId === organizationId)
+      .filter(
+        (one) =>
+          one.environmentId === environmentId &&
+          (organizationId === undefined || one.organizationId === organizationId)
+      )
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || (a.id < b.id ? -1 : 1))
       .map((one) => structuredClone(one))
   }

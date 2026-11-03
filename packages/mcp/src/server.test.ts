@@ -32,6 +32,7 @@ import {
   TEST_PROPOSAL_ID,
   TEST_SECRET_KEY,
   TEST_SESSION_ID,
+  TEST_SSO_CONNECTION_ID,
   TEST_THROWAWAY_USER_ID,
   TEST_USER_ID,
   withCanaries,
@@ -59,6 +60,8 @@ const SAMPLE_ARGS: Record<string, Record<string, unknown>> = {
   list_organizations: { page: 1, size: 20 },
   list_organization_members: { organizationId: TEST_ORGANIZATION_ID, page: 1, size: 100 },
   list_organization_roles: {},
+  list_sso_connections: { organizationId: TEST_ORGANIZATION_ID },
+  get_sso_connection: { connectionId: TEST_SSO_CONNECTION_ID },
   run_doctor: {},
   propose_ban_user: { userId: TEST_USER_ID },
   propose_unban_user: { userId: TEST_USER_ID },
@@ -531,6 +534,34 @@ describe('the read tools', () => {
         },
       ],
     })
+  })
+
+  test('list_sso_connections and get_sso_connection: status, protocol, domains and certificate expiry; no address, key or fingerprint', async () => {
+    const { client, requests } = await world()
+    const list = await callTool(client, 'list_sso_connections', SAMPLE_ARGS.list_sso_connections)
+    expect(requests[0]?.path).toBe('/v1/admin/sso-connections')
+    expect(requests[0]?.search).toBe(`?organizationId=${TEST_ORGANIZATION_ID}`)
+    const one = await callTool(client, 'get_sso_connection', SAMPLE_ARGS.get_sso_connection)
+    expect(requests[1]?.path).toBe(`/v1/admin/sso-connections/${TEST_SSO_CONNECTION_ID}`)
+    const expected = {
+      id: TEST_SSO_CONNECTION_ID,
+      organizationId: TEST_ORGANIZATION_ID,
+      protocol: 'saml',
+      name: 'Acme Okta',
+      status: 'active',
+      defaultRole: 'member',
+      domains: ['acme.example'],
+      saml: { certificates: [{ notAfter: '2027-01-01T00:00:00.000Z', expired: false }] },
+      createdAt: '2026-02-01T00:00:00.000Z',
+      updatedAt: '2026-02-02T00:00:00.000Z',
+    }
+    expect(list.structured.connections).toEqual([expected])
+    expect(one.structured).toEqual(expected)
+    for (const raw of [list.raw, one.raw]) {
+      for (const canary of ['canary', 'idp-', 'fingerprint', 'auth.example.com', 'issuer']) {
+        expect(raw).not.toContain(canary)
+      }
+    }
   })
 
   test('list_organization_members: users by id and role key, never by address', async () => {
@@ -1259,6 +1290,8 @@ describe('nothing is changed', () => {
       /^\/v1\/admin\/organizations$/,
       /^\/v1\/admin\/organizations\/[^/]+\/memberships$/,
       /^\/v1\/admin\/organization-roles$/,
+      /^\/v1\/admin\/sso-connections$/,
+      /^\/v1\/admin\/sso-connections\/[^/]+$/,
     ]
     expect(allowed).toHaveLength(READ_OPERATIONS.length)
     expect(requests.length).toBeGreaterThanOrEqual(READ_OPERATIONS.length)

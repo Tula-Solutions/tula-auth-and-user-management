@@ -218,7 +218,7 @@ describe('no native app', () => {
     for (const id of NATIVE_IDS) {
       expect(byId(result.checks, id)).toEqual({ id, status: 'skipped', summary: SKIPPED_NONE })
     }
-    expect(result.checks.map((check) => check.id).slice(-3)).toEqual([...NATIVE_IDS])
+    expect(result.checks.map((check) => check.id).slice(-4, -1)).toEqual([...NATIVE_IDS])
     expect(settingsRead).toBe(0)
     expect(diagnostics.requested).toEqual([`${PUBLIC_URL}/v1/status`])
   })
