@@ -129,6 +129,16 @@ describe('SCIM Users: create, get, list', () => {
     expect(got.body.id).toBe(created.body.id)
   })
 
+  test('active as the string "False" (Entra) is a deactivated user; a word that is no boolean is a 400', async () => {
+    const entra = await scim('POST', '/Users', okta('lee@acme.test', { active: 'False' }))
+    expect(entra.status).toBe(201)
+    expect(entra.body.active).toBe(false)
+    expect(await members(entra.body.id)).toBe(0)
+    const bad = await scim('POST', '/Users', okta('kim@acme.test', { active: 'maybe' }))
+    expect(bad.status).toBe(400)
+    expect(bad.body.scimType).toBe('invalidValue')
+  })
+
   test('a duplicate userName or externalId is a SCIM 409 uniqueness', async () => {
     await provision()
     const same = await scim('POST', '/Users', okta('MAYA@acme.test', { externalId: 'other' }))

@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { DEFAULT_ENVIRONMENT_SETTINGS, SCIM_TOKEN_PREFIX } from '@tula-tech/contract'
 import { Hono } from 'hono'
 import type { AppEnv } from '~/dependencies'
 import { onError } from '~/handlers'
 import { createApp } from '~/index'
+import * as logger from '~/lib/logger'
 import { scimToken } from '~/middleware/scim-token'
 import * as Organizations from '~/modules/organization/service'
 import * as ScimTokens from '~/modules/scim-token/service'
@@ -225,6 +226,17 @@ describe('scimToken middleware', () => {
     expect((await deps.scim.listTokens(TENANT.environmentId, o.id))[0]?.lastUsedAt).toEqual(
       deps.clock.now()
     )
+  })
+
+  test('a failed write of the last use never fails a valid request', async () => {
+    const { token: secret } = await token()
+    const touch = spyOn(deps.scim, 'touchToken').mockRejectedValue(new Error('db down'))
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {})
+    const res = await guarded().request('/', bearer(secret))
+    expect(res.status).toBe(200)
+    expect(warn).toHaveBeenCalledTimes(1)
+    touch.mockRestore()
+    warn.mockRestore()
   })
 
   test('a revoked, unknown, malformed or foreign key is the same 401', async () => {
