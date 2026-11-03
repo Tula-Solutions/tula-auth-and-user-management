@@ -606,8 +606,8 @@ test('SSO, SCIM and setup-link tables on a real server: another environment’s 
     ).toEqual([])
     expect(await db.select({ id: table.id }).from(table)).toEqual([])
     // And its writes find no row to change or delete. The group-role mapping has no UPDATE
-    // grant at all (it is replaced, migration 0053), so only its delete is tried.
-    if (table !== organizationGroupRoles) {
+    // grant at all (it is replaced, migration 0053), so only its delete is tried (a SCIM group's members likewise: select, insert, delete).
+    if (table !== organizationGroupRoles && table !== scimGroupMembers) {
       expect(
         await withTenant(db, b.environmentId, (tx) =>
           tx
