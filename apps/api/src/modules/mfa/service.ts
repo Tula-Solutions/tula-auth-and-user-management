@@ -470,6 +470,48 @@ type ConfirmDeps = Pick<
 >
 
 /**
+ * Take back an enrolment that was confirmed but whose response (the backup codes) cannot reach
+ * the user, so nobody is left with a second factor whose codes they never saw.
+ *
+ * Recorded as `user.mfa_disabled`, `method: 'enrolment_incomplete'`, pairing the `mfa_enabled`
+ * entry the confirmation wrote. Never throws: if the undo fails too, it is logged.
+ *
+ * @param deps - Factor store, ids and clock.
+ * @param scope - The project and environment.
+ * @param userId - The user.
+ * @param factorId - The factor this request confirmed; a factor enrolled since is left alone.
+ * @param actor - Who is recorded as having removed it.
+ */
+export async function undoEnrolment(
+  deps: ConfirmDeps,
+  scope: Scope,
+  userId: string,
+  factorId: string,
+  actor: Actor
+): Promise<void> {
+  try {
+    await deps.factors.removeForUser(
+      scope.environmentId,
+      userId,
+      Audit.entry(deps, scope, {
+        type: 'user.mfa_disabled',
+        actor,
+        target: { type: 'user', id: userId },
+        data: { method: 'enrolment_incomplete' },
+      }),
+      factorId
+    )
+  } catch (undo) {
+    // Both failed: the factor is on and its codes were never shown. The user signs in with
+    // the authenticator and makes new codes, or an administrator resets them.
+    logger.warn('could not undo an enrolment whose attempt did not complete', {
+      environmentId: scope.environmentId,
+      err: undo instanceof Error ? undo.name : 'unknown',
+    })
+  }
+}
+
+/**
  * Confirm a started enrolment with the code the authenticator app shows, turning two-step
  * verification on.
  *
@@ -575,13 +617,15 @@ export async function confirmTotp(
   // Again, now that the factor is on: a session created between the snapshot and the
   // confirmation (the first sweep took only the snapshot) must not outlive it. Fails closed
   // (ADR 0016): a session that never proved the factor must not survive it being on. The
-  // flow's caller undoes the enrolment on this error.
   try {
     await sweep()
   } catch {
     try {
       await sweep()
     } catch (error) {
+      // As the flow's confirmation does when its attempt cannot complete: the codes were never
+      // shown, so the factor goes again and the user enrols afresh.
+      await undoEnrolment(deps, scope, userId, factor.id, actor)
       throw new ServiceUnavailableError({
         internalMessage: `could not end the sessions after turning two-step verification on: ${error instanceof Error ? error.name : 'unknown'}`,
       })

@@ -532,6 +532,28 @@ describe('confirmTotp', () => {
         ((await confirm(user.id, codeFor(secret)).catch((e) => e)) as { code: string }).code
       ).toBe('service.unavailable')
     })
+
+    test('two failures on the profile path undo the enrolment; a fresh enrolment then confirms', async () => {
+      const user = await seedUser()
+      const { secret } = await Mfa.startTotp(deps, tenant, user.id)
+      const real = deps.sessions.revokeByUser.bind(deps.sessions)
+      let calls = 0
+      const spy = spyOn(deps.sessions, 'revokeByUser').mockImplementation((...args) => {
+        if (++calls >= 2) {
+          throw new Error('store down')
+        }
+        return real(...args)
+      })
+      spies.push(spy)
+      expect(
+        ((await confirm(user.id, codeFor(secret)).catch((e) => e)) as { code: string }).code
+      ).toBe('service.unavailable')
+      expect(await Mfa.status(deps, tenant, user.id)).toMatchObject({ totp: { enabled: false } })
+      expect(deps.activityLog.ofType('user.mfa_disabled')).toHaveLength(1)
+      spy.mockRestore()
+      const again = await Mfa.startTotp(deps, tenant, user.id)
+      expect((await confirm(user.id, codeFor(again.secret))).codes).toHaveLength(10)
+    })
   })
 
   test('the codes still reach the user when the enrolling session cannot be marked', async () => {
