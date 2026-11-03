@@ -60,7 +60,7 @@ describe('rateLimit', () => {
     expect((await from('203.0.113.7')).status).toBe(429)
   })
 
-  test('buckets by environment after key resolution and skips when there is none', async () => {
+  test('buckets by environment after key resolution and fails a route that mounts it before one', async () => {
     const deps = createTestDeps()
     const key = 'tula_pk_dev_publishable0000000000000000000'
     await seedApiKey(deps, key)
@@ -71,8 +71,10 @@ describe('rateLimit', () => {
     const keyed = () => app.request('/test/keyed', { headers: { [PUBLISHABLE_KEY_HEADER]: key } })
     expect((await keyed()).status).toBe(200)
     expect((await keyed()).status).toBe(429)
-    expect((await app.request('/test/open')).status).toBe(200)
-    expect((await app.request('/test/open')).status).toBe(200)
+    // Placed before the key middleware it would count nothing, for ever: that is a bug in the
+    // route, so it fails the request instead of silently skipping the limit.
+    expect((await app.request('/test/open')).status).toBe(500)
+    expect((await app.request('/test/open')).status).toBe(500)
   })
 })
 

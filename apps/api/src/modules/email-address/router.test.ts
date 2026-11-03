@@ -775,3 +775,47 @@ describe('what is written down', () => {
     expect(JSON.stringify(added()[0])).toContain(TEST_ACTOR.ipAddress as string)
   })
 })
+
+describe('an account an identity provider manages (decision 11)', () => {
+  /** The account as the store holds it, plus the mark of a manager. */
+  async function managed(mark: { managedByConnectionId?: string; managedByDirectoryId?: string }) {
+    const session = await signIn('2244994946')
+    const record = await stored(session.userId)
+    const find = spyOn(deps.users, 'findById').mockResolvedValue(record && { ...record, ...mark })
+    return { session, find }
+  }
+
+  test.each([
+    ['a live connection', { managedByConnectionId: 'c1' }],
+    ['a directory with a live token', { managedByDirectoryId: 'o1' }],
+  ])('%s: both routes answer user.managed and nothing is sent or stored', async (_name, mark) => {
+    const { session, find } = await managed(mark)
+    const connection = spyOn(deps.ssoConnections, 'find').mockResolvedValue({} as never)
+    const tokens = spyOn(deps.scim, 'listTokens').mockResolvedValue([{ revokedAt: null }] as never)
+    deps.mailer.outbox.length = 0
+    try {
+      const answers = [await ask(session.accessToken), await confirm(session.accessToken, '123456')]
+      for (const res of answers) {
+        expect(res.status).toBe(403)
+        expect(await codeOf(res)).toBe('user.managed')
+      }
+      expect(deps.mailer.outbox).toEqual([])
+      expect(await pending(session.userId)).toBeNull()
+    } finally {
+      find.mockRestore()
+      connection.mockRestore()
+      tokens.mockRestore()
+    }
+  })
+
+  test('a deleted connection manages no one', async () => {
+    const { session, find } = await managed({ managedByConnectionId: 'c1' })
+    const connection = spyOn(deps.ssoConnections, 'find').mockResolvedValue(null)
+    try {
+      expect((await ask(session.accessToken)).status).toBe(200)
+    } finally {
+      find.mockRestore()
+      connection.mockRestore()
+    }
+  })
+})
