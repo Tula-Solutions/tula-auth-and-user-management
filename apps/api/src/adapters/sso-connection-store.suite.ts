@@ -57,6 +57,7 @@ export function describeSsoConnectionStore(
       clientSecretSealed: 'sealed',
       defaultRole: 'member',
       domains: ['acme.test'],
+      testedFingerprint: null,
       createdAt: now,
       updatedAt: now,
       ...overrides,
@@ -200,6 +201,19 @@ export function describeSsoConnectionStore(
       })
       expect(await ctx.store.findActiveByDomain(ctx.a.environmentId, 'acme.test')).toBeNull()
       expect(await ctx.store.findActiveByDomain(ctx.a.environmentId, 'new.test')).not.toBeNull()
+    })
+
+    test('a test mark is stored by an update and kept by the next one', async () => {
+      const record = connection(ctx.a, org)
+      await insert(record)
+      expect(
+        (await update(record.id, { testedFingerprint: 'abc' })) as SsoConnectionRecord
+      ).toMatchObject({
+        testedFingerprint: 'abc',
+      })
+      expect(await update(record.id, { name: 'Renamed' })).toMatchObject({
+        testedFingerprint: 'abc',
+      })
     })
 
     test('SAML settings round-trip with each certificate expiry, and an update replaces them', async () => {

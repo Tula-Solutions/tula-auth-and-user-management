@@ -32,6 +32,7 @@ export const SSO_CONNECTION_FIELDS = [
   'defaultRole',
   'domains',
   'status',
+  'test',
 ] as const
 
 /** One of {@link SSO_CONNECTION_FIELDS}. */

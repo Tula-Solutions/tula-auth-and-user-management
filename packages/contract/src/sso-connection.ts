@@ -111,6 +111,8 @@ export const SsoConnectionSchema = z
     saml: SamlConnectionViewSchema.nullable(),
     defaultRole: z.string(),
     domains: z.array(z.string()),
+    /** Whether a test sign-in has passed against the current settings: required to activate. */
+    tested: z.boolean(),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
   })

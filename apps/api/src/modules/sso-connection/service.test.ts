@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { DEFAULT_ENVIRONMENT_SETTINGS } from '@tula-tech/contract'
+import { FakeOutbound } from '~/adapters/memory/outbound'
 import { MOCK_SAML_KEYS } from '~/adapters/oauth/mock-saml'
 import { createApp } from '~/index'
 import * as Audit from '~/modules/audit/service'
@@ -12,6 +13,7 @@ import {
   TEST_TENANT,
   type TestDeps,
 } from '~/testing'
+import { passTest } from '~/testing/sso-tested'
 
 const SK = 'tula_sk_dev_secret000000000000000000000000'
 const AK = 'tula_ak_dev_agent000000000000000000000000000000'
@@ -163,6 +165,8 @@ describe('SSO connection admin service', () => {
     await verified(o.id, 'acme.test')
     const first = await Sso.create(deps, TENANT, input(o.id), TEST_ACTOR)
     const second = await Sso.create(deps, TENANT, input(o.id, { name: 'Other' }), TEST_ACTOR)
+    await passTest(deps, TENANT, first.id, TEST_ACTOR)
+    await passTest(deps, TENANT, second.id, TEST_ACTOR)
     await Sso.update(deps, TENANT, first.id, { status: 'active' }, TEST_ACTOR)
     const entry = deps.activityLog.entries.findLast((e) => e.type === 'sso_connection.updated')
     expect(entry?.data).toMatchObject({ changed: ['status'], status: 'active', weakened: true })
@@ -170,6 +174,35 @@ describe('SSO connection admin service', () => {
     await expect(
       Sso.update(deps, TENANT, second.id, { status: 'active' }, TEST_ACTOR)
     ).rejects.toMatchObject({ code: 'sso.domain_taken' })
+  })
+
+  test('activation is refused without a passing test, and after a change that follows one', async () => {
+    const o = await org()
+    await verified(o.id, 'acme.test')
+    const c = await Sso.create(deps, TENANT, input(o.id), TEST_ACTOR)
+    expect(c.tested).toBe(false)
+    await expect(
+      Sso.update(deps, TENANT, c.id, { status: 'active' }, TEST_ACTOR)
+    ).rejects.toMatchObject({ code: 'sso.test_required' })
+    await passTest(deps, TENANT, c.id, TEST_ACTOR)
+    expect((await Sso.get(deps, TENANT, c.id)).tested).toBe(true)
+    const changed = await Sso.update(deps, TENANT, c.id, { clientId: 'client-2' }, TEST_ACTOR)
+    expect(changed.tested).toBe(false)
+    await expect(
+      Sso.update(deps, TENANT, c.id, { status: 'active' }, TEST_ACTOR)
+    ).rejects.toMatchObject({ code: 'sso.test_required' })
+    await passTest(deps, TENANT, c.id, TEST_ACTOR)
+    const active = await Sso.update(deps, TENANT, c.id, { status: 'active' }, TEST_ACTOR)
+    expect(active.status).toBe('active')
+  })
+
+  test('a mark for settings that changed meanwhile is not written', async () => {
+    const o = await org()
+    await verified(o.id, 'acme.test')
+    const c = await Sso.create(deps, TENANT, input(o.id), TEST_ACTOR)
+    const stale = Sso.fingerprint((await deps.ssoConnections.find(TENANT.environmentId, c.id))!)
+    await Sso.update(deps, TENANT, c.id, { clientId: 'client-2' }, TEST_ACTOR)
+    expect(await Sso.markTested(deps, TENANT, c.id, stale, TEST_ACTOR)).toBe(false)
   })
 
   test('a connection never returns to a draft, and cannot activate without a domain', async () => {
@@ -321,6 +354,22 @@ describe('SAML connections', () => {
         TEST_ACTOR
       )
     ).rejects.toMatchObject({ code: 'sso.saml_invalid' })
+  })
+
+  test('an http SSO URL is refused outside the local tier and allowed in it', async () => {
+    const o = await org()
+    await verified(o.id, 'acme.test')
+    const manual = {
+      idpEntityId: 'https://idp.example.test/e',
+      ssoUrl: 'http://idp.example.test/sso',
+      certificates: [MOCK_SAML_KEYS.a.certificate],
+    }
+    const made = await Sso.create(deps, TENANT, saml(o.id, manual), TEST_ACTOR)
+    expect(made.saml?.ssoUrl).toBe('http://idp.example.test/sso')
+    deps.outbound = new FakeOutbound('prod')
+    await expect(
+      Sso.create(deps, TENANT, saml(o.id, manual, { name: 'Two' }), TEST_ACTOR)
+    ).rejects.toMatchObject({ code: 'sso.url_not_https', status: 422 })
   })
 
   test('metadata with a DTD or an entity is refused', async () => {

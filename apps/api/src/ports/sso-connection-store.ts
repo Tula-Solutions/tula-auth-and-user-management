@@ -41,6 +41,8 @@ export interface SsoConnectionRecord {
   defaultRole: string
   /** The verified domains of the organization this connection is bound to, sorted. */
   domains: string[]
+  /** Fingerprint of the settings a passing test sign-in ran against; `null` before one. */
+  testedFingerprint: string | null
   createdAt: Date
   updatedAt: Date
 }
@@ -56,6 +58,8 @@ export interface SsoConnectionChanges {
   /** The whole new set of bound domains. */
   domains?: string[]
   status?: SsoConnectionStatus
+  /** Set by a passing test sign-in. */
+  testedFingerprint?: string
 }
 
 /** Why an update wrote nothing. */

@@ -114,6 +114,7 @@ export class MemorySsoConnectionStore implements SsoConnectionStore {
       defaultRole: changes.defaultRole ?? record.defaultRole,
       domains: changes.domains ? [...changes.domains].sort() : record.domains,
       status: changes.status ?? record.status,
+      testedFingerprint: changes.testedFingerprint ?? record.testedFingerprint,
       updatedAt,
     }
     const renamed = next.name !== record.name

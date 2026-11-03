@@ -121,6 +121,9 @@ public enum ErrorCode: Codable, Hashable, Sendable {
     case ssoSamlInvalid
     case ssoConnectionInUse
     case ssoInvalidTransition
+    case ssoUrlNotHttps
+    case ssoTestRequired
+    case ssoTestNotFound
     case ssoUnavailable
     case ssoProviderError
     case ssoUserNotProvisioned
@@ -258,6 +261,9 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         .ssoSamlInvalid,
         .ssoConnectionInUse,
         .ssoInvalidTransition,
+        .ssoUrlNotHttps,
+        .ssoTestRequired,
+        .ssoTestNotFound,
         .ssoUnavailable,
         .ssoProviderError,
         .ssoUserNotProvisioned,
@@ -395,6 +401,9 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case "sso.saml_invalid": self = .ssoSamlInvalid
         case "sso.connection_in_use": self = .ssoConnectionInUse
         case "sso.invalid_transition": self = .ssoInvalidTransition
+        case "sso.url_not_https": self = .ssoUrlNotHttps
+        case "sso.test_required": self = .ssoTestRequired
+        case "sso.test_not_found": self = .ssoTestNotFound
         case "sso.unavailable": self = .ssoUnavailable
         case "sso.provider_error": self = .ssoProviderError
         case "sso.user_not_provisioned": self = .ssoUserNotProvisioned
@@ -534,6 +543,9 @@ public enum ErrorCode: Codable, Hashable, Sendable {
         case .ssoSamlInvalid: return "sso.saml_invalid"
         case .ssoConnectionInUse: return "sso.connection_in_use"
         case .ssoInvalidTransition: return "sso.invalid_transition"
+        case .ssoUrlNotHttps: return "sso.url_not_https"
+        case .ssoTestRequired: return "sso.test_required"
+        case .ssoTestNotFound: return "sso.test_not_found"
         case .ssoUnavailable: return "sso.unavailable"
         case .ssoProviderError: return "sso.provider_error"
         case .ssoUserNotProvisioned: return "sso.user_not_provisioned"
@@ -930,6 +942,15 @@ public enum TulaErrorDefinitions {
     /// `sso.invalid_transition`
     public static let ssoInvalidTransition = TulaErrorDefinition(code: .ssoInvalidTransition, status: 409, message: "A connection cannot move to that status from its current one.")
 
+    /// `sso.url_not_https`
+    public static let ssoUrlNotHttps = TulaErrorDefinition(code: .ssoUrlNotHttps, status: 422, message: "The identity provider\u{2019}s sign-in address must start with https.")
+
+    /// `sso.test_required`
+    public static let ssoTestRequired = TulaErrorDefinition(code: .ssoTestRequired, status: 409, message: "Run a passing test sign-in of the connection\u{2019}s current settings before activating it.")
+
+    /// `sso.test_not_found`
+    public static let ssoTestNotFound = TulaErrorDefinition(code: .ssoTestNotFound, status: 404, message: "No such test sign-in.")
+
     /// `sso.unavailable`
     public static let ssoUnavailable = TulaErrorDefinition(code: .ssoUnavailable, status: 400, message: "Single sign-on is not available for that address.")
 
@@ -1098,6 +1119,9 @@ public enum TulaErrorDefinitions {
         ssoSamlInvalid,
         ssoConnectionInUse,
         ssoInvalidTransition,
+        ssoUrlNotHttps,
+        ssoTestRequired,
+        ssoTestNotFound,
         ssoUnavailable,
         ssoProviderError,
         ssoUserNotProvisioned,

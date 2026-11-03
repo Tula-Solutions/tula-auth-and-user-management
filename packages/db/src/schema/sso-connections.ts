@@ -61,6 +61,12 @@ export const ssoConnections = tula.table(
     }>(),
     /** The role key a user provisioned by this connection gets in the organization. */
     defaultRole: text('default_role').notNull(),
+    /**
+     * Fingerprint of the settings a passing test sign-in ran against (TULA-145). A connection
+     * can be activated only while its current settings hash to this, so any change to them
+     * is a reset with nothing to clear.
+     */
+    testedFingerprint: text('tested_fingerprint'),
     ...timestamps(),
   },
   (t) => [

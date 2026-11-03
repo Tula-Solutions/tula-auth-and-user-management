@@ -1849,6 +1849,7 @@ export const SsoConnectionUpdatedEventDataChangedItem = {
   defaultRole: 'defaultRole',
   domains: 'domains',
   status: 'status',
+  test: 'test',
 } as const;
 
 export type SsoConnectionUpdatedEventDataStatus = typeof SsoConnectionUpdatedEventDataStatus[keyof typeof SsoConnectionUpdatedEventDataStatus];
@@ -1867,7 +1868,7 @@ export interface SsoConnectionUpdatedEventData {
   protocol: SsoConnectionUpdatedEventDataProtocol;
   /**
      * @minItems 1
-     * @maxItems 8
+     * @maxItems 9
      */
   changed: SsoConnectionUpdatedEventDataChangedItem[];
   status: SsoConnectionUpdatedEventDataStatus;
@@ -3254,6 +3255,9 @@ export const ErrorCode = {
   ssosaml_invalid: 'sso.saml_invalid',
   ssoconnection_in_use: 'sso.connection_in_use',
   ssoinvalid_transition: 'sso.invalid_transition',
+  ssourl_not_https: 'sso.url_not_https',
+  ssotest_required: 'sso.test_required',
+  ssotest_not_found: 'sso.test_not_found',
   ssounavailable: 'sso.unavailable',
   ssoprovider_error: 'sso.provider_error',
   ssouser_not_provisioned: 'sso.user_not_provisioned',
@@ -6365,6 +6369,7 @@ export interface SsoConnection {
   saml: SamlConnection | null;
   defaultRole: string;
   domains: string[];
+  tested: boolean;
   /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
   createdAt: string;
   /** @pattern ^(?:(?:\d\d[2468][048]|\d\d[13579][26]|\d\d0[48]|[02468][048]00|[13579][26]00)-02-29|\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\d|30)|(?:02)-(?:0[1-9]|1\d|2[0-8])))T(?:(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z))$ */
@@ -6466,6 +6471,80 @@ export interface UpdateSsoConnectionRequest {
   /** @maxItems 20 */
   domains?: OrganizationDomainName[];
   status?: UpdateSsoConnectionRequestStatus;
+}
+
+export interface SsoTestStart {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  testId: string;
+  authorizationUrl: string;
+}
+
+export interface SsoTestStartRequest {
+  /** @maxLength 2048 */
+  redirectUrl: string;
+}
+
+export type SsoTestResultStatus = typeof SsoTestResultStatus[keyof typeof SsoTestResultStatus];
+
+
+export const SsoTestResultStatus = {
+  pending: 'pending',
+  passed: 'passed',
+  failed: 'failed',
+} as const;
+
+export type SsoTestResultReason = typeof SsoTestResultReason[keyof typeof SsoTestResultReason] | null;
+
+
+export const SsoTestResultReason = {
+  wrong_audience: 'wrong_audience',
+  wrong_issuer: 'wrong_issuer',
+  wrong_recipient: 'wrong_recipient',
+  unsigned_assertion: 'unsigned_assertion',
+  signature_invalid: 'signature_invalid',
+  signature_algorithm: 'signature_algorithm',
+  certificate_not_trusted: 'certificate_not_trusted',
+  certificate_expired: 'certificate_expired',
+  assertion_expired: 'assertion_expired',
+  clock_skew: 'clock_skew',
+  response_not_to_this_request: 'response_not_to_this_request',
+  replayed: 'replayed',
+  idp_refused: 'idp_refused',
+  encrypted_assertion: 'encrypted_assertion',
+  malformed_response: 'malformed_response',
+  discovery_failed: 'discovery_failed',
+  token_exchange_failed: 'token_exchange_failed',
+  no_id_token: 'no_id_token',
+  id_token_invalid: 'id_token_invalid',
+  email_missing: 'email_missing',
+  email_outside_domains: 'email_outside_domains',
+} as const;
+
+export type SsoTestResultAttributesItem = {
+  name: string;
+  values: string[];
+};
+
+export type SsoTestResultMapped = {
+  /** @nullable */
+  email: string | null;
+  /** @nullable */
+  givenName: string | null;
+  /** @nullable */
+  familyName: string | null;
+  emailOnVerifiedDomain: boolean;
+} | null;
+
+export interface SsoTestResult {
+  /** @pattern ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$ */
+  testId: string;
+  status: SsoTestResultStatus;
+  reason: SsoTestResultReason;
+  /** @nullable */
+  message: string | null;
+  attributes: SsoTestResultAttributesItem[];
+  groups: string[];
+  mapped: SsoTestResultMapped;
 }
 
 export interface SmsPrefixUsage {
@@ -14571,6 +14650,206 @@ export const useRefreshSsoConnectionMetadata = <TError = ErrorEnvelope,
       > => {
       return useMutation(getRefreshSsoConnectionMetadataMutationOptions(options), queryClient);
     }
+
+export const getStartSsoConnectionTestUrl = (id: string,) => {
+
+
+
+
+  return `/v1/admin/sso-connections/${id}/tests`
+}
+
+/**
+ * Starts the whole sign-in round through the identity provider without creating a session, user, identity or membership. Send the browser to `authorizationUrl`; it returns to `redirectUrl` (an address the environment allows) with `#tula_test=<testId>`, and the result is read with `GET /:id/tests/:testId`. A passing test of the connection’s current settings is required to activate it.
+ * @summary Start a test sign-in of an SSO connection
+ */
+export const startSsoConnectionTest = async (id: string,
+    ssoTestStartRequest: SsoTestStartRequest, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoTestStart> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return dashboardFetch<SsoTestStart>(getStartSsoConnectionTestUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(ssoTestStartRequest)
+  }
+);}
+
+
+
+
+
+export const getStartSsoConnectionTestMutationKey = () => ['startSsoConnectionTest'] as const;
+
+export const getStartSsoConnectionTestMutationOptions = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startSsoConnectionTest>>, TError,StartSsoConnectionTestMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof startSsoConnectionTest>>, TError,StartSsoConnectionTestMutationVariables, TContext> => {
+
+const mutationKey = getStartSsoConnectionTestMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startSsoConnectionTest>>, StartSsoConnectionTestMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  startSsoConnectionTest(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartSsoConnectionTestMutationResult = NonNullable<Awaited<ReturnType<typeof startSsoConnectionTest>>>
+    export type StartSsoConnectionTestMutationBody = SsoTestStartRequest
+    export type StartSsoConnectionTestMutationError = ErrorEnvelope
+    export type StartSsoConnectionTestMutationVariables = {id: string;data: SsoTestStartRequest}
+
+    /**
+ * @summary Start a test sign-in of an SSO connection
+ */
+export const useStartSsoConnectionTest = <TError = ErrorEnvelope,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startSsoConnectionTest>>, TError,StartSsoConnectionTestMutationVariables, TContext>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof startSsoConnectionTest>>,
+        TError,
+        StartSsoConnectionTestMutationVariables,
+        TContext
+      > => {
+      return useMutation(getStartSsoConnectionTestMutationOptions(options), queryClient);
+    }
+
+export const getGetSsoConnectionTestUrl = (id: string,
+    testId: string,) => {
+
+
+
+
+  return `/v1/admin/sso-connections/${id}/tests/${testId}`
+}
+
+/**
+ * The attributes and groups that arrived, how they mapped, or the reason the test failed with a sentence for it. `pending` until the browser has come back. It holds no assertion and no token. This is the one place a refusal’s reason is shown.
+ * @summary Read the result of a test sign-in
+ */
+export const getSsoConnectionTest = async (id: string,
+    testId: string, options?: Parameters<typeof dashboardFetch>[1]): Promise<SsoTestResult> => {
+
+  return dashboardFetch<SsoTestResult>(getGetSsoConnectionTestUrl(id,testId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSsoConnectionTestQueryKey = (id: string,
+    testId: string,) => {
+    return [
+    `/v1/admin/sso-connections/${id}/tests/${testId}`
+    ] as const;
+    }
+
+
+export const getGetSsoConnectionTestQueryOptions = <TData = Awaited<ReturnType<typeof getSsoConnectionTest>>, TError = ErrorEnvelope>(id: string,
+    testId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoConnectionTest>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSsoConnectionTestQueryKey(id,testId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSsoConnectionTest>>> = ({ signal }) => getSsoConnectionTest(id,testId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined && testId !== null && testId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSsoConnectionTest>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetSsoConnectionTestQueryResult = NonNullable<Awaited<ReturnType<typeof getSsoConnectionTest>>>
+export type GetSsoConnectionTestQueryError = ErrorEnvelope
+
+
+export function useGetSsoConnectionTest<TData = Awaited<ReturnType<typeof getSsoConnectionTest>>, TError = ErrorEnvelope>(
+ id: string,
+    testId: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoConnectionTest>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSsoConnectionTest>>,
+          TError,
+          Awaited<ReturnType<typeof getSsoConnectionTest>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSsoConnectionTest<TData = Awaited<ReturnType<typeof getSsoConnectionTest>>, TError = ErrorEnvelope>(
+ id: string,
+    testId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoConnectionTest>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getSsoConnectionTest>>,
+          TError,
+          Awaited<ReturnType<typeof getSsoConnectionTest>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetSsoConnectionTest<TData = Awaited<ReturnType<typeof getSsoConnectionTest>>, TError = ErrorEnvelope>(
+ id: string,
+    testId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoConnectionTest>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Read the result of a test sign-in
+ */
+
+export function useGetSsoConnectionTest<TData = Awaited<ReturnType<typeof getSsoConnectionTest>>, TError = ErrorEnvelope>(
+ id: string,
+    testId: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getSsoConnectionTest>>, TError, TData>>, request?: SecondParameter<typeof dashboardFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetSsoConnectionTestQueryOptions(id,testId,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getGetSmsUsageUrl = (params?: GetSmsUsageParams,) => {
   const normalizedParams = new URLSearchParams();

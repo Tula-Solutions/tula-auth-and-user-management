@@ -276,8 +276,10 @@ describe('what @tula-tech/react costs a browser bundle', () => {
    * 69,574, so the 436 bytes of room are still what is left.
    * Single sign-on (TULA-138) added its error codes and the `sso` first factor: 677 bytes, to 69,815.
    * The budget moved by exactly those, to 70,251: the room is still 436.
+   * The test sign-in (TULA-145) added three error codes: 490 bytes, to 70,305. The budget moved
+   * by exactly those, to 70,741.
    */
-  const GZIP_BUDGET_BYTES = 70_251
+  const GZIP_BUDGET_BYTES = 70_741
   /**
    * The QR encoder, in a chunk of its own: loaded when an enrolment is first drawn, so an app
    * that never shows one does not pay for it.

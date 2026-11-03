@@ -6,6 +6,7 @@ import { adminActor } from '~/lib/actor'
 import { adminRateLimit, byEnvironment, rateLimit } from '~/middleware/rate-limit'
 import { secretKey } from '~/middleware/secret-key'
 import * as SsoConnections from '~/modules/sso-connection/service'
+import * as SsoTests from '~/modules/sso-test/service'
 import * as openapi from '~/openapi'
 import {
   CreateSsoConnectionRequestSchema,
@@ -13,11 +14,18 @@ import {
   SsoConnectionListQuerySchema,
   SsoConnectionListSchema,
   SsoConnectionSchema,
+  SsoTestIdParamSchema,
+  SsoTestResultSchema,
+  SsoTestStartRequestSchema,
+  SsoTestStartSchema,
   UpdateSsoConnectionRequestSchema,
 } from './schema'
 
 /** Metadata refreshes a minute per environment: each one makes the server call an address. */
 const REFRESH_RATE_LIMIT = 10
+
+/** Test sign-ins a minute per environment: each one makes the server call the provider. */
+const TEST_RATE_LIMIT = 20
 
 const router = new Hono<AppEnv>()
 
@@ -195,6 +203,71 @@ router.post(
       adminActor(c)
     )
     return c.json(SsoConnectionSchema.parse(refreshed))
+  }
+)
+
+router.post(
+  '/:id/tests',
+  describeRoute({
+    operationId: 'startSsoConnectionTest',
+    tags: ['SSO connections'],
+    summary: 'Start a test sign-in of an SSO connection',
+    description:
+      'Starts the whole sign-in round through the identity provider without creating a ' +
+      'session, user, identity or membership. Send the browser to `authorizationUrl`; it ' +
+      'returns to `redirectUrl` (an address the environment allows) with `#tula_test=<testId>`, ' +
+      'and the result is read with `GET /:id/tests/:testId`. A passing test of the ' +
+      'connection’s current settings is required to activate it.',
+    security: openapi.security.admin,
+    responses: {
+      201: { description: 'The test.', content: json(SsoTestStartSchema) },
+      413: openapi.responses[413],
+      ...errors,
+      ...openapi.adminResponses,
+    },
+  }),
+  adminRateLimit(),
+  secretKey(),
+  rateLimit({ name: 'sso_test', limit: TEST_RATE_LIMIT, window: '1m', key: byEnvironment }),
+  validator('param', SsoConnectionIdParamSchema, validationHook),
+  validator('json', SsoTestStartRequestSchema, validationHook),
+  async (c) => {
+    const started = await SsoTests.start(
+      c.get('deps'),
+      c.get('tenant'),
+      c.req.valid('param').id,
+      c.req.valid('json').redirectUrl,
+      adminActor(c)
+    )
+    return c.json(SsoTestStartSchema.parse(started), 201)
+  }
+)
+
+router.get(
+  '/:id/tests/:testId',
+  describeRoute({
+    operationId: 'getSsoConnectionTest',
+    tags: ['SSO connections'],
+    summary: 'Read the result of a test sign-in',
+    description:
+      'The attributes and groups that arrived, how they mapped, or the reason the test failed ' +
+      'with a sentence for it. `pending` until the browser has come back. It holds no ' +
+      'assertion and no token. This is the one place a refusal’s reason is shown.',
+    security: openapi.security.admin,
+    responses: {
+      200: { description: 'The result.', content: json(SsoTestResultSchema) },
+      ...errors,
+      ...openapi.adminResponses,
+    },
+  }),
+  adminRateLimit(),
+  secretKey(),
+  validator('param', SsoTestIdParamSchema, validationHook),
+  async (c) => {
+    const { id, testId } = c.req.valid('param')
+    return c.json(
+      SsoTestResultSchema.parse(await SsoTests.result(c.get('deps'), c.get('tenant'), id, testId))
+    )
   }
 )
 

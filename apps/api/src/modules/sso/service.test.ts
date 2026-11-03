@@ -3,6 +3,7 @@ import {
   type AccessTokenClaims,
   DEFAULT_ENVIRONMENT_SETTINGS,
   SSO_CONNECTION_CLAIM,
+  SSO_TEST_REASONS,
 } from '@tula-tech/contract'
 import { decodeJwt, exportJWK, generateKeyPair, type JWK, SignJWT } from 'jose'
 import { createApp } from '~/index'
@@ -11,6 +12,7 @@ import * as Notices from '~/modules/notice/service'
 import * as Organizations from '~/modules/organization/service'
 import * as Sso from '~/modules/sso/service'
 import * as SsoConnections from '~/modules/sso-connection/service'
+import * as SsoTests from '~/modules/sso-test/service'
 import {
   createTestDeps,
   seedApiKey,
@@ -19,6 +21,7 @@ import {
   TEST_TENANT,
   type TestDeps,
 } from '~/testing'
+import { passTest } from '~/testing/sso-tested'
 
 // The OIDC round of an SSO connection (ADR 0067), through the routes, against an identity
 // provider this file runs on loopback (the outbound guard allows loopback `http` in the
@@ -26,7 +29,11 @@ import {
 // ID tokens are signed here, so that each check of the token is held by a test.
 
 const PK = 'tula_pk_dev_sso0000000000000000000000000000'
-const TENANT = { projectId: TEST_TENANT.projectId, environmentId: TEST_TENANT.environmentId }
+const TENANT = {
+  projectId: TEST_TENANT.projectId,
+  environmentId: TEST_TENANT.environmentId,
+  apiKeyId: '',
+}
 const REDIRECT = 'http://localhost:5174/oauth/callback'
 const DOMAIN = 'acme.test'
 const CLIENT_ID = 'tula-client'
@@ -41,6 +48,8 @@ const idp = {
   base: '',
   /** The issuer its discovery document names; the base address when `null`. */
   namedIssuer: null as string | null,
+  /** The authorization endpoint its discovery document names; its own `/authorize` when `null`. */
+  authorizationEndpoint: null as string | null,
   keys: [] as { privateKey: CryptoKey; jwk: JWK }[],
   /** Index of the key that signs. */
   signer: 0,
@@ -79,7 +88,7 @@ beforeAll(async () => {
       if (pathname === '/.well-known/openid-configuration') {
         return Response.json({
           issuer: idp.namedIssuer ?? idp.base,
-          authorization_endpoint: `${idp.base}/authorize`,
+          authorization_endpoint: idp.authorizationEndpoint ?? `${idp.base}/authorize`,
           token_endpoint: `${idp.base}/token`,
           jwks_uri: `${idp.base}/jwks`,
         })
@@ -165,6 +174,7 @@ beforeEach(async () => {
   Sso.forgetCached()
   Object.assign(idp, {
     namedIssuer: null,
+    authorizationEndpoint: null,
     signer: 0,
     published: [0],
     jwksFetches: 0,
@@ -213,6 +223,9 @@ beforeEach(async () => {
 })
 
 async function setStatus(status: 'draft' | 'active' | 'disabled') {
+  if (status === 'active') {
+    await passTest(deps, TENANT, connectionId, TEST_ACTOR)
+  }
   await SsoConnections.update(deps, TENANT, connectionId, { status }, TEST_ACTOR)
 }
 
@@ -557,5 +570,74 @@ describe('the outbound guard', () => {
     )
     expect(idp.jwksFetches).toBe(before)
     expect(deps.outbound.asked).toContain('idp.internal.test')
+  })
+})
+
+describe('the OIDC test round (TULA-145)', () => {
+  /** Run a test round through the provider and the callback; the result the admin reads. */
+  async function round(): Promise<Awaited<ReturnType<typeof SsoTests.result>>> {
+    const begun = await SsoTests.start(deps, TENANT, connectionId, REDIRECT, TEST_ACTOR)
+    const back = await callback(consent(begun.authorizationUrl))
+    expect(back.location).toStartWith(`${REDIRECT}#tula_test=${begun.testId}`)
+    return SsoTests.result(deps, TENANT, connectionId, begun.testId)
+  }
+
+  test('a pass shows the claims, marks the connection tested and creates no user, session or identity', async () => {
+    idp.claims = { email: `ada@${DOMAIN}`, groups: ['admins'] }
+    const before = recorded()
+    const result = await round()
+    expect(result).toMatchObject({
+      status: 'passed',
+      groups: ['admins'],
+      mapped: { email: `ada@${DOMAIN}`, emailOnVerifiedDomain: true },
+    })
+    expect(JSON.stringify(result)).not.toContain('eyJ')
+    expect((await SsoConnections.get(deps, TENANT, connectionId)).tested).toBe(true)
+    expect(await deps.users.findByEmail(TENANT.environmentId, `ada@${DOMAIN}`)).toBeNull()
+    expect(recorded().slice(before.length)).toEqual(['sso_connection.updated'])
+  })
+
+  test.each([
+    [
+      'a key the provider does not publish',
+      () => {
+        idp.signer = 2
+      },
+      'certificate_not_trusted',
+    ],
+    [
+      'an address outside the domains',
+      () => (idp.claims = { email: 'x@elsewhere.test' }),
+      'email_outside_domains',
+    ],
+  ] as const)('%s fails with its reason', async (_name, setup, reason) => {
+    setup()
+    const result = await round()
+    expect(result).toMatchObject({ status: 'failed', reason })
+    expect(result.message).toBe(SSO_TEST_REASONS[reason])
+    expect(await deps.users.findByEmail(TENANT.environmentId, `ada@${DOMAIN}`)).toBeNull()
+  })
+
+  test('a real sign-in with the same fault still says only sso.provider_error', async () => {
+    idp.signer = 2
+    expect(await codeOf()).toBe('sso.provider_error')
+  })
+
+  test('an authorization endpoint that is not https (http only in local) fails the test', async () => {
+    idp.authorizationEndpoint = 'ftp://idp.example/authorize'
+    const begun = await SsoTests.start(deps, TENANT, connectionId, REDIRECT, TEST_ACTOR)
+    expect(await SsoTests.result(deps, TENANT, connectionId, begun.testId)).toMatchObject({
+      status: 'failed',
+      reason: 'discovery_failed',
+    })
+  })
+
+  test('a discovery document naming another issuer fails the test at its start', async () => {
+    idp.namedIssuer = 'https://evil.test'
+    const begun = await SsoTests.start(deps, TENANT, connectionId, REDIRECT, TEST_ACTOR)
+    expect(await SsoTests.result(deps, TENANT, connectionId, begun.testId)).toMatchObject({
+      status: 'failed',
+      reason: 'discovery_failed',
+    })
   })
 })

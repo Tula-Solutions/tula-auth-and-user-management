@@ -277,6 +277,16 @@ async function bindSsoDomain(body: unknown): Promise<Response> {
     clientSecret: 'e2e-sso-secret',
     domains: [domain],
   })
+  // Activation needs a passing test sign-in (TULA-145): play the administrator at the mock
+  // provider, then the callback it sends the browser to.
+  const test = (await admin('POST', `/v1/admin/sso-connections/${connection.id}/tests`, {
+    redirectUrl: 'http://localhost:5174/oauth/callback',
+  })) as unknown as { authorizationUrl: string }
+  const authorize = new URL(test.authorizationUrl)
+  authorize.searchParams.set('login_hint', `tester@${domain}`)
+  const consented = await app.request(authorize.pathname + authorize.search)
+  const callbackUrl = new URL(consented.headers.get('location') ?? '', authorize)
+  await app.request(callbackUrl.pathname + callbackUrl.search)
   await admin('PATCH', `/v1/admin/sso-connections/${connection.id}`, { status: 'active' })
   return json({ ok: true })
 }

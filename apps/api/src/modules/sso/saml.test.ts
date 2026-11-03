@@ -20,6 +20,7 @@ import {
   TEST_TENANT,
   type TestDeps,
 } from '~/testing'
+import { passTest } from '~/testing/sso-tested'
 
 // The SAML round of an SSO connection (ADR 0067), through the real routes and the real
 // verifier; the identity provider is the mock signer, told to get each thing wrong.
@@ -85,6 +86,7 @@ async function connect(certificates: string[]) {
   spEntityId = made.saml?.spEntityId ?? ''
   acsUrl = made.saml?.acsUrl ?? ''
   acsPath = new URL(acsUrl).pathname
+  await passTest(deps, TENANT, made.id, TEST_ACTOR)
   await SsoConnections.update(deps, TENANT, made.id, { status: 'active' }, TEST_ACTOR)
 }
 

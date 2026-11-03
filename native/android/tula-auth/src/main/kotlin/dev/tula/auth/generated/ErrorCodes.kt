@@ -480,6 +480,18 @@ sealed class ErrorCode {
         override val rawValue: String = "sso.invalid_transition"
     }
 
+    object SsoUrlNotHttps : ErrorCode() {
+        override val rawValue: String = "sso.url_not_https"
+    }
+
+    object SsoTestRequired : ErrorCode() {
+        override val rawValue: String = "sso.test_required"
+    }
+
+    object SsoTestNotFound : ErrorCode() {
+        override val rawValue: String = "sso.test_not_found"
+    }
+
     object SsoUnavailable : ErrorCode() {
         override val rawValue: String = "sso.unavailable"
     }
@@ -674,6 +686,9 @@ sealed class ErrorCode {
                 SsoSamlInvalid,
                 SsoConnectionInUse,
                 SsoInvalidTransition,
+                SsoUrlNotHttps,
+                SsoTestRequired,
+                SsoTestNotFound,
                 SsoUnavailable,
                 SsoProviderError,
                 SsoUserNotProvisioned,
@@ -811,6 +826,9 @@ sealed class ErrorCode {
             "sso.saml_invalid" -> SsoSamlInvalid
             "sso.connection_in_use" -> SsoConnectionInUse
             "sso.invalid_transition" -> SsoInvalidTransition
+            "sso.url_not_https" -> SsoUrlNotHttps
+            "sso.test_required" -> SsoTestRequired
+            "sso.test_not_found" -> SsoTestNotFound
             "sso.unavailable" -> SsoUnavailable
             "sso.provider_error" -> SsoProviderError
             "sso.user_not_provisioned" -> SsoUserNotProvisioned
@@ -1202,6 +1220,15 @@ object TulaErrorDefinitions {
     /** `sso.invalid_transition` */
     val ssoInvalidTransition: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoInvalidTransition, 409, "A connection cannot move to that status from its current one.")
 
+    /** `sso.url_not_https` */
+    val ssoUrlNotHttps: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoUrlNotHttps, 422, "The identity provider\u2019s sign-in address must start with https.")
+
+    /** `sso.test_required` */
+    val ssoTestRequired: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoTestRequired, 409, "Run a passing test sign-in of the connection\u2019s current settings before activating it.")
+
+    /** `sso.test_not_found` */
+    val ssoTestNotFound: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoTestNotFound, 404, "No such test sign-in.")
+
     /** `sso.unavailable` */
     val ssoUnavailable: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.SsoUnavailable, 400, "Single sign-on is not available for that address.")
 
@@ -1370,6 +1397,9 @@ object TulaErrorDefinitions {
         ssoSamlInvalid,
         ssoConnectionInUse,
         ssoInvalidTransition,
+        ssoUrlNotHttps,
+        ssoTestRequired,
+        ssoTestNotFound,
         ssoUnavailable,
         ssoProviderError,
         ssoUserNotProvisioned,

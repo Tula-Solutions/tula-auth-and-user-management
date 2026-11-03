@@ -57,6 +57,8 @@ describe('conformance scenarios, in process', () => {
       'sso saml sign-in',
       'sso saml replay refused',
       'email code sign-in',
+      'sso connection activates only after a passing test',
+      'sso test sign-in fails with its reason',
       'email link sign-in',
       'passwordless sign-up',
       'two-step enrolment and sign-in',
