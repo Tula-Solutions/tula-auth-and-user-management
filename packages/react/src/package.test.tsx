@@ -281,8 +281,10 @@ describe('what @tula-tech/react costs a browser bundle', () => {
    * The organization admins' Single sign-on tab (TULA-148: connections, on/off, enforcement,
    * delete, the create form and its words) added 1,805 bytes, to 72,110. The budget moved by
    * exactly those, to 72,546: the room is still 436.
+   * The tab's setup links (create, list, revoke and their words) added 1,080 bytes, to 73,190. The
+   * budget moved by exactly those, to 73,626: the room is still 436.
    */
-  const GZIP_BUDGET_BYTES = 72_546
+  const GZIP_BUDGET_BYTES = 73_626
   /**
    * The QR encoder, in a chunk of its own: loaded when an enrolment is first drawn, so an app
    * that never shows one does not pay for it.

@@ -941,7 +941,8 @@
   .tula-member-list,
   .tula-invitation-list,
   .tula-domain-list,
-  .tula-sso-list
+  .tula-sso-list,
+  .tula-setup-link-list
 ) {
   border: 1px solid var(--_tula-color-border);
   border-radius: var(--_tula-radius);
@@ -953,7 +954,8 @@
   .tula-member-item,
   .tula-invitation-item,
   .tula-domain-item,
-  .tula-sso-item
+  .tula-sso-item,
+  .tula-setup-link-item
 ) {
   display: flex;
   align-items: center;
@@ -967,14 +969,16 @@
     .tula-member-item,
     .tula-invitation-item,
     .tula-domain-item,
-    .tula-sso-item
+    .tula-sso-item,
+    .tula-setup-link-item
   )
   + :where(
     .tula-session-item,
     .tula-member-item,
     .tula-invitation-item,
     .tula-domain-item,
-    .tula-sso-item
+    .tula-sso-item,
+    .tula-setup-link-item
   ) {
   border-top: 1px solid var(--_tula-color-border);
 }
@@ -1073,8 +1077,20 @@
   gap: var(--_tula-spacing);
 }
 
-:where(.tula-member-item, .tula-invitation-item, .tula-domain-item, .tula-sso-item) {
+:where(
+  .tula-member-item,
+  .tula-invitation-item,
+  .tula-domain-item,
+  .tula-sso-item,
+  .tula-setup-link-item
+) {
   flex-wrap: wrap;
+}
+
+:where(.tula-setup-link-created) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--_tula-spacing);
 }
 
 :where(.tula-select) {

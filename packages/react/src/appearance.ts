@@ -86,6 +86,9 @@ export const ELEMENT_NAMES = [
   'domainItem',
   'ssoList',
   'ssoItem',
+  'setupLinkList',
+  'setupLinkItem',
+  'setupLinkCreated',
   'select',
   'dangerZone',
 ] as const

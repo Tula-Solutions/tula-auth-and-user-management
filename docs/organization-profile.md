@@ -43,7 +43,7 @@ A tab is drawn when the user's role holds its permission (read from the organiza
 | Members | `org:sys:memberships:read` or `:manage` | Lists the members and their roles. With `org:sys:memberships:manage` a role can be changed (among the roles the user may give) and a member removed. |
 | Invitations | `org:sys:invitations:manage` | Invite an address with a role, see the pending invitations, revoke one. |
 | Domains | `org:sys:domains:manage` | Claim a domain, verify it with the emailed code, choose what a verified domain does, remove it. |
-| Single sign-on | `org:sys:sso:manage` | Add an OIDC connection, turn it on or off, require it, delete it. |
+| Single sign-on | `org:sys:sso:manage` | Add an OIDC connection, turn it on or off, require it, delete it; make, list and revoke setup links. |
 
 With the built-in roles, an `admin` sees all four and a `member` sees General and Members.
 
@@ -69,7 +69,7 @@ Claim a domain by giving it and an address on it; the code is emailed to that ad
 
 ## Single sign-on
 
-Lists the organization's enterprise connections with their state (draft, on, off, required). "Add connection" takes a name, the issuer, the client ID and the client secret; the connection starts as a draft that signs nobody in until it is turned on. The client secret is typed into a password field, sent once and cleared; it is never returned, so the list only says whether one is saved. Switching enforcement off is a weakening, so the server asks for a recent sign-in (`auth.step_up_required`): the "Confirm it is you" dialog opens and the change repeats after it. An active connection cannot be deleted (`sso.connection_in_use`): turn it off first; deleting one that was used keeps its people's accounts. SAML connections and the group-to-role mapping are available through `organizations.sso` in `@tula-tech/core`; see [the SSO method](methods/sso.md).
+Lists the organization's enterprise connections with their state (draft, on, off, required). "Add connection" takes a name, the issuer, the client ID and the client secret; the connection starts as a draft that signs nobody in until it is turned on. The client secret is typed into a password field, sent once and cleared; it is never returned, so the list only says whether one is saved. Switching enforcement off is a weakening, so the server asks for a recent sign-in (`auth.step_up_required`): the "Confirm it is you" dialog opens and the change repeats after it. An active connection cannot be deleted (`sso.connection_in_use`): turn it off first; deleting one that was used keeps its people's accounts. Under the connections, "Setup links" makes an address for the person who runs your identity provider: it opens a page that needs no account and sets up an OpenID Connect connection (a setup link is OIDC only; SAML is added here through `organizations.sso` or in the dashboard). "Create setup link" takes an optional name and shows the address once, in a read-only field; "Done" drops it, and it is never stored or listed again. The list shows each link's name and end, and "Revoke" asks first and ends the link at once. SAML connections and the group-to-role mapping are available through `organizations.sso` in `@tula-tech/core`; see [the SSO method](methods/sso.md).
 
 ## When access changes
 
@@ -89,7 +89,7 @@ Every result belongs to the session it was asked for: an answer that arrives aft
 
 ## Words and styling
 
-The words are the `organizationProfile` group of the [localization](reference/react.md). The parts you can style by `appearance.elements` are `tabList`, `tab`, `tabPanel`, `memberList`, `memberItem`, `invitationList`, `invitationItem`, `domainList`, `domainItem`, `ssoList`, `ssoItem`, `select` and `dangerZone`, beside the shared ones. The tabs follow the ARIA tabs pattern: arrow keys, Home and End move between them and select them, and only the selected one is in the tab order.
+The words are the `organizationProfile` group of the [localization](reference/react.md). The parts you can style by `appearance.elements` are `tabList`, `tab`, `tabPanel`, `memberList`, `memberItem`, `invitationList`, `invitationItem`, `domainList`, `domainItem`, `ssoList`, `ssoItem`, `setupLinkList`, `setupLinkItem`, `setupLinkCreated`, `select` and `dangerZone`, beside the shared ones. The tabs follow the ARIA tabs pattern: arrow keys, Home and End move between them and select them, and only the selected one is in the tab order.
 
 ## See also
 

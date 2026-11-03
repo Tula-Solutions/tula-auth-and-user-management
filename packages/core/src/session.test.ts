@@ -2618,6 +2618,14 @@ describe('organization members, roles and domains (ADR 0065, Orgs 07)', () => {
       redirectUrl: 'https://app.test/s',
     })
     expect((await sso.testResult(ORG, C, T)).status).toBe('pending')
+    const LINKS = `/v1/client/me/organizations/${ORG}/setup-links`
+    w.api.on(`GET ${LINKS}`, () => json(200, { links: [] }))
+    w.api.on(`POST ${LINKS}`, () => json(201, { id: 'l1', token: 't', url: 'https://x/#t' }))
+    w.api.on(`DELETE ${LINKS}/l1`, () => json(204, undefined))
+    expect(await sso.setupLinks(ORG)).toEqual({ links: [] })
+    expect((await sso.createSetupLink(ORG, { name: 'IT' })).url).toBe('https://x/#t')
+    expect(w.api.calls(`POST ${LINKS}`)[0]?.body).toEqual({ name: 'IT' })
+    expect(await sso.revokeSetupLink(ORG, 'l1')).toBeUndefined()
   })
 
   test('domains list, start, verify, change the mode and remove', async () => {

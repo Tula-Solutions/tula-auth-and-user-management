@@ -6,6 +6,7 @@ import { useStepUp } from '../hooks/use-step-up'
 import { formatText } from '../localization'
 import { placeErrors } from './form-errors'
 import type { OrganizationSectionProps } from './organization-general'
+import { SetupLinks } from './organization-setup-links'
 import {
   Confirmation,
   isAccessChanged,
@@ -293,6 +294,7 @@ export function SsoSection(props: OrganizationSectionProps) {
         </div>
       </Form>
       <Status message={actions.message} />
+      <SetupLinks {...props} />
     </section>
   )
 }

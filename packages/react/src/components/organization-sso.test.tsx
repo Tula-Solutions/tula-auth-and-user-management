@@ -45,6 +45,7 @@ function ssoWorld(connections: ReturnType<typeof CONNECTION>[] = [CONNECTION()])
   const w = orgWorld({ organizations: [SSO_ACME, GLOBEX] })
   const state = { connections }
   w.api.on(`GET ${BASE}`, () => json(200, { connections: state.connections }))
+  w.api.on(`GET /v1/client/me/organizations/${A}/setup-links`, () => json(200, { links: [] }))
   w.api.on(`GET /v1/client/me/organizations/${A}/roles`, () =>
     json(200, { data: [{ key: 'admin', name: 'Admin' }] })
   )
@@ -166,5 +167,72 @@ describe('<OrganizationProfile>: Single sign-on', () => {
     await waitFor(() =>
       expect(w.api.calls('GET /v1/client/me/organizations').length).toBeGreaterThan(1)
     )
+  })
+
+  describe('setup links', () => {
+    const LINKS = `/v1/client/me/organizations/${A}/setup-links`
+    const LINK = {
+      id: 'l1',
+      organizationId: A,
+      name: 'Acme IT',
+      prefix: 'tula_setup_ab',
+      expiresAt: '2030-01-08T00:00:00.000Z',
+      revokedAt: null,
+      lastUsedAt: null,
+      createdAt: '2030-01-01T00:00:00.000Z',
+    }
+
+    test('says the link is for OpenID Connect only and lists the links without a token', async () => {
+      const w = ssoWorld()
+      w.api.on(`GET ${LINKS}`, () => json(200, { links: [LINK] }))
+      w.mount(<OrganizationProfile section='sso' />)
+      expect(await screen.findByText('Acme IT')).toBeTruthy()
+      expect(screen.getByText(/OpenID Connect only/)).toBeTruthy()
+      expect(document.body.textContent).not.toContain('tula_setup_ab_secret')
+    })
+
+    test('creating a link shows its address once, and it is gone after it is dismissed', async () => {
+      const w = ssoWorld()
+      let links: (typeof LINK)[] = []
+      w.api.on(`GET ${LINKS}`, () => json(200, { links }))
+      w.api.on(`POST ${LINKS}`, () => {
+        links = [LINK]
+        return json(201, {
+          ...LINK,
+          token: 'tula_setup_ab_secret',
+          url: 'https://auth.test/dashboard/setup#tula_setup_ab_secret',
+        })
+      })
+      w.mount(<OrganizationProfile section='sso' />)
+      await w.user.type(await screen.findByLabelText('Link name'), 'Acme IT')
+      await w.user.click(screen.getByRole('button', { name: 'Create setup link' }))
+      const address = (await screen.findByLabelText('Setup link address')) as HTMLInputElement
+      expect(address.value).toBe('https://auth.test/dashboard/setup#tula_setup_ab_secret')
+      expect(w.api.calls(`POST ${LINKS}`)[0]?.body).toMatchObject({ name: 'Acme IT' })
+      await w.user.click(screen.getByRole('button', { name: 'Done' }))
+      expect(document.body.textContent).not.toContain('tula_setup_ab_secret')
+      expect(window.localStorage.length + window.sessionStorage.length).toBe(0)
+    })
+
+    test('revoking asks first, then ends the link', async () => {
+      const w = ssoWorld()
+      w.api.on(`GET ${LINKS}`, () => json(200, { links: [LINK] }))
+      w.api.on(`DELETE ${LINKS}/l1`, () => new Response(null, { status: 204 }))
+      w.mount(<OrganizationProfile section='sso' />)
+      await w.user.click(await screen.findByRole('button', { name: 'Revoke Acme IT' }))
+      expect(w.api.calls(`DELETE ${LINKS}/l1`).length).toBe(0)
+      await w.user.click(screen.getByRole('button', { name: 'Yes, revoke' }))
+      await waitFor(() => expect(w.api.calls(`DELETE ${LINKS}/l1`).length).toBe(1))
+    })
+
+    test('a refused creation shows the server message and no address', async () => {
+      const w = ssoWorld()
+      w.api.on(`GET ${LINKS}`, () => json(200, { links: [] }))
+      w.api.on(`POST ${LINKS}`, () => failure(403, 'organization.permission_required'))
+      w.mount(<OrganizationProfile section='sso' />)
+      await w.user.click(await screen.findByRole('button', { name: 'Create setup link' }))
+      expect(await screen.findByRole('alert')).toBeTruthy()
+      expectAbsent(screen.queryByLabelText('Setup link address'))
+    })
   })
 })
