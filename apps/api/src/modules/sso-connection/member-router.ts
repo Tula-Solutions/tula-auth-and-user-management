@@ -3,6 +3,10 @@ import {
   SsoConnectionListSchema,
   SsoConnectionSchema,
   SsoGroupRolesSchema,
+  SsoTestIdParamSchema,
+  SsoTestResultSchema,
+  SsoTestStartRequestSchema,
+  SsoTestStartSchema,
   UpdateSsoConnectionRequestSchema,
 } from '@tula-tech/contract'
 import { Hono } from 'hono'
@@ -27,8 +31,12 @@ export const SSO_MEMBER_WRITE_RATE_LIMIT = 20
 /** Metadata refreshes a minute per environment: each one makes the server call an address. */
 const REFRESH_RATE_LIMIT = 10
 
+/** Test sign-ins a minute per environment: each one makes the server call the provider. */
+const TEST_RATE_LIMIT = 20
+
 const OrganizationParam = z.object({ organizationId: z.uuid() })
 const ConnectionParam = z.object({ organizationId: z.uuid(), id: z.uuid() })
+const TestParam = SsoTestIdParamSchema.extend({ organizationId: z.uuid() })
 
 // Mounted at `/v1/client/me/organizations`: what a signed-in member who holds
 // `org:sys:sso:manage` does to their own organization's single sign-on (ADR 0067). The admin
@@ -233,6 +241,77 @@ router.post(
           organizationId,
           id,
           userActor(c)
+        )
+      )
+    )
+  }
+)
+
+router.post(
+  '/:organizationId/sso-connections/:id/tests',
+  describeRoute({
+    operationId: 'startMyOrganizationSsoConnectionTest',
+    tags: ['Organizations'],
+    summary: 'Start a test sign-in of an SSO connection',
+    description: `Runs the whole sign-in round through the identity provider without creating a session, user or membership. Send the browser to \`authorizationUrl\`; it returns to \`redirectUrl\` (an address the environment allows) with \`#tula_test=<testId>\`. A passing test of the connection’s current settings is required to turn it on (\`sso.test_required\`, 409). Limited to ${TEST_RATE_LIMIT} a minute per environment. ${needs}`,
+    security: openapi.security.session,
+    responses: {
+      201: { description: 'The test.', content: json(SsoTestStartSchema) },
+      413: openapi.responses[413],
+      ...errors,
+    },
+  }),
+  limit('my_sso_test_ip', SSO_MEMBER_WRITE_RATE_LIMIT),
+  rateLimit({ name: 'sso_test', limit: TEST_RATE_LIMIT, window: '1m', key: byEnvironment }),
+  publishableKey(),
+  sessionAuth(),
+  validator('param', ConnectionParam, validationHook),
+  validator('json', SsoTestStartRequestSchema, validationHook),
+  async (c) => {
+    c.header('Cache-Control', 'no-store')
+    const { organizationId, id } = c.req.valid('param')
+    const started = await Members.startTest(
+      c.get('deps'),
+      c.get('tenant'),
+      { userId: c.get('session').sub },
+      organizationId,
+      id,
+      c.req.valid('json').redirectUrl,
+      userActor(c)
+    )
+    return c.json(SsoTestStartSchema.parse(started), 201)
+  }
+)
+
+router.get(
+  '/:organizationId/sso-connections/:id/tests/:testId',
+  describeRoute({
+    operationId: 'getMyOrganizationSsoConnectionTest',
+    tags: ['Organizations'],
+    summary: 'Read the result of a test sign-in',
+    description: `The attributes and groups that arrived, how they mapped, or the reason the test failed. \`pending\` until the browser has come back. ${needs}`,
+    security: openapi.security.session,
+    responses: {
+      200: { description: 'The result.', content: json(SsoTestResultSchema) },
+      ...errors,
+    },
+  }),
+  limit('my_sso_test_read_ip', SSO_MEMBER_READ_RATE_LIMIT),
+  publishableKey(),
+  sessionAuth(),
+  validator('param', TestParam, validationHook),
+  async (c) => {
+    c.header('Cache-Control', 'no-store')
+    const { organizationId, id, testId } = c.req.valid('param')
+    return c.json(
+      SsoTestResultSchema.parse(
+        await Members.testResult(
+          c.get('deps'),
+          c.get('tenant'),
+          { userId: c.get('session').sub },
+          organizationId,
+          id,
+          testId
         )
       )
     )

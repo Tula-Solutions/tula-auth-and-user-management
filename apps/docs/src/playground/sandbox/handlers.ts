@@ -454,6 +454,8 @@ export const HANDLERS: Handlers = {
   deleteMyOrganizationSsoConnection: () => unsupported('deleteMyOrganizationSsoConnection'),
   getMyOrganizationSsoGroupRoles: () => unsupported('getMyOrganizationSsoGroupRoles'),
   replaceMyOrganizationSsoGroupRoles: () => unsupported('replaceMyOrganizationSsoGroupRoles'),
+  startMyOrganizationSsoConnectionTest: () => unsupported('startMyOrganizationSsoConnectionTest'),
+  getMyOrganizationSsoConnectionTest: () => unsupported('getMyOrganizationSsoConnectionTest'),
   submitSignInIdToken: () => unsupported('submitSignInIdToken'),
 
   // Passkeys -----------------------------------------------------------------------------------

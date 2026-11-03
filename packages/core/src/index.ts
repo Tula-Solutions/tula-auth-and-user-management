@@ -113,6 +113,8 @@ export type {
   OrganizationSsoConnection,
   OrganizationSsoConnectionList,
   OrganizationSsoGroupRoles,
+  OrganizationSsoTestResult,
+  OrganizationSsoTestStart,
   OrganizationSuggestion,
   OrganizationSuggestionList,
   Passkey,

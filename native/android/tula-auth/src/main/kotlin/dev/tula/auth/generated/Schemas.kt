@@ -2182,6 +2182,7 @@ data class SsoConnection(
     val breakGlassRole: String?,
     val trustIdpMfa: Boolean,
     val domains: List<String>,
+    val tested: Boolean,
     /** Format: `date-time`. */
     val createdAt: String,
     /** Format: `date-time`. */
@@ -2316,6 +2317,268 @@ data class SsoGroupRolesMappingsItem(
 
 @Serializable
 data class SsoStartRequest(
+    val redirectUrl: String,
+)
+
+@Serializable
+data class SsoTestResult(
+    /** Format: `uuid`. */
+    val testId: String,
+    val status: SsoTestResultStatus,
+    val reason: SsoTestResultReason?,
+    val message: String?,
+    val attributes: List<SsoTestResultAttributesItem>,
+    val groups: List<String>,
+    val mapped: SsoTestResultMapped?,
+)
+
+@Serializable
+data class SsoTestResultAttributesItem(
+    val name: String,
+    val values: List<String>,
+)
+
+@Serializable
+data class SsoTestResultMapped(
+    val email: String?,
+    val givenName: String?,
+    val familyName: String?,
+    val emailOnVerifiedDomain: Boolean,
+)
+
+@Serializable(with = SsoTestResultReasonSerializer::class)
+sealed class SsoTestResultReason {
+    /** The value as the API writes it. */
+    abstract val rawValue: String
+
+    override fun toString(): String = rawValue
+
+    object WrongAudience : SsoTestResultReason() {
+        override val rawValue: String = "wrong_audience"
+    }
+
+    object WrongIssuer : SsoTestResultReason() {
+        override val rawValue: String = "wrong_issuer"
+    }
+
+    object WrongRecipient : SsoTestResultReason() {
+        override val rawValue: String = "wrong_recipient"
+    }
+
+    object UnsignedAssertion : SsoTestResultReason() {
+        override val rawValue: String = "unsigned_assertion"
+    }
+
+    object SignatureInvalid : SsoTestResultReason() {
+        override val rawValue: String = "signature_invalid"
+    }
+
+    object SignatureAlgorithm : SsoTestResultReason() {
+        override val rawValue: String = "signature_algorithm"
+    }
+
+    object CertificateNotTrusted : SsoTestResultReason() {
+        override val rawValue: String = "certificate_not_trusted"
+    }
+
+    object CertificateExpired : SsoTestResultReason() {
+        override val rawValue: String = "certificate_expired"
+    }
+
+    object AssertionExpired : SsoTestResultReason() {
+        override val rawValue: String = "assertion_expired"
+    }
+
+    object ClockSkew : SsoTestResultReason() {
+        override val rawValue: String = "clock_skew"
+    }
+
+    object ResponseNotToThisRequest : SsoTestResultReason() {
+        override val rawValue: String = "response_not_to_this_request"
+    }
+
+    object Replayed : SsoTestResultReason() {
+        override val rawValue: String = "replayed"
+    }
+
+    object IdpRefused : SsoTestResultReason() {
+        override val rawValue: String = "idp_refused"
+    }
+
+    object EncryptedAssertion : SsoTestResultReason() {
+        override val rawValue: String = "encrypted_assertion"
+    }
+
+    object MalformedResponse : SsoTestResultReason() {
+        override val rawValue: String = "malformed_response"
+    }
+
+    object DiscoveryFailed : SsoTestResultReason() {
+        override val rawValue: String = "discovery_failed"
+    }
+
+    object TokenExchangeFailed : SsoTestResultReason() {
+        override val rawValue: String = "token_exchange_failed"
+    }
+
+    object NoIdToken : SsoTestResultReason() {
+        override val rawValue: String = "no_id_token"
+    }
+
+    object IdTokenInvalid : SsoTestResultReason() {
+        override val rawValue: String = "id_token_invalid"
+    }
+
+    object EmailMissing : SsoTestResultReason() {
+        override val rawValue: String = "email_missing"
+    }
+
+    object EmailOutsideDomains : SsoTestResultReason() {
+        override val rawValue: String = "email_outside_domains"
+    }
+
+    /** A value this version does not know, as the API wrote it. Made by [of] only. */
+    class Unknown internal constructor(override val rawValue: String) : SsoTestResultReason() {
+        override fun equals(other: Any?): Boolean = other is Unknown && other.rawValue == rawValue
+
+        override fun hashCode(): Int = rawValue.hashCode()
+    }
+
+    companion object {
+        /** Every value this version knows. */
+        val known: List<SsoTestResultReason> by lazy {
+            listOf(
+                WrongAudience,
+                WrongIssuer,
+                WrongRecipient,
+                UnsignedAssertion,
+                SignatureInvalid,
+                SignatureAlgorithm,
+                CertificateNotTrusted,
+                CertificateExpired,
+                AssertionExpired,
+                ClockSkew,
+                ResponseNotToThisRequest,
+                Replayed,
+                IdpRefused,
+                EncryptedAssertion,
+                MalformedResponse,
+                DiscoveryFailed,
+                TokenExchangeFailed,
+                NoIdToken,
+                IdTokenInvalid,
+                EmailMissing,
+                EmailOutsideDomains,
+            )
+        }
+
+        /** The value for a string of the API: [Unknown] for one this version does not know. */
+        fun of(rawValue: String): SsoTestResultReason = when (rawValue) {
+            "wrong_audience" -> WrongAudience
+            "wrong_issuer" -> WrongIssuer
+            "wrong_recipient" -> WrongRecipient
+            "unsigned_assertion" -> UnsignedAssertion
+            "signature_invalid" -> SignatureInvalid
+            "signature_algorithm" -> SignatureAlgorithm
+            "certificate_not_trusted" -> CertificateNotTrusted
+            "certificate_expired" -> CertificateExpired
+            "assertion_expired" -> AssertionExpired
+            "clock_skew" -> ClockSkew
+            "response_not_to_this_request" -> ResponseNotToThisRequest
+            "replayed" -> Replayed
+            "idp_refused" -> IdpRefused
+            "encrypted_assertion" -> EncryptedAssertion
+            "malformed_response" -> MalformedResponse
+            "discovery_failed" -> DiscoveryFailed
+            "token_exchange_failed" -> TokenExchangeFailed
+            "no_id_token" -> NoIdToken
+            "id_token_invalid" -> IdTokenInvalid
+            "email_missing" -> EmailMissing
+            "email_outside_domains" -> EmailOutsideDomains
+            else -> Unknown(rawValue)
+        }
+    }
+}
+
+/** Reads and writes [SsoTestResultReason] as its string, whatever the string is. */
+object SsoTestResultReasonSerializer : KSerializer<SsoTestResultReason> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("dev.tula.auth.generated.SsoTestResultReason", PrimitiveKind.STRING)
+
+    override fun deserialize(decoder: Decoder): SsoTestResultReason = SsoTestResultReason.of(decoder.decodeString())
+
+    override fun serialize(encoder: Encoder, value: SsoTestResultReason) {
+        encoder.encodeString(value.rawValue)
+    }
+}
+
+@Serializable(with = SsoTestResultStatusSerializer::class)
+sealed class SsoTestResultStatus {
+    /** The value as the API writes it. */
+    abstract val rawValue: String
+
+    override fun toString(): String = rawValue
+
+    object Pending : SsoTestResultStatus() {
+        override val rawValue: String = "pending"
+    }
+
+    object Passed : SsoTestResultStatus() {
+        override val rawValue: String = "passed"
+    }
+
+    object Failed : SsoTestResultStatus() {
+        override val rawValue: String = "failed"
+    }
+
+    /** A value this version does not know, as the API wrote it. Made by [of] only. */
+    class Unknown internal constructor(override val rawValue: String) : SsoTestResultStatus() {
+        override fun equals(other: Any?): Boolean = other is Unknown && other.rawValue == rawValue
+
+        override fun hashCode(): Int = rawValue.hashCode()
+    }
+
+    companion object {
+        /** Every value this version knows. */
+        val known: List<SsoTestResultStatus> by lazy {
+            listOf(
+                Pending,
+                Passed,
+                Failed,
+            )
+        }
+
+        /** The value for a string of the API: [Unknown] for one this version does not know. */
+        fun of(rawValue: String): SsoTestResultStatus = when (rawValue) {
+            "pending" -> Pending
+            "passed" -> Passed
+            "failed" -> Failed
+            else -> Unknown(rawValue)
+        }
+    }
+}
+
+/** Reads and writes [SsoTestResultStatus] as its string, whatever the string is. */
+object SsoTestResultStatusSerializer : KSerializer<SsoTestResultStatus> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("dev.tula.auth.generated.SsoTestResultStatus", PrimitiveKind.STRING)
+
+    override fun deserialize(decoder: Decoder): SsoTestResultStatus = SsoTestResultStatus.of(decoder.decodeString())
+
+    override fun serialize(encoder: Encoder, value: SsoTestResultStatus) {
+        encoder.encodeString(value.rawValue)
+    }
+}
+
+@Serializable
+data class SsoTestStart(
+    /** Format: `uuid`. */
+    val testId: String,
+    val authorizationUrl: String,
+)
+
+@Serializable
+data class SsoTestStartRequest(
     val redirectUrl: String,
 )
 

@@ -1,5 +1,9 @@
 import { deflateRawSync } from 'node:zlib'
-import { effectiveAttributeNames, type SessionClient } from '@tula-tech/contract'
+import {
+  effectiveAttributeNames,
+  type SessionClient,
+  type SsoTestReason,
+} from '@tula-tech/contract'
 import {
   createLocalJWKSet,
   errors,
@@ -40,6 +44,14 @@ const CACHE_MS = 10 * 60 * 1000
 
 /** Seconds of clock difference accepted on `exp` and `iat`, as for an OAuth provider. */
 const CLOCK_TOLERANCE_SECONDS = 30
+
+/**
+ * Where a test sign-in collects what the provider sent (attribute or claim names to values),
+ * which a real sign-in never reads. Filled only after the answer was verified.
+ */
+export interface Seen {
+  attributes?: Record<string, string[]>
+}
 
 /** What a connection's provider vouched for, kept from the callback until the exchange. */
 export interface SsoProfile {
@@ -212,7 +224,7 @@ async function getJson(
   const parsed: unknown =
     answer.status === 200 ? JSON.parse(new TextDecoder().decode(answer.body)) : null
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new AuthError('sso.provider_error')
+    throw refused('discovery', 'document', 'discovery_failed')
   }
   const value = parsed as Record<string, unknown>
   cache.set(url, { value, until: now + CACHE_MS })
@@ -252,7 +264,7 @@ async function discover(
     typeof named !== 'string' ||
     named.replace(/\/$/, '') !== issuer
   ) {
-    throw new AuthError('sso.provider_error')
+    throw refused('discovery', 'document', 'discovery_failed')
   }
   return { issuer: named, authorizationEndpoint: a, tokenEndpoint: t, jwksUri: j }
 }
@@ -291,7 +303,11 @@ export async function authorizationUrl(
   params: { state: string; nonce: string; codeVerifier: string }
 ): Promise<string> {
   const found = await asProviderError(discover(deps, connection), 'discovery')
+  // The browser is sent here: https only, as for any address we call (`http` in the `local` tier).
   const url = new URL(found.authorizationEndpoint)
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && deps.outbound.tier === 'local')) {
+    throw refused('discovery', 'authorization_endpoint_not_https', 'discovery_failed')
+  }
   const challenge = new Bun.CryptoHasher('sha256').update(params.codeVerifier).digest('base64url')
   url.search = new URLSearchParams({
     response_type: 'code',
@@ -315,6 +331,7 @@ export async function authorizationUrl(
  * @param deps - Outbound, secret box, clock and config.
  * @param connection - The connection.
  * @param params - The code, and the verifier and nonce the attempt kept.
+ * @param seen - A test sign-in's collector of the claims that arrived.
  * @returns The profile.
  * @throws AuthError `sso.provider_error` for every failure; the log says which step failed
  *   and how, by a fixed word, never with anything of the answer.
@@ -322,7 +339,8 @@ export async function authorizationUrl(
 export async function exchange(
   deps: FetchDeps & Pick<Deps, 'config' | 'clock' | 'secretBox'>,
   connection: SsoConnectionRecord,
-  params: { code: string; codeVerifier: string; nonce: string }
+  params: { code: string; codeVerifier: string; nonce: string },
+  seen?: Seen
 ): Promise<SsoProfile> {
   const found = await asProviderError(discover(deps, connection), 'discovery')
   const secret = new TextDecoder().decode(
@@ -359,7 +377,7 @@ export async function exchange(
   )
   const idToken = (tokens as { id_token?: unknown } | null)?.id_token
   if (typeof idToken !== 'string') {
-    throw refused('token', 'no_id_token')
+    throw refused('token', 'no_id_token', 'no_id_token')
   }
   const { payload } = await asProviderError(
     jwtVerify(idToken, keysOf(deps, found.jwksUri), {
@@ -373,12 +391,41 @@ export async function exchange(
     'id_token'
   )
   if (typeof payload.nonce !== 'string' || !timingSafeEqual(payload.nonce, params.nonce)) {
-    throw refused('id_token', 'nonce')
+    throw refused('id_token', 'nonce', 'response_not_to_this_request')
   }
   if (payload.azp !== undefined && payload.azp !== connection.clientId) {
-    throw refused('id_token', 'azp')
+    throw refused('id_token', 'azp', 'wrong_audience')
+  }
+  if (seen) {
+    seen.attributes = claimsOf(payload)
   }
   return profileOf(payload, connection)
+}
+
+/** The claims a test shows: strings, numbers, booleans and lists of them, not the token's own bookkeeping. */
+function claimsOf(payload: JWTPayload): Record<string, string[]> {
+  const own = new Set([
+    'iss',
+    'aud',
+    'exp',
+    'iat',
+    'nbf',
+    'jti',
+    'nonce',
+    'azp',
+    'at_hash',
+    'c_hash',
+  ])
+  const out: Record<string, string[]> = {}
+  for (const [name, value] of Object.entries(payload)) {
+    const values = (Array.isArray(value) ? value : [value]).filter(
+      (v) => typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'
+    )
+    if (!own.has(name) && values.length > 0) {
+      out[name] = values.map(String)
+    }
+  }
+  return out
 }
 
 /**
@@ -422,6 +469,7 @@ export function samlRedirectUrl(
  * @param connection - A SAML connection.
  * @param samlResponse - The `SAMLResponse` form field.
  * @param requestId - The `ID` of the attempt's `AuthnRequest`.
+ * @param seen - A test sign-in's collector of the attributes that arrived.
  * @returns The profile.
  * @throws AuthError `sso.provider_error` when the response is refused for any reason.
  * @throws ServiceUnavailableError when the replay guard cannot answer.
@@ -430,11 +478,12 @@ export async function verifySaml(
   deps: Pick<Deps, 'clock' | 'proofReplay' | 'config'>,
   connection: SsoConnectionRecord,
   samlResponse: string,
-  requestId: string
+  requestId: string,
+  seen?: Seen
 ): Promise<SsoProfile> {
   const saml = connection.saml
   if (!saml) {
-    throw refused('saml', 'not_saml')
+    throw refused('saml', 'not_saml', 'malformed_response')
   }
   const { spEntityId, acsUrl } = samlUrls(deps.config, connection)
   // The POST binding base64-encodes the document; the verifier reads the XML itself.
@@ -447,10 +496,13 @@ export async function verifySaml(
     certificates: saml.certificates.map((c) => c.pem),
   })
   if (!verdict.ok) {
-    throw refused('saml', verdict.reason)
+    throw refused('saml', verdict.reason, SAML_REASONS[verdict.reason])
   }
   const { subject, attributes } = verdict.assertion
   const names = effectiveAttributeNames(connection.protocol, connection.attributeMapping)
+  if (seen) {
+    seen.attributes = attributes
+  }
   const first = (candidates: string[]) => {
     for (const name of candidates) {
       const value = attributes[name]?.[0]?.trim()
@@ -511,10 +563,80 @@ function groupValues(values: unknown[]): string[] {
     .slice(0, MAX_PROFILE_GROUPS)
 }
 
-function refused(step: string, failure: string): AuthError {
+/**
+ * A refusal of the provider's answer. It reaches a sign-in as `sso.provider_error` and nothing
+ * more; only the test sign-in (TULA-145) reads `reason`, to tell the person setting the
+ * connection up what is wrong.
+ */
+export class SsoRefusal extends AuthError {
+  /** @param reason - The contract's code for what went wrong. */
+  constructor(readonly reason: SsoTestReason) {
+    super('sso.provider_error')
+    this.name = 'SsoRefusal'
+  }
+}
+
+/** What each of the SAML verifier's refusals is called to the person setting a connection up. */
+const SAML_REASONS: Record<SamlVerifier.SamlRefusal, SsoTestReason> = {
+  malformed: 'malformed_response',
+  forbidden_xml: 'malformed_response',
+  unsolicited: 'response_not_to_this_request',
+  status_not_success: 'idp_refused',
+  encrypted_assertion_unsupported: 'encrypted_assertion',
+  no_assertion: 'malformed_response',
+  multiple_assertions: 'malformed_response',
+  assertion_misplaced: 'malformed_response',
+  unsigned: 'unsigned_assertion',
+  assertion_unsigned: 'unsigned_assertion',
+  signature_invalid: 'signature_invalid',
+  signature_algorithm_refused: 'signature_algorithm',
+  certificate_not_configured: 'certificate_not_trusted',
+  issuer_mismatch: 'wrong_issuer',
+  destination_mismatch: 'wrong_recipient',
+  in_response_to_missing: 'response_not_to_this_request',
+  in_response_to_mismatch: 'response_not_to_this_request',
+  subject_confirmation_invalid: 'wrong_recipient',
+  recipient_mismatch: 'wrong_recipient',
+  audience_mismatch: 'wrong_audience',
+  conditions_missing: 'malformed_response',
+  not_yet_valid: 'clock_skew',
+  expired: 'assertion_expired',
+  name_id_invalid: 'malformed_response',
+  attribute_invalid: 'malformed_response',
+  replayed: 'replayed',
+}
+
+function refused(step: string, failure: string, reason: SsoTestReason): SsoRefusal {
   // The step and a fixed word only: an answer can hold a token or an address.
   logger.warn('an SSO provider call failed', { step, failure })
-  return new AuthError('sso.provider_error')
+  return new SsoRefusal(reason)
+}
+
+function reasonOf(step: string, error: unknown): SsoTestReason {
+  if (error instanceof errors.JWTExpired) {
+    return 'assertion_expired'
+  }
+  if (error instanceof errors.JWTClaimValidationFailed) {
+    const claim = error.claim
+    return claim === 'aud'
+      ? 'wrong_audience'
+      : claim === 'iss'
+        ? 'wrong_issuer'
+        : claim === 'nbf' || claim === 'iat'
+          ? 'clock_skew'
+          : 'id_token_invalid'
+  }
+  if (error instanceof errors.JWSSignatureVerificationFailed) {
+    return 'signature_invalid'
+  }
+  if (error instanceof errors.JWKSNoMatchingKey) {
+    return 'certificate_not_trusted'
+  }
+  return step === 'discovery'
+    ? 'discovery_failed'
+    : step === 'id_token'
+      ? 'id_token_invalid'
+      : 'token_exchange_failed'
 }
 
 async function asProviderError<T>(work: Promise<T>, step: string): Promise<T> {
@@ -530,7 +652,8 @@ async function asProviderError<T>(work: Promise<T>, step: string): Promise<T> {
         ? error.reason
         : error instanceof errors.JOSEError
           ? error.code
-          : 'unexpected'
+          : 'unexpected',
+      reasonOf(step, error)
     )
   }
 }

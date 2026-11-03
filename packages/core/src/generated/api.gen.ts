@@ -109,7 +109,7 @@ export interface Schemas {
     status: 'verified'
   }
   EmailVerificationStrategy: 'email_code' | 'email_link'
-  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'email.already_set' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.reused' | 'password.not_set' | 'import.unsupported_algorithm' | 'import.hash_malformed' | 'import.hash_parameters_too_weak' | 'import.hash_parameters_too_costly' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.enrolment_needs_other_sign_in' | 'mfa.needs_other_sign_in' | 'mfa.sms_not_allowed' | 'mfa.phone_number_required' | 'mfa.required_by_policy' | 'oauth.access_denied' | 'oauth.provider_error' | 'oauth.state_invalid' | 'oauth.ticket_invalid' | 'oauth.different_browser' | 'oauth.email_missing' | 'oauth.email_unverified' | 'oauth.account_exists' | 'oauth.identity_in_use' | 'oauth.already_linked' | 'identity.last_sign_in_method' | 'webhook.url_not_allowed' | 'webhook.cannot_redeliver' | 'webhook.rotation_refused' | 'hook.denied' | 'hook.unavailable' | 'hook.url_not_allowed' | 'passkey.registration_failed' | 'passkey.already_registered' | 'passkey.limit_reached' | 'passkey.last_sign_in_method' | 'phone.invalid' | 'sms.disabled' | 'sms.country_not_allowed' | 'sms.unavailable' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'session.limit_reached' | 'device.proof_invalid' | 'device.nonce_required' | 'device.binding_not_supported' | 'device.binding_required' | 'user.last_organization_manager' | 'organization.disabled' | 'organization.slug_taken' | 'organization.member_exists' | 'organization.last_manager' | 'organization.role_unknown' | 'organization.not_a_member' | 'organization.creation_disabled' | 'organization.limit_reached' | 'organization.personal_account_disabled' | 'organization.role_exists' | 'organization.role_in_use' | 'organization.role_built_in' | 'organization.role_limit' | 'organization.permission_required' | 'organization.role_not_assignable' | 'organization.invitation_exists' | 'organization.invitation_not_found' | 'organization.invitation_expired' | 'organization.invitation_revoked' | 'organization.invitation_used' | 'organization.invitation_wrong_account' | 'organization.invitation_email_unverified' | 'organization.invitation_role_gone' | 'organization.domain_public' | 'organization.domain_taken' | 'organization.domain_address_mismatch' | 'organization.domain_limit' | 'organization.suggestion_unavailable' | 'sso.disabled' | 'sso.connection_not_found' | 'sso.name_taken' | 'sso.domain_taken' | 'sso.domain_not_verified' | 'sso.issuer_not_allowed' | 'sso.saml_invalid' | 'sso.connection_in_use' | 'sso.invalid_transition' | 'sso.unavailable' | 'sso.provider_error' | 'sso.user_not_provisioned' | 'sso.email_domain_mismatch' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
+  ErrorCode: 'auth.invalid_credentials' | 'auth.unauthenticated' | 'auth.invalid_key' | 'auth.forbidden' | 'auth.user_banned' | 'auth.method_disabled' | 'auth.step_up_required' | 'flow.not_found' | 'flow.invalid_step' | 'email.invalid' | 'email.already_set' | 'password.too_short' | 'password.too_long' | 'password.missing_lowercase' | 'password.missing_uppercase' | 'password.missing_number' | 'password.missing_special' | 'password.too_few_character_classes' | 'password.contains_user_info' | 'password.common' | 'password.breached' | 'password.repeated_characters' | 'password.sequence' | 'password.reused' | 'password.not_set' | 'import.unsupported_algorithm' | 'import.hash_malformed' | 'import.hash_parameters_too_weak' | 'import.hash_parameters_too_costly' | 'verification.invalid_code' | 'verification.expired' | 'verification.too_many_attempts' | 'verification.different_browser' | 'mfa.invalid_code' | 'mfa.already_enabled' | 'mfa.not_enabled' | 'mfa.enrolment_expired' | 'mfa.not_available' | 'mfa.enrolment_needs_other_sign_in' | 'mfa.needs_other_sign_in' | 'mfa.sms_not_allowed' | 'mfa.phone_number_required' | 'mfa.required_by_policy' | 'oauth.access_denied' | 'oauth.provider_error' | 'oauth.state_invalid' | 'oauth.ticket_invalid' | 'oauth.different_browser' | 'oauth.email_missing' | 'oauth.email_unverified' | 'oauth.account_exists' | 'oauth.identity_in_use' | 'oauth.already_linked' | 'identity.last_sign_in_method' | 'webhook.url_not_allowed' | 'webhook.cannot_redeliver' | 'webhook.rotation_refused' | 'hook.denied' | 'hook.unavailable' | 'hook.url_not_allowed' | 'passkey.registration_failed' | 'passkey.already_registered' | 'passkey.limit_reached' | 'passkey.last_sign_in_method' | 'phone.invalid' | 'sms.disabled' | 'sms.country_not_allowed' | 'sms.unavailable' | 'session.invalid_token' | 'session.expired' | 'session.revoked' | 'session.reuse_detected' | 'session.limit_reached' | 'device.proof_invalid' | 'device.nonce_required' | 'device.binding_not_supported' | 'device.binding_required' | 'user.last_organization_manager' | 'organization.disabled' | 'organization.slug_taken' | 'organization.member_exists' | 'organization.last_manager' | 'organization.role_unknown' | 'organization.not_a_member' | 'organization.creation_disabled' | 'organization.limit_reached' | 'organization.personal_account_disabled' | 'organization.role_exists' | 'organization.role_in_use' | 'organization.role_built_in' | 'organization.role_limit' | 'organization.permission_required' | 'organization.role_not_assignable' | 'organization.invitation_exists' | 'organization.invitation_not_found' | 'organization.invitation_expired' | 'organization.invitation_revoked' | 'organization.invitation_used' | 'organization.invitation_wrong_account' | 'organization.invitation_email_unverified' | 'organization.invitation_role_gone' | 'organization.domain_public' | 'organization.domain_taken' | 'organization.domain_address_mismatch' | 'organization.domain_limit' | 'organization.suggestion_unavailable' | 'sso.disabled' | 'sso.connection_not_found' | 'sso.name_taken' | 'sso.domain_taken' | 'sso.domain_not_verified' | 'sso.issuer_not_allowed' | 'sso.saml_invalid' | 'sso.connection_in_use' | 'sso.invalid_transition' | 'sso.url_not_https' | 'sso.test_required' | 'sso.test_not_found' | 'sso.unavailable' | 'sso.provider_error' | 'sso.user_not_provisioned' | 'sso.email_domain_mismatch' | 'rate_limited' | 'request.malformed' | 'request.too_large' | 'request.origin_not_allowed' | 'request.redirect_not_allowed' | 'validation.failed' | 'resource.not_found' | 'resource.conflict' | 'precondition.required' | 'precondition.failed' | 'not_implemented' | 'service.unavailable' | 'internal'
   ErrorEnvelope: {
     status: number
     code: Schemas['ErrorCode']
@@ -563,6 +563,7 @@ export interface Schemas {
     breakGlassRole: string | null
     trustIdpMfa: boolean
     domains: string[]
+    tested: boolean
     createdAt: string
     updatedAt: string
   }
@@ -576,6 +577,30 @@ export interface Schemas {
     }[]
   }
   SsoStartRequest: {
+    redirectUrl: string
+  }
+  SsoTestResult: {
+    testId: string
+    status: 'pending' | 'passed' | 'failed'
+    reason: 'wrong_audience' | 'wrong_issuer' | 'wrong_recipient' | 'unsigned_assertion' | 'signature_invalid' | 'signature_algorithm' | 'certificate_not_trusted' | 'certificate_expired' | 'assertion_expired' | 'clock_skew' | 'response_not_to_this_request' | 'replayed' | 'idp_refused' | 'encrypted_assertion' | 'malformed_response' | 'discovery_failed' | 'token_exchange_failed' | 'no_id_token' | 'id_token_invalid' | 'email_missing' | 'email_outside_domains' | null
+    message: string | null
+    attributes: {
+      name: string
+      values: string[]
+    }[]
+    groups: string[]
+    mapped: {
+      email: string | null
+      givenName: string | null
+      familyName: string | null
+      emailOnVerifiedDomain: boolean
+    } | null
+  }
+  SsoTestStart: {
+    testId: string
+    authorizationUrl: string
+  }
+  SsoTestStartRequest: {
     redirectUrl: string
   }
   StartOrganizationDomainRequest: {
@@ -711,6 +736,8 @@ export interface Operations {
   getMyFactors: { params: Record<string, never>; body: undefined; response: Schemas['Factors'] }
   /** Get an SSO connection (`GET /v1/client/me/organizations/{organizationId}/sso-connections/{id}`). */
   getMyOrganizationSsoConnection: { params: { organizationId: string; id: string }; body: undefined; response: Schemas['SsoConnection'] }
+  /** Read the result of a test sign-in (`GET /v1/client/me/organizations/{organizationId}/sso-connections/{id}/tests/{testId}`). */
+  getMyOrganizationSsoConnectionTest: { params: { id: string; testId: string; organizationId: string }; body: undefined; response: Schemas['SsoTestResult'] }
   /** Get the IdP group to role mapping (`GET /v1/client/me/organizations/{organizationId}/sso-connections/{id}/group-roles`). */
   getMyOrganizationSsoGroupRoles: { params: { organizationId: string; id: string }; body: undefined; response: Schemas['SsoGroupRoles'] }
   /** Password policy (`GET /v1/client/password-policy`). */
@@ -803,6 +830,8 @@ export interface Operations {
   startIdTokenSignIn: { params: Record<string, never>; body: Schemas['IdTokenStartRequest']; response: Schemas['IdTokenStart'] }
   /** Claim a domain for an organization (`POST /v1/client/me/organizations/{id}/domains`). */
   startMyOrganizationDomain: { params: { id: string }; body: Schemas['StartOrganizationDomainRequest']; response: Schemas['OrganizationDomain'] }
+  /** Start a test sign-in of an SSO connection (`POST /v1/client/me/organizations/{organizationId}/sso-connections/{id}/tests`). */
+  startMyOrganizationSsoConnectionTest: { params: { organizationId: string; id: string }; body: Schemas['SsoTestStartRequest']; response: Schemas['SsoTestStart'] }
   /** Start signing in with an OAuth provider (`POST /v1/client/sign-ins/oauth`). */
   startOAuthSignIn: { params: Record<string, never>; body: Schemas['OAuthStartRequest']; response: Schemas['OAuthStart'] }
   /** Start registering a passkey (`POST /v1/client/me/passkeys/options`). */
@@ -902,6 +931,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   getMe: { method: 'GET', path: '/v1/client/me', session: true },
   getMyFactors: { method: 'GET', path: '/v1/client/me/factors', session: true },
   getMyOrganizationSsoConnection: { method: 'GET', path: '/v1/client/me/organizations/{organizationId}/sso-connections/{id}', session: true },
+  getMyOrganizationSsoConnectionTest: { method: 'GET', path: '/v1/client/me/organizations/{organizationId}/sso-connections/{id}/tests/{testId}', session: true },
   getMyOrganizationSsoGroupRoles: { method: 'GET', path: '/v1/client/me/organizations/{organizationId}/sso-connections/{id}/group-roles', session: true },
   getPasswordPolicy: { method: 'GET', path: '/v1/client/password-policy', session: false },
   getPasswordResetSecondFactorPasskeyOptions: { method: 'POST', path: '/v1/client/password-resets/{attemptId}/second-factor/passkey/options', session: false },
@@ -948,6 +978,7 @@ export const OPERATIONS: { readonly [Id in keyof Operations]: OperationRoute } =
   startIdentityLink: { method: 'POST', path: '/v1/client/me/identities/oauth', session: true },
   startIdTokenSignIn: { method: 'POST', path: '/v1/client/sign-ins/id-token', session: false },
   startMyOrganizationDomain: { method: 'POST', path: '/v1/client/me/organizations/{id}/domains', session: true },
+  startMyOrganizationSsoConnectionTest: { method: 'POST', path: '/v1/client/me/organizations/{organizationId}/sso-connections/{id}/tests', session: true },
   startOAuthSignIn: { method: 'POST', path: '/v1/client/sign-ins/oauth', session: false },
   startPasskeyRegistration: { method: 'POST', path: '/v1/client/me/passkeys/options', session: true },
   startPasskeySignIn: { method: 'POST', path: '/v1/client/sign-ins/passkey', session: false },

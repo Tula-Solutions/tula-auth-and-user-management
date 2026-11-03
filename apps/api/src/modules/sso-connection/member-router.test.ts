@@ -10,6 +10,7 @@ import {
 import { createApp } from '~/index'
 import * as Audit from '~/modules/audit/service'
 import * as Organizations from '~/modules/organization/service'
+import * as SsoConnections from '~/modules/sso-connection/service'
 import { createTestDeps, seedApiKey, TEST_ACTOR, TEST_TENANT, type TestDeps } from '~/testing'
 
 const PK = 'tula_pk_dev_publishable0000000000000000000'
@@ -18,6 +19,7 @@ const TENANT = { projectId: TEST_TENANT.projectId, environmentId: TEST_TENANT.en
 const PASSWORD = 'correct horse battery staple'
 const ORIGIN = 'https://app.northline.test'
 const SECRET = 'super-secret-value'
+const REDIRECT = `${ORIGIN}/settings`
 
 let deps: TestDeps
 let app: ReturnType<typeof createApp>
@@ -43,7 +45,7 @@ beforeEach(async () => {
           smsCode: { enabled: false },
         },
       },
-      urls: { allowedOrigins: [ORIGIN], allowedRedirectUrls: [] },
+      urls: { allowedOrigins: [ORIGIN], allowedRedirectUrls: [REDIRECT] },
       organizations: {
         ...DEFAULT_ENVIRONMENT_SETTINGS.organizations,
         enabled: true,
@@ -193,6 +195,13 @@ describe('who may call', () => {
       client('POST', `${base(org)}/${made.id}/refresh-metadata`, undefined, ada.accessToken),
       client('GET', `${base(org)}/${made.id}/group-roles`, undefined, ada.accessToken),
       client('PUT', `${base(org)}/${made.id}/group-roles`, { mappings: [] }, ada.accessToken),
+      client('POST', `${base(org)}/${made.id}/tests`, { redirectUrl: REDIRECT }, ada.accessToken),
+      client(
+        'GET',
+        `${base(org)}/${made.id}/tests/${Bun.randomUUIDv7()}`,
+        undefined,
+        ada.accessToken
+      ),
     ]
     for (const res of await Promise.all(calls)) {
       expect(res.status).toBe(403)
@@ -212,11 +221,15 @@ describe('who may call', () => {
       ['POST', `${base(org)}/${made.id}/refresh-metadata`],
       ['GET', `${base(org)}/${made.id}/group-roles`],
       ['PUT', `${base(org)}/${made.id}/group-roles`],
+      ['POST', `${base(org)}/${made.id}/tests`],
+      ['GET', `${base(org)}/${made.id}/tests/${Bun.randomUUIDv7()}`],
     ] as const) {
       const res = await client(
         method,
         path,
-        { POST: body(), PATCH: { name: 'x' } }[method as 'POST'] ?? { mappings: [] },
+        path.endsWith('/tests')
+          ? { redirectUrl: REDIRECT }
+          : ({ POST: body(), PATCH: { name: 'x' } }[method as 'POST'] ?? { mappings: [] }),
         cy.accessToken
       )
       expect(await codeOf(res)).toBe('organization.not_a_member')
@@ -238,11 +251,17 @@ describe('who may call', () => {
       ['POST', `${base(org)}/${foreign.id}/refresh-metadata`],
       ['GET', `${base(org)}/${foreign.id}/group-roles`],
       ['PUT', `${base(org)}/${foreign.id}/group-roles`],
+      ['POST', `${base(org)}/${foreign.id}/tests`],
+      ['GET', `${base(org)}/${foreign.id}/tests/${Bun.randomUUIDv7()}`],
     ] as const) {
       const res = await client(
         method,
         path,
-        method === 'PATCH' ? { name: 'x' } : { mappings: [] },
+        path.endsWith('/tests')
+          ? { redirectUrl: REDIRECT }
+          : method === 'PATCH'
+            ? { name: 'x' }
+            : { mappings: [] },
         maya.accessToken
       )
       expect(await codeOf(res)).toBe('sso.connection_not_found')
@@ -395,5 +414,77 @@ describe('weakenings need a recent authentication', () => {
     expect(
       (await client('PATCH', `${base(org)}/${made.id}`, { name: 'Renamed' }, token)).status
     ).toBe(200)
+  })
+})
+
+describe('the test sign-in gate', () => {
+  test('activating without a passing test is refused, however the admin asks', async () => {
+    const { maya, org, made } = await world()
+    const res = await client(
+      'PATCH',
+      `${base(org)}/${made.id}`,
+      { status: 'active' },
+      maya.accessToken
+    )
+    expect(res.status).toBe(409)
+    expect(await codeOf(res)).toBe('sso.test_required')
+  })
+
+  test('a passing test of the current settings allows activation, and a change resets it', async () => {
+    const { maya, org, made } = await world()
+    const record = await deps.ssoConnections.find(TENANT.environmentId, made.id)
+    if (!record) {
+      throw new Error('missing')
+    }
+    await SsoConnections.markTested(
+      deps,
+      TENANT,
+      made.id,
+      SsoConnections.fingerprint(record),
+      TEST_ACTOR
+    )
+    const read = await json<SsoConnection>(
+      await client('GET', `${base(org)}/${made.id}`, undefined, maya.accessToken)
+    )
+    expect(read.tested).toBe(true)
+    await client('PATCH', `${base(org)}/${made.id}`, { clientId: 'client-2' }, maya.accessToken)
+    const again = await client(
+      'PATCH',
+      `${base(org)}/${made.id}`,
+      { status: 'active' },
+      maya.accessToken
+    )
+    expect(await codeOf(again)).toBe('sso.test_required')
+  })
+
+  test('starts a test of the own connection and reads it; a test of another connection is not found', async () => {
+    const { maya, org, made } = await world()
+    const second = await json<SsoConnection>(
+      await client('POST', base(org), body({ name: 'Second', domains: [] }), maya.accessToken)
+    )
+    // The provider cannot be reached: the test fails at once instead of waiting on the network.
+    deps.outbound.point('idp.example.test')
+    const started = await client(
+      'POST',
+      `${base(org)}/${made.id}/tests`,
+      { redirectUrl: REDIRECT },
+      maya.accessToken
+    )
+    expect(started.status).toBe(201)
+    const { testId } = await json<{ testId: string }>(started)
+    const read = await client(
+      'GET',
+      `${base(org)}/${made.id}/tests/${testId}`,
+      undefined,
+      maya.accessToken
+    )
+    expect(read.status).toBe(200)
+    const wrong = await client(
+      'GET',
+      `${base(org)}/${second.id}/tests/${testId}`,
+      undefined,
+      maya.accessToken
+    )
+    expect(await codeOf(wrong)).toBe('sso.test_not_found')
   })
 })

@@ -93,6 +93,9 @@ object TulaOperations {
     /** Get an SSO connection (`GET /v1/client/me/organizations/{organizationId}/sso-connections/{id}`). No body. Answers [SsoConnection]. */
     val getMyOrganizationSsoConnection: TulaOperation = TulaOperation("getMyOrganizationSsoConnection", "GET", "/v1/client/me/organizations/{organizationId}/sso-connections/{id}", true)
 
+    /** Read the result of a test sign-in (`GET /v1/client/me/organizations/{organizationId}/sso-connections/{id}/tests/{testId}`). No body. Answers [SsoTestResult]. */
+    val getMyOrganizationSsoConnectionTest: TulaOperation = TulaOperation("getMyOrganizationSsoConnectionTest", "GET", "/v1/client/me/organizations/{organizationId}/sso-connections/{id}/tests/{testId}", true)
+
     /** Get the IdP group to role mapping (`GET /v1/client/me/organizations/{organizationId}/sso-connections/{id}/group-roles`). No body. Answers [SsoGroupRoles]. */
     val getMyOrganizationSsoGroupRoles: TulaOperation = TulaOperation("getMyOrganizationSsoGroupRoles", "GET", "/v1/client/me/organizations/{organizationId}/sso-connections/{id}/group-roles", true)
 
@@ -231,6 +234,9 @@ object TulaOperations {
     /** Claim a domain for an organization (`POST /v1/client/me/organizations/{id}/domains`). Body: [StartOrganizationDomainRequest]. Answers [OrganizationDomain]. */
     val startMyOrganizationDomain: TulaOperation = TulaOperation("startMyOrganizationDomain", "POST", "/v1/client/me/organizations/{id}/domains", true)
 
+    /** Start a test sign-in of an SSO connection (`POST /v1/client/me/organizations/{organizationId}/sso-connections/{id}/tests`). Body: [SsoTestStartRequest]. Answers [SsoTestStart]. */
+    val startMyOrganizationSsoConnectionTest: TulaOperation = TulaOperation("startMyOrganizationSsoConnectionTest", "POST", "/v1/client/me/organizations/{organizationId}/sso-connections/{id}/tests", true)
+
     /** Start signing in with an OAuth provider (`POST /v1/client/sign-ins/oauth`). Body: [OAuthStartRequest]. Answers [OAuthStart]. */
     val startOAuthSignIn: TulaOperation = TulaOperation("startOAuthSignIn", "POST", "/v1/client/sign-ins/oauth", false)
 
@@ -348,6 +354,7 @@ object TulaOperations {
         getMe,
         getMyFactors,
         getMyOrganizationSsoConnection,
+        getMyOrganizationSsoConnectionTest,
         getMyOrganizationSsoGroupRoles,
         getPasswordPolicy,
         getPasswordResetSecondFactorPasskeyOptions,
@@ -394,6 +401,7 @@ object TulaOperations {
         startIdTokenSignIn,
         startIdentityLink,
         startMyOrganizationDomain,
+        startMyOrganizationSsoConnectionTest,
         startOAuthSignIn,
         startPasskeyRegistration,
         startPasskeySignIn,

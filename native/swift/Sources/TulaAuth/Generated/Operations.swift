@@ -93,6 +93,9 @@ public enum TulaOperations {
     /// Get an SSO connection (`GET /v1/client/me/organizations/{organizationId}/sso-connections/{id}`). No body. Answers `SsoConnection`.
     public static let getMyOrganizationSsoConnection = TulaOperation(id: "getMyOrganizationSsoConnection", method: "GET", path: "/v1/client/me/organizations/{organizationId}/sso-connections/{id}", requiresSession: true)
 
+    /// Read the result of a test sign-in (`GET /v1/client/me/organizations/{organizationId}/sso-connections/{id}/tests/{testId}`). No body. Answers `SsoTestResult`.
+    public static let getMyOrganizationSsoConnectionTest = TulaOperation(id: "getMyOrganizationSsoConnectionTest", method: "GET", path: "/v1/client/me/organizations/{organizationId}/sso-connections/{id}/tests/{testId}", requiresSession: true)
+
     /// Get the IdP group to role mapping (`GET /v1/client/me/organizations/{organizationId}/sso-connections/{id}/group-roles`). No body. Answers `SsoGroupRoles`.
     public static let getMyOrganizationSsoGroupRoles = TulaOperation(id: "getMyOrganizationSsoGroupRoles", method: "GET", path: "/v1/client/me/organizations/{organizationId}/sso-connections/{id}/group-roles", requiresSession: true)
 
@@ -231,6 +234,9 @@ public enum TulaOperations {
     /// Claim a domain for an organization (`POST /v1/client/me/organizations/{id}/domains`). Body: `StartOrganizationDomainRequest`. Answers `OrganizationDomain`.
     public static let startMyOrganizationDomain = TulaOperation(id: "startMyOrganizationDomain", method: "POST", path: "/v1/client/me/organizations/{id}/domains", requiresSession: true)
 
+    /// Start a test sign-in of an SSO connection (`POST /v1/client/me/organizations/{organizationId}/sso-connections/{id}/tests`). Body: `SsoTestStartRequest`. Answers `SsoTestStart`.
+    public static let startMyOrganizationSsoConnectionTest = TulaOperation(id: "startMyOrganizationSsoConnectionTest", method: "POST", path: "/v1/client/me/organizations/{organizationId}/sso-connections/{id}/tests", requiresSession: true)
+
     /// Start signing in with an OAuth provider (`POST /v1/client/sign-ins/oauth`). Body: `OAuthStartRequest`. Answers `OAuthStart`.
     public static let startOAuthSignIn = TulaOperation(id: "startOAuthSignIn", method: "POST", path: "/v1/client/sign-ins/oauth", requiresSession: false)
 
@@ -348,6 +354,7 @@ public enum TulaOperations {
         getMe,
         getMyFactors,
         getMyOrganizationSsoConnection,
+        getMyOrganizationSsoConnectionTest,
         getMyOrganizationSsoGroupRoles,
         getPasswordPolicy,
         getPasswordResetSecondFactorPasskeyOptions,
@@ -394,6 +401,7 @@ public enum TulaOperations {
         startIdTokenSignIn,
         startIdentityLink,
         startMyOrganizationDomain,
+        startMyOrganizationSsoConnectionTest,
         startOAuthSignIn,
         startPasskeyRegistration,
         startPasskeySignIn,

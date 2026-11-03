@@ -3,6 +3,8 @@ import {
   SSO_MANAGE_PERMISSION,
   type SsoConnection,
   type SsoGroupRoles,
+  type SsoTestResult,
+  type SsoTestStart,
   type UpdateSsoConnectionRequest,
 } from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
@@ -10,6 +12,7 @@ import { AuthError, ForbiddenError } from '~/exceptions'
 import type { Actor } from '~/lib/actor'
 import * as Organizations from '~/modules/organization/service'
 import * as SsoConnections from '~/modules/sso-connection/service'
+import * as SsoTests from '~/modules/sso-test/service'
 
 // What a signed-in organization admin does to their own organization's single sign-on (ADR
 // 0067). The decisions are the admin service's, so a change is the same change with the same
@@ -309,4 +312,57 @@ export async function putGroupRoles(
     await requireAssignable(deps, tenant, permissions, role)
   }
   return SsoConnections.putGroupRoles(deps, tenant, id, input, actor)
+}
+
+/**
+ * Start a test sign-in of a connection of the organization. The activation gate is the admin
+ * service's (`sso.test_required`): this is how an organization admin earns a pass for it.
+ *
+ * @param deps - As {@link SsoTests.start}.
+ * @param tenant - The environment.
+ * @param caller - The signed-in user.
+ * @param organizationId - The organization.
+ * @param id - The connection.
+ * @param redirectUrl - The page to return to; must be allowed by the environment.
+ * @param actor - The user, for the audit log.
+ * @returns The test's id and where to send the browser.
+ * @throws As {@link get}, and `request.redirect_not_allowed`.
+ */
+export async function startTest(
+  deps: Deps,
+  tenant: Tenant,
+  caller: Caller,
+  organizationId: string,
+  id: string,
+  redirectUrl: string,
+  actor: Actor
+): Promise<SsoTestStart> {
+  await requireManager(deps, tenant, caller, organizationId)
+  await requireOwn(deps, tenant, organizationId, id)
+  return SsoTests.start(deps, tenant, id, redirectUrl, actor)
+}
+
+/**
+ * The result of a test of a connection of the organization.
+ *
+ * @param deps - Stores and settings.
+ * @param tenant - The environment.
+ * @param caller - The signed-in user.
+ * @param organizationId - The organization.
+ * @param id - The connection.
+ * @param testId - The test.
+ * @returns The result, `pending` until the browser has come back.
+ * @throws As {@link get}, and `sso.test_not_found`.
+ */
+export async function testResult(
+  deps: Base & Pick<Deps, 'clock' | 'flowAttempts'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  caller: Caller,
+  organizationId: string,
+  id: string,
+  testId: string
+): Promise<SsoTestResult> {
+  await requireManager(deps, tenant, caller, organizationId)
+  await requireOwn(deps, tenant, organizationId, id)
+  return SsoTests.result(deps, tenant, id, testId)
 }

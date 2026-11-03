@@ -228,6 +228,61 @@
       }
     },
     {
+      "name": "an administrator starts a test sign-in of the connection",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/sso-connections/{{connectionId}}/tests",
+        "auth": "secret",
+        "body": {
+          "redirectUrl": "http://localhost:5174/oauth/callback"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "testId": "$any",
+          "authorizationUrl": "$any"
+        }
+      },
+      "capture": {
+        "testId": "testId",
+        "testUrl": "authorizationUrl"
+      }
+    },
+    {
+      "name": "the administrator signs in at the identity provider as someone on the domain",
+      "sso": {
+        "authorizationUrl": "{{testUrl}}",
+        "email": "tester-{{suffix}}@s{{suffix}}.example",
+        "captureTest": "returnedTest"
+      }
+    },
+    {
+      "name": "the test passed",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/sso-connections/{{connectionId}}/tests/{{testId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "testId": "{{testId}}",
+          "status": "passed",
+          "reason": null,
+          "message": null,
+          "attributes": "$any",
+          "groups": "$any",
+          "mapped": {
+            "email": "tester-{{suffix}}@s{{suffix}}.example",
+            "givenName": null,
+            "familyName": null,
+            "emailOnVerifiedDomain": true
+          }
+        }
+      }
+    },
+    {
       "name": "the administrator activates the connection",
       "request": {
         "method": "PATCH",

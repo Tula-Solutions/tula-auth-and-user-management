@@ -277,6 +277,25 @@ async function bindSsoDomain(body: unknown): Promise<Response> {
     clientSecret: 'e2e-sso-secret',
     domains: [domain],
   })
+  // Activation needs a passing test sign-in (TULA-145): play the administrator at the mock
+  // provider, then the callback it sends the browser to.
+  const test = (await admin('POST', `/v1/admin/sso-connections/${connection.id}/tests`, {
+    redirectUrl: 'http://localhost:5174/oauth/callback',
+  })) as unknown as { authorizationUrl: string }
+  const authorize = new URL(test.authorizationUrl)
+  authorize.searchParams.set('login_hint', `tester@${domain}`)
+  // The mock provider answers a loopback Host only; a request made in process has none.
+  const LOOPBACK = { headers: { host: '127.0.0.1' } }
+  const consented = await app.request(authorize.pathname + authorize.search, LOOPBACK)
+  const callbackUrl = new URL(consented.headers.get('location') ?? '', authorize)
+  await app.request(callbackUrl.pathname + callbackUrl.search, LOOPBACK)
+  const outcome = await app.request(
+    `/v1/admin/sso-connections/${connection.id}/tests/${(test as unknown as { testId: string }).testId}`,
+    { headers: { authorization: `Bearer ${SECRET_KEY}` } }
+  )
+  if (((await outcome.json()) as { status: string }).status !== 'passed') {
+    throw new Error('the fixture SSO test sign-in did not pass')
+  }
   await admin('PATCH', `/v1/admin/sso-connections/${connection.id}`, { status: 'active' })
   return json({ ok: true })
 }

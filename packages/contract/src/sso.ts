@@ -37,6 +37,7 @@ export const SSO_CONNECTION_FIELDS = [
   'status',
   'attributeMapping',
   'groupRoles',
+  'test',
 ] as const
 
 /** One of {@link SSO_CONNECTION_FIELDS}. */

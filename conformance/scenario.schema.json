@@ -511,6 +511,9 @@
                   "captureAttempt": {
                     "type": "string"
                   },
+                  "captureTest": {
+                    "type": "string"
+                  },
                   "expectError": {
                     "type": "string"
                   },
@@ -1308,6 +1311,9 @@
                     "type": "string"
                   },
                   "captureAttempt": {
+                    "type": "string"
+                  },
+                  "captureTest": {
                     "type": "string"
                   },
                   "expectError": {

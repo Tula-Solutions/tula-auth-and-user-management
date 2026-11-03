@@ -3354,6 +3354,23 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
         )
         expect(created.status).toBe(201)
         const { id } = (await created.json()) as { id: string }
+        // Activation needs a passing test sign-in of these settings (TULA-145).
+        const test = await s.admin('POST', `/v1/admin/sso-connections/${id}/tests`, {
+          redirectUrl: SIGN_IN_PAGE,
+        })
+        expect(test.status).toBe(201)
+        const started = (await test.json()) as { testId: string; authorizationUrl: string }
+        const tester = `tester@${domain}`
+        if (protocol === 'saml') {
+          await atSamlIdp(s, started.authorizationUrl, tester)
+        } else {
+          await atIdp(s, started.authorizationUrl, tester)
+        }
+        const tested = await s.admin(
+          'GET',
+          `/v1/admin/sso-connections/${id}/tests/${started.testId}`
+        )
+        expect(((await tested.json()) as { status: string }).status).toBe('passed')
         const active = await s.admin('PATCH', `/v1/admin/sso-connections/${id}`, {
           status: 'active',
         })

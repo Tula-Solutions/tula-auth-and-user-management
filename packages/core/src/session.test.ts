@@ -2593,6 +2593,11 @@ describe('organization members, roles and domains (ADR 0065, Orgs 07)', () => {
     w.api.on(`DELETE ${SSO}/${C}`, () => new Response(null, { status: 204 }))
     w.api.on(`GET ${SSO}/${C}/group-roles`, () => json(200, { mappings: [] }))
     w.api.on(`PUT ${SSO}/${C}/group-roles`, (_req) => json(200, { mappings: [] }))
+    const T = '01980000-0000-7000-8000-0000000000aa'
+    w.api.on(`POST ${SSO}/${C}/tests`, () =>
+      json(201, { testId: T, authorizationUrl: 'https://idp.test/a' })
+    )
+    w.api.on(`GET ${SSO}/${C}/tests/${T}`, () => json(200, { testId: T, status: 'pending' }))
     const { tula } = await signedIn(w)
     const sso = tula.organizations.sso
     expect(await sso.list(ORG)).toEqual({ connections: [connection] } as never)
@@ -2608,6 +2613,11 @@ describe('organization members, roles and domains (ADR 0065, Orgs 07)', () => {
     const mapping = { mappings: [{ group: 'eng', role: 'admin' }] }
     await sso.setGroupRoles(ORG, C, mapping)
     expect(w.api.calls(`PUT ${SSO}/${C}/group-roles`)[0]?.body).toEqual(mapping)
+    expect((await sso.startTest(ORG, C, 'https://app.test/s')).testId).toBe(T)
+    expect(w.api.calls(`POST ${SSO}/${C}/tests`)[0]?.body).toEqual({
+      redirectUrl: 'https://app.test/s',
+    })
+    expect((await sso.testResult(ORG, C, T)).status).toBe('pending')
   })
 
   test('domains list, start, verify, change the mode and remove', async () => {

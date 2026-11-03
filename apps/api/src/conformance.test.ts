@@ -67,6 +67,8 @@ describe('conformance scenarios, in process', () => {
       'email code sign-in',
       'sso group roles follow the identity provider',
       'sso group roles keep the last manager',
+      'sso connection activates only after a passing test',
+      'sso test sign-in fails with its reason',
       'email link sign-in',
       'passwordless sign-up',
       'two-step enrolment and sign-in',

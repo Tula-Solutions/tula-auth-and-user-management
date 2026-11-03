@@ -29,6 +29,8 @@ const CONNECTION = (over: Record<string, unknown> = {}) => ({
   clientSecretSet: true,
   saml: null,
   attributeMapping: null,
+  groupRoles: null,
+  tested: false,
   defaultRole: 'member',
   enforced: false,
   breakGlassRole: null,

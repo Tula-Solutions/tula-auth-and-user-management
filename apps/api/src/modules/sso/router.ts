@@ -8,6 +8,7 @@ import { byIp, rateLimit } from '~/middleware/rate-limit'
 import * as Flows from '~/modules/flow/service'
 import { OAUTH_INVALID_PAGE } from '~/modules/oauth/router'
 import { samlUrls } from '~/modules/sso-connection/service'
+import * as SsoTests from '~/modules/sso-test/service'
 import * as openapi from '~/openapi'
 
 /** Requests per minute from one IP to an SSO connection's callback. */
@@ -129,14 +130,26 @@ async function answer(c: Context<AppEnv>, input: Record<string, unknown>): Promi
   c.header('Cache-Control', 'no-store')
   c.header('Referrer-Policy', 'no-referrer')
   const connectionId = c.req.param('connectionId') ?? ''
-  const result = UUID.test(connectionId)
-    ? await Flows.ssoCallback(c.get('deps'), connectionId, {
-        state: field(input.state),
+  const state = field(input.state)
+  // A test sign-in's state is taken by the test; anything else is a sign-in's.
+  const test = UUID.test(connectionId)
+    ? await SsoTests.callback(c.get('deps'), connectionId, {
+        state,
         code: field(input.code),
         error: field(input.error),
         samlResponse: field(input.samlResponse),
       })
-    : ({ invalid: true } as const)
+    : null
+  const result =
+    test ??
+    (UUID.test(connectionId)
+      ? await Flows.ssoCallback(c.get('deps'), connectionId, {
+          state: field(input.state),
+          code: field(input.code),
+          error: field(input.error),
+          samlResponse: field(input.samlResponse),
+        })
+      : ({ invalid: true } as const))
   if ('redirectTo' in result) {
     try {
       return c.redirect(result.redirectTo, 303)

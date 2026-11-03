@@ -320,6 +320,8 @@ describe('documentation routes', () => {
       '/v1/admin/sso-connections/{id}',
       '/v1/admin/sso-connections/{id}/group-roles',
       '/v1/admin/sso-connections/{id}/refresh-metadata',
+      '/v1/admin/sso-connections/{id}/tests',
+      '/v1/admin/sso-connections/{id}/tests/{testId}',
       '/v1/admin/scim-tokens',
       '/v1/admin/scim-tokens/{id}',
       '/v1/sso/callback/{connectionId}',

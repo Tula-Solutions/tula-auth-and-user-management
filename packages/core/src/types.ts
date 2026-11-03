@@ -404,6 +404,12 @@ export type UpdateOrganizationSsoConnectionInput = Schemas['UpdateSsoConnectionR
 /** An organization's IdP group to role mapping, in precedence order. */
 export type OrganizationSsoGroupRoles = Schemas['SsoGroupRoles']
 
+/** A started test sign-in: where to send the browser, and the id it returns with. */
+export type OrganizationSsoTestStart = Schemas['SsoTestStart']
+
+/** A test sign-in's result. */
+export type OrganizationSsoTestResult = Schemas['SsoTestResult']
+
 /** What `organizations.setActive()` answers: the session's active organization now. */
 export type ActiveOrganization = Schemas['ActiveOrganization']
 
