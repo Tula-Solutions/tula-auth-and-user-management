@@ -15,6 +15,7 @@ import {
   organizationRoutes,
 } from './fake-organizations'
 import { type FakeProposalState, proposalRoutes } from './fake-proposals'
+import { type FakeSsoState, ssoRoutes } from './fake-sso'
 import { type FakeWebhookState, webhookRoutes } from './fake-webhooks'
 
 export { type FakeHook, fakeHook } from './fake-hooks'
@@ -33,6 +34,7 @@ export {
   fakeRole,
 } from './fake-organizations'
 export { FAKE_AGENT_KEY_ID, type FakeProposal, fakeProposal } from './fake-proposals'
+export { type FakeSsoConnection, fakeSsoConnection } from './fake-sso'
 
 export {
   type FakeWebhookDelivery,
@@ -236,6 +238,7 @@ export interface FakeState
     FakeHookState,
     FakeNativeAppState,
     FakeOrganizationState,
+    FakeSsoState,
     FakeProposalState {
   /** Whether `TULA_ADMIN_TOKEN` is set (the instance routes exist). */
   adminToken: boolean
@@ -389,6 +392,8 @@ function initialState(): FakeState {
     roles: [],
     invitations: [],
     domains: [],
+    ssoConnections: [],
+    ssoCertificateEnd: '2027-10-23T12:00:00.000Z',
     proposals: [],
     proposalNow: NOW,
     webhookWorkerSeparate: false,
@@ -742,6 +747,11 @@ export function installFakeApi() {
       enabled: () => state.settings.settings.organizations?.enabled ?? false,
       redirectUrls: () => state.settings.settings.urls.allowedRedirectUrls,
       userExists: (userId) => state.users.some((user) => user.id === userId),
+    }),
+    ...ssoRoutes(state, {
+      enabled: () => state.settings.settings.sso?.enabled ?? false,
+      organizations: () => state.organizations,
+      domains: () => state.domains,
     }),
     ...proposalRoutes(state),
     ['GET', /^\/v1\/admin\/settings$/, () => structuredClone(state.settings)],
