@@ -56,6 +56,9 @@ export function describeSsoConnectionStore(
       clientId: 'client-1',
       clientSecretSealed: 'sealed',
       defaultRole: 'member',
+      enforced: false,
+      breakGlassRole: null,
+      trustIdpMfa: false,
       domains: ['acme.test'],
       testedFingerprint: null,
       createdAt: now,
@@ -135,6 +138,17 @@ export function describeSsoConnectionStore(
       expect(await ctx.store.find(ctx.a.environmentId, record.id)).toEqual(expected)
       expect(await ctx.store.list(ctx.a.environmentId, org)).toEqual([expected])
       expect(await ctx.recorded()).toEqual(['sso_connection.created'])
+    })
+
+    test('lists the whole environment when no organization is named', async () => {
+      const other = await ctx.organization(ctx.a)
+      const one = connection(ctx.a, org, { name: 'one', domains: ['one.test'] })
+      const two = connection(ctx.a, other, { name: 'two', domains: ['two.test'] })
+      await insert(one)
+      await insert(two)
+      const ids = (await ctx.store.list(ctx.a.environmentId)).map((r) => r.id).sort()
+      expect(ids).toEqual([one.id, two.id].sort())
+      expect(await ctx.store.list(ctx.b.environmentId)).toEqual([])
     })
 
     test('another environment sees nothing', async () => {
@@ -236,6 +250,19 @@ export function describeSsoConnectionStore(
       const updated = await update(record.id, { saml: next })
       expect(updated).toMatchObject({ saml: next })
       expect(await update(record.id, { name: 'Renamed' })).toMatchObject({ saml: next })
+    })
+
+    test('enforcement, break-glass role and MFA trust are stored, and a null role clears it', async () => {
+      const record = connection(ctx.a, org)
+      await insert(record)
+      const set = await update(record.id, {
+        enforced: true,
+        breakGlassRole: 'admin',
+        trustIdpMfa: true,
+      })
+      expect(set).toMatchObject({ enforced: true, breakGlassRole: 'admin', trustIdpMfa: true })
+      const cleared = await update(record.id, { breakGlassRole: null })
+      expect(cleared).toMatchObject({ enforced: true, breakGlassRole: null, trustIdpMfa: true })
     })
 
     test('an update refuses a taken name and an unknown connection', async () => {

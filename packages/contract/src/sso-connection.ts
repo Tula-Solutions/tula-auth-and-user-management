@@ -75,6 +75,9 @@ export const UpdateSsoConnectionRequestSchema = z
     clientSecret: z.string().min(1).max(4096),
     saml: SamlSettingsInputSchema,
     defaultRole: RoleKeySchema,
+    enforced: z.boolean(),
+    breakGlassRole: RoleKeySchema.nullable(),
+    trustIdpMfa: z.boolean(),
     domains: Domains,
     status: z.enum(SSO_CONNECTION_STATUSES),
   })
@@ -110,6 +113,9 @@ export const SsoConnectionSchema = z
     clientSecretSet: z.boolean(),
     saml: SamlConnectionViewSchema.nullable(),
     defaultRole: z.string(),
+    enforced: z.boolean(),
+    breakGlassRole: z.string().nullable(),
+    trustIdpMfa: z.boolean(),
     domains: z.array(z.string()),
     /** Whether a test sign-in has passed against the current settings: required to activate. */
     tested: z.boolean(),
@@ -123,8 +129,8 @@ export const SsoConnectionListSchema = z
   .object({ connections: z.array(SsoConnectionSchema) })
   .meta({ ref: 'SsoConnectionList' })
 
-/** The query of the list route: the organization whose connections to list. */
-export const SsoConnectionListQuerySchema = z.object({ organizationId: z.uuid() })
+/** The query of the list route: the organization whose connections to list; left out, the whole environment's. */
+export const SsoConnectionListQuerySchema = z.object({ organizationId: z.uuid().optional() })
 
 /** The identity provider values of a SAML connection, as given. */
 export type SamlSettingsInput = z.infer<typeof SamlSettingsInputSchema>

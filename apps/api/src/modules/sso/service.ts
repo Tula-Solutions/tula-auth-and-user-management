@@ -82,6 +82,72 @@ export async function offered(
 }
 
 /**
+ * Whether a first factor other than `sso` is refused for an identifier: its domain is enforced
+ * and the method is not one a break-glass member keeps.
+ *
+ * Decided by the domain. Only `password` ever reads the account (to spare a holder of the
+ * connection's break-glass role), so that is the one answer that depends on who the address
+ * belongs to; {@link requireNotEnforced} never asks it, and the password step folds it into
+ * `auth.invalid_credentials` (account enumeration, ADR 0067).
+ *
+ * @param deps - Settings, connections, users and organizations.
+ * @param tenant - The environment.
+ * @param identifier - The address the sign-in is for (a phone number is on no domain).
+ * @param method - The strategy being tried.
+ * @returns `true` when the method is refused.
+ */
+export async function refuses(
+  deps: Pick<Deps, 'environmentSettings' | 'config' | 'ssoConnections' | 'users' | 'organizations'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  identifier: string,
+  method: string
+): Promise<boolean> {
+  const connection = await offered(deps, tenant, identifier)
+  if (!connection?.enforced) {
+    return false
+  }
+  if (method !== 'password' || connection.breakGlassRole === null) {
+    return true
+  }
+  const user = await deps.users.findByEmail(tenant.environmentId, identifier)
+  const membership = user
+    ? await deps.organizations.findMembership(
+        tenant.environmentId,
+        connection.organizationId,
+        user.id
+      )
+    : null
+  return membership?.roleKey !== connection.breakGlassRole
+}
+
+/**
+ * Refuse a first factor other than `sso` for an identifier on an enforced connection's domain,
+ * with an answer that does not depend on who the address belongs to.
+ *
+ * Break-glass covers the password alone, which is why this holds for every method it guards:
+ * the emailed code and link, the texted code, a passkey and a provider's profile. The password
+ * step does not call this; it uses {@link refuses} and answers `auth.invalid_credentials`.
+ * Called by each other first factor's own route (a client that skips the offer is refused too),
+ * and by the completion of a provider or passkey sign-in once the account is known.
+ *
+ * @param deps - Settings, connections, users and organizations.
+ * @param tenant - The environment.
+ * @param identifier - The address the sign-in is for (a phone number is on no domain).
+ * @param method - The strategy being tried, named in the refusal.
+ * @throws AuthError `auth.method_disabled` when the domain is enforced.
+ */
+export async function requireNotEnforced(
+  deps: Pick<Deps, 'environmentSettings' | 'config' | 'ssoConnections' | 'users' | 'organizations'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  identifier: string,
+  method: string
+): Promise<void> {
+  if (await refuses(deps, tenant, identifier, method)) {
+    throw new AuthError('auth.method_disabled', { method })
+  }
+}
+
+/**
  * The connection an SSO round is for, as long as it may still sign anybody in: single sign-on
  * on and the connection `active`. Asked at the start, the callback and the exchange.
  *

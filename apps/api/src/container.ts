@@ -35,6 +35,7 @@ import { PostgresOrganizationDomainStore } from '~/adapters/postgres/organizatio
 import { PostgresOrganizationStore } from '~/adapters/postgres/organizations'
 import { PostgresPasskeyStore } from '~/adapters/postgres/passkeys'
 import { PostgresProposalStore } from '~/adapters/postgres/proposals'
+import { PostgresScimStore } from '~/adapters/postgres/scim'
 import { PostgresSessionStore } from '~/adapters/postgres/sessions'
 import { PostgresSigningKeyStore } from '~/adapters/postgres/signing-keys'
 import { PostgresSmsUsageStore } from '~/adapters/postgres/sms-usage'
@@ -272,6 +273,7 @@ export function createContainer(env: Env, role: ProcessRole = 'api'): Container 
     hooks: new PostgresHookStore(database.db),
     nativeApps: new PostgresNativeAppStore(database.db),
     ssoConnections: new PostgresSsoConnectionStore(database.db),
+    scim: new PostgresScimStore(database.db),
     organizations: new PostgresOrganizationStore(database.db),
     organizationDomains: new PostgresOrganizationDomainStore(database.db),
     proposals: new PostgresProposalStore(database.db),

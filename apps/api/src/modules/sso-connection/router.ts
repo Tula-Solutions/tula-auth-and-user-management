@@ -52,7 +52,8 @@ router.get(
     operationId: 'listSsoConnections',
     tags: ['SSO connections'],
     summary: 'List an organization’s SSO connections',
-    description: 'The single sign-on connections of one organization, oldest first.',
+    description:
+      'The single sign-on connections of one organization, or of the whole environment when `organizationId` is left out, oldest first.',
     security: openapi.security.admin,
     responses: {
       200: { description: 'The connections.', content: json(SsoConnectionListSchema) },

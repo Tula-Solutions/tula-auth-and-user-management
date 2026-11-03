@@ -52,6 +52,8 @@ export const users = tula.table(
     metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
     /** The SSO connection that provisioned and manages this account (ADR 0067); null for every other user. */
     managedByConnectionId: uuid('managed_by_connection_id'),
+    /** The organization whose SCIM directory provisioned and manages this account (ADR 0067); null for every other user. */
+    managedByDirectoryId: uuid('managed_by_directory_id'),
     ...timestamps(),
   },
   (t) => [

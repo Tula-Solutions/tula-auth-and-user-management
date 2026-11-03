@@ -96,7 +96,9 @@ function secrets(value: unknown, named = false): string[] {
 }
 
 /** Response fields whose value is a credential, in whole or in part. */
-const SECRET_KEYS = /token|secret|^key$|^codes?$|^uri$|binding|ticket|challenge|credential/i
+// `tokens` alone is the envelope of the SCIM token list (its entries hold dates and ids, and the
+// secret is `token`, still matched): read as a secret it would make the entries' times inputs.
+const SECRET_KEYS = /token(?!s$)|secret|^key$|^codes?$|^uri$|binding|ticket|challenge|credential/i
 
 function parseJson(text: string): unknown {
   try {

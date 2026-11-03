@@ -129,6 +129,8 @@ not name is refused.
 | `list_organizations` | `page?`, `size?` (≤ 50, default 20) | `{ meta, data: [organization] }` |
 | `list_organization_members` | `organizationId`, `page?`, `size?` (≤ 100, default 50) | `{ meta, data: [membership] }` |
 | `list_organization_roles` | none | `{ data: [role] }` (the built-in roles and the custom ones, at most 100) |
+| `list_sso_connections` | `organizationId?` | `{ connections: [connection] }` (at most 100) |
+| `get_sso_connection` | `connectionId` | `connection` |
 | `run_doctor` | none | `{ apiUrl, version, environment, checks: [{ id, source, status, summary, fix?, values? }] }` |
 
 - A **user** is `id`, `email`, `emailVerifiedAt`, `firstName`, `lastName`, `bannedAt`,
@@ -153,6 +155,12 @@ not name is refused.
   An environment with organizations switched off answers these three tools with the API's
   `organization.disabled`. The first read of the roles can create the two built-in role rows, if
   the environment does not have them yet.
+- A **connection** is `id`, `organizationId`, `protocol`, `name`, `status`, `defaultRole`, `domains`,
+  `createdAt`, `updatedAt` and, for SAML, `saml.certificates` (each `notAfter` and `expired`). The
+  identity provider's issuer, addresses, client id and certificate fingerprints are not returned,
+  and a client secret never leaves the server. While SSO is switched off in the settings the API
+  answers `sso.disabled`. `run_doctor`'s `sso_connections` check reports expiring or ended
+  certificates, a metadata address that does not answer and a domain no longer verified.
 - `run_doctor` needs only `TULA_API_URL`; with `TULA_ADMIN_TOKEN` it includes the checks the
   API makes of itself.
 

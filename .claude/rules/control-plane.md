@@ -83,7 +83,9 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   string that must not reach the response) and a row in ADR 0031's table. The only origin
   the server fetches is its own `PUBLIC_URL` (its `/v1/status`, and the association files of
   at most `NATIVE_APP_FILES_FETCHED` of its own environments, on a path built from an id the
-  server made), never an address from a request, a setting or a stored row. A check never claims more
+  server made), never an address from a request, a setting or a stored row. The one exception
+  is `sso_connections` (ADR 0067), which requests a connection's stored metadata address, only
+  through `Outbound.request`, at most `METADATA_FETCHES_PER_RUN` a run, keeping the status alone. A check never claims more
   than it looked at (the `master_key` check warns past `MAX_ENVIRONMENTS_CHECKED`). A check
   that makes many store calls takes the deadline's `AbortSignal` and looks at it between
   them, the scan is never started on top of one still running, and concurrent callers share

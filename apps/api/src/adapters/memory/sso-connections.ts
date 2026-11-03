@@ -41,9 +41,13 @@ export class MemorySsoConnectionStore implements SsoConnectionStore {
   }
 
   /** @inheritdoc */
-  async list(environmentId: string, organizationId: string): Promise<SsoConnectionRecord[]> {
+  async list(environmentId: string, organizationId?: string): Promise<SsoConnectionRecord[]> {
     return [...this.#records.values()]
-      .filter((one) => one.environmentId === environmentId && one.organizationId === organizationId)
+      .filter(
+        (one) =>
+          one.environmentId === environmentId &&
+          (organizationId === undefined || one.organizationId === organizationId)
+      )
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || (a.id < b.id ? -1 : 1))
       .map((one) => structuredClone(one))
   }
@@ -112,6 +116,10 @@ export class MemorySsoConnectionStore implements SsoConnectionStore {
       clientSecretSealed: changes.clientSecretSealed ?? record.clientSecretSealed,
       saml: changes.saml ?? record.saml,
       defaultRole: changes.defaultRole ?? record.defaultRole,
+      enforced: changes.enforced ?? record.enforced,
+      breakGlassRole:
+        changes.breakGlassRole === undefined ? record.breakGlassRole : changes.breakGlassRole,
+      trustIdpMfa: changes.trustIdpMfa ?? record.trustIdpMfa,
       domains: changes.domains ? [...changes.domains].sort() : record.domains,
       status: changes.status ?? record.status,
       testedFingerprint: changes.testedFingerprint ?? record.testedFingerprint,

@@ -39,6 +39,12 @@ export interface SsoConnectionRecord {
   clientSecretSealed: string
   /** The role key given to a user this connection provisions. */
   defaultRole: string
+  /** Enforced: an identifier on the domains is offered `sso` only (TULA-140). */
+  enforced: boolean
+  /** The organization role whose members keep their other methods under enforcement, or `null`. */
+  breakGlassRole: string | null
+  /** Whether the identity provider's own MFA stands in for Tula's second step. */
+  trustIdpMfa: boolean
   /** The verified domains of the organization this connection is bound to, sorted. */
   domains: string[]
   /** Fingerprint of the settings a passing test sign-in ran against; `null` before one. */
@@ -55,6 +61,9 @@ export interface SsoConnectionChanges {
   clientId?: string
   clientSecretSealed?: string
   defaultRole?: string
+  enforced?: boolean
+  breakGlassRole?: string | null
+  trustIdpMfa?: boolean
   /** The whole new set of bound domains. */
   domains?: string[]
   status?: SsoConnectionStatus
@@ -81,10 +90,10 @@ export interface SsoIdentityRecord {
 export interface SsoConnectionStore {
   /**
    * @param environmentId - The environment.
-   * @param organizationId - The organization whose connections to list.
-   * @returns Its connections, oldest first.
+   * @param organizationId - The organization whose connections to list; omitted, the whole environment's.
+   * @returns The connections, oldest first.
    */
-  list(environmentId: string, organizationId: string): Promise<SsoConnectionRecord[]>
+  list(environmentId: string, organizationId?: string): Promise<SsoConnectionRecord[]>
 
   /**
    * @param environmentId - The environment.

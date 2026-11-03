@@ -321,6 +321,8 @@ describe('documentation routes', () => {
       '/v1/admin/sso-connections/{id}/refresh-metadata',
       '/v1/admin/sso-connections/{id}/tests',
       '/v1/admin/sso-connections/{id}/tests/{testId}',
+      '/v1/admin/scim-tokens',
+      '/v1/admin/scim-tokens/{id}',
       '/v1/sso/callback/{connectionId}',
       '/v1/environments/{environmentId}/sso/saml/{connectionId}/metadata',
       '/v1/environments/{environmentId}/sso/saml/{connectionId}/acs',

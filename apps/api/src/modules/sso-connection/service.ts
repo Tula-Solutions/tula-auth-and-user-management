@@ -137,6 +137,9 @@ function view(
       ...samlUrls(config, record),
     },
     defaultRole: record.defaultRole,
+    enforced: record.enforced,
+    breakGlassRole: record.breakGlassRole,
+    trustIdpMfa: record.trustIdpMfa,
     domains: record.domains,
     tested: record.testedFingerprint === fingerprint(record),
     createdAt: record.createdAt.toISOString(),
@@ -277,13 +280,13 @@ async function requireOwnDomains(
  *
  * @param deps - Stores and settings.
  * @param tenant - The environment.
- * @param organizationId - The organization.
- * @returns Its connections, oldest first.
+ * @param organizationId - The organization; left out, every connection of the environment.
+ * @returns The connections, oldest first.
  */
 export async function list(
   deps: Pick<Deps, 'ssoConnections' | 'environmentSettings' | 'config' | 'clock'>,
   tenant: Pick<Tenant, 'environmentId'>,
-  organizationId: string
+  organizationId?: string
 ): Promise<SsoConnection[]> {
   await requireEnabled(deps, tenant)
   return (await deps.ssoConnections.list(tenant.environmentId, organizationId)).map((r) =>
@@ -392,6 +395,9 @@ export async function create(
       clientSecretSealed: sealed,
       saml,
       defaultRole: input.defaultRole,
+      enforced: false,
+      breakGlassRole: null,
+      trustIdpMfa: false,
       domains,
       testedFingerprint: null,
       createdAt: activity.occurredAt,
@@ -449,6 +455,28 @@ export async function markTested(
 /** The life of a connection never goes back to a draft. */
 function transitionAllowed(from: SsoConnectionStatus, to: SsoConnectionStatus): boolean {
   return from === to || to !== 'draft'
+}
+
+/**
+ * Whether a change makes the connection ask less of a sign-in (ADR 0067): activating it, or
+ * changing what an active one accepts, and in any case switching enforcement off, trusting
+ * the provider for MFA, or naming a break-glass role. Shared by the audit entry's `weakened`.
+ *
+ * @param current - The connection as it is.
+ * @param changes - The fields being changed.
+ * @returns `true` when the change is a weakening.
+ */
+export function weakens(current: SsoConnectionRecord, changes: SsoConnectionChanges): boolean {
+  const changedFields = Object.keys(changes).filter((key) => key !== 'name' && key !== 'status')
+  return (
+    changes.status === 'active' ||
+    (current.status === 'active' &&
+      changedFields.some((key) => !['enforced', 'breakGlassRole', 'trustIdpMfa'].includes(key))) ||
+    (changes.enforced === false && current.enforced) ||
+    (changes.trustIdpMfa === true && !current.trustIdpMfa) ||
+    (typeof changes.breakGlassRole === 'string' &&
+      changes.breakGlassRole !== current.breakGlassRole)
+  )
 }
 
 /**
@@ -532,6 +560,21 @@ export async function update(
     changes.defaultRole = input.defaultRole
     changed.push('defaultRole')
   }
+  if (input.enforced !== undefined && input.enforced !== current.enforced) {
+    changes.enforced = input.enforced
+    changed.push('enforced')
+  }
+  if (input.breakGlassRole !== undefined && input.breakGlassRole !== current.breakGlassRole) {
+    if (input.breakGlassRole !== null) {
+      await Organizations.requireRole(deps, tenant, input.breakGlassRole)
+    }
+    changes.breakGlassRole = input.breakGlassRole
+    changed.push('breakGlassRole')
+  }
+  if (input.trustIdpMfa !== undefined && input.trustIdpMfa !== current.trustIdpMfa) {
+    changes.trustIdpMfa = input.trustIdpMfa
+    changed.push('trustIdpMfa')
+  }
   if (input.domains !== undefined) {
     const domains = await requireOwnDomains(deps, tenant, current.organizationId, input.domains)
     if (domains.join() !== current.domains.join()) {
@@ -561,9 +604,7 @@ export async function update(
   if (changed.length === 0) {
     return view(deps.config, current, deps.clock.now())
   }
-  const widens =
-    changes.status === 'active' ||
-    (current.status === 'active' && changed.some((field) => field !== 'name' && field !== 'status'))
+  const widens = weakens(current, changes)
   const activity = Audit.entry(deps, tenant, {
     type: 'sso_connection.updated',
     actor,
