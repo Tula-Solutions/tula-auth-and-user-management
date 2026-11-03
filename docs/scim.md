@@ -13,7 +13,12 @@ OpenAPI document and no SDK is generated from them. The routes that manage SCIM 
 
 A **SCIM token** belongs to one organization and one environment. Create it with a secret key
 (`POST /v1/admin/scim-tokens`, body `{ "organizationId": "…", "name": "Okta" }`) or in the
-dashboard, on the organization's page. The token looks like `tula_scim_<environment>_…`, is
+dashboard: on the organization's page, the **SCIM provisioning** section has **Create token**. It
+lists the tokens (name, the start of the token, created, last used) with a revoke action, and creating
+one opens a dialog, *Copy this token now*, with the token and the **SCIM base URL** to paste into the
+identity provider. That is the only time the token is shown.
+
+![The organization page's SCIM provisioning section, with its tokens](../apps/dashboard/docs/organization-scim.png) The token looks like `tula_scim_<environment>_…`, is
 **shown once**, and is stored only as a hash. List the tokens of an organization with
 `GET /v1/admin/scim-tokens?organizationId=…` (the secret is never in the list) and revoke one
 with `DELETE /v1/admin/scim-tokens/:id?organizationId=…`.

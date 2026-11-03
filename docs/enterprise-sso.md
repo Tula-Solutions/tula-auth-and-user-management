@@ -121,6 +121,27 @@ if (result.status === 'passed') {
 ```
 <!-- /snippet -->
 
+## In the dashboard
+
+An operator finds all of this on an organization's page in the dashboard (**Organizations**, then the
+organization), in the sections below **Domains**:
+
+![The organization page's Single sign-on section, with a connection and its values for the identity provider](../apps/dashboard/docs/organization-sso.png)
+
+- **Single sign-on** lists the organization's connections with their protocol (SAML or OIDC) and status,
+  and **New connection**, **Edit**, **Activate** or **Disable** and **Delete** for each. A SAML connection
+  shows the *Values for your identity provider* (entity id, reply URL (ACS) and metadata URL, each with a
+  copy button, and a download of the metadata) and a warning when a signing certificate has ended or
+  is about to. A connection that people have signed in through cannot be deleted: disable it. The section
+  says so when `sso.enabled` is off in the environment.
+- Editing a connection has the switches **Require this connection**, **Trust the identity provider for
+  two-step verification** and the **Break-glass role** (anyone with it keeps password sign-in).
+- **Setup links** (on the same section) lists the organization's links and has **Create a setup link**.
+  The new link's address is shown once, in a dialog (*Copy this setup link now*), and is not shown
+  again; each link can be revoked.
+- The test sign-in and the group-to-role mapping are not drawn in the dashboard yet; use the admin API
+  (the snippets on this page) or the setup portal.
+
 ## Enforcement and break-glass
 
 By default SSO is one way in among the others. With `enforced: true` on an **active** connection,

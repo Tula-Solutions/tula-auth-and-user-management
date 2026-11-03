@@ -13,7 +13,8 @@
         "$TURBO_ROOT$/packages/*/README.md",
         "$TURBO_ROOT$/examples/*/README.md",
         "$TURBO_ROOT$/native/*/README.md",
-        "$TURBO_ROOT$/examples/tula-config/tula.config.ts"
+        "$TURBO_ROOT$/examples/tula-config/tula.config.ts",
+        "$TURBO_ROOT$/apps/dashboard/docs/organization-s*.png"
       ]
     },
     "build": {
@@ -27,7 +28,8 @@
         "$TURBO_ROOT$/packages/*/README.md",
         "$TURBO_ROOT$/examples/*/README.md",
         "$TURBO_ROOT$/native/*/README.md",
-        "$TURBO_ROOT$/examples/tula-config/tula.config.ts"
+        "$TURBO_ROOT$/examples/tula-config/tula.config.ts",
+        "$TURBO_ROOT$/apps/dashboard/docs/organization-s*.png"
       ]
     },
     "test": {
@@ -41,7 +43,8 @@
         "$TURBO_ROOT$/packages/*/README.md",
         "$TURBO_ROOT$/examples/*/README.md",
         "$TURBO_ROOT$/native/*/README.md",
-        "$TURBO_ROOT$/examples/tula-config/tula.config.ts"
+        "$TURBO_ROOT$/examples/tula-config/tula.config.ts",
+        "$TURBO_ROOT$/apps/dashboard/docs/organization-s*.png"
       ]
     },
     "test:coverage": {
@@ -55,7 +58,8 @@
         "$TURBO_ROOT$/packages/*/README.md",
         "$TURBO_ROOT$/examples/*/README.md",
         "$TURBO_ROOT$/native/*/README.md",
-        "$TURBO_ROOT$/examples/tula-config/tula.config.ts"
+        "$TURBO_ROOT$/examples/tula-config/tula.config.ts",
+        "$TURBO_ROOT$/apps/dashboard/docs/organization-s*.png"
       ]
     },
     "generate:check": {
@@ -69,7 +73,8 @@
         "$TURBO_ROOT$/packages/*/README.md",
         "$TURBO_ROOT$/examples/*/README.md",
         "$TURBO_ROOT$/native/*/README.md",
-        "$TURBO_ROOT$/examples/tula-config/tula.config.ts"
+        "$TURBO_ROOT$/examples/tula-config/tula.config.ts",
+        "$TURBO_ROOT$/apps/dashboard/docs/organization-s*.png"
       ]
     }
   }
