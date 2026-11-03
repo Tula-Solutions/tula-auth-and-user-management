@@ -2419,14 +2419,15 @@ export async function exchangeOAuth(
   context: ClientContext
 ): Promise<FlowResult> {
   const redeemed = await redeemOAuthTicket(deps, tenant, input, 'sign_in', context)
-  const result = await completeProviderSignIn(
+  const result = await completeExternalSignIn(
     deps,
     tenant,
     redeemed.attempt,
     redeemed.state,
     redeemed.provider,
     redeemed.profile,
-    context
+    context,
+    'fed'
   )
   return result.tokens
     ? result
@@ -2437,11 +2438,11 @@ export async function exchangeOAuth(
  * Take a sign-in past a provider's word for who the user is: resolve the account and continue
  * as after any first factor.
  *
- * **The one tail of every provider sign-in**, whichever way the profile was obtained: the
- * browser's round trip ({@link exchangeOAuth}) and a native app's ID token
- * ({@link submitIdToken}, ADR 0045). So the linking table (`OAuth.resolveAccount`), the
- * `before_sign_up` hook, the ban check, `Factors.requiredFor`, the enrolment policy and
- * `fed` in `amr` cannot differ between the two.
+ * **The one tail of every externally completed sign-in**, whichever way the profile was
+ * obtained: the browser's round trip ({@link exchangeOAuth}) and a native app's ID token
+ * ({@link submitIdToken}, ADR 0045); a later kind of external sign-in joins here too. So the
+ * linking table (`OAuth.resolveAccount`), the `before_sign_up` hook, the ban check,
+ * `Factors.requiredFor`, the enrolment policy and the `amr` entry cannot differ between them.
  *
  * @param deps - All dependencies.
  * @param tenant - The environment.
@@ -2450,17 +2451,20 @@ export async function exchangeOAuth(
  * @param provider - The provider that vouched.
  * @param profile - What it vouched for.
  * @param context - The requesting device.
+ * @param method - The `amr` value of the proof (`fed` for a provider); becomes the session's
+ *   `authMethods`.
  * @returns `complete` with tokens, or `needs_second_factor` / `needs_factor_enrolment`.
  * @throws AuthError as `OAuth.resolveAccount`, or `auth.user_banned`.
  */
-async function completeProviderSignIn(
+export async function completeExternalSignIn(
   deps: Deps,
   tenant: Tenant,
   attempt: FlowAttemptRecord,
   state: State,
   provider: OAuthProvider,
   profile: OAuthProfile,
-  context: ClientContext
+  context: ClientContext,
+  method: string
 ): Promise<FlowResult> {
   const { user, created } = await OAuth.resolveAccount(
     deps,
@@ -2495,7 +2499,7 @@ async function completeProviderSignIn(
     tenant,
     attempt,
     {
-      ...firstProven(state, OAuth.strategyOf(provider), 'fed'),
+      ...firstProven(state, OAuth.strategyOf(provider), method),
       ...(created && { accountCreated: true }),
     },
     user.id,
@@ -2611,7 +2615,7 @@ export async function startIdTokenSignIn(
  * app starts again).
  *
  * With the token accepted the sign-in continues exactly as a browser's does after its
- * ticket ({@link completeProviderSignIn}): the same account resolution, hooks, second
+ * ticket ({@link completeExternalSignIn}): the same account resolution, hooks, second
  * factor and enrolment, and `fed` in `amr`.
  *
  * @param deps - All dependencies.
@@ -2705,7 +2709,7 @@ export async function submitIdToken(
     }
     throw new AuthError('auth.invalid_credentials')
   }
-  return completeProviderSignIn(deps, tenant, attempt, rest, provider, profile, context)
+  return completeExternalSignIn(deps, tenant, attempt, rest, provider, profile, context, 'fed')
 }
 
 /**
