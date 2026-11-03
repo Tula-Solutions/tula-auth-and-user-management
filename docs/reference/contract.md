@@ -395,6 +395,17 @@ always `false`.
 const AdminSessionSchema
 ```
 
+### `AdminSsoTestStartRequestSchema`
+
+_constant_, defined in `packages/contract/src/sso-test.ts`
+
+The administrator's start of a test sign-in. Left out, `redirectUrl` is the server's own
+setup page, which needs no entry in the environment's list: the dashboard cannot know it.
+
+```ts
+const AdminSsoTestStartRequestSchema: z.ZodObject<{ redirectUrl: z.ZodOptional<z.ZodString>; }, z.core.$strip>
+```
+
 ### `AndroidApp`
 
 _type_, defined in `packages/contract/src/native-app.ts`
