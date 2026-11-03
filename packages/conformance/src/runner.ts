@@ -1016,6 +1016,20 @@ async function readEmailMessage(
     variables[expected.captureCode] = code
   }
   const problems: string[] = []
+  if (expected.captureFragmentParam !== undefined) {
+    const { name, capture, url } = expected.captureFragmentParam
+    const link = /https?:\/\/[^\s"<>]*#[^\s"<>]+/.exec(message.text)?.[0]
+    const at = link?.indexOf('#') ?? -1
+    const value = link === undefined ? null : new URLSearchParams(link.slice(at + 1)).get(name)
+    if (link === undefined || !value) {
+      problems.push('the text holds no link with the expected parameter in its fragment')
+    } else {
+      variables[capture] = value
+      if (url !== undefined && link.slice(0, at) !== fill(url, variables)) {
+        problems.push('the link, without its fragment, is not the expected URL')
+      }
+    }
+  }
   if (expected.subject !== undefined && message.subject !== fill(expected.subject, variables)) {
     problems.push('the subject is not the expected one')
   }

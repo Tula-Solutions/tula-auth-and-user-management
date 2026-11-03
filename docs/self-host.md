@@ -581,10 +581,11 @@ See [ADR 0032](adr/0032-dashboard.md).
 
 ## Running it for real
 
-**The master key.** `TULA_MASTER_KEY` cannot be recovered or changed afterwards. Without it the
-stored signing keys cannot be decrypted, and every sign-in fails until the signing keys are
-recreated, which signs every user out. Store it in a secret manager and back it up separately
-from the database.
+> [!WARNING]
+> **The master key.** `TULA_MASTER_KEY` cannot be recovered or changed afterwards. Without it the
+> stored signing keys cannot be decrypted, and every sign-in fails until the signing keys are
+> recreated, which signs every user out. Store it in a secret manager and back it up separately
+> from the database.
 
 **The database.** Tula is developed and tested against PostgreSQL 18 (its migrations and
 integration tests also passed on 17). The bundled Compose file pins the `postgres:18` image,
@@ -633,11 +634,12 @@ history and the process list: put them in a file only you can read and pass
 `--env-file tula.env` instead of `-e NAME=value`. Add `--network <name>` when the database is
 only reachable on a Docker network.
 
-**HTTPS and the proxy.** Put the API behind a TLS-terminating reverse proxy and set
-`PUBLIC_URL` to the public https address (with the Compose file, set `API_PUBLIC_URL`). Refresh cookies are `Secure` when `PUBLIC_URL` is
-https. Set `TRUST_PROXY=true` so rate limits and the audit log see the client's address, and
-make sure the proxy **overwrites** `X-Forwarded-For`; if the API is also reachable without the
-proxy, clients can forge their address.
+> [!IMPORTANT]
+> **HTTPS and the proxy.** Put the API behind a TLS-terminating reverse proxy and set
+> `PUBLIC_URL` to the public https address (with the Compose file, set `API_PUBLIC_URL`). Refresh cookies are `Secure` when `PUBLIC_URL` is
+> https. Set `TRUST_PROXY=true` so rate limits and the audit log see the client's address, and
+> make sure the proxy **overwrites** `X-Forwarded-For`; if the API is also reachable without the
+> proxy, clients can forge their address.
 
 **A Next.js app in front (`@tula-tech/nextjs`).** With the Next.js SDK the browser talks to the
 app's own origin, and the app's server forwards to the API

@@ -236,7 +236,7 @@ export interface ClientOperation {
   agentKey: boolean
   instanceToken: boolean
   pathParams: string[]
-  /** Query and header parameters. The client half has none worth typing; the admin half does. */
+  /** Query and header parameters. The client half types only the query, where there is one. */
   query: Parameter[]
   headers: Parameter[]
   body: SchemaNode | undefined
@@ -352,9 +352,12 @@ export function renderClientApi(document: OpenApiDocument): string {
         : `{ ${operation.pathParams.map((name) => `${propertyKey(name)}: string`).join('; ')} }`
     const body = operation.body ? renderType(operation.body) : 'undefined'
     const response = operation.response ? renderType(operation.response) : 'undefined'
+    // Only an operation that documents a query has the key: the client half types the paging
+    // query of the lists a client reads, and the rest stay as they were.
+    const query = operation.query.length > 0 ? `query: ${parametersType(operation.query)}; ` : ''
     return [
       `  /** ${operation.summary} (\`${operation.method} ${operation.path}\`). */`,
-      `  ${operation.id}: { params: ${params}; body: ${body}; response: ${response} }`,
+      `  ${operation.id}: { params: ${params}; ${query}body: ${body}; response: ${response} }`,
     ].join('\n')
   })
 
@@ -371,7 +374,7 @@ export interface Schemas {
 ${schemaLines.join('\n')}
 }
 
-/** Path parameters, JSON body and success response of every client operation. */
+/** Path parameters, query (where the operation has one), JSON body and success response of every client operation. */
 export interface Operations {
 ${operationLines.join('\n')}
 }

@@ -90,6 +90,25 @@ export const ERROR_DEFINITIONS = {
     message: 'This account has no password yet. Use "forgot password" to set one.',
   },
 
+  // The reasons one row of a user import (`POST /v1/admin/users/import`, ADR 0066) is refused.
+  // They are reported per row, in the body of a 200, never as the request's own error.
+  'import.unsupported_algorithm': {
+    status: 422,
+    message: 'That password hash algorithm is not supported.',
+  },
+  'import.hash_malformed': {
+    status: 422,
+    message: 'That password hash is malformed.',
+  },
+  'import.hash_parameters_too_weak': {
+    status: 422,
+    message: 'That password hash is too weak to import.',
+  },
+  'import.hash_parameters_too_costly': {
+    status: 422,
+    message: 'That password hash is too costly to verify.',
+  },
+
   'verification.invalid_code': { status: 422, message: 'That code is incorrect.' },
   'verification.expired': { status: 410, message: 'That code has expired. Request a new one.' },
   'verification.too_many_attempts': {
@@ -337,6 +356,165 @@ export const ERROR_DEFINITIONS = {
   'device.binding_required': {
     status: 400,
     message: 'Signing in here needs a device key.',
+  },
+
+  // Deleting a user who is the only member holding `org:sys:memberships:manage` of an
+  // organization (ADR 0065). `params.organizationIds` is a comma-separated list of those
+  // organizations' ids (at most 20, ascending) and `params.count` how many there are. Nothing
+  // was deleted: give the organization another manager or delete it, then try again.
+  'user.last_organization_manager': {
+    status: 409,
+    message:
+      'This user is the only manager of an organization. Add another manager or delete the organization first.',
+  },
+  // Organizations (ADR 0065). `disabled`: the environment's `organizations.enabled` setting is
+  // off, so every organization route answers this and touches nothing. It says nothing about any
+  // account. `slug_taken` and `member_exists` are conflicts on the organization's unique slug and
+  // on a user's one membership per organization. `last_manager`: the change would leave the
+  // organization with no member who holds `org:sys:memberships:manage`; nothing was changed.
+  // `role_unknown`: the role key names no role of the environment.
+  'organization.disabled': {
+    status: 403,
+    message: 'Organizations are not enabled for this environment.',
+  },
+  'organization.slug_taken': {
+    status: 409,
+    message: 'An organization with that slug already exists.',
+  },
+  'organization.member_exists': {
+    status: 409,
+    message: 'That user is already a member of this organization.',
+  },
+  'organization.last_manager': {
+    status: 409,
+    message: 'An organization must keep at least one member who can manage its members.',
+  },
+  'organization.role_unknown': {
+    status: 422,
+    message: 'That role does not exist in this environment.',
+  },
+  // A signed-in user's own organization routes (ADR 0065, Orgs 02). `not_a_member`: the
+  // organization is not one the user belongs to, which is also what an organization that does
+  // not exist, or is another environment's, answers: it says nothing about what exists.
+  // `creation_disabled`: users may not create organizations here (`allowUserCreated` is off).
+  // `limit_reached`: the user has created as many as `maxCreatedPerUser` allows.
+  // `personal_account_disabled`: the environment has no personal account
+  // (`personalAccount: false`), so the active organization cannot be cleared.
+  'organization.not_a_member': {
+    status: 403,
+    message: 'You are not a member of that organization.',
+  },
+  'organization.creation_disabled': {
+    status: 403,
+    message: 'Creating an organization is not allowed in this environment.',
+  },
+  'organization.limit_reached': {
+    status: 403,
+    message: 'You have reached the number of organizations you can create.',
+  },
+  'organization.personal_account_disabled': {
+    status: 409,
+    message: 'An organization must be active in this environment.',
+  },
+  // Custom roles (ADR 0065). `role_exists`: the key is taken, by a custom role or by a built-in
+  // one (`admin`, `member`). `role_in_use`: members still hold the role, so it cannot be deleted.
+  // `role_built_in`: `admin` and `member` cannot be changed or deleted. `role_limit`: the
+  // environment has `params.max` custom roles already.
+  'organization.role_exists': {
+    status: 409,
+    message: 'A role with that key already exists in this environment.',
+  },
+  'organization.role_in_use': {
+    status: 409,
+    message: 'Members still hold this role. Give them another role first.',
+  },
+  'organization.role_built_in': {
+    status: 409,
+    message: 'A built-in role cannot be changed or deleted.',
+  },
+  'organization.role_limit': {
+    status: 409,
+    message: 'This environment has the most custom roles it can have.',
+  },
+  // Invitations to an organization (ADR 0065, Orgs 04). `permission_required`: the signed-in
+  // user is a member but their role lacks the permission the route needs (`params.permission`).
+  // `role_not_assignable`: an inviter may only invite to a role whose permissions they hold
+  // all of themselves. `invitation_exists`: the address has a pending invitation to this
+  // organization already. `invitation_not_found`: no invitation has this token (or id).
+  // `invitation_expired`, `invitation_revoked` and `invitation_used` (already accepted or
+  // declined): the invitation can no longer be accepted; ask for a new one.
+  // `invitation_wrong_account`: it was sent to another address than the signed-in account's.
+  // `invitation_email_unverified`: the account's address is the invited one but is not
+  // verified, and an unproven address joins nothing. `invitation_role_gone`: the role it names
+  // was deleted after it was sent; it is refused and not given another role.
+  'organization.permission_required': {
+    status: 403,
+    message: 'Your role does not allow that.',
+  },
+  'organization.role_not_assignable': {
+    status: 403,
+    message: 'You can only invite to a role no stronger than yours.',
+  },
+  'organization.invitation_exists': {
+    status: 409,
+    message: 'That address already has a pending invitation.',
+  },
+  'organization.invitation_not_found': {
+    status: 404,
+    message: 'This invitation does not exist.',
+  },
+  'organization.invitation_expired': {
+    status: 410,
+    message: 'This invitation has expired.',
+  },
+  'organization.invitation_revoked': {
+    status: 410,
+    message: 'This invitation was withdrawn.',
+  },
+  'organization.invitation_used': {
+    status: 410,
+    message: 'This invitation was already used.',
+  },
+  'organization.invitation_wrong_account': {
+    status: 403,
+    message: 'This invitation was sent to another email address.',
+  },
+  'organization.invitation_email_unverified': {
+    status: 403,
+    message: 'Verify your email address to accept this invitation.',
+  },
+  'organization.invitation_role_gone': {
+    status: 409,
+    message: 'The role this invitation offers no longer exists.',
+  },
+
+  // Verified domains (ADR 0065). `domain_public`: a public mail domain (gmail.com, …) proves
+  // nothing about its holder and cannot be claimed. `domain_taken`: the domain is verified for
+  // an organization of this environment already (this one or another), so it cannot be
+  // claimed again. `domain_address_mismatch`: the address the code goes to is not, exactly,
+  // on the domain (a subdomain is another domain). `domain_limit`: the organization has
+  // `params.max` domains already. `suggestion_unavailable`: the organization is not one this
+  // user can join (no verified domain of it matches a verified address of theirs); it is also
+  // what an organization that does not exist answers.
+  'organization.domain_public': {
+    status: 422,
+    message: 'A public email domain cannot be claimed by an organization.',
+  },
+  'organization.domain_taken': {
+    status: 409,
+    message: 'That domain is verified for an organization already.',
+  },
+  'organization.domain_address_mismatch': {
+    status: 422,
+    message: 'That address is not on the domain.',
+  },
+  'organization.domain_limit': {
+    status: 409,
+    message: 'This organization has the most domains it can have.',
+  },
+  'organization.suggestion_unavailable': {
+    status: 403,
+    message: 'You cannot join that organization.',
   },
 
   rate_limited: { status: 429, message: 'Too many requests. Try again shortly.' },

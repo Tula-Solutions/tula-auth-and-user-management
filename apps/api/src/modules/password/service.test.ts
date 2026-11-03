@@ -4,6 +4,7 @@ import { MemoryBreachChecker } from '~/adapters/memory/breach-checker'
 import { ServiceException } from '~/exceptions'
 import * as Passwords from '~/modules/password/service'
 import { createTestDeps, TEST_CONFIG, TEST_TENANT, type TestDeps } from '~/testing'
+import { ARGON2I_REFERENCE, BCRYPT_PHP_COST_7 } from '~/testing/password-vectors'
 
 const STRONG = 'correct horse battery staple'
 const CURRENT_PARAMS = '$argon2id$v=19$m=65536,t=2,p=1$'
@@ -113,6 +114,81 @@ describe('verify', () => {
   test('the length cap counts code points, not UTF-16 units', async () => {
     const stored = await Passwords.hash('🔒'.repeat(Passwords.MAX_PASSWORD_LENGTH))
     expect(await Passwords.verify(stored, '🔒'.repeat(Passwords.MAX_PASSWORD_LENGTH))).toBe(true)
+  })
+})
+
+describe('verify: hashes made by another system (ADR 0066)', () => {
+  test('dispatches on the stored hash: bcrypt in all three prefixes, argon2i and argon2id', async () => {
+    const bcrypt = await Bun.password.hash(STRONG, { algorithm: 'bcrypt', cost: 4 })
+    for (const prefix of ['$2a$', '$2b$', '$2y$']) {
+      const stored = bcrypt.replace('$2b$', prefix)
+      expect(await Passwords.verify(stored, STRONG)).toBe(true)
+      expect(await Passwords.verify(stored, `${STRONG}!`)).toBe(false)
+    }
+    const argon2i = await Bun.password.hash(STRONG, {
+      algorithm: 'argon2i',
+      memoryCost: 19_456,
+      timeCost: 2,
+    })
+    expect(await Passwords.verify(argon2i, STRONG)).toBe(true)
+    expect(await Passwords.verify(argon2i, `${STRONG}!`)).toBe(false)
+  })
+
+  test('known vectors from public sources verify with their own password only', async () => {
+    expect(await Passwords.verify(BCRYPT_PHP_COST_7, 'rasmuslerdorf')).toBe(true)
+    expect(await Passwords.verify(BCRYPT_PHP_COST_7, 'rasmuslerdorg')).toBe(false)
+    expect(await Passwords.verify(ARGON2I_REFERENCE, 'password')).toBe(true)
+    expect(await Passwords.verify(ARGON2I_REFERENCE, 'Password')).toBe(false)
+  })
+
+  test('every foreign hash needs a rehash, a current one does not', async () => {
+    expect(Passwords.needsRehash(BCRYPT_PHP_COST_7)).toBe(true)
+    expect(Passwords.needsRehash(ARGON2I_REFERENCE)).toBe(true)
+    expect(Passwords.needsRehash(await Passwords.hash(STRONG))).toBe(false)
+  })
+
+  test('known and unknown users cost one verification each, whatever the hash', async () => {
+    const bcrypt = await Bun.password.hash(STRONG, { algorithm: 'bcrypt', cost: 4 })
+    const argon2id = await Passwords.hash(STRONG)
+    verifySpy = spyOn(Bun.password, 'verify')
+    for (const stored of [bcrypt, argon2id, ARGON2I_REFERENCE, null]) {
+      verifySpy.mockClear()
+      await Passwords.verify(stored, STRONG)
+      expect(verifySpy).toHaveBeenCalledTimes(1)
+    }
+  })
+
+  test('a password that is not in normal form is tried as typed too, for every kind of account', async () => {
+    const decomposed = 'cafe\u0301 au lait sunrise'
+    const composed = decomposed.normalize('NFC')
+    expect(decomposed).not.toBe(composed)
+    // What the other system hashed was the password as typed, not its normal form.
+    const bcrypt = await Bun.password.hash(decomposed, { algorithm: 'bcrypt', cost: 4 })
+    expect(await Passwords.verify(bcrypt, decomposed)).toBe(true)
+
+    verifySpy = spyOn(Bun.password, 'verify')
+    for (const stored of [bcrypt, await Passwords.hash(composed), null]) {
+      verifySpy.mockClear()
+      await Passwords.verify(stored, decomposed)
+      // The same count for an imported hash, a native one and no account at all.
+      expect(verifySpy).toHaveBeenCalledTimes(2)
+    }
+  })
+
+  test('a stored hash that cannot be read matches nothing and does not throw', async () => {
+    for (const stored of [
+      'garbage',
+      '$argon2id$v=19$m=65536,t=2,p=1$bad$bad',
+      '$2b$10$short',
+      '',
+    ]) {
+      expect(await Passwords.verify(stored, STRONG)).toBe(false)
+    }
+  })
+
+  test('an unreadable hash does not report a user who has none as one who has', async () => {
+    verifySpy = spyOn(Bun.password, 'verify').mockResolvedValue(true)
+    expect(await Passwords.verify(null, STRONG)).toBe(false)
   })
 })
 

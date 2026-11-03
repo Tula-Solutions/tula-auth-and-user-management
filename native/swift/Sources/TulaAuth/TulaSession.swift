@@ -659,6 +659,53 @@ public actor TulaSession: TulaRedacted {
         }
     }
 
+    /// Make an organization the one the session acts in (`PUT /v1/client/me/organizations/active`),
+    /// and take the access token that carries it.
+    ///
+    /// As a step-up does, it installs only the access token of the answer: choosing does not
+    /// rotate the refresh token, and a refresh token a misbehaving server put in the answer is
+    /// ignored. When the session's token was replaced while the call was on its way, or a
+    /// refresh is running, the answer's token is not installed (it is a result for an older
+    /// generation): one refresh, started after the choice was accepted, carries it.
+    ///
+    /// - Parameter organizationId: The organization, or `nil` for the personal account.
+    /// - Returns: The answer: the session's id and the organization it acts in now.
+    /// - Throws: `TulaError`: what the API refused with; `response.invalid` for an answer that
+    ///   is not the choice that was asked for; `auth.unauthenticated` when the client was
+    ///   signed out, or signed in as someone else, while the call was in flight.
+    func setActiveOrganization(_ organizationId: String?) async throws -> ActiveOrganization {
+        // A refresh already in flight would otherwise hand the choice a token about to be replaced.
+        await idle()
+        let (answer, left) = try await sent(
+            TulaOperations.setActiveOrganization, body: SetActiveOrganizationRequest(organizationId: organizationId),
+            as: ActiveOrganization.self)
+        let issued = SessionTokens(
+            sessionId: answer.sessionId, accessToken: answer.accessToken,
+            accessTokenExpiresAt: answer.accessTokenExpiresAt)
+        // A 200 is not proof of talking to the API: the answer must name the choice and carry
+        // a token this client can install (a stateful session's answer has none, and is not a
+        // session for this client).
+        guard lifetime(of: issued) != nil, answer.organizationId == organizationId,
+            organizationId?.isEmpty != true
+        else {
+            throw TulaError.client(TulaClientErrorCode.responseInvalid)
+        }
+        // Signed out, or signed in as someone else, while the call was in flight: the answer
+        // is about a session this client no longer has.
+        guard state != .signedOut, tokens?.sessionId == answer.sessionId else {
+            throw TulaError(code: "auth.unauthenticated", status: 401)
+        }
+        if generation == left, refreshing == nil {
+            await settle(commit(issued))
+            return answer
+        }
+        await idle()
+        guard tokens?.sessionId == answer.sessionId, try await sharedRefresh(explicit: true) != nil else {
+            throw TulaError(code: "auth.unauthenticated", status: 401)
+        }
+        return answer
+    }
+
     /// The signed-in user's sessions, this one marked `current`.
     public func list() async throws -> [Session] {
         try await authorized(TulaOperations.listSessions, as: SessionList.self).data

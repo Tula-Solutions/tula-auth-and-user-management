@@ -21,6 +21,9 @@ handler, a server action and the account page.
 | `app/api/whoami/route.ts` | A protected route handler (401 when signed out). |
 | `app/sign-in/page.tsx` | `<SignIn>` with a `redirect_url` checked by `safeRedirectPath`. |
 | `app/profile/page.tsx` | `<UserProfile>`. |
+| `app/organizations/page.tsx`, `app/organization-switcher.tsx` | `useOrganizationList()` and `useOrganization()`: switch the active organization; `has()` decides what to show. |
+| `app/billing/page.tsx` | A page that needs `org:billing:read`: the proxy's `access` rule refuses others, and the page checks `auth().has()` again. |
+| `app/no-access/page.tsx` | Where the proxy's `forbiddenUrl` sends a signed-in visitor the rule refuses. |
 
 ## Which sign-in methods it has
 
@@ -43,6 +46,7 @@ API; [one page per method](../../docs/README.md#sign-in-methods)) and it appears
 | The hybrid profile's cookies and their refresh; a stateful profile | every page | `app.spec.ts`, `methods.spec.ts` |
 | The concurrent-session limit | `/sign-in` | `methods.spec.ts` |
 | Server component, route handler, server action | `/dashboard`, `/api/whoami` | `app.spec.ts` |
+| Organizations: a permission-protected route (allowed, refused, no organization), the largest role in two cookies | `/organizations`, `/billing`, `/no-access` | `organizations.spec.ts` |
 
 ## Run it
 

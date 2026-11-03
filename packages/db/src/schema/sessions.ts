@@ -85,6 +85,18 @@ export const sessions = tula.table(
      * statement, whoever sends it.
      */
     deviceThumbprint: text('device_thumbprint'),
+    /**
+     * The organization the session is acting in (ADR 0065, "Token claims"), or `null` for the
+     * user's personal account. The user's own choice among organizations they belong to
+     * (`PUT /v1/client/me/organizations/active`); the token's `org_id`, `org_role` and
+     * `org_perms` are built from it **and from the membership as it is at that refresh**.
+     *
+     * Deliberately **not a foreign key**: deleting an organization, or removing the member,
+     * must not rewrite session rows (a composite key cannot null one of its two columns here),
+     * and the id alone grants nothing. A membership that is gone means no claims, whatever this
+     * column says.
+     */
+    activeOrganizationId: uuid('active_organization_id'),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     revokeReason: text('revoke_reason', { enum: SESSION_REVOKE_REASONS }),
     ...timestamps(),

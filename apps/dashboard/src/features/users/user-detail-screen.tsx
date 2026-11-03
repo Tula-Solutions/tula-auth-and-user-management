@@ -26,9 +26,11 @@ import { Modal } from '~/components/modal'
 import { PageHeader, Section } from '~/components/page'
 import { EmptyState, QueryState } from '~/components/states'
 import { notify } from '~/components/toaster'
+import { organizationMessageFor } from '~/features/organizations/words'
 import { useEnvironment, useEnvironmentRequest } from '~/features/shell/environment-context'
 import { formatDateTime, fullName, userLabel } from '~/lib/format'
 import { SignInMethods } from './sign-in-methods'
+import { LastManagerOrganizations, UserOrganizations } from './user-organizations'
 import { type EnvironmentScope, UserStatus } from './users-screen'
 
 /** What the reset of two-step verification left the user with. */
@@ -247,6 +249,7 @@ export function UserDetailScreen({ scope, userId, onGone }: UserDetailScreenProp
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
   const [settingPassword, setSettingPassword] = useState(false)
   const [resetOutcome, setResetOutcome] = useState<ResetOutcome | null>(null)
+  const [organizationsPage, setOrganizationsPage] = useState(1)
   const ban = useBanUser({ request })
   const unban = useUnbanUser({ request })
   const remove = useDeleteUser({ request })
@@ -405,7 +408,15 @@ export function UserDetailScreen({ scope, userId, onGone }: UserDetailScreenProp
             },
             delete: {
               title: `Delete ${label}?`,
-              body: 'The account, its sessions and its sign-in methods are deleted for good. This cannot be undone.',
+              body: (
+                <>
+                  The account, its sessions, its sign-in methods and its memberships of
+                  organizations are deleted for good. This cannot be undone.
+                  {/* Shown with the refusal: a user who is the only manager of an organization
+                      is not deleted, and the organizations that need another manager are named. */}
+                  <LastManagerOrganizations error={remove.error} scope={scope} />
+                </>
+              ),
               label: 'Delete user',
               pending: remove.isPending,
               error: remove.error,
@@ -532,6 +543,13 @@ export function UserDetailScreen({ scope, userId, onGone }: UserDetailScreenProp
                 </QueryState>
               </Section>
 
+              <UserOrganizations
+                userId={userId}
+                scope={scope}
+                page={organizationsPage}
+                onPage={setOrganizationsPage}
+              />
+
               <Activity userId={userId} />
 
               <Section title='Account actions' description='Each asks for confirmation first.'>
@@ -581,6 +599,7 @@ export function UserDetailScreen({ scope, userId, onGone }: UserDetailScreenProp
                 requireText={active?.plain ? undefined : requireText}
                 pending={active?.pending}
                 error={active?.error}
+                errorText={organizationMessageFor}
                 onConfirm={confirm}
                 onCancel={closeConfirmation}
               >

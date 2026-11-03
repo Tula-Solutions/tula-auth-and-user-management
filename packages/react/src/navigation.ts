@@ -44,6 +44,23 @@ export interface NavigationOptions {
   afterSignOutUrl?: string
   /** Where `<UserProfile>` lives. Without it `<UserButton>` opens the profile in a dialog. */
   userProfileUrl?: string
+  /**
+   * The page an emailed organization invitation leads to: the one that reads the invitation's
+   * token from the link (`readInvitationLink`). It must be one of the environment's allowed
+   * redirect URLs, exactly (a relative value is resolved against the page first). Without it
+   * `<OrganizationProfile>` cannot send invitations.
+   */
+  invitationUrl?: string
+  /**
+   * Where `<OrganizationProfile>` lives. Without it `<OrganizationSwitcher>` opens the profile
+   * in a dialog.
+   */
+  organizationProfileUrl?: string
+  /**
+   * Where `<CreateOrganization>` lives. Without it `<OrganizationSwitcher>` opens the form in
+   * a dialog.
+   */
+  createOrganizationUrl?: string
 }
 
 /** Whether a value names its own scheme (`https://…`), as opposed to being relative to the page. */

@@ -23,13 +23,17 @@ import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdAuditLogRouteImport } f
 import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdHooksRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/hooks'
 import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdMessagesRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/messages'
 import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdNativeAppsRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/native-apps'
+import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationSettingsRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/organization-settings'
 import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdPasswordPolicyRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/password-policy'
 import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdProposalsRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/proposals'
+import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdRolesRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/roles'
 import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdSessionsRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/sessions'
 import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdSettingsRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/settings'
 import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdSignInMethodsRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/sign-in-methods'
 import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdSigningKeysRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/signing-keys'
 import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdTextMessagesRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/text-messages'
+import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationsIndexRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/organizations/index'
+import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationsOrganizationIdRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/organizations/$organizationId'
 import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdUsersIndexRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/users/index'
 import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdUsersUserIdRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/users/$userId'
 import { Route as AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksIndexRouteImport } from './routes/_app/w.$workspaceId/p.$projectId/e.$environmentId/webhooks/index'
@@ -113,6 +117,14 @@ const AppWWorkspaceIdPProjectIdEEnvironmentIdNativeAppsRoute =
     path: '/native-apps',
     getParentRoute: () => AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRoute,
   } as any)
+const AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationSettingsRoute =
+  AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationSettingsRouteImport.update(
+    {
+      id: '/organization-settings',
+      path: '/organization-settings',
+      getParentRoute: () => AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRoute,
+    } as any,
+  )
 const AppWWorkspaceIdPProjectIdEEnvironmentIdPasswordPolicyRoute =
   AppWWorkspaceIdPProjectIdEEnvironmentIdPasswordPolicyRouteImport.update({
     id: '/password-policy',
@@ -123,6 +135,12 @@ const AppWWorkspaceIdPProjectIdEEnvironmentIdProposalsRoute =
   AppWWorkspaceIdPProjectIdEEnvironmentIdProposalsRouteImport.update({
     id: '/proposals',
     path: '/proposals',
+    getParentRoute: () => AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRoute,
+  } as any)
+const AppWWorkspaceIdPProjectIdEEnvironmentIdRolesRoute =
+  AppWWorkspaceIdPProjectIdEEnvironmentIdRolesRouteImport.update({
+    id: '/roles',
+    path: '/roles',
     getParentRoute: () => AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRoute,
   } as any)
 const AppWWorkspaceIdPProjectIdEEnvironmentIdSessionsRoute =
@@ -155,6 +173,20 @@ const AppWWorkspaceIdPProjectIdEEnvironmentIdTextMessagesRoute =
     path: '/text-messages',
     getParentRoute: () => AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRoute,
   } as any)
+const AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationsIndexRoute =
+  AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationsIndexRouteImport.update({
+    id: '/organizations/',
+    path: '/organizations/',
+    getParentRoute: () => AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRoute,
+  } as any)
+const AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationsOrganizationIdRoute =
+  AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationsOrganizationIdRouteImport.update(
+    {
+      id: '/organizations/$organizationId',
+      path: '/organizations/$organizationId',
+      getParentRoute: () => AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRoute,
+    } as any,
+  )
 const AppWWorkspaceIdPProjectIdEEnvironmentIdUsersIndexRoute =
   AppWWorkspaceIdPProjectIdEEnvironmentIdUsersIndexRouteImport.update({
     id: '/users/',
@@ -203,15 +235,19 @@ export interface FileRoutesByFullPath {
   '/w/$workspaceId/p/$projectId/e/$environmentId/hooks': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdHooksRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/messages': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdMessagesRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/native-apps': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdNativeAppsRoute
+  '/w/$workspaceId/p/$projectId/e/$environmentId/organization-settings': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationSettingsRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/password-policy': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdPasswordPolicyRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/proposals': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdProposalsRoute
+  '/w/$workspaceId/p/$projectId/e/$environmentId/roles': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdRolesRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/sessions': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSessionsRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/settings': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSettingsRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/sign-in-methods': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSignInMethodsRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/signing-keys': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSigningKeysRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/text-messages': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdTextMessagesRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdIndexRoute
+  '/w/$workspaceId/p/$projectId/e/$environmentId/organizations/$organizationId': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationsOrganizationIdRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/users/$userId': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdUsersUserIdRoute
+  '/w/$workspaceId/p/$projectId/e/$environmentId/organizations/': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationsIndexRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/users/': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdUsersIndexRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksIndexRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/$endpointId/': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksEndpointIdIndexRoute
@@ -229,15 +265,19 @@ export interface FileRoutesByTo {
   '/w/$workspaceId/p/$projectId/e/$environmentId/hooks': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdHooksRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/messages': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdMessagesRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/native-apps': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdNativeAppsRoute
+  '/w/$workspaceId/p/$projectId/e/$environmentId/organization-settings': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationSettingsRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/password-policy': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdPasswordPolicyRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/proposals': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdProposalsRoute
+  '/w/$workspaceId/p/$projectId/e/$environmentId/roles': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdRolesRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/sessions': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSessionsRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/settings': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSettingsRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/sign-in-methods': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSignInMethodsRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/signing-keys': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSigningKeysRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/text-messages': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdTextMessagesRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdIndexRoute
+  '/w/$workspaceId/p/$projectId/e/$environmentId/organizations/$organizationId': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationsOrganizationIdRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/users/$userId': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdUsersUserIdRoute
+  '/w/$workspaceId/p/$projectId/e/$environmentId/organizations': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationsIndexRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/users': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdUsersIndexRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/webhooks': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksIndexRoute
   '/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/$endpointId': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksEndpointIdIndexRoute
@@ -258,15 +298,19 @@ export interface FileRoutesById {
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/hooks': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdHooksRoute
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/messages': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdMessagesRoute
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/native-apps': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdNativeAppsRoute
+  '/_app/w/$workspaceId/p/$projectId/e/$environmentId/organization-settings': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationSettingsRoute
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/password-policy': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdPasswordPolicyRoute
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/proposals': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdProposalsRoute
+  '/_app/w/$workspaceId/p/$projectId/e/$environmentId/roles': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdRolesRoute
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/sessions': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSessionsRoute
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/settings': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSettingsRoute
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/sign-in-methods': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSignInMethodsRoute
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/signing-keys': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSigningKeysRoute
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/text-messages': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdTextMessagesRoute
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdIndexRoute
+  '/_app/w/$workspaceId/p/$projectId/e/$environmentId/organizations/$organizationId': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationsOrganizationIdRoute
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/users/$userId': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdUsersUserIdRoute
+  '/_app/w/$workspaceId/p/$projectId/e/$environmentId/organizations/': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationsIndexRoute
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/users/': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdUsersIndexRoute
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksIndexRoute
   '/_app/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/$endpointId/': typeof AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksEndpointIdIndexRoute
@@ -287,15 +331,19 @@ export interface FileRouteTypes {
     | '/w/$workspaceId/p/$projectId/e/$environmentId/hooks'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/messages'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/native-apps'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/organization-settings'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/password-policy'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/proposals'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/roles'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/sessions'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/settings'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/sign-in-methods'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/signing-keys'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/text-messages'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/organizations/$organizationId'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/users/$userId'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/organizations/'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/users/'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/$endpointId/'
@@ -313,15 +361,19 @@ export interface FileRouteTypes {
     | '/w/$workspaceId/p/$projectId/e/$environmentId/hooks'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/messages'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/native-apps'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/organization-settings'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/password-policy'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/proposals'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/roles'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/sessions'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/settings'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/sign-in-methods'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/signing-keys'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/text-messages'
     | '/w/$workspaceId/p/$projectId/e/$environmentId'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/organizations/$organizationId'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/users/$userId'
+    | '/w/$workspaceId/p/$projectId/e/$environmentId/organizations'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/users'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/webhooks'
     | '/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/$endpointId'
@@ -341,15 +393,19 @@ export interface FileRouteTypes {
     | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/hooks'
     | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/messages'
     | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/native-apps'
+    | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/organization-settings'
     | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/password-policy'
     | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/proposals'
+    | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/roles'
     | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/sessions'
     | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/settings'
     | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/sign-in-methods'
     | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/signing-keys'
     | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/text-messages'
     | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/'
+    | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/organizations/$organizationId'
     | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/users/$userId'
+    | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/organizations/'
     | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/users/'
     | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/'
     | '/_app/w/$workspaceId/p/$projectId/e/$environmentId/webhooks/$endpointId/'
@@ -461,6 +517,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdNativeAppsRouteImport
       parentRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRoute
     }
+    '/_app/w/$workspaceId/p/$projectId/e/$environmentId/organization-settings': {
+      id: '/_app/w/$workspaceId/p/$projectId/e/$environmentId/organization-settings'
+      path: '/organization-settings'
+      fullPath: '/w/$workspaceId/p/$projectId/e/$environmentId/organization-settings'
+      preLoaderRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationSettingsRouteImport
+      parentRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRoute
+    }
     '/_app/w/$workspaceId/p/$projectId/e/$environmentId/password-policy': {
       id: '/_app/w/$workspaceId/p/$projectId/e/$environmentId/password-policy'
       path: '/password-policy'
@@ -473,6 +536,13 @@ declare module '@tanstack/react-router' {
       path: '/proposals'
       fullPath: '/w/$workspaceId/p/$projectId/e/$environmentId/proposals'
       preLoaderRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdProposalsRouteImport
+      parentRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRoute
+    }
+    '/_app/w/$workspaceId/p/$projectId/e/$environmentId/roles': {
+      id: '/_app/w/$workspaceId/p/$projectId/e/$environmentId/roles'
+      path: '/roles'
+      fullPath: '/w/$workspaceId/p/$projectId/e/$environmentId/roles'
+      preLoaderRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdRolesRouteImport
       parentRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRoute
     }
     '/_app/w/$workspaceId/p/$projectId/e/$environmentId/sessions': {
@@ -508,6 +578,20 @@ declare module '@tanstack/react-router' {
       path: '/text-messages'
       fullPath: '/w/$workspaceId/p/$projectId/e/$environmentId/text-messages'
       preLoaderRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdTextMessagesRouteImport
+      parentRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRoute
+    }
+    '/_app/w/$workspaceId/p/$projectId/e/$environmentId/organizations/': {
+      id: '/_app/w/$workspaceId/p/$projectId/e/$environmentId/organizations/'
+      path: '/organizations'
+      fullPath: '/w/$workspaceId/p/$projectId/e/$environmentId/organizations/'
+      preLoaderRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationsIndexRouteImport
+      parentRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRoute
+    }
+    '/_app/w/$workspaceId/p/$projectId/e/$environmentId/organizations/$organizationId': {
+      id: '/_app/w/$workspaceId/p/$projectId/e/$environmentId/organizations/$organizationId'
+      path: '/organizations/$organizationId'
+      fullPath: '/w/$workspaceId/p/$projectId/e/$environmentId/organizations/$organizationId'
+      preLoaderRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationsOrganizationIdRouteImport
       parentRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRoute
     }
     '/_app/w/$workspaceId/p/$projectId/e/$environmentId/users/': {
@@ -554,15 +638,19 @@ interface AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRouteChildren {
   AppWWorkspaceIdPProjectIdEEnvironmentIdHooksRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdHooksRoute
   AppWWorkspaceIdPProjectIdEEnvironmentIdMessagesRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdMessagesRoute
   AppWWorkspaceIdPProjectIdEEnvironmentIdNativeAppsRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdNativeAppsRoute
+  AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationSettingsRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationSettingsRoute
   AppWWorkspaceIdPProjectIdEEnvironmentIdPasswordPolicyRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdPasswordPolicyRoute
   AppWWorkspaceIdPProjectIdEEnvironmentIdProposalsRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdProposalsRoute
+  AppWWorkspaceIdPProjectIdEEnvironmentIdRolesRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdRolesRoute
   AppWWorkspaceIdPProjectIdEEnvironmentIdSessionsRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSessionsRoute
   AppWWorkspaceIdPProjectIdEEnvironmentIdSettingsRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSettingsRoute
   AppWWorkspaceIdPProjectIdEEnvironmentIdSignInMethodsRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSignInMethodsRoute
   AppWWorkspaceIdPProjectIdEEnvironmentIdSigningKeysRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdSigningKeysRoute
   AppWWorkspaceIdPProjectIdEEnvironmentIdTextMessagesRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdTextMessagesRoute
   AppWWorkspaceIdPProjectIdEEnvironmentIdIndexRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdIndexRoute
+  AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationsOrganizationIdRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationsOrganizationIdRoute
   AppWWorkspaceIdPProjectIdEEnvironmentIdUsersUserIdRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdUsersUserIdRoute
+  AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationsIndexRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationsIndexRoute
   AppWWorkspaceIdPProjectIdEEnvironmentIdUsersIndexRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdUsersIndexRoute
   AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksIndexRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksIndexRoute
   AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksEndpointIdIndexRoute: typeof AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksEndpointIdIndexRoute
@@ -581,10 +669,14 @@ const AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRouteChildren: AppWWorkspaceId
       AppWWorkspaceIdPProjectIdEEnvironmentIdMessagesRoute,
     AppWWorkspaceIdPProjectIdEEnvironmentIdNativeAppsRoute:
       AppWWorkspaceIdPProjectIdEEnvironmentIdNativeAppsRoute,
+    AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationSettingsRoute:
+      AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationSettingsRoute,
     AppWWorkspaceIdPProjectIdEEnvironmentIdPasswordPolicyRoute:
       AppWWorkspaceIdPProjectIdEEnvironmentIdPasswordPolicyRoute,
     AppWWorkspaceIdPProjectIdEEnvironmentIdProposalsRoute:
       AppWWorkspaceIdPProjectIdEEnvironmentIdProposalsRoute,
+    AppWWorkspaceIdPProjectIdEEnvironmentIdRolesRoute:
+      AppWWorkspaceIdPProjectIdEEnvironmentIdRolesRoute,
     AppWWorkspaceIdPProjectIdEEnvironmentIdSessionsRoute:
       AppWWorkspaceIdPProjectIdEEnvironmentIdSessionsRoute,
     AppWWorkspaceIdPProjectIdEEnvironmentIdSettingsRoute:
@@ -597,8 +689,12 @@ const AppWWorkspaceIdPProjectIdEEnvironmentIdRouteRouteChildren: AppWWorkspaceId
       AppWWorkspaceIdPProjectIdEEnvironmentIdTextMessagesRoute,
     AppWWorkspaceIdPProjectIdEEnvironmentIdIndexRoute:
       AppWWorkspaceIdPProjectIdEEnvironmentIdIndexRoute,
+    AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationsOrganizationIdRoute:
+      AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationsOrganizationIdRoute,
     AppWWorkspaceIdPProjectIdEEnvironmentIdUsersUserIdRoute:
       AppWWorkspaceIdPProjectIdEEnvironmentIdUsersUserIdRoute,
+    AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationsIndexRoute:
+      AppWWorkspaceIdPProjectIdEEnvironmentIdOrganizationsIndexRoute,
     AppWWorkspaceIdPProjectIdEEnvironmentIdUsersIndexRoute:
       AppWWorkspaceIdPProjectIdEEnvironmentIdUsersIndexRoute,
     AppWWorkspaceIdPProjectIdEEnvironmentIdWebhooksIndexRoute:

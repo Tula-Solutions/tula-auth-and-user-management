@@ -228,6 +228,11 @@ export const documentation: GenerateSpecOptions['documentation'] = {
       description:
         'The iOS and Android apps an environment says are its own (admin), and the two association files the platforms fetch to believe it: Apple’s `apple-app-site-association` and Android’s `assetlinks.json` (public).',
     },
+    {
+      name: 'Organizations',
+      description:
+        'The companies and teams an environment’s users belong to, and the roles they hold in them (admin). Off until the environment’s `organizations.enabled` setting is on.',
+    },
   ],
   components: {
     securitySchemes: {

@@ -717,7 +717,7 @@ describe('every tenant table has exactly the isolation policy (F5)', () => {
         select tablename as table, policyname as name, cmd as command, roles::text as roles,
                qual as using
         from pg_policies where schemaname = 'tula' and permissive <> 'PERMISSIVE'
-        order by tablename
+        order by tablename, policyname
       `
     )
     await testDb.setRole('tula_app')
@@ -738,6 +738,22 @@ describe('every tenant table has exactly the isolation policy (F5)', () => {
         using: expect.stringMatching(
           /delivered_at IS NOT NULL.*occurred_at < \(now\(\) - '1 day'::interval\)/
         ),
+      },
+      {
+        // Custom roles are changed and deleted by the API; no statement of the runtime role
+        // reaches a built-in one (ADR 0065).
+        table: 'organization_roles',
+        name: 'organization_roles_custom_delete_only',
+        command: 'DELETE',
+        roles: '{public}',
+        using: '(NOT built_in)',
+      },
+      {
+        table: 'organization_roles',
+        name: 'organization_roles_custom_update_only',
+        command: 'UPDATE',
+        roles: '{public}',
+        using: '(NOT built_in)',
       },
       {
         table: 'sms_code_counts',

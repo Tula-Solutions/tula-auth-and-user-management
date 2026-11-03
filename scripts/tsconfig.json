@@ -5,6 +5,8 @@
     "../.claude/hooks/release.test.ts",
     "../.claude/hooks/release-publish.test.ts",
     "../.claude/hooks/api-image.test.ts",
-    "../.claude/hooks/github-packages.test.ts"
+    "../.claude/hooks/github-packages.test.ts",
+    "../.claude/hooks/release-pr.test.ts",
+    "../.claude/hooks/changeset-check.test.ts"
   ]
 }

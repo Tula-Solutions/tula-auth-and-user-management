@@ -17,6 +17,7 @@ import type { FactorStore } from '~/ports/factor-store'
 import type { HookRecord, HookStore } from '~/ports/hook-store'
 import type { NativeAppRecord, NativeAppStore } from '~/ports/native-app-store'
 import type { OAuthProviderRecord, OAuthProviderStore } from '~/ports/oauth-provider-store'
+import type { OrganizationRecord, OrganizationStore } from '~/ports/organization-store'
 import type { PasskeyRecord, PasskeyStore } from '~/ports/passkey-store'
 import type { NewRefreshToken, NewSession, SessionStore } from '~/ports/session-store'
 import type { RotationPlan, SigningKeyStore } from '~/ports/signing-key-store'
@@ -50,6 +51,7 @@ declare const endpoint: WebhookEndpointRecord
 declare const rotation: WebhookSecretRotation
 declare const hook: HookRecord
 declare const nativeApp: NativeAppRecord
+declare const organization: OrganizationRecord
 declare const settings: Parameters<EnvironmentSettingsStore['replace']>[2]
 
 async function _users(users: UserRepository): Promise<void> {
@@ -416,6 +418,35 @@ async function _nativeApps(apps: NativeAppStore): Promise<void> {
   await apps.delete(ENV, 'app', undefined)
 }
 
+async function _organizations(store: OrganizationStore): Promise<void> {
+  const role = { id: 'role', key: 'member' }
+  // @ts-expect-error an organization is created on the record
+  await store.insert(organization)
+  // @ts-expect-error
+  await store.insert(organization, undefined)
+  // @ts-expect-error
+  await store.update(ENV, 'organization', { name: 'New' }, AT)
+  // @ts-expect-error
+  await store.update(ENV, 'organization', { name: 'New' }, AT, undefined)
+  // @ts-expect-error
+  await store.delete(ENV, 'organization')
+  // @ts-expect-error
+  await store.delete(ENV, 'organization', undefined)
+  // @ts-expect-error who belongs to an organization, and with which role, is who can do what
+  await store.addMembership({} as never)
+  // @ts-expect-error
+  await store.changeRole(ENV, 'organization', 'user', 'role', role, AT)
+  // @ts-expect-error
+  await store.changeRole(ENV, 'organization', 'user', 'role', role, AT, undefined)
+  // @ts-expect-error
+  await store.removeMembership(ENV, 'organization', 'user', 'role')
+  // @ts-expect-error
+  await store.removeMembership(ENV, 'organization', 'user', 'role', undefined)
+  // The built-in roles of an environment are a method of its own and take none: nobody made
+  // them, the server creates them on first use (ADR 0065, "Built-in roles").
+  await store.ensureBuiltInRoles([])
+}
+
 describe('what a store is told about the audit entry of a write', () => {
   test('the type-level assertions above are compiled, not run', () => {
     for (const unused of [
@@ -427,6 +458,7 @@ describe('what a store is told about the audit entry of a write', () => {
       _webhookEndpoints,
       _hooks,
       _nativeApps,
+      _organizations,
       _memoryAdapters,
       _reasons,
     ]) {

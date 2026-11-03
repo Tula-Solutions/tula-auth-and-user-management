@@ -1,0 +1,890 @@
+{
+  "$schema": "../scenario.schema.json",
+  "name": "verified domains: suggest and auto-join",
+  "description": "An administrator claims a domain for an organization: a code is emailed to an address on it and until it is entered the claim grants nothing. A public mail domain, a name that is not lower-case ASCII and an address off the domain are refused; a wrong code is refused; the right one verifies, and another organization can then no longer claim the name. A new account whose verified address is exactly on a verified auto-join domain becomes a member with the environment's default role at sign-up; on a suggest domain it is offered the organization (name and slug only) and joins by itself, once. An account that signed up before the domain was verified is not a member and cannot read its domains. A member without org:sys:domains:manage cannot read the domains. Removing the domain stops later joins and offers and keeps the members it already brought. The original settings are put back afterwards, even when a step fails.",
+  "needsSecretKey": true,
+  "variables": {
+    "password": {
+      "generate": "password"
+    },
+    "suffix": {
+      "generate": "snowflake"
+    }
+  },
+  "steps": [
+    {
+      "name": "read the settings and their revision",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "etag": "ETag"
+      },
+      "captureJson": {
+        "original": "settings",
+        "appSettings": "settings.app",
+        "passwordSettings": "settings.password",
+        "signInSettings": "settings.signIn",
+        "signUpSettings": "settings.signUp",
+        "urlsSettings": "settings.urls",
+        "auditSettings": "settings.audit",
+        "notificationsSettings": "settings.notifications",
+        "mfaSettings": "settings.mfa",
+        "passkeysSettings": "settings.passkeys",
+        "smsSettings": "settings.sms",
+        "emailsSettings": "settings.emails"
+      }
+    },
+    {
+      "name": "an administrator switches organizations on, with member as the default role",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{etag}}"
+        },
+        "body": {
+          "app": {
+            "$json": "{{appSettings}}"
+          },
+          "password": {
+            "$json": "{{passwordSettings}}"
+          },
+          "signIn": {
+            "$json": "{{signInSettings}}"
+          },
+          "signUp": {
+            "$json": "{{signUpSettings}}"
+          },
+          "urls": {
+            "$json": "{{urlsSettings}}"
+          },
+          "audit": {
+            "$json": "{{auditSettings}}"
+          },
+          "notifications": {
+            "$json": "{{notificationsSettings}}"
+          },
+          "mfa": {
+            "$json": "{{mfaSettings}}"
+          },
+          "passkeys": {
+            "$json": "{{passkeysSettings}}"
+          },
+          "sms": {
+            "$json": "{{smsSettings}}"
+          },
+          "emails": {
+            "$json": "{{emailsSettings}}"
+          },
+          "organizations": {
+            "enabled": true,
+            "allowUserCreated": false,
+            "maxCreatedPerUser": 1,
+            "creatorRole": "admin",
+            "defaultRole": "member",
+            "personalAccount": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "settings": {
+            "organizations": {
+              "enabled": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "an administrator creates an organization",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations",
+        "auth": "secret",
+        "body": {
+          "name": "Domain Org",
+          "slug": "domains-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "orgId": "id"
+      }
+    },
+    {
+      "name": "and a second one",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations",
+        "auth": "secret",
+        "body": {
+          "name": "Rival Org",
+          "slug": "rival-{{suffix}}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any"
+        }
+      },
+      "capture": {
+        "rivalId": "id"
+      }
+    },
+    {
+      "name": "a public mail domain is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/domains",
+        "auth": "secret",
+        "body": {
+          "domain": "gmail.com",
+          "email": "someone@gmail.com",
+          "mode": "auto_join"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "organization.domain_public"
+        }
+      }
+    },
+    {
+      "name": "a domain in capitals is not a domain",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/domains",
+        "auth": "secret",
+        "body": {
+          "domain": "Domain.Example",
+          "email": "a@domain.example",
+          "mode": "auto_join"
+        }
+      },
+      "expect": {
+        "status": 422
+      }
+    },
+    {
+      "name": "the address the code goes to must be on the domain",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/domains",
+        "auth": "secret",
+        "body": {
+          "domain": "d{{suffix}}.example",
+          "email": "ada@mail.d{{suffix}}.example",
+          "mode": "auto_join"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "organization.domain_address_mismatch"
+        }
+      }
+    },
+    {
+      "name": "a claim emails a code and grants nothing yet",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/domains",
+        "auth": "secret",
+        "body": {
+          "domain": "d{{suffix}}.example",
+          "email": "ada@d{{suffix}}.example",
+          "mode": "auto_join"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "$any",
+          "domain": "d{{suffix}}.example",
+          "mode": "auto_join",
+          "status": "pending",
+          "verifiedAt": "$absent",
+          "expiresAt": "$absent"
+        }
+      },
+      "capture": {
+        "domainId": "id"
+      }
+    },
+    {
+      "name": "read the emailed code",
+      "emailCode": {
+        "to": "ada@d{{suffix}}.example",
+        "capture": "domainCode"
+      }
+    },
+    {
+      "name": "early starts a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "early-{{suffix}}@d{{suffix}}.example",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "earlyId": "id",
+        "earlySecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "early reads the emailed code",
+      "emailCode": {
+        "to": "early-{{suffix}}@d{{suffix}}.example",
+        "capture": "earlyCode"
+      }
+    },
+    {
+      "name": "early verifies the address: the sign-up completes",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{earlyId}}/verify-email",
+        "body": {
+          "code": "{{earlyCode}}"
+        },
+        "attempt": "{{earlySecret}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          }
+        }
+      },
+      "capture": {
+        "earlyUserId": "step.userId",
+        "earlyToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "a sign-up on a pending domain joins nothing",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations",
+        "accessToken": "{{earlyToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": []
+        }
+      }
+    },
+    {
+      "name": "and is suggested nothing",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations/suggestions",
+        "accessToken": "{{earlyToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": []
+        }
+      }
+    },
+    {
+      "name": "a wrong code is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/domains/{{domainId}}/verify",
+        "auth": "secret",
+        "body": {
+          "code": "000000"
+        }
+      },
+      "expect": {
+        "status": 422,
+        "body": {
+          "code": "verification.invalid_code"
+        }
+      }
+    },
+    {
+      "name": "the emailed code verifies the domain",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{orgId}}/domains/{{domainId}}/verify",
+        "auth": "secret",
+        "body": {
+          "code": "{{domainCode}}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "domain": "d{{suffix}}.example",
+          "status": "verified",
+          "verifiedAt": "$any",
+          "expiresAt": "$any",
+          "codeExpiresAt": "$absent"
+        }
+      }
+    },
+    {
+      "name": "another organization cannot claim a verified domain",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{rivalId}}/domains",
+        "auth": "secret",
+        "body": {
+          "domain": "d{{suffix}}.example",
+          "email": "ada@d{{suffix}}.example",
+          "mode": "suggest"
+        }
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "organization.domain_taken"
+        }
+      }
+    },
+    {
+      "name": "the domain is listed with its mode",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/organizations/{{orgId}}/domains",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "id": "{{domainId}}",
+              "domain": "d{{suffix}}.example",
+              "mode": "auto_join",
+              "status": "verified",
+              "verifiedAt": "$any",
+              "expiresAt": "$any"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "joiner starts a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "joiner-{{suffix}}@d{{suffix}}.example",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "joinerId": "id",
+        "joinerSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "joiner reads the emailed code",
+      "emailCode": {
+        "to": "joiner-{{suffix}}@d{{suffix}}.example",
+        "capture": "joinerCode"
+      }
+    },
+    {
+      "name": "joiner verifies the address: the sign-up completes",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{joinerId}}/verify-email",
+        "body": {
+          "code": "{{joinerCode}}"
+        },
+        "attempt": "{{joinerSecret}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          }
+        }
+      },
+      "capture": {
+        "joinerUserId": "step.userId",
+        "joinerToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "a new account with a verified address on an auto-join domain is a member",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations",
+        "accessToken": "{{joinerToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "id": "{{orgId}}",
+              "slug": "domains-{{suffix}}",
+              "role": "member"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "and is not also suggested it",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations/suggestions",
+        "accessToken": "{{joinerToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": []
+        }
+      }
+    },
+    {
+      "name": "a member without the permission cannot read the domains",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations/{{orgId}}/domains",
+        "accessToken": "{{joinerToken}}"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "auth.forbidden"
+        }
+      }
+    },
+    {
+      "name": "an account that signed up before the domain was verified is not a member",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations/{{orgId}}/domains",
+        "accessToken": "{{earlyToken}}"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.not_a_member"
+        }
+      }
+    },
+    {
+      "name": "an administrator changes the domain to suggest only",
+      "request": {
+        "method": "PATCH",
+        "path": "/v1/admin/organizations/{{orgId}}/domains/{{domainId}}",
+        "auth": "secret",
+        "body": {
+          "mode": "suggest"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "mode": "suggest"
+        }
+      }
+    },
+    {
+      "name": "that earlier account is suggested the organization now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations/suggestions",
+        "accessToken": "{{earlyToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "id": "{{orgId}}",
+              "name": "Domain Org",
+              "slug": "domains-{{suffix}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "suggested starts a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "suggested-{{suffix}}@d{{suffix}}.example",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "suggestedId": "id",
+        "suggestedSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "suggested reads the emailed code",
+      "emailCode": {
+        "to": "suggested-{{suffix}}@d{{suffix}}.example",
+        "capture": "suggestedCode"
+      }
+    },
+    {
+      "name": "suggested verifies the address: the sign-up completes",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{suggestedId}}/verify-email",
+        "body": {
+          "code": "{{suggestedCode}}"
+        },
+        "attempt": "{{suggestedSecret}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          }
+        }
+      },
+      "capture": {
+        "suggestedUserId": "step.userId",
+        "suggestedToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "a suggest domain joins nobody",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations",
+        "accessToken": "{{suggestedToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": []
+        }
+      }
+    },
+    {
+      "name": "the organization is suggested, by name only",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations/suggestions",
+        "accessToken": "{{suggestedToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "id": "{{orgId}}",
+              "name": "Domain Org",
+              "slug": "domains-{{suffix}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "the user joins it with the default role",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organizations/suggestions/{{orgId}}/join",
+        "accessToken": "{{suggestedToken}}"
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "id": "{{orgId}}",
+          "role": "member"
+        }
+      }
+    },
+    {
+      "name": "joining twice is refused",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organizations/suggestions/{{orgId}}/join",
+        "accessToken": "{{suggestedToken}}"
+      },
+      "expect": {
+        "status": 409,
+        "body": {
+          "code": "organization.member_exists"
+        }
+      }
+    },
+    {
+      "name": "a user who joined is listed it",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations",
+        "accessToken": "{{suggestedToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "id": "{{orgId}}",
+              "role": "member"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "an administrator removes the domain",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/organizations/{{orgId}}/domains/{{domainId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "removing it again is not found",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/organizations/{{orgId}}/domains/{{domainId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 404
+      }
+    },
+    {
+      "name": "after the removal the earlier account can no longer join",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/me/organizations/suggestions/{{orgId}}/join",
+        "accessToken": "{{earlyToken}}"
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "code": "organization.suggestion_unavailable"
+        }
+      }
+    },
+    {
+      "name": "late starts a sign-up",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups",
+        "client": "ios",
+        "body": {
+          "email": "late-{{suffix}}@d{{suffix}}.example",
+          "password": "{{password}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      },
+      "capture": {
+        "lateId": "id",
+        "lateSecret": "attemptSecret"
+      }
+    },
+    {
+      "name": "late reads the emailed code",
+      "emailCode": {
+        "to": "late-{{suffix}}@d{{suffix}}.example",
+        "capture": "lateCode"
+      }
+    },
+    {
+      "name": "late verifies the address: the sign-up completes",
+      "request": {
+        "method": "POST",
+        "path": "/v1/client/sign-ups/{{lateId}}/verify-email",
+        "body": {
+          "code": "{{lateCode}}"
+        },
+        "attempt": "{{lateSecret}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "step": {
+            "status": "complete"
+          }
+        }
+      },
+      "capture": {
+        "lateUserId": "step.userId",
+        "lateToken": "session.accessToken"
+      }
+    },
+    {
+      "name": "after the removal a sign-up joins nobody",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations",
+        "accessToken": "{{lateToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": []
+        }
+      }
+    },
+    {
+      "name": "and is suggested nothing",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations/suggestions",
+        "accessToken": "{{lateToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": []
+        }
+      }
+    },
+    {
+      "name": "members who joined stay members",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations",
+        "accessToken": "{{joinerToken}}"
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "data": [
+            {
+              "id": "{{orgId}}",
+              "role": "member"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "the domain can be claimed by another organization now",
+      "request": {
+        "method": "POST",
+        "path": "/v1/admin/organizations/{{rivalId}}/domains",
+        "auth": "secret",
+        "body": {
+          "domain": "d{{suffix}}.example",
+          "email": "ada@d{{suffix}}.example",
+          "mode": "suggest"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "domain": "d{{suffix}}.example"
+        }
+      }
+    },
+    {
+      "name": "a publishable key alone is refused",
+      "request": {
+        "method": "GET",
+        "path": "/v1/client/me/organizations/suggestions"
+      },
+      "expect": {
+        "status": 401
+      }
+    },
+    {
+      "name": "an administrator deletes the first organization",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/organizations/{{orgId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    },
+    {
+      "name": "and the second, with its domains",
+      "request": {
+        "method": "DELETE",
+        "path": "/v1/admin/organizations/{{rivalId}}",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 204
+      }
+    }
+  ],
+  "cleanup": [
+    {
+      "name": "read the revision the settings are at now",
+      "request": {
+        "method": "GET",
+        "path": "/v1/admin/settings",
+        "auth": "secret"
+      },
+      "expect": {
+        "status": 200
+      },
+      "captureHeaders": {
+        "cleanupEtag": "ETag"
+      }
+    },
+    {
+      "name": "put the original settings back",
+      "request": {
+        "method": "PUT",
+        "path": "/v1/admin/settings",
+        "auth": "secret",
+        "headers": {
+          "If-Match": "{{cleanupEtag}}"
+        },
+        "body": {
+          "$json": "{{original}}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

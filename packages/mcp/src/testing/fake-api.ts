@@ -269,6 +269,46 @@ export function defaultAnswers(): Answers {
         drifted: false,
       },
     },
+    'GET /v1/admin/organizations': {
+      meta: { totalCount: 1, totalPages: 1, page: 1, perPage: 20 },
+      data: [
+        {
+          id: TEST_ORGANIZATION_ID,
+          name: 'Acme Inc',
+          slug: 'acme',
+          createdBy: USER_ID,
+          createdAt: '2026-02-01T00:00:00.000Z',
+          updatedAt: '2026-02-02T00:00:00.000Z',
+        },
+      ],
+    },
+    [`GET /v1/admin/organizations/${TEST_ORGANIZATION_ID}/memberships`]: {
+      meta: { totalCount: 1, totalPages: 1, page: 1, perPage: 50 },
+      data: [
+        {
+          id: '0198c1de-0000-7000-8000-0000000000d2',
+          organizationId: TEST_ORGANIZATION_ID,
+          userId: USER_ID,
+          role: 'admin',
+          createdAt: '2026-02-01T00:00:00.000Z',
+          updatedAt: '2026-02-01T00:00:00.000Z',
+        },
+      ],
+    },
+    'GET /v1/admin/organization-roles': {
+      data: [
+        {
+          id: '0198c1de-0000-7000-8000-0000000000d3',
+          key: 'billing',
+          name: 'Billing',
+          permissions: ['org:billing:manage', 'org:billing:read'],
+          builtIn: false,
+          version: 2,
+          createdAt: '2026-02-01T00:00:00.000Z',
+          updatedAt: '2026-02-02T00:00:00.000Z',
+        },
+      ],
+    },
     'GET /v1/admin/oauth-providers': {
       data: [
         {
@@ -287,6 +327,9 @@ export function defaultAnswers(): Answers {
     },
   }
 }
+
+/** The organization the fake API's organization answers are about. */
+export const TEST_ORGANIZATION_ID = '0198c1de-0000-7000-8000-0000000000d1'
 
 /** The user every default answer is about. */
 export const TEST_USER_ID = USER_ID

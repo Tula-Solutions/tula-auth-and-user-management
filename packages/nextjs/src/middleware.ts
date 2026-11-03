@@ -1,3 +1,12 @@
+import {
+  hasOrganizationAccess,
+  type OrganizationCheck,
+  readOrganizationClaims,
+} from '@tula-tech/contract/custom-claims'
+import {
+  PERMISSION_KEY_PATTERN,
+  ROLE_KEY_PATTERN,
+} from '@tula-tech/contract/organization-permissions'
 import { type NextRequest, NextResponse } from 'next/server'
 import { configFor, type TulaServerOptions } from './config'
 import { REDIRECT_PARAM, safeRedirectPath } from './paths'
@@ -26,14 +35,35 @@ export type RouteMatcher =
   | ReadonlyArray<string | RegExp | ((pathname: string) => boolean)>
 
 /**
- * Options of {@link tulaMiddleware}: which routes need a session, where sign-in lives, and
- * the server configuration (read from the environment when left out).
+ * A group of routes and what the active organization must grant to open them: one permission
+ * key or one role key, checked offline on the verified claims (the rule of `auth().has()`).
+ *
+ * A route a rule matches needs a session, whatever `publicRoutes` / `protectedRoutes` say.
+ * When several rules match a path, **all** of them must grant. The check is exact: no
+ * wildcard, and no permission implies another.
+ *
+ * @example
+ * ```ts
+ * const rules: RouteAccessRule[] = [
+ *   { routes: '/billing(.*)', permission: 'org:billing:read' },
+ *   { routes: ['/admin(.*)', '/api/admin(.*)'], role: 'admin' },
+ * ]
+ * ```
+ */
+export type RouteAccessRule = { routes: RouteMatcher } & OrganizationCheck
+
+/**
+ * Options of {@link tulaMiddleware}: which routes need a session, which need a permission or
+ * a role of the active organization, where sign-in lives, and the server configuration (read
+ * from the environment when left out).
  *
  * @example
  * ```ts
  * const options: TulaMiddlewareOptions = {
  *   publicRoutes: ['/', '/sign-up'],
  *   signInUrl: '/sign-in',
+ *   access: [{ routes: '/billing(.*)', permission: 'org:billing:read' }],
+ *   forbiddenUrl: '/no-access',
  * }
  * ```
  */
@@ -55,6 +85,52 @@ export interface TulaMiddlewareOptions extends TulaServerOptions {
   signInUrl?: string
   /** The sign-up page, so that it is never protected. Defaults to `/sign-up`. */
   signUpUrl?: string
+  /**
+   * Routes that need a permission or a role of the session's active organization (ADR 0065),
+   * checked on the verified claims with no call to the API. Without a session the visitor is
+   * sent to sign in, as for any protected route. **With** a session that does not grant the
+   * rule (no active organization, another role, a missing permission) the answer is a `403`:
+   * JSON for `apiRoutes` and for anything but a `GET`, and for a page a redirect to
+   * `forbiddenUrl` or, when there is none, a plain `403` page.
+   */
+  access?: ReadonlyArray<RouteAccessRule>
+  /**
+   * Where a signed-in visitor who lacks what a rule in `access` asks for is sent: a path on
+   * this origin. Leave it out for a bare `403` response. Never matched by `access` itself.
+   */
+  forbiddenUrl?: string
+}
+
+/**
+ * The path as the router reads it: percent-escapes decoded (`/%62illing` is `/billing`),
+ * repeated slashes collapsed (`//billing`) and dot segments resolved (`/a/%2e%2e/billing`).
+ *
+ * Next.js serves the page for all of these spellings, and a matcher that saw only the raw
+ * path would let a rule (a permission boundary) be skipped by spelling a path differently.
+ * A path that does not decode is matched as it is: Next.js answers such a request with a 400
+ * before any page runs.
+ *
+ * @param raw - `request.nextUrl.pathname`.
+ * @returns The path to match rules and route lists against.
+ */
+function canonicalPath(raw: string): string {
+  const kept: string[] = []
+  for (const encoded of raw.split('/')) {
+    let segment = encoded
+    try {
+      // Per segment: an encoded slash stays inside its segment's text, it starts no new one.
+      segment = decodeURIComponent(encoded)
+    } catch {
+      return raw
+    }
+    if (segment === '..') {
+      kept.pop()
+    } else if (segment !== '.' && segment !== '') {
+      kept.push(segment)
+    }
+  }
+  const trailing = raw.length > 1 && raw.endsWith('/') ? '/' : ''
+  return `/${kept.join('/')}${kept.length > 0 ? trailing : ''}`
 }
 
 function compile(matcher: RouteMatcher | undefined): (pathname: string) => boolean {
@@ -79,6 +155,41 @@ function compile(matcher: RouteMatcher | undefined): (pathname: string) => boole
     return (pathname: string) => pattern.test(pathname)
   })
   return (pathname) => tests.some((test) => test(pathname))
+}
+
+/** One rule of `access`, validated and compiled: the same check as `auth().has()`. */
+interface CompiledRule {
+  matches(pathname: string): boolean
+  check: OrganizationCheck
+}
+
+/**
+ * Check the rules of `access` when the middleware is created: a typo in a permission key
+ * would otherwise refuse everybody, silently, at run time.
+ */
+function compileAccess(rules: ReadonlyArray<RouteAccessRule> | undefined): CompiledRule[] {
+  return (rules ?? []).map((rule, index) => {
+    const { routes, permission, role } = rule as {
+      routes: RouteMatcher
+      permission?: unknown
+      role?: unknown
+    }
+    const named = [permission, role].filter((value) => value !== undefined)
+    const key = typeof permission === 'string' ? permission : role
+    const valid =
+      named.length === 1 &&
+      typeof key === 'string' &&
+      (permission !== undefined ? PERMISSION_KEY_PATTERN.test(key) : ROLE_KEY_PATTERN.test(key))
+    if (routes === undefined || !valid) {
+      throw new TypeError(
+        `@tula-tech/nextjs: \`access[${index}]\` needs \`routes\` and exactly one of \`permission\` (an exact key like org:billing:read, no wildcard) or \`role\` (a role key like admin)`
+      )
+    }
+    return {
+      matches: compile(routes),
+      check: (permission !== undefined ? { permission: key } : { role: key }) as OrganizationCheck,
+    }
+  })
 }
 
 function localPath(value: string, option: string): string {
@@ -118,17 +229,33 @@ function localPath(value: string, option: string): string {
  * In Next.js 16 the file is `proxy.ts` and the export `proxy`; in Next.js 15 it is
  * `middleware.ts` and `middleware`.
  *
+ * Routes in `access` also need the active organization to grant a permission or a role
+ * (`{ routes: '/billing(.*)', permission: 'org:billing:read' }`). That is decided from the
+ * verified claims, offline, by the rule of `auth().has()`: false with no active organization,
+ * and exact (no wildcard). A visitor without a session is sent to sign in; one with a session
+ * that does not grant it gets a `403` (JSON for API routes and non-`GET` requests; for a page
+ * a redirect to `forbiddenUrl`, or a bare `403` page). The claims are as old as the access
+ * token, so a role changed a moment ago is seen at the next refresh; the code that changes
+ * data still authorizes the change itself.
+ *
  * @param options - The routes to protect and, optionally, the server configuration.
  * @returns The function to export from `proxy.ts` / `middleware.ts`.
- * @throws TypeError when `signInUrl` or `signUpUrl` is not a path on this origin. The
- *   returned function rejects with a `TypeError` when the configuration is incomplete.
+ * @throws TypeError when `signInUrl`, `signUpUrl` or `forbiddenUrl` is not a path on this
+ *   origin, or a rule of `access` names neither or both of `permission` and `role`, a
+ *   permission that is not an exact key (`org:<feature>:<action>`) or a role key that is not
+ *   one. The returned function rejects with a `TypeError` when the configuration is
+ *   incomplete.
  *
  * @example
  * ```ts
  * // proxy.ts (Next.js 16)
  * import { tulaMiddleware } from '@tula-tech/nextjs/middleware'
  *
- * export const proxy = tulaMiddleware({ publicRoutes: ['/', '/sign-up'] })
+ * export const proxy = tulaMiddleware({
+ *   publicRoutes: ['/', '/sign-up'],
+ *   access: [{ routes: '/billing(.*)', permission: 'org:billing:read' }],
+ *   forbiddenUrl: '/no-access',
+ * })
  *
  * export const config = {
  *   matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
@@ -140,13 +267,27 @@ export function tulaMiddleware(
 ): (request: NextRequest) => Promise<NextResponse> {
   const signInPath = localPath(options.signInUrl ?? '/sign-in', 'signInUrl')
   const signUpPath = localPath(options.signUpUrl ?? '/sign-up', 'signUpUrl')
+  const forbiddenPath =
+    options.forbiddenUrl === undefined ? null : localPath(options.forbiddenUrl, 'forbiddenUrl')
+  const rules = compileAccess(options.access)
   const always = new Set([signInPath, signUpPath].map((path) => new URL(path, 'http://x').pathname))
   const isProtected = compile(options.protectedRoutes)
   const isPublic = compile(options.publicRoutes)
   const isApi = compile(options.apiRoutes ?? '/api(.*)')
+  // No rule applies to the page a refused visitor is sent to, or it could refuse them again.
+  const exempt = new Set(always)
+  if (forbiddenPath !== null) {
+    exempt.add(new URL(forbiddenPath, 'http://x').pathname)
+  }
+  /** The rules that apply to a path: none for the sign-in, sign-up and forbidden pages. */
+  const rulesFor = (pathname: string): CompiledRule[] =>
+    exempt.has(pathname) ? [] : rules.filter((rule) => rule.matches(pathname))
   const needsSession = (pathname: string): boolean => {
     if (always.has(pathname)) {
       return false
+    }
+    if (rulesFor(pathname).length > 0) {
+      return true
     }
     if (options.protectedRoutes !== undefined) {
       return isProtected(pathname)
@@ -156,8 +297,11 @@ export function tulaMiddleware(
 
   return async function middleware(request: NextRequest): Promise<NextResponse> {
     const config = configFor(options)
-    const { pathname, search } = request.nextUrl
-    if (pathname === config.path || pathname.startsWith(`${config.path}/`)) {
+    const { search } = request.nextUrl
+    const rawPath = request.nextUrl.pathname
+    // Every matcher judges the path the way the router will read it (see `canonicalPath`).
+    const pathname = canonicalPath(rawPath)
+    if (rawPath === config.path || rawPath.startsWith(`${config.path}/`)) {
       // The route handler does its own checks and talks to the API itself. The claims header
       // is still not the browser's to send, on this path as on any other.
       const headers = new Headers(request.headers)
@@ -167,7 +311,33 @@ export function tulaMiddleware(
 
     const { session, setCookies, requestHeaders } = await resolveSession(request, config)
     let response: NextResponse
-    if (session || !needsSession(pathname)) {
+    const applicable = session ? rulesFor(pathname) : []
+    const organization = applicable.length > 0 ? readOrganizationClaims(session?.claims) : null
+    const denied = applicable.some((rule) => !hasOrganizationAccess(organization, rule.check))
+    if (session && denied) {
+      if (isApi(pathname) || (request.method !== 'GET' && request.method !== 'HEAD')) {
+        response = NextResponse.json(
+          {
+            status: 403,
+            code: 'auth.forbidden',
+            detail: 'You do not have permission to do that.',
+          },
+          { status: 403, headers: { 'cache-control': 'no-store' } }
+        )
+      } else if (forbiddenPath !== null) {
+        const target = request.nextUrl.clone()
+        const destination = new URL(forbiddenPath, 'http://x')
+        target.pathname = destination.pathname
+        target.search = destination.search
+        target.hash = ''
+        response = NextResponse.redirect(target)
+      } else {
+        response = new NextResponse('Forbidden', {
+          status: 403,
+          headers: { 'cache-control': 'no-store', 'content-type': 'text/plain; charset=utf-8' },
+        })
+      }
+    } else if (session || !needsSession(pathname)) {
       response = NextResponse.next({ request: { headers: requestHeaders } })
     } else if (isApi(pathname) || (request.method !== 'GET' && request.method !== 'HEAD')) {
       response = NextResponse.json(
@@ -181,7 +351,7 @@ export function tulaMiddleware(
       target.search = destination.search
       target.hash = ''
       // Where the visitor was going, as a path: the sign-in page checks it again before use.
-      target.searchParams.set(REDIRECT_PARAM, safeRedirectPath(`${pathname}${search}`))
+      target.searchParams.set(REDIRECT_PARAM, safeRedirectPath(`${rawPath}${search}`))
       response = NextResponse.redirect(target)
     }
     for (const line of setCookies) {

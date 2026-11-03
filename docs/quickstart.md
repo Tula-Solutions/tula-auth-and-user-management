@@ -2,6 +2,7 @@
 
 You need [Bun](https://bun.sh) 1.2 or newer and Docker.
 
+> [!NOTE]
 > **What is on npm, and what is not.** The web packages and `create-tula` are released to npm
 > ([releasing.md](releasing.md)), so for a web app steps 2 and 3
 > can be `bunx create-tula@latest my-app --framework react-vite`. **The Tula API image is
@@ -35,7 +36,29 @@ bun run packages:check       # builds and packs every package into .release/
 
 ## 3. Create the project
 
-Anywhere outside the repository:
+For a web app from npm (see the note above), with the package manager you use:
+
+:::code-group{sync="package-manager"}
+
+```sh title="bun"
+bunx create-tula@latest my-app --framework react-vite
+```
+
+```sh title="npm"
+npm create tula@latest my-app -- --framework react-vite
+```
+
+```sh title="pnpm"
+pnpm create tula@latest my-app --framework react-vite
+```
+
+```sh title="yarn"
+yarn create tula@latest my-app --framework react-vite
+```
+
+:::
+
+From a checkout, as the steps above leave you, anywhere outside the repository:
 
 ```sh
 mkdir -p /tmp/create-tula && tar -xzf <repo>/.release/create-tula-0.1.1.tgz -C /tmp/create-tula
@@ -140,6 +163,7 @@ The same stack, with an Expo, a SwiftUI or a Compose app in place of the web one
 2, 4 and 5 are as above; this replaces steps 3 and 6. The order is: scaffold, start the
 stack, run the app in a simulator or an emulator, open the tunnel, then run it on a phone.
 
+> [!WARNING]
 > **What was run, and what was not.** The three templates were scaffolded, and the SwiftUI
 > and Compose ones compiled, on the machine that wrote them. **Nobody has run a scaffolded
 > native project in a simulator, on an emulator or on a phone, and nobody has run
@@ -148,6 +172,8 @@ stack, run the app in a simulator or an emulator, open the tunnel, then run it o
 > verified](plans/phase-2-unverified.md) lists each one. What needs an Apple or a Google
 > account of your own is one table:
 > [native-apps.md](native-apps.md#what-needs-your-own-accounts).
+
+:::steps
 
 ### Scaffold
 
@@ -264,6 +290,8 @@ example apps' identifiers are not yours to register. [The table in
 native-apps.md](native-apps.md#what-needs-your-own-accounts) says, row by row, which account
 each one needs and what you then give Tula; the SDK's own guide ([expo.md](expo.md),
 [swift.md](swift.md), [kotlin.md](kotlin.md)) says what the app is given.
+
+:::
 
 ## Afterwards
 

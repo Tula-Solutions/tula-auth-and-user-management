@@ -38,6 +38,7 @@ does not want to draw its own ([Screens](#screens), below). The reasoning is in
 | An expired password | The new password, as the last step of the sign-in. |
 | Session | Kept in the Android Keystore's care, refreshed when needed, ended by sign-out; bound to a device key where the app passes a key store. |
 | The signed-in user | Step-up, the authenticator app and backup codes, a texted code as the second step, passkeys (list, add, remove), a phone number (add, prove, remove), connected provider accounts, a password change, the session list, ending one session or all the others. |
+| Organizations | The user's organizations, creating one, the active organization and its claims, an invitation (preview, accept, decline), the organizations a verified address is offered. |
 
 Not yet: an emailed link (the code in the same email is the way) and renaming a passkey
 (both TULA-76: the rename is a `PATCH`, which the default HTTP engine cannot send). A step
@@ -447,6 +448,85 @@ file is not copied, and without them the copy has no key on the new device and i
 no token. Neither was tried on a device
 ([what was not verified](plans/phase-2-unverified.md#step-215-the-kotlin-client-tula-38-adr-0054)).
 
+## Organizations
+
+An environment with organizations switched on lets a user belong to several, and a session
+works in one of them at a time: the **active organization**
+([ADR 0065](adr/0065-organizations.md)). `tula.organizations` lists the user's
+organizations, creates one where the environment lets users, and sets or clears the active
+one. Setting it asks the server for a new access token that carries the organization's
+claims (`org_id`, `org_role`, `org_perms`); the refresh token does not change.
+
+<!-- snippet: native/android/tula-auth/src/test/kotlin/dev/tula/auth/DocsSnippets.kt#organizations -->
+```kotlin
+val page = tula.organizations.list() // each with the user's role and its permissions
+if (page.data.isEmpty()) {
+    val acme = tula.organizations.create(name = "Acme", slug = "acme")
+    tula.organizations.setActive(acme.id) // the next access token carries the claims
+}
+tula.organizations.active()?.let { organization ->
+    // Read from the access token, to decide what to draw: your server checks the same keys.
+    if (organization.hasPermission("org:billing:read")) {
+        // show the billing tab
+    }
+    if (organization.hasRole("admin")) {
+        // show the admin tab
+    }
+}
+tula.organizations.clearActive() // back to the personal account
+```
+<!-- /snippet -->
+
+`active()` reads the claims from the access token the client holds, without checking its
+signature: that is for drawing the right screen, never for deciding what a user may do.
+Your server verifies the token and checks the same permission. The claims are all three or
+none: a token whose organization claims do not satisfy the contract's grammar has no active
+organization here, as in `@tula-tech/core`. Kotlin cannot overload on a parameter's name, so
+the two checks are `hasPermission` and `hasRole` (`has(permission:)` and `has(role:)` in the
+Swift client).
+
+An invitation arrives as an emailed link whose address carries the token in its
+**fragment** (`#tula_invitation=...`), which no server sees. Open it in the app (an app
+link) and read it with `TulaInvitationLink`. Previewing needs no session; accepting and
+declining need one, and accepting needs the address the invitation was sent to, verified.
+
+<!-- snippet: native/android/tula-auth/src/test/kotlin/dev/tula/auth/DocsSnippets.kt#invitation -->
+```kotlin
+// The app was opened by the link in the emailed invitation (an app link, say).
+val link = TulaInvitationLink.read(openedWith) ?: return
+// The token is a secret. It was in the address's fragment, which no server saw.
+val preview = tula.organizations.invitations.preview(link.token)
+// preview.organizationName, preview.role and preview.email, to prefill a sign-up.
+// Once the user is signed in as preview.email, with its address verified:
+val joined = tula.organizations.invitations.accept(link.token)
+tula.organizations.setActive(joined.id)
+// or: tula.organizations.invitations.decline(link.token)
+```
+<!-- /snippet -->
+
+The token is a credential: the client never logs it, prints it or puts it in an error, and
+`TulaInvitationLink` prints as its name only. Keep `link.cleanUrl`, not the address the
+token came in.
+
+When an environment verifies an organization's domain, a user whose verified address is on
+it is offered that organization, and joins it with the environment's default role:
+
+<!-- snippet: native/android/tula-auth/src/test/kotlin/dev/tula/auth/DocsSnippets.kt#organization-suggestions -->
+```kotlin
+// Organizations whose verified domain is the one of the user's verified address:
+val offered = tula.organizations.suggestions()
+offered.data.firstOrNull()?.let { first ->
+    tula.organizations.join(first.id) // with the environment's default role
+}
+```
+<!-- /snippet -->
+
+Members, roles and invitations are managed by administrators (the dashboard, or
+`@tula-tech/admin` on your server). `tula.organizations.invitations` also has `list`,
+`invite` and `revoke` for a signed-in member whose role may do it; the server decides.
+The three journeys of these calls ran against the real API from a JVM; nothing here was
+run on a device.
+
 ## Requests
 
 The client sends its requests with the platform's own `HttpURLConnection`, so the library
@@ -511,6 +591,18 @@ that was shown while nobody was signed in: there was no session to end.
 
 An app that starts with a stored session reads `client.state` once, after `client.load()`,
 to choose which of the two to open on ([the example](../examples/compose/README.md) does).
+
+### What the screens look like
+
+:::native-screens{platform="android"}
+
+These are `TulaAuth` and `TulaAccount` as [the example app](#the-example-and-its-ui-tests)
+draws them on an Android emulator against the real API: pick a screen and a step, the scheme
+and whether to show a device frame. Each picture is a screenshot taken by the example's UI
+tests, not a mock-up, and the line under the gallery says what made it.
+[Refreshing the captures](#refreshing-the-captures) says how to take them again.
+
+:::
 
 ### Passkeys, Google and providers on the screens
 
@@ -730,6 +822,25 @@ The script refuses a device that is not an emulator unless it is given `--allow-
 `adb reverse` puts the API's port on the device's own loopback address, where every app
 installed on a phone can reach it. They are run by hand: no workflow starts an emulator. CI compiles and lints the screens,
 the example and the tests.
+
+### Refreshing the captures
+
+The pictures of [what the screens look like](#what-the-screens-look-like) come from the same
+UI tests, in a mode that photographs instead of asserting:
+
+```bash
+bun run native/android/fixture/ui-tests.ts --avd <name of an emulator> --screenshots apps/docs/public/native/android
+```
+
+`CaptureTest` (in `examples/compose/src/androidTest`) walks the sign-in, the sign-up, the
+password reset, the second step and the account, once in the light scheme and once in the
+dark (`cmd uimode night`), and captures the app's window of every step (Compose's `captureToImage`, written out by the
+shell, so without the system bars: the example is not edge to edge and an emulator without a
+window draws its status bar empty). The script pulls them, scales each to 560 pixels wide, writes it as WebP (it needs `cwebp`:
+`brew install webp`; a picture over 80 KB stops it) and writes `manifest.json` beside them
+with the device, the Android API level, the commit and the date. The captures and the manifest
+are committed; no workflow takes them, because none runs an emulator. Without the flag the
+capture tests skip themselves, so an ordinary run is unchanged.
 
 What the UI tests cover of these screens, and what they do not (no passkey sheet, Google
 chooser or browser was opened; no text message was received; TalkBack was never on), is in

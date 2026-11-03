@@ -62,6 +62,6 @@ describe('PostgresJobLock', () => {
   })
 
   test('job ids never change: instances of two versions must agree during an upgrade', () => {
-    expect(JOB_LOCK_IDS).toEqual({ retention: 1, webhook_delivery: 2 })
+    expect(JOB_LOCK_IDS).toEqual({ retention: 1, webhook_delivery: 2, domain_reminders: 3 })
   })
 })

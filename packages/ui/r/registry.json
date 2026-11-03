@@ -207,6 +207,63 @@
           "security": false
         }
       }
+    },
+    {
+      "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+      "name": "organization-switcher",
+      "type": "registry:block",
+      "title": "Organization switcher",
+      "description": "Lists the organizations the signed-in user belongs to and makes one the session's active organization; \"Personal account\" clears it. Optionally creates an organization and switches to it. A native select, so it is right on a phone. Behaviour lives in useOrganizationList() of @tula-tech/react; this is presentation you own.",
+      "dependencies": ["@tula-tech/react@^0.3.0"],
+      "registryDependencies": [
+        "button",
+        "input",
+        "label",
+        "https://tula-solutions.github.io/tula-auth-and-user-management/r/status.json"
+      ],
+      "files": [
+        {
+          "path": "items/organization-switcher.tsx",
+          "type": "registry:component",
+          "target": "@components/tula/organization-switcher.tsx"
+        }
+      ],
+      "docs": "Draw <OrganizationSwitcher onSwitch={() => router.refresh()} allowCreate /> inside <TulaProvider> from @tula-tech/react, for a signed-in user, where the environment has organizations switched on (organizations.enabled). Pass allowCreate only where users may create organizations (organizations.allowUserCreated).",
+      "meta": {
+        "tula": {
+          "version": "0.3.0",
+          "minReact": "0.3.0",
+          "security": false
+        }
+      }
+    },
+    {
+      "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+      "name": "organization-profile",
+      "type": "registry:block",
+      "title": "Organization profile",
+      "description": "The organization the session acts in: its name, short name and creation date, the user's role, what that role allows and whether they can see or manage the members. Behaviour lives in useOrganization() of @tula-tech/react, whose has() decides what to show and never what to allow; this is presentation you own.",
+      "dependencies": ["@tula-tech/react@^0.3.0"],
+      "registryDependencies": [
+        "button",
+        "card",
+        "https://tula-solutions.github.io/tula-auth-and-user-management/r/status.json"
+      ],
+      "files": [
+        {
+          "path": "items/organization-profile.tsx",
+          "type": "registry:component",
+          "target": "@components/tula/organization-profile.tsx"
+        }
+      ],
+      "docs": "Draw <OrganizationProfile /> inside <TulaProvider> from @tula-tech/react, for a signed-in user, where the environment has organizations switched on. Check permissions again on your server: the profile only shows what the access token says.",
+      "meta": {
+        "tula": {
+          "version": "0.3.0",
+          "minReact": "0.3.0",
+          "security": false
+        }
+      }
     }
   ]
 }

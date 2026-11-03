@@ -96,6 +96,20 @@ alone, the tests fail: a test on a device cannot start a process of the machine,
 script does. It starts the real API on 127.0.0.1 (`e2e/kotlin-fixture.ts`), forwards that
 port into the device with `adb reverse`, and ends what it started.
 
+## The pictures of the documentation
+
+The screens in [docs/kotlin.md](../../docs/kotlin.md#what-the-screens-look-like) are taken by
+`CaptureTest`, which skips itself unless the script passes it a directory:
+
+```bash
+bun run native/android/fixture/ui-tests.ts --avd <name> --screenshots apps/docs/public/native/android
+```
+
+It walks the sign-in, the sign-up, the password reset, the second step and the account in both
+schemes, and the script writes 560 px WebP files and `manifest.json` there (it needs `cwebp`:
+`brew install webp`). They are committed; nothing runs them in CI.
+[Refreshing the captures](../../docs/kotlin.md#refreshing-the-captures) has the rest.
+
 ## What was run, and what was not
 
 The eight tests of `AuthScreensTest` and the eight of `AccountScreensTest` passed on one

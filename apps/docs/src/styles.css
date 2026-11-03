@@ -1,5 +1,17 @@
 @import "tailwindcss";
 @import "./styles/tokens.gen.css";
+@import "./styles/shadcn-theme.css";
+
+/*
+ * The playground island's sources are scanned here too, so that Tailwind's utilities are written
+ * once, in this stylesheet. The island's own stylesheet (playground/playground.css) holds its
+ * layout and the components' styles, and no utilities: a second copy of the utilities layer,
+ * loaded after this one, beat the site's variants at equal specificity (its `.hidden` hid the
+ * header's `dark:block` sun icon on every page with a playground). Tests are not scanned: a
+ * class-like string in one would add a rule every page loads.
+ */
+@source not "./**/*.test.ts";
+@source not "./**/*.test.tsx";
 
 /*
  * The site's look. Every colour, radius, shadow, type step and duration is a custom property
@@ -54,8 +66,6 @@
   line-gap-override: 0%;
 }
 
-@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
-
 :root {
   color-scheme: light dark;
   --font-sans-stack:
@@ -77,34 +87,6 @@
     --header-h: 60px;
     --gutter: 32px;
   }
-}
-
-/* The shadcn primitives (src/components/ui) read these names; they map onto the tokens. */
-@theme inline {
-  --color-background: var(--bg);
-  --color-foreground: var(--body);
-  --color-card: var(--surface);
-  --color-card-foreground: var(--body);
-  --color-popover: var(--raised);
-  --color-popover-foreground: var(--body);
-  --color-primary: var(--btn-bg);
-  --color-primary-foreground: var(--btn-fg);
-  --color-secondary: var(--surface);
-  --color-secondary-foreground: var(--ink);
-  --color-muted: var(--surface);
-  --color-muted-foreground: var(--muted);
-  --color-accent: var(--accent-soft);
-  --color-accent-foreground: var(--ink);
-  --color-destructive: var(--danger);
-  --color-link: var(--accent);
-  --color-border: var(--border);
-  --color-input: var(--border-strong);
-  --color-ring: var(--accent);
-  --radius-sm: var(--r-sm);
-  --radius-md: var(--r-md);
-  --radius-lg: var(--r-lg);
-  --font-sans: var(--font-sans-stack);
-  --font-mono: var(--font-mono-stack);
 }
 
 @layer base {
@@ -757,27 +739,23 @@
   color: var(--ink);
   font-weight: 550;
 }
-/* The mark's motif, small: a level beam with a solid and an open end. */
+/*
+ * The logo kit's mark (the geometry of `LogoMark` in `components/logo.tsx`, with a heavier stroke
+ * so that it holds at 20 px) as a mask, painted in `--ink`: ink on the light page and paper on
+ * the dark one, following the theme toggle like the header's logo does.
+ */
 .nav-link[aria-current="page"]::before {
+  --nav-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-78 -60 156 125'%3E%3Cg fill='none' stroke='black' stroke-width='10' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M0 -52V56M-60 -34H60M-26 56H26M-60 -34V-10M60 -34V-10'/%3E%3Ccircle cx='-60' cy='4' r='16' fill='black' stroke='none'/%3E%3Ccircle cx='60' cy='4' r='13'/%3E%3C/g%3E%3C/svg%3E");
   content: "";
   position: absolute;
   inset-inline-end: 12px;
   top: 50%;
-  width: 14px;
-  height: 7px;
+  width: 20px;
+  height: 16px;
   transform: translateY(-50%);
-  background:
-    radial-gradient(circle at 3.5px 3.5px, var(--accent) 3px, transparent 3.4px) left center / 7px
-    7px no-repeat,
-    linear-gradient(var(--accent), var(--accent)) center / 100% 1.5px no-repeat,
-    radial-gradient(
-      circle at 3.5px 3.5px,
-      transparent 1.7px,
-      var(--accent) 2px,
-      var(--accent) 3px,
-      transparent 3.4px
-    )
-    right center / 7px 7px no-repeat;
+  background-color: var(--ink);
+  -webkit-mask: var(--nav-mark) center / contain no-repeat;
+  mask: var(--nav-mark) center / contain no-repeat;
 }
 @media (max-width: 1023.98px) {
   .nav-link[aria-current="page"]::before {
@@ -1301,7 +1279,14 @@ html[data-js] .feedback-nojs,
 
 /* ---------------------------------------------------------------- prose */
 
-/* The prose of a page: the Markdown, rendered. */
+/*
+ * The prose of a page: the Markdown, rendered.
+ *
+ * A rule for a bare element (`.doc p`, `.doc a`, `.doc code`) stops at the playground
+ * (`.pg-host`, the placeholder a `:::playground` writes): the components inside it are not
+ * prose and bring their own zero-specificity styles, which `.doc p` would otherwise win.
+ * `:where()` keeps the exclusion at no specificity, so no rule changes rank against another.
+ */
 .doc {
   min-width: 0;
   overflow-wrap: break-word;
@@ -1310,60 +1295,60 @@ html[data-js] .feedback-nojs,
 .doc > :first-child {
   margin-top: 0;
 }
-.doc h1,
-.doc h2,
-.doc h3,
-.doc h4,
-.doc h5,
-.doc h6 {
+.doc h1:not(:where(.pg-host *)),
+.doc h2:not(:where(.pg-host *)),
+.doc h3:not(:where(.pg-host *)),
+.doc h4:not(:where(.pg-host *)),
+.doc h5:not(:where(.pg-host *)),
+.doc h6:not(:where(.pg-host *)) {
   color: var(--ink);
   text-wrap: balance;
 }
-.doc h1 {
+.doc h1:not(:where(.pg-host *)) {
   margin: 0 0 16px;
   font-size: 2rem;
   line-height: 2.5rem;
   font-weight: var(--fw-h1);
   letter-spacing: var(--ls-h1);
 }
-.doc h2 {
+.doc h2:not(:where(.pg-host *)) {
   margin: 56px 0 12px;
   font-size: 1.5rem;
   line-height: 2rem;
   font-weight: var(--fw-h2);
   letter-spacing: var(--ls-h2);
 }
-.doc h3 {
+.doc h3:not(:where(.pg-host *)) {
   margin: 36px 0 8px;
   font-size: 1.1875rem;
   line-height: 1.75rem;
   font-weight: var(--fw-h3);
   letter-spacing: var(--ls-h3);
 }
-.doc h4,
-.doc h5,
-.doc h6 {
+.doc h4:not(:where(.pg-host *)),
+.doc h5:not(:where(.pg-host *)),
+.doc h6:not(:where(.pg-host *)) {
   margin: 28px 0 6px;
   font-size: var(--fs-h4);
   line-height: var(--lh-h4);
   font-weight: var(--fw-h4);
 }
 @media (min-width: 640px) {
-  .doc h1 {
+  .doc h1:not(:where(.pg-host *)) {
     font-size: var(--fs-h1);
     line-height: var(--lh-h1);
   }
-  .doc h2 {
+  .doc h2:not(:where(.pg-host *)) {
     font-size: var(--fs-h2);
     line-height: var(--lh-h2);
   }
-  .doc h3 {
+  .doc h3:not(:where(.pg-host *)) {
     font-size: var(--fs-h3);
     line-height: var(--lh-h3);
   }
 }
 /* The lead: the paragraph under the title. */
-.doc h1 + p {
+.doc h1 + p:not(:where(.pg-host *)) {
   margin-bottom: 28px;
   color: var(--muted);
   font-size: 1.0625rem;
@@ -1371,47 +1356,47 @@ html[data-js] .feedback-nojs,
   letter-spacing: var(--ls-lead);
 }
 @media (min-width: 640px) {
-  .doc h1 + p {
+  .doc h1 + p:not(:where(.pg-host *)) {
     font-size: var(--fs-lead);
     line-height: var(--lh-lead);
   }
 }
-.doc p,
-.doc ul,
-.doc ol,
-.doc blockquote,
-.doc pre,
+.doc p:not(:where(.pg-host *)),
+.doc ul:not(:where(.pg-host *)),
+.doc ol:not(:where(.pg-host *)),
+.doc blockquote:not(:where(.pg-host *)),
+.doc .code-block,
 .doc .table-wrap,
-.doc details {
+.doc details:not(:where(.pg-host *)) {
   margin: 0 0 16px;
 }
-.doc p {
+.doc p:not(:where(.pg-host *)) {
   text-wrap: pretty;
 }
-.doc strong {
+.doc strong:not(:where(.pg-host *)) {
   color: var(--ink);
   font-weight: 600;
 }
-.doc ul,
-.doc ol {
+.doc ul:not(:where(.pg-host *)),
+.doc ol:not(:where(.pg-host *)) {
   padding-left: 1.5rem;
 }
-.doc ul {
+.doc ul:not(:where(.pg-host *)) {
   list-style: disc;
 }
-.doc ol {
+.doc ol:not(:where(.pg-host *)) {
   list-style: decimal;
 }
-.doc li::marker {
+.doc li:not(:where(.pg-host *))::marker {
   color: var(--faint);
 }
-.doc li + li {
+.doc li + li:not(:where(.pg-host *)) {
   margin-top: 6px;
 }
-.doc li > :is(ul, ol) {
+.doc li > :is(ul, ol):not(:where(.pg-host *)) {
   margin: 6px 0 0;
 }
-.doc a {
+.doc a:not(:where(.pg-host *)) {
   color: var(--accent);
   text-decoration: underline;
   text-decoration-color: color-mix(in srgb, var(--accent) 38%, transparent);
@@ -1419,7 +1404,7 @@ html[data-js] .feedback-nojs,
   text-underline-offset: 3px;
   transition: text-decoration-color var(--dur-fast) var(--ease);
 }
-.doc a:hover {
+.doc a:hover:not(:where(.pg-host *)) {
   text-decoration-color: currentColor;
 }
 .doc a.permalink {
@@ -1434,7 +1419,7 @@ html[data-js] .feedback-nojs,
   opacity: 1;
 }
 /* A note: the document's blockquote, on a card. */
-.doc blockquote {
+.doc blockquote:not(:where(.pg-host *)) {
   padding: 14px 18px;
   border: 1px solid var(--border);
   border-left: 3px solid var(--accent);
@@ -1444,7 +1429,7 @@ html[data-js] .feedback-nojs,
   font-size: 0.9375rem;
   line-height: 1.625rem;
 }
-.doc blockquote > :last-child {
+.doc blockquote > :last-child:not(:where(.pg-host *)) {
   margin-bottom: 0;
 }
 /*
@@ -1452,13 +1437,13 @@ html[data-js] .feedback-nojs,
  * or a quote beside it never looks like it has a stray space. A chip that wraps keeps its edges
  * on both lines, and a long identifier breaks where it has to (after a slash or a hyphen first).
  */
-.doc code {
+.doc code:not(:where(.pg-host *)) {
   font-family: var(--font-mono-stack);
   font-size: 0.875em;
   font-weight: 450;
   font-variant-ligatures: none;
 }
-.doc :not(pre) > code {
+.doc :not(pre) > code:not(:where(.pg-host *)) {
   padding: 0.1em 0.35em;
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
@@ -1468,24 +1453,23 @@ html[data-js] .feedback-nojs,
   box-decoration-break: clone;
   overflow-wrap: break-word;
 }
-.doc :is(h2, h3, h4) > code {
+.doc :is(h2, h3, h4) > code:not(:where(.pg-host *)) {
   font-size: 0.85em;
   background: transparent;
   border-color: transparent;
   padding-inline: 0;
 }
-.doc pre {
+.doc pre:not(:where(.pg-host *)) {
+  margin: 0;
   overflow-x: auto;
-  padding: 16px 20px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
+  padding: 16px 0;
   font-size: var(--fs-code);
   line-height: var(--lh-code);
   tab-size: 2;
   scrollbar-width: thin;
   scrollbar-color: var(--border-strong) transparent;
 }
-.doc pre code {
+.doc pre code:not(:where(.pg-host *)) {
   background: none;
   border: 0;
   padding: 0;
@@ -1495,11 +1479,14 @@ html[data-js] .feedback-nojs,
   white-space: pre;
 }
 @media (max-width: 639.98px) {
-  .doc pre {
+  .doc .code-block,
+  .doc .docs-tabs[data-kind="code"][data-ready] {
     margin-inline: calc(var(--gutter) * -1);
-    padding-inline: var(--gutter);
     border-inline: 0;
     border-radius: 0;
+    font-size: 0.8125rem;
+  }
+  .doc pre:not(:where(.pg-host *)) {
     font-size: 0.8125rem;
   }
 }
@@ -1511,15 +1498,15 @@ html[data-js] .feedback-nojs,
   border-radius: var(--r-md);
   scrollbar-width: thin;
 }
-.doc table {
+.doc table:not(:where(.pg-host *)) {
   border-collapse: collapse;
   width: 100%;
   font-size: 0.875rem;
   line-height: 1.375rem;
   font-variant-numeric: tabular-nums;
 }
-.doc th,
-.doc td {
+.doc th:not(:where(.pg-host *)),
+.doc td:not(:where(.pg-host *)) {
   text-align: left;
   vertical-align: top;
   padding: 10px 14px;
@@ -1527,28 +1514,28 @@ html[data-js] .feedback-nojs,
   min-width: 8rem;
   overflow-wrap: anywhere;
 }
-.doc th {
+.doc th:not(:where(.pg-host *)) {
   background: var(--surface);
   color: var(--ink);
   font-size: 0.8125rem;
   font-weight: 600;
   white-space: nowrap;
 }
-.doc tr:last-child td {
+.doc tr:last-child td:not(:where(.pg-host *)) {
   border-bottom: 0;
 }
-.doc img {
+.doc img:not(:where(.pg-host *)) {
   max-width: 100%;
   height: auto;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
 }
-.doc hr {
+.doc hr:not(:where(.pg-host *)) {
   border: 0;
   border-top: 1px solid var(--border);
   margin: 40px 0;
 }
-.doc kbd {
+.doc kbd:not(:where(.pg-host *)) {
   padding: 1px 6px;
   border: 1px solid var(--border-strong);
   border-bottom-width: 2px;
@@ -1558,12 +1545,12 @@ html[data-js] .feedback-nojs,
   font-family: var(--font-mono-stack);
   font-size: 0.8125em;
 }
-.doc details {
+.doc details:not(:where(.pg-host *)) {
   padding: 12px 16px;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
 }
-.doc summary {
+.doc summary:not(:where(.pg-host *)) {
   cursor: pointer;
   color: var(--ink);
   font-weight: 550;
@@ -1591,6 +1578,479 @@ html[data-js] .feedback-nojs,
 :root[data-theme="dark"] .shiki,
 :root[data-theme="dark"] .shiki span {
   color: var(--shiki-dark);
+}
+
+/* ------------------------------------------------- content components (callouts, steps, tabs, code, tree, params) */
+
+/* Icons are masks, so that they take the colour of the text beside them and need no markup. */
+.doc .icon,
+.doc .callout-title::before,
+.doc .tree-icon::before {
+  display: inline-block;
+  flex: none;
+  width: 1em;
+  height: 1em;
+  background: currentColor;
+  -webkit-mask: var(--icon) center / contain no-repeat;
+  mask: var(--icon) center / contain no-repeat;
+}
+.doc .icon-copy {
+  --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='14' height='14' x='8' y='8' rx='2' ry='2'/%3E%3Cpath d='M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2'/%3E%3C/svg%3E");
+}
+.doc .copy[data-copied] .icon-copy {
+  --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+}
+
+/* Callouts: GitHub's alerts. The kind is told by its icon and its word, never by colour alone. */
+.doc .callout {
+  --callout: var(--accent);
+  margin: 0 0 20px;
+  padding: 14px 18px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--callout);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--body);
+  font-size: 0.9375rem;
+  line-height: 1.625rem;
+}
+.doc .callout[data-callout="tip"] {
+  --callout: var(--ok);
+}
+.doc .callout[data-callout="important"] {
+  --callout: var(--ink);
+}
+.doc .callout[data-callout="warning"] {
+  --callout: var(--warn);
+}
+.doc .callout[data-callout="caution"] {
+  --callout: var(--danger);
+}
+.doc .callout > :last-child {
+  margin-bottom: 0;
+}
+.doc .callout p {
+  margin-bottom: 10px;
+}
+.doc .callout .callout-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  color: var(--callout);
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.doc .callout-title::before {
+  content: "";
+  width: 18px;
+  height: 18px;
+  --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 16v-4'/%3E%3Cpath d='M12 8h.01'/%3E%3C/svg%3E");
+}
+.doc .callout[data-callout="tip"] .callout-title::before {
+  --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5'/%3E%3Cpath d='M9 18h6'/%3E%3Cpath d='M10 22h4'/%3E%3C/svg%3E");
+}
+.doc .callout[data-callout="important"] .callout-title::before {
+  --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'/%3E%3Cpath d='M12 7v2'/%3E%3Cpath d='M12 13h.01'/%3E%3C/svg%3E");
+}
+.doc .callout[data-callout="warning"] .callout-title::before {
+  --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3'/%3E%3Cpath d='M12 9v4'/%3E%3Cpath d='M12 17h.01'/%3E%3C/svg%3E");
+}
+.doc .callout[data-callout="caution"] .callout-title::before {
+  --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 16h.01'/%3E%3Cpath d='M12 8v4'/%3E%3Cpath d='M15.312 2a2 2 0 0 1 1.414.586l4.688 4.688A2 2 0 0 1 22 8.688v6.624a2 2 0 0 1-.586 1.414l-4.688 4.688a2 2 0 0 1-1.414.586H8.688a2 2 0 0 1-1.414-.586l-4.688-4.688A2 2 0 0 1 2 15.312V8.688a2 2 0 0 1 .586-1.414l4.688-4.688A2 2 0 0 1 8.688 2z'/%3E%3C/svg%3E");
+}
+
+/* Steps: a numbered rail. The number is a counter, so the list stays a list for a screen reader. */
+.doc ol.steps {
+  list-style: none;
+  margin: 0 0 24px;
+  padding: 0;
+  counter-reset: step;
+}
+.doc .steps > .step {
+  position: relative;
+  margin: 0;
+  padding: 0 0 28px 44px;
+  counter-increment: step;
+}
+.doc .steps > .step:last-child {
+  padding-bottom: 0;
+}
+.doc .steps > .step::before {
+  content: counter(step);
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--raised);
+  color: var(--ink);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.doc .steps > .step:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 38px;
+  bottom: 8px;
+  left: 15px;
+  width: 1px;
+  background: var(--border);
+}
+.doc .steps > .step > :is(h2, h3, h4, h5, h6):first-child {
+  margin: 0 0 8px;
+  padding-top: 1px;
+  font-size: 1.0625rem;
+  line-height: 1.75rem;
+}
+.doc .steps > .step > :last-child {
+  margin-bottom: 0;
+}
+@media (min-width: 640px) {
+  .doc .steps > .step {
+    padding-left: 52px;
+  }
+  .doc .steps > .step::before {
+    width: 32px;
+    height: 32px;
+  }
+  .doc .steps > .step:not(:last-child)::after {
+    top: 40px;
+    left: 16px;
+  }
+  .doc .steps > .step > :is(h2, h3, h4, h5, h6):first-child {
+    font-size: var(--fs-h3);
+    line-height: var(--lh-h3);
+    padding-top: 2px;
+  }
+}
+
+/* Tabs. Without script every panel shows under its label; with it, a tab list and one panel. */
+.doc .docs-tabs {
+  margin: 0 0 20px;
+}
+.doc .docs-tabs:not([data-ready]) .docs-tab-panel {
+  margin: 0 0 16px;
+  padding-left: 16px;
+  border-left: 2px solid var(--border);
+}
+.doc .docs-tab-label {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.doc .docs-tabs[data-ready] .docs-tab-label {
+  display: none;
+}
+.doc .docs-tablist {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 14px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  scrollbar-width: none;
+}
+.doc .docs-tab {
+  position: relative;
+  flex: none;
+  appearance: none;
+  padding: 9px 14px;
+  border: 0;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease);
+}
+.doc .docs-tab:hover,
+.doc .docs-tab[aria-selected="true"] {
+  color: var(--ink);
+}
+.doc .docs-tab[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  right: 12px;
+  bottom: -1px;
+  left: 12px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.doc .docs-tab:focus-visible {
+  outline-offset: -2px;
+}
+.doc .docs-tab-panel[hidden] {
+  display: none;
+}
+.doc .docs-tab-panel > :last-child {
+  margin-bottom: 0;
+}
+.doc .docs-tab-panel:focus-visible {
+  outline-offset: 4px;
+}
+
+/* A code group is one card: the tab list is its header and the block its body. */
+.doc .docs-tabs[data-kind="code"][data-ready] {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.doc .docs-tabs[data-kind="code"] .docs-tablist {
+  margin: 0;
+  padding: 0 8px;
+}
+.doc .docs-tabs[data-kind="code"][data-ready] .code-block {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+/* Code blocks: a frame, an optional title, a copy button, highlighted and changed lines. */
+.doc .code-block {
+  position: relative;
+  margin: 0 0 16px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.doc .code-title {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 8px 56px 8px 20px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-family: var(--font-mono-stack);
+  font-size: 0.8125rem;
+}
+.doc .code-title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.doc .code-frame {
+  position: relative;
+}
+.doc .copy {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 32px;
+  height: 32px;
+  justify-content: center;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--raised);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+.doc .code-block[data-titled] .copy {
+  top: 4px;
+}
+:root:not([data-js]) .doc .copy {
+  display: none;
+}
+.doc .copy:hover,
+.doc .copy[data-copied] {
+  border-color: var(--border-strong);
+  color: var(--ink);
+}
+.doc .copy .icon {
+  width: 16px;
+  height: 16px;
+}
+.doc .copy-label {
+  display: none;
+}
+.doc .copy[data-copied] .copy-label {
+  display: inline;
+}
+.doc .code-frame pre:focus-visible {
+  outline-offset: -2px;
+}
+.doc .code-frame pre code {
+  display: grid;
+  width: max-content;
+  min-width: 100%;
+}
+.doc .code-frame .line {
+  position: relative;
+  min-height: var(--lh-code);
+  padding-inline: 20px;
+}
+.doc .code-frame .line.highlighted {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.doc .code-frame .line.diff.add {
+  background: var(--add-bg);
+  box-shadow: inset 3px 0 0 var(--ok);
+}
+.doc .code-frame .line.diff.remove {
+  background: var(--remove-bg);
+  box-shadow: inset 3px 0 0 var(--danger);
+}
+.doc .code-frame .line.diff::before {
+  position: absolute;
+  left: 7px;
+  font-weight: 600;
+}
+.doc .code-frame .line.diff.add::before {
+  content: "+";
+  color: var(--ok);
+}
+.doc .code-frame .line.diff.remove::before {
+  content: "-";
+  color: var(--danger);
+}
+.doc .code-frame pre[data-language="diff"] .line.diff::before {
+  content: none;
+}
+
+/* A file tree. */
+.doc .file-tree {
+  margin: 0 0 16px;
+  padding: 14px 18px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-mono-stack);
+  font-size: 0.875rem;
+  line-height: 1.5rem;
+  scrollbar-width: thin;
+}
+.doc .file-tree ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.doc .file-tree ul ul {
+  margin-left: 7px;
+  padding-left: 17px;
+  border-left: 1px solid var(--border-strong);
+}
+.doc .file-tree li {
+  margin: 0;
+}
+.doc .tree-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.doc .tree-icon {
+  display: inline-flex;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+}
+.doc .tree-icon::before {
+  content: "";
+  width: 16px;
+  height: 16px;
+  --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z'/%3E%3Cpath d='M14 2v4a2 2 0 0 0 2 2h4'/%3E%3C/svg%3E");
+}
+.doc .tree-dir > .tree-entry .tree-icon::before {
+  --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z'/%3E%3C/svg%3E");
+}
+.doc .tree-more .tree-icon {
+  display: none;
+}
+.doc .tree-dir > .tree-entry .tree-name {
+  font-weight: 500;
+}
+.doc .tree-note {
+  margin-left: 12px;
+  color: var(--muted);
+  font-family: var(--font-sans-stack);
+  font-size: 0.8125rem;
+}
+
+/* Parameters: a name, its type, whether it is needed, and what it does. */
+.doc dl.params {
+  margin: 0 0 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+.doc .param {
+  padding: 14px 18px;
+  border-top: 1px solid var(--border);
+}
+.doc .param:first-child {
+  border-top: 0;
+}
+.doc .param dt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+}
+.doc .param-name {
+  color: var(--ink);
+  font-family: var(--font-mono-stack);
+  font-size: 0.875rem;
+  font-weight: 600;
+  overflow-wrap: break-word;
+}
+.doc .param-type,
+.doc .param-default {
+  color: var(--muted);
+  font-family: var(--font-mono-stack);
+  font-size: 0.8125rem;
+}
+.doc .param-default {
+  font-family: var(--font-sans-stack);
+}
+.doc .param-required {
+  color: var(--warn);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.doc :is(.param-name, .param-type, .param-default) > code {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+}
+.doc .param dd {
+  margin: 6px 0 0;
+  color: var(--body);
+  font-size: 0.9375rem;
+  line-height: 1.625rem;
+}
+
+/* Inside a step, a tab or a callout the page's gutter is not the block's edge. */
+.doc :is(.step, .callout, .docs-tab-panel) .code-block {
+  margin-inline: 0;
 }
 
 /* ---------------------------------------------------------------- landing */
@@ -1784,6 +2244,10 @@ html[data-js] .feedback-nojs,
 /* ---------------------------------------------------------------- other */
 
 @media (forced-colors: active) {
+  .nav-link[aria-current="page"]::before {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
   .nav-link[aria-current="page"],
   .tab[aria-current="true"] {
     outline: 1px solid CanvasText;
@@ -1814,5 +2278,196 @@ html[data-js] .feedback-nojs,
   }
   .doc a {
     color: inherit;
+  }
+}
+
+/* ------------------------------------------------- native screens gallery */
+/*
+ * `:::native-screens` (src/lib/native-captures.ts, src/client/native-screens.ts). Without a script
+ * the page lists every capture in the page's scheme; with one, a picker shows a single screen,
+ * step and scheme in a device frame. The pictures are real screenshots: nothing here draws one.
+ */
+.native-screens {
+  --ns-radius: 44px;
+  margin-block: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 16px;
+}
+.native-screens[data-native-screens="android"] {
+  --ns-radius: 28px;
+}
+.ns-caption > :first-child {
+  margin-top: 0;
+}
+.ns-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.ns-toolbar[hidden],
+.ns-steps[hidden],
+.ns-panel[hidden],
+.ns-shot[hidden] {
+  display: none;
+}
+.ns-tabs,
+.ns-options,
+.ns-steps,
+.ns-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ns-tab,
+.ns-step,
+.ns-option {
+  min-height: 44px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--muted);
+  padding: 0 14px;
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+.ns-tab:hover,
+.ns-step:hover,
+.ns-option:hover {
+  color: var(--ink);
+}
+.ns-step[aria-pressed="true"],
+.ns-option[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+.ns-tab[aria-selected="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.ns-steps {
+  margin-bottom: 16px;
+}
+.ns-options {
+  align-items: center;
+}
+
+/* Without a script: every capture, in a grid, in the page's scheme. */
+.doc .ns-shots {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.doc .ns-shot {
+  margin: 0;
+  padding: 0;
+}
+.ns-device {
+  margin: 0;
+}
+.ns-screen {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.ns-img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.ns-img[data-theme="dark"] {
+  display: none;
+}
+:root[data-theme="dark"] .native-screens:not([data-enhanced]) .ns-img[data-theme="light"] {
+  display: none;
+}
+:root[data-theme="dark"] .native-screens:not([data-enhanced]) .ns-img[data-theme="dark"] {
+  display: block;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .native-screens:not([data-enhanced]) .ns-img[data-theme="light"] {
+    display: none;
+  }
+  :root:not([data-theme="light"]) .native-screens:not([data-enhanced]) .ns-img[data-theme="dark"] {
+    display: block;
+  }
+}
+.ns-label {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: var(--fs-small);
+  text-align: center;
+}
+.ns-provenance {
+  margin: 16px 0 0;
+  color: var(--faint);
+  font-size: var(--fs-small);
+}
+.ns-missing {
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  padding: 16px;
+}
+.ns-missing-title {
+  margin: 0 0 4px;
+  color: var(--ink);
+  font-weight: 600;
+}
+.ns-missing > p {
+  margin: 0 0 8px;
+}
+.ns-missing pre {
+  margin: 0;
+}
+
+/* With a script: one device, one screen, one scheme. */
+.native-screens[data-enhanced] .ns-shots {
+  display: block;
+}
+.native-screens[data-enhanced] .ns-device {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  padding: 24px 16px 16px;
+}
+.native-screens[data-enhanced] .ns-screen {
+  width: min(100%, 280px);
+  border-radius: 12px;
+}
+.native-screens[data-enhanced][data-ns-frame="on"] .ns-screen {
+  border: 8px solid var(--border-strong);
+  border-radius: var(--ns-radius);
+  box-shadow: var(--sh-2);
+}
+.native-screens[data-enhanced][data-ns-theme="light"] .ns-img[data-theme="dark"],
+.native-screens[data-enhanced][data-ns-theme="dark"] .ns-img[data-theme="light"] {
+  display: none;
+}
+.native-screens[data-enhanced][data-ns-theme="light"] .ns-img[data-theme="light"],
+.native-screens[data-enhanced][data-ns-theme="dark"] .ns-img[data-theme="dark"] {
+  display: block;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ns-tab,
+  .ns-step,
+  .ns-option {
+    transition: none;
   }
 }

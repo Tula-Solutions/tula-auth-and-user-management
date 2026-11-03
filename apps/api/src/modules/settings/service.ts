@@ -515,6 +515,12 @@ export function clientConfig(
     },
     // Whether a number can be added at all, and nothing of which countries.
     phone: { enabled: phone },
+    // What the organization switcher needs to draw only what the server would accept.
+    organizations: {
+      enabled: settings.organizations.enabled,
+      allowUserCreated: settings.organizations.allowUserCreated,
+      personalAccount: settings.organizations.personalAccount,
+    },
   }
 }
 

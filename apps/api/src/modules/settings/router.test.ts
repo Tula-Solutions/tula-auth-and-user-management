@@ -414,6 +414,28 @@ describe('GET /v1/client/config', () => {
       password: PASSWORD_POLICY_PRESETS.recommended,
       mfa: { policy: 'optional', smsCode: false },
       phone: { enabled: false },
+      organizations: { enabled: false, allowUserCreated: false, personalAccount: true },
+    })
+  })
+
+  test('organizations are described by three switches and nothing else of their settings', async () => {
+    await put(
+      {
+        organizations: {
+          enabled: true,
+          allowUserCreated: true,
+          maxCreatedPerUser: 3,
+          creatorRole: 'admin',
+          defaultRole: 'member',
+          personalAccount: false,
+        },
+      },
+      '"0"'
+    )
+    expect(ClientConfigSchema.parse(await (await config()).json()).organizations).toEqual({
+      enabled: true,
+      allowUserCreated: true,
+      personalAccount: false,
     })
   })
 
@@ -446,6 +468,7 @@ describe('GET /v1/client/config', () => {
       password: strictPolicy,
       mfa: { policy: 'optional', smsCode: false },
       phone: { enabled: false },
+      organizations: { enabled: false, allowUserCreated: false, personalAccount: true },
     })
     expect(text).not.toContain('https://acme.test')
     expect(text).not.toContain('retentionDays')

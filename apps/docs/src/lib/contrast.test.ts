@@ -8,7 +8,11 @@ import { COLOR_PAIRS, COLORS, type ColorScheme } from './design-tokens'
 import { CODE_COLOR_REPLACEMENTS, CODE_THEMES } from './markdown'
 import { tokensCss } from './tokens'
 
-const STYLESHEET = readFileSync(join(import.meta.dir, '../styles.css'), 'utf8')
+// The site's stylesheet, the theme mapping it shares with the playground's, and the
+// playground's own: none of the three may write a colour of its own.
+const STYLESHEET = ['../styles.css', '../styles/shadcn-theme.css', '../playground/playground.css']
+  .map((file) => readFileSync(join(import.meta.dir, file), 'utf8'))
+  .join('\n')
 
 describe('contrastRatio', () => {
   test('black on white is 21 and a colour on itself is 1', () => {
@@ -99,7 +103,7 @@ describe('the colours of highlighted code', () => {
     ['light', lightTheme, CODE_THEMES.light],
     ['dark', darkTheme, CODE_THEMES.dark],
   ] as const) {
-    test(`${scheme}: every token colour of ${name} reaches 4.5:1 on the code background`, () => {
+    test(`${scheme}: every token colour of ${name} reaches 4.5:1 on the code background and its line tints`, () => {
       const replacements = CODE_COLOR_REPLACEMENTS[name] ?? {}
       const colors = new Set<string>([(theme.colors ?? {})['editor.foreground'] as string])
       for (const rule of theme.tokenColors ?? []) {
@@ -115,10 +119,13 @@ describe('the colours of highlighted code', () => {
         if (used === '#FFFFFF') {
           continue
         }
-        expect(
-          contrastRatio(used, COLORS[scheme].surface),
-          `${color} as ${used}`
-        ).toBeGreaterThanOrEqual(4.5)
+        // The code background, and the tints a highlighted line and an added or removed one take.
+        for (const background of ['surface', 'accentSoft', 'addBg', 'removeBg'] as const) {
+          expect(
+            contrastRatio(used, COLORS[scheme][background]),
+            `${color} as ${used} on ${background}`
+          ).toBeGreaterThanOrEqual(4.5)
+        }
       }
     })
   }

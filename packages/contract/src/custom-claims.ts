@@ -3,6 +3,12 @@
 // that verifies tokens (`@tula-tech/nextjs`) can use it without a schema library in its bundle:
 // `@tula-tech/contract/custom-claims`.
 
+import {
+  MAX_PERMISSION_KEY_LENGTH,
+  PERMISSION_KEY_PATTERN,
+  ROLE_KEY_PATTERN,
+} from './organization-permissions'
+
 /**
  * The one top-level claim every custom claim is nested under (ADR 0036).
  *
@@ -17,6 +23,18 @@
  * ```
  */
 export const CUSTOM_CLAIMS_CLAIM = 'ext'
+
+/** The access token's claim naming the active organization (ADR 0065, "Token claims"). */
+export const ORGANIZATION_ID_CLAIM = 'org_id'
+
+/** The access token's claim holding the key of the member's role in the active organization. */
+export const ORGANIZATION_ROLE_CLAIM = 'org_role'
+
+/**
+ * The access token's claim holding the permission keys of that role. A list of strings,
+ * present only beside the other two.
+ */
+export const ORGANIZATION_PERMISSIONS_CLAIM = 'org_perms'
 
 /**
  * Claim names a custom claim's key may never be: every claim Tula's tokens carry, the
@@ -47,6 +65,11 @@ export const RESERVED_CLAIM_NAMES = [
   'amr',
   'sp',
   'cnf',
+  // The active organization (ADR 0065): top level, never inside `ext`, and never an
+  // operator's to set.
+  ORGANIZATION_ID_CLAIM,
+  ORGANIZATION_ROLE_CLAIM,
+  ORGANIZATION_PERMISSIONS_CLAIM,
   CUSTOM_CLAIMS_CLAIM,
 ] as const
 
@@ -60,6 +83,177 @@ export const RESERVED_CLAIM_NAMES = [
  * room for a long issuer URL.
  */
 export const MAX_CUSTOM_CLAIMS_BYTES = 1024
+
+/**
+ * The most bytes the three organization claims may take together, as JSON (UTF-8): their own
+ * cap, beside {@link MAX_CUSTOM_CLAIMS_BYTES} and never taken from it.
+ *
+ * It is the true upper bound of what the grammars allow: an organization id (a UUID, 36
+ * characters), a role key of 32 characters and 32 permissions of the longest key
+ * (`org:sys:` + 32 + `:` + 32 = 73 characters) take 2,541 bytes; the cap leaves a little
+ * room. A role is bounded by the contract and the database, so a token never reaches it
+ * unless a row was written by hand: the server then issues the token **without** the
+ * organization claims (no claim is "no permission"), never with a cut list.
+ */
+export const MAX_ORGANIZATION_CLAIMS_BYTES = 2560
+
+/** Most permissions an organization role (and so the `org_perms` claim) holds. */
+export const MAX_ORGANIZATION_PERMISSIONS_CLAIM = 32
+
+/** The organization claims of a verified session: who it acts as, in which organization. */
+export interface OrganizationClaims {
+  /** The active organization's id. */
+  readonly orgId: string
+  /** The key of the member's role in it. */
+  readonly orgRole: string
+  /** The permission keys of that role. */
+  readonly orgPermissions: readonly string[]
+}
+
+/**
+ * Whether permission keys and an organization id and role can ride in a token: the UTF-8 length
+ * of the JSON of the three claims, which {@link MAX_ORGANIZATION_CLAIMS_BYTES} caps.
+ *
+ * @param claims - The three claims.
+ * @returns The byte count.
+ *
+ * @example
+ * ```ts
+ * organizationClaimsBytes({ orgId: 'o1', orgRole: 'member', orgPermissions: [] }) // 52
+ * ```
+ */
+export function organizationClaimsBytes(claims: OrganizationClaims): number {
+  return utf8Length(
+    JSON.stringify({
+      [ORGANIZATION_ID_CLAIM]: claims.orgId,
+      [ORGANIZATION_ROLE_CLAIM]: claims.orgRole,
+      [ORGANIZATION_PERMISSIONS_CLAIM]: claims.orgPermissions,
+    })
+  )
+}
+
+/**
+ * What an organization's id may look like in a token: URL-safe characters, at most 64. Tula's
+ * ids are UUIDs (36 characters); the bound is what keeps a malformed claim from being read as
+ * an organization, not a statement of what the server issues.
+ */
+const ORGANIZATION_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/
+
+/**
+ * Read the organization claims out of a session's claims, for an SDK or an application.
+ *
+ * Call it only with claims that were **verified**: this checks a shape, not where the claims
+ * came from. The three are returned together or not at all. A token that carries one without
+ * the others, a value of another type, an id or a role key outside their grammar, more than
+ * {@link MAX_ORGANIZATION_PERMISSIONS_CLAIM} permissions, a permission outside the permission
+ * grammar (`PERMISSION_KEY_PATTERN`) or claims over {@link MAX_ORGANIZATION_CLAIMS_BYTES} has
+ * **no** active organization, whole: never repaired and never partly believed. Treat `null`
+ * as "no organization, no permission".
+ *
+ * @param claims - A session's verified claims.
+ * @returns A frozen copy, or `null` when no organization is active (or the claims are not
+ *   what a Tula server issues).
+ *
+ * @example
+ * ```ts
+ * readOrganizationClaims({ org_id: 'o1', org_role: 'admin', org_perms: ['org:sys:memberships:read'] })
+ * // { orgId: 'o1', orgRole: 'admin', orgPermissions: ['org:sys:memberships:read'] }
+ * readOrganizationClaims({ org_id: 'o1' }) // null
+ * ```
+ */
+export function readOrganizationClaims(claims: unknown): OrganizationClaims | null {
+  if (typeof claims !== 'object' || claims === null) {
+    return null
+  }
+  const record = claims as Record<string, unknown>
+  const [id, role, permissions] = [
+    record[ORGANIZATION_ID_CLAIM],
+    record[ORGANIZATION_ROLE_CLAIM],
+    record[ORGANIZATION_PERMISSIONS_CLAIM],
+  ]
+  if (
+    typeof id !== 'string' ||
+    !ORGANIZATION_ID_PATTERN.test(id) ||
+    typeof role !== 'string' ||
+    !ROLE_KEY_PATTERN.test(role) ||
+    !Array.isArray(permissions) ||
+    permissions.length > MAX_ORGANIZATION_PERMISSIONS_CLAIM ||
+    !permissions.every(
+      (permission) =>
+        typeof permission === 'string' &&
+        permission.length <= MAX_PERMISSION_KEY_LENGTH &&
+        PERMISSION_KEY_PATTERN.test(permission)
+    )
+  ) {
+    return null
+  }
+  const read: OrganizationClaims = Object.freeze({
+    orgId: id,
+    orgRole: role,
+    orgPermissions: Object.freeze([...(permissions as string[])]),
+  })
+  return organizationClaimsBytes(read) > MAX_ORGANIZATION_CLAIMS_BYTES ? null : read
+}
+
+/**
+ * What {@link hasOrganizationAccess} asks: one permission key, or one role key. Exactly one
+ * of the two.
+ *
+ * @example
+ * ```ts
+ * const byPermission: OrganizationCheck = { permission: 'org:billing:read' }
+ * const byRole: OrganizationCheck = { role: 'admin' }
+ * ```
+ */
+export type OrganizationCheck =
+  | { readonly permission: string; readonly role?: never }
+  | { readonly role: string; readonly permission?: never }
+
+/**
+ * Whether the active organization grants a permission or a role: the one rule behind
+ * `has()` in `@tula-tech/nextjs` and `@tula-tech/react`.
+ *
+ * It is exact. A permission is held when the claims list that very key; there is no wildcard
+ * (`org:billing:*` matches nothing) and no implication between keys (`manage` does not
+ * include `read`). A role is held when it is the member's role key. It is **false** with no
+ * active organization, for a check that names neither or both, and for anything that is not a
+ * non-empty string: a check that cannot be understood never grants.
+ *
+ * This reads claims, so it is as old as the access token (the server decides afresh at every
+ * refresh, within the token's life). Use it to decide what to show and what to let through
+ * quickly; a request that changes data is authorized by the server that changes it.
+ *
+ * @param claims - What {@link readOrganizationClaims} returned, or `null`.
+ * @param check - The permission or the role asked for.
+ * @returns Whether the organization grants it.
+ *
+ * @example
+ * ```ts
+ * const claims = readOrganizationClaims(payload)
+ * hasOrganizationAccess(claims, { permission: 'org:billing:read' })
+ * hasOrganizationAccess(claims, { role: 'admin' })
+ * hasOrganizationAccess(null, { role: 'admin' }) // false: no organization is active
+ * ```
+ */
+export function hasOrganizationAccess(
+  claims: OrganizationClaims | null | undefined,
+  check: OrganizationCheck
+): boolean {
+  if (!claims || typeof check !== 'object' || check === null) {
+    return false
+  }
+  const { permission, role } = check as { permission?: unknown; role?: unknown }
+  if (permission !== undefined && role !== undefined) {
+    return false
+  }
+  if (typeof permission === 'string' && permission !== '') {
+    return claims.orgPermissions.includes(permission)
+  }
+  if (typeof role === 'string' && role !== '') {
+    return claims.orgRole === role
+  }
+  return false
+}
 
 /** Most JWT templates an environment may define. */
 export const MAX_JWT_TEMPLATES = 10

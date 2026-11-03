@@ -7,6 +7,7 @@
   "scripts": {
     "registry:generate": "bun run scripts/registry.ts",
     "registry:check": "bun run scripts/registry.ts --check",
+    "browser:build": "vite build --config browser/vite.config.ts",
     "typecheck": "tsc --noEmit -p .",
     "test": "bun test",
     "test:coverage": "bun test --coverage"
@@ -14,6 +15,7 @@
   "dependencies": {},
   "devDependencies": {
     "@happy-dom/global-registrator": "^20.14.5",
+    "@tailwindcss/vite": "^4.3.3",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.7",
@@ -23,9 +25,12 @@
     "@tula-tech/tsconfig": "workspace:*",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
     "happy-dom": "^20.14.5",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "ts-morph": "28.0.0"
+    "tailwindcss": "^4.3.3",
+    "ts-morph": "28.0.0",
+    "vite": "^8.3.4"
   }
 }

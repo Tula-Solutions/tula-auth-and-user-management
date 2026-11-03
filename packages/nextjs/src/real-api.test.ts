@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server'
 import { FixedClock } from '../../../apps/api/src/adapters/memory/clock'
 import { createApp } from '../../../apps/api/src/index'
 import * as Hooks from '../../../apps/api/src/modules/hook/service'
+import * as Roles from '../../../apps/api/src/modules/organization-role/service'
 import {
   createTestDeps,
   seedApiKey,
@@ -19,6 +20,7 @@ import {
   MAX_CUSTOM_CLAIMS_BYTES,
 } from '../../contract/src/index'
 import type { TulaServerOptions } from './config'
+import { MAX_ACCESS_TOKEN_LENGTH } from './cookies'
 import { createTulaHandlers } from './handlers'
 import { authenticate, fetchCurrentUser } from './helpers'
 import { tulaMiddleware } from './middleware'
@@ -684,5 +686,111 @@ describe('claims from a before_token hook (ADR 0035)', () => {
     const direct = new Request(`${APP}/x`, { headers: { cookie: browser.cookieHeader() } })
     expect((await authenticate(direct, options)).customClaims).toEqual(expected)
     expect(asked).toHaveLength(1)
+  })
+})
+
+describe('organizations and the access-token cookie (ADR 0065, ADR 0029)', () => {
+  const ROLE = 'r'.repeat(32)
+  const BIG_TEMPLATE = {
+    claims: {
+      a: { value: 'x'.repeat(256) },
+      b: { value: 'y'.repeat(256) },
+      c: { value: 'z'.repeat(256) },
+      d: { value: 'w'.repeat(220) },
+    },
+  }
+  const PERMISSIONS = Array.from(
+    { length: 32 },
+    (_, i) =>
+      `org:${'f'.repeat(30)}${String(i).padStart(2, '0')}:${'a'.repeat(30)}${String(i).padStart(2, '0')}`
+  )
+
+  async function orgWorld(type: 'hybrid' | 'stateful', template = true) {
+    const w = await world()
+    w.deps.environmentSettings.seed(TEST_TENANT.environmentId, {
+      revision: 1,
+      settings: EnvironmentSettingsSchema.parse({
+        ...DEFAULT_ENVIRONMENT_SETTINGS,
+        organizations: { enabled: true, allowUserCreated: true, creatorRole: ROLE },
+        sessions: {
+          ...(template && { jwtTemplates: { app: BIG_TEMPLATE } }),
+          profiles: { web: { type, ...(template && { jwtTemplate: 'app' }) } },
+        },
+      }),
+    })
+    await Roles.create(
+      w.deps,
+      TEST_TENANT,
+      { key: ROLE, name: 'Biggest', permissions: PERMISSIONS },
+      TEST_ACTOR
+    )
+    return w
+  }
+
+  async function activeOrganization(w: World) {
+    const { browser } = await signUp(w)
+    const org = await browser.tula.organizations.create({ name: 'Acme', slug: 'acme' })
+    await browser.tula.organizations.setActive(org.id)
+    return { browser, org }
+  }
+
+  test('the largest role and the largest custom claims: the token outgrows one cookie and the session works', async () => {
+    const w = await orgWorld('hybrid')
+    const { browser, org } = await activeOrganization(w)
+    // Two cookies, each inside what a browser keeps (4,096 bytes of name and value).
+    expect([...browser.jar.keys()].sort()).toEqual(['tula_at', 'tula_at_1', 'tula_rt'])
+    const token = `${browser.jar.get('tula_at')}${browser.jar.get('tula_at_1')}`
+    for (const [name, value] of browser.jar) {
+      expect(name.length + value.length).toBeLessThanOrEqual(4096 - 900)
+    }
+    // Measured: the whole token is longer than one cookie can be (about 5.3 kB).
+    expect('__Host-tula_at='.length + token.length).toBeGreaterThan(4096)
+    expect(token.length).toBeLessThan(MAX_ACCESS_TOKEN_LENGTH)
+
+    const response = await browser.visit('/billing', {
+      ...w.instance({ secretKey: SECRET_KEY }),
+      access: [{ routes: '/billing(.*)', permission: PERMISSIONS[31] as string }],
+    } as never)
+    expect(isNext(response)).toBe(true)
+    const auth = await authenticate(passedOn(response), w.instance())
+    expect(auth.orgId).toBe(org.id)
+    expect(auth.orgRole).toBe(ROLE)
+    expect(auth.orgPermissions).toEqual(PERMISSIONS)
+    expect(auth.has({ permission: PERMISSIONS[0] as string })).toBe(true)
+    expect(auth.has({ permission: 'org:billing:read' })).toBe(false)
+    expect(Object.keys(auth.customClaims ?? {})).toEqual(['a', 'b', 'c', 'd'])
+  })
+
+  test('switching to the personal account leaves no tail of the longer token', async () => {
+    const w = await orgWorld('hybrid')
+    const { browser } = await activeOrganization(w)
+    expect(browser.jar.has('tula_at_1')).toBe(true)
+    await browser.tula.organizations.setActive(null)
+    expect(browser.jar.has('tula_at_1')).toBe(false)
+    const response = await browser.visit('/dashboard')
+    const auth = await authenticate(passedOn(response), w.instance())
+    expect(auth.isSignedIn).toBe(true)
+    expect(auth.orgId).toBeNull()
+    expect(auth.has({ role: ROLE })).toBe(false)
+  })
+
+  test('an expired long token is replaced by the middleware, both parts', async () => {
+    const w = await orgWorld('hybrid')
+    const { browser } = await activeOrganization(w)
+    w.advance(120_000)
+    const response = await browser.visit('/dashboard')
+    expect(isNext(response)).toBe(true)
+    expect(browser.jar.has('tula_at_1')).toBe(true)
+    const auth = await authenticate(passedOn(response), w.instance())
+    expect(auth.orgPermissions).toHaveLength(32)
+  })
+
+  test('a stateful session carries the organization too', async () => {
+    const w = await orgWorld('stateful', false)
+    const { browser, org } = await activeOrganization(w)
+    const direct = new Request(`${APP}/x`, { headers: { cookie: browser.cookieHeader() } })
+    const auth = await authenticate(direct, w.instance({ secretKey: SECRET_KEY }))
+    expect(auth.orgId).toBe(org.id)
+    expect(auth.orgPermissions).toEqual(PERMISSIONS)
   })
 })

@@ -1,6 +1,7 @@
 import type { Deps } from '~/dependencies'
 import * as logger from '~/lib/logger'
 import { errorReason } from '~/lib/safe-error'
+import * as DomainReminders from '~/modules/organization-domain/reminders'
 import * as Retention from '~/modules/retention/service'
 import * as Webhooks from '~/modules/webhook/service'
 import type { ExclusiveJob } from '~/ports/job-lock'
@@ -83,6 +84,14 @@ export function startJobs(
     }
   }
 
+  async function runDomainReminders() {
+    try {
+      await DomainReminders.run(deps)
+    } catch (error) {
+      logger.warn('could not run the domain reminder job', { err: errorReason(error) })
+    }
+  }
+
   async function runDelivery() {
     try {
       await Webhooks.run(deps, deliveryStop.signal)
@@ -110,6 +119,9 @@ export function startJobs(
 
   if (jobs.includes('retention')) {
     schedule(() => void runRetention(), Retention.RETENTION_INTERVAL_MS)
+  }
+  if (jobs.includes('domain_reminders')) {
+    schedule(() => void runDomainReminders(), DomainReminders.DOMAIN_REMINDER_INTERVAL_MS)
   }
   if (jobs.includes('webhook_delivery')) {
     schedule(startDelivery, Webhooks.WEBHOOK_DELIVERY_INTERVAL_MS)

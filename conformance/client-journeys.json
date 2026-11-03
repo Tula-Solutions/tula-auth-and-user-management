@@ -544,6 +544,42 @@
         "decision": "journey"
       }
     },
+    "admin organization roles": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a role is defined and changed on the admin API with a secret key (or the dashboard's session), and an administrator, not a user, makes every change here: a client SDK holds a publishable key and a user's session and reaches none of these routes, and must never. What a client does with a role's permissions (`has()`, the claims of the token) is a later ticket's scenarios."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "a role is defined and changed on the admin API with a secret key (or the dashboard's session), and an administrator, not a user, makes every change here: a client SDK holds a publishable key and a user's session and reaches none of these routes, and must never. What a client does with a role's permissions (`has()`, the claims of the token) is a later ticket's scenarios."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "a role is defined and changed on the admin API with a secret key (or the dashboard's session), and an administrator, not a user, makes every change here: a client SDK holds a publishable key and a user's session and reaches none of these routes, and must never. What a client does with a role's permissions (`has()`, the claims of the token) is a later ticket's scenarios."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a role is defined and changed on the admin API with a secret key (or the dashboard's session), and an administrator, not a user, makes every change here: a client SDK holds a publishable key and a user's session and reaches none of these routes, and must never. What a client does with a role's permissions (`has()`, the claims of the token) is a later ticket's scenarios."
+      }
+    },
+    "admin organizations and memberships": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "organizations and their memberships are managed on the admin API with a secret key (or the dashboard's session), and an administrator, not a user, makes every change here: a client SDK holds a publishable key and a user's session and reaches none of these routes, and must never. What a signed-in user does with an organization (list, create, switch, accept an invitation) is `/v1/client/me/organizations`, a later ticket's scenarios."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "organizations and their memberships are managed on the admin API with a secret key (or the dashboard's session), and an administrator, not a user, makes every change here: a client SDK holds a publishable key and a user's session and reaches none of these routes, and must never. What a signed-in user does with an organization (list, create, switch, accept an invitation) is `/v1/client/me/organizations`, a later ticket's scenarios."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "organizations and their memberships are managed on the admin API with a secret key (or the dashboard's session), and an administrator, not a user, makes every change here: a client SDK holds a publishable key and a user's session and reaches none of these routes, and must never. What a signed-in user does with an organization (list, create, switch, accept an invitation) is `/v1/client/me/organizations`, a later ticket's scenarios."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "organizations and their memberships are managed on the admin API with a secret key (or the dashboard's session), and an administrator, not a user, makes every change here: a client SDK holds a publishable key and a user's session and reaches none of these routes, and must never. What a signed-in user does with an organization (list, create, switch, accept an invitation) is `/v1/client/me/organizations`, a later ticket's scenarios."
+      }
+    },
     "admin second factor reset": {
       "core": {
         "decision": "journey"
@@ -899,6 +935,38 @@
         "decision": "journey"
       }
     },
+    "my organizations and the active organization": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "my pending organization invitations": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "not_built",
+        "ticket": "TULA-132",
+        "reason": "the Swift client has no call for the invitations addressed to the signed-in user, or for answering one by its id, yet; they are built there by TULA-132 (the invitee's own list in the Swift and Kotlin clients)."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-132",
+        "reason": "the Kotlin client has no call for the invitations addressed to the signed-in user, or for answering one by its id, yet; they are built there by TULA-132 (the invitee's own list in the Swift and Kotlin clients)."
+      }
+    },
     "native Apple ID token refused": {
       "core": {
         "decision": "journey"
@@ -1031,6 +1099,38 @@
       "kotlin": {
         "decision": "not_applicable",
         "reason": "an environment’s native apps are registered on the admin API with a secret key or a dashboard session, and the two association files are fetched by Apple and Android from the app’s own domain, not by an SDK: no client SDK calls either."
+      }
+    },
+    "organization invitations": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "organization members and roles from the client": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "not_built",
+        "ticket": "TULA-130",
+        "reason": "the Swift client has no call for an organization's members, the roles a member may give, renaming, deleting or leaving an organization yet; they are built there by TULA-130 (member and organization management in the Swift and Kotlin clients)."
+      },
+      "kotlin": {
+        "decision": "not_built",
+        "ticket": "TULA-130",
+        "reason": "the Kotlin client has no call for an organization's members, the roles a member may give, renaming, deleting or leaving an organization yet; they are built there by TULA-130 (member and organization management in the Swift and Kotlin clients)."
       }
     },
     "passkey assertion replay": {
@@ -1284,7 +1384,9 @@
       "swift": {
         "decision": "journey"
       },
-      "kotlin": { "decision": "journey" }
+      "kotlin": {
+        "decision": "journey"
+      }
     },
     "provider sign-in returned to a custom scheme": {
       "core": {
@@ -1599,7 +1701,9 @@
       "swift": {
         "decision": "journey"
       },
-      "kotlin": { "decision": "journey" }
+      "kotlin": {
+        "decision": "journey"
+      }
     },
     "text messages past the daily limit": {
       "core": {
@@ -1611,7 +1715,9 @@
       "swift": {
         "decision": "journey"
       },
-      "kotlin": { "decision": "journey" }
+      "kotlin": {
+        "decision": "journey"
+      }
     },
     "text messages to a blocked destination": {
       "core": {
@@ -1623,7 +1729,9 @@
       "swift": {
         "decision": "journey"
       },
-      "kotlin": { "decision": "journey" }
+      "kotlin": {
+        "decision": "journey"
+      }
     },
     "the admin reset removes passkeys and says whether the user can still sign in": {
       "core": {
@@ -1703,7 +1811,57 @@
         "decision": "journey"
       }
     },
+    "user import with Firebase scrypt and PBKDF2-SHA256 hashes": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a bulk import is a call of the admin API with a secret key, which a client SDK never holds. Signing in with an old Firebase or PBKDF2 password is the ordinary password sign-in of the \"sign-in\" journey: a client cannot tell an imported hash from one the server made."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "a bulk import is a call of the admin API with a secret key, which an app never holds. Signing in with an old Firebase or PBKDF2 password is the ordinary password sign-in of the \"sign-in\" journey: a client cannot tell an imported hash from one the server made."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "a bulk import is a call of the admin API with a secret key; the Swift client talks to `/v1/client/*` only. Signing in with an old Firebase or PBKDF2 password is the ordinary password sign-in of the \"sign-in\" journey: a client cannot tell an imported hash from one the server made."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a bulk import is a call of the admin API with a secret key; the Kotlin client talks to `/v1/client/*` only. Signing in with an old Firebase or PBKDF2 password is the ordinary password sign-in of the \"sign-in\" journey: a client cannot tell an imported hash from one the server made."
+      }
+    },
+    "user import with a bcrypt hash": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "a bulk import is a call of the admin API with a secret key, which a client SDK never holds. What a client observes of an imported user, signing in with the old password, is the ordinary password sign-in of the \"sign-in\" journey: a client cannot tell an imported hash from one the server made."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "a bulk import is a call of the admin API with a secret key, which an app never holds. What an app observes of an imported user, signing in with the old password, is the ordinary password sign-in of the \"sign-in\" journey: it cannot tell an imported hash from one the server made."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "a bulk import is a call of the admin API with a secret key; the Swift client talks to `/v1/client/*` only. Signing in with an old password is the ordinary password sign-in of the \"sign-in\" journey."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "a bulk import is a call of the admin API with a secret key; the Kotlin client talks to `/v1/client/*` only. Signing in with an old password is the ordinary password sign-in of the \"sign-in\" journey."
+      }
+    },
     "verification code attempts": {
+      "core": {
+        "decision": "journey"
+      },
+      "expo": {
+        "decision": "journey"
+      },
+      "swift": {
+        "decision": "journey"
+      },
+      "kotlin": {
+        "decision": "journey"
+      }
+    },
+    "verified domains: suggest and auto-join": {
       "core": {
         "decision": "journey"
       },

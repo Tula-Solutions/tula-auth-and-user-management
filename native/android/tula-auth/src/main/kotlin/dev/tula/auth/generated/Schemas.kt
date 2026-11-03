@@ -25,6 +25,37 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
 @Serializable
+data class AcceptedInvitation(
+    val id: String,
+    val name: String,
+    val slug: String,
+    val role: String,
+    val permissions: List<String>,
+    /** Format: `date-time`. */
+    val createdAt: String,
+)
+
+@Serializable
+data class ActiveOrganization(
+    val sessionId: String,
+    val organizationId: String?,
+    val accessToken: String? = null,
+    /** Format: `date-time`. */
+    val accessTokenExpiresAt: String? = null,
+)
+
+@Serializable
+data class AssignableRole(
+    val key: String,
+    val name: String,
+)
+
+@Serializable
+data class AssignableRoleList(
+    val data: List<AssignableRole>,
+)
+
+@Serializable
 data class BackupCodes(
     val codes: List<String>,
 )
@@ -43,6 +74,7 @@ data class ClientConfig(
     val password: PasswordPolicy,
     val mfa: ClientConfigMfa? = null,
     val phone: ClientConfigPhone? = null,
+    val organizations: ClientConfigOrganizations? = null,
 )
 
 @Serializable
@@ -55,6 +87,13 @@ data class ClientConfigApp(
 data class ClientConfigMfa(
     val policy: MfaPolicy,
     val smsCode: Boolean? = null,
+)
+
+@Serializable
+data class ClientConfigOrganizations(
+    val enabled: Boolean,
+    val allowUserCreated: Boolean,
+    val personalAccount: Boolean,
 )
 
 @Serializable
@@ -71,6 +110,19 @@ data class ClientConfigSignIn(
 @Serializable
 data class ClientConfigSignUp(
     val password: SignUpPasswordMode,
+)
+
+@Serializable
+data class CreateOrganizationInvitationRequest(
+    val email: String,
+    val role: OrganizationRoleKey,
+    val redirectUrl: String,
+)
+
+@Serializable
+data class CreateOrganizationRequest(
+    val name: String,
+    val slug: OrganizationSlug,
 )
 
 @Serializable
@@ -746,6 +798,20 @@ data class IdentityList(
     val data: List<Identity>,
 )
 
+@Serializable
+data class InvitationPreview(
+    val organizationName: String,
+    val role: String,
+    val email: String,
+    /** Format: `date-time`. */
+    val expiresAt: String,
+)
+
+@Serializable
+data class InvitationTokenRequest(
+    val token: String,
+)
+
 @Serializable(with = MfaPolicySerializer::class)
 sealed class MfaPolicy {
     /** The value as the API writes it. */
@@ -803,6 +869,21 @@ object MfaPolicySerializer : KSerializer<MfaPolicy> {
         encoder.encodeString(value.rawValue)
     }
 }
+
+@Serializable
+data class MyOrganizationInvitation(
+    val id: String,
+    val organizationName: String,
+    val role: String,
+    /** Format: `date-time`. */
+    val expiresAt: String,
+)
+
+@Serializable
+data class MyOrganizationInvitationList(
+    val meta: PaginationMeta,
+    val data: List<MyOrganizationInvitation>,
+)
 
 @Serializable(with = NewPasswordReasonSerializer::class)
 sealed class NewPasswordReason {
@@ -895,6 +976,268 @@ data class OAuthStart(
 data class OAuthStartRequest(
     val provider: OAuthProvider,
     val redirectUrl: String,
+)
+
+@Serializable
+data class OrganizationDomain(
+    val id: String,
+    val domain: String,
+    val mode: OrganizationDomainMode,
+    val status: OrganizationDomainStatus,
+    val verifiedAt: String?,
+    val expiresAt: String?,
+    val codeExpiresAt: String?,
+    /** Format: `date-time`. */
+    val createdAt: String,
+    /** Format: `date-time`. */
+    val updatedAt: String,
+)
+
+@Serializable
+data class OrganizationDomainList(
+    val data: List<OrganizationDomain>,
+)
+
+@Serializable(with = OrganizationDomainModeSerializer::class)
+sealed class OrganizationDomainMode {
+    /** The value as the API writes it. */
+    abstract val rawValue: String
+
+    override fun toString(): String = rawValue
+
+    object Suggest : OrganizationDomainMode() {
+        override val rawValue: String = "suggest"
+    }
+
+    object AutoJoin : OrganizationDomainMode() {
+        override val rawValue: String = "auto_join"
+    }
+
+    /** A value this version does not know, as the API wrote it. Made by [of] only. */
+    class Unknown internal constructor(override val rawValue: String) : OrganizationDomainMode() {
+        override fun equals(other: Any?): Boolean = other is Unknown && other.rawValue == rawValue
+
+        override fun hashCode(): Int = rawValue.hashCode()
+    }
+
+    companion object {
+        /** Every value this version knows. */
+        val known: List<OrganizationDomainMode> by lazy {
+            listOf(
+                Suggest,
+                AutoJoin,
+            )
+        }
+
+        /** The value for a string of the API: [Unknown] for one this version does not know. */
+        fun of(rawValue: String): OrganizationDomainMode = when (rawValue) {
+            "suggest" -> Suggest
+            "auto_join" -> AutoJoin
+            else -> Unknown(rawValue)
+        }
+    }
+}
+
+/** Reads and writes [OrganizationDomainMode] as its string, whatever the string is. */
+object OrganizationDomainModeSerializer : KSerializer<OrganizationDomainMode> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("dev.tula.auth.generated.OrganizationDomainMode", PrimitiveKind.STRING)
+
+    override fun deserialize(decoder: Decoder): OrganizationDomainMode = OrganizationDomainMode.of(decoder.decodeString())
+
+    override fun serialize(encoder: Encoder, value: OrganizationDomainMode) {
+        encoder.encodeString(value.rawValue)
+    }
+}
+
+typealias OrganizationDomainName = String
+
+@Serializable(with = OrganizationDomainStatusSerializer::class)
+sealed class OrganizationDomainStatus {
+    /** The value as the API writes it. */
+    abstract val rawValue: String
+
+    override fun toString(): String = rawValue
+
+    object Pending : OrganizationDomainStatus() {
+        override val rawValue: String = "pending"
+    }
+
+    object Verified : OrganizationDomainStatus() {
+        override val rawValue: String = "verified"
+    }
+
+    object NeedsReverification : OrganizationDomainStatus() {
+        override val rawValue: String = "needs_reverification"
+    }
+
+    /** A value this version does not know, as the API wrote it. Made by [of] only. */
+    class Unknown internal constructor(override val rawValue: String) : OrganizationDomainStatus() {
+        override fun equals(other: Any?): Boolean = other is Unknown && other.rawValue == rawValue
+
+        override fun hashCode(): Int = rawValue.hashCode()
+    }
+
+    companion object {
+        /** Every value this version knows. */
+        val known: List<OrganizationDomainStatus> by lazy {
+            listOf(
+                Pending,
+                Verified,
+                NeedsReverification,
+            )
+        }
+
+        /** The value for a string of the API: [Unknown] for one this version does not know. */
+        fun of(rawValue: String): OrganizationDomainStatus = when (rawValue) {
+            "pending" -> Pending
+            "verified" -> Verified
+            "needs_reverification" -> NeedsReverification
+            else -> Unknown(rawValue)
+        }
+    }
+}
+
+/** Reads and writes [OrganizationDomainStatus] as its string, whatever the string is. */
+object OrganizationDomainStatusSerializer : KSerializer<OrganizationDomainStatus> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("dev.tula.auth.generated.OrganizationDomainStatus", PrimitiveKind.STRING)
+
+    override fun deserialize(decoder: Decoder): OrganizationDomainStatus = OrganizationDomainStatus.of(decoder.decodeString())
+
+    override fun serialize(encoder: Encoder, value: OrganizationDomainStatus) {
+        encoder.encodeString(value.rawValue)
+    }
+}
+
+@Serializable
+data class OrganizationInvitation(
+    val id: String,
+    val organizationId: String,
+    val email: String,
+    val role: String,
+    val status: OrganizationInvitationStatus,
+    val invitedBy: String?,
+    /** Format: `date-time`. */
+    val expiresAt: String,
+    /** Format: `date-time`. */
+    val createdAt: String,
+)
+
+@Serializable
+data class OrganizationInvitationList(
+    val meta: PaginationMeta,
+    val data: List<OrganizationInvitation>,
+)
+
+@Serializable(with = OrganizationInvitationStatusSerializer::class)
+sealed class OrganizationInvitationStatus {
+    /** The value as the API writes it. */
+    abstract val rawValue: String
+
+    override fun toString(): String = rawValue
+
+    object Pending : OrganizationInvitationStatus() {
+        override val rawValue: String = "pending"
+    }
+
+    object Accepted : OrganizationInvitationStatus() {
+        override val rawValue: String = "accepted"
+    }
+
+    object Declined : OrganizationInvitationStatus() {
+        override val rawValue: String = "declined"
+    }
+
+    object Revoked : OrganizationInvitationStatus() {
+        override val rawValue: String = "revoked"
+    }
+
+    object Expired : OrganizationInvitationStatus() {
+        override val rawValue: String = "expired"
+    }
+
+    /** A value this version does not know, as the API wrote it. Made by [of] only. */
+    class Unknown internal constructor(override val rawValue: String) : OrganizationInvitationStatus() {
+        override fun equals(other: Any?): Boolean = other is Unknown && other.rawValue == rawValue
+
+        override fun hashCode(): Int = rawValue.hashCode()
+    }
+
+    companion object {
+        /** Every value this version knows. */
+        val known: List<OrganizationInvitationStatus> by lazy {
+            listOf(
+                Pending,
+                Accepted,
+                Declined,
+                Revoked,
+                Expired,
+            )
+        }
+
+        /** The value for a string of the API: [Unknown] for one this version does not know. */
+        fun of(rawValue: String): OrganizationInvitationStatus = when (rawValue) {
+            "pending" -> Pending
+            "accepted" -> Accepted
+            "declined" -> Declined
+            "revoked" -> Revoked
+            "expired" -> Expired
+            else -> Unknown(rawValue)
+        }
+    }
+}
+
+/** Reads and writes [OrganizationInvitationStatus] as its string, whatever the string is. */
+object OrganizationInvitationStatusSerializer : KSerializer<OrganizationInvitationStatus> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("dev.tula.auth.generated.OrganizationInvitationStatus", PrimitiveKind.STRING)
+
+    override fun deserialize(decoder: Decoder): OrganizationInvitationStatus = OrganizationInvitationStatus.of(decoder.decodeString())
+
+    override fun serialize(encoder: Encoder, value: OrganizationInvitationStatus) {
+        encoder.encodeString(value.rawValue)
+    }
+}
+
+@Serializable
+data class OrganizationMember(
+    val userId: String,
+    val name: String?,
+    val email: String?,
+    val role: String,
+    /** Format: `date-time`. */
+    val createdAt: String,
+)
+
+@Serializable
+data class OrganizationMemberList(
+    val meta: PaginationMeta,
+    val data: List<OrganizationMember>,
+)
+
+typealias OrganizationRoleKey = String
+
+typealias OrganizationSlug = String
+
+@Serializable
+data class OrganizationSuggestion(
+    val id: String,
+    val name: String,
+    val slug: String,
+)
+
+@Serializable
+data class OrganizationSuggestionList(
+    val data: List<OrganizationSuggestion>,
+)
+
+@Serializable
+data class PaginationMeta(
+    val totalCount: Long,
+    val totalPages: Long,
+    val page: Long,
+    val perPage: Long,
 )
 
 @Serializable
@@ -1587,6 +1930,11 @@ data class SessionTokens(
 )
 
 @Serializable
+data class SetActiveOrganizationRequest(
+    val organizationId: String?,
+)
+
+@Serializable
 data class SignInStartRequest(
     val identifier: String,
 )
@@ -1664,6 +2012,13 @@ data class SmsFactorCode(
 @Serializable
 data class SmsFactorConfirmRequest(
     val code: String,
+)
+
+@Serializable
+data class StartOrganizationDomainRequest(
+    val domain: OrganizationDomainName,
+    val email: String,
+    val mode: OrganizationDomainMode,
 )
 
 @Serializable
@@ -1804,6 +2159,45 @@ data class TotpEnrolment(
 )
 
 @Serializable
+data class UpdateOrganizationDomainRequest(
+    val mode: OrganizationDomainMode,
+)
+
+@Serializable
+data class UpdateOrganizationMemberRequest(
+    val role: OrganizationRoleKey,
+)
+
+@Serializable
+data class UpdateOrganizationRequest(
+    val name: String? = null,
+    val slug: OrganizationSlug? = null,
+)
+
+@Serializable
+data class UserOrganization(
+    val id: String,
+    val name: String,
+    val slug: String,
+    val role: String,
+    val permissions: List<String>,
+    /** Format: `date-time`. */
+    val createdAt: String,
+)
+
+@Serializable
+data class UserOrganizationList(
+    val activeOrganizationId: String?,
+    val meta: PaginationMeta,
+    val data: List<UserOrganization>,
+)
+
+@Serializable
 data class VerifyEmailRequest(
+    val code: String,
+)
+
+@Serializable
+data class VerifyOrganizationDomainRequest(
     val code: String,
 )

@@ -66,6 +66,16 @@ allowed without being listed.
 
 ## What the user sees
 
+### Try it in the sandbox
+
+:::playground{preset="email-link"}
+
+A sandbox of the sign-in component with the emailed link on: the link arrives in a sandbox inbox
+and can be opened in this browser or in "another browser". It needs a browser with script; the
+screens are described below.
+
+:::
+
 - **Email me a link** beside the other ways to sign in, then "Check your email" with a field
   for the code from the same email.
 - Clicking the link opens a new tab that says the sign-in was confirmed. The tab that asked
@@ -115,13 +125,13 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: { children: ReactNode }) {
   // What the server knows about the session goes to the provider, so the first paint (on the
   // server and after hydration) already shows the right header.
-  const { sessionId } = await auth()
+  const { sessionId, orgId } = await auth()
   return (
     <html lang='en'>
       <body>
         <TulaProvider
           publishableKey={process.env.NEXT_PUBLIC_TULA_PUBLISHABLE_KEY ?? ''}
-          initialState={sessionId ? { sessionId } : null}
+          initialState={sessionId ? { sessionId, organizationId: orgId } : null}
           signInUrl='/sign-in'
           signUpUrl='/sign-up'
           afterSignInUrl='/dashboard'

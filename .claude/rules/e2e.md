@@ -58,10 +58,25 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   its report as `playwright-report-<i>` (`playwright-report-docs-<i>`).
   The config starts only the servers of the projects named on the command line
   (`playwright.config.ts`: a run of `docs` alone starts no API, a run without it no docs server).
-  The fixture API uses ports 4317 to 4320 and the docs server 4321 with `reuseExistingServer`:
-  only one checkout (or git worktree) can hold 4317 to 4320 at a time, so check them before a
-  local run (`lsof -nP -iTCP:4317-4321 -sTCP:LISTEN`) rather than reuse another checkout's
-  server, which serves its own build.
+  The fixture API uses ports 4317 to 4320 and the docs server 4321. Only one checkout (or git
+  worktree) can hold 4317 to 4320 at a time, so check them before a local run
+  (`lsof -nP -iTCP:4317-4321 -sTCP:LISTEN`). **A run never attaches to a fixture that is
+  already listening** (`reuseFixture` in `playwright.config.ts`, on only with
+  `E2E_REUSE_SERVER=1`; the docs server, static files, keeps `reuseExistingServer`): the
+  fixture is one in-memory world, and another run's tests change its settings, clock and
+  organizations under yours, stop its servers and serve its own build (TULA-129: a sign-in
+  method switched off mid-test, "Organizations are switched off", a connection refused). A
+  busy port stops the run with Playwright's "already used"; wait for the other run, never
+  stop a server you did not start. A leftover of your own aborted run: find it with the
+  `lsof` above and stop that process.
+  **A spec does not assume the environment is empty or at the defaults**: the `nextjs` project
+  runs before `dashboard` in the same fixture and leaves organizations behind, so a test that
+  says "none yet" first makes it true (`clearOrganizations` in the dashboard's organizations
+  spec). **A page is not checked while the router is still re-rendering it**: the
+  `router.refresh()` that follows an organization switch has no signal a test can wait for
+  (a wait for its request hung in some tests), so `switchTo` in
+  `e2e/tests/nextjs/organizations.spec.ts` loads the page again before axe looks at it, or
+  axe finds a document without its `<title>` (`document-title`).
   `.claude/hooks/e2e-projects.test.ts` (in `test:harness`) holds that every project of
   `playwright.config.ts` is named by exactly one of the two sets of shards, so a new project is added to
   one of them in the same change; `e2e/projects.ts` (tested in `e2e/projects.test.ts`) decides

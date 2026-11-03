@@ -17,6 +17,7 @@ repository run `bun run tula -- <command>`, and see
 | [`tula policy test`](#tula-policy-test) | Which password rules a password passes. |
 | [`tula mcp`](#tula-mcp) | The MCP server an AI assistant reads and proposes through. |
 | [`tula approve`](#tula-approve) | Approve a change an assistant proposed. |
+| [`tula import`](#tula-import) | Move users, with their password hashes, from Clerk, Auth0, Firebase, Supabase or better-auth. |
 | [`tula diff`, `tula apply`](config.md) | Settings as code. |
 
 ## Credentials are never arguments
@@ -398,6 +399,66 @@ a secret key, and then nobody was asked.
 Exit codes: 0 approved and carried out; 1 anything else (declined, expired, the agent key
 revoked, already approved, refused for a production environment, approved but not carried
 out or only half carried out, an error).
+
+## `tula import`
+
+```sh
+tula import --from supabase supabase-users.csv          # a report; nothing is sent
+tula import --from supabase supabase-users.csv --yes    # import; run it again after a stop
+```
+
+Moves users from another provider with the password hashes they have there, so that nobody
+resets a password ([Importing users](user-import.md) says what the server does with them). It
+reads the provider's own export on your machine and makes **no request to the old provider**.
+One guide per provider says what to export and what is and is not carried:
+[Clerk](migrate-from-clerk.md), [Auth0](migrate-from-auth0.md),
+[Firebase](migrate-from-firebase.md), [Supabase](migrate-from-supabase.md) and
+[better-auth](migrate-from-better-auth.md).
+
+| Option | |
+| --- | --- |
+| `--from <provider>` | `clerk`, `auth0`, `firebase`, `supabase` or `better-auth`. Required. |
+| `<export file>` | The provider's user export (JSON, NDJSON or CSV, by provider). |
+| `--yes` | Import. Without it only the report is printed, and no key is needed. |
+| `--password-hashes <file>` | Auth0: the hash export that Auth0 support sends. |
+| `--accounts <file>` | better-auth: the `account` table. |
+| `--organizations <file>`, `--memberships <file>` | Clerk: its organizations and their members, imported through the organization admin routes. |
+| `--firebase-hash-config <file>`, `--firebase-rounds <n>`, `--firebase-mem-cost <n>` | Firebase: the project's scrypt parameters. The signer key is in the file or in `TULA_FIREBASE_SIGNER_KEY`, never an option. |
+| `--allow-passwordless` | A user whose hash the server cannot read is imported without a password, instead of the row being refused. |
+| `--progress-file <path>`, `--fresh` | Where the progress is kept (default `<export file>.tula-import-progress.json`); start over. |
+| `--batch-size <n>`, `--max-wait <seconds>` | Users per request (at most 500, the default); the longest a `Retry-After` is waited (default 120). |
+| `--env`, `--api-url`, `--insecure-http`, `--secret-key-file`, `--json` | As for the other commands. |
+
+- **The report comes first, always.** It counts the users to import by password algorithm and
+  lists every row it would refuse by **row number** (the Nth user of the file), a **code** and
+  an address **masked** to its first character and the last label of its domain
+  (`m***@***.app`). A refused row is one the file or the server cannot take: no usable address,
+  a disabled or banned user, a hash in a format the server does not read, parameters it limits.
+  An address that repeats an earlier row is counted, and the server skips it.
+- **It sends batches of up to 500 users and 4 MB** to `POST /v1/admin/users/import`, one after
+  another. A `429` is waited out as long as `Retry-After` says, up to `--max-wait`, and the same
+  batch is sent again; so is a request that got no answer or a `5xx`, six tries in all, because
+  every request is safe to repeat: a user whose address exists is **skipped**, never created twice.
+- **The progress file** is written after every answer and holds the number of the last row
+  sent, the batch count, the counts and the codes of the rows the server refused, and, for a
+  Clerk import with memberships, the provider's and Tula's ids of users and organizations. It
+  holds **no password hash, no signer key, no address and no name**, and its permissions are
+  `0600`. It is bound to the export, the provider, the server and the key: another one is
+  refused, and `--fresh` ignores it (everything that exists is then skipped).
+- **A run that stops** (a network failure, `Ctrl-C`, a server that stays down) keeps what it
+  did. Run the same command again, with the same options (another `--allow-passwordless` or other
+  Firebase parameters is another import: the progress file is refused, `--fresh` starts over). A
+  batch whose answer was lost is sent again, and the server reports the users its first attempt made
+  as duplicates, with their ids and whether their external id is the row's own: those are counted
+  as created, and a Clerk member is paired by that id, with no lookup by address. A duplicate
+  with another external id (or none) is a user who was there before and stays skipped. A server
+  older than this change sends no ids; the count is then low after a lost answer, and a Clerk
+  member is found by address.
+- **Nothing sensitive is printed.** No hash, token, signer key or whole address, in the report or
+  in an error; the secret key and the signer key are redacted from every line.
+
+Exit codes: 0 done and nothing refused (or a report with nothing to refuse), 2 something was
+refused (an answer, not a failure), 1 an error. The progress file keeps what was done.
 
 ## `tula diff` and `tula apply`
 

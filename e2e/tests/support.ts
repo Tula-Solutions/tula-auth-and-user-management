@@ -102,11 +102,22 @@ export interface TestSettings {
   sessions?: {
     profiles?: Record<
       string,
-      { type?: 'hybrid' | 'stateful'; stepUpAfter?: string; accessTokenTtl?: string }
+      {
+        type?: 'hybrid' | 'stateful'
+        stepUpAfter?: string
+        accessTokenTtl?: string
+        jwtTemplate?: string
+      }
     >
     maxPerUser?: number | null
     onLimit?: 'end_oldest' | 'refuse_newest'
+    /** Named sets of custom claims a profile can add to its access tokens (ADR 0036). */
+    jwtTemplates?: Record<string, { claims: Record<string, { value: string }> }>
   }
+  /** Organizations (ADR 0065); off when left out. */
+  organizations?: { enabled: boolean; allowUserCreated?: boolean }
+  /** Addresses to change (an invitation's link leads to an allowed redirect URL). */
+  urls?: { allowedRedirectUrls?: string[] }
 }
 
 /**

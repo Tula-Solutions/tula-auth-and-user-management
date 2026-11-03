@@ -3,7 +3,11 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
 const ROOT = join(import.meta.dir, '../..')
-const CSS = readFileSync(join(ROOT, 'src/styles.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+// The prose rules carry a zero-specificity guard that keeps them out of a playground
+// (`.pg-host`); the tests name a rule by its selector without it.
+const CSS = readFileSync(join(ROOT, 'src/styles.css'), 'utf8')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replaceAll(':not(:where(.pg-host *))', '')
 
 /** The declarations of the first rule whose selector is exactly `selector`. */
 function ruleOf(selector: string): string {
@@ -117,5 +121,45 @@ describe('the fonts', () => {
     for (const face of loaded) {
       expect(face).toContain('font-display: swap')
     }
+  })
+})
+
+describe('the content components', () => {
+  test('the copy button is drawn only where the page has script', () => {
+    expect(ruleOf(':root:not([data-js]) .doc .copy')).toContain('display: none')
+  })
+
+  test('tabs: without script every panel and its label show; with it the label and the hidden panels go', () => {
+    expect(ruleOf('.doc .docs-tab-label')).not.toContain('display: none')
+    expect(ruleOf('.doc .docs-tabs[data-ready] .docs-tab-label')).toContain('display: none')
+    expect(ruleOf('.doc .docs-tab-panel[hidden]')).toContain('display: none')
+  })
+
+  test('code never wraps: a long line scrolls the block', () => {
+    expect(ruleOf('.doc pre code')).toContain('white-space: pre')
+    expect(ruleOf('.doc pre')).toContain('overflow-x: auto')
+  })
+
+  test('a changed line is told by a mark as well as a colour', () => {
+    expect(ruleOf('.doc .code-frame .line.diff.add::before')).toContain('content: "+"')
+    expect(ruleOf('.doc .code-frame .line.diff.remove::before')).toContain('content: "-"')
+  })
+
+  test('a callout is told by an icon and its word, not by its colour alone', () => {
+    expect(ruleOf('.doc .callout-title::before')).toContain('content: ""')
+    for (const kind of ['tip', 'important', 'warning', 'caution']) {
+      expect(CSS).toContain(`.doc .callout[data-callout="${kind}"] .callout-title::before`)
+    }
+  })
+})
+
+describe('the Tailwind build', () => {
+  test('one stylesheet writes the utilities, and its scan leaves the tests out', () => {
+    const playground = readFileSync(join(ROOT, 'src/playground/playground.css'), 'utf8')
+    expect(playground).not.toContain('tailwindcss')
+    // The raw file: stripping comments would also eat the `/**/` inside these globs.
+    const site = readFileSync(join(ROOT, 'src/styles.css'), 'utf8')
+    expect(site).toContain('@source not "./**/*.test.ts";')
+    expect(site).toContain('@source not "./**/*.test.tsx";')
   })
 })

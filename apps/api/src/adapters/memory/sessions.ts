@@ -87,6 +87,7 @@ export class MemorySessionStore implements SessionStore {
       authMethods: [...(session.authMethods ?? [])],
       hookClaims: session.hookClaims ? { ...session.hookClaims } : null,
       deviceThumbprint: session.deviceThumbprint ?? null,
+      activeOrganizationId: session.activeOrganizationId ?? null,
       revokedAt: null,
       revokeReason: null,
     })
@@ -111,6 +112,21 @@ export class MemorySessionStore implements SessionStore {
     session.lastActiveAt = at
     session.idleExpiresAt = idleExpiresAt
     return true
+  }
+
+  /** @inheritdoc */
+  async setActiveOrganization(
+    environmentId: string,
+    id: string,
+    organizationId: string | null,
+    at: Date
+  ): Promise<SessionRecord | null> {
+    const session = this.#session(environmentId, id)
+    if (!session || !isActive(session, at)) {
+      return null
+    }
+    session.activeOrganizationId = organizationId
+    return copy(session)
   }
 
   /** @inheritdoc */

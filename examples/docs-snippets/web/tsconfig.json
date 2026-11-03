@@ -1,0 +1,25 @@
+{
+  // How the repository checks the React, Next.js and backend samples of docs/organizations.md
+  // (`bun run typecheck:scripts`). This directory is not a workspace package and has no
+  // `node_modules`: the packages are the repository's sources, and the libraries they stand on
+  // are the ones the packages are checked with.
+  "extends": "../../../packages/tsconfig/base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["bun-types"],
+    "paths": {
+      "@tula-tech/core": ["../../../packages/core/src/index.ts"],
+      "@tula-tech/react": ["../../../packages/react/src/index.ts"],
+      "@tula-tech/nextjs": ["../../../packages/nextjs/src/index.ts"],
+      "@tula-tech/nextjs/server": ["../../../packages/nextjs/src/server.ts"],
+      "@tula-tech/nextjs/middleware": ["../../../packages/nextjs/src/middleware.ts"],
+      "@tula-tech/contract/*": ["../../../packages/contract/src/*.ts"],
+      "react": ["../../../packages/react/node_modules/@types/react/index.d.ts"],
+      "react/jsx-runtime": ["../../../packages/react/node_modules/@types/react/jsx-runtime.d.ts"],
+      "next/navigation": ["../../../packages/nextjs/node_modules/next/navigation.d.ts"],
+      "jose": ["../../../packages/nextjs/node_modules/jose/dist/types/index.d.ts"]
+    }
+  },
+  "include": ["*.ts", "*.tsx"]
+}

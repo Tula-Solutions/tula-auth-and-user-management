@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import { BUILT_IN_ROLES } from '@tula-tech/contract'
 import type { Tenant } from '~/dependencies'
 import { RateLimitError, ServiceException } from '~/exceptions'
 import * as Audit from '~/modules/audit/service'
@@ -250,6 +251,59 @@ describe('remove', () => {
     expect((await rejection(Users.get(deps, tenant, user.id))).status).toBe(404)
     // The address is free again.
     expect((await create()).id).not.toBe(user.id)
+  })
+
+  test('refuses the only manager of an organization before it ends any session', async () => {
+    const user = await create()
+    const tokens = await signIn(user.id)
+    await deps.organizations.ensureBuiltInRoles(
+      BUILT_IN_ROLES.map((role) => ({
+        id: Bun.randomUUIDv7(),
+        ...tenant,
+        key: role.key,
+        name: role.name,
+        permissions: [...role.permissions],
+        builtIn: true,
+        version: 1,
+        createdAt: deps.clock.now(),
+        updatedAt: deps.clock.now(),
+      }))
+    )
+    const admin = await deps.organizations.findRole(tenant.environmentId, 'admin')
+    const organization = await deps.organizations.insert(
+      {
+        id: Bun.randomUUIDv7(),
+        ...tenant,
+        name: 'Acme',
+        slug: 'acme',
+        createdBy: null,
+        createdAt: deps.clock.now(),
+        updatedAt: deps.clock.now(),
+      },
+      Audit.none('fixture')
+    )
+    if (!admin || !organization) {
+      throw new Error('fixture')
+    }
+    await deps.organizations.addMembership(
+      {
+        id: Bun.randomUUIDv7(),
+        ...tenant,
+        organizationId: organization.id,
+        userId: user.id,
+        roleId: admin.id,
+        roleKey: admin.key,
+        createdAt: deps.clock.now(),
+        updatedAt: deps.clock.now(),
+      },
+      Audit.none('fixture')
+    )
+    const refused = await rejection(Users.remove(deps, tenant, user.id, TEST_ACTOR))
+    expect(refused.code).toBe('user.last_organization_manager')
+    expect(refused.params).toEqual({ organizationIds: organization.id, count: 1 })
+    expect(await deps.revokedSessions.has(tokens.sessionId, deps.clock.now())).toBe(false)
+    expect((await session(tokens.sessionId))?.revokedAt).toBeNull()
+    expect((await Users.get(deps, tenant, user.id)).id).toBe(user.id)
   })
 
   test('answers 404 for unknown users and other environments', async () => {

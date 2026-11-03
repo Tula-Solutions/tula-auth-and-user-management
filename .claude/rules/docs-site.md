@@ -60,11 +60,58 @@ static HTML. Its commands are in its README.
   would hydrate every page, which means shipping the content of all of `docs/` (several MB of
   generated reference) to the browser as JavaScript or fetching each page twice, for links
   that are already plain `<a href>`. The page works with no script. Do not add a client
-  framework or hydration without a measured reason.
+  framework or hydration without a measured reason. **The one measured reason is the
+  playground** (below).
+- **The playground is the one React island** (`src/playground/`, TULA-106). The
+  reason: it has to run the real `@tula-tech/react` components on the real `@tula-tech/core`
+  client against a sandbox, which is client state by nature; the same components inline in
+  static HTML would be a mock that drifts from the product. What it costs is measured, and kept
+  out of every other page: its own Vite entry (`src/client/playground.ts`, 2.2 KB raw, 1.1 KB
+  gzipped) that only a page holding a `:::playground` placeholder loads (`hasPlayground` in
+  `blocks.ts`, `Frame.assets.playground`), which fetches the island's one chunk
+  (`mount-*.js`, 610 KB raw, 185 KB gzipped, plus its stylesheet) when a placeholder is within
+  600 px of the viewport. The site's own script and stylesheet are unchanged for every page
+  (`main.js` is byte-for-byte what it was without the playground, 6.8 KB raw when measured; `main.css` grew 1.3 KB for the guard below), and
+  `e2e/tests/docs/playground.spec.ts` fails if a page with no playground loads any of it.
+  Never import the island from `main.ts`, never add a playground script to a page without a
+  placeholder, never add a second island.
+  - **`.pg-host` is outside the prose styles.** The island is drawn inside `.doc`, whose bare
+    element rules (`.doc p`, `.doc a`, …) would restyle the components. Each of them carries
+    `:not(:where(.pg-host *))`, which adds no specificity; a new bare-element rule under `.doc`
+    gets the same guard. (Shadow DOM, an iframe and `@scope` were tried and rejected: React's
+    focus and portal handling and the components' `document.activeElement` need the one document.)
+  - **The sandbox** (`src/playground/sandbox/`) answers every `/v1/client/*` operation of the
+    client API (`HANDLERS` covers all of them) from the client's own fetch, in the page: not a
+    service worker, so it works offline and in a preview. It returns the shapes and the error
+    codes the contract defines, applies the visible rules of the real server (one generic answer
+    for a wrong password, lockout, code guesses, expiry, single-use codes, refresh rotation) and
+    never claims to be the service: the frame is labelled Sandbox, a consent screen is its own
+    and imitates no provider, the passkey sheet says it is simulated and `navigator.credentials`
+    is never called. What it does not simulate answers with the API's error where the method is
+    off (`UNSUPPORTED`: step-up, SMS and phone numbers, signing in with a native ID token,
+    password expiry, a passkey as a second factor). **Its state is in memory only**: no token,
+    code or secret is written to web storage, and a reload or **Reset sandbox** drops it. The
+    island bundle is Zod-free (the tests, not the island, check the shapes against the contract's
+    schemas in `sandbox.test.ts`).
+  - **The configuration is one object** (`PlaygroundConfig`, `config.ts`): the frame, the panel
+    and the three copied files (`code.ts`: React, a CSS block of only the changed theme
+    variables, and a `tula.config.ts` that `config.test.ts` loads with `@tula-tech/config`)
+    are all computed from it. A new control changes the object and gets a line in each output.
+  - **The panel uses the shadcn primitives in `src/components/ui/`**, which are now also
+    client-rendered. Their Tailwind utilities are written once, by `styles.css`, whose scan
+    takes in the island and the primitives; `playground.css` imports `@tula-tech/react`'s
+    stylesheet and no Tailwind layer. A second copy of the utilities, loaded after
+    `main.css`, beats the site's variants at equal specificity: its `.hidden` hid the theme
+    toggle's sun in the dark scheme. It reads the site's tokens and writes no colour
+    (`contrast.test.ts` scans it).
+  - `/playground/` is a wide page (`WIDE_ROUTES` in `layout.tsx`): no table of contents column.
+  - `PLAYGROUND_PRESETS` (the directive) and `EMBED_PRESETS` (the island) are held equal by a
+    test; a new preset is added to both.
 - **The build fails, and writes nothing, for a file it cannot render or a link it cannot
   resolve** (`bun run --filter @tula-tech/docs generate:check` runs it without writing; it is
   part of `verify`). That is a Markdown file with no `#` heading (the title), a code block in
-  a language that is not in `CODE_LANGUAGES`, a relative link or image to a file that does not
+  a language that is not in `CODE_LANGUAGES` (`markdown` and `md` are, to show a component's
+  source), a malformed component (below), a relative link or image to a file that does not
   exist, and a `#anchor` the target does not have. The resolver (`src/lib/links.ts`) is a pure
   function over an injected `LinkEnvironment` and is tested on its own. A link to a repository
   file that is not a page (an ADR, a package README, a source file) becomes its address on
@@ -72,11 +119,67 @@ static HTML. Its commands are in its README.
 - **Anchors are GitHub's** (`github-slugger`, `-1` for a repeat), because the docs link to
   `file.md#heading` as GitHub renders it. `docs/**` links keep working in both places.
 - **The Markdown pipeline is unified**: `remark-parse`, `remark-gfm`, `remark-rehype`,
-  `rehype-raw` (the docs hold some raw HTML) and `rehype-stringify`. Code is highlighted at build
+  `rehype-raw` (the docs hold some raw HTML) and `rehype-stringify`, with the content components
+  (below) turned into elements between the parse and `remark-rehype`. Code is highlighted at build
   time by shiki, both themes written as CSS variables, so no highlighter reaches the
   browser. The docs and their rendering are repository content, so a page body goes through
   `dangerouslySetInnerHTML`; **nothing a visitor or an API typed ever does** (the error
   codes' text is escaped, the search results are written with `textContent`).
+- **The content components are Markdown first** (`docs/writing-docs.md` documents each with its
+  source and its result, and is the page the browser tests drive: **a new component or option
+  is added there in the same change**). The same file is read on GitHub, rendered here and
+  served as a twin, so a component has to read well as plain Markdown. `src/lib/blocks.ts`
+  turns them into elements before `remark-rehype`, as plain mdast nodes with `data.hName` (no
+  `remark-directive`: its `:name` text directives would read ordinary prose such as `a :b` as a
+  directive). The syntaxes, which are the whole contract:
+  - **Callouts**: GitHub's alerts, `> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`,
+    `[!CAUTION]`, the text on the lines after the marker (text on the marker's line is refused:
+    GitHub would not draw an alert). A plain `>` block quote stays a quiet note.
+  - **Containers**: `:::name` and a bare `:::`, each on its own line with a blank line either side
+    (a fence sharing a paragraph with text is refused: GitHub would run them together), and
+    `{sync="key"}` where the block takes it. `:::steps` (the `###` headings are the steps: all of
+    one depth, real headings with anchors, in the outline), `:::tabs` (the headings are the tab
+    labels, which are not headings of the page), `:::code-group` (fenced blocks only, named by
+    `title="…"` or else the language; the title moves to the tab), `:::params` (one table: `Name`,
+    `Type`, `Required` (`yes`/`no`), `Default`, `Description`, drawn as a list of terms and
+    definitions). They nest. An unknown or unclosed container, a stray `:::`, a malformed
+    attribute, a heading of another depth, a duplicate tab label and an unknown callout fail
+    `generate:check` with `file: line N: …` (`BlockError`, wrapped as `RenderError` by
+    `analyze`). A new container is added to `CONTAINERS` and `build()` in `blocks.ts`, gets a
+    row in `docs/writing-docs.md`'s table of what the build refuses, and an edit in `twinEdits`
+    if its Markdown needs one in the twin.
+  - **Code fences**: `ts title="app/layout.tsx" {1,3-5}` (`code-meta.ts`; anything else after the
+    language is refused, so a misspelt `titel=` is not dropped), `// [!code ++]`, `--` and
+    `highlight` (shiki's notation transformers: the comment is removed from the code), and the
+    `diff` language. A highlighted or changed line is told by a bar and a `+`/`-` as well as a
+    tint, never colour alone. Every block is `div.code-block` > optional title bar >
+    `div.code-frame` > `pre`, a copy button and a polite live region. A line never wraps: the
+    block scrolls, and `pre` is a tab stop. ` ```tree ` is a file tree (`file-tree.ts`: one entry
+    a line, two or four spaces a level, a trailing `/` a folder, ` # note`), a focusable named
+    region; on GitHub it is a plain code block.
+  - **The Markdown twin** drops the `:::` lines, labels each block of a code group with its tab
+    in bold, and keeps headings, tables, callouts and fences as written (`twinEdits`).
+- **Tabs work with no script, and are tabs before they are painted.** The server writes every
+  panel under its label (what a reader without script sees, in order). Straight after each group
+  an inline `<script>` enhances it: the first group of a page carries the whole runtime
+  (`src/client/tabs.ts`, written into the page with `Function.prototype.toString` by
+  `src/lib/tabs-runtime.ts`, so the function must use nothing outside its body), the others
+  call it. It must run inline, never from the deferred bundle, or the stacked panels would be
+  painted first; `main.ts` has nothing to do with tabs. The pattern is ARIA tabs with automatic
+  activation (Left and Right wrap, Home, End; one tab in the tab order; a panel with nothing to
+  focus is a stop of its own). A group with `sync` shares its choice with every group of that
+  key on the page, across pages and across browser tabs (`localStorage` key `tula-docs-tabs`, a
+  `{key: label}` object, **every read and write in `try`**: blocked or garbled storage means
+  the choice lasts for the page, never an error, and a saved label the group lacks falls back to
+  its first tab). Its own class is `docs-tabs`: `.tabs` is the header's.
+- **The copy button is drawn only where the head's script set `data-js`** (a button that does
+  nothing without script is never shown), so it is in the markup and not behind a `hidden`
+  attribute a late script would have to clear. `main.ts` copies the lines of the block less those
+  a change removes (`.line.remove`), falls back to a selection where the clipboard API is not
+  available, and announces "Copied" (or "Copy failed") in the block's `role="status"` region.
+- **Icons are CSS masks** (`--icon: url("data:image/svg+xml,…")` on the callout title, the tree's
+  entries and the copy button), so they take the colour of the text, need no markup, are not in
+  the twin and cannot be read by a screen reader as anything. The meaning is always in a word.
 - **Snippet blocks are ordinary code blocks.** `<!-- snippet: … -->` markers are comments and
   are dropped; the block between them is a fenced block the docs generator wrote.
 - **The sidebar comes from `docs/README.md`**: each `##` section is a group; in a table the
@@ -98,7 +201,9 @@ static HTML. Its commands are in its README.
   schemes, the type scale, radii, shadows, motion and the shell's widths, from
   `docs/plans/docs-overhaul.md` section (e). `tokensCss()` (`src/lib/tokens.ts`) writes them to
   `src/styles/tokens.gen.css` (generated, ignored, never edited) as custom properties, and
-  `styles.css` reads them by name: **no colour is a literal in the stylesheet**
+  `styles.css` reads them by name: **no colour is a literal in the stylesheet** (a changed line's tints are the `addBg` and
+  `removeBg` roles; a highlighted line is `accentSoft`; the code themes' colours are measured
+  on all of them)
   (`contrast.test.ts` fails for one). The site does not read `@tula-tech/contract/theme`: the
   sign-in components' default theme is a product-wide decision made in the contract, which is
   meant to adopt the same values; never edit the contract from here. `COLOR_PAIRS` lists every
@@ -220,9 +325,31 @@ static HTML. Its commands are in its README.
   `llms.txt` and `skill.md` at the root. `updated` and `lastmod` come from the repository's
   history and only in a clone that has it (`src/lib/ai/git.ts`): the Pages workflow checks out
   one commit, where every file would get that commit's date, so there they are left out.
+- **The native screens are pictures a UI test took, never drawn here** (`:::native-screens
+  {platform="ios"|"android"}`, `src/lib/native-captures.ts`, `src/client/native-screens.ts`, written in
+  `docs/writing-docs.md`, "Native screens"). The files are `apps/docs/public/native/<platform>/`:
+  one WebP per screen, step and scheme (`<screen>.<step>.<theme>.webp`, 560 px wide, each under
+  `MAX_CAPTURE_BYTES` of `native/fixture/captures.ts`, 80 KB) and a `manifest.json` (version 1: the
+  device, the tools, the commit, `dirty`, the date, and each file's size, SHA-256 and labels). They
+  are made by `bun run native/swift/fixture/ui-tests.ts --screenshots apps/docs/public/native/ios`
+  and `bun run native/android/fixture/ui-tests.ts --avd <name> --screenshots
+  apps/docs/public/native/android`, by hand: no workflow runs a simulator or an emulator. **Never
+  make, edit, crop or compose a capture by another route, and never commit one a run did not write**:
+  the manifest is read by `parseManifest`, which refuses what it cannot check (a name that is not
+  `<screen>.<step>.<theme>.webp`, markup in a label, a platform that is not the directory's), and a
+  wrong manifest stops the build rather than showing less. A platform with no manifest shows "Not
+  captured yet" and the command; it never shows a picture of the other platform in its place (the
+  Expo page says in words that its pictures are the Swift and Kotlin examples'). A change to a
+  screen under `native/` or to an example app means the captures are taken again in the same
+  change, or the gallery's line (which names the commit) is left saying what it was made from.
+  The gallery works with no script (every capture listed, in the reader's scheme) and the script
+  only adds the picker: keep both, and the Playwright cases for each (`native-screens.spec.ts`).
+  Its alternative text names the platform, screen, step and scheme; its styles use tokens only.
 - **shadcn primitives** in `src/components/ui/` are written by `bunx shadcn@latest add` and
   not edited (as in the dashboard). They import `cn` from the bare specifier, mapped by
-  `tsconfig.json` and `vite.config.ts`. The primitives used are rendered on the server only.
+  `tsconfig.json` and `vite.config.ts`. The pages use them on the server only; the playground's
+  panel is the one place they reach the browser. A name a primitive leaves out (a one-thumb
+  slider's) is set from the panel, not by editing the primitive.
 - **Tests.** `bun test` runs on Bun's default timeout, with none raised, so a test does only
   what it can finish in a fraction of it on a loaded runner (CI ran this package's tests three
   to eight times slower than a laptop): `site.test.ts` renders a sample of pages, and whatever

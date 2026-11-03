@@ -146,6 +146,25 @@ this file under "Area rules" and does not repeat it. A section named in a senten
   "the last 24 hours". `words.test.ts` has the row of a failed last call 23 hours old.
   The row says what the counts are not.
   A hook is never called a webhook in its words (`features/hooks/words.test.ts`).
+- **The organization screens** (`features/organizations`, ADR 0065, `organizations.md`) are
+  the dashboard's side of `/v1/admin/organizations`, `/v1/admin/organization-roles` and
+  `GET /v1/admin/users/:userId/organizations`; every route answers `organization.disabled`
+  while the environment has them off, and every screen says so (`OrganizationsOff`) with a
+  link to Organization settings, never "not allowed". **What is asked about first is the
+  contract's**: a role gaining a permission (`organizationRoleWeakenings`, through
+  `WeakeningQuestion`), the three organizations settings (`settingsWeakenings`, said by
+  `describeWeakening`) and, for a domain, `auto_join` (`autoJoinSentences`, the server
+  records `weakened: true`). **A role's change carries the version it was listed at**
+  (`If-Match`), a 412 is "changed since you opened it" with a load of the current role and
+  never a retry, and a role changed after the dialog opened is never saved over. **The
+  server's refusals are the dashboard's own sentences** (`organizationMessageFor`; the words
+  test walks the contract's codes). A name an operator typed (an organization's, a role's)
+  goes through `printableName`, which keeps ordinary spaces; slugs, keys, domains and
+  addresses through `printable`. The list searches the page it holds, because the API has
+  no `q` for organizations: say so, never imply a search of every organization. A user's
+  deletion refused with `user.last_organization_manager` names each organization with a link.
+  The fake (`src/testing/fake-organizations.ts`) is held to the contract and the service's
+  refusals by `fake-organizations.test.ts`.
 - **The proposals screen** (`features/proposals`, [ADR 0053](../../docs/adr/0053-proposals.md),
   "The dashboard's Proposals screen") lists what an agent asked for and approves with the
   dashboard's session. **It approves what it showed**: the request's operation and target

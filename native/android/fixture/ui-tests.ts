@@ -1,6 +1,17 @@
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
+import {
+  ANDROID_CAPTURE_DIRECTORY,
+  deviceFacts,
+  finishCaptures,
+  parseCaptureArgs,
+  prepareDevice,
+  pullCaptures,
+  rawDirectory,
+  removeRaw,
+  restoreDevice,
+} from '../../fixture/captures'
 
 // Runs the UI tests of the Compose screens (examples/compose/src/androidTest) on an Android
 // device or emulator, against the real API on this machine.
@@ -12,6 +23,11 @@ import { join } from 'node:path'
 //   bun run native/android/fixture/ui-tests.ts --avd <name>       starts that emulator without a
 //                                                                 window, and shuts it down again
 //   bun run native/android/fixture/ui-tests.ts -- <gradle arguments>
+//   bun run native/android/fixture/ui-tests.ts --avd <name> --screenshots apps/docs/public/native/android
+//                                                                 not a test run: photographs the
+//                                                                 screens in both colour schemes
+//                                                                 and writes the files and the
+//                                                                 manifest the documentation shows
 //
 // A test on a device cannot start a process of the machine, so this does: it starts
 // e2e/kotlin-fixture.ts (the real API in memory, on a loopback port the system picks), forwards
@@ -177,14 +193,26 @@ export async function fixtureOrigin(
  *
  * @param origin - The fixture's origin, handed to the tests as an instrumentation argument.
  * @param extra - Arguments of the caller's, put last.
+ * @param capture - Whether this is a capture run: only the capture tests, told where to write.
  * @returns The argument vector.
  */
-export function gradleArguments(origin: string, extra: readonly string[]): string[] {
+export function gradleArguments(
+  origin: string,
+  extra: readonly string[],
+  capture = false
+): string[] {
   return [
     './gradlew',
     '--console=plain',
     ':compose-example:connectedDebugAndroidTest',
     `-Pandroid.testInstrumentationRunnerArguments.tulaFixtureUrl=${origin}`,
+    // A capture run is the capture tests alone; they write where the device lets the shell.
+    ...(capture
+      ? [
+          '-Pandroid.testInstrumentationRunnerArguments.class=dev.tula.example.compose.CaptureTest',
+          `-Pandroid.testInstrumentationRunnerArguments.tulaCaptureDir=${ANDROID_CAPTURE_DIRECTORY}`,
+        ]
+      : []),
     ...extra,
   ]
 }
@@ -214,6 +242,12 @@ if (import.meta.main) {
     return at >= 0 ? own[at + 1] : undefined
   }
   const avd = option('--avd')
+  const captures = parseCaptureArgs(own)
+  if (captures.problem !== undefined) {
+    process.stderr.write(`${captures.problem}\n`)
+    process.exit(1)
+  }
+  const rawCaptures = captures.directory === null ? null : rawDirectory()
 
   const sdk = sdkDirectory(process.env, existsSync, homedir())
   if (sdk === null) {
@@ -231,6 +265,12 @@ if (import.meta.main) {
   /** End what this run started. Safe to call twice: on a signal and again in the `finally`. */
   const stop = (): void => {
     tests?.kill()
+    if (rawCaptures !== null) {
+      removeRaw(rawCaptures)
+    }
+    if (captures.directory !== null && serial !== undefined) {
+      restoreDevice(adb, serial)
+    }
     if (serial !== undefined && forwarded !== undefined) {
       // The forward is the device's, not this process's: taken away by name.
       Bun.spawnSync([adb, '-s', serial, 'reverse', '--remove', `tcp:${forwarded}`], {
@@ -329,7 +369,10 @@ if (import.meta.main) {
           process.stderr.write('the fixture’s port could not be forwarded into the device\n')
         } else {
           forwarded = listening.port
-          tests = Bun.spawn(gradleArguments(listening.origin, rest), {
+          if (captures.directory !== null) {
+            prepareDevice(adb, serial)
+          }
+          tests = Bun.spawn(gradleArguments(listening.origin, rest, captures.directory !== null), {
             cwd: join(root, 'native/android'),
             env: { ...process.env, ANDROID_HOME: sdk, ANDROID_SERIAL: serial },
             stdout: 'inherit',
@@ -337,6 +380,22 @@ if (import.meta.main) {
             timeout: TEST_TIMEOUT_MS,
           })
           code = await tests.exited
+          if (code === 0 && rawCaptures !== null && captures.directory !== null) {
+            if (!pullCaptures(adb, serial, rawCaptures)) {
+              process.stderr.write('the pictures could not be copied from the device\n')
+              code = 1
+            } else {
+              const outDirectory = resolve(root, captures.directory)
+              const made = finishCaptures({
+                platform: 'android',
+                rawDirectory: rawCaptures,
+                outDirectory,
+                root,
+                ...deviceFacts(adb, serial),
+              })
+              process.stdout.write(`captures: ${made.captures.length} in ${outDirectory}\n`)
+            }
+          }
         }
       }
     }

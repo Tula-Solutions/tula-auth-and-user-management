@@ -138,6 +138,19 @@ export function stepLimitMs(
   return limits.stepMs + (SIGN_IN_TEST_HOOKS_ASKED[step] ?? 0) * limits.hookMs
 }
 
+/**
+ * Starts a timer: calls `fire` after `ms` milliseconds unless the returned function is called
+ * first. The run's time limits are kept by these, and only a test passes its own, so that a
+ * limit is reached when the test says so and not when a loaded machine gets there.
+ */
+export type After = (ms: number, fire: () => void) => () => void
+
+/** The real clock's {@link After}. */
+const realAfter: After = (ms, fire) => {
+  const timer = setTimeout(fire, ms)
+  return () => clearTimeout(timer)
+}
+
 /** A step that was left at its time limit, and whether its work has ended since. */
 interface Abandoned {
   step: SignInTestStep
@@ -161,19 +174,23 @@ const atWork = new Set<Promise<unknown>>()
  * the wait ends is left to the shutdown: what it makes is the retention job's to remove.
  *
  * @param maxMs - The longest wait. Only a test passes its own.
+ * @param after - The timer that ends the wait. Only a test passes its own.
  */
-export async function settled(maxMs: number = SIGN_IN_TEST_SETTLE_MS): Promise<void> {
+export async function settled(
+  maxMs: number = SIGN_IN_TEST_SETTLE_MS,
+  after: After = realAfter
+): Promise<void> {
   if (atWork.size === 0) {
     return
   }
-  let timer: ReturnType<typeof setTimeout> | undefined
+  let cancel: () => void = () => undefined
   await Promise.race([
     Promise.allSettled([...atWork]),
     new Promise<void>((resolve) => {
-      timer = setTimeout(resolve, maxMs)
+      cancel = after(maxMs, resolve)
     }),
   ])
-  clearTimeout(timer)
+  cancel()
 }
 
 /** What a run may be given beside who asked. */
@@ -182,6 +199,8 @@ export interface RunOptions {
   signal?: AbortSignal
   /** Time limits other than the constants, for tests. */
   limits?: Partial<SignInTestLimits>
+  /** The timer the limits are kept by, for tests. */
+  after?: After
 }
 
 /** How a step that ran ended, and what the steps after it may use. */
@@ -336,6 +355,7 @@ export async function run(
   /** Steps left at their time limit: they may still finish, and one may still create the user. */
   const abandoned: Abandoned[] = []
   const startedAt = deps.clock.now().getTime()
+  const after = options.after ?? realAfter
 
   /**
    * Run one step under its time limit and record how it ended. A step that is not due (the
@@ -350,7 +370,7 @@ export async function run(
     } else if (left <= 0) {
       end = { outcome: 'not_run', reason: 'timeout' }
     } else {
-      end = await bounded(work(), Math.min(stepLimitMs(name, limits), left), (late) => {
+      end = await bounded(work(), Math.min(stepLimitMs(name, limits), left), after, (late) => {
         const entry: Abandoned = { step: name, work: late, ended: false }
         abandoned.push(entry)
         atWork.add(late)
@@ -492,7 +512,8 @@ export async function run(
       Promise.allSettled(abandoned.map((left) => left.work)).then(
         () => ({ outcome: 'passed' }) as const
       ),
-      limits.cleanupMs
+      limits.cleanupMs,
+      after
     )
     const stillAtWork = abandoned.some(
       (left) => !left.ended && SIGN_IN_TEST_STEPS_THAT_CREATE.has(left.step)
@@ -508,7 +529,8 @@ export async function run(
         cleanup = 'failed'
         end = await bounded(
           Users.remove(flow, tenant, user.id, actor).then(() => ({ outcome: 'passed' }) as const),
-          limits.cleanupMs
+          limits.cleanupMs,
+          after
         )
         cleanup = end.outcome === 'passed' ? 'deleted' : 'failed'
       } else if (stillAtWork) {
@@ -583,6 +605,7 @@ function logFailure(words: string, tenant: Tenant, userId: string | null, error:
 async function bounded(
   work: Promise<StepEnd>,
   ms: number,
+  after: After,
   onLate?: (work: Promise<unknown>) => void
 ): Promise<StepEnd> {
   const settled = work.catch((error: unknown): StepEnd => {
@@ -593,12 +616,12 @@ async function bounded(
     }
     return { outcome: 'failed', code: codeOf(error) }
   })
-  let timer: ReturnType<typeof setTimeout> | undefined
+  let cancel: () => void = () => undefined
   const late = new Promise<'late'>((resolve) => {
-    timer = setTimeout(() => resolve('late'), ms)
+    cancel = after(ms, () => resolve('late'))
   })
   const first = await Promise.race([settled, late])
-  clearTimeout(timer)
+  cancel()
   if (first === 'late') {
     onLate?.(settled)
     return { outcome: 'failed', reason: 'timeout' }

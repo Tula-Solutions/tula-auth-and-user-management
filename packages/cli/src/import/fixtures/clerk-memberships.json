@@ -1,0 +1,29 @@
+{
+  "data": [
+    {
+      "id": "orgmem_1",
+      "role": "org:admin",
+      "organization": { "id": "org_2one", "name": "Northline Labs" },
+      "public_user_data": { "user_id": "user_2aaa", "identifier": "maya@northline.app" }
+    },
+    {
+      "id": "orgmem_2",
+      "role": "org:member",
+      "organization_id": "org_2one",
+      "public_user_data": { "user_id": "user_2bbb" }
+    },
+    {
+      "id": "orgmem_3",
+      "role": "org:admin",
+      "organization": { "id": "org_2two" },
+      "public_user_data": { "user_id": "user_2bbb" }
+    },
+    {
+      "id": "orgmem_4",
+      "role": "org:member",
+      "organization": { "id": "org_2two" },
+      "public_user_data": { "user_id": "user_unknown" }
+    },
+    { "id": "orgmem_5", "role": "", "organization": { "id": "org_2two" } }
+  ]
+}

@@ -1,0 +1,8 @@
+id,email,encrypted_password,email_confirmed_at,raw_user_meta_data,raw_app_meta_data,phone,banned_until,deleted_at,is_anonymous,created_at
+7d2c9f6e-0000-4000-8000-000000000001,maya@northline.app,$2a$10$NDhuqUZcBQ/LFla5qSAXXezYn7yAR/RITInkyddwtdh1ANBpFw7hS,2024-01-02 10:00:00+00,"{""full_name"":""Maya Chen"",""avatar_url"":""https://example.com/m.png""}","{""provider"":""email"",""providers"":[""email""]}",,,,false,2024-01-02 09:59:00+00
+7d2c9f6e-0000-4000-8000-000000000002,jon@northline.app,$2a$10$ntnGMZCfePahIenQf0nNa.qYftiSFBTsq/8pUkvKDJ8P6VtT08V0G,,"{""name"":""Jon Okafor""}","{""provider"":""email""}",,,,false,2024-02-01 09:59:00+00
+7d2c9f6e-0000-4000-8000-000000000003,priya@northline.app,,2024-03-01 00:00:00+00,"{}","{""provider"":""google""}",,,,false,2024-03-01 00:00:00+00
+7d2c9f6e-0000-4000-8000-000000000004,gone@northline.app,$2b$10$l30gcf50Ot55i0XDX0sXC.FFC7BkQM14q7ts8VmHMeSn4JgfZ1jEu,2024-01-02 10:00:00+00,"{}","{}",,,2024-05-01 00:00:00+00,false,2024-01-02 09:59:00+00
+7d2c9f6e-0000-4000-8000-000000000005,banned@northline.app,$2b$10$l30gcf50Ot55i0XDX0sXC.FFC7BkQM14q7ts8VmHMeSn4JgfZ1jEu,2024-01-02 10:00:00+00,"{}","{}",,2999-01-01 00:00:00+00,,false,2024-01-02 09:59:00+00
+7d2c9f6e-0000-4000-8000-000000000006,,,,"{}","{}",,,,true,2024-06-01 00:00:00+00
+7d2c9f6e-0000-4000-8000-000000000007,odd@northline.app,5f4dcc3b5aa765d61d8327deb882cf99,2024-01-02 10:00:00+00,"{}","{}",,,,false,2024-01-02 09:59:00+00

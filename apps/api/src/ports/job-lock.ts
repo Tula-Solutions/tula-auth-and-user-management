@@ -1,5 +1,5 @@
 /** Background jobs that only one API instance may run at a time. */
-export type ExclusiveJob = 'retention' | 'webhook_delivery'
+export type ExclusiveJob = 'retention' | 'webhook_delivery' | 'domain_reminders'
 
 /** What {@link JobLock.runExclusive} reports: the job's result, or that it did not run here. */
 export type JobOutcome<T> = { ran: true; value: T } | { ran: false }

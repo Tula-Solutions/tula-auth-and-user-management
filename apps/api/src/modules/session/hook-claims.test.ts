@@ -3,6 +3,7 @@ import {
   type AccessTokenClaims,
   DEFAULT_ENVIRONMENT_SETTINGS,
   EnvironmentSettingsSchema,
+  HOOK_MAX_DEADLINE_MS,
   HOOK_QUESTION_SCHEMAS,
   MAX_CUSTOM_CLAIMS_BYTES,
 } from '@tula-tech/contract'
@@ -45,6 +46,23 @@ const claims = (value: Record<string, unknown>) => () => Response.json({ claims:
 const raw = (text: string) => () =>
   new Response(text, { headers: { 'content-type': 'application/json' } })
 const hang = () => new Promise<Response>(() => undefined)
+// A deadline is real time (an abort signal of the outbound guard), so a hook here has the
+// longest one there is: a request to a listener in this process took more than 100 ms on a
+// machine under load (TULA-133). A hook that must run out of time is given the shortest
+// (`SHORT_DEADLINE_MS`) just before its endpoint hangs, with `runOut`: it fails the same way
+// at any speed, because its answer never comes.
+
+/** The shortest deadline a hook may have, for the one call that must run out of time. */
+const SHORT_DEADLINE_MS = 100
+
+/** Give the hook of a point the shortest deadline, before its endpoint is made to hang. */
+async function runOut(point: string): Promise<void> {
+  const found = (await Hooks.list(deps, tenant)).find((hook) => hook.point === point)
+  if (!found) {
+    throw new Error(`no hook is registered for ${point}`)
+  }
+  await Hooks.update(deps, tenant, found.id, { deadlineMs: SHORT_DEADLINE_MS }, TEST_ACTOR)
+}
 
 let deps: TestDeps
 let revision = 0
@@ -111,7 +129,7 @@ function register(input: Partial<Parameters<typeof Hooks.create>[2]> = {}, scope
       point: 'before_token',
       url: `http://127.0.0.1:${listener.port}/tula/before-token`,
       enabled: true,
-      deadlineMs: 100,
+      deadlineMs: HOOK_MAX_DEADLINE_MS,
       failureMode: 'deny',
       ...input,
     },
@@ -336,10 +354,12 @@ describe('a claims hook is not an authority', () => {
 describe('a claims hook that fails', () => {
   test('one that hangs fails the sign-in within its deadline and is noted on the hook', async () => {
     const hook = await register()
+    await runOut('before_token')
     respond = hang
     const started = performance.now()
     const refused = await failure(create())
-    expect(performance.now() - started).toBeLessThan(1500)
+    // Wide margin on purpose: ends at the 100 ms deadline, not at the 5 s cap.
+    expect(performance.now() - started).toBeLessThan(HOOK_MAX_DEADLINE_MS - 1000)
     expect(refused.code).toBe('hook.unavailable')
     expect(created()).toEqual([])
     expect(
@@ -415,6 +435,7 @@ describe('a refresh', () => {
   test('a hook that is down, off or removed does not fail it, and the session keeps its claims', async () => {
     const hook = await register()
     const first = await create()
+    await runOut('before_token')
     respond = hang
     const second = await Sessions.refresh(deps, tenant, first.refreshToken ?? '')
     expect(decoded(second).ext).toEqual({ plan: 'pro', seats: 5 })
@@ -506,6 +527,7 @@ describe('a stateful session', () => {
 
   test('a failing hook refuses it like any other session', async () => {
     await register()
+    await runOut('before_token')
     respond = hang
     expect((await failure(create())).code).toBe('hook.unavailable')
     expect(created()).toEqual([])
@@ -551,6 +573,7 @@ describe('when a session’s user proves a factor again', () => {
     const tokens = await create()
     const before = await row(tokens.sessionId)
     deps.clock.advance('3m')
+    await runOut('before_token')
     respond = hang
     const refused = await failure(stepUp(tokens.sessionId))
     expect(refused.code).toBe('hook.unavailable')

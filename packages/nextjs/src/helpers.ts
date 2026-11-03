@@ -1,4 +1,9 @@
-import type { CustomClaims } from '@tula-tech/contract/custom-claims'
+import {
+  type CustomClaims,
+  hasOrganizationAccess,
+  type OrganizationCheck,
+  readOrganizationClaims,
+} from '@tula-tech/contract/custom-claims'
 import { CLIENT_HEADER } from '@tula-tech/contract/headers'
 import type { User } from '@tula-tech/core'
 import { configFor, type TulaServerOptions } from './config'
@@ -45,6 +50,42 @@ export type Auth =
        */
       customClaims: CustomClaims
       /**
+       * The active organization's id (ADR 0065), or `null` while the session acts in none
+       * (the personal account, or the environment has organizations off). Read from the
+       * verified claims, for a token session and a `stateful` one alike; a token whose
+       * organization claims are incomplete or malformed reads as no organization, never as
+       * a partial one.
+       */
+      orgId: string | null
+      /** The key of the member's role in the active organization, or `null`. */
+      orgRole: string | null
+      /**
+       * The permission keys of that role (`org:billing:read`), frozen; empty with no active
+       * organization. As of the session's last refresh: a role changed since is seen at the
+       * next one, within an access token's life.
+       */
+      orgPermissions: readonly string[]
+      /**
+       * Whether the active organization grants a permission or a role, checked offline on the
+       * verified claims. **False** with no active organization. A permission is matched
+       * exactly: there is no wildcard and `manage` does not imply `read`.
+       *
+       * Use it to decide what a page shows and what a route lets through; the server that
+       * changes data still authorizes the change itself.
+       *
+       * @param check - `{ permission: 'org:billing:read' }` or `{ role: 'admin' }`.
+       * @returns Whether it is granted.
+       *
+       * @example
+       * ```ts
+       * const { has } = await auth()
+       * if (!has({ permission: 'org:billing:read' })) {
+       *   notFound()
+       * }
+       * ```
+       */
+      has(check: OrganizationCheck): boolean
+      /**
        * The access token, for calling your own backend. `null` for a `stateful` session,
        * which has none.
        */
@@ -56,6 +97,11 @@ export type Auth =
       sessionId: null
       claims: null
       customClaims: null
+      orgId: null
+      orgRole: null
+      orgPermissions: readonly string[]
+      /** Nobody is signed in, so nothing is granted. */
+      has(check: OrganizationCheck): false
       getToken(): Promise<null>
     }
 
@@ -85,12 +131,19 @@ export function requestFromHeaders(headers: Headers): Request {
   return new Request('http://localhost/', { headers })
 }
 
+/** No permission: what a session with no active organization holds. */
+const NO_PERMISSIONS: readonly string[] = Object.freeze([])
+
 const SIGNED_OUT: Auth = Object.freeze({
   isSignedIn: false,
   userId: null,
   sessionId: null,
   claims: null,
   customClaims: null,
+  orgId: null,
+  orgRole: null,
+  orgPermissions: NO_PERMISSIONS,
+  has: () => false,
   getToken: () => Promise.resolve(null),
 })
 
@@ -118,12 +171,19 @@ export async function authenticate(request: Request, options: TulaServerOptions)
     return SIGNED_OUT
   }
   const { claims, token } = session
+  // The claims came through `sessionClaims`, which keeps the organization's three only when
+  // all are well formed; reading them again here is what hands out a frozen copy.
+  const organization = readOrganizationClaims(claims)
   return {
     isSignedIn: true,
     userId: claims.sub,
     sessionId: claims.sid,
     claims,
     customClaims: claims.ext ?? NO_CUSTOM_CLAIMS,
+    orgId: organization?.orgId ?? null,
+    orgRole: organization?.orgRole ?? null,
+    orgPermissions: organization?.orgPermissions ?? NO_PERMISSIONS,
+    has: (check) => hasOrganizationAccess(organization, check),
     getToken: () => Promise.resolve(token),
   }
 }

@@ -11,6 +11,7 @@ import * as SignInTests from '~/modules/sign-in-test/service'
 import * as Sms from '~/modules/sms/service'
 import { closeApi } from '~/server-close'
 import { createTestDeps, TEST_ACTOR, TEST_TENANT } from '~/testing'
+import { manualTimers } from '~/testing/manual-timers'
 
 // What an API process ends, and in which order, on SIGTERM. Nothing runs `server.ts` in a
 // test (it needs a database before it listens), so the order lives in `closeApi` and
@@ -218,6 +219,12 @@ describe('closeApi', () => {
     const tenant = { ...SCOPE, apiKeyId: 'key_1' }
     const actor = { ...TEST_ACTOR, type: 'agent' as const }
 
+    // The limits are kept by the test's own timers (`manualTimers`), so that a step is left at
+    // its limit when the test says so and not when a loaded machine's password hash is slower
+    // than a real 300 ms (TULA-133). Each limit has a delay of its own to be named by.
+    const STEP_MS = 300
+    const CLEANUP_MS = 50
+
     /** A run whose verification is held until `land()`, with what happened in `order`. */
     async function runWithHeldVerification() {
       const deps = createTestDeps()
@@ -232,8 +239,13 @@ describe('closeApi', () => {
       const held = new Promise<void>((resolve) => {
         land = resolve
       })
+      let entered: () => void = () => undefined
+      const enteredVerification = new Promise<void>((resolve) => {
+        entered = resolve
+      })
       const real = Flows.verifyEmail
       const verify = spyOn(Flows, 'verifyEmail').mockImplementation(async (...args) => {
+        entered()
         await held
         try {
           return await real(...args)
@@ -244,9 +256,18 @@ describe('closeApi', () => {
       const quiet = (['error', 'warn', 'info'] as const).map((level) =>
         spyOn(logger, level).mockImplementation(() => undefined)
       )
-      const report = await SignInTests.run(deps, tenant, actor, {
-        limits: { stepMs: 300, hookMs: 0, cleanupMs: 50 },
+      const timers = manualTimers()
+      const running = SignInTests.run(deps, tenant, actor, {
+        limits: { stepMs: STEP_MS, hookMs: 0, cleanupMs: CLEANUP_MS },
+        after: timers.after,
       })
+      // The verification is at work, and it is the only step with a pending limit: leave it.
+      await enteredVerification
+      timers.fire(STEP_MS)
+      // The clean-up waits for the step it left, for its own limit: that runs out too.
+      await timers.registered(CLEANUP_MS)
+      timers.fire(CLEANUP_MS)
+      const report = await running
       const restore = async () => {
         land()
         await SignInTests.settled()
@@ -283,7 +304,10 @@ describe('closeApi', () => {
       try {
         expect(run.report).toMatchObject({ outcome: 'failed', cleanup: 'failed' })
         const closed = closing(run.order)
-        await new Promise((resolve) => setTimeout(resolve, 20))
+        // A turn of the event loop: enough for the listener's stop to be recorded, and for
+        // anything that would end the wait early (nothing does, short of the bound's own
+        // seconds) to show itself.
+        await new Promise((resolve) => setTimeout(resolve, 0))
         expect(run.order).toEqual(['server stopped'])
         run.land()
         await closed
@@ -301,11 +325,19 @@ describe('closeApi', () => {
     test('one that never ends holds a shutdown for its bound and no longer', async () => {
       const run = await runWithHeldVerification()
       try {
-        const began = performance.now()
-        await SignInTests.settled(60)
-        const waited = performance.now() - began
-        expect(waited).toBeGreaterThanOrEqual(50)
-        expect(waited).toBeLessThan(1_000)
+        // The bound is a timer of the test's: the wait is over when it goes off and not before,
+        // however long the step stays at work.
+        const bound = manualTimers()
+        let over = false
+        const waiting = SignInTests.settled(60, bound.after).then(() => {
+          over = true
+        })
+        await bound.registered(60)
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        expect(over).toBe(false)
+        expect(bound.fire(60)).toBe(1)
+        await waiting
+        expect(over).toBe(true)
         expect(run.order).toEqual([])
       } finally {
         await run.restore()

@@ -7,6 +7,7 @@ import { MemoryActivityLog } from '~/adapters/memory/activity-log'
 import { type Activity, activityOf, type Recorded, recordedOf } from '~/ports/activity-log'
 import type {
   AddEmailRefusal,
+  DeleteUserOutcome,
   DependentAccounts,
   IdentityRecord,
   LinkGuard,
@@ -37,7 +38,13 @@ function withOutcome(activity: Activity, outcome: PasswordOutcome): Activity {
 /** Users held in memory, for tests. */
 export class MemoryUserRepository implements UserRepository {
   readonly #users: Map<string, UserRecord>
+  readonly #deletionListeners: Array<(environmentId: string, userId: string) => void>
+  readonly #deletionGuards: Array<
+    (environmentId: string, userIds: readonly string[]) => Map<string, string[]>
+  >
   readonly #passwords: Map<string, string>
+  /** The `externalId` an import stored, kept for the import's duplicate check only. */
+  readonly #externalIds = new Map<string, string>()
   /** When each user's current password was set. A key exactly where `#passwords` has one. */
   readonly #passwordsChangedAt = new Map<string, Date>()
   /** Each user's previous password hashes, the most recent first. */
@@ -53,6 +60,8 @@ export class MemoryUserRepository implements UserRepository {
     // Assigned here rather than as field initializers: Bun's per-file coverage counts
     // initializers as an uncalled function.
     this.#users = new Map()
+    this.#deletionListeners = []
+    this.#deletionGuards = []
     this.#passwords = new Map()
     this.#history = new Map()
     this.#identities = new Map()
@@ -110,9 +119,30 @@ export class MemoryUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
+  async findByIds(environmentId: string, ids: readonly string[]): Promise<UserRecord[]> {
+    const found: UserRecord[] = []
+    for (const id of new Set(ids)) {
+      const user = this.#users.get(id)
+      if (user?.environmentId === environmentId) {
+        found.push({ ...user })
+      }
+    }
+    return found
+  }
+
+  /** @inheritdoc */
   async findByEmail(environmentId: string, emailNormalized: string): Promise<UserRecord | null> {
     const user = this.#byEmail(environmentId, emailNormalized)
     return user ? { ...user } : null
+  }
+
+  /** @inheritdoc */
+  async findImportMatch(
+    environmentId: string,
+    emailNormalized: string
+  ): Promise<{ id: string; externalId: string | null } | null> {
+    const user = this.#byEmail(environmentId, emailNormalized)
+    return user ? { id: user.id, externalId: this.#externalIds.get(user.id) ?? null } : null
   }
 
   /** @inheritdoc */
@@ -150,8 +180,13 @@ export class MemoryUserRepository implements UserRepository {
       credentialId: _credentialId,
       oauthIdentity: _oauthIdentity,
       passwordHash,
+      externalId,
+      metadata: _metadata,
       ...record
     } = user
+    if (externalId !== undefined) {
+      this.#externalIds.set(user.id, externalId)
+    }
     this.#users.set(user.id, {
       ...record,
       bannedAt: null,
@@ -633,10 +668,18 @@ export class MemoryUserRepository implements UserRepository {
   }
 
   /** @inheritdoc */
-  async delete(environmentId: string, userId: string, recorded: Recorded): Promise<boolean> {
+  async delete(
+    environmentId: string,
+    userId: string,
+    recorded: Recorded
+  ): Promise<DeleteUserOutcome> {
     const activity = activityOf(recorded)
     if (!this.#user(environmentId, userId)) {
-      return false
+      return { outcome: 'not_found' }
+    }
+    const blocked = this.#blockedBy(environmentId, [userId]).get(userId)
+    if (blocked) {
+      return { outcome: 'last_manager', organizationIds: blocked }
     }
     this.#passwords.delete(userId)
     this.#passwordsChangedAt.delete(userId)
@@ -645,8 +688,51 @@ export class MemoryUserRepository implements UserRepository {
       this.#identities.delete(identity.id)
     }
     this.#users.delete(userId)
+    this.#externalIds.delete(userId)
+    for (const listener of this.#deletionListeners) {
+      listener(environmentId, userId)
+    }
     this.#activityLog.record(activity ? [activity] : [])
-    return true
+    return { outcome: 'deleted' }
+  }
+
+  /** What the guards say stops these users from being deleted: user id to organization ids. */
+  #blockedBy(environmentId: string, userIds: readonly string[]): Map<string, string[]> {
+    const blocked = new Map<string, string[]>()
+    for (const guard of this.#deletionGuards) {
+      for (const [userId, organizationIds] of guard(environmentId, userIds)) {
+        blocked.set(userId, [...(blocked.get(userId) ?? []), ...organizationIds].sort())
+      }
+    }
+    return blocked
+  }
+
+  /**
+   * Tell a store about every deletion of a user, so that it drops what the database would
+   * cascade (the organization store's memberships).
+   *
+   * @param listener - Called with the environment and the id of each user deleted.
+   */
+  onDelete(listener: (environmentId: string, userId: string) => void): void {
+    this.#deletionListeners.push(listener)
+  }
+
+  /**
+   * Let a store stop a deletion, as a database constraint or a lock-and-check would (the
+   * organization store's last-manager rule, TULA-124).
+   *
+   * @param guard - Given the environment and the users about to be deleted, returns for each
+   *   one it refuses the ids of the organizations that block it.
+   */
+  onBeforeDelete(
+    guard: (environmentId: string, userIds: readonly string[]) => Map<string, string[]>
+  ): void {
+    this.#deletionGuards.push(guard)
+  }
+
+  /** @inheritdoc */
+  async soleManagerOf(environmentId: string, userId: string): Promise<string[]> {
+    return this.#blockedBy(environmentId, [userId]).get(userId) ?? []
   }
 
   /** @inheritdoc */
@@ -672,11 +758,17 @@ export class MemoryUserRepository implements UserRepository {
           user.createdAt.getTime() < before.getTime()
       )
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || (a.id < b.id ? -1 : 1))
-      .slice(0, Math.max(0, limit))
-    for (const user of old) {
+    // A test user who is the only manager of an organization is left for a later round, and
+    // the pick goes on past them (TULA-124).
+    const blocked = this.#blockedBy(
+      environmentId,
+      old.map((user) => user.id)
+    )
+    const deletable = old.filter((user) => !blocked.has(user.id)).slice(0, Math.max(0, limit))
+    for (const user of deletable) {
       await this.delete(environmentId, user.id, record(user.id))
     }
-    return old.length
+    return deletable.length
   }
 
   #byEmail(environmentId: string, emailNormalized: string): UserRecord | undefined {

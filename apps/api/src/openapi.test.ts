@@ -182,7 +182,12 @@ describe('the event payloads in the OpenAPI document', () => {
       .components.schemas as Record<string, unknown>
     const shared = Object.keys(fromEvents).filter((name) => name in fromRoutes)
     // Today: the enums an event's data reuses. The check is not vacuous.
-    expect(shared.sort()).toEqual(['OAuthProvider', 'ProposalApprover', 'SessionClient'])
+    expect(shared.sort()).toEqual([
+      'OAuthProvider',
+      'OrganizationRoleKey',
+      'ProposalApprover',
+      'SessionClient',
+    ])
     expect(conflicts(fromEvents, fromRoutes)).toEqual([])
     // And the routes alone bring no event component: these names are the events' own.
     expect(Object.keys(fromRoutes).filter((name) => /Event(Data|Actor)?$/.test(name))).toEqual([])

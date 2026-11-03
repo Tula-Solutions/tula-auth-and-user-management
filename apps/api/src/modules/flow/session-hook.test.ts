@@ -5,6 +5,7 @@ import {
   type EnvironmentSettings,
   FLOW_ATTEMPT_HEADER,
   type FlowAttempt,
+  HOOK_MAX_DEADLINE_MS,
   HOOK_QUESTION_SCHEMAS,
   type OAuthStart,
 } from '@tula-tech/contract'
@@ -61,6 +62,23 @@ let asked: Asked[] = []
 const allow = () => Response.json({ decision: 'allow' })
 const deny = () => Response.json({ decision: 'deny', code: 'not_on_the_list' })
 const hang = () => new Promise<Response>(() => undefined)
+// A deadline is real time (an abort signal of the outbound guard), so a hook here has the
+// longest one there is: a request to a listener in this process took more than 100 ms on a
+// machine under load (TULA-133). A hook that must run out of time is given the shortest
+// (`SHORT_DEADLINE_MS`) just before its endpoint hangs, with `runOut`: it fails the same way
+// at any speed, because its answer never comes.
+
+/** The shortest deadline a hook may have, for the one call that must run out of time. */
+const SHORT_DEADLINE_MS = 100
+
+/** Give the hook of a point the shortest deadline, before its endpoint is made to hang. */
+async function runOut(point: string): Promise<void> {
+  const found = (await Hooks.list(deps, tenant)).find((hook) => hook.point === point)
+  if (!found) {
+    throw new Error(`no hook is registered for ${point}`)
+  }
+  await Hooks.update(deps, tenant, found.id, { deadlineMs: SHORT_DEADLINE_MS }, TEST_ACTOR)
+}
 let respond: Record<Point, () => Response | Promise<Response>>
 const listener = Bun.serve({
   port: 0,
@@ -137,7 +155,7 @@ function hook(
       point,
       url: `http://127.0.0.1:${listener.port}/${point}`,
       enabled: true,
-      deadlineMs: 100,
+      deadlineMs: HOOK_MAX_DEADLINE_MS,
       failureMode: 'deny',
       ...input,
     },
@@ -349,10 +367,12 @@ describe('a sign-in whose every factor is proven', () => {
   test('a hook that hangs fails the sign-in within its deadline, and the failure shows on the hook', async () => {
     const userId = await seedUser()
     const registered = await hook()
+    await runOut('before_session')
     respond.before_session = hang
     const started = performance.now()
     const refused = await rejection(signIn())
-    expect(performance.now() - started).toBeLessThan(1500)
+    // Wide margin on purpose: ends at the 100 ms deadline, not at the 5 s cap.
+    expect(performance.now() - started).toBeLessThan(HOOK_MAX_DEADLINE_MS - 1000)
     expect(refused.code).toBe('hook.unavailable')
     expect(refused.status).toBe(503)
     await expectNoSession(userId)
@@ -407,6 +427,7 @@ describe('a sign-in whose every factor is proven', () => {
     await hook()
     respond.before_session = deny
     await rejection(signIn())
+    await runOut('before_session')
     respond.before_session = hang
     await rejection(signIn())
     expect(logged()).not.toContain('203.0.113.7')
@@ -600,6 +621,7 @@ describe('the two hooks of one sign-in', () => {
     const userId = await seedUser()
     await hook('before_session')
     await hook('before_token')
+    await runOut('before_token')
     respond.before_token = hang
     const attempt = await startSignIn()
     const refused = await rejection(password(attempt))
@@ -722,6 +744,7 @@ describe('over HTTP', () => {
   test('a hook that fails is a 503 and sets no cookie', async () => {
     const userId = await seedUser()
     await hook()
+    await runOut('before_session')
     respond.before_session = hang
     const started = (await (await post('/sign-ins', { identifier: EMAIL })).json()) as FlowAttempt
     const res = await post(`/sign-ins/${started.id}/password`, { password: PASSWORD })
@@ -823,6 +846,7 @@ describe('an enrolment inside a sign-in that a hook then refuses', () => {
   test('a session hook that hangs does the same', async () => {
     const { userId, earlier, confirm } = await enrolling()
     await hook()
+    await runOut('before_session')
     respond.before_session = hang
     expect((await rejection(confirm())).code).toBe('hook.unavailable')
     await expectRefused(userId, earlier)
@@ -831,6 +855,7 @@ describe('an enrolment inside a sign-in that a hook then refuses', () => {
   test('so does a claims hook that hangs as the session is made', async () => {
     const { userId, earlier, confirm } = await enrolling()
     await hook('before_token')
+    await runOut('before_token')
     respond.before_token = hang
     expect((await rejection(confirm())).code).toBe('hook.unavailable')
     await expectRefused(userId, earlier)

@@ -1,6 +1,6 @@
 import { createContainer } from '~/container'
 import { loadEnv } from '~/env'
-import { createApp, MAX_BODY_BYTES } from '~/index'
+import { createApp, MAX_IMPORT_BODY_BYTES } from '~/index'
 import { bootJobs } from '~/jobs'
 import * as logger from '~/lib/logger'
 import { errorReason } from '~/lib/safe-error'
@@ -26,8 +26,9 @@ if (bootstrap.failed > 0) {
 
 const server = Bun.serve({
   port: env.PORT,
-  // Refuse oversized bodies at the socket too; `createApp` enforces the same cap per request.
-  maxRequestBodySize: MAX_BODY_BYTES,
+  // Refuse oversized bodies at the socket too; `createApp` enforces the (smaller) cap of each
+  // route, and only the bulk import is allowed up to this one.
+  maxRequestBodySize: MAX_IMPORT_BODY_BYTES,
   fetch: createApp(container.deps).fetch,
 })
 

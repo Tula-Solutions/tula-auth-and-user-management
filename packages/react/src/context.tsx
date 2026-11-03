@@ -166,6 +166,9 @@ export function TulaProvider(props: TulaProviderProps) {
     afterSignUpUrl,
     afterSignOutUrl,
     userProfileUrl,
+    invitationUrl,
+    organizationProfileUrl,
+    createOrganizationUrl,
   } = props
 
   // One client per key and URL, kept in a ref: `useMemo` may be recomputed at any time, and a
@@ -303,6 +306,9 @@ export function TulaProvider(props: TulaProviderProps) {
         afterSignUpUrl,
         afterSignOutUrl,
         userProfileUrl,
+        invitationUrl,
+        organizationProfileUrl,
+        createOrganizationUrl,
       },
     }),
     [
@@ -320,6 +326,9 @@ export function TulaProvider(props: TulaProviderProps) {
       afterSignUpUrl,
       afterSignOutUrl,
       userProfileUrl,
+      invitationUrl,
+      organizationProfileUrl,
+      createOrganizationUrl,
     ]
   )
 

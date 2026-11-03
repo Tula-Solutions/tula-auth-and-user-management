@@ -96,6 +96,16 @@ method (an emailed code, a passkey or a provider) is on.
 
 ## What the user sees
 
+### Try it in the sandbox
+
+:::playground{preset="password"}
+
+A sandbox of the sign-in and sign-up components with the password method on: wrong passwords, the
+emailed code of a reset and the account screen, all answered by a stand-in for the API that runs in
+your browser. It needs a browser with script; the screens are described below.
+
+:::
+
 - **Sign-up**: name (optional), address, password with a live checklist of the policy's rules,
   then "Check your email" for the 6-digit code. The account exists but is not signed in until
   the address is verified.

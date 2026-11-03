@@ -9,12 +9,18 @@ import { type EmailBrand, type EmailMessage, render } from '~/modules/email/temp
 const at = new Date('2026-10-03T14:05:59.000Z')
 const link = 'https://app.acme.test/auth/link#tula_link=tok&tula_attempt=att'
 
-const CODES = (['email_verification', 'password_reset', 'sign_in', 'step_up'] as const).flatMap(
-  (type): [string, EmailMessage][] => [
-    [type, { type, code: '482913', ttlMinutes: 10 }],
-    [`${type} with a link`, { type, code: '482913', ttlMinutes: 15, linkUrl: link }],
-  ]
-)
+const CODES = (
+  [
+    'email_verification',
+    'password_reset',
+    'sign_in',
+    'step_up',
+    'organization_domain_verification',
+  ] as const
+).flatMap((type): [string, EmailMessage][] => [
+  [type, { type, code: '482913', ttlMinutes: 10 }],
+  [`${type} with a link`, { type, code: '482913', ttlMinutes: 15, linkUrl: link }],
+])
 
 const DECOYS = (
   ['account_exists', 'no_account', 'no_account_sign_in', 'email_in_use'] as const
@@ -63,6 +69,37 @@ const MESSAGES: [string, EmailMessage][] = [
   ],
   ['new_sign_in with no address', { type: 'new_sign_in', device: 'Safari', at, ipAddress: null }],
   ['email_added', { type: 'email_added', at }],
+  [
+    'organization_domain_expiring',
+    {
+      type: 'organization_domain_expiring',
+      organizationName: 'Acme <Robotics> & Sons',
+      domains: 1,
+      daysLeft: 30,
+    },
+  ],
+  [
+    'organization_domain_expiring for several domains and one day',
+    { type: 'organization_domain_expiring', organizationName: 'Acme', domains: 3, daysLeft: 1 },
+  ],
+  [
+    'organization_invitation',
+    {
+      type: 'organization_invitation',
+      organizationName: 'Acme <Robotics> & Sons',
+      linkUrl: 'https://app.acme.test/join#tula_invitation=tok',
+      ttlDays: 7,
+    },
+  ],
+  [
+    'organization_invitation for one day',
+    {
+      type: 'organization_invitation',
+      organizationName: 'Acme',
+      linkUrl: 'https://app.acme.test/join#tula_invitation=tok',
+      ttlDays: 1,
+    },
+  ],
 ]
 
 const BRANDS: [string, EmailBrand][] = [

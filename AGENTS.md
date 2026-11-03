@@ -150,6 +150,7 @@ above or below and the file it is in has none of that name, the section is in th
 | Password history (`modules/password`, see ADR 0038) | `.claude/rules/passwords.md` |
 | Password expiry (`modules/flow`, `modules/password`, see ADR 0041) | `.claude/rules/passwords.md` |
 | Native apps (`modules/native-app`, see ADR 0040) | `.claude/rules/native-apps.md` |
+| Organizations (`modules/organization`, `modules/organization-domain`, see ADR 0065) | `.claude/rules/organizations.md` |
 | Device binding (`modules/session/device-binding.ts`, `lib/dpop.ts`, see ADR 0043) | `.claude/rules/device-binding.md` |
 | Generated native types (`packages/core/scripts/native`, see ADR 0050) | `.claude/rules/native-types.md` |
 | Swift SDK (`native/swift`, see ADR 0051) | `.claude/rules/swift.md` |
@@ -223,11 +224,13 @@ takes it (the day's count of text messages is a store method of its own for that
 `bootJobs(container)`, which starts the jobs their `ProcessPlan` names; neither names a job
 or sets a timer of its own (`jobs.test.ts` reads both files).
 `deps.jobLock.runExclusive(job, fn)` lets one process through and the others skip
-the round (a Postgres advisory lock; [ADR 0017](docs/adr/0017-retention.md)). There are two,
+the round (a Postgres advisory lock; [ADR 0017](docs/adr/0017-retention.md)). There are three,
 each with its own job name and lock id (`JOB_LOCK_IDS`: never renumber, only add):
 the webhook worker (`Webhooks.run` in `modules/webhook`,
-[ADR 0034](docs/adr/0034-webhooks.md)) and `modules/retention`, which has no router.
-Retention runs in every API instance and never in a worker; the delivery job runs in every
+[ADR 0034](docs/adr/0034-webhooks.md)), `modules/retention`, which has no router, and the
+daily domain reminders (`modules/organization-domain/reminders.ts`,
+`.claude/rules/organizations.md`). Retention and the reminders run in every API instance and
+never in a worker; the delivery job runs in every
 API instance, or with `WEBHOOK_WORKER=separate` only in the worker processes
 (`.claude/rules/webhooks.md`). A new job is added to `ProcessPlan.jobs` for the role that runs it. The
 retention job's deletes go through store methods that take
@@ -470,8 +473,9 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   router built with `adminActor(c)` / `userActor(c)` (`~/lib/actor`). Never write an audit entry
   as a separate step, and never put a secret or an email address in one. A settings change
   records the **keys** that changed (`data.changed`), never their values. The only unrecorded
-  writes are a password-hash upgrade after sign-in and an environment's first signing keys
-  (ADR 0012).
+  writes are a password-hash upgrade after sign-in, an environment's first signing keys and a
+  session's choice among memberships it already holds (ADR 0012, "What is deliberately not
+  recorded").
 - Operator-supplied text that reaches an email (the app name) is untrusted input: it goes
   through `displayName` and `escapeHtml` in `~/modules/email/templates`, never straight into a
   subject or HTML. A user agent never reaches an email at all: only the family
@@ -488,7 +492,7 @@ run `bun run contract:generate` and commit `packages/contract/openapi.json` — 
   digits. Tests wait for them with `Notices.settled()` and read a code from the newest email
   whose subject leads with one, not from the newest email.
 - Treat every change under
-  `modules/{flow,session,password,jwks,verification,mfa,factor,oauth,passkey,instance,control-plane,webhook,hook,phone,sms,native-app,proposal,sign-in-test}`,
+  `modules/{flow,session,password,jwks,verification,mfa,factor,oauth,passkey,instance,control-plane,webhook,hook,phone,sms,native-app,organization,organization-role,organization-domain,proposal,sign-in-test}`,
   `modules/email/templates.ts`, `modules/message-preview`, `packages/contract/src/{email-template,sms-template}.ts`,
   `adapters/oauth/`, `adapters/sms/`, `middleware/{cors,recent-auth,instance-admin,secret-key,agent-key,dashboard-session}.ts`,
   `lib/crypto.ts`, `lib/totp.ts`, `lib/webauthn.ts`, `lib/dpop.ts`, `lib/outbound.ts`, `lib/signing-secret.ts`, `lib/dashboard-session.ts` or `lib/dashboard-files.ts` as
@@ -626,6 +630,8 @@ apps/api/src/
                       # counts by destination prefix; the dev-only inbox route),
                       # native-app (an environment's iOS and Android apps, and the two
                       # association files built from them),
+                      # organization (organizations, roles and memberships: the admin routes),
+                      # organization-role (an environment's custom roles: the admin routes),
                       # message-preview (what the server would send for a draft wording),
                       # proposal (what an agent asked for, a human's approval of it and
                       # the carrying out; the agent's route and the admin routes),

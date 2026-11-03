@@ -194,6 +194,11 @@ export interface WorldOptions {
    * out, the config says nothing (an older server).
    */
   phone?: boolean
+  /**
+   * The `organizations` of the public configuration (what the organization components are drawn
+   * from). Left out, the config says nothing: an older server, which has no organizations.
+   */
+  organizations?: { enabled: boolean; allowUserCreated: boolean; personalAccount: boolean }
   /** Storage shared by the browser's tabs; without it an emailed link cannot be used. */
   linkStorage?: FakeLinkStorage
   /** The tab's `sessionStorage`: where an OAuth round trip's binding is kept. */
@@ -238,6 +243,7 @@ export function world(options: WorldOptions = {}): World {
       password: options.policy ?? PASSWORD_POLICY_PRESETS.recommended,
       ...(options.mfaPolicy && { mfa: { policy: options.mfaPolicy } }),
       ...(options.phone !== undefined && { phone: { enabled: options.phone } }),
+      ...(options.organizations && { organizations: options.organizations }),
     })
   )
   api.on(ROUTE.signOut, () => new Response(null, { status: 204 }))

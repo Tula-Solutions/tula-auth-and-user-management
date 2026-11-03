@@ -201,6 +201,22 @@ export const DASHBOARD_SESSION_COOKIE = 'tula_dashboard'
 export const EMAIL_LINK_TOKEN_PARAM = 'tula_link'
 
 /**
+ * Name of the URL-fragment parameter carrying an organization invitation's token (ADR 0065,
+ * Orgs 04).
+ *
+ * The link in the invitation email is the app's own redirect URL followed by
+ * `#tula_invitation=<token>`. A fragment is never sent to a server, a proxy or in `Referer`,
+ * so the token reaches only the page's own script, which posts it to the invitation routes
+ * (`preview`, `accept`, `decline`) and removes it from the URL.
+ *
+ * @example
+ * ```ts
+ * const token = new URLSearchParams(location.hash.slice(1)).get(ORGANIZATION_INVITATION_TOKEN_PARAM)
+ * ```
+ */
+export const ORGANIZATION_INVITATION_TOKEN_PARAM = 'tula_invitation'
+
+/**
  * Name of the URL-fragment parameter carrying the id of the sign-in an emailed link belongs to.
  *
  * @example

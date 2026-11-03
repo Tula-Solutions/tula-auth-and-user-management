@@ -1,8 +1,10 @@
 package dev.tula.auth
 
+import dev.tula.auth.generated.ActiveOrganization
 import dev.tula.auth.generated.CurrentUser
 import dev.tula.auth.generated.RefreshTokenRequest
 import dev.tula.auth.generated.SessionTokens
+import dev.tula.auth.generated.SetActiveOrganizationRequest
 import dev.tula.auth.generated.TulaJson
 import dev.tula.auth.generated.TulaOperation
 import dev.tula.auth.generated.TulaOperations
@@ -741,6 +743,56 @@ internal class SessionManager(
         if (tokens?.sessionId != answer.sessionId || startRefresh(true).await() == null) {
             throw unauthenticated()
         }
+    }
+
+    /**
+     * Make an organization the one the session acts in (`PUT /v1/client/me/organizations/active`)
+     * and take the access token that carries it.
+     *
+     * As [stepUp] does, it installs only the access token of the answer: choosing does not
+     * rotate the refresh token, and one a misbehaving server put in the answer is ignored.
+     * When the session's token was replaced while the call was on its way, or a refresh is
+     * running, the answer's token is not installed (it is a result for an older generation):
+     * one refresh, started after the choice was accepted, carries it.
+     *
+     * @param organizationId The organization, or `null` for the personal account.
+     * @return The answer: the session's id and the organization it acts in now.
+     * @throws TulaError what the API refused with; `response.invalid` for an answer that is
+     *   not the choice that was asked for; `auth.unauthenticated` when the client was signed
+     *   out, or signed in as someone else, while the call was in flight.
+     */
+    suspend fun setActiveOrganization(organizationId: String?): ActiveOrganization = withContext(confined) {
+        // A refresh already in flight would otherwise hand the choice a token about to be replaced.
+        idleNow()
+        var left = generation
+        val answer = transport.decode(
+            ActiveOrganization.serializer(),
+            authorized(
+                TulaOperations.setActiveOrganization,
+                CallInput(body = encode(SetActiveOrganizationRequest.serializer(), SetActiveOrganizationRequest(organizationId))),
+            ) { left = generation },
+        )
+        val issued = SessionTokens(answer.sessionId, answer.accessToken, answer.accessTokenExpiresAt)
+        // A 200 is not proof of talking to the API: the answer must name the choice and carry
+        // a token this client can install (a stateful session's answer has none, and is not a
+        // session for this client).
+        if (!isSessionTokens(issued) || answer.organizationId != organizationId || organizationId?.isEmpty() == true) {
+            throw transport.invalid()
+        }
+        // Signed out, or signed in as someone else, while the call was in flight: the answer
+        // is about a session this client no longer has.
+        if (current.value is AuthState.SignedOut || tokens?.sessionId != answer.sessionId) {
+            throw unauthenticated()
+        }
+        if (generation == left && refreshing == null) {
+            settle(commit(issued))
+            return@withContext answer
+        }
+        idleNow()
+        if (tokens?.sessionId != answer.sessionId || startRefresh(true).await() == null) {
+            throw unauthenticated()
+        }
+        answer
     }
 
     private fun unauthenticated(): TulaError = TulaError(

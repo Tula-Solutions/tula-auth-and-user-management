@@ -28,7 +28,12 @@ interface SectionRule {
  * A tab with no pages is not drawn: "Components" appears when the docs have a page for it.
  */
 export const SECTION_RULES: readonly SectionRule[] = [
-  { id: 'start', label: 'Get started', routes: ['/quickstart/'], routesTitle: 'Start here' },
+  {
+    id: 'start',
+    label: 'Get started',
+    routes: ['/quickstart/', '/playground/'],
+    routesTitle: 'Start here',
+  },
   {
     id: 'guides',
     label: 'Guides',

@@ -1,5 +1,12 @@
 # @tula-tech/config
 
+## 0.2.0
+
+### Patch Changes
+
+- Updated dependencies [f56f6b5]
+  - @tula-tech/contract@0.2.0
+
 ## 0.1.1
 
 ### Patch Changes

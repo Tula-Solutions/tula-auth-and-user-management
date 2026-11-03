@@ -896,6 +896,30 @@ when a version on either side changes without the written list of differences ch
 with it. [ADR 0063](adr/0063-expo-native-screens.md) has what was tried and what was only
 read from the published artifacts.
 
+### What the screens look like
+
+`@tula-tech/expo-screens` draws no screen of its own: its two components are the SwiftUI and
+the Compose screens, so they look as those do. **These pictures were taken from the Swift and
+Kotlin example apps, not from an Expo app**, because no screen has been drawn through this
+package (see the note above). They are the same screens with the same default theme; what an
+Expo app adds is the React Native view around them and the props of the
+[theme](#the-theme-of-the-native-screens).
+
+:::native-screens{platform="ios"}
+
+The iOS screens, from the [SwiftUI example](swift.md#what-the-screens-look-like).
+
+:::
+
+:::native-screens{platform="android"}
+
+The Android screens, from the [Compose example](kotlin.md#what-the-screens-look-like).
+
+:::
+
+To refresh them, see [refreshing the captures](swift.md#refreshing-the-captures) for iOS and
+[for Android](kotlin.md#refreshing-the-captures).
+
 ### One session owner
 
 **An app is on the native screens or on the headless client, never on both.** The native
@@ -1421,6 +1445,35 @@ export function HomeScreen(props: { onSignOut(): void }) {
 - A call that needs a recent sign-in is refused with `auth.step_up_required`
   (`isStepUpRequired`, `stepUpMethods`); `useTula().session.stepUp(proof)` proves it, and
   the call is then repeated.
+
+## Organizations
+
+The client is `@tula-tech/core`'s, so organizations are `client.organizations`
+([ADR 0065](adr/0065-organizations.md), [Organizations](organizations.md)); take the client
+from `useTula()`. It lists the user's organizations (`list()`), creates one where the
+environment lets users (`create({ name, slug })`), and chooses the one the session acts in
+(`setActive(id)`, or `setActive(null)` for the personal account): the next access token
+carries `org_id`, `org_role` and `org_perms`, the refresh token does not change, and
+`useAuth().getToken()` hands your own backend that token, and the signed-in state's
+`organizationId` says which is active. To draw the right screen, read the claims from the
+token the client holds with `readOrganizationClaims` and `hasOrganizationAccess` of
+`@tula-tech/contract/custom-claims`, as [Organizations](organizations.md) shows; your backend
+verifies the token and checks the same keys.
+
+An invitation arrives as an emailed link whose address carries the token in its **fragment**
+(`#tula_invitation=...`). Open it in the app (a universal link or an app link, as for
+[the emailed sign-in link](#the-emailed-link)), read it with `readInvitationLink(url)` and
+hand the token to `client.organizations.invitations`: `preview(token)` needs no session, and
+`accept(token)` and `decline(token)` need one (the invited account, with that address
+verified). `readInvitationLink` also returns the address without the token; keep that one.
+The token is a credential: it is in no error message of the client, and the app should not
+log it either. `client.organizations.suggestions()` lists the organizations a verified
+address is offered, and `join(id)` joins one.
+
+The app's journeys against the real API are the same three of `@tula-tech/core`'s suite
+(my organizations and the active organization, organization invitations, verified domains),
+which `packages/expo/src/journeys.test.ts` runs for this package's client. Nothing here was
+run in a real Expo app.
 
 ## Where the tokens are
 

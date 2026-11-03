@@ -91,6 +91,12 @@ export const RequestSchema = z
      */
     instance: z.enum(['first', 'second']).optional(),
   })
+  // Real `fetch` refuses a GET with a body (the in-process app tolerated it), so a scenario
+  // that wrote one passed in process and failed against a live server.
+  .refine((request) => !(request.method === 'GET' && request.body !== undefined), {
+    message: 'a GET request has no body: leave `body` out',
+    path: ['body'],
+  })
   .refine((request) => !(request.auth === 'secret' && request.accessToken !== undefined), {
     message: 'a request carries the secret key or an access token, not both',
   })
@@ -339,6 +345,26 @@ export const EmailMessageStepSchema = z
          * text. The step fails when the text holds none, or more than one different run.
          */
         captureCode: z.string().optional(),
+        /**
+         * Stores one parameter of the fragment of the link in the text: the first
+         * `https://…#…` URL of the text part. For a message whose link carries a credential
+         * in its fragment (an organization invitation's `tula_invitation`). The step fails
+         * when there is no such URL or it lacks the parameter; the value is never reported.
+         */
+        captureFragmentParam: z
+          .object({
+            /** The fragment parameter to read, e.g. `tula_invitation`. */
+            name: z.string().min(1),
+            /** Variable to store its value in. */
+            capture: z.string().min(1),
+            /**
+             * What the link must be once its fragment is removed: exactly this URL (the
+             * redirect URL that was asked for).
+             */
+            url: z.string().optional(),
+          })
+          .strict()
+          .optional(),
         /** What the subject must be, exactly. */
         subject: z.string().optional(),
         /** Strings the text part must contain, each of them. */

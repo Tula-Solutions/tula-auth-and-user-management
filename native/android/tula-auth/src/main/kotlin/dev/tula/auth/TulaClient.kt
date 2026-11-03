@@ -416,6 +416,12 @@ class TulaClient internal constructor(
     /** The signed-in account's phone number: add, prove, remove. */
     val phone: TulaPhone get() = TulaPhone(flows)
 
+    /**
+     * The signed-in user's organizations, the one the session acts in, invitations to them
+     * and the organizations a verified address is offered (ADR 0065).
+     */
+    val organizations: TulaOrganizations get() = TulaOrganizations(flows)
+
     /** The provider accounts the signed-in user signs in with. */
     val identities: TulaIdentities get() = TulaIdentities(flows)
 

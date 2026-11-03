@@ -412,3 +412,185 @@ describe('sections', () => {
     })
   })
 })
+
+describe('the content components', () => {
+  test('a callout, steps, tabs and a parameter table are written as the elements the stylesheet draws', () => {
+    const { html } = render(
+      [
+        '# T',
+        '',
+        '> [!WARNING]',
+        '> Careful.',
+        '',
+        ':::steps',
+        '',
+        '### One',
+        '',
+        'x',
+        '',
+        ':::',
+        '',
+        ':::params',
+        '',
+        '| Name | Description |',
+        '| --- | --- |',
+        '| `a` | b |',
+        '',
+        ':::',
+        '',
+      ].join('\n')
+    )
+    expect(html).toContain('data-callout="warning"')
+    expect(html).toContain('<ol class="steps">')
+    expect(html).toContain('<h2 id="one">One<a class="permalink"')
+    expect(html).toContain('<dl class="params">')
+  })
+
+  test('a step is a heading of the page: it has an anchor, and the outline has no hole', () => {
+    const doc = parseMarkdown('docs/a.md', '# T\n\n## S\n\n:::steps\n\n### One\n\nx\n\n:::\n')
+    expect(doc.headings.map((heading) => heading.id)).toEqual(['t', 's', 'one'])
+    expect(render('# T\n\n## S\n\n:::steps\n\n### One\n\nx\n\n:::\n').html).toContain(
+      '<h3 id="one"'
+    )
+  })
+
+  test('a tab label is not a heading, so it is not in the outline or an anchor', () => {
+    const doc = parseMarkdown(
+      'docs/a.md',
+      '# T\n\n:::tabs\n\n#### Vite\n\nx\n\n#### Next\n\ny\n\n:::\n'
+    )
+    expect(doc.headings.map((heading) => heading.text)).toEqual(['T'])
+    expect([...doc.ids]).not.toContain('vite')
+  })
+
+  describe('tabs', () => {
+    const tabs = (name: string) =>
+      `:::tabs{sync="fw"}\n\n#### A${name}\n\nx\n\n#### B\n\ny\n\n:::\n`
+
+    test('the first set of tabs carries the runtime and each later one only calls it', () => {
+      const { html } = render(`# T\n\n${tabs('1')}\n${tabs('2')}\n${tabs('3')}`)
+      expect(html.match(/<script>/g)).toHaveLength(3)
+      expect(html.match(/function tabsRuntime/g)).toHaveLength(1)
+      expect(html.match(/window\.__docsTabs&&window\.__docsTabs\(\)/g)).toHaveLength(2)
+      // The script follows its own group, so that the group is tabs before it is painted.
+      expect(html.indexOf('data-docs-tabs')).toBeLessThan(html.indexOf('<script>'))
+    })
+
+    test('a page with no tabs has no tabs script', () => {
+      expect(render('# T\n\ntext\n').html).not.toContain('<script')
+    })
+
+    test('the script is not text of the page: it is not searched', () => {
+      const doc = parseMarkdown('docs/a.md', `# T\n\n## S\n\n${tabs('')}`)
+      const built = renderMarkdown(doc, environment, highlighter)
+      expect(built.html).toContain('tabsRuntime')
+      expect(doc.sections.map((section) => section.text).join(' ')).not.toContain('localStorage')
+    })
+
+    test('the runtime is plain JavaScript that parses', () => {
+      const source = render(`# T\n\n${tabs('')}`).html.match(/<script>([\s\S]*?)<\/script>/)?.[1]
+      expect(source).toBeDefined()
+      expect(() => new Function(source as string)).not.toThrow()
+      expect(source).not.toMatch(/\): (void|string|boolean)\b|\bas unknown\b/)
+    })
+  })
+
+  describe('code blocks', () => {
+    test('a block is a frame with a copy button and a live region, and a title when it has one', () => {
+      const { html } = render('# T\n\n```ts title="app/layout.tsx"\nconst a = 1\n```\n')
+      expect(html).toContain('class="code-block"')
+      expect(html).toContain('data-titled')
+      expect(html).toContain('<span class="code-title-text">app/layout.tsx</span>')
+      expect(html).toContain('aria-label="Copy app/layout.tsx"')
+      expect(html).toContain('role="status"')
+      expect(html).toContain('aria-live="polite"')
+      expect(html).toContain('data-language="ts"')
+    })
+
+    test('an untitled block says "Copy code" and has no title bar', () => {
+      const { html } = render('# T\n\n```sh\nls\n```\n')
+      expect(html).toContain('aria-label="Copy code"')
+      expect(html).not.toContain('code-title')
+    })
+
+    test('the copy button is never hidden by an attribute: the stylesheet shows it only with script', () => {
+      expect(render('# T\n\n```sh\nls\n```\n').html).not.toMatch(/<button[^>]*hidden/)
+    })
+
+    test('{1,3-5} marks lines, and each marked line is a line', () => {
+      const { html } = render('# T\n\n```ts {2,3}\na\nb\nc\nd\n```\n')
+      expect(html.match(/class="line highlighted"/g)).toHaveLength(2)
+      expect(html.match(/class="line"/g)).toHaveLength(2)
+    })
+
+    test('// [!code ++] and -- tint the lines and are taken out of the code', () => {
+      const { html } = render(
+        '# T\n\n```ts\nconst a = 1 // [!code --]\nconst a = 2 // [!code ++]\nconst b = 3 // [!code highlight]\n```\n'
+      )
+      expect(html).toContain('class="line diff remove"')
+      expect(html).toContain('class="line diff add"')
+      expect(html).toContain('class="line highlighted"')
+      expect(html).not.toContain('[!code')
+    })
+
+    test('a diff block tints the lines that start with + and -', () => {
+      const { html } = render('# T\n\n```diff\n- old\n+ new\n  same\n```\n')
+      expect(html).toContain('class="line diff remove"')
+      expect(html).toContain('class="line diff add"')
+      expect(html.match(/class="line"/g)).toHaveLength(1)
+    })
+
+    test('a code group tab carries the block with no title bar of its own', () => {
+      const { html } = render('# T\n\n:::code-group\n\n```sh title="npm"\nnpm i\n```\n\n:::\n')
+      expect(html).toContain('data-label="npm"')
+      expect(html).not.toContain('code-title')
+    })
+
+    test('a malformed info string fails with the file and the line of the block', () => {
+      expect(() => render('# T\n\ntext\n\n```ts titel="x"\na\n```\n')).toThrow(
+        'docs/a.md: line 5: the code block\'s "titel="x"" is not a title'
+      )
+    })
+
+    test('a line range past the end fails with the line', () => {
+      expect(() => render('# T\n\n```ts {1,9}\na\nb\n```\n')).toThrow(
+        'docs/a.md: line 3: the line range {9} is past the end of a block of 2 lines'
+      )
+    })
+
+    test('an unknown language still fails, and now says where', () => {
+      expect(() => render('# T\n\n```klingon\na\n```\n')).toThrow(
+        'has a code block in an unknown language "klingon" (line 3)'
+      )
+    })
+  })
+
+  describe('trees', () => {
+    test('a tree fence is a file tree, not a code block', () => {
+      const { html } = render('# T\n\n```tree\napp/\n  page.tsx\n```\n')
+      expect(html).toContain('class="file-tree"')
+      expect(html).not.toContain('code-block')
+    })
+
+    test('a tree takes no title, and a tree that cannot be read fails with its line', () => {
+      expect(() => render('# T\n\n```tree title="x"\napp/\n```\n')).toThrow(
+        'docs/a.md: line 3: a tree block takes no title'
+      )
+      expect(() => render('# T\n\n```tree\napp/\n\tpage.tsx\n```\n')).toThrow(
+        'docs/a.md: line 3: line 2 of the tree is indented with a tab'
+      )
+    })
+  })
+
+  describe('errors', () => {
+    test('an unknown block is a RenderError naming the file and the line', () => {
+      expect(() => render('# T\n\ntext\n\n:::banner\n\nx\n\n:::\n')).toThrow(
+        'docs/a.md: line 5: unknown block :::banner'
+      )
+    })
+
+    test('the error of a block is raised when the page is parsed, so the whole build stops on it', () => {
+      expect(() => parseMarkdown('docs/a.md', '# T\n\n:::steps\n\n### a\n')).toThrow(RenderError)
+    })
+  })
+})

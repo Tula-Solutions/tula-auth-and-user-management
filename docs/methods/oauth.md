@@ -101,6 +101,16 @@ reads the switch from its `.env`.
 
 ## What the user sees
 
+### Try it in the sandbox
+
+:::playground{preset="oauth"}
+
+A sandbox of the sign-in component with provider buttons: each opens a sandbox consent screen (not
+the provider's page) where you approve or cancel, and returns to the app. It needs a browser with
+script; the screens are described below.
+
+:::
+
 - A button per enabled provider above the sign-in and sign-up forms.
 - The provider's own consent page, then your app's callback page for a moment, then the app.
 - In the account page: the connected accounts, **Connect** for the others and **Disconnect**

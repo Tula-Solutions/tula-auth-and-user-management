@@ -1,0 +1,13 @@
+{
+  "data": [
+    {
+      "id": "org_2one",
+      "name": "Northline Labs",
+      "slug": "northline-labs",
+      "created_by": "user_2aaa"
+    },
+    { "id": "org_2two", "name": "Okafor & Sons", "slug": "okafor-sons" },
+    { "id": "org_2bad", "name": "", "slug": "" }
+  ],
+  "total_count": 3
+}

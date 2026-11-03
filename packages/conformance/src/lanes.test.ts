@@ -147,7 +147,11 @@ describe('estimateMs', () => {
       [
         { name: 'w', wait: '61s' },
         { name: 'put', request: put, expect: { status: 200 } },
-        { name: 'get', request: { ...put, method: 'GET' }, expect: { status: 200 } },
+        {
+          name: 'get',
+          request: { method: 'GET', path: put.path, auth: put.auth },
+          expect: { status: 200 },
+        },
       ],
       { needsSecretKey: true, cleanup: [{ name: 'back', request: put, expect: { status: 200 } }] }
     )

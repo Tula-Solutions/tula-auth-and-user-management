@@ -120,6 +120,22 @@ sealed class ErrorCode {
         override val rawValue: String = "password.not_set"
     }
 
+    object ImportUnsupportedAlgorithm : ErrorCode() {
+        override val rawValue: String = "import.unsupported_algorithm"
+    }
+
+    object ImportHashMalformed : ErrorCode() {
+        override val rawValue: String = "import.hash_malformed"
+    }
+
+    object ImportHashParametersTooWeak : ErrorCode() {
+        override val rawValue: String = "import.hash_parameters_too_weak"
+    }
+
+    object ImportHashParametersTooCostly : ErrorCode() {
+        override val rawValue: String = "import.hash_parameters_too_costly"
+    }
+
     object VerificationInvalidCode : ErrorCode() {
         override val rawValue: String = "verification.invalid_code"
     }
@@ -312,6 +328,122 @@ sealed class ErrorCode {
         override val rawValue: String = "device.binding_required"
     }
 
+    object UserLastOrganizationManager : ErrorCode() {
+        override val rawValue: String = "user.last_organization_manager"
+    }
+
+    object OrganizationDisabled : ErrorCode() {
+        override val rawValue: String = "organization.disabled"
+    }
+
+    object OrganizationSlugTaken : ErrorCode() {
+        override val rawValue: String = "organization.slug_taken"
+    }
+
+    object OrganizationMemberExists : ErrorCode() {
+        override val rawValue: String = "organization.member_exists"
+    }
+
+    object OrganizationLastManager : ErrorCode() {
+        override val rawValue: String = "organization.last_manager"
+    }
+
+    object OrganizationRoleUnknown : ErrorCode() {
+        override val rawValue: String = "organization.role_unknown"
+    }
+
+    object OrganizationNotAMember : ErrorCode() {
+        override val rawValue: String = "organization.not_a_member"
+    }
+
+    object OrganizationCreationDisabled : ErrorCode() {
+        override val rawValue: String = "organization.creation_disabled"
+    }
+
+    object OrganizationLimitReached : ErrorCode() {
+        override val rawValue: String = "organization.limit_reached"
+    }
+
+    object OrganizationPersonalAccountDisabled : ErrorCode() {
+        override val rawValue: String = "organization.personal_account_disabled"
+    }
+
+    object OrganizationRoleExists : ErrorCode() {
+        override val rawValue: String = "organization.role_exists"
+    }
+
+    object OrganizationRoleInUse : ErrorCode() {
+        override val rawValue: String = "organization.role_in_use"
+    }
+
+    object OrganizationRoleBuiltIn : ErrorCode() {
+        override val rawValue: String = "organization.role_built_in"
+    }
+
+    object OrganizationRoleLimit : ErrorCode() {
+        override val rawValue: String = "organization.role_limit"
+    }
+
+    object OrganizationPermissionRequired : ErrorCode() {
+        override val rawValue: String = "organization.permission_required"
+    }
+
+    object OrganizationRoleNotAssignable : ErrorCode() {
+        override val rawValue: String = "organization.role_not_assignable"
+    }
+
+    object OrganizationInvitationExists : ErrorCode() {
+        override val rawValue: String = "organization.invitation_exists"
+    }
+
+    object OrganizationInvitationNotFound : ErrorCode() {
+        override val rawValue: String = "organization.invitation_not_found"
+    }
+
+    object OrganizationInvitationExpired : ErrorCode() {
+        override val rawValue: String = "organization.invitation_expired"
+    }
+
+    object OrganizationInvitationRevoked : ErrorCode() {
+        override val rawValue: String = "organization.invitation_revoked"
+    }
+
+    object OrganizationInvitationUsed : ErrorCode() {
+        override val rawValue: String = "organization.invitation_used"
+    }
+
+    object OrganizationInvitationWrongAccount : ErrorCode() {
+        override val rawValue: String = "organization.invitation_wrong_account"
+    }
+
+    object OrganizationInvitationEmailUnverified : ErrorCode() {
+        override val rawValue: String = "organization.invitation_email_unverified"
+    }
+
+    object OrganizationInvitationRoleGone : ErrorCode() {
+        override val rawValue: String = "organization.invitation_role_gone"
+    }
+
+    object OrganizationDomainPublic : ErrorCode() {
+        override val rawValue: String = "organization.domain_public"
+    }
+
+    object OrganizationDomainTaken : ErrorCode() {
+        override val rawValue: String = "organization.domain_taken"
+    }
+
+    object OrganizationDomainAddressMismatch : ErrorCode() {
+        override val rawValue: String = "organization.domain_address_mismatch"
+    }
+
+    object OrganizationDomainLimit : ErrorCode() {
+        override val rawValue: String = "organization.domain_limit"
+    }
+
+    object OrganizationSuggestionUnavailable : ErrorCode() {
+        override val rawValue: String = "organization.suggestion_unavailable"
+    }
+
     object RateLimited : ErrorCode() {
         override val rawValue: String = "rate_limited"
     }
@@ -400,6 +532,10 @@ sealed class ErrorCode {
                 PasswordSequence,
                 PasswordReused,
                 PasswordNotSet,
+                ImportUnsupportedAlgorithm,
+                ImportHashMalformed,
+                ImportHashParametersTooWeak,
+                ImportHashParametersTooCostly,
                 VerificationInvalidCode,
                 VerificationExpired,
                 VerificationTooManyAttempts,
@@ -448,6 +584,35 @@ sealed class ErrorCode {
                 DeviceNonceRequired,
                 DeviceBindingNotSupported,
                 DeviceBindingRequired,
+                UserLastOrganizationManager,
+                OrganizationDisabled,
+                OrganizationSlugTaken,
+                OrganizationMemberExists,
+                OrganizationLastManager,
+                OrganizationRoleUnknown,
+                OrganizationNotAMember,
+                OrganizationCreationDisabled,
+                OrganizationLimitReached,
+                OrganizationPersonalAccountDisabled,
+                OrganizationRoleExists,
+                OrganizationRoleInUse,
+                OrganizationRoleBuiltIn,
+                OrganizationRoleLimit,
+                OrganizationPermissionRequired,
+                OrganizationRoleNotAssignable,
+                OrganizationInvitationExists,
+                OrganizationInvitationNotFound,
+                OrganizationInvitationExpired,
+                OrganizationInvitationRevoked,
+                OrganizationInvitationUsed,
+                OrganizationInvitationWrongAccount,
+                OrganizationInvitationEmailUnverified,
+                OrganizationInvitationRoleGone,
+                OrganizationDomainPublic,
+                OrganizationDomainTaken,
+                OrganizationDomainAddressMismatch,
+                OrganizationDomainLimit,
+                OrganizationSuggestionUnavailable,
                 RateLimited,
                 RequestMalformed,
                 RequestTooLarge,
@@ -491,6 +656,10 @@ sealed class ErrorCode {
             "password.sequence" -> PasswordSequence
             "password.reused" -> PasswordReused
             "password.not_set" -> PasswordNotSet
+            "import.unsupported_algorithm" -> ImportUnsupportedAlgorithm
+            "import.hash_malformed" -> ImportHashMalformed
+            "import.hash_parameters_too_weak" -> ImportHashParametersTooWeak
+            "import.hash_parameters_too_costly" -> ImportHashParametersTooCostly
             "verification.invalid_code" -> VerificationInvalidCode
             "verification.expired" -> VerificationExpired
             "verification.too_many_attempts" -> VerificationTooManyAttempts
@@ -539,6 +708,35 @@ sealed class ErrorCode {
             "device.nonce_required" -> DeviceNonceRequired
             "device.binding_not_supported" -> DeviceBindingNotSupported
             "device.binding_required" -> DeviceBindingRequired
+            "user.last_organization_manager" -> UserLastOrganizationManager
+            "organization.disabled" -> OrganizationDisabled
+            "organization.slug_taken" -> OrganizationSlugTaken
+            "organization.member_exists" -> OrganizationMemberExists
+            "organization.last_manager" -> OrganizationLastManager
+            "organization.role_unknown" -> OrganizationRoleUnknown
+            "organization.not_a_member" -> OrganizationNotAMember
+            "organization.creation_disabled" -> OrganizationCreationDisabled
+            "organization.limit_reached" -> OrganizationLimitReached
+            "organization.personal_account_disabled" -> OrganizationPersonalAccountDisabled
+            "organization.role_exists" -> OrganizationRoleExists
+            "organization.role_in_use" -> OrganizationRoleInUse
+            "organization.role_built_in" -> OrganizationRoleBuiltIn
+            "organization.role_limit" -> OrganizationRoleLimit
+            "organization.permission_required" -> OrganizationPermissionRequired
+            "organization.role_not_assignable" -> OrganizationRoleNotAssignable
+            "organization.invitation_exists" -> OrganizationInvitationExists
+            "organization.invitation_not_found" -> OrganizationInvitationNotFound
+            "organization.invitation_expired" -> OrganizationInvitationExpired
+            "organization.invitation_revoked" -> OrganizationInvitationRevoked
+            "organization.invitation_used" -> OrganizationInvitationUsed
+            "organization.invitation_wrong_account" -> OrganizationInvitationWrongAccount
+            "organization.invitation_email_unverified" -> OrganizationInvitationEmailUnverified
+            "organization.invitation_role_gone" -> OrganizationInvitationRoleGone
+            "organization.domain_public" -> OrganizationDomainPublic
+            "organization.domain_taken" -> OrganizationDomainTaken
+            "organization.domain_address_mismatch" -> OrganizationDomainAddressMismatch
+            "organization.domain_limit" -> OrganizationDomainLimit
+            "organization.suggestion_unavailable" -> OrganizationSuggestionUnavailable
             "rate_limited" -> RateLimited
             "request.malformed" -> RequestMalformed
             "request.too_large" -> RequestTooLarge
@@ -655,6 +853,18 @@ object TulaErrorDefinitions {
 
     /** `password.not_set` */
     val passwordNotSet: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.PasswordNotSet, 409, "This account has no password yet. Use \"forgot password\" to set one.")
+
+    /** `import.unsupported_algorithm` */
+    val importUnsupportedAlgorithm: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.ImportUnsupportedAlgorithm, 422, "That password hash algorithm is not supported.")
+
+    /** `import.hash_malformed` */
+    val importHashMalformed: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.ImportHashMalformed, 422, "That password hash is malformed.")
+
+    /** `import.hash_parameters_too_weak` */
+    val importHashParametersTooWeak: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.ImportHashParametersTooWeak, 422, "That password hash is too weak to import.")
+
+    /** `import.hash_parameters_too_costly` */
+    val importHashParametersTooCostly: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.ImportHashParametersTooCostly, 422, "That password hash is too costly to verify.")
 
     /** `verification.invalid_code` */
     val verificationInvalidCode: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.VerificationInvalidCode, 422, "That code is incorrect.")
@@ -800,6 +1010,93 @@ object TulaErrorDefinitions {
     /** `device.binding_required` */
     val deviceBindingRequired: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.DeviceBindingRequired, 400, "Signing in here needs a device key.")
 
+    /** `user.last_organization_manager` */
+    val userLastOrganizationManager: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.UserLastOrganizationManager, 409, "This user is the only manager of an organization. Add another manager or delete the organization first.")
+
+    /** `organization.disabled` */
+    val organizationDisabled: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationDisabled, 403, "Organizations are not enabled for this environment.")
+
+    /** `organization.slug_taken` */
+    val organizationSlugTaken: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationSlugTaken, 409, "An organization with that slug already exists.")
+
+    /** `organization.member_exists` */
+    val organizationMemberExists: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationMemberExists, 409, "That user is already a member of this organization.")
+
+    /** `organization.last_manager` */
+    val organizationLastManager: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationLastManager, 409, "An organization must keep at least one member who can manage its members.")
+
+    /** `organization.role_unknown` */
+    val organizationRoleUnknown: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationRoleUnknown, 422, "That role does not exist in this environment.")
+
+    /** `organization.not_a_member` */
+    val organizationNotAMember: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationNotAMember, 403, "You are not a member of that organization.")
+
+    /** `organization.creation_disabled` */
+    val organizationCreationDisabled: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationCreationDisabled, 403, "Creating an organization is not allowed in this environment.")
+
+    /** `organization.limit_reached` */
+    val organizationLimitReached: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationLimitReached, 403, "You have reached the number of organizations you can create.")
+
+    /** `organization.personal_account_disabled` */
+    val organizationPersonalAccountDisabled: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationPersonalAccountDisabled, 409, "An organization must be active in this environment.")
+
+    /** `organization.role_exists` */
+    val organizationRoleExists: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationRoleExists, 409, "A role with that key already exists in this environment.")
+
+    /** `organization.role_in_use` */
+    val organizationRoleInUse: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationRoleInUse, 409, "Members still hold this role. Give them another role first.")
+
+    /** `organization.role_built_in` */
+    val organizationRoleBuiltIn: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationRoleBuiltIn, 409, "A built-in role cannot be changed or deleted.")
+
+    /** `organization.role_limit` */
+    val organizationRoleLimit: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationRoleLimit, 409, "This environment has the most custom roles it can have.")
+
+    /** `organization.permission_required` */
+    val organizationPermissionRequired: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationPermissionRequired, 403, "Your role does not allow that.")
+
+    /** `organization.role_not_assignable` */
+    val organizationRoleNotAssignable: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationRoleNotAssignable, 403, "You can only invite to a role no stronger than yours.")
+
+    /** `organization.invitation_exists` */
+    val organizationInvitationExists: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationInvitationExists, 409, "That address already has a pending invitation.")
+
+    /** `organization.invitation_not_found` */
+    val organizationInvitationNotFound: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationInvitationNotFound, 404, "This invitation does not exist.")
+
+    /** `organization.invitation_expired` */
+    val organizationInvitationExpired: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationInvitationExpired, 410, "This invitation has expired.")
+
+    /** `organization.invitation_revoked` */
+    val organizationInvitationRevoked: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationInvitationRevoked, 410, "This invitation was withdrawn.")
+
+    /** `organization.invitation_used` */
+    val organizationInvitationUsed: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationInvitationUsed, 410, "This invitation was already used.")
+
+    /** `organization.invitation_wrong_account` */
+    val organizationInvitationWrongAccount: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationInvitationWrongAccount, 403, "This invitation was sent to another email address.")
+
+    /** `organization.invitation_email_unverified` */
+    val organizationInvitationEmailUnverified: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationInvitationEmailUnverified, 403, "Verify your email address to accept this invitation.")
+
+    /** `organization.invitation_role_gone` */
+    val organizationInvitationRoleGone: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationInvitationRoleGone, 409, "The role this invitation offers no longer exists.")
+
+    /** `organization.domain_public` */
+    val organizationDomainPublic: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationDomainPublic, 422, "A public email domain cannot be claimed by an organization.")
+
+    /** `organization.domain_taken` */
+    val organizationDomainTaken: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationDomainTaken, 409, "That domain is verified for an organization already.")
+
+    /** `organization.domain_address_mismatch` */
+    val organizationDomainAddressMismatch: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationDomainAddressMismatch, 422, "That address is not on the domain.")
+
+    /** `organization.domain_limit` */
+    val organizationDomainLimit: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationDomainLimit, 409, "This organization has the most domains it can have.")
+
+    /** `organization.suggestion_unavailable` */
+    val organizationSuggestionUnavailable: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.OrganizationSuggestionUnavailable, 403, "You cannot join that organization.")
+
     /** `rate_limited` */
     val rateLimited: TulaErrorDefinition = TulaErrorDefinition(ErrorCode.RateLimited, 429, "Too many requests. Try again shortly.")
 
@@ -866,6 +1163,10 @@ object TulaErrorDefinitions {
         passwordSequence,
         passwordReused,
         passwordNotSet,
+        importUnsupportedAlgorithm,
+        importHashMalformed,
+        importHashParametersTooWeak,
+        importHashParametersTooCostly,
         verificationInvalidCode,
         verificationExpired,
         verificationTooManyAttempts,
@@ -914,6 +1215,35 @@ object TulaErrorDefinitions {
         deviceNonceRequired,
         deviceBindingNotSupported,
         deviceBindingRequired,
+        userLastOrganizationManager,
+        organizationDisabled,
+        organizationSlugTaken,
+        organizationMemberExists,
+        organizationLastManager,
+        organizationRoleUnknown,
+        organizationNotAMember,
+        organizationCreationDisabled,
+        organizationLimitReached,
+        organizationPersonalAccountDisabled,
+        organizationRoleExists,
+        organizationRoleInUse,
+        organizationRoleBuiltIn,
+        organizationRoleLimit,
+        organizationPermissionRequired,
+        organizationRoleNotAssignable,
+        organizationInvitationExists,
+        organizationInvitationNotFound,
+        organizationInvitationExpired,
+        organizationInvitationRevoked,
+        organizationInvitationUsed,
+        organizationInvitationWrongAccount,
+        organizationInvitationEmailUnverified,
+        organizationInvitationRoleGone,
+        organizationDomainPublic,
+        organizationDomainTaken,
+        organizationDomainAddressMismatch,
+        organizationDomainLimit,
+        organizationSuggestionUnavailable,
         rateLimited,
         requestMalformed,
         requestTooLarge,

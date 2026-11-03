@@ -555,6 +555,17 @@ describe('the example config', () => {
       },
     })
     expect(selectEnvironment(config, 'dev').hooks).toBeUndefined()
+    // And custom organization roles: one environment declares them, the other leaves them
+    // unmanaged, and the permissions come back sorted.
+    expect(prod.organizationRoles).toEqual([
+      {
+        key: 'billing_manager',
+        name: 'Billing manager',
+        permissions: ['org:billing:read', 'org:billing:write', 'org:sys:memberships:read'],
+      },
+      { key: 'viewer', name: 'Viewer', permissions: ['org:billing:read'] },
+    ])
+    expect(selectEnvironment(config, 'dev').organizationRoles).toBeUndefined()
   })
 })
 
@@ -867,6 +878,16 @@ describe('JWT templates', () => {
     const on = await hash({ agents: { testSignIn: true } })
     const off = await hash({ agents: { testSignIn: false } })
     expect(new Set([before, on, off]).size).toBe(3)
+  })
+
+  test('the organizations section is in the fingerprint only when it is not the default', async () => {
+    const before = 'sha256:06efab455d94f577b0fd2648dfd07f2fd51743799595001ee73bc0b0bf3918ad'
+    expect(await hash({})).toBe(before)
+    expect(await hash({ organizations: {} })).toBe(before)
+    expect(await hash({ organizations: { enabled: false } })).toBe(before)
+    const on = await hash({ organizations: { enabled: true } })
+    const roles = await hash({ organizations: { defaultRole: 'viewer' } })
+    expect(new Set([before, on, roles]).size).toBe(3)
   })
 
   test('the sign-in test setting is validated by the contract: a word is refused, by its path', () => {
@@ -1685,5 +1706,160 @@ describe('Google’s additional client ids', () => {
     const two = await hash({ additionalClientIds: [ANDROID, IOS] })
     expect(new Set([none, one, two]).size).toBe(3)
     expect(await hash({ additionalClientIds: [IOS, ANDROID] })).toBe(two)
+  })
+})
+
+describe('custom organization roles', () => {
+  const billing = {
+    key: 'billing_manager',
+    name: 'Billing manager',
+    permissions: ['org:billing:read', 'org:billing:write'],
+  }
+
+  const rolesOf = (input: TulaConfigInput) =>
+    defineConfig(input).environments.dev?.organizationRoles
+
+  const hash = async (input: TulaConfigInput) => {
+    const dev = defineConfig(input).environments.dev
+    if (!dev) {
+      throw new Error('fixture')
+    }
+    return hashEnvironmentConfig(dev)
+  }
+
+  test('an environment without the key does not manage roles: the key stays absent', () => {
+    const dev = defineConfig({ environments: { dev: {} } }).environments.dev
+    expect(dev && Object.hasOwn(dev, 'organizationRoles')).toBe(false)
+    expect(rolesOf({ environments: { dev: { organizationRoles: [] } } })).toEqual([])
+  })
+
+  test('permissions are a set: order and repeats go', () => {
+    expect(
+      rolesOf({
+        environments: {
+          dev: {
+            organizationRoles: [
+              {
+                ...billing,
+                permissions: ['org:billing:write', 'org:billing:read', 'org:billing:write'],
+              },
+            ],
+          },
+        },
+      })
+    ).toEqual([billing])
+  })
+
+  test.each<[string, Record<string, unknown>, string]>([
+    ['a key in upper case', { ...billing, key: 'Billing' }, 'organizationRoles.0.key'],
+    ['a key that starts with a digit', { ...billing, key: '1st' }, 'organizationRoles.0.key'],
+    ['a name of only spaces', { ...billing, name: '  ' }, 'organizationRoles.0.name'],
+    [
+      'a permission outside the grammar',
+      { ...billing, permissions: ['billing.read'] },
+      'organizationRoles.0.permissions.0',
+    ],
+    [
+      'a system permission Tula does not define',
+      { ...billing, permissions: ['org:sys:billing:read'] },
+      'organizationRoles.0.permissions.0',
+    ],
+    [
+      'a field the file does not know',
+      { ...billing, builtIn: false },
+      'organizationRoles.0.builtIn',
+    ],
+  ])('%s is refused by position', (_name, role, path) => {
+    const error = refusal(() =>
+      defineConfig(untyped({ environments: { dev: { organizationRoles: [role] } } }))
+    )
+    expect(error.issues.map((issue) => issue.path)).toContain(`environments.dev.${path}`)
+  })
+
+  test('a built-in role key is refused: the file does not manage admin or member', () => {
+    for (const key of ['admin', 'member']) {
+      const error = refusal(() =>
+        defineConfig({ environments: { dev: { organizationRoles: [{ ...billing, key }] } } })
+      )
+      expect(error.issues).toEqual([
+        {
+          path: 'environments.dev.organizationRoles.0.key',
+          message: 'the built-in roles admin and member are not managed by the file',
+        },
+      ])
+    }
+  })
+
+  test('a role listed twice is refused by position', () => {
+    const error = refusal(() =>
+      defineConfig({
+        environments: { dev: { organizationRoles: [billing, { ...billing, name: 'Again' }] } },
+      })
+    )
+    expect(error.issues).toEqual([
+      {
+        path: 'environments.dev.organizationRoles.1.key',
+        message:
+          'the same role as organizationRoles.0: a role is identified by its key, so each is listed once',
+      },
+    ])
+  })
+
+  test('more roles than an environment may have are refused', () => {
+    const organizationRoles = Array.from({ length: 51 }, (_, index) => ({
+      ...billing,
+      key: `role_${index}`,
+    }))
+    const error = refusal(() => defineConfig({ environments: { dev: { organizationRoles } } }))
+    expect(error.issues).toEqual([
+      {
+        path: 'environments.dev.organizationRoles',
+        message: 'an environment has at most 50 custom roles',
+      },
+    ])
+  })
+
+  test('more than 32 permissions on a role are refused', () => {
+    const permissions = Array.from({ length: 33 }, (_, index) => `org:feature${index}:read`)
+    const error = refusal(() =>
+      defineConfig({ environments: { dev: { organizationRoles: [{ ...billing, permissions }] } } })
+    )
+    expect(error.issues.map((issue) => issue.path)).toEqual([
+      'environments.dev.organizationRoles.0.permissions',
+    ])
+  })
+
+  test('the fingerprint of a file without roles is what it was before roles could be written', async () => {
+    // The value the native apps' test pins: no environment already applied shows a new
+    // version of its file.
+    expect(await hash({ environments: { dev: {} } })).toBe(
+      'sha256:06efab455d94f577b0fd2648dfd07f2fd51743799595001ee73bc0b0bf3918ad'
+    )
+  })
+
+  test('the fingerprint counts permissions as a set, and managing no roles is not managing none', async () => {
+    const one = await hash({ environments: { dev: { organizationRoles: [billing] } } })
+    expect(
+      await hash({
+        environments: {
+          dev: {
+            organizationRoles: [
+              {
+                ...billing,
+                permissions: ['org:billing:write', 'org:billing:read', 'org:billing:read'],
+              },
+            ],
+          },
+        },
+      })
+    ).toBe(one)
+    expect(await hash({ environments: { dev: { organizationRoles: [] } } })).not.toBe(
+      await hash({ environments: { dev: {} } })
+    )
+    expect(
+      await hash({
+        environments: { dev: { organizationRoles: [{ ...billing, permissions: [] }] } },
+      })
+    ).not.toBe(one)
   })
 })

@@ -102,6 +102,56 @@ export default async function Dashboard() {
 }
 ```
 
+## Organizations and `has()`
+
+Where the environment has organizations ([ADR 0065](../../docs/adr/0065-organizations.md)), the
+access token of a session with an active organization carries the organization, the user's
+role in it and the role's permissions. On the server:
+
+```tsx
+const { orgId, orgRole, orgPermissions, has } = await auth()
+if (!has({ permission: 'org:billing:read' })) {
+  redirect('/no-access')
+}
+has({ role: 'admin' }) // a role instead; one check at a time
+```
+
+`has()` is an exact match on the keys (no wildcard) and `false` when no organization is
+active, for a signed-out visitor and for a check that names neither or both. The three claims
+are used only as a set that passed the contract's checks (the grammar of the keys, the bounds):
+a malformed set means no organization, never a partial one. This holds for a `hybrid`
+session's token, a `stateful` session's answer and the header the middleware seals.
+
+Protect a group of routes in the middleware, before anything renders:
+
+```ts
+// proxy.ts
+export const proxy = tulaMiddleware({
+  publicRoutes: ['/', '/pricing'],
+  access: [
+    { routes: '/billing(.*)', permission: 'org:billing:read' },
+    { routes: '/admin(.*)', role: 'admin' },
+  ],
+  forbiddenUrl: '/no-access', // pages go here; API routes and writes get a 403 JSON error
+})
+```
+
+A visitor with no session is sent to sign in; one who is signed in and fails the rule is
+refused. A rule with a wildcard, a key that is not in the grammar, or both or neither of
+`permission` and `role` throws when the middleware is created. Check again in the page or route
+that serves the data: a matcher is a convenience, not the only guard.
+
+In the browser, `useOrganization()` and `useOrganizationList()` (re-exported from
+`@tula-tech/react`) read and switch the active organization; a switch refreshes the router so
+the server components render with the new token.
+
+**A large role makes the access token outgrow one cookie.** The largest role and custom claims
+the API accepts give an access token of about 5.3 kB, more than the roughly 4 kB a browser keeps
+in one cookie. The SDK stores the token in up to two cookies, `tula_at` and `tula_at_1`, and
+joins them before it verifies the whole as one token. Nothing for you to do; do not read or
+write these cookies yourself. A token too large even for two is not stored, one warning says so,
+and the session continues on its refresh cookie.
+
 ## What you must configure on the API
 
 - **Allowed origins.** Add the app's origin to the environment's `urls.allowedOrigins`. The

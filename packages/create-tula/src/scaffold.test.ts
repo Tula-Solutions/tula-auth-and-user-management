@@ -113,6 +113,7 @@ describe('scaffold', () => {
       'src/app.tsx',
       'src/auth-provider.tsx',
       'src/main.tsx',
+      'src/organizations-page.tsx',
       'src/protected.tsx',
       'src/sign-in-page.tsx',
       'tsconfig.json',

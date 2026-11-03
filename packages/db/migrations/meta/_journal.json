@@ -253,6 +253,69 @@
       "when": 1791856146299,
       "tag": "0035_proposals_target_id_text",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1792719557239,
+      "tag": "0036_organizations",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1792722417362,
+      "tag": "0037_user_import_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1792723428178,
+      "tag": "0038_organization_custom_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1792726732330,
+      "tag": "0039_session_active_organization",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1792729555982,
+      "tag": "0040_organization_invitations",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1792734367525,
+      "tag": "0041_organization_domains",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1792739520399,
+      "tag": "0042_organization_domain_lifetime",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1792745535429,
+      "tag": "0044_organization_invitations_email_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1792751006253,
+      "tag": "0045_organization_search_indexes",
+      "breakpoints": true
     }
   ]
 }

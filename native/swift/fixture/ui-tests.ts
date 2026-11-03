@@ -1,4 +1,13 @@
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
+import {
+  finishCaptures,
+  parseCaptureArgs,
+  prepareSimulator,
+  rawDirectory,
+  removeRaw,
+  restoreSimulator,
+  simulatorFacts,
+} from '../../fixture/captures'
 
 // Runs the UI tests of the SwiftUI screens (examples/swiftui/TulaExampleUITests) on an iOS
 // simulator, against the real API on this machine.
@@ -6,6 +15,11 @@ import { join } from 'node:path'
 //   bun run native/swift/fixture/ui-tests.ts                       an iPhone simulator it picks
 //   bun run native/swift/fixture/ui-tests.ts --simulator <udid>    this one
 //   bun run native/swift/fixture/ui-tests.ts -- -only-testing:TulaExampleUITests/AuthScreensUITests/testPasswordReset
+//   bun run native/swift/fixture/ui-tests.ts --screenshots apps/docs/public/native/ios
+//                                                                  not a test run: photographs the
+//                                                                  screens in both colour schemes
+//                                                                  and writes the files and the
+//                                                                  manifest the documentation shows
 //
 // A test runner on a simulator cannot start a process of the machine, so this does what the
 // Swift journey tests do for themselves: it starts native/swift/fixture/server.ts (the real
@@ -171,7 +185,19 @@ const FIXTURE_TIMEOUT_MS = TEST_TIMEOUT_MS + 5 * 60_000
 if (import.meta.main) {
   const root = join(import.meta.dir, '../../..')
   const args = process.argv.slice(2)
-  const rest = args.includes('--') ? args.slice(args.indexOf('--') + 1) : []
+  const own = args.includes('--') ? args.slice(0, args.indexOf('--')) : args
+  const captures = parseCaptureArgs(own)
+  if (captures.problem !== undefined) {
+    process.stderr.write(`${captures.problem}\n`)
+    process.exit(1)
+  }
+  // A capture run is the capture tests alone; every other test skips itself without the
+  // directory, and the others are not what the caller asked for.
+  const rest = [
+    ...(captures.directory === null ? [] : ['-only-testing:TulaExampleUITests/CaptureUITests']),
+    ...(args.includes('--') ? args.slice(args.indexOf('--') + 1) : []),
+  ]
+  const rawCaptures = captures.directory === null ? null : rawDirectory()
   const named = args.indexOf('--simulator')
   let udid = named >= 0 ? args[named + 1] : undefined
 
@@ -205,6 +231,12 @@ if (import.meta.main) {
   /** End what this run started. Safe to call twice: on a signal and again in the `finally`. */
   const stop = (): void => {
     tests?.kill()
+    if (rawCaptures !== null) {
+      removeRaw(rawCaptures)
+    }
+    if (captures.directory !== null && udid !== undefined) {
+      restoreSimulator(udid)
+    }
     try {
       // The fixture ends when its standard input closes.
       fixture.stdin.end()
@@ -233,22 +265,40 @@ if (import.meta.main) {
       process.stdout.write(`fixture: ${origin}\n`)
 
       const derivedData = join(root, 'examples/swiftui/build')
-      tests = Bun.spawn(xcodebuildArguments(udid as string, derivedData, rest), {
-        cwd: root,
-        // `xcodebuild` hands a variable named TEST_RUNNER_<NAME> to the test runner as <NAME>.
-        env: {
-          ...process.env,
-          TEST_RUNNER_TULA_FIXTURE_ORIGIN: origin,
-          // Where a failed test keeps a picture of the screen, when the caller named a directory.
-          ...(process.env.TULA_SCREENSHOT_DIR
-            ? { TEST_RUNNER_TULA_SCREENSHOT_DIR: process.env.TULA_SCREENSHOT_DIR }
-            : {}),
-        },
-        stdout: 'inherit',
-        stderr: 'inherit',
-        timeout: TEST_TIMEOUT_MS,
-      })
-      code = await tests.exited
+      const ready = captures.directory === null || prepareSimulator(udid as string)
+      if (!ready) {
+        process.stderr.write('the simulator did not boot, or took no status bar override\n')
+      }
+      if (ready) {
+        tests = Bun.spawn(xcodebuildArguments(udid as string, derivedData, rest), {
+          cwd: root,
+          // `xcodebuild` hands a variable named TEST_RUNNER_<NAME> to the test runner as <NAME>.
+          env: {
+            ...process.env,
+            TEST_RUNNER_TULA_FIXTURE_ORIGIN: origin,
+            // Where a failed test keeps a picture of the screen, when the caller named a directory.
+            ...(process.env.TULA_SCREENSHOT_DIR
+              ? { TEST_RUNNER_TULA_SCREENSHOT_DIR: process.env.TULA_SCREENSHOT_DIR }
+              : {}),
+            ...(rawCaptures !== null ? { TEST_RUNNER_TULA_CAPTURE_DIR: rawCaptures } : {}),
+          },
+          stdout: 'inherit',
+          stderr: 'inherit',
+          timeout: TEST_TIMEOUT_MS,
+        })
+        code = await tests.exited
+        if (code === 0 && rawCaptures !== null && captures.directory !== null) {
+          const outDirectory = resolve(root, captures.directory)
+          const made = finishCaptures({
+            platform: 'ios',
+            rawDirectory: rawCaptures,
+            outDirectory,
+            root,
+            ...simulatorFacts(udid as string),
+          })
+          process.stdout.write(`captures: ${made.captures.length} in ${outDirectory}\n`)
+        }
+      }
     }
   } finally {
     stop()

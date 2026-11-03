@@ -225,6 +225,28 @@ test.describe('the documentation site', () => {
     await expectAccessible(page, 'quickstart after choosing dark')
   })
 
+  test('the current page is marked with the Tula mark, in ink on paper and paper on ink', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.emulateMedia({ colorScheme: 'light' })
+    await page.goto(at('/quickstart/'))
+    const marker = () =>
+      page.locator('.nav-link[aria-current="page"]').evaluate((link) => {
+        const style = getComputedStyle(link, '::before')
+        return {
+          mask: style.maskImage || style.getPropertyValue('-webkit-mask-image'),
+          color: style.backgroundColor,
+        }
+      })
+    const light = await marker()
+    expect(light.mask).toContain('data:image/svg+xml')
+    expect(light.color).toBe('rgb(26, 26, 24)')
+    await page.getByRole('button', { name: 'Dark theme' }).click()
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+    expect((await marker()).color).toBe('rgb(241, 239, 232)')
+  })
+
   test('searching an error code finds its anchor, and following it lands on the code', async ({
     page,
   }) => {

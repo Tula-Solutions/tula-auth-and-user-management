@@ -187,6 +187,17 @@ library of the package ("SwiftUI screens" below: TULA-49, and TULA-60 for the re
   say what was run.
   The coverage thresholds are `SWIFT_COVERAGE_THRESHOLD`, over the hand-written sources
   only: never count `Generated/`.
+- **Organizations (`TulaOrganizations.swift`, TULA-121, ADR 0065) are read for showing and
+  never for deciding.** `TulaOrganizationClaims.read` takes the three claims of the access
+  token without verifying its signature, all three or none, under the contract's grammars
+  (hand-kept copies; `.claude/hooks/native-organizations.test.ts` holds the claim names, the
+  fragment parameter and the caps to the contract's). Keep the doc comment that says the
+  app's own server checks the same keys. **An invitation's token is a secret**:
+  `TulaInvitationLink`, `TulaOrganizations` and `TulaOrganizationInvitations` are
+  `TulaRedacted`, the token is sent in a request body only, and it is in no error, log line
+  or URL. Choosing an organization (`TulaSession.setActiveOrganization`) installs only the
+  access token of the answer, as a step-up does, and checks that the answer names the choice
+  that was asked for; `OrganizationJourneys` has the three journeys.
 - **Never say more of iOS than was run**, in a doc, a README, a changeset or a doc
   comment. What was: the package compiled for the iOS simulator, and the screens, with the
   client under them, run in one simulator by the example's UI tests ("SwiftUI screens"

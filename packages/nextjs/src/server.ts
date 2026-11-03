@@ -19,7 +19,7 @@ import { type Auth, authenticate, fetchCurrentUser, requestFromHeaders } from '.
  * sent the header, so `http` there decides nothing against such a cookie).
  */
 
-export type { CustomClaims } from '@tula-tech/contract/custom-claims'
+export type { CustomClaims, OrganizationCheck } from '@tula-tech/contract/custom-claims'
 export type { User } from '@tula-tech/core'
 export type { Auth } from './helpers'
 export { REDIRECT_PARAM, safeRedirectPath } from './paths'
@@ -45,10 +45,13 @@ async function currentRequest(): Promise<Request> {
  * without it, a session whose token has expired reads as signed out. Verified once per
  * request, however often it is called. Reading it makes the route dynamic.
  *
- * @returns `{ isSignedIn: true, userId, sessionId, claims, customClaims, getToken }`, or the
- *   signed-out shape with `null`s. `customClaims` holds what the JWT template of the
- *   session's profile defines (empty without one), for a token session and a `stateful` one
- *   alike.
+ * @returns `{ isSignedIn: true, userId, sessionId, claims, customClaims, orgId, orgRole,
+ *   orgPermissions, has, getToken }`, or the signed-out shape with `null`s. `customClaims`
+ *   holds what the JWT template of the session's profile defines (empty without one), for a
+ *   token session and a `stateful` one alike. `orgId`, `orgRole` and `orgPermissions` are the
+ *   active organization's (ADR 0065; `null`, `null` and empty with none), and
+ *   `has({ permission } | { role })` checks them offline: false with no active organization,
+ *   exact for a permission.
  * @throws TypeError when the configuration is incomplete.
  *
  * @example

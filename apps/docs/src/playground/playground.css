@@ -1,0 +1,668 @@
+@import "@tula-tech/react/styles.css";
+
+/*
+ * The playground island's stylesheet, loaded by the pages that hold one and by no other page.
+ * Two parts: the components' own stylesheet and the playground's layout below. Tailwind's
+ * utilities for the island's classes are written by the site's stylesheet (`styles.css` scans
+ * the island's sources), never here: a second utilities layer would override the site's.
+ * Colours, radii, shadows and motion are the site's tokens (`styles/tokens.gen.css`); nothing
+ * here is a colour of its own, and `contrast.test.ts` holds that.
+ */
+
+/* ----------------------------------------------------------- the placeholder and the frame */
+
+/* The full playground page is wider than the prose; the prose around it keeps its measure. */
+.main[data-wide] {
+  max-width: none;
+}
+.main[data-wide] .doc [data-docs-section] > :not(.pg-host) {
+  max-width: var(--prose);
+}
+
+/* The placeholder the build writes: its text is for a reader without the script. */
+.pg-host {
+  container-type: inline-size;
+  margin: 24px 0 32px;
+}
+.pg-host:not([data-state="ready"]) {
+  min-height: 420px;
+  padding: 20px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  color: var(--body);
+}
+.pg-host[data-state="failed"]::after {
+  content: "The playground could not be loaded.";
+  display: block;
+  margin-top: 8px;
+  color: var(--danger);
+}
+
+.pg {
+  overflow: clip;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--raised);
+  box-shadow: var(--sh-1);
+  color: var(--body);
+  font-family: var(--font-sans-stack);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  text-align: left;
+}
+.pg *,
+.pg *::before,
+.pg *::after {
+  box-sizing: border-box;
+}
+.pg h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1rem;
+  line-height: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.pg p {
+  margin: 0;
+}
+.pg-muted {
+  color: var(--muted);
+}
+.pg-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.pg-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+@container (min-width: 800px) {
+  .pg-main {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+  .pg-panel-col {
+    border-top: 0;
+    border-left: 1px solid var(--border);
+  }
+}
+.pg-stage-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+}
+.pg-panel-col {
+  min-width: 0;
+  padding: 16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+
+/* The bar above the stage: what this is, and the two things a visitor does to all of it. */
+.pg-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.pg-bar-spacer {
+  flex: 1;
+}
+.pg-sandbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 10px 3px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.pg-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* The stage: the component on a dotted ground, under a faint address bar. */
+.pg-stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  min-height: 500px;
+  padding: 52px 12px 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background-color: var(--surface);
+  background-image: radial-gradient(var(--border) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+.pg-url {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 24px);
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--raised);
+  color: var(--muted);
+  font-family: var(--font-mono-stack);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transform: translateX(-50%);
+}
+.pg-lock {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 2px;
+  background: var(--ok);
+}
+.pg-frame {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+}
+.pg-back {
+  align-self: center;
+}
+.pg-other,
+.pg-note {
+  color: var(--muted);
+}
+.pg-other {
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--raised);
+}
+
+/* The sandbox's own pages: a provider's consent screen, the signed-out gate. */
+.pg-consent,
+.pg-gate {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--raised);
+  box-shadow: var(--sh-2);
+  color: var(--body);
+}
+.pg-consent-brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.pg-wordmark {
+  color: var(--ink);
+  font-size: 1.125rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+.pg-consent-sandbox {
+  padding: 2px 8px;
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.pg-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.pg-choice legend {
+  margin-bottom: 4px;
+  padding: 0;
+  color: var(--ink);
+  font-weight: 600;
+}
+.pg-choice-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  cursor: pointer;
+}
+.pg-choice-row:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.pg-choice-row:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.pg-choice-row input {
+  accent-color: var(--accent);
+}
+.pg-choice-row span {
+  display: flex;
+  flex-direction: column;
+}
+.pg-choice-row strong {
+  color: var(--ink);
+}
+.pg-choice-row small {
+  color: var(--muted);
+}
+
+/* The simulated passkey sheet, over the frame. */
+.pg-sheet-wrap {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--ink) 45%, transparent);
+}
+.pg-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  padding: 20px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+  background: var(--raised);
+  box-shadow: var(--sh-3);
+}
+.pg-sheet-flag {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* ------------------------------------------------------------------------------- controls */
+
+.pg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--raised);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+.pg-btn:hover:not(:disabled) {
+  background: var(--surface);
+}
+.pg-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.pg-btn:focus-visible,
+.pg-copy:focus-visible,
+.pg input[type="color"]:focus-visible,
+.pg pre:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.pg-btn-primary {
+  border-color: var(--btn-bg);
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+}
+.pg-btn-primary:hover:not(:disabled) {
+  background: var(--btn-bg);
+  opacity: 0.88;
+}
+.pg-btn-quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+.pg-btn-quiet:hover:not(:disabled) {
+  background: var(--surface);
+  color: var(--ink);
+}
+.pg-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.pg-copy {
+  padding: 2px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--raised);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.pg-copy:hover {
+  background: var(--surface);
+}
+
+.pg-group {
+  min-width: 0;
+  margin: 0 0 20px;
+  padding: 0;
+  border: 0;
+}
+.pg-group-title {
+  margin-bottom: 8px;
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.pg-hint {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.pg-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+}
+.pg-switch-label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  color: var(--ink);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+.pg-switch-label small {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+.pg-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+.pg-field label {
+  color: var(--ink);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+.pg-value {
+  color: var(--muted);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.pg-segmented,
+.pg-chips {
+  flex-wrap: wrap;
+  max-width: 100%;
+  margin-top: 4px;
+}
+.pg-colors {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 12px;
+}
+.pg-color {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pg-color label {
+  color: var(--ink);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+.pg-color-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pg input[type="color"] {
+  width: 36px;
+  height: 32px;
+  padding: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--raised);
+  cursor: pointer;
+}
+.pg-color-input code {
+  color: var(--body);
+  font-family: var(--font-mono-stack);
+  font-size: 0.75rem;
+}
+.pg-warn {
+  margin-top: 8px;
+  color: var(--warn);
+  font-size: 0.8125rem;
+}
+.pg-select {
+  width: 100%;
+}
+
+/* ----------------------------------------------------------------------- inbox and accounts */
+
+.pg-mails {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pg-mail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg);
+}
+.pg-mail[data-expired] {
+  border-style: dashed;
+}
+.pg-mail-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--ink);
+}
+.pg-mail-head time {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+.pg-mail-text {
+  color: var(--body);
+}
+.pg-mail-code {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.pg-mail-code code,
+.pg-totp code {
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-mono-stack);
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+}
+.pg-expire {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.pg-empty {
+  padding: 16px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-md);
+  color: var(--muted);
+}
+.pg-defs {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 16px;
+}
+.pg-defs dt {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.pg-defs dd {
+  margin: 0;
+  color: var(--ink);
+}
+.pg-defs code,
+.pg-note code {
+  font-family: var(--font-mono-stack);
+  font-size: 0.8125rem;
+}
+.pg-subtitle {
+  margin-bottom: 8px;
+}
+.pg-totps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pg-totps li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--ink);
+}
+.pg-totp {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.pg-totp small {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ----------------------------------------------------------------------------- the code */
+
+.pg-code {
+  padding: 16px;
+  border-top: 1px solid var(--border);
+}
+.pg-codebox {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.pg-codebox-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px 6px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-family: var(--font-mono-stack);
+  font-size: 0.75rem;
+}
+.pg pre {
+  max-height: 340px;
+  margin: 0;
+  padding: 14px;
+  overflow: auto;
+  color: var(--ink);
+  font-family: var(--font-mono-stack);
+  font-size: var(--fs-code);
+  line-height: var(--lh-code);
+  tab-size: 2;
+  scrollbar-width: thin;
+}
+.pg pre code {
+  font-family: inherit;
+  white-space: pre;
+}
+.pg-try {
+  padding: 16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+.pg-try ul {
+  margin: 8px 0 0;
+  padding-left: 1.25rem;
+  list-style: disc;
+}
+.pg-try li + li {
+  margin-top: 4px;
+}
+.pg-note {
+  font-size: 0.8125rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pg *,
+  .pg *::before,
+  .pg *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

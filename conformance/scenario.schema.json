@@ -304,6 +304,24 @@
                   "captureCode": {
                     "type": "string"
                   },
+                  "captureFragmentParam": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "capture": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "url": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["name", "capture"],
+                    "additionalProperties": false
+                  },
                   "subject": {
                     "type": "string"
                   },
@@ -1026,6 +1044,24 @@
                   },
                   "captureCode": {
                     "type": "string"
+                  },
+                  "captureFragmentParam": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "capture": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "url": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["name", "capture"],
+                    "additionalProperties": false
                   },
                   "subject": {
                     "type": "string"

@@ -31,6 +31,7 @@ import {
   isStepUpRequired,
   isTulaError,
   type OAuthCallbackOutcome,
+  readInvitationLink,
   type SignInFlow,
   stepUpMethods,
   type TokenStorage,
@@ -2368,6 +2369,603 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
           backupCodes: { remaining: 0 },
           sms: { enabled: false, enabledAt: null, inUse: false, available: false },
         })
+      }
+    )
+
+    journey(
+      'my organizations and the active organization',
+      'organizations: a user lists theirs, creates one where allowed and chooses the one the session acts in; the token carries it, a refresh re-reads the membership and a removed member keeps the session without the claims',
+      async () => {
+        const s = await server()
+        const { tula, email } = await signUp(s)
+        const userId = tula.state.status === 'signed-in' ? tula.state.user?.id : undefined
+
+        // Off by default: every route answers its code and nothing changes.
+        expect((await caught(tula.organizations.list())).code).toBe('organization.disabled')
+        expect((await caught(tula.organizations.setActive(null))).code).toBe(
+          'organization.disabled'
+        )
+
+        /** Replace the environment's organization settings, as an operator does. */
+        async function configure(allowUserCreated: boolean): Promise<void> {
+          const read = await s.admin('GET', '/v1/admin/settings')
+          const { settings } = (await read.json()) as { settings: EnvironmentSettings }
+          const saved = await s.admin(
+            'PUT',
+            '/v1/admin/settings',
+            {
+              ...settings,
+              organizations: {
+                enabled: true,
+                allowUserCreated,
+                maxCreatedPerUser: 1,
+                creatorRole: 'admin',
+                defaultRole: 'member',
+                personalAccount: true,
+              },
+            },
+            { 'if-match': read.headers.get('etag') ?? '' }
+          )
+          expect(saved.status).toBe(200)
+        }
+        await configure(false)
+        expect(
+          (await caught(tula.organizations.create({ name: 'Mine', slug: `mine-${userId}` }))).code
+        ).toBe('organization.creation_disabled')
+
+        const created = async (name: string, slug: string) =>
+          (
+            (await (await s.admin('POST', '/v1/admin/organizations', { name, slug })).json()) as {
+              id: string
+            }
+          ).id
+        const orgId = await created('Conformance Org', `conformance-${userId}`)
+        const otherId = await created('Elsewhere', `elsewhere-${userId}`)
+        // A second user keeps an administrator in the organization, so the first can be demoted.
+        const managerEmail = freshEmail()
+        const manager = (await (
+          await s.admin('POST', '/v1/admin/users', { email: managerEmail, emailVerified: true })
+        ).json()) as { id: string }
+        const memberships = `/v1/admin/organizations/${orgId}/memberships`
+        expect(
+          (await s.admin('POST', memberships, { userId: manager.id, role: 'admin' })).status
+        ).toBe(201)
+        expect((await s.admin('POST', memberships, { userId, role: 'member' })).status).toBe(201)
+
+        const page = await tula.organizations.list()
+        expect(page.data.map((org) => [org.id, org.role])).toEqual([[orgId, 'member']])
+        expect(page.activeOrganizationId).toBeNull()
+        expect(tula.state).toMatchObject({ status: 'signed-in', organizationId: null })
+        expect(decodeJwt((await tula.session.getToken()) ?? '').org_id).toBeUndefined()
+
+        // More organizations than one page: the client asks for each page by number.
+        const extraId = await created('Second Membership', `second-${userId}`)
+        expect(
+          (
+            await s.admin('POST', `/v1/admin/organizations/${extraId}/memberships`, {
+              userId,
+              role: 'member',
+            })
+          ).status
+        ).toBe(201)
+        const first = await tula.organizations.list({ page: 1, size: 1 })
+        const second = await tula.organizations.list({ page: 2, size: 1 })
+        expect(first.meta).toEqual({ totalCount: 2, totalPages: 2, page: 1, perPage: 1 })
+        expect(second.meta).toMatchObject({ totalCount: 2, page: 2 })
+        expect([...first.data, ...second.data].map((org) => org.id).sort()).toEqual(
+          [orgId, extraId].sort()
+        )
+
+        // One that is not theirs, and one that does not exist, are refused alike.
+        const refused = await caught(tula.organizations.setActive(otherId))
+        expect(refused).toMatchObject({ code: 'organization.not_a_member', status: 403 })
+        expect((await caught(tula.organizations.setActive(userId as string))).code).toBe(
+          refused.code
+        )
+        expect(tula.state).toMatchObject({ organizationId: null })
+
+        const before = refreshes(s).length
+        const chosen = await tula.organizations.setActive(orgId)
+        expect(chosen).toMatchObject({ organizationId: orgId })
+        expect(refreshes(s)).toHaveLength(before)
+        expect(tula.state).toMatchObject({ status: 'signed-in', organizationId: orgId })
+        expect(decodeJwt((await tula.session.getToken()) ?? '')).toMatchObject({
+          org_id: orgId,
+          org_role: 'member',
+        })
+        expect((await tula.organizations.list()).activeOrganizationId).toBe(orgId)
+
+        // A refresh keeps the choice and reads the membership again.
+        s.advance(1_000)
+        expect(decodeJwt((await tula.session.refresh()) ?? '')).toMatchObject({
+          org_id: orgId,
+          org_role: 'member',
+        })
+        const member = `${memberships}/${userId}`
+        expect((await s.admin('PATCH', member, { role: 'admin' })).status).toBe(200)
+        s.advance(1_000)
+        expect(decodeJwt((await tula.session.refresh()) ?? '').org_role).toBe('admin')
+        expect((await s.admin('PATCH', member, { role: 'member' })).status).toBe(200)
+        s.advance(1_000)
+        expect(decodeJwt((await tula.session.refresh()) ?? '').org_role).toBe('member')
+
+        // Removed: the session lives on, its next token has no organization.
+        expect((await s.admin('DELETE', member)).status).toBe(204)
+        s.advance(1_000)
+        const after = decodeJwt((await tula.session.refresh()) ?? '')
+        expect(after.org_id).toBeUndefined()
+        expect(after.org_role).toBeUndefined()
+        expect(after.org_perms).toBeUndefined()
+        expect(tula.state).toMatchObject({ status: 'signed-in', organizationId: null })
+        expect((await caught(tula.organizations.setActive(orgId))).code).toBe(
+          'organization.not_a_member'
+        )
+        expect(await tula.organizations.setActive(null)).toMatchObject({ organizationId: null })
+
+        // Creating needs the setting, makes the user its admin, stops at the limit and
+        // does not switch the session.
+        await configure(true)
+        expect(
+          (
+            await caught(
+              tula.organizations.create({ name: 'Taken', slug: `conformance-${userId}` })
+            )
+          ).code
+        ).toBe('organization.slug_taken')
+        const mine = await tula.organizations.create({ name: 'Mine', slug: `mine-${userId}` })
+        expect(mine).toMatchObject({ slug: `mine-${userId}`, role: 'admin' })
+        expect(
+          (await caught(tula.organizations.create({ name: 'Again', slug: `again-${userId}` }))).code
+        ).toBe('organization.limit_reached')
+        expect(tula.state).toMatchObject({ organizationId: null })
+        await tula.organizations.setActive(mine.id)
+        expect(tula.state).toMatchObject({ organizationId: mine.id })
+        expect(email).toBeTruthy()
+      }
+    )
+
+    journey(
+      'organization invitations',
+      'organization invitations: an administrator invites an address, the emailed link carries the token in its fragment, only the invited account accepts or declines, a member without the permission cannot invite, and a withdrawn or used invitation is refused',
+      async () => {
+        const s = await server()
+        const JOIN = `${APP_ORIGIN}/join`
+        const read = await s.admin('GET', '/v1/admin/settings')
+        const { settings } = (await read.json()) as { settings: EnvironmentSettings }
+        const saved = await s.admin(
+          'PUT',
+          '/v1/admin/settings',
+          {
+            ...settings,
+            urls: { ...settings.urls, allowedRedirectUrls: [JOIN] },
+            organizations: {
+              enabled: true,
+              allowUserCreated: true,
+              maxCreatedPerUser: 1,
+              creatorRole: 'admin',
+              defaultRole: 'member',
+              personalAccount: true,
+            },
+          },
+          { 'if-match': read.headers.get('etag') ?? '' }
+        )
+        expect(saved.status).toBe(200)
+
+        const owner = await signUp(s)
+        const ada = await signUp(s)
+        const stranger = await signUp(s)
+        const org = await owner.tula.organizations.create({ name: 'Acme', slug: 'acme' })
+        const invitations = owner.tula.organizations.invitations
+        const linkOf = () => {
+          const mail = s.deps.mailer.outbox.findLast((message) => /invited/.test(message.subject))
+          const link = /https?:\/\/\S+#tula_invitation=\S+/.exec(mail?.text ?? '')?.[0] ?? ''
+          return { mail, link, read: readInvitationLink(link) }
+        }
+
+        // An invitation: the email goes to the address and the link leads to the redirect URL.
+        const sent = await invitations.invite(org.id, {
+          email: ada.email,
+          role: 'member',
+          redirectUrl: JOIN,
+        })
+        expect(sent).toMatchObject({ organizationId: org.id, role: 'member', status: 'pending' })
+        const first = linkOf()
+        expect(first.mail?.to).toBe(ada.email)
+        expect(first.link.startsWith(`${JOIN}#tula_invitation=`)).toBe(true)
+        expect(first.read?.cleanUrl).toBe(JOIN)
+        const token = first.read?.token ?? ''
+        expect(token).not.toBe('')
+        // The API's answers never hold the token.
+        expect(JSON.stringify(await invitations.list(org.id))).not.toContain(token)
+        expect((await invitations.list(org.id)).data.map((one) => one.id)).toEqual([sent.id])
+        expect(
+          (
+            await caught(
+              invitations.invite(org.id, { email: ada.email, role: 'member', redirectUrl: JOIN })
+            )
+          ).code
+        ).toBe('organization.invitation_exists')
+        expect(
+          (
+            await caught(
+              invitations.invite(org.id, {
+                email: freshEmail(),
+                role: 'member',
+                redirectUrl: 'https://evil.test/join',
+              })
+            )
+          ).code
+        ).toBe('request.redirect_not_allowed')
+
+        // Anyone with the token may see what it is for, signed in or not.
+        const visitor = s.client(NATIVE).tula
+        expect(await visitor.organizations.invitations.preview(token)).toMatchObject({
+          organizationName: 'Acme',
+          role: 'member',
+          email: ada.email,
+        })
+        expect((await caught(visitor.organizations.invitations.preview('nothing'))).code).toBe(
+          'organization.invitation_not_found'
+        )
+
+        // Only the invited account answers.
+        expect((await caught(stranger.tula.organizations.invitations.accept(token))).code).toBe(
+          'organization.invitation_wrong_account'
+        )
+        expect((await caught(stranger.tula.organizations.invitations.decline(token))).code).toBe(
+          'organization.invitation_wrong_account'
+        )
+        const joined = await ada.tula.organizations.invitations.accept(token)
+        expect(joined).toMatchObject({ id: org.id, role: 'member' })
+        expect((await ada.tula.organizations.list()).data.map((one) => one.id)).toEqual([org.id])
+        expect((await caught(ada.tula.organizations.invitations.accept(token))).code).toBe(
+          'organization.invitation_used'
+        )
+        expect((await invitations.list(org.id)).data).toEqual([])
+
+        // A member whose role cannot manage invitations cannot invite or list.
+        const refused = await caught(
+          ada.tula.organizations.invitations.invite(org.id, {
+            email: freshEmail(),
+            role: 'member',
+            redirectUrl: JOIN,
+          })
+        )
+        expect(refused).toMatchObject({
+          code: 'organization.permission_required',
+          status: 403,
+        })
+        expect((await caught(ada.tula.organizations.invitations.list(org.id))).code).toBe(
+          'organization.permission_required'
+        )
+        // And a member cannot be invited again.
+        expect(
+          (
+            await caught(
+              invitations.invite(org.id, { email: ada.email, role: 'admin', redirectUrl: JOIN })
+            )
+          ).code
+        ).toBe('organization.member_exists')
+
+        // Declining uses it up; withdrawing makes the link say so.
+        const declined = await invitations.invite(org.id, {
+          email: stranger.email,
+          role: 'member',
+          redirectUrl: JOIN,
+        })
+        const declinedToken = linkOf().read?.token ?? ''
+        await stranger.tula.organizations.invitations.decline(declinedToken)
+        expect(
+          (await caught(stranger.tula.organizations.invitations.accept(declinedToken))).code
+        ).toBe('organization.invitation_used')
+        expect((await caught(invitations.revoke(org.id, declined.id))).code).toBe(
+          'organization.invitation_used'
+        )
+        const thirdEmail = freshEmail()
+        const withdrawn = await invitations.invite(org.id, {
+          email: thirdEmail,
+          role: 'member',
+          redirectUrl: JOIN,
+        })
+        const withdrawnToken = linkOf().read?.token ?? ''
+        await invitations.revoke(org.id, withdrawn.id)
+        expect((await caught(visitor.organizations.invitations.preview(withdrawnToken))).code).toBe(
+          'organization.invitation_revoked'
+        )
+        expect((await caught(invitations.revoke(org.id, withdrawn.id))).code).toBe(
+          'organization.invitation_revoked'
+        )
+
+        // An invitation lasts seven days.
+        const lapsing = await invitations.invite(org.id, {
+          email: freshEmail(),
+          role: 'member',
+          redirectUrl: JOIN,
+        })
+        const lapsingToken = linkOf().read?.token ?? ''
+        expect(lapsing.status).toBe('pending')
+        s.advance(7 * 24 * 3600 * 1000 + 1000)
+        expect((await caught(visitor.organizations.invitations.preview(lapsingToken))).code).toBe(
+          'organization.invitation_expired'
+        )
+      }
+    )
+
+    journey(
+      'organization members and roles from the client',
+      'organization members: a member reads the list, only a holder of the permission renames, deletes, changes a role or removes someone, the last manager cannot leave, and a member who left is refused on the next call',
+      async () => {
+        const s = await server()
+        const read = await s.admin('GET', '/v1/admin/settings')
+        const { settings } = (await read.json()) as { settings: EnvironmentSettings }
+        const saved = await s.admin(
+          'PUT',
+          '/v1/admin/settings',
+          {
+            ...settings,
+            organizations: {
+              enabled: true,
+              allowUserCreated: true,
+              maxCreatedPerUser: 1,
+              creatorRole: 'admin',
+              defaultRole: 'member',
+              personalAccount: true,
+            },
+          },
+          { 'if-match': read.headers.get('etag') ?? '' }
+        )
+        expect(saved.status).toBe(200)
+
+        const owner = await signUp(s)
+        const ada = await signUp(s)
+        const org = await owner.tula.organizations.create({ name: 'Acme', slug: 'acme' })
+        const adaId = (await ada.tula.user.get()).id
+        const ownerId = (await owner.tula.user.get()).id
+        await s.admin('POST', `/v1/admin/organizations/${org.id}/memberships`, {
+          userId: adaId,
+          role: 'member',
+        })
+
+        // A member reads the list, with addresses and role keys, and nothing else.
+        const listed = await ada.tula.organizations.members.list(org.id)
+        expect(listed.data.map((one) => [one.email, one.role])).toEqual([
+          [owner.email, 'admin'],
+          [ada.email, 'member'],
+        ])
+        // Thunks, so each call starts only when it is awaited: promises made up front would
+        // reject while an earlier one is still being awaited, which Bun reports as unhandled.
+        for (const refused of [
+          () => ada.tula.organizations.roles(org.id),
+          () => ada.tula.organizations.update(org.id, { name: 'Mine' }),
+          () => ada.tula.organizations.remove(org.id),
+          () => ada.tula.organizations.members.changeRole(org.id, ownerId, 'member'),
+          () => ada.tula.organizations.members.remove(org.id, ownerId),
+        ]) {
+          expect((await caught(refused())).code).toBe('organization.permission_required')
+        }
+
+        // The owner manages: roles on offer, a rename, a role that does not exist.
+        expect((await owner.tula.organizations.roles(org.id)).data.map((one) => one.key)).toEqual([
+          'admin',
+          'member',
+        ])
+        expect(await owner.tula.organizations.update(org.id, { name: 'Acme Inc' })).toMatchObject({
+          name: 'Acme Inc',
+          role: 'admin',
+        })
+        expect(
+          (await caught(owner.tula.organizations.members.changeRole(org.id, adaId, 'nobody'))).code
+        ).toBe('organization.role_unknown')
+
+        // The last manager stays; with a second one, the first may leave.
+        expect((await caught(owner.tula.organizations.leave(org.id))).code).toBe(
+          'organization.last_manager'
+        )
+        expect(
+          await owner.tula.organizations.members.changeRole(org.id, adaId, 'admin')
+        ).toMatchObject({ role: 'admin' })
+        await owner.tula.organizations.leave(org.id)
+        expect((await caught(owner.tula.organizations.members.list(org.id))).code).toBe(
+          'organization.not_a_member'
+        )
+
+        // The remaining admin deletes it, and it is gone for everyone.
+        await ada.tula.organizations.remove(org.id)
+        expect((await caught(ada.tula.organizations.members.list(org.id))).code).toBe(
+          'organization.not_a_member'
+        )
+      }
+    )
+
+    journey(
+      'my pending organization invitations',
+      'my invitations: the invited user lists the invitations sent to their verified address, with no token, and accepts or declines one by its id; another account is told it does not exist; a withdrawn one is refused',
+      async () => {
+        const s = await server()
+        const JOIN = `${APP_ORIGIN}/join`
+        const read = await s.admin('GET', '/v1/admin/settings')
+        const { settings } = (await read.json()) as { settings: EnvironmentSettings }
+        const saved = await s.admin(
+          'PUT',
+          '/v1/admin/settings',
+          {
+            ...settings,
+            urls: { ...settings.urls, allowedRedirectUrls: [JOIN] },
+            organizations: {
+              enabled: true,
+              allowUserCreated: true,
+              maxCreatedPerUser: 1,
+              creatorRole: 'admin',
+              defaultRole: 'member',
+              personalAccount: true,
+            },
+          },
+          { 'if-match': read.headers.get('etag') ?? '' }
+        )
+        expect(saved.status).toBe(200)
+
+        const owner = await signUp(s)
+        const ada = await signUp(s)
+        const stranger = await signUp(s)
+        const org = await owner.tula.organizations.create({ name: 'Acme', slug: 'acme' })
+        const invitations = owner.tula.organizations.invitations
+
+        // Nothing yet. Then an invitation: the invited user lists it, and nobody else does.
+        expect((await ada.tula.organizations.invitations.mine()).data).toEqual([])
+        const sent = await invitations.invite(org.id, {
+          email: ada.email,
+          role: 'admin',
+          redirectUrl: JOIN,
+        })
+        const link = /#tula_invitation=(\S+)/.exec(
+          s.deps.mailer.outbox.findLast((message) => /invited/.test(message.subject))?.text ?? ''
+        )?.[1]
+        const mine = await ada.tula.organizations.invitations.mine()
+        expect(mine.data).toEqual([
+          {
+            id: sent.id,
+            organizationName: 'Acme',
+            role: 'admin',
+            expiresAt: sent.expiresAt,
+          },
+        ])
+        // Four fields: not the token, the address, the inviter or the organization's id.
+        expect(JSON.stringify(mine)).not.toContain(link ?? 'no link was sent')
+        expect(JSON.stringify(mine)).not.toContain(ada.email)
+        expect(JSON.stringify(mine)).not.toContain(org.id)
+        expect((await stranger.tula.organizations.invitations.mine()).data).toEqual([])
+
+        // Another account, and an id nothing was issued for, look alike.
+        expect(
+          (await caught(stranger.tula.organizations.invitations.acceptMine(sent.id))).code
+        ).toBe('organization.invitation_not_found')
+        expect(
+          (await caught(stranger.tula.organizations.invitations.declineMine(sent.id))).code
+        ).toBe('organization.invitation_not_found')
+
+        // Accepting by id joins with the invitation's role, and uses it up.
+        expect(await ada.tula.organizations.invitations.acceptMine(sent.id)).toMatchObject({
+          id: org.id,
+          role: 'admin',
+        })
+        expect((await ada.tula.organizations.invitations.mine()).data).toEqual([])
+        expect((await caught(ada.tula.organizations.invitations.acceptMine(sent.id))).code).toBe(
+          'organization.invitation_used'
+        )
+
+        // Declining by id uses one up with no membership; a withdrawn one is refused.
+        const second = await invitations.invite(org.id, {
+          email: stranger.email,
+          role: 'member',
+          redirectUrl: JOIN,
+        })
+        await stranger.tula.organizations.invitations.declineMine(second.id)
+        expect((await stranger.tula.organizations.list()).data).toEqual([])
+        const third = await invitations.invite(org.id, {
+          email: stranger.email,
+          role: 'member',
+          redirectUrl: JOIN,
+        })
+        await invitations.revoke(org.id, third.id)
+        expect((await stranger.tula.organizations.invitations.mine()).data).toEqual([])
+        expect(
+          (await caught(stranger.tula.organizations.invitations.acceptMine(third.id))).code
+        ).toBe('organization.invitation_revoked')
+      }
+    )
+
+    journey(
+      'verified domains: suggest and auto-join',
+      'verified domains: an address on an organization\u2019s verified domain joins it at sign-up (auto-join) or is offered it to join (suggest); the server decides again, and a removed domain offers and joins nobody',
+      async () => {
+        const s = await server()
+        const read = await s.admin('GET', '/v1/admin/settings')
+        const { settings } = (await read.json()) as { settings: EnvironmentSettings }
+        const saved = await s.admin(
+          'PUT',
+          '/v1/admin/settings',
+          {
+            ...settings,
+            organizations: {
+              enabled: true,
+              allowUserCreated: false,
+              maxCreatedPerUser: 1,
+              creatorRole: 'admin',
+              defaultRole: 'member',
+              personalAccount: true,
+            },
+          },
+          { 'if-match': read.headers.get('etag') ?? '' }
+        )
+        expect(saved.status).toBe(200)
+
+        const org = (await (
+          await s.admin('POST', '/v1/admin/organizations', {
+            name: 'Domain Org',
+            slug: 'domain-org',
+          })
+        ).json()) as { id: string }
+        const domain = `corp-${org.id.slice(-8)}.example`
+        const base = `/v1/admin/organizations/${org.id}/domains`
+        const claimed = await s.admin('POST', base, {
+          domain,
+          email: `ada@${domain}`,
+          mode: 'auto_join',
+        })
+        expect(claimed.status).toBe(201)
+        const { id: domainId } = (await claimed.json()) as { id: string }
+
+        // Until the code is entered the claim grants nothing.
+        const early = await signUp(s, NATIVE, `early@${domain}`)
+        expect((await early.tula.organizations.list()).data).toEqual([])
+        expect((await early.tula.organizations.suggestions()).data).toEqual([])
+        expect(
+          (await s.admin('POST', `${base}/${domainId}/verify`, { code: '000000' })).status
+        ).toBe(422)
+        const verified = await s.admin('POST', `${base}/${domainId}/verify`, {
+          code: s.code(`ada@${domain}`),
+        })
+        expect(verified.status).toBe(200)
+
+        // Auto-join: a new account with a verified address on the domain is a member.
+        const maya = await signUp(s, NATIVE, `maya@${domain}`)
+        const mine = await maya.tula.organizations.list()
+        expect(mine.data.map((one) => [one.id, one.role])).toEqual([[org.id, 'member']])
+        expect((await maya.tula.organizations.suggestions()).data).toEqual([])
+
+        // Another domain is offered nothing and cannot join; the account from before the
+        // domain was verified was not joined.
+        const stranger = await signUp(s)
+        expect((await stranger.tula.organizations.suggestions()).data).toEqual([])
+        expect((await caught(stranger.tula.organizations.join(org.id))).code).toBe(
+          'organization.suggestion_unavailable'
+        )
+        expect((await early.tula.organizations.list()).data).toEqual([])
+
+        // Suggest: the organization is offered, by name, and the user joins it once.
+        const changed = await s.admin('PATCH', `${base}/${domainId}`, { mode: 'suggest' })
+        expect(changed.status).toBe(200)
+        const kai = await signUp(s, NATIVE, `kai@${domain}`)
+        expect((await kai.tula.organizations.list()).data).toEqual([])
+        expect((await kai.tula.organizations.suggestions()).data).toEqual([
+          { id: org.id, name: 'Domain Org', slug: 'domain-org' },
+        ])
+        const joined = await kai.tula.organizations.join(org.id)
+        expect(joined).toMatchObject({ id: org.id, role: 'member' })
+        expect(kai.tula.state).toMatchObject({ organizationId: null })
+        expect((await caught(kai.tula.organizations.join(org.id))).code).toBe(
+          'organization.member_exists'
+        )
+
+        // Removed: nobody is offered it or joined to it any more, and members stay.
+        expect((await s.admin('DELETE', `${base}/${domainId}`)).status).toBe(204)
+        expect((await caught(early.tula.organizations.join(org.id))).code).toBe(
+          'organization.suggestion_unavailable'
+        )
+        const late = await signUp(s, NATIVE, `late@${domain}`)
+        expect((await late.tula.organizations.list()).data).toEqual([])
+        expect((await late.tula.organizations.suggestions()).data).toEqual([])
+        expect((await maya.tula.organizations.list()).data).toHaveLength(1)
       }
     )
 

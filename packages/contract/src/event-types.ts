@@ -28,6 +28,9 @@ import type { AuditTargetType } from './audit'
  */
 export const ACTIVITY_TYPES = [
   'user.created',
+  // A user brought across by an import (ADR 0066), instead of `user.created`: an endpoint
+  // subscribes to it deliberately, so a migration does not fire a delivery per user.
+  'user.imported',
   'user.email_verified',
   'user.banned',
   'user.unbanned',
@@ -98,6 +101,30 @@ export const ACTIVITY_TYPES = [
   'native_app.created',
   'native_app.updated',
   'native_app.deleted',
+  // An organization and its members (ADR 0065). The events carry ids and role keys only:
+  // never the organization's name or slug, and never a member's address or name.
+  'organization.created',
+  'organization.updated',
+  'organization.deleted',
+  'organization_membership.added',
+  'organization_membership.role_changed',
+  'organization_membership.removed',
+  // A custom role of the environment's organizations (ADR 0065). Its key, never its name.
+  'organization_role.created',
+  'organization_role.updated',
+  'organization_role.deleted',
+  // A domain of an organization (ADR 0065, "Verified domains"). The organization's id, the
+  // domain (a bounded name of a fixed grammar) and the mode: never an address.
+  'organization_domain.claimed',
+  'organization_domain.verified',
+  'organization_domain.updated',
+  'organization_domain.removed',
+  // An invitation to join an organization (ADR 0065, Orgs 04). Ids and the role's key only: the
+  // invited address is never in an event. An invitation that lapses is not recorded.
+  'organization_invitation.created',
+  'organization_invitation.accepted',
+  'organization_invitation.declined',
+  'organization_invitation.revoked',
   'proposal.created',
   'proposal.approved',
   'proposal.executed',
@@ -142,6 +169,7 @@ export const EVENT_SCHEMA_VERSION = 1
  */
 export const EVENT_TARGET_TYPES = {
   'user.created': 'user',
+  'user.imported': 'user',
   'user.email_verified': 'user',
   'user.banned': 'user',
   'user.unbanned': 'user',
@@ -185,6 +213,23 @@ export const EVENT_TARGET_TYPES = {
   'native_app.created': 'native_app',
   'native_app.updated': 'native_app',
   'native_app.deleted': 'native_app',
+  'organization.created': 'organization',
+  'organization.updated': 'organization',
+  'organization.deleted': 'organization',
+  'organization_membership.added': 'organization_membership',
+  'organization_membership.role_changed': 'organization_membership',
+  'organization_membership.removed': 'organization_membership',
+  'organization_role.created': 'organization_role',
+  'organization_role.updated': 'organization_role',
+  'organization_role.deleted': 'organization_role',
+  'organization_domain.claimed': 'organization_domain',
+  'organization_domain.verified': 'organization_domain',
+  'organization_domain.updated': 'organization_domain',
+  'organization_domain.removed': 'organization_domain',
+  'organization_invitation.created': 'organization_invitation',
+  'organization_invitation.accepted': 'organization_invitation',
+  'organization_invitation.declined': 'organization_invitation',
+  'organization_invitation.revoked': 'organization_invitation',
   'proposal.created': 'proposal',
   'proposal.approved': 'proposal',
   'proposal.executed': 'proposal',

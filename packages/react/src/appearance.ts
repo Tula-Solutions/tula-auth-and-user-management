@@ -70,6 +70,22 @@ export const ELEMENT_NAMES = [
   'passkeyList',
   'passkeyItem',
   'confirmation',
+  'organizationSwitcher',
+  'organizationSwitcherTrigger',
+  'organizationPanel',
+  'organizationList',
+  'organizationItem',
+  'tabList',
+  'tab',
+  'tabPanel',
+  'memberList',
+  'memberItem',
+  'invitationList',
+  'invitationItem',
+  'domainList',
+  'domainItem',
+  'select',
+  'dangerZone',
 ] as const
 
 /**

@@ -9,6 +9,7 @@ import {
 } from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { AuthError, RateLimitError, ServiceException } from '~/exceptions'
+import * as Foreign from '~/modules/password/foreign-hash'
 import * as Settings from '~/modules/settings/service'
 import type { UserRecord, UserWithPassword } from '~/ports/user-repository'
 
@@ -74,18 +75,60 @@ export async function hash(password: string): Promise<string> {
  * Pass `null` when there is no account (or no password credential): a dummy hash with the same
  * parameters is verified instead, so response timing does not reveal which accounts exist.
  *
- * @param storedHash - The user's argon2id hash, or `null` for an unknown user.
+ * @param storedHash - The user's hash, in Tula's argon2id or in a format an import accepts
+ *   (`./foreign-hash`), or `null` for an unknown user. A hash that cannot be read matches
+ *   nothing.
  * @param password - The password the client sent.
+ * @param foreign - Who the hash belongs to, for a hash whose parameters are sealed with it
+ *   (Firebase's scrypt, ADR 0066). Without it such a hash matches nothing.
  * @returns `true` only when a real hash matches.
  */
-export async function verify(storedHash: string | null, password: string): Promise<boolean> {
+export async function verify(
+  storedHash: string | null,
+  password: string,
+  foreign?: Foreign.Opener | null
+): Promise<boolean> {
   const normalized = normalizeCapped(password)
   // No stored password can be this long, so rejecting early leaks nothing about the account.
   if (normalized === null) {
     return false
   }
-  const matches = await Bun.password.verify(normalized, storedHash ?? DUMMY_HASH)
-  return storedHash !== null && matches
+  // `Bun.password.verify` reads the algorithm from the stored hash itself: argon2id, argon2i
+  // and bcrypt (`$2a$`, `$2b$`, `$2y$`), so an imported hash (ADR 0066) is checked with its own
+  // algorithm and a native one with argon2id, through this one call. An unknown user gets
+  // the dummy hash, so the same call runs for every answer.
+  //
+  // The system an imported hash came from did not NFC-normalize what it hashed, so the
+  // password as typed is tried as well when it differs from its normal form. Every candidate
+  // is tried for every kind of account, the dummy included and with no early exit, so neither
+  // the match nor the account's origin decides how long this takes.
+  const candidates = password === normalized ? [normalized] : [normalized, password]
+  let matched = false
+  for (const candidate of candidates) {
+    matched = (await checks(candidate, storedHash ?? DUMMY_HASH, foreign)) || matched
+  }
+  return storedHash !== null && matched
+}
+
+/**
+ * Bun's verification, with a hash it cannot read counting as a mismatch. A stored hash is
+ * parsed when it is imported, but a row can come from before that rule or from a restore.
+ */
+async function checks(
+  password: string,
+  encoded: string,
+  foreign: Foreign.Opener | null | undefined
+): Promise<boolean> {
+  try {
+    // PBKDF2-SHA256 and Firebase's scrypt are not read by Bun: `null` means another format.
+    const own = await Foreign.verify(encoded, password, foreign ?? undefined)
+    if (own !== null) {
+      return own
+    }
+    return await Bun.password.verify(password, encoded)
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -249,7 +292,7 @@ export function previousKept(history: number): number {
  * else says it either: the error carries the policy's number and no index, and nothing is
  * logged or recorded.
  *
- * @param deps - Users and the rate limiter.
+ * @param deps - Users, the rate limiter and the secret box (for a hash imported from Firebase).
  * @param tenant - The user's environment.
  * @param userId - The user.
  * @param password - The candidate password.
@@ -268,7 +311,7 @@ export function previousKept(history: number): number {
  * @throws AuthError `flow.invalid_step` when `proven` is given and is not the stored hash.
  */
 export async function assertNotReused(
-  deps: Pick<Deps, 'users' | 'rateLimiter'>,
+  deps: Pick<Deps, 'users' | 'rateLimiter' | 'secretBox'>,
   tenant: Pick<Tenant, 'environmentId'>,
   userId: string,
   password: string,
@@ -300,7 +343,9 @@ export async function assertNotReused(
   let reused = false
   for (const storedHash of [stored.current, ...stored.previous]) {
     // No early exit: a match must not answer sooner than no match.
-    reused = (await verify(storedHash, password)) || reused
+    reused =
+      (await verify(storedHash, password, Foreign.opener(deps, tenant.environmentId, userId))) ||
+      reused
   }
   if (reused) {
     throw new ServiceException('password.reused', {

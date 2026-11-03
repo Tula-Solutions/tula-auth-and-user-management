@@ -59,6 +59,16 @@ never sign in.
 
 ## What the user sees
 
+### Try it in the sandbox
+
+:::playground{preset="email-code"}
+
+A sandbox of the sign-in component with the emailed code as the only method: the code arrives in a
+sandbox inbox, and a wrong, expired or reused code shows its screen. It needs a browser with
+script; the screens are described below.
+
+:::
+
 - With the password on as well: after the address, the password screen lists **Email me a
   code** under "Other ways to sign in". Nothing is sent until it is chosen.
 - As the only method: the address leads straight to "Check your email".

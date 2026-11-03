@@ -233,6 +233,26 @@ opaque.
 const AUTHENTICATION_METHODS: readonly ["pwd", "email", "sms", "otp", "backup_code", "mfa", "hwk", "swk", "user"]
 ```
 
+### `AcceptedInvitation`
+
+_type_, defined in `packages/contract/src/organization-invitation.ts`
+
+The organization a user joined by accepting.
+
+```ts
+export type AcceptedInvitation = z.infer<typeof AcceptedInvitationSchema>
+```
+
+### `AcceptedInvitationSchema`
+
+_constant_, defined in `packages/contract/src/organization-invitation.ts`
+
+What accepting an invitation answers: the organization the user joined, with their role.
+
+```ts
+const AcceptedInvitationSchema
+```
+
 ### `AccessTokenClaims`
 
 _type_, defined in `packages/contract/src/tokens.ts`
@@ -256,6 +276,29 @@ Any language can verify these with the environment's JWKS: check `alg === 'EdDSA
 const AccessTokenClaimsSchema
 ```
 
+### `ActiveOrganization`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+The session after its active organization changed.
+
+```ts
+export type ActiveOrganization = z.infer<typeof ActiveOrganizationSchema>
+```
+
+### `ActiveOrganizationSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+The session after the active organization changed. A `hybrid` session gets a **new access
+token** that already carries `org_id`, `org_role` and `org_perms` (or none of them, once
+cleared); the refresh token is untouched. A `stateful` session gets no token: its next
+request is read from the stored session.
+
+```ts
+const ActiveOrganizationSchema
+```
+
 ### `ActivityType`
 
 _type_, defined in `packages/contract/src/event-types.ts`
@@ -274,6 +317,26 @@ One of {@link ACTIVITY_TYPES}.
 
 ```ts
 const ActivityTypeSchema: z.ZodEnum<{}>
+```
+
+### `AddOrganizationMemberRequest`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+The body that adds a member.
+
+```ts
+export type AddOrganizationMemberRequest = z.infer<typeof AddOrganizationMemberRequestSchema>
+```
+
+### `AddOrganizationMemberRequestSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+Add an existing user to an organization with a role.
+
+```ts
+const AddOrganizationMemberRequestSchema: z.ZodObject<{ userId: z.ZodUUID; role: z.ZodString; }, z.core.$strict>
 ```
 
 ### `AdditionalClientIdsSchema`
@@ -437,6 +500,47 @@ app registered it is `[]`.
 const AssetLinksSchema
 ```
 
+### `AssignableRole`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+A role a member may give to someone.
+
+```ts
+export type AssignableRole = z.infer<typeof AssignableRoleSchema>
+```
+
+### `AssignableRoleList`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+The roles a member may give.
+
+```ts
+export type AssignableRoleList = z.infer<typeof AssignableRoleListSchema>
+```
+
+### `AssignableRoleListSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+The roles the signed-in member may offer (to an invitation, or to a member): those whose
+permissions they hold themselves. Built-in roles first, then the custom ones by key.
+
+```ts
+const AssignableRoleListSchema
+```
+
+### `AssignableRoleSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+A role a member may give to someone: its key and its name, never its permissions.
+
+```ts
+const AssignableRoleSchema: z.ZodObject<{ key: z.ZodString; name: z.ZodString; }, z.core.$strip>
+```
+
 ### `AuditActorType`
 
 _type_, defined in `packages/contract/src/audit.ts`
@@ -520,6 +624,19 @@ How many backup codes a user holds after turning two-step verification on or reg
 const BACKUP_CODE_COUNT: 10
 ```
 
+### `BUILT_IN_ROLES`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The two roles every environment has (ADR 0065): `admin` holds every system permission,
+`member` may read the member list. They cannot be deleted, renamed or given other
+permissions. They exist as rows of every environment (`ensureBuiltInRoles`) so that a
+membership refers to a role the way it does to a custom one.
+
+```ts
+const BUILT_IN_ROLES: readonly BuiltInRole[]
+```
+
 ### `BUILT_IN_SESSION_PROFILES`
 
 _constant_, defined in `packages/contract/src/session-profile.ts`
@@ -567,6 +684,20 @@ server keeps only keyed hashes; they can be replaced but never shown again.
 
 ```ts
 const BackupCodesSchema: z.ZodObject<{ codes: z.ZodArray<z.ZodString>; }, z.core.$strip>
+```
+
+### `BuiltInRole`
+
+_interface_, defined in `packages/contract/src/organization-permissions.ts`
+
+A built-in role: its key, its name and the permissions it holds.
+
+```ts
+export interface BuiltInRole {
+  readonly key: string
+  readonly name: string
+  readonly permissions: readonly SystemPermission[]
+}
 ```
 
 ### `BuiltInSessionProfile`
@@ -858,6 +989,12 @@ nothing an operator would not put on that screen.
 - `phone.enabled` says whether a profile screen should offer adding a phone number: SMS is
   on and at least one country is allowed. Which countries is not said. Optional in the
   schema, so a client reading an older server's answer treats a missing one as `false`.
+- `organizations` says whether organizations are on at all, whether users may create their
+  own and whether the personal account (no organization) is allowed, so that an
+  organization switcher draws "Create organization" and "Personal account" only where the
+  server would accept them. Optional in the schema, so a client reading an older server's
+  answer treats a missing one as organizations off. The server still decides: every
+  organization route checks the setting itself.
 - The allow-lists (`urls`, `sms.allowedCountries`), the audit settings, the email templates (`emails`), the notice switches (`notifications`) and
   everything under `sessions` (profiles, timeouts, the session limit) are deliberately
   absent: a client learns how its session is held from the response that starts it.
@@ -910,6 +1047,74 @@ bundle id or package name.
 
 ```ts
 const CreateNativeAppRequestSchema
+```
+
+### `CreateOrganizationInvitationRequest`
+
+_type_, defined in `packages/contract/src/organization-invitation.ts`
+
+The body that invites an address.
+
+```ts
+export type CreateOrganizationInvitationRequest = z.infer<
+  typeof CreateOrganizationInvitationRequestSchema
+>
+```
+
+### `CreateOrganizationInvitationRequestSchema`
+
+_constant_, defined in `packages/contract/src/organization-invitation.ts`
+
+Invite an address to an organization with a role.
+
+`redirectUrl` is where the emailed link leads: it must be one of the environment's allowed
+redirect URLs (matched exactly), an `https` address or loopback in the `local` tier; a
+custom scheme is refused, so a native app opens its page through an app link. The link is
+the URL followed by `#tula_invitation=<token>`.
+
+```ts
+const CreateOrganizationInvitationRequestSchema: z.ZodObject<{ email: z.ZodString; role: z.ZodString; redirectUrl: z.ZodString; }, z.core.$strict>
+```
+
+### `CreateOrganizationRequest`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+The body that creates an organization.
+
+```ts
+export type CreateOrganizationRequest = z.infer<typeof CreateOrganizationRequestSchema>
+```
+
+### `CreateOrganizationRequestSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+Create an organization from a server or the dashboard.
+
+```ts
+const CreateOrganizationRequestSchema: z.ZodObject<{ name: z.ZodString; slug: z.ZodString; }, z.core.$strict>
+```
+
+### `CreateOrganizationRoleRequest`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+The body that defines a custom role.
+
+```ts
+export type CreateOrganizationRoleRequest = z.infer<typeof CreateOrganizationRoleRequestSchema>
+```
+
+### `CreateOrganizationRoleRequestSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+Define a custom role. The key is the role's identity and cannot be changed later; the keys
+of the built-in roles are taken.
+
+```ts
+const CreateOrganizationRoleRequestSchema
 ```
 
 ### `CreateProposalRequest`
@@ -1178,6 +1383,16 @@ The settings of an environment that has never saved any.
 const DEFAULT_ENVIRONMENT_SETTINGS: EnvironmentSettings
 ```
 
+### `DEFAULT_MAX_ORGANIZATIONS_CREATED_PER_USER`
+
+_constant_, defined in `packages/contract/src/environment-settings.ts`
+
+Most organizations one user may create unless the environment sets another cap.
+
+```ts
+const DEFAULT_MAX_ORGANIZATIONS_CREATED_PER_USER: 5
+```
+
 ### `DEFAULT_MOBILE_SESSION_PROFILE`
 
 _constant_, defined in `packages/contract/src/session-profile.ts`
@@ -1275,6 +1490,85 @@ waits for, so its work is bounded: past this many accounts the answer says `more
 
 ```ts
 const DEPENDENT_ACCOUNTS_SCAN_LIMIT: 1000
+```
+
+### `DOMAINS_MANAGE_PERMISSION`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permission that lets a member claim, verify, change and remove the organization's
+domains through the client routes (ADR 0065, "Verified domains"). Read from the member's
+role at the time of the request, never from a token.
+
+```ts
+const DOMAINS_MANAGE_PERMISSION: SystemPermission
+```
+
+### `DOMAIN_PATTERN`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+The grammar of a claimable domain: two or more labels of lower-case ASCII letters, digits
+and hyphens (none at a label's end), joined by single full stops, the last label letters
+only (or punycode, `xn--…`). So: no upper case, no trailing full stop, no port or path, no
+underscore, no `@`, no wildcard, and no IP address (a numeric last label is refused, and so
+is the bracketed IPv6 form).
+
+**Internationalised domains are written in punycode** (`xn--bcher-kva.example`, never
+`bücher.example`): Unicode is refused, not converted, so a domain is stored and compared in
+the one spelling a mail server uses. The pattern is the grammar alone; the length bounds
+({@link MAX_DOMAIN_LENGTH}, {@link MAX_DOMAIN_LABEL_LENGTH}) and the public list are
+{@link domainRefusal}'s. `domainRefusal` runs it only over text of at most twice the length cap, so its work is bounded.
+
+```ts
+const DOMAIN_PATTERN: {}
+```
+
+**Example**
+
+```ts
+DOMAIN_PATTERN.test('acme.com') // true
+DOMAIN_PATTERN.test('Acme.com') // false
+DOMAIN_PATTERN.test('192.168.0.1') // false
+```
+
+### `DOMAIN_REMINDER_DAYS`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+How many days before a verification lapses the organization's managers are emailed, largest
+first. Each is sent once per verification: a reminder is never repeated, and re-verifying
+starts the series again.
+
+```ts
+const DOMAIN_REMINDER_DAYS: readonly number[]
+```
+
+### `DOMAIN_REVERIFICATION_GRACE_DAYS`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+The least time, in days, that a domain verified before the lifetime existed (migration
+0042) keeps matching after the migration: its deadline is the later of the original
+`verified_at` plus the lifetime and this many days from the migration, so that nobody is
+cut off the day the change ships and every manager gets a reminder before it ends.
+
+```ts
+const DOMAIN_REVERIFICATION_GRACE_DAYS: 30
+```
+
+### `DOMAIN_VERIFICATION_LIFETIME_DAYS`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+How long a verification of a domain lasts, in days (ADR 0065, "Verified domains", "Lapse").
+A domain can be lost and registered again by someone else, and nothing tells Tula, so a
+claim is only believed for this long: past it the domain matches nobody (no auto-join, no
+suggestion) until a manager proves it again with a new emailed code. Counted from the day
+the code was entered.
+
+```ts
+const DOMAIN_VERIFICATION_LIFETIME_DAYS: 365
 ```
 
 ### `DPOP_ALGORITHMS`
@@ -1450,6 +1744,16 @@ export interface DevicePublicJwk {
 const jwk: DevicePublicJwk = { kty: 'EC', crv: 'P-256', x: '…', y: '…' }
 ```
 
+### `DomainRefusal`
+
+_type_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Why a string is not a claimable domain.
+
+```ts
+export type DomainRefusal = 'grammar' | 'length' | 'public'
+```
+
 ### `DpopAlgorithm`
 
 _type_, defined in `packages/contract/src/device-binding.ts`
@@ -1606,11 +1910,16 @@ _constant_, defined in `packages/contract/src/email-template.ts`
 Every email whose wording an environment can change (ADR 0039): one kind per message the
 server sends, so that a template never has to say two different things.
 
-- `email_verification`, `password_reset`, `sign_in`, `step_up`: the messages that carry a
-  6-digit code (`sign_in` can carry a link as well).
+- `email_verification`, `password_reset`, `sign_in`, `step_up`, `organization_domain_verification`:
+  the messages that carry a 6-digit code (`sign_in` can carry a link as well). The last is
+  the code that shows an organization controls a domain (ADR 0065).
 - `account_exists`, `no_account`, `no_account_sign_in`, `email_in_use`: what is sent
   instead of a code, so that a sign-up, a reset, a sign-in and adding an address to an
   account (ADR 0059) answer alike for every address.
+- `organization_domain_expiring` (ADR 0065): the reminder, 30 and 7 days ahead, that a
+  verified domain of an organization will stop matching unless it is verified again.
+- `organization_invitation` (ADR 0065): an invitation to join an organization, with the
+  server's link and no code.
 - the rest: security notices (ADR 0023), one per thing that can have happened.
 
 A closed list. Later servers may add kinds: additive.
@@ -1636,6 +1945,7 @@ Every placeholder a template can name, as `{{name}}`.
 - `link`: the sign-in link. In a body only; the server draws it as its own button, and a
   paragraph that names it is left out of a message that has no link.
 - `expiresInMinutes`: minutes until the code (and link) stop working. A number.
+- `expiresInDays`: days until an invitation's link stops working. A number.
 - `device`: the device family of a new sign-in (`Chrome on Windows`): one of the server's
   fixed names, never the user agent.
 - `time`: when it happened, in UTC (`2026-10-03 14:05 UTC`).
@@ -1992,7 +2302,7 @@ _type_, defined in `packages/contract/src/email-template.ts`
 What a kind of message is, which decides the rules its templates are held to.
 
 ```ts
-export type EmailTemplateCategory = 'code' | 'notice'
+export type EmailTemplateCategory = 'code' | 'notice' | 'invitation'
 ```
 
 ### `EmailTemplateKind`
@@ -2080,8 +2390,10 @@ The rules of one kind's templates.
 export interface EmailTemplateRules {
   /**
    * `code`: the message exists to carry a code. `notice`: it carries none, its template can
-   * name no code and no link, and its subject does not lead with a digit. No kind of either
-   * category can hold something that reads as a link.
+   * name no code and no link, and its subject does not lead with a digit. `invitation`: it
+   * carries the server's link and no code (an invitation to an organization, ADR 0065), and
+   * its subject does not lead with a digit either, so that it is never taken for a code. No
+   * kind of any category can hold something that reads as a link.
    */
   category: EmailTemplateCategory
   /** Placeholders a body must name: without them the message could not do its job. */
@@ -2248,6 +2560,11 @@ otherwise silently reset the password policy to its default.
   them for good; `null` (the default) keeps them for ever.
 - `agents.proposalsInProduction`: whether a production environment accepts proposals from
   an AI agent (`false` by default; ADR 0053). Switching it on is a weakening.
+- `organizations`: whether the environment has organizations (`enabled`, off by default;
+  ADR 0065), whether users may create them (`allowUserCreated`), how many each may
+  (`maxCreatedPerUser`), the role a creator and a new member get (`creatorRole`,
+  `defaultRole`) and whether a session may have no active organization (`personalAccount`).
+  Switching it off, or letting users create organizations, is a weakening.
 - `notifications`: which security notices are emailed to an account's owner
   (`passwordChanged`, `newSignIn`, `mfaChanged`, `identityChanged`). All are on unless switched off.
 - `mfa.policy`: whether two-step verification is `off`, `optional` (the default) or
@@ -2508,6 +2825,29 @@ One field-level problem inside a `validation.failed` (or password) error.
 
 ```ts
 const FieldErrorSchema
+```
+
+### `FirebaseScryptParams`
+
+_type_, defined in `packages/contract/src/user.ts`
+
+A Firebase project's password hash parameters.
+
+```ts
+export type FirebaseScryptParams = z.infer<typeof FirebaseScryptParamsSchema>
+```
+
+### `FirebaseScryptParamsSchema`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+A Firebase project's password hash parameters, from `firebase auth:export` or the console's
+"password hash parameters" (ADR 0066). Given once per call and used by every row whose
+algorithm is `firebase_scrypt`. All four are secrets of the source project: the signer key
+above all. They are sealed where stored, and never returned, logged or recorded.
+
+```ts
+const FirebaseScryptParamsSchema
 ```
 
 ### `FirstFactorAttemptRequest`
@@ -3374,6 +3714,52 @@ What an instance audit entry can be about.
 const INSTANCE_AUDIT_TARGET_TYPES: readonly ["workspace", "project", "environment"]
 ```
 
+### `INVITATIONS_MANAGE_PERMISSION`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permission that lets a member invite people to the organization and withdraw
+invitations (ADR 0065, Orgs 04). Checked on the server from the membership as it is now,
+never from a token's claims alone.
+
+```ts
+const INVITATIONS_MANAGE_PERMISSION: SystemPermission
+```
+
+### `INVITATION_EXPIRY_DAYS`
+
+_constant_, defined in `packages/contract/src/organization-invitation.ts`
+
+How long an invitation can be accepted after it was sent, in days. After that it is
+`expired`, and the retention job deletes it a while later.
+
+```ts
+const INVITATION_EXPIRY_DAYS: 7
+```
+
+**Example**
+
+```ts
+new Date(sentAt.getTime() + INVITATION_EXPIRY_DAYS * 86_400_000)
+```
+
+### `INVITATION_STATUSES`
+
+_constant_, defined in `packages/contract/src/organization-invitation.ts`
+
+The states of an invitation. `pending` is the only one that can be accepted. `expired` is
+not stored: it is a `pending` invitation whose time has passed.
+
+```ts
+const INVITATION_STATUSES: readonly ["pending", "accepted", "declined", "revoked", "expired"]
+```
+
+**Example**
+
+```ts
+INVITATION_STATUSES.includes('pending') // true
+```
+
 ### `IdTokenExchangeRequest`
 
 _type_, defined in `packages/contract/src/oauth.ts`
@@ -3534,6 +3920,133 @@ provider token: Tula stores none.
 const IdentitySchema: z.ZodObject<{ id: z.ZodString; provider: z.ZodString; createdAt: z.ZodISODateTime; }, z.core.$strip>
 ```
 
+### `ImportPasswordSchema`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+A password hash made by another system, in a tagged form.
+
+`algorithm` names the format and decides how `hash` is read and checked. It is a plain
+string on the wire so that a name this server does not know is refused for that row
+(`import.unsupported_algorithm`) and not for the whole call, and so that a later algorithm
+is an addition, not a break. Today: `bcrypt`
+(`$2a$`, `$2b$`, `$2y$`; cost 10 to 14), `argon2id` and `argon2i` (PHC strings; at least
+19 MiB and 2 passes), `pbkdf2_sha256` (Django's `pbkdf2_sha256$iterations$salt$hash`, a PHC
+or passlib `$pbkdf2-sha256$…` string, or a base64 derived key with `params`
+`{ iterations, salt }`, the salt base64; 100,000 to 2,000,000 iterations) and
+`firebase_scrypt` (Firebase's `passwordHash`, base64, with `params` `{ salt }`, the user's
+`salt` from the export, base64; the project's own parameters come once in the request's
+`firebaseScrypt`). `params` is for algorithms whose hash does not carry its own parameters;
+bcrypt and argon2 do, so it is ignored for them.
+
+The hash is never returned by any route.
+
+```ts
+const ImportPasswordSchema
+```
+
+**Example**
+
+```ts
+ImportPasswordSchema.parse({ algorithm: 'bcrypt', hash: '$2b$10$…' })
+```
+
+### `ImportRowResult`
+
+_type_, defined in `packages/contract/src/user.ts`
+
+What became of one import row.
+
+```ts
+export type ImportRowResult = z.infer<typeof ImportRowResultSchema>
+```
+
+### `ImportRowResultSchema`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+What became of one row. `index` is the row's place in the request, so the answer can be
+matched to the file it came from. A `created` row has the user's `id`, a `skipped` one a
+`reason` (and, for `email_exists`, the existing user's `id` and `sameExternalId`), a `refused` one a contract error `code` (an `import.*` code, `email.invalid`,
+…) and its default message.
+
+```ts
+const ImportRowResultSchema
+```
+
+### `ImportSkipReasonSchema`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+Why a row was skipped: the address is taken, or an earlier row of the call has it.
+
+```ts
+const ImportSkipReasonSchema: z.ZodEnum<{}>
+```
+
+### `ImportUserRow`
+
+_type_, defined in `packages/contract/src/user.ts`
+
+One user of an import.
+
+```ts
+export type ImportUserRow = z.infer<typeof ImportUserRowSchema>
+```
+
+### `ImportUserRowSchema`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+One user of an import.
+
+```ts
+const ImportUserRowSchema
+```
+
+### `ImportUsersRequest`
+
+_type_, defined in `packages/contract/src/user.ts`
+
+An import request body.
+
+```ts
+export type ImportUsersRequest = z.infer<typeof ImportUsersRequestSchema>
+```
+
+### `ImportUsersRequestSchema`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+A call of `POST /v1/admin/users/import`: up to {@link MAX_IMPORT_ROWS} users. A row that is
+wrong is refused alone; a request that is not this shape at all is refused whole.
+`firebaseScrypt` carries the Firebase project's parameters for the rows that use them; a
+`firebase_scrypt` row of a call without it is refused alone.
+
+```ts
+const ImportUsersRequestSchema
+```
+
+### `ImportUsersResult`
+
+_type_, defined in `packages/contract/src/user.ts`
+
+The answer to an import.
+
+```ts
+export type ImportUsersResult = z.infer<typeof ImportUsersResultSchema>
+```
+
+### `ImportUsersResultSchema`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+The answer to an import: one result per row, in order, and the counts.
+
+```ts
+const ImportUsersResultSchema
+```
+
 ### `InstanceActivityType`
 
 _type_, defined in `packages/contract/src/audit.ts`
@@ -3562,6 +4075,60 @@ What an instance action was about.
 
 ```ts
 export type InstanceAuditTargetType = (typeof INSTANCE_AUDIT_TARGET_TYPES)[number]
+```
+
+### `InvitationPreview`
+
+_type_, defined in `packages/contract/src/organization-invitation.ts`
+
+What the token's holder may see before signing in.
+
+```ts
+export type InvitationPreview = z.infer<typeof InvitationPreviewSchema>
+```
+
+### `InvitationPreviewSchema`
+
+_constant_, defined in `packages/contract/src/organization-invitation.ts`
+
+What the holder of an invitation's token may see before signing in: which organization
+invites them, as which role, and the address it was sent to (so that a sign-up can be
+prefilled with it). Answered for a pending invitation only; the token is the proof of
+having been sent it.
+
+```ts
+const InvitationPreviewSchema
+```
+
+### `InvitationStatus`
+
+_type_, defined in `packages/contract/src/organization-invitation.ts`
+
+One of {@link INVITATION_STATUSES}.
+
+```ts
+export type InvitationStatus = (typeof INVITATION_STATUSES)[number]
+```
+
+### `InvitationTokenRequest`
+
+_type_, defined in `packages/contract/src/organization-invitation.ts`
+
+The body that carries an invitation's token.
+
+```ts
+export type InvitationTokenRequest = z.infer<typeof InvitationTokenRequestSchema>
+```
+
+### `InvitationTokenRequestSchema`
+
+_constant_, defined in `packages/contract/src/organization-invitation.ts`
+
+The token of an invitation, as the link carried it (`#tula_invitation=…`). What `preview`,
+`accept` and `decline` send.
+
+```ts
+const InvitationTokenRequestSchema: z.ZodObject<{ token: z.ZodString; }, z.core.$strict>
 ```
 
 ### `IosApp`
@@ -3936,6 +4503,16 @@ Longest custom claim key, in characters.
 const MAX_CUSTOM_CLAIM_KEY_LENGTH: 32
 ```
 
+### `MAX_CUSTOM_ROLES`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+How many custom roles an environment can define, beside the built-in ones.
+
+```ts
+const MAX_CUSTOM_ROLES: 50
+```
+
 ### `MAX_CUSTOM_SESSION_PROFILES`
 
 _constant_, defined in `packages/contract/src/session-profile.ts`
@@ -3944,6 +4521,37 @@ Most profiles an environment may define besides the built-in `web` and `mobile`.
 
 ```ts
 const MAX_CUSTOM_SESSION_PROFILES: 10
+```
+
+### `MAX_DOMAINS_PER_ORGANIZATION`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+How many domains one organization can claim, verified or waiting for a code. A bound so that
+a signed-in administrator cannot fill the table.
+
+```ts
+const MAX_DOMAINS_PER_ORGANIZATION: 10
+```
+
+### `MAX_DOMAIN_LABEL_LENGTH`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Longest one label of a domain can be, in characters (RFC 1035).
+
+```ts
+const MAX_DOMAIN_LABEL_LENGTH: 63
+```
+
+### `MAX_DOMAIN_LENGTH`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Longest a whole domain can be, in characters (RFC 1035).
+
+```ts
+const MAX_DOMAIN_LENGTH: 253
 ```
 
 ### `MAX_DPOP_PROOF_LENGTH`
@@ -4044,6 +4652,30 @@ Longest given or family name an ID-token exchange may carry beside the token.
 const MAX_ID_TOKEN_NAME_LENGTH: 100
 ```
 
+### `MAX_IMPORT_METADATA_BYTES`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+The most bytes a row's `metadata` may take **as stored**: the database prints a space after
+every `:` and `,`, so the count is the compact JSON plus about one byte for each of them.
+It is stored with the user, so it is bounded the way any user-sized value is. A row over
+it, nested more than 32 levels, or holding a NUL, a lone surrogate or an exponent number
+is refused alone with `validation.failed`.
+
+```ts
+const MAX_IMPORT_METADATA_BYTES: 4096
+```
+
+### `MAX_IMPORT_ROWS`
+
+_constant_, defined in `packages/contract/src/user.ts`
+
+The most rows one call of `POST /v1/admin/users/import` takes.
+
+```ts
+const MAX_IMPORT_ROWS: 500
+```
+
 ### `MAX_JWT_TEMPLATES`
 
 _constant_, defined in `packages/contract/src/custom-claims.ts`
@@ -4079,6 +4711,64 @@ const MAX_NATIVE_APPS: 20
 
 ```ts
 apps.length <= MAX_NATIVE_APPS
+```
+
+### `MAX_ORGANIZATIONS_CREATED_PER_USER`
+
+_constant_, defined in `packages/contract/src/environment-settings.ts`
+
+Highest `organizations.maxCreatedPerUser` that can be set.
+
+```ts
+const MAX_ORGANIZATIONS_CREATED_PER_USER: 1000
+```
+
+### `MAX_ORGANIZATION_CLAIMS_BYTES`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The most bytes the three organization claims may take together, as JSON (UTF-8): their own
+cap, beside {@link MAX_CUSTOM_CLAIMS_BYTES} and never taken from it.
+
+It is the true upper bound of what the grammars allow: an organization id (a UUID, 36
+characters), a role key of 32 characters and 32 permissions of the longest key
+(`org:sys:` + 32 + `:` + 32 = 73 characters) take 2,541 bytes; the cap leaves a little
+room. A role is bounded by the contract and the database, so a token never reaches it
+unless a row was written by hand: the server then issues the token **without** the
+organization claims (no claim is "no permission"), never with a cut list.
+
+```ts
+const MAX_ORGANIZATION_CLAIMS_BYTES: 2560
+```
+
+### `MAX_ORGANIZATION_NAME_LENGTH`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+Longest organization name, in characters.
+
+```ts
+const MAX_ORGANIZATION_NAME_LENGTH: 100
+```
+
+### `MAX_ORGANIZATION_PERMISSIONS_CLAIM`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+Most permissions an organization role (and so the `org_perms` claim) holds.
+
+```ts
+const MAX_ORGANIZATION_PERMISSIONS_CLAIM: 32
+```
+
+### `MAX_ORGANIZATION_SLUG_LENGTH`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+Longest organization slug.
+
+```ts
+const MAX_ORGANIZATION_SLUG_LENGTH: 48
 ```
 
 ### `MAX_PACKAGE_NAME_LENGTH`
@@ -4146,6 +4836,27 @@ const MAX_PASSWORD_HISTORY: 24
 
 ```ts
 policy.history <= MAX_PASSWORD_HISTORY // true for every policy the schema accepts
+```
+
+### `MAX_PERMISSIONS_PER_ROLE`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+How many permissions one role can hold. The permissions of the active organization's role are
+a claim of every access token (ADR 0065, "Token claims"), so the number is capped.
+
+```ts
+const MAX_PERMISSIONS_PER_ROLE: 32
+```
+
+### `MAX_PERMISSION_KEY_LENGTH`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The longest a permission key can be, in characters.
+
+```ts
+const MAX_PERMISSION_KEY_LENGTH: 100
 ```
 
 ### `MAX_PHONE_NUMBER_DIGITS`
@@ -4301,6 +5012,30 @@ const MAX_WEBHOOK_URL_LENGTH: 2048
 url.length <= MAX_WEBHOOK_URL_LENGTH
 ```
 
+### `MEMBERSHIPS_MANAGE_PERMISSION`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permission that makes a member a manager of the organization's members. **Every
+organization keeps at least one member who holds it**: the last such member cannot be
+removed or moved to a role without it (`organization.last_manager`), and a role's
+permissions cannot be changed so that an organization would be left with none.
+
+```ts
+const MEMBERSHIPS_MANAGE_PERMISSION: SystemPermission
+```
+
+### `MEMBERSHIPS_READ_PERMISSION`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permission that lets a member read the organization's member list through the client
+routes (ADR 0065, Orgs 07). `org:sys:memberships:manage` also reads it.
+
+```ts
+const MEMBERSHIPS_READ_PERMISSION: SystemPermission
+```
+
 ### `MICROSOFT_TENANT_ALIASES`
 
 _constant_, defined in `packages/contract/src/oauth.ts`
@@ -4323,6 +5058,16 @@ Shortest access-token lifetime a profile may set.
 const MIN_ACCESS_TOKEN_TTL: Duration
 ```
 
+### `MIN_DOMAIN_LENGTH`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Shortest a domain can be: `a.bc`.
+
+```ts
+const MIN_DOMAIN_LENGTH: 4
+```
+
 ### `MIN_IDLE_TIMEOUT`
 
 _constant_, defined in `packages/contract/src/session-profile.ts`
@@ -4331,6 +5076,16 @@ Shortest idle timeout a profile may set.
 
 ```ts
 const MIN_IDLE_TIMEOUT: Duration
+```
+
+### `MIN_ORGANIZATION_SLUG_LENGTH`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+Shortest organization slug.
+
+```ts
+const MIN_ORGANIZATION_SLUG_LENGTH: 2
 ```
 
 ### `MIN_PASSWORD_MIN_LENGTH`
@@ -4428,6 +5183,60 @@ const MicrosoftTenantSchema: z.ZodString
 ```ts
 MicrosoftTenantSchema.parse('common') // 'common'
 MicrosoftTenantSchema.parse('72F988BF-86F1-41AF-91AB-2D7CD011DB47') // lower-cased
+```
+
+### `MyOrganizationInvitation`
+
+_type_, defined in `packages/contract/src/organization-invitation.ts`
+
+An invitation addressed to the signed-in user.
+
+```ts
+export type MyOrganizationInvitation = z.infer<typeof MyOrganizationInvitationSchema>
+```
+
+### `MyOrganizationInvitationList`
+
+_type_, defined in `packages/contract/src/organization-invitation.ts`
+
+A page of them.
+
+```ts
+export type MyOrganizationInvitationList = z.infer<typeof MyOrganizationInvitationListSchema>
+```
+
+### `MyOrganizationInvitationListSchema`
+
+_constant_, defined in `packages/contract/src/organization-invitation.ts`
+
+One page of the signed-in user's pending invitations, newest first.
+
+```ts
+const MyOrganizationInvitationListSchema
+```
+
+### `MyOrganizationInvitationQuerySchema`
+
+_constant_, defined in `packages/contract/src/organization-invitation.ts`
+
+The query of {@link MyOrganizationInvitationListSchema}: a page.
+
+```ts
+const MyOrganizationInvitationQuerySchema
+```
+
+### `MyOrganizationInvitationSchema`
+
+_constant_, defined in `packages/contract/src/organization-invitation.ts`
+
+A pending invitation addressed to the signed-in user, as `GET /v1/client/me/organization-invitations`
+lists it: enough to show and answer it, and nothing else. No token, no invited address, no
+inviter and no other user's data. It is answered by its `id`
+(`POST …/organization-invitations/{invitationId}/accept` and `…/decline`), which the session
+authorizes exactly as the token does.
+
+```ts
+const MyOrganizationInvitationSchema
 ```
 
 ### `NATIVE_APP_FIELDS`
@@ -4925,6 +5734,587 @@ The answer to starting an OAuth sign-in.
 const OAuthStartSchema
 ```
 
+### `ORGANIZATION_DELETE_PERMISSION`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permission that lets a member delete the organization through the client routes (ADR
+0065, Orgs 07). Read from the membership now, never from a token's claims alone.
+
+```ts
+const ORGANIZATION_DELETE_PERMISSION: SystemPermission
+```
+
+### `ORGANIZATION_DOMAIN_MODES`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+How an organization treats a user who signs up with a verified address on its domain.
+
+```ts
+const ORGANIZATION_DOMAIN_MODES: readonly ["suggest", "auto_join"]
+```
+
+### `ORGANIZATION_DOMAIN_STATUSES`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+What a domain row is: waiting for its first code, verified, or past its lifetime.
+
+```ts
+const ORGANIZATION_DOMAIN_STATUSES: readonly ["pending", "verified", "needs_reverification"]
+```
+
+### `ORGANIZATION_FIELDS`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+The fields of an organization an update can change, as `organization.updated` names them.
+Names only: a value is never in an event.
+
+```ts
+const ORGANIZATION_FIELDS: readonly ["name", "slug"]
+```
+
+### `ORGANIZATION_ID_CLAIM`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The access token's claim naming the active organization (ADR 0065, "Token claims").
+
+```ts
+const ORGANIZATION_ID_CLAIM: "org_id"
+```
+
+### `ORGANIZATION_INVITATION_TOKEN_PARAM`
+
+_constant_, defined in `packages/contract/src/headers.ts`
+
+Name of the URL-fragment parameter carrying an organization invitation's token (ADR 0065,
+Orgs 04).
+
+The link in the invitation email is the app's own redirect URL followed by
+`#tula_invitation=<token>`. A fragment is never sent to a server, a proxy or in `Referer`,
+so the token reaches only the page's own script, which posts it to the invitation routes
+(`preview`, `accept`, `decline`) and removes it from the URL.
+
+```ts
+const ORGANIZATION_INVITATION_TOKEN_PARAM: "tula_invitation"
+```
+
+**Example**
+
+```ts
+const token = new URLSearchParams(location.hash.slice(1)).get(ORGANIZATION_INVITATION_TOKEN_PARAM)
+```
+
+### `ORGANIZATION_MANAGE_PERMISSION`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permission that lets a member rename the organization through the client routes
+(ADR 0065, Orgs 07). Read from the membership now, never from a token's claims alone.
+
+```ts
+const ORGANIZATION_MANAGE_PERMISSION: SystemPermission
+```
+
+### `ORGANIZATION_PERMISSIONS_CLAIM`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The access token's claim holding the permission keys of that role. A list of strings,
+present only beside the other two.
+
+```ts
+const ORGANIZATION_PERMISSIONS_CLAIM: "org_perms"
+```
+
+### `ORGANIZATION_ROLE_CLAIM`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The access token's claim holding the key of the member's role in the active organization.
+
+```ts
+const ORGANIZATION_ROLE_CLAIM: "org_role"
+```
+
+### `ORGANIZATION_ROLE_FIELDS`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+The fields of a role an update can change, as `organization_role.updated` names them.
+Names only: a value is never in an event.
+
+```ts
+const ORGANIZATION_ROLE_FIELDS: readonly ["name", "permissions"]
+```
+
+### `ORGANIZATION_SLUG_PATTERN`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+The grammar of an organization's slug: lower-case letters and digits in groups joined by
+single hyphens (`acme`, `acme-corp-2`), at least {@link MIN_ORGANIZATION_SLUG_LENGTH} and at
+most {@link MAX_ORGANIZATION_SLUG_LENGTH} characters. No leading, trailing or doubled hyphen,
+no other character: a slug goes into URLs and is compared exactly. A slug is unique in its
+environment.
+
+```ts
+const ORGANIZATION_SLUG_PATTERN: {}
+```
+
+**Example**
+
+```ts
+ORGANIZATION_SLUG_PATTERN.test('acme-corp') // true
+ORGANIZATION_SLUG_PATTERN.test('Acme Corp') // false
+```
+
+### `Organization`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+An organization.
+
+```ts
+export type Organization = z.infer<typeof OrganizationSchema>
+```
+
+### `OrganizationCheck`
+
+_type_, defined in `packages/contract/src/custom-claims.ts`
+
+What {@link hasOrganizationAccess} asks: one permission key, or one role key. Exactly one
+of the two.
+
+```ts
+export type OrganizationCheck =
+| { readonly permission: string; readonly role?: never }
+| { readonly role: string; readonly permission?: never }
+```
+
+**Example**
+
+```ts
+const byPermission: OrganizationCheck = { permission: 'org:billing:read' }
+const byRole: OrganizationCheck = { role: 'admin' }
+```
+
+### `OrganizationClaims`
+
+_interface_, defined in `packages/contract/src/custom-claims.ts`
+
+The organization claims of a verified session: who it acts as, in which organization.
+
+```ts
+export interface OrganizationClaims {
+  /** The active organization's id. */
+  readonly orgId: string
+  /** The key of the member's role in it. */
+  readonly orgRole: string
+  /** The permission keys of that role. */
+  readonly orgPermissions: readonly string[]
+}
+```
+
+### `OrganizationDomain`
+
+_type_, defined in `packages/contract/src/organization-domain.ts`
+
+A domain of an organization.
+
+```ts
+export type OrganizationDomain = z.infer<typeof OrganizationDomainSchema>
+```
+
+### `OrganizationDomainList`
+
+_type_, defined in `packages/contract/src/organization-domain.ts`
+
+An organization's domains.
+
+```ts
+export type OrganizationDomainList = z.infer<typeof OrganizationDomainListSchema>
+```
+
+### `OrganizationDomainListSchema`
+
+_constant_, defined in `packages/contract/src/organization-domain.ts`
+
+An organization's domains, oldest first.
+
+```ts
+const OrganizationDomainListSchema
+```
+
+### `OrganizationDomainMode`
+
+_type_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+One of {@link ORGANIZATION_DOMAIN_MODES}.
+
+```ts
+export type OrganizationDomainMode = (typeof ORGANIZATION_DOMAIN_MODES)[number]
+```
+
+### `OrganizationDomainModeSchema`
+
+_constant_, defined in `packages/contract/src/organization-domain.ts`
+
+How an organization treats a user with a verified address on its domain.
+
+```ts
+const OrganizationDomainModeSchema: z.ZodEnum<{}>
+```
+
+### `OrganizationDomainNameSchema`
+
+_constant_, defined in `packages/contract/src/organization-domain.ts`
+
+A domain an organization can claim: see {@link DOMAIN_PATTERN }. The grammar and the length
+bounds are checked here; that the domain is not a **public** mail domain is a rule the
+server answers with its own code (`organization.domain_public`), because it is a refusal of
+a well-formed claim.
+
+```ts
+const OrganizationDomainNameSchema: z.ZodString
+```
+
+### `OrganizationDomainSchema`
+
+_constant_, defined in `packages/contract/src/organization-domain.ts`
+
+A domain of an organization. **Pending** (`status` `pending`, `verifiedAt` is `null`): a
+code was emailed and not yet entered; it grants nothing. **Verified**: a user who signs up
+with a verified address on it is suggested the organization or joined to it, by `mode`,
+until `expiresAt`. **Needs re-verification**: `expiresAt` has passed; the domain matches
+nobody until a manager claims it again and enters the new code (ADR 0065, "Lapse").
+
+```ts
+const OrganizationDomainSchema
+```
+
+### `OrganizationDomainStatus`
+
+_type_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+One of {@link ORGANIZATION_DOMAIN_STATUSES}.
+
+```ts
+export type OrganizationDomainStatus = (typeof ORGANIZATION_DOMAIN_STATUSES)[number]
+```
+
+### `OrganizationDomainStatusSchema`
+
+_constant_, defined in `packages/contract/src/organization-domain.ts`
+
+What a domain row is now: see {@link OrganizationDomainSchema}.
+
+```ts
+const OrganizationDomainStatusSchema: z.ZodEnum<{}>
+```
+
+### `OrganizationField`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+One of {@link ORGANIZATION_FIELDS}.
+
+```ts
+export type OrganizationField = (typeof ORGANIZATION_FIELDS)[number]
+```
+
+### `OrganizationInvitation`
+
+_type_, defined in `packages/contract/src/organization-invitation.ts`
+
+An invitation.
+
+```ts
+export type OrganizationInvitation = z.infer<typeof OrganizationInvitationSchema>
+```
+
+### `OrganizationInvitationList`
+
+_type_, defined in `packages/contract/src/organization-invitation.ts`
+
+A page of invitations.
+
+```ts
+export type OrganizationInvitationList = z.infer<typeof OrganizationInvitationListSchema>
+```
+
+### `OrganizationInvitationListSchema`
+
+_constant_, defined in `packages/contract/src/organization-invitation.ts`
+
+One page of an organization's invitations, newest first.
+
+```ts
+const OrganizationInvitationListSchema
+```
+
+### `OrganizationInvitationQuerySchema`
+
+_constant_, defined in `packages/contract/src/organization-invitation.ts`
+
+The query of a list of invitations: a page, and the state to list (`pending` unless
+another is asked for).
+
+```ts
+const OrganizationInvitationQuerySchema
+```
+
+### `OrganizationInvitationSchema`
+
+_constant_, defined in `packages/contract/src/organization-invitation.ts`
+
+An invitation as the admin API and the inviting members' routes return it.
+
+```ts
+const OrganizationInvitationSchema
+```
+
+### `OrganizationList`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+A page of organizations.
+
+```ts
+export type OrganizationList = z.infer<typeof OrganizationListSchema>
+```
+
+### `OrganizationListSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+One page of organizations, newest first.
+
+```ts
+const OrganizationListSchema
+```
+
+### `OrganizationMember`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+A member of an organization, as another member sees them.
+
+```ts
+export type OrganizationMember = z.infer<typeof OrganizationMemberSchema>
+```
+
+### `OrganizationMemberList`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+A page of members.
+
+```ts
+export type OrganizationMemberList = z.infer<typeof OrganizationMemberListSchema>
+```
+
+### `OrganizationMemberListSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+One page of an organization's members, oldest first, as a member sees them.
+
+```ts
+const OrganizationMemberListSchema
+```
+
+### `OrganizationMemberSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+A member of an organization as another member sees them (ADR 0065, Orgs 07): who they are
+and the key of their role. The name and the address are shown so that a member list can be
+read at all; they go to members whose role holds `org:sys:memberships:read` or `:manage` and
+to nobody else, and never into an event or an audit entry.
+
+```ts
+const OrganizationMemberSchema
+```
+
+### `OrganizationMembership`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+A membership.
+
+```ts
+export type OrganizationMembership = z.infer<typeof OrganizationMembershipSchema>
+```
+
+### `OrganizationMembershipList`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+A page of memberships.
+
+```ts
+export type OrganizationMembershipList = z.infer<typeof OrganizationMembershipListSchema>
+```
+
+### `OrganizationMembershipListSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+One page of an organization's members, oldest first.
+
+```ts
+const OrganizationMembershipListSchema
+```
+
+### `OrganizationMembershipSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+A user's membership of an organization.
+
+```ts
+const OrganizationMembershipSchema
+```
+
+### `OrganizationPageQuerySchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+The query of a list of organizations or of an organization's members.
+
+```ts
+const OrganizationPageQuerySchema
+```
+
+### `OrganizationRole`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+A role.
+
+```ts
+export type OrganizationRole = z.infer<typeof OrganizationRoleSchema>
+```
+
+### `OrganizationRoleField`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+One of {@link ORGANIZATION_ROLE_FIELDS}.
+
+```ts
+export type OrganizationRoleField = (typeof ORGANIZATION_ROLE_FIELDS)[number]
+```
+
+### `OrganizationRoleList`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+The list of roles.
+
+```ts
+export type OrganizationRoleList = z.infer<typeof OrganizationRoleListSchema>
+```
+
+### `OrganizationRoleListSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+The environment's roles: the two built-in ones first, then the custom ones by key.
+
+```ts
+const OrganizationRoleListSchema
+```
+
+### `OrganizationRoleSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+A role as the admin API returns it. `version` counts the changes made to the role, from 1;
+it is also the `ETag` of the role, and the value `If-Match` carries to change or delete it.
+
+```ts
+const OrganizationRoleSchema
+```
+
+### `OrganizationSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+An organization, as the admin API returns it.
+
+```ts
+const OrganizationSchema
+```
+
+### `OrganizationSearchQuerySchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+The query of the administrator's list of organizations: a page, and an optional search.
+
+`q` is matched against the start of the name (ignoring case) and of the slug; a blank one
+is no search. It is bounded to the longest name an organization can have.
+
+```ts
+const OrganizationSearchQuerySchema
+```
+
+### `OrganizationSlugSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+An organization's slug: see {@link ORGANIZATION_SLUG_PATTERN}.
+
+```ts
+const OrganizationSlugSchema: z.ZodString
+```
+
+### `OrganizationSuggestion`
+
+_type_, defined in `packages/contract/src/organization-domain.ts`
+
+An organization the user can join.
+
+```ts
+export type OrganizationSuggestion = z.infer<typeof OrganizationSuggestionSchema>
+```
+
+### `OrganizationSuggestionList`
+
+_type_, defined in `packages/contract/src/organization-domain.ts`
+
+The user's suggestions.
+
+```ts
+export type OrganizationSuggestionList = z.infer<typeof OrganizationSuggestionListSchema>
+```
+
+### `OrganizationSuggestionListSchema`
+
+_constant_, defined in `packages/contract/src/organization-domain.ts`
+
+The organizations the signed-in user is suggested, none of which they belong to.
+
+```ts
+const OrganizationSuggestionListSchema
+```
+
+### `OrganizationSuggestionSchema`
+
+_constant_, defined in `packages/contract/src/organization-domain.ts`
+
+An organization the signed-in user can join because of a verified address on its verified
+domain. Its name and slug only: the user is told nothing of its members.
+
+```ts
+const OrganizationSuggestionSchema: z.ZodObject<{ id: z.ZodString; name: z.ZodString; slug: z.ZodString; }, z.core.$strip>
+```
+
 ### `PACKAGE_NAME_PATTERN`
 
 _constant_, defined in `packages/contract/src/native-app.ts`
@@ -4975,6 +6365,32 @@ composition rules.
 const PASSWORD_POLICY_PRESETS: Readonly<
   Record<Exclude<PasswordPolicy['preset'], 'custom'>, PasswordPolicy>
 >
+```
+
+### `PERMISSION_KEY_PATTERN`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The grammar of a permission key (ADR 0065): `org:<feature>:<action>`, each of the last two
+a lower-case letter followed by lower-case letters, digits and underscores (at most 32
+characters); or, for the permissions Tula's own routes check, `org:sys:<feature>:<action>`.
+No dot, no other separator: a key is safe in a token and in a URL. The feature `sys` is
+reserved: a custom key never has it, and a system key is one of
+{@link SYSTEM_PERMISSIONS}.
+
+The pattern is the grammar alone. Whether a role may hold a key is
+{@link rolePermissionRefusal}.
+
+```ts
+const PERMISSION_KEY_PATTERN: {}
+```
+
+**Example**
+
+```ts
+PERMISSION_KEY_PATTERN.test('org:billing:read') // true
+PERMISSION_KEY_PATTERN.test('org:sys:memberships:manage') // true
+PERMISSION_KEY_PATTERN.test('billing.read') // false
 ```
 
 ### `PROPOSAL_APPROVAL_REFUSALS`
@@ -5178,6 +6594,38 @@ const PROPOSAL_TARGET_TYPES: readonly ["user", "session", "oauth_provider"]
 
 ```ts
 const type: ProposalTargetType = 'user'
+```
+
+### `PUBLIC_EMAIL_BRANDS`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Provider names whose every country domain is public: `yahoo.com`, `yahoo.co.uk`, `yahoo.fr`
+and `yahoo.co.jp` are all `yahoo`. A domain matches when its **first** label is one of
+these and what follows is a top-level domain, or a short second-level one and a top-level
+one (`co.uk`, `com.br`): `yahoo.com` and `hotmail.co.uk` match, `yahoo.acme.com` and
+`notyahoo.com` do not.
+
+```ts
+const PUBLIC_EMAIL_BRANDS: readonly string[]
+```
+
+### `PUBLIC_EMAIL_DOMAINS`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Domains that anyone can get an address at, and that so prove nothing about the holder of an
+address on them. **Documented here and nowhere else**: a claim of one is refused
+(`organization.domain_public`) and a join never matches one, even a claim stored before the
+list grew. The list is the large free consumer mailbox providers, the internet providers
+that give every customer an address, and the common national ones; a company's own domain
+is never on it.
+
+Providers that sell a mailbox under many country domains (`yahoo.co.uk`, `yahoo.fr`,
+`hotmail.de`, …) are in {@link PUBLIC_EMAIL_BRANDS} instead.
+
+```ts
+const PUBLIC_EMAIL_DOMAINS: readonly string[]
 ```
 
 ### `PUBLISHABLE_KEY_HEADER`
@@ -5604,6 +7052,16 @@ export interface PasswordUserInfo {
 }
 ```
 
+### `PermissionKeySchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+A permission key: see {@link PERMISSION_KEY_PATTERN}.
+
+```ts
+const PermissionKeySchema: z.ZodString
+```
+
 ### `PhoneCodeSent`
 
 _type_, defined in `packages/contract/src/user.ts`
@@ -5977,6 +7435,23 @@ const RESERVED_CLAIM_NAMES
 RESERVED_CLAIM_NAMES.includes('sub') // true
 ```
 
+### `ROLE_KEY_PATTERN`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The grammar of a role's key: a lower-case letter, then lower-case letters, digits and
+underscores, up to 32 characters (`admin`, `billing_manager`). Unique in its environment.
+
+```ts
+const ROLE_KEY_PATTERN: {}
+```
+
+**Example**
+
+```ts
+ROLE_KEY_PATTERN.test('billing_manager') // true
+```
+
 ### `RedirectUrlKind`
 
 _type_, defined in `packages/contract/src/redirect-url.ts`
@@ -6048,6 +7523,48 @@ Result of revoking the user's other sessions.
 
 ```ts
 const RevokedSessionsSchema: z.ZodObject<{ revoked: z.ZodNumber; }, z.core.$strip>
+```
+
+### `RoleKeySchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+The key of a role: see {@link ROLE_KEY_PATTERN}.
+
+```ts
+const RoleKeySchema: z.ZodString
+```
+
+### `RoleNameSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+The name of a role, as people read it (`Billing manager`).
+
+```ts
+const RoleNameSchema: z.ZodString
+```
+
+### `RolePermissionRefusal`
+
+_type_, defined in `packages/contract/src/organization-permissions.ts`
+
+Why a custom role may not hold a permission key.
+
+```ts
+export type RolePermissionRefusal = 'grammar' | 'reserved'
+```
+
+### `RolePermissionsSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+The permissions a **custom** role holds: at most {@link MAX_PERMISSIONS_PER_ROLE} keys, each
+of the grammar, none twice, and none of the reserved `sys` feature that Tula does not define
+(`rolePermissionRefusal`, ADR 0065). A role may hold any of Tula's own system permissions.
+
+```ts
+const RolePermissionsSchema: z.ZodArray<z.ZodString>
 ```
 
 ### `RotatedWebhookSecret`
@@ -6385,6 +7902,18 @@ ten minutes. Past it they answer `auth.step_up_required`.
 const STEP_UP_MAX_AGE_SECONDS: 600
 ```
 
+### `SYSTEM_PERMISSIONS`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permissions Tula's own organization routes check (ADR 0065). The same keys an app's
+server checks with `has({ permission })`, so Tula's routes hold no privilege an app cannot
+also give a role.
+
+```ts
+const SYSTEM_PERMISSIONS
+```
+
 ### `SecondFactorMethod`
 
 _type_, defined in `packages/contract/src/flow.ts`
@@ -6685,6 +8214,27 @@ The other types of the business plan (`stateless`, `long-lived`, `kiosk`) are no
 
 ```ts
 const SessionTypeSchema: z.ZodEnum<{}>
+```
+
+### `SetActiveOrganizationRequest`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+The body that sets or clears the active organization.
+
+```ts
+export type SetActiveOrganizationRequest = z.infer<typeof SetActiveOrganizationRequestSchema>
+```
+
+### `SetActiveOrganizationRequestSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+Make an organization the session's active one, or clear it (`null`: the personal
+account, where the environment allows one).
+
+```ts
+const SetActiveOrganizationRequestSchema: z.ZodObject<{ organizationId: z.ZodNullable<z.ZodUUID>; }, z.core.$strict>
 ```
 
 ### `SetPasswordRequest`
@@ -7251,6 +8801,30 @@ Counts only. No phone number, and nothing about who asked.
 const SmsUsageSchema
 ```
 
+### `StartOrganizationDomainRequest`
+
+_type_, defined in `packages/contract/src/organization-domain.ts`
+
+The body that claims a domain.
+
+```ts
+export type StartOrganizationDomainRequest = z.infer<typeof StartOrganizationDomainRequestSchema>
+```
+
+### `StartOrganizationDomainRequestSchema`
+
+_constant_, defined in `packages/contract/src/organization-domain.ts`
+
+Claim a domain: email a code to an address **on that domain**, and say what a verified
+domain does. Sent again for a pending claim it emails a new code (the old one stops
+working) and may change `mode`. Sent for a verified domain of the same organization it
+starts a re-verification: the domain keeps working, with its mode, until the new code is
+entered (which restarts its lifetime) or it lapses.
+
+```ts
+const StartOrganizationDomainRequestSchema: z.ZodObject<{ domain: z.ZodString; email: z.ZodString; mode: z.ZodEnum<{}>; }, z.core.$strict>
+```
+
 ### `StepUpEmailCode`
 
 _type_, defined in `packages/contract/src/mfa.ts`
@@ -7398,6 +8972,16 @@ export interface StoredSmsTemplatesRead {
   /** How many entries were under a kind this version does not know. */
   unknown: number
 }
+```
+
+### `SystemPermission`
+
+_type_, defined in `packages/contract/src/organization-permissions.ts`
+
+One of {@link SYSTEM_PERMISSIONS}.
+
+```ts
+export type SystemPermission = (typeof SYSTEM_PERMISSIONS)[number]
 ```
 
 ### `TEST_ADDRESS_DOMAIN`
@@ -7744,6 +9328,87 @@ field of the app's own platform; the other is refused.
 const UpdateNativeAppRequestSchema
 ```
 
+### `UpdateOrganizationDomainRequest`
+
+_type_, defined in `packages/contract/src/organization-domain.ts`
+
+The body that changes a domain's mode.
+
+```ts
+export type UpdateOrganizationDomainRequest = z.infer<typeof UpdateOrganizationDomainRequestSchema>
+```
+
+### `UpdateOrganizationDomainRequestSchema`
+
+_constant_, defined in `packages/contract/src/organization-domain.ts`
+
+Change what a domain does.
+
+```ts
+const UpdateOrganizationDomainRequestSchema: z.ZodObject<{ mode: z.ZodEnum<{}>; }, z.core.$strict>
+```
+
+### `UpdateOrganizationMemberRequest`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+The body that changes a member's role.
+
+```ts
+export type UpdateOrganizationMemberRequest = z.infer<typeof UpdateOrganizationMemberRequestSchema>
+```
+
+### `UpdateOrganizationMemberRequestSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+Change a member's role.
+
+```ts
+const UpdateOrganizationMemberRequestSchema: z.ZodObject<{ role: z.ZodString; }, z.core.$strict>
+```
+
+### `UpdateOrganizationRequest`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+The body that changes an organization.
+
+```ts
+export type UpdateOrganizationRequest = z.infer<typeof UpdateOrganizationRequestSchema>
+```
+
+### `UpdateOrganizationRequestSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+Rename an organization, or change its slug. At least one field.
+
+```ts
+const UpdateOrganizationRequestSchema: z.ZodObject<{ name: z.ZodOptional<z.ZodString>; slug: z.ZodOptional<z.ZodString>; }, z.core.$strict>
+```
+
+### `UpdateOrganizationRoleRequest`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+The body that changes a custom role.
+
+```ts
+export type UpdateOrganizationRoleRequest = z.infer<typeof UpdateOrganizationRoleRequestSchema>
+```
+
+### `UpdateOrganizationRoleRequestSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+Rename a custom role or replace its permissions (the set given is the whole set). At least
+one field.
+
+```ts
+const UpdateOrganizationRoleRequestSchema
+```
+
 ### `UpdateWebhookEndpointRequest`
 
 _type_, defined in `packages/contract/src/webhook.ts`
@@ -7830,6 +9495,92 @@ One page of users.
 const UserListSchema
 ```
 
+### `UserMembership`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+A user's membership of an organization, with the organization's name.
+
+```ts
+export type UserMembership = z.infer<typeof UserMembershipSchema>
+```
+
+### `UserMembershipList`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+A page of a user's memberships.
+
+```ts
+export type UserMembershipList = z.infer<typeof UserMembershipListSchema>
+```
+
+### `UserMembershipListSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+One page of a user's memberships, the one they joined first at the top.
+
+```ts
+const UserMembershipListSchema
+```
+
+### `UserMembershipSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+One organization a user belongs to, as an administrator reads it on the user's page: the
+organization, the key of the user's role in it and when they joined. No permission list and
+no session: those are the user's own view (`UserOrganization`).
+
+```ts
+const UserMembershipSchema
+```
+
+### `UserOrganization`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+An organization the signed-in user belongs to.
+
+```ts
+export type UserOrganization = z.infer<typeof UserOrganizationSchema>
+```
+
+### `UserOrganizationList`
+
+_type_, defined in `packages/contract/src/organization.ts`
+
+A page of the signed-in user's organizations.
+
+```ts
+export type UserOrganizationList = z.infer<typeof UserOrganizationListSchema>
+```
+
+### `UserOrganizationListSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+One page of the signed-in user's organizations, the one they joined first at the top. The
+`activeOrganizationId` is the session's own: `null` for the personal account, and for an
+organization the user is no longer a member of.
+
+```ts
+const UserOrganizationListSchema
+```
+
+### `UserOrganizationSchema`
+
+_constant_, defined in `packages/contract/src/organization.ts`
+
+An organization the signed-in user belongs to, with their role in it (ADR 0065, Orgs 02).
+What `GET /v1/client/me/organizations` lists and `POST` creates. No creator and no other
+member: a user is told about their own membership and nothing of anyone else's.
+
+```ts
+const UserOrganizationSchema
+```
+
 ### `UserSchema`
 
 _constant_, defined in `packages/contract/src/user.ts`
@@ -7880,6 +9631,26 @@ Submit an emailed verification code for an attempt waiting on `needs_email_verif
 
 ```ts
 const VerifyEmailRequestSchema: z.ZodObject<{ code: z.ZodString; }, z.core.$strip>
+```
+
+### `VerifyOrganizationDomainRequest`
+
+_type_, defined in `packages/contract/src/organization-domain.ts`
+
+The body that verifies a claimed domain.
+
+```ts
+export type VerifyOrganizationDomainRequest = z.infer<typeof VerifyOrganizationDomainRequestSchema>
+```
+
+### `VerifyOrganizationDomainRequestSchema`
+
+_constant_, defined in `packages/contract/src/organization-domain.ts`
+
+The code that verifies a claimed domain.
+
+```ts
+const VerifyOrganizationDomainRequestSchema: z.ZodObject<{ code: z.ZodString; }, z.core.$strict>
 ```
 
 ### `VerifySessionRequest`
@@ -8630,6 +10401,63 @@ defaultDeviceBinding('web') // 'none'
 defaultDeviceBinding('back-office') // 'optional'
 ```
 
+### `domainOfAddress`
+
+_function_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+The domain of an email address in the spelling the server stores (lower case), or `null`
+when the text has no `@` or ends in one.
+
+It is everything after the **last** `@`, unchanged: no subdomain is cut off, so
+`a@mail.acme.com` is `mail.acme.com` and **never** matches a claim on `acme.com`. Whether the
+result is a domain at all is {@link domainRefusal}'s question.
+
+```ts
+export function domainOfAddress(address: string): string | null
+```
+
+**Parameters**
+
+- `address`: An email address, normalised (lower case) by the caller.
+
+**Returns** The part after the last `@`, or `null`.
+
+**Example**
+
+```ts
+domainOfAddress('ada@acme.com') // 'acme.com'
+domainOfAddress('ada@mail.acme.com') // 'mail.acme.com'
+```
+
+### `domainRefusal`
+
+_function_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Why a string cannot be claimed as a domain, or `null` when it can.
+
+```ts
+export function domainRefusal(domain: string): DomainRefusal | null
+```
+
+**Parameters**
+
+- `domain`: The text to judge.
+
+**Returns**
+
+`grammar` (not a lower-case ASCII domain name: upper case, Unicode, an IP address,
+a single label), `length` (a label over {@link MAX_DOMAIN_LABEL_LENGTH}, the whole over
+{@link MAX_DOMAIN_LENGTH} or under {@link MIN_DOMAIN_LENGTH}), `public` (a public mail
+domain), or `null`.
+
+**Example**
+
+```ts
+domainRefusal('acme.com') // null
+domainRefusal('gmail.com') // 'public'
+domainRefusal('bücher.example') // 'grammar'
+```
+
 ### `durationToMs`
 
 _function_, defined in `packages/contract/src/duration.ts`
@@ -9019,6 +10847,46 @@ hasInvisibleCharacter('a\u{200B}b') // true
 hasInvisibleCharacter('münchen') // false
 ```
 
+### `hasOrganizationAccess`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Whether the active organization grants a permission or a role: the one rule behind
+`has()` in `@tula-tech/nextjs` and `@tula-tech/react`.
+
+It is exact. A permission is held when the claims list that very key; there is no wildcard
+(`org:billing:*` matches nothing) and no implication between keys (`manage` does not
+include `read`). A role is held when it is the member's role key. It is **false** with no
+active organization, for a check that names neither or both, and for anything that is not a
+non-empty string: a check that cannot be understood never grants.
+
+This reads claims, so it is as old as the access token (the server decides afresh at every
+refresh, within the token's life). Use it to decide what to show and what to let through
+quickly; a request that changes data is authorized by the server that changes it.
+
+```ts
+export function hasOrganizationAccess(
+  claims: OrganizationClaims | null | undefined,
+  check: OrganizationCheck
+): boolean
+```
+
+**Parameters**
+
+- `claims`: What {@link readOrganizationClaims} returned, or `null`.
+- `check`: The permission or the role asked for.
+
+**Returns** Whether the organization grants it.
+
+**Example**
+
+```ts
+const claims = readOrganizationClaims(payload)
+hasOrganizationAccess(claims, { permission: 'org:billing:read' })
+hasOrganizationAccess(claims, { role: 'admin' })
+hasOrganizationAccess(null, { role: 'admin' }) // false: no organization is active
+```
+
 ### `hookFailureOutcome`
 
 _function_, defined in `packages/contract/src/hook.ts`
@@ -9132,6 +11000,30 @@ export function isAppLinkPath(path: string): boolean
 ```ts
 isAppLinkPath('/oauth/callback') // true
 isAppLinkPath('/') // false: that is the domain's front page, not a callback
+```
+
+### `isBuiltInRoleKey`
+
+_function_, defined in `packages/contract/src/organization-permissions.ts`
+
+Whether a string is the key of a built-in role (`admin`, `member`). A custom role never
+takes one of these keys.
+
+```ts
+export function isBuiltInRoleKey(key: string): boolean
+```
+
+**Parameters**
+
+- `key`: A role key.
+
+**Returns** `true` for a built-in role's key.
+
+**Example**
+
+```ts
+isBuiltInRoleKey('admin') // true
+isBuiltInRoleKey('billing_manager') // false
 ```
 
 ### `isCustomClaimKey`
@@ -9363,6 +11255,31 @@ isProposalTargetId('user', 'google') // false
 isProposalTargetId('user', '0199C2F4-7A10-7C3E-9B1A-5D2E8F4A6C01') // false: lower case only
 ```
 
+### `isPublicEmailDomain`
+
+_function_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Whether anyone can get an address on this domain: it is on {@link PUBLIC_EMAIL_DOMAINS} or
+is a country domain of one of {@link PUBLIC_EMAIL_BRANDS}.
+
+```ts
+export function isPublicEmailDomain(domain: string): boolean
+```
+
+**Parameters**
+
+- `domain`: A domain in the spelling of {@link DOMAIN_PATTERN}.
+
+**Returns** `true` for a public mail domain.
+
+**Example**
+
+```ts
+isPublicEmailDomain('gmail.com') // true
+isPublicEmailDomain('yahoo.co.uk') // true
+isPublicEmailDomain('acme.com') // false
+```
+
 ### `isRedirectUrl`
 
 _function_, defined in `packages/contract/src/redirect-url.ts`
@@ -9483,6 +11400,29 @@ export function isSmsTemplateKind(value: string): value is SmsTemplateKind
 ```ts
 isSmsTemplateKind('sign_in') // true
 isSmsTemplateKind('constructor') // false
+```
+
+### `isSystemPermission`
+
+_function_, defined in `packages/contract/src/organization-permissions.ts`
+
+Whether a string is one of {@link SYSTEM_PERMISSIONS}.
+
+```ts
+export function isSystemPermission(key: string): key is SystemPermission
+```
+
+**Parameters**
+
+- `key`: A permission key.
+
+**Returns** `true` for one of Tula's own permissions.
+
+**Example**
+
+```ts
+isSystemPermission('org:sys:memberships:read') // true
+isSystemPermission('org:billing:read') // false
 ```
 
 ### `isTestAddress`
@@ -9833,6 +11773,29 @@ export function normalizePassword(password: string): string
 
 **Returns** The NFC-normalized password.
 
+### `normalizePermissions`
+
+_function_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permissions of a role as a set: each key once, sorted. How a role is stored, compared
+and returned, so that the order a caller listed them in is never a difference.
+
+```ts
+export function normalizePermissions(permissions: readonly string[]): string[]
+```
+
+**Parameters**
+
+- `permissions`: Permission keys, in any order, possibly with repeats.
+
+**Returns** The distinct keys, sorted.
+
+**Example**
+
+```ts
+normalizePermissions(['org:b:read', 'org:a:read', 'org:b:read']) // ['org:a:read', 'org:b:read']
+```
+
 ### `oauthProviderWeakenings`
 
 _function_, defined in `packages/contract/src/oauth.ts`
@@ -9875,6 +11838,64 @@ oauthProviderWeakenings(
   { enabled: true, dependents: { accounts: 3, more: false } },
   { enabled: false }
 ) // ['enabled']
+```
+
+### `organizationClaimsBytes`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Whether permission keys and an organization id and role can ride in a token: the UTF-8 length
+of the JSON of the three claims, which {@link MAX_ORGANIZATION_CLAIMS_BYTES} caps.
+
+```ts
+export function organizationClaimsBytes(claims: OrganizationClaims): number
+```
+
+**Parameters**
+
+- `claims`: The three claims.
+
+**Returns** The byte count.
+
+**Example**
+
+```ts
+organizationClaimsBytes({ orgId: 'o1', orgRole: 'member', orgPermissions: [] }) // 52
+```
+
+### `organizationRoleWeakenings`
+
+_function_, defined in `packages/contract/src/organization-permissions.ts`
+
+What a change to a custom role's permissions widens, the one rule the server records
+`weakened` with, `tula apply` asks `--allow-weaker` with and the dashboard asks first with.
+
+**Adding a permission to a role is a weakening** (members who hold the role gain access at
+their next refresh); taking one away is not. **Creating a role is not one**: no member holds
+it until someone assigns it, and that assignment is a membership change of its own. Deleting
+a role is not one: only a role no member holds can be deleted.
+
+```ts
+export function organizationRoleWeakenings(
+  before: readonly string[] | null,
+  after: readonly string[]
+): 'permissions'[]
+```
+
+**Parameters**
+
+- `before`: The permissions the role has, or `null` for a role that does not exist yet.
+- `after`: The permissions it would have.
+
+**Returns** `['permissions']` when `after` holds a key `before` does not, otherwise `[]`.
+
+**Example**
+
+```ts
+organizationRoleWeakenings(['org:billing:read'], ['org:billing:read', 'org:billing:write'])
+// ['permissions']
+organizationRoleWeakenings(['org:billing:read'], []) // []
+organizationRoleWeakenings(null, ['org:billing:read']) // []
 ```
 
 ### `originMatchesRelyingParty`
@@ -10206,6 +12227,41 @@ readHookClaimsAnswer({ claims: { role: 'admin' } }) // { claims: { role: 'admin'
 readHookClaimsAnswer({ claims: { sub: 'x' } }) // { problem: 'claims_invalid' }
 ```
 
+### `readOrganizationClaims`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Read the organization claims out of a session's claims, for an SDK or an application.
+
+Call it only with claims that were **verified**: this checks a shape, not where the claims
+came from. The three are returned together or not at all. A token that carries one without
+the others, a value of another type, an id or a role key outside their grammar, more than
+{@link MAX_ORGANIZATION_PERMISSIONS_CLAIM} permissions, a permission outside the permission
+grammar (`PERMISSION_KEY_PATTERN`) or claims over {@link MAX_ORGANIZATION_CLAIMS_BYTES} has
+**no** active organization, whole: never repaired and never partly believed. Treat `null`
+as "no organization, no permission".
+
+```ts
+export function readOrganizationClaims(claims: unknown): OrganizationClaims | null
+```
+
+**Parameters**
+
+- `claims`: A session's verified claims.
+
+**Returns**
+
+A frozen copy, or `null` when no organization is active (or the claims are not
+what a Tula server issues).
+
+**Example**
+
+```ts
+readOrganizationClaims({ org_id: 'o1', org_role: 'admin', org_perms: ['org:sys:memberships:read'] })
+// { orgId: 'o1', orgRole: 'admin', orgPermissions: ['org:sys:memberships:read'] }
+readOrganizationClaims({ org_id: 'o1' }) // null
+```
+
 ### `readStoredEmailTemplates`
 
 _function_, defined in `packages/contract/src/email-template.ts`
@@ -10448,6 +12504,40 @@ resolveSessionProfile(settings.sessions, { client: 'web', requested: 'admin' }).
 // 'admin' when profiles.admin.clientSelectable, otherwise 'web'
 ```
 
+### `rolePermissionRefusal`
+
+_function_, defined in `packages/contract/src/organization-permissions.ts`
+
+Whether a **custom** role may hold a permission key (ADR 0065, "Permissions").
+
+A custom role holds the operator's own permissions (`org:billing:read`) and may also hold
+any of Tula's {@link SYSTEM_PERMISSIONS}, so that a role such as `owner` can manage members.
+It can never hold a key of the reserved `sys` feature that is not on that list: a key Tula
+does not check would mean nothing today and silently grant a privilege tomorrow, when a
+later version gives that key a meaning.
+
+```ts
+export function rolePermissionRefusal(key: string): RolePermissionRefusal | null
+```
+
+**Parameters**
+
+- `key`: A permission key.
+
+**Returns**
+
+`null` when the role may hold it, `'grammar'` when it is not a permission key at
+all, `'reserved'` when it is a `sys` key Tula does not define.
+
+**Example**
+
+```ts
+rolePermissionRefusal('org:billing:read') // null
+rolePermissionRefusal('org:sys:memberships:manage') // null
+rolePermissionRefusal('org:sys:billing:read') // 'reserved'
+rolePermissionRefusal('billing.read') // 'grammar'
+```
+
 ### `settingsWeakenings`
 
 _function_, defined in `packages/contract/src/settings-weakening.ts`
@@ -10508,6 +12598,10 @@ A path is listed when:
   Each is listed in the other kind too, where it changes nothing: the documents do not
   say which kind of environment they are for, so the rule errs towards asking. `false`,
   and `null` where a run was allowed outright (`true`) or by default, are never listed.
+
+- `organizations.enabled`, `organizations.allowUserCreated`, `organizations.maxCreatedPerUser`:
+  organizations are switched off, user-created organizations are switched on, or the cap
+  on them is raised or removed (ADR 0065). Switching organizations on is not listed.
 
 One of these is enough, whatever else became stricter. Not counted: `maxLength`,
 `specialChars`, the `preset` label and `expiryDays` (forced rotation is not a strength
@@ -11073,6 +13167,102 @@ Most claims one JWT template may define.
 const MAX_JWT_TEMPLATE_CLAIMS: 16
 ```
 
+### `MAX_ORGANIZATION_CLAIMS_BYTES`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The most bytes the three organization claims may take together, as JSON (UTF-8): their own
+cap, beside {@link MAX_CUSTOM_CLAIMS_BYTES} and never taken from it.
+
+It is the true upper bound of what the grammars allow: an organization id (a UUID, 36
+characters), a role key of 32 characters and 32 permissions of the longest key
+(`org:sys:` + 32 + `:` + 32 = 73 characters) take 2,541 bytes; the cap leaves a little
+room. A role is bounded by the contract and the database, so a token never reaches it
+unless a row was written by hand: the server then issues the token **without** the
+organization claims (no claim is "no permission"), never with a cut list.
+
+```ts
+const MAX_ORGANIZATION_CLAIMS_BYTES: 2560
+```
+
+### `MAX_ORGANIZATION_PERMISSIONS_CLAIM`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+Most permissions an organization role (and so the `org_perms` claim) holds.
+
+```ts
+const MAX_ORGANIZATION_PERMISSIONS_CLAIM: 32
+```
+
+### `ORGANIZATION_ID_CLAIM`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The access token's claim naming the active organization (ADR 0065, "Token claims").
+
+```ts
+const ORGANIZATION_ID_CLAIM: "org_id"
+```
+
+### `ORGANIZATION_PERMISSIONS_CLAIM`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The access token's claim holding the permission keys of that role. A list of strings,
+present only beside the other two.
+
+```ts
+const ORGANIZATION_PERMISSIONS_CLAIM: "org_perms"
+```
+
+### `ORGANIZATION_ROLE_CLAIM`
+
+_constant_, defined in `packages/contract/src/custom-claims.ts`
+
+The access token's claim holding the key of the member's role in the active organization.
+
+```ts
+const ORGANIZATION_ROLE_CLAIM: "org_role"
+```
+
+### `OrganizationCheck`
+
+_type_, defined in `packages/contract/src/custom-claims.ts`
+
+What {@link hasOrganizationAccess} asks: one permission key, or one role key. Exactly one
+of the two.
+
+```ts
+export type OrganizationCheck =
+| { readonly permission: string; readonly role?: never }
+| { readonly role: string; readonly permission?: never }
+```
+
+**Example**
+
+```ts
+const byPermission: OrganizationCheck = { permission: 'org:billing:read' }
+const byRole: OrganizationCheck = { role: 'admin' }
+```
+
+### `OrganizationClaims`
+
+_interface_, defined in `packages/contract/src/custom-claims.ts`
+
+The organization claims of a verified session: who it acts as, in which organization.
+
+```ts
+export interface OrganizationClaims {
+  /** The active organization's id. */
+  readonly orgId: string
+  /** The key of the member's role in it. */
+  readonly orgRole: string
+  /** The permission keys of that role. */
+  readonly orgPermissions: readonly string[]
+}
+```
+
 ### `RESERVED_CLAIM_NAMES`
 
 _constant_, defined in `packages/contract/src/custom-claims.ts`
@@ -11147,6 +13337,46 @@ export function customClaimsBytes(claims: Readonly<Record<string, CustomClaimVal
 customClaimsBytes({ role: 'admin' }) // 16: {"role":"admin"}
 ```
 
+### `hasOrganizationAccess`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Whether the active organization grants a permission or a role: the one rule behind
+`has()` in `@tula-tech/nextjs` and `@tula-tech/react`.
+
+It is exact. A permission is held when the claims list that very key; there is no wildcard
+(`org:billing:*` matches nothing) and no implication between keys (`manage` does not
+include `read`). A role is held when it is the member's role key. It is **false** with no
+active organization, for a check that names neither or both, and for anything that is not a
+non-empty string: a check that cannot be understood never grants.
+
+This reads claims, so it is as old as the access token (the server decides afresh at every
+refresh, within the token's life). Use it to decide what to show and what to let through
+quickly; a request that changes data is authorized by the server that changes it.
+
+```ts
+export function hasOrganizationAccess(
+  claims: OrganizationClaims | null | undefined,
+  check: OrganizationCheck
+): boolean
+```
+
+**Parameters**
+
+- `claims`: What {@link readOrganizationClaims} returned, or `null`.
+- `check`: The permission or the role asked for.
+
+**Returns** Whether the organization grants it.
+
+**Example**
+
+```ts
+const claims = readOrganizationClaims(payload)
+hasOrganizationAccess(claims, { permission: 'org:billing:read' })
+hasOrganizationAccess(claims, { role: 'admin' })
+hasOrganizationAccess(null, { role: 'admin' }) // false: no organization is active
+```
+
 ### `isCustomClaimKey`
 
 _function_, defined in `packages/contract/src/custom-claims.ts`
@@ -11196,6 +13426,29 @@ isCustomClaimValue('admin') // true
 isCustomClaimValue(['admin']) // false
 ```
 
+### `organizationClaimsBytes`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Whether permission keys and an organization id and role can ride in a token: the UTF-8 length
+of the JSON of the three claims, which {@link MAX_ORGANIZATION_CLAIMS_BYTES} caps.
+
+```ts
+export function organizationClaimsBytes(claims: OrganizationClaims): number
+```
+
+**Parameters**
+
+- `claims`: The three claims.
+
+**Returns** The byte count.
+
+**Example**
+
+```ts
+organizationClaimsBytes({ orgId: 'o1', orgRole: 'member', orgPermissions: [] }) // 52
+```
+
 ### `readCustomClaims`
 
 _function_, defined in `packages/contract/src/custom-claims.ts`
@@ -11227,6 +13480,41 @@ export function readCustomClaims(claims: unknown): CustomClaims | null
 ```ts
 readCustomClaims({ sub: 'u1', ext: { role: 'admin' } }) // { role: 'admin' }
 readCustomClaims({ sub: 'u1', ext: ['admin'] }) // null
+```
+
+### `readOrganizationClaims`
+
+_function_, defined in `packages/contract/src/custom-claims.ts`
+
+Read the organization claims out of a session's claims, for an SDK or an application.
+
+Call it only with claims that were **verified**: this checks a shape, not where the claims
+came from. The three are returned together or not at all. A token that carries one without
+the others, a value of another type, an id or a role key outside their grammar, more than
+{@link MAX_ORGANIZATION_PERMISSIONS_CLAIM} permissions, a permission outside the permission
+grammar (`PERMISSION_KEY_PATTERN`) or claims over {@link MAX_ORGANIZATION_CLAIMS_BYTES} has
+**no** active organization, whole: never repaired and never partly believed. Treat `null`
+as "no organization, no permission".
+
+```ts
+export function readOrganizationClaims(claims: unknown): OrganizationClaims | null
+```
+
+**Parameters**
+
+- `claims`: A session's verified claims.
+
+**Returns**
+
+A frozen copy, or `null` when no organization is active (or the claims are not
+what a Tula server issues).
+
+**Example**
+
+```ts
+readOrganizationClaims({ org_id: 'o1', org_role: 'admin', org_perms: ['org:sys:memberships:read'] })
+// { orgId: 'o1', orgRole: 'admin', orgPermissions: ['org:sys:memberships:read'] }
+readOrganizationClaims({ org_id: 'o1' }) // null
 ```
 
 ## `@tula-tech/contract/device-binding`
@@ -12025,6 +14313,28 @@ const OAUTH_TICKET_PARAM: "tula_ticket"
 const ticket = new URLSearchParams(location.hash.slice(1)).get(OAUTH_TICKET_PARAM)
 ```
 
+### `ORGANIZATION_INVITATION_TOKEN_PARAM`
+
+_constant_, defined in `packages/contract/src/headers.ts`
+
+Name of the URL-fragment parameter carrying an organization invitation's token (ADR 0065,
+Orgs 04).
+
+The link in the invitation email is the app's own redirect URL followed by
+`#tula_invitation=<token>`. A fragment is never sent to a server, a proxy or in `Referer`,
+so the token reaches only the page's own script, which posts it to the invitation routes
+(`preview`, `accept`, `decline`) and removes it from the URL.
+
+```ts
+const ORGANIZATION_INVITATION_TOKEN_PARAM: "tula_invitation"
+```
+
+**Example**
+
+```ts
+const token = new URLSearchParams(location.hash.slice(1)).get(ORGANIZATION_INVITATION_TOKEN_PARAM)
+```
+
 ### `PUBLISHABLE_KEY_HEADER`
 
 _constant_, defined in `packages/contract/src/headers.ts`
@@ -12120,6 +14430,628 @@ export function jwksUrl(issuer: string): string
 ```ts
 jwksUrl('https://auth.example.com/v1/environments/env_1')
 // 'https://auth.example.com/v1/environments/env_1/.well-known/jwks.json'
+```
+
+## `@tula-tech/contract/organization-domain-rules`
+
+Source: `packages/contract/src/organization-domain-rules.ts`
+
+### `DOMAIN_PATTERN`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+The grammar of a claimable domain: two or more labels of lower-case ASCII letters, digits
+and hyphens (none at a label's end), joined by single full stops, the last label letters
+only (or punycode, `xn--…`). So: no upper case, no trailing full stop, no port or path, no
+underscore, no `@`, no wildcard, and no IP address (a numeric last label is refused, and so
+is the bracketed IPv6 form).
+
+**Internationalised domains are written in punycode** (`xn--bcher-kva.example`, never
+`bücher.example`): Unicode is refused, not converted, so a domain is stored and compared in
+the one spelling a mail server uses. The pattern is the grammar alone; the length bounds
+({@link MAX_DOMAIN_LENGTH}, {@link MAX_DOMAIN_LABEL_LENGTH}) and the public list are
+{@link domainRefusal}'s. `domainRefusal` runs it only over text of at most twice the length cap, so its work is bounded.
+
+```ts
+const DOMAIN_PATTERN: {}
+```
+
+**Example**
+
+```ts
+DOMAIN_PATTERN.test('acme.com') // true
+DOMAIN_PATTERN.test('Acme.com') // false
+DOMAIN_PATTERN.test('192.168.0.1') // false
+```
+
+### `DOMAIN_REMINDER_DAYS`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+How many days before a verification lapses the organization's managers are emailed, largest
+first. Each is sent once per verification: a reminder is never repeated, and re-verifying
+starts the series again.
+
+```ts
+const DOMAIN_REMINDER_DAYS: readonly number[]
+```
+
+### `DOMAIN_REVERIFICATION_GRACE_DAYS`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+The least time, in days, that a domain verified before the lifetime existed (migration
+0042) keeps matching after the migration: its deadline is the later of the original
+`verified_at` plus the lifetime and this many days from the migration, so that nobody is
+cut off the day the change ships and every manager gets a reminder before it ends.
+
+```ts
+const DOMAIN_REVERIFICATION_GRACE_DAYS: 30
+```
+
+### `DOMAIN_VERIFICATION_LIFETIME_DAYS`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+How long a verification of a domain lasts, in days (ADR 0065, "Verified domains", "Lapse").
+A domain can be lost and registered again by someone else, and nothing tells Tula, so a
+claim is only believed for this long: past it the domain matches nobody (no auto-join, no
+suggestion) until a manager proves it again with a new emailed code. Counted from the day
+the code was entered.
+
+```ts
+const DOMAIN_VERIFICATION_LIFETIME_DAYS: 365
+```
+
+### `DomainRefusal`
+
+_type_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Why a string is not a claimable domain.
+
+```ts
+export type DomainRefusal = 'grammar' | 'length' | 'public'
+```
+
+### `MAX_DOMAINS_PER_ORGANIZATION`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+How many domains one organization can claim, verified or waiting for a code. A bound so that
+a signed-in administrator cannot fill the table.
+
+```ts
+const MAX_DOMAINS_PER_ORGANIZATION: 10
+```
+
+### `MAX_DOMAIN_LABEL_LENGTH`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Longest one label of a domain can be, in characters (RFC 1035).
+
+```ts
+const MAX_DOMAIN_LABEL_LENGTH: 63
+```
+
+### `MAX_DOMAIN_LENGTH`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Longest a whole domain can be, in characters (RFC 1035).
+
+```ts
+const MAX_DOMAIN_LENGTH: 253
+```
+
+### `MIN_DOMAIN_LENGTH`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Shortest a domain can be: `a.bc`.
+
+```ts
+const MIN_DOMAIN_LENGTH: 4
+```
+
+### `ORGANIZATION_DOMAIN_MODES`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+How an organization treats a user who signs up with a verified address on its domain.
+
+```ts
+const ORGANIZATION_DOMAIN_MODES: readonly ["suggest", "auto_join"]
+```
+
+### `ORGANIZATION_DOMAIN_STATUSES`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+What a domain row is: waiting for its first code, verified, or past its lifetime.
+
+```ts
+const ORGANIZATION_DOMAIN_STATUSES: readonly ["pending", "verified", "needs_reverification"]
+```
+
+### `OrganizationDomainMode`
+
+_type_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+One of {@link ORGANIZATION_DOMAIN_MODES}.
+
+```ts
+export type OrganizationDomainMode = (typeof ORGANIZATION_DOMAIN_MODES)[number]
+```
+
+### `OrganizationDomainStatus`
+
+_type_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+One of {@link ORGANIZATION_DOMAIN_STATUSES}.
+
+```ts
+export type OrganizationDomainStatus = (typeof ORGANIZATION_DOMAIN_STATUSES)[number]
+```
+
+### `PUBLIC_EMAIL_BRANDS`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Provider names whose every country domain is public: `yahoo.com`, `yahoo.co.uk`, `yahoo.fr`
+and `yahoo.co.jp` are all `yahoo`. A domain matches when its **first** label is one of
+these and what follows is a top-level domain, or a short second-level one and a top-level
+one (`co.uk`, `com.br`): `yahoo.com` and `hotmail.co.uk` match, `yahoo.acme.com` and
+`notyahoo.com` do not.
+
+```ts
+const PUBLIC_EMAIL_BRANDS: readonly string[]
+```
+
+### `PUBLIC_EMAIL_DOMAINS`
+
+_constant_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Domains that anyone can get an address at, and that so prove nothing about the holder of an
+address on them. **Documented here and nowhere else**: a claim of one is refused
+(`organization.domain_public`) and a join never matches one, even a claim stored before the
+list grew. The list is the large free consumer mailbox providers, the internet providers
+that give every customer an address, and the common national ones; a company's own domain
+is never on it.
+
+Providers that sell a mailbox under many country domains (`yahoo.co.uk`, `yahoo.fr`,
+`hotmail.de`, …) are in {@link PUBLIC_EMAIL_BRANDS} instead.
+
+```ts
+const PUBLIC_EMAIL_DOMAINS: readonly string[]
+```
+
+### `domainOfAddress`
+
+_function_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+The domain of an email address in the spelling the server stores (lower case), or `null`
+when the text has no `@` or ends in one.
+
+It is everything after the **last** `@`, unchanged: no subdomain is cut off, so
+`a@mail.acme.com` is `mail.acme.com` and **never** matches a claim on `acme.com`. Whether the
+result is a domain at all is {@link domainRefusal}'s question.
+
+```ts
+export function domainOfAddress(address: string): string | null
+```
+
+**Parameters**
+
+- `address`: An email address, normalised (lower case) by the caller.
+
+**Returns** The part after the last `@`, or `null`.
+
+**Example**
+
+```ts
+domainOfAddress('ada@acme.com') // 'acme.com'
+domainOfAddress('ada@mail.acme.com') // 'mail.acme.com'
+```
+
+### `domainRefusal`
+
+_function_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Why a string cannot be claimed as a domain, or `null` when it can.
+
+```ts
+export function domainRefusal(domain: string): DomainRefusal | null
+```
+
+**Parameters**
+
+- `domain`: The text to judge.
+
+**Returns**
+
+`grammar` (not a lower-case ASCII domain name: upper case, Unicode, an IP address,
+a single label), `length` (a label over {@link MAX_DOMAIN_LABEL_LENGTH}, the whole over
+{@link MAX_DOMAIN_LENGTH} or under {@link MIN_DOMAIN_LENGTH}), `public` (a public mail
+domain), or `null`.
+
+**Example**
+
+```ts
+domainRefusal('acme.com') // null
+domainRefusal('gmail.com') // 'public'
+domainRefusal('bücher.example') // 'grammar'
+```
+
+### `isPublicEmailDomain`
+
+_function_, defined in `packages/contract/src/organization-domain-rules.ts`
+
+Whether anyone can get an address on this domain: it is on {@link PUBLIC_EMAIL_DOMAINS} or
+is a country domain of one of {@link PUBLIC_EMAIL_BRANDS}.
+
+```ts
+export function isPublicEmailDomain(domain: string): boolean
+```
+
+**Parameters**
+
+- `domain`: A domain in the spelling of {@link DOMAIN_PATTERN}.
+
+**Returns** `true` for a public mail domain.
+
+**Example**
+
+```ts
+isPublicEmailDomain('gmail.com') // true
+isPublicEmailDomain('yahoo.co.uk') // true
+isPublicEmailDomain('acme.com') // false
+```
+
+## `@tula-tech/contract/organization-permissions`
+
+Source: `packages/contract/src/organization-permissions.ts`
+
+### `BUILT_IN_ROLES`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The two roles every environment has (ADR 0065): `admin` holds every system permission,
+`member` may read the member list. They cannot be deleted, renamed or given other
+permissions. They exist as rows of every environment (`ensureBuiltInRoles`) so that a
+membership refers to a role the way it does to a custom one.
+
+```ts
+const BUILT_IN_ROLES: readonly BuiltInRole[]
+```
+
+### `BuiltInRole`
+
+_interface_, defined in `packages/contract/src/organization-permissions.ts`
+
+A built-in role: its key, its name and the permissions it holds.
+
+```ts
+export interface BuiltInRole {
+  readonly key: string
+  readonly name: string
+  readonly permissions: readonly SystemPermission[]
+}
+```
+
+### `DOMAINS_MANAGE_PERMISSION`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permission that lets a member claim, verify, change and remove the organization's
+domains through the client routes (ADR 0065, "Verified domains"). Read from the member's
+role at the time of the request, never from a token.
+
+```ts
+const DOMAINS_MANAGE_PERMISSION: SystemPermission
+```
+
+### `INVITATIONS_MANAGE_PERMISSION`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permission that lets a member invite people to the organization and withdraw
+invitations (ADR 0065, Orgs 04). Checked on the server from the membership as it is now,
+never from a token's claims alone.
+
+```ts
+const INVITATIONS_MANAGE_PERMISSION: SystemPermission
+```
+
+### `MAX_CUSTOM_ROLES`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+How many custom roles an environment can define, beside the built-in ones.
+
+```ts
+const MAX_CUSTOM_ROLES: 50
+```
+
+### `MAX_PERMISSIONS_PER_ROLE`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+How many permissions one role can hold. The permissions of the active organization's role are
+a claim of every access token (ADR 0065, "Token claims"), so the number is capped.
+
+```ts
+const MAX_PERMISSIONS_PER_ROLE: 32
+```
+
+### `MAX_PERMISSION_KEY_LENGTH`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The longest a permission key can be, in characters.
+
+```ts
+const MAX_PERMISSION_KEY_LENGTH: 100
+```
+
+### `MEMBERSHIPS_MANAGE_PERMISSION`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permission that makes a member a manager of the organization's members. **Every
+organization keeps at least one member who holds it**: the last such member cannot be
+removed or moved to a role without it (`organization.last_manager`), and a role's
+permissions cannot be changed so that an organization would be left with none.
+
+```ts
+const MEMBERSHIPS_MANAGE_PERMISSION: SystemPermission
+```
+
+### `MEMBERSHIPS_READ_PERMISSION`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permission that lets a member read the organization's member list through the client
+routes (ADR 0065, Orgs 07). `org:sys:memberships:manage` also reads it.
+
+```ts
+const MEMBERSHIPS_READ_PERMISSION: SystemPermission
+```
+
+### `ORGANIZATION_DELETE_PERMISSION`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permission that lets a member delete the organization through the client routes (ADR
+0065, Orgs 07). Read from the membership now, never from a token's claims alone.
+
+```ts
+const ORGANIZATION_DELETE_PERMISSION: SystemPermission
+```
+
+### `ORGANIZATION_MANAGE_PERMISSION`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permission that lets a member rename the organization through the client routes
+(ADR 0065, Orgs 07). Read from the membership now, never from a token's claims alone.
+
+```ts
+const ORGANIZATION_MANAGE_PERMISSION: SystemPermission
+```
+
+### `PERMISSION_KEY_PATTERN`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The grammar of a permission key (ADR 0065): `org:<feature>:<action>`, each of the last two
+a lower-case letter followed by lower-case letters, digits and underscores (at most 32
+characters); or, for the permissions Tula's own routes check, `org:sys:<feature>:<action>`.
+No dot, no other separator: a key is safe in a token and in a URL. The feature `sys` is
+reserved: a custom key never has it, and a system key is one of
+{@link SYSTEM_PERMISSIONS}.
+
+The pattern is the grammar alone. Whether a role may hold a key is
+{@link rolePermissionRefusal}.
+
+```ts
+const PERMISSION_KEY_PATTERN: {}
+```
+
+**Example**
+
+```ts
+PERMISSION_KEY_PATTERN.test('org:billing:read') // true
+PERMISSION_KEY_PATTERN.test('org:sys:memberships:manage') // true
+PERMISSION_KEY_PATTERN.test('billing.read') // false
+```
+
+### `ROLE_KEY_PATTERN`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The grammar of a role's key: a lower-case letter, then lower-case letters, digits and
+underscores, up to 32 characters (`admin`, `billing_manager`). Unique in its environment.
+
+```ts
+const ROLE_KEY_PATTERN: {}
+```
+
+**Example**
+
+```ts
+ROLE_KEY_PATTERN.test('billing_manager') // true
+```
+
+### `RolePermissionRefusal`
+
+_type_, defined in `packages/contract/src/organization-permissions.ts`
+
+Why a custom role may not hold a permission key.
+
+```ts
+export type RolePermissionRefusal = 'grammar' | 'reserved'
+```
+
+### `SYSTEM_PERMISSIONS`
+
+_constant_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permissions Tula's own organization routes check (ADR 0065). The same keys an app's
+server checks with `has({ permission })`, so Tula's routes hold no privilege an app cannot
+also give a role.
+
+```ts
+const SYSTEM_PERMISSIONS
+```
+
+### `SystemPermission`
+
+_type_, defined in `packages/contract/src/organization-permissions.ts`
+
+One of {@link SYSTEM_PERMISSIONS}.
+
+```ts
+export type SystemPermission = (typeof SYSTEM_PERMISSIONS)[number]
+```
+
+### `isBuiltInRoleKey`
+
+_function_, defined in `packages/contract/src/organization-permissions.ts`
+
+Whether a string is the key of a built-in role (`admin`, `member`). A custom role never
+takes one of these keys.
+
+```ts
+export function isBuiltInRoleKey(key: string): boolean
+```
+
+**Parameters**
+
+- `key`: A role key.
+
+**Returns** `true` for a built-in role's key.
+
+**Example**
+
+```ts
+isBuiltInRoleKey('admin') // true
+isBuiltInRoleKey('billing_manager') // false
+```
+
+### `isSystemPermission`
+
+_function_, defined in `packages/contract/src/organization-permissions.ts`
+
+Whether a string is one of {@link SYSTEM_PERMISSIONS}.
+
+```ts
+export function isSystemPermission(key: string): key is SystemPermission
+```
+
+**Parameters**
+
+- `key`: A permission key.
+
+**Returns** `true` for one of Tula's own permissions.
+
+**Example**
+
+```ts
+isSystemPermission('org:sys:memberships:read') // true
+isSystemPermission('org:billing:read') // false
+```
+
+### `normalizePermissions`
+
+_function_, defined in `packages/contract/src/organization-permissions.ts`
+
+The permissions of a role as a set: each key once, sorted. How a role is stored, compared
+and returned, so that the order a caller listed them in is never a difference.
+
+```ts
+export function normalizePermissions(permissions: readonly string[]): string[]
+```
+
+**Parameters**
+
+- `permissions`: Permission keys, in any order, possibly with repeats.
+
+**Returns** The distinct keys, sorted.
+
+**Example**
+
+```ts
+normalizePermissions(['org:b:read', 'org:a:read', 'org:b:read']) // ['org:a:read', 'org:b:read']
+```
+
+### `organizationRoleWeakenings`
+
+_function_, defined in `packages/contract/src/organization-permissions.ts`
+
+What a change to a custom role's permissions widens, the one rule the server records
+`weakened` with, `tula apply` asks `--allow-weaker` with and the dashboard asks first with.
+
+**Adding a permission to a role is a weakening** (members who hold the role gain access at
+their next refresh); taking one away is not. **Creating a role is not one**: no member holds
+it until someone assigns it, and that assignment is a membership change of its own. Deleting
+a role is not one: only a role no member holds can be deleted.
+
+```ts
+export function organizationRoleWeakenings(
+  before: readonly string[] | null,
+  after: readonly string[]
+): 'permissions'[]
+```
+
+**Parameters**
+
+- `before`: The permissions the role has, or `null` for a role that does not exist yet.
+- `after`: The permissions it would have.
+
+**Returns** `['permissions']` when `after` holds a key `before` does not, otherwise `[]`.
+
+**Example**
+
+```ts
+organizationRoleWeakenings(['org:billing:read'], ['org:billing:read', 'org:billing:write'])
+// ['permissions']
+organizationRoleWeakenings(['org:billing:read'], []) // []
+organizationRoleWeakenings(null, ['org:billing:read']) // []
+```
+
+### `rolePermissionRefusal`
+
+_function_, defined in `packages/contract/src/organization-permissions.ts`
+
+Whether a **custom** role may hold a permission key (ADR 0065, "Permissions").
+
+A custom role holds the operator's own permissions (`org:billing:read`) and may also hold
+any of Tula's {@link SYSTEM_PERMISSIONS}, so that a role such as `owner` can manage members.
+It can never hold a key of the reserved `sys` feature that is not on that list: a key Tula
+does not check would mean nothing today and silently grant a privilege tomorrow, when a
+later version gives that key a meaning.
+
+```ts
+export function rolePermissionRefusal(key: string): RolePermissionRefusal | null
+```
+
+**Parameters**
+
+- `key`: A permission key.
+
+**Returns**
+
+`null` when the role may hold it, `'grammar'` when it is not a permission key at
+all, `'reserved'` when it is a `sys` key Tula does not define.
+
+**Example**
+
+```ts
+rolePermissionRefusal('org:billing:read') // null
+rolePermissionRefusal('org:sys:memberships:manage') // null
+rolePermissionRefusal('org:sys:billing:read') // 'reserved'
+rolePermissionRefusal('billing.read') // 'grammar'
 ```
 
 ## `@tula-tech/contract/password-rules`

@@ -1,4 +1,5 @@
 import {
+  MAX_CUSTOM_ROLES,
   MAX_EMAIL_BODY_LENGTH,
   MAX_NATIVE_APPS,
   MAX_WEBHOOK_ENDPOINTS,
@@ -11,6 +12,7 @@ import {
   isTemplatePath,
   type NativeAppChange,
   type Operation,
+  type OrganizationRoleChange,
   type Plan,
   type ProviderChange,
   type WebhookChange,
@@ -254,6 +256,49 @@ function unmanagedLinkPathsLine(change: NativeAppChange): string | null {
   return `      ${paths} on the server, not managed by the file (kept; write appLinkPaths to manage them, [] to remove them)`
 }
 
+/** A role's key or name, the file's or the server's, as text that is safe to print. */
+function roleText(value: unknown): string {
+  return printable(String(value), 100)
+}
+
+function organizationRoleFields(change: OrganizationRoleChange): string[] {
+  return change.fields.map((field) => {
+    if (field.path === 'permissions') {
+      const entries =
+        field.kind === 'added'
+          ? (field.after as unknown[]).map(roleText)
+          : [
+              ...(field.added ?? []).map((entry) => `+${roleText(entry)}`),
+              ...(field.removed ?? []).map((entry) => `-${roleText(entry)}`),
+            ]
+      return entries.length > 0 ? `permissions ${entries.join(' ')}` : 'permissions none'
+    }
+    return field.kind === 'added'
+      ? `name ${show(roleText(field.after))}`
+      : `name ${show(roleText(field.before))} → ${show(roleText(field.after))}`
+  })
+}
+
+function organizationRoleLine(output: Output, change: OrganizationRoleChange): string {
+  const { style } = output
+  const name = roleText(change.key)
+  const fields = organizationRoleFields(change).join(', ')
+  switch (change.action) {
+    case 'create':
+      return style.green(`  + ${name}: define (${fields})`)
+    case 'update':
+      return style.yellow(`  ~ ${name}: update (${fields})`)
+    case 'delete':
+      return style.red(`  - ${name}: remove (refused by the server while a member holds the role)`)
+    case 'unmanaged':
+      return style.dim(
+        `  = ${name}: unmanaged (on the server, not in the file; --prune removes it)`
+      )
+    default:
+      return style.dim(`  = ${name}: unchanged`)
+  }
+}
+
 function nativeAppLine(output: Output, change: NativeAppChange): string {
   const { style } = output
   const name = appName(change)
@@ -327,7 +372,7 @@ export function webhookCounts(plan: Pick<Plan, 'webhooks'>): { created: number; 
  * ```
  */
 export function planBlockers(
-  plan: Pick<Plan, 'webhooks'> & Partial<Pick<Plan, 'nativeApps'>>
+  plan: Pick<Plan, 'webhooks'> & Partial<Pick<Plan, 'nativeApps' | 'organizationRoles'>>
 ): string[] {
   const blockers: string[] = []
   for (const change of plan.webhooks.endpoints) {
@@ -349,6 +394,12 @@ export function planBlockers(
   const apps = plan.nativeApps?.overLimit ?? null
   if (apps !== null) {
     blockers.push(`The environment would have ${apps} native apps and may have ${MAX_NATIVE_APPS}.`)
+  }
+  const roles = plan.organizationRoles?.overLimit ?? null
+  if (roles !== null) {
+    blockers.push(
+      `The environment would have ${roles} custom organization roles and may have ${MAX_CUSTOM_ROLES}.`
+    )
   }
   return blockers
 }
@@ -629,7 +680,8 @@ export function removedWebhooks(plan: Pick<Plan, 'webhooks'>): string | null {
  *
  * @param operation - The write.
  * @returns E.g. `settings: replace`, `provider google: create`, `webhook https://…: remove`,
- *   `hook before_sign_up: update`, `native app ios com.example.app: register`.
+ *   `hook before_sign_up: update`, `native app ios com.example.app: register`,
+ *   `organization role billing_manager: define`.
  *
  * @example
  * ```ts
@@ -659,6 +711,18 @@ export function describeOperation(operation: Operation): string {
       'nativeApp.delete': 'remove',
     }
     return `native app ${appName(operation.change)}: ${did[operation.kind]}`
+  }
+  if (
+    operation.kind === 'organizationRole.create' ||
+    operation.kind === 'organizationRole.update' ||
+    operation.kind === 'organizationRole.delete'
+  ) {
+    const did = {
+      'organizationRole.create': 'define',
+      'organizationRole.update': 'update',
+      'organizationRole.delete': 'remove',
+    }
+    return `organization role ${roleText(operation.key)}: ${did[operation.kind]}`
   }
   if (operation.kind === 'provider.delete') {
     return `provider ${operation.provider}: delete`
@@ -762,6 +826,23 @@ export function renderPlan(
       }
     }
   }
+  if (plan.organizationRoles.managed) {
+    output.line()
+    output.line(style.bold('Organization roles'))
+    if (plan.organizationRoles.roles.length === 0) {
+      output.line(style.dim('  none in the file, none on the server'))
+    }
+    if (plan.organizationRoles.unread) {
+      output.line(
+        style.dim(
+          '  organizations are off on the server, so its custom roles were not read: a role it already has fails its definition (nothing is written over it); run tula diff again once organizations are on'
+        )
+      )
+    }
+    for (const change of plan.organizationRoles.roles) {
+      output.line(organizationRoleLine(output, change))
+    }
+  }
   const warnings = planWarnings(plan)
   if (warnings.length > 0) {
     output.line()
@@ -812,6 +893,13 @@ export function planToJson(
       // Without the file's entry: every part of it is in the change already.
       apps: plan.nativeApps.apps.map(({ entry: _entry, ...change }) => change),
       overLimit: plan.nativeApps.overLimit,
+    },
+    organizationRoles: {
+      managed: plan.organizationRoles.managed,
+      // Without the file's entry: every part of it is in the change already.
+      roles: plan.organizationRoles.roles.map(({ entry: _entry, ...change }) => change),
+      overLimit: plan.organizationRoles.overLimit,
+      unread: plan.organizationRoles.unread,
     },
     blockers: planBlockers(plan),
     managedBy: {
