@@ -264,12 +264,15 @@ async function bindSsoDomain(body: unknown): Promise<Response> {
     .findLast((sent) => sent.to === contact && /^\d{6}\b/.test(sent.subject))
     ?.subject.slice(0, 6)
   await admin('POST', `${base}/${claimed.id}/verify`, { code })
+  // The outbound guard needs a loopback address, and `api` listens on a name: a listener of
+  // its own on 127.0.0.1 hands each request to the app (as the SDK journeys do).
+  if (!ssoIdp) {
+    ssoIdp = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: (r) => app.request(r) })
+  }
   const connection = await admin('POST', '/v1/admin/sso-connections', {
     organizationId: org.id,
     name: 'Mock IdP',
-    // The outbound guard needs a loopback address, and `api` listens on a name: a listener of
-    // its own on 127.0.0.1 hands each request to the app (as the SDK journeys do).
-    issuer: `http://127.0.0.1:${(ssoIdp ??= Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: (r) => app.request(r) })).port}/v1/dev/sso`,
+    issuer: `http://127.0.0.1:${ssoIdp.port}/v1/dev/sso`,
     clientId: 'e2e-sso',
     clientSecret: 'e2e-sso-secret',
     domains: [domain],

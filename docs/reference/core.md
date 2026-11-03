@@ -1600,6 +1600,23 @@ export interface SignInFlow extends Flow<'sign_in'>, FactorEnrolmentActions, Sec
    *   server refuses with.
    */
   waitForEmailLink(options?: { signal?: AbortSignal }): Promise<FlowStep>
+  /**
+   * Continue with single sign-on (step `needs_first_factor` offering `sso`: the address's
+   * domain is bound to an active connection). Keeps the round trip's binding for this tab and
+   * navigates to the identity provider, unless `navigate` is `false`. The provider returns to
+   * `redirectUrl`; call `signIn.handleOAuthCallback()` on that page, as after a provider.
+   *
+   * @param input - The page to come back to (one of the allowed redirect URLs, same origin as
+   *   this page), and `navigate: false` to navigate yourself.
+   * @returns The identity provider's URL.
+   * @throws TulaError `request.redirect_not_allowed`, `sso.*` codes, `link.cross_origin` and
+   *   `storage.failed` (raised by the client, no request sent).
+   * @example
+   * ```ts
+   * await flow.startSso({ redirectUrl: `${location.origin}/oauth/callback` })
+   * ```
+   */
+  startSso(input: { redirectUrl: string; navigate?: boolean }): Promise<{ url: string }>
 }
 ```
 
