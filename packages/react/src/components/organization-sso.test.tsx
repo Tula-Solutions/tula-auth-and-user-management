@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
-import { screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { accessToken } from '../../../core/src/testing/fakes'
 import { expectAbsent, failure, json, sessionTokens } from '../testing/harness'
 import {
@@ -209,6 +209,9 @@ describe('<OrganizationProfile>: Single sign-on', () => {
       const address = (await screen.findByLabelText('Setup link address')) as HTMLInputElement
       expect(address.value).toBe('https://auth.test/dashboard/setup#tula_setup_ab_secret')
       expect(w.api.calls(`POST ${LINKS}`)[0]?.body).toMatchObject({ name: 'Acme IT' })
+      // The address is read-only: an edit does not change what the administrator will copy.
+      fireEvent.change(address, { target: { value: 'https://elsewhere.test' } })
+      expect(address.value).toBe('https://auth.test/dashboard/setup#tula_setup_ab_secret')
       await w.user.click(screen.getByRole('button', { name: 'Done' }))
       expect(document.body.textContent).not.toContain('tula_setup_ab_secret')
       expect(window.localStorage.length + window.sessionStorage.length).toBe(0)
@@ -223,6 +226,21 @@ describe('<OrganizationProfile>: Single sign-on', () => {
       expect(w.api.calls(`DELETE ${LINKS}/l1`).length).toBe(0)
       await w.user.click(screen.getByRole('button', { name: 'Yes, revoke' }))
       await waitFor(() => expect(w.api.calls(`DELETE ${LINKS}/l1`).length).toBe(1))
+    })
+
+    test('a list that cannot be read says so, and the form to make a link stays', async () => {
+      const w = ssoWorld()
+      w.api.on(`GET ${LINKS}`, () => failure(500, 'internal'))
+      w.mount(<OrganizationProfile section='sso' />)
+      expect(await screen.findByRole('alert')).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Create setup link' })).toBeTruthy()
+    })
+
+    test('a list refused because the role changed tells the profile to read the permissions again', async () => {
+      const w = ssoWorld()
+      w.api.on(`GET ${LINKS}`, () => failure(403, 'organization.permission_required'))
+      w.mount(<OrganizationProfile section='sso' />)
+      expect(await screen.findByText(/Your permissions in this organization changed/)).toBeTruthy()
     })
 
     test('a refused creation shows the server message and no address', async () => {
