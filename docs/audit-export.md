@@ -47,3 +47,32 @@ cursor at the end: read it from the last row (`tula audit export` does and print
 Each export is one `audit.exported` entry with the filters and the number of rows written, as
 the call ends, **also when the reader stops early**. The entry holds no row content. It is
 itself in the log, so the next export includes the one before it.
+
+## Single sign-on and provisioning events
+
+Everything an enterprise administrator needs to answer "who changed our sign-in" is in the same log, so an
+export filtered by `action` (or by `organizationId`) is the audit trail of the feature
+([Enterprise single sign-on: the guide](enterprise-sso.md)):
+
+| `action` | Recorded when |
+| --- | --- |
+| `sso_connection.created`, `sso_connection.updated`, `sso_connection.deleted` | A connection is made, changed or removed. An update lists the **names** of the fields that changed (`changed`) and never a value, and says `weakened: true` for a weakening: activating, switching enforcement off, trusting the provider's MFA, setting a break-glass role. A change of the group-to-role mapping is `changed: ['groupRoles']`, never the groups. |
+| `setup_link.created`, `setup_link.revoked` | A setup link is made or revoked. |
+| `scim_token.created`, `scim_token.revoked` | A SCIM token is made or revoked. |
+| `user.scim_provisioned` | The directory created or changed a user. |
+
+The actor of a change is the operator or administrator who made it, `setup_link` for one made through a
+[setup portal](enterprise-sso.md#the-setup-portal), and `directory` (with the SCIM token's id) for
+provisioning. No entry holds a secret, an email address, a certificate or a group name. For example, the
+events of one organization's connections for a quarter:
+
+```sh
+curl -sN -X POST "$TULA_API_URL/v1/admin/audit-logs/export" \
+  -H "Authorization: Bearer $TULA_SECRET_KEY" -H 'content-type: application/json' \
+  -d '{ "format": "csv", "organizationId": "<org id>", "action": "sso_connection.updated",
+        "from": "2026-07-01T00:00:00Z", "to": "2026-10-01T00:00:00Z" }'
+```
+
+> [!NOTE]
+> `action` takes one entry type; run one export per type, or export the organization's entries unfiltered
+> and filter the file. Entries older than the environment's `audit.retentionDays` have been deleted for good.
