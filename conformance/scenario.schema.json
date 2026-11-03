@@ -510,6 +510,19 @@
                   },
                   "expectError": {
                     "type": "string"
+                  },
+                  "captureSamlMetadata": {
+                    "type": "string"
+                  },
+                  "failure": {
+                    "type": "string"
+                  },
+                  "key": {
+                    "type": "string",
+                    "enum": ["a", "b", "c"]
+                  },
+                  "expectReplayRefused": {
+                    "type": "boolean"
                   }
                 },
                 "additionalProperties": false
@@ -1293,6 +1306,19 @@
                   },
                   "expectError": {
                     "type": "string"
+                  },
+                  "captureSamlMetadata": {
+                    "type": "string"
+                  },
+                  "failure": {
+                    "type": "string"
+                  },
+                  "key": {
+                    "type": "string",
+                    "enum": ["a", "b", "c"]
+                  },
+                  "expectReplayRefused": {
+                    "type": "boolean"
                   }
                 },
                 "additionalProperties": false

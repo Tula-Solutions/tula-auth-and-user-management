@@ -18,6 +18,6 @@ sdkJourneys({
   passkeys: 'page',
   deviceKey: true,
   // Every kind of client; the SSO start is built by TULA-141 ("Continue with SSO").
-  notBuilt: { 'TULA-141': 2 },
+  notBuilt: { 'TULA-141': 4 },
   sources: [import.meta.path],
 })
