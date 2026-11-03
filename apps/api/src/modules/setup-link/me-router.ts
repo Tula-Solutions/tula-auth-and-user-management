@@ -95,6 +95,7 @@ router.post(
     security: openapi.security.session,
     responses: {
       201: { description: 'The link, with its token.', content: json(CreatedSetupLinkSchema) },
+      413: openapi.responses[413],
       ...errors,
     },
   }),

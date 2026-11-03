@@ -207,11 +207,13 @@ function claimsDomain(request: Request): boolean {
 }
 
 /**
- * The domains an SSO connection's body binds it to (ADR 0067): domains the organization has
+ * The domains an SSO connection's body binds it to, by an administrator or a setup link (ADR 0067): domains the organization has
  * already claimed and verified, so public, and held to {@link DOMAIN_FIELDS} like a claim's.
  */
 function boundDomains(request: Request, json: unknown): unknown[] {
-  const bound = /\/v1\/admin\/sso-connections(?:\/[^/]+)?\/?$/.test(new URL(request.url).pathname)
+  const bound = /\/v1\/(?:admin\/sso-connections|setup\/connections)(?:\/[^/]+)?\/?$/.test(
+    new URL(request.url).pathname
+  )
   const domains = bound ? (json as { domains?: unknown } | undefined)?.domains : undefined
   return Array.isArray(domains) ? domains : []
 }
