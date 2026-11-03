@@ -49,6 +49,12 @@ export const ssoConnections = tula.table(
     clientSecretSealed: text('client_secret_sealed').notNull(),
     /** The role key a user provisioned by this connection gets in the organization. */
     defaultRole: text('default_role').notNull(),
+    /** Enforced: an identifier on the connection's domains is offered `sso` and nothing else. */
+    enforced: boolean('enforced').notNull().default(false),
+    /** Members holding this role key keep their other methods under enforcement; null is none. */
+    breakGlassRole: text('break_glass_role'),
+    /** Trust the identity provider for MFA: an SSO sign-in skips Tula's second step. */
+    trustIdpMfa: boolean('trust_idp_mfa').notNull().default(false),
     ...timestamps(),
   },
   (t) => [

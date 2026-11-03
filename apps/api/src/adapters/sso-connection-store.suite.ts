@@ -55,6 +55,9 @@ export function describeSsoConnectionStore(
       clientId: 'client-1',
       clientSecretSealed: 'sealed',
       defaultRole: 'member',
+      enforced: false,
+      breakGlassRole: null,
+      trustIdpMfa: false,
       domains: ['acme.test'],
       createdAt: now,
       updatedAt: now,
@@ -199,6 +202,19 @@ export function describeSsoConnectionStore(
       })
       expect(await ctx.store.findActiveByDomain(ctx.a.environmentId, 'acme.test')).toBeNull()
       expect(await ctx.store.findActiveByDomain(ctx.a.environmentId, 'new.test')).not.toBeNull()
+    })
+
+    test('enforcement, break-glass role and MFA trust are stored, and a null role clears it', async () => {
+      const record = connection(ctx.a, org)
+      await insert(record)
+      const set = await update(record.id, {
+        enforced: true,
+        breakGlassRole: 'admin',
+        trustIdpMfa: true,
+      })
+      expect(set).toMatchObject({ enforced: true, breakGlassRole: 'admin', trustIdpMfa: true })
+      const cleared = await update(record.id, { breakGlassRole: null })
+      expect(cleared).toMatchObject({ enforced: true, breakGlassRole: null, trustIdpMfa: true })
     })
 
     test('an update refuses a taken name and an unknown connection', async () => {

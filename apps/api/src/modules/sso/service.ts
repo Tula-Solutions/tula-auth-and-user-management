@@ -70,6 +70,47 @@ export async function offered(
 }
 
 /**
+ * Refuse a first factor other than `sso` for an identifier on an enforced connection's domain.
+ *
+ * Decided by the domain, as {@link offered} is; the account is read only to spare a holder of
+ * the connection's break-glass role, so a non-member and an unknown address get one answer.
+ * Called by every other first factor's own route (a client that skips the offer is refused
+ * too), and by the completion of a provider or passkey sign-in once the account is known.
+ *
+ * @param deps - Settings, connections, users and organizations.
+ * @param tenant - The environment.
+ * @param identifier - The address the sign-in is for (a phone number is on no domain).
+ * @param method - The strategy being tried, named in the refusal.
+ * @throws AuthError `auth.method_disabled` when the domain is enforced and the account is not a
+ *   break-glass member.
+ */
+export async function requireNotEnforced(
+  deps: Pick<Deps, 'environmentSettings' | 'config' | 'ssoConnections' | 'users' | 'organizations'>,
+  tenant: Pick<Tenant, 'environmentId'>,
+  identifier: string,
+  method: string
+): Promise<void> {
+  const connection = await offered(deps, tenant, identifier)
+  if (!connection?.enforced) {
+    return
+  }
+  if (connection.breakGlassRole !== null) {
+    const user = await deps.users.findByEmail(tenant.environmentId, identifier)
+    const membership = user
+      ? await deps.organizations.findMembership(
+          tenant.environmentId,
+          connection.organizationId,
+          user.id
+        )
+      : null
+    if (membership?.roleKey === connection.breakGlassRole) {
+      return
+    }
+  }
+  throw new AuthError('auth.method_disabled', { method })
+}
+
+/**
  * The connection an SSO round is for, as long as it may still sign anybody in: single sign-on
  * on and the connection `active`. Asked at the start, the callback and the exchange.
  *

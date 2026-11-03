@@ -29,6 +29,9 @@ export const SSO_CONNECTION_FIELDS = [
   'clientId',
   'clientSecret',
   'defaultRole',
+  'enforced',
+  'breakGlassRole',
+  'trustIdpMfa',
   'domains',
   'status',
 ] as const
