@@ -3275,7 +3275,9 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
       })
 
       /** A server with an active OIDC connection bound to a verified domain of an organization. */
-      async function ssoServer(): Promise<Server & { domain: string }> {
+      async function ssoServer(
+        options: { mfaRequired?: boolean } = {}
+      ): Promise<Server & { domain: string; patch(body: object): Promise<void> }> {
         const s = await oauthServer()
         const proxy = Bun.serve({
           hostname: '127.0.0.1',
@@ -3299,6 +3301,7 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
               personalAccount: true,
             },
             sso: { enabled: true },
+            ...(options.mfaRequired && { mfa: { ...settings.mfa, policy: 'required' } }),
           },
           { 'if-match': read.headers.get('etag') ?? '' }
         )
@@ -3333,7 +3336,10 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
           status: 'active',
         })
         expect(active.status).toBe(200)
-        return Object.assign(s, { domain })
+        const patch = async (body: object) => {
+          expect((await s.admin('PATCH', `/v1/admin/sso-connections/${id}`, body)).status).toBe(200)
+        }
+        return Object.assign(s, { domain, patch })
       }
 
       /** Play the user at the identity provider; returns where the API's callback sent the browser. */
@@ -3427,6 +3433,58 @@ export function sdkJourneys(target: JourneyTarget): JourneyKit {
             code: 'sso.email_domain_mismatch',
           })
           expect(landing.tula.state.status).not.toBe('signed-in')
+        }
+      )
+
+      /** One round at the identity provider for `email`; the callback's outcome. */
+      async function ssoRound(s: Server, email: string) {
+        const browserTab = tab()
+        browserTab.open(SIGN_IN_PAGE)
+        const start = s.client('web')
+        const flow = await start.tula.signIn.start({ identifier: email })
+        const { url } = await flow.startSso({ redirectUrl: CALLBACK_PAGE })
+        browserTab.open(await atIdp(s, url, email))
+        const landing = s.client('web', { cookies: start.cookies })
+        return { landing, outcome: await landing.tula.signIn.handleOAuthCallback() }
+      }
+
+      page(
+        'sso enforcement removes the other first factors of a domain',
+        'SSO enforcement: an enforced domain offers single sign-on alone, the same for a known and an unknown address, and its password step answers both with the generic failure',
+        async () => {
+          const s = await ssoServer()
+          const known = await signUp(s, 'web', `known@${s.domain}`)
+          await known.tula.session.signOut()
+          await s.patch({ enforced: true })
+          const steps = []
+          for (const who of ['known', 'nobody']) {
+            const flow = await s
+              .client('web')
+              .tula.signIn.start({ identifier: `${who}@${s.domain}` })
+            steps.push(flow.step)
+            expect(flow.step).toMatchObject({ status: 'needs_first_factor', strategies: ['sso'] })
+            expect((await caught(flow.submitPassword({ password: PASSWORD }))).code).toBe(
+              'auth.invalid_credentials'
+            )
+          }
+          expect(steps[0]).toEqual(steps[1])
+        }
+      )
+
+      page(
+        'sso trust in the provider for two-step verification',
+        'SSO MFA trust: under a required second step a single sign-on sign-in stops at enrolment, and completes once the connection trusts the identity provider',
+        async () => {
+          const s = await ssoServer({ mfaRequired: true })
+          const off = await ssoRound(s, `ada@${s.domain}`)
+          expect(off.outcome.status).toBe('needs_step')
+          expect(off.outcome.status === 'needs_step' ? off.outcome.flow.step.status : '').toBe(
+            'needs_factor_enrolment'
+          )
+          expect(off.landing.tula.state.status).not.toBe('signed-in')
+          await s.patch({ trustIdpMfa: true })
+          const on = await ssoRound(s, `grace@${s.domain}`)
+          expect(on.outcome.status).toBe('complete')
         }
       )
 
