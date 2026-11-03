@@ -70,6 +70,7 @@ router.post(
           'text/csv': { schema: { type: 'string' } },
         },
       },
+      413: openapi.responses[413],
       422: openapi.responses[422],
       429: openapi.responses[429],
       500: openapi.responses[500],
