@@ -2116,14 +2116,14 @@ export function describeUserRepository(name: string, setup: () => Promise<UserSu
               nelly.id
             )
             expect(
-              await ctx.users.findByEmail(ctx.a.environmentId, nelly.emailNormalized!)
+              await ctx.users.findByEmail(ctx.a.environmentId, nelly.emailNormalized ?? '')
             ).toBeNull()
             expect(await auditOf(ctx.a, nelly.id)).toEqual(['user.scim_updated'])
             expect(
               await ctx.users.replaceEmail(
                 ctx.a.environmentId,
                 nelly.id,
-                { ...address(), email: maya.email!, normalized: maya.emailNormalized! },
+                { ...address(), email: maya.email ?? '', normalized: maya.emailNormalized ?? '' },
                 later(6),
                 activity(ctx.a, 'user.scim_updated', nelly.id)
               )

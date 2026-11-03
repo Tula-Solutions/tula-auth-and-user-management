@@ -581,3 +581,17 @@ describe('SSO connection list without an organization', () => {
     expect(((await response.json()) as { connections: unknown[] }).connections).toHaveLength(2)
   })
 })
+
+describe('samlUrls', () => {
+  test('a public URL with trailing slashes gives no double slash in any value', () => {
+    const urls = Sso.samlUrls(
+      { publicUrl: 'https://auth.example.com//' },
+      { id: 'c1', environmentId: 'e1' }
+    )
+    expect(urls).toEqual({
+      spEntityId: 'https://auth.example.com/v1/environments/e1/sso/saml/c1/metadata',
+      acsUrl: 'https://auth.example.com/v1/environments/e1/sso/saml/c1/acs',
+      spMetadataUrl: 'https://auth.example.com/v1/environments/e1/sso/saml/c1/metadata',
+    })
+  })
+})

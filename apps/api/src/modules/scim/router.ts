@@ -32,7 +32,7 @@ const SCIM_JSON = 'application/scim+json'
 
 /** The same error body, as RFC 7644 section 3.12 has it, on these routes only. */
 router.onError(async (err, c) => {
-  const response = onError(err, c as never)
+  const response = onError(err, c)
   const { detail } = (await response.clone().json()) as { detail?: string }
   const headers = new Headers(response.headers)
   headers.set('content-type', SCIM_JSON)
@@ -50,10 +50,7 @@ router.onError(async (err, c) => {
 
 // The address is limited first so that guessed tokens count too; the token's own and the
 // organization's limits are in `scimToken()`.
-router.use(
-  '*',
-  rateLimit({ name: 'scim', limit: SCIM_IP_RATE_LIMIT, window: '1m', key: byIp }) as never
-)
+router.use('*', rateLimit({ name: 'scim', limit: SCIM_IP_RATE_LIMIT, window: '1m', key: byIp }))
 router.use('*', scimToken())
 router.use('*', async (c, next) => {
   await Organizations.requireEnabled(c.get('deps'), c.get('tenant'))

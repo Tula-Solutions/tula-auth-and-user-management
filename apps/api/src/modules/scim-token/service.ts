@@ -3,6 +3,7 @@ import type { Deps, Tenant } from '~/dependencies'
 import { ConflictError, NotFoundError } from '~/exceptions'
 import type { Actor } from '~/lib/actor'
 import { randomToken, sha256Hex } from '~/lib/crypto'
+import { publicBase } from '~/lib/public-base'
 import * as Audit from '~/modules/audit/service'
 import * as Organizations from '~/modules/organization/service'
 import type { ScimTokenRecord } from '~/ports/scim-store'
@@ -102,8 +103,10 @@ export async function create(
   tenant: Pick<Tenant, 'projectId' | 'environmentId'>,
   input: { organizationId: string; name: string },
   actor: Actor
-): Promise<ScimTokenView & { token: string }> {
+): Promise<ScimTokenView & { token: string; scimBaseUrl: string }> {
   await requireOrganization(deps, tenant, input.organizationId)
+  // shortcut: list-then-insert, so two simultaneous creates may land one past the cap; the
+  // cap keeps a list short and guards nothing, so no environment lock, until a limit is a security one.
   const live = (await deps.scim.listTokens(tenant.environmentId, input.organizationId)).filter(
     (one) => one.revokedAt === null
   )
@@ -132,7 +135,7 @@ export async function create(
     updatedAt: activity.occurredAt,
   }
   await deps.scim.insertToken(record, activity)
-  return { ...view(record), token }
+  return { ...view(record), token, scimBaseUrl: `${publicBase(deps.config)}/v1/scim/v2` }
 }
 
 /**

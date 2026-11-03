@@ -582,6 +582,7 @@ export interface Schemas {
     test?: true
   }
   AuditExportedEventData: {
+    phase?: 'started' | 'finished'
     format: 'ndjson' | 'csv'
     rowCount: number
     resumed: boolean
@@ -730,6 +731,8 @@ export interface Schemas {
     createdAt: string
     /** The bearer token. Shown once; only its hash is stored. */
     token: string
+    /** The base URL to give the identity provider. */
+    scimBaseUrl: string
   }
   CreatedSetupLink: {
     id: string

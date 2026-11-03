@@ -432,7 +432,7 @@ describe('event payloads hold nothing a client or admin supplied, and no secret'
 
   // The sweep above proves nothing if the tap is blind or the flows record nothing: this
   // runs the journeys the event contract was written for and says what was seen.
-  test('the tap sees the inputs of sign-up, sign-in, reset, admin create, settings and OAuth', async () => {
+  test('the tap sees the inputs of sign-up, sign-in, reset, admin create, settings, OAuth, SCIM and setup tokens', async () => {
     const named = [
       'sign-up',
       'sign-in',
@@ -440,6 +440,8 @@ describe('event payloads hold nothing a client or admin supplied, and no secret'
       'email code sign-in',
       'environment settings',
       'OAuth sign-up and sign-in',
+      'scim tokens: create, use, revoke',
+      'setup links: create, use, revoke',
     ]
     const runs = await Promise.all(
       named.map((name) => {
@@ -472,6 +474,8 @@ describe('event payloads hold nothing a client or admin supplied, and no secret'
       /^Conformance Suite/, // an app name an admin set
       /^tula_sk_/, // the secret key
       /^tula_rt_/, // a refresh token
+      /^tula_scim_/, // a SCIM token
+      /^tula_setup_/, // a setup link's token
       /^ey[\w-]+\.[\w-]+\.[\w-]+$/, // an access token
     ]) {
       const input = inputs.find((candidate) => kind.test(candidate))

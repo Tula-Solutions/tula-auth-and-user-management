@@ -6774,6 +6774,13 @@
       "AuditExportedEventData": {
         "type": "object",
         "properties": {
+          "phase": {
+            "type": "string",
+            "enum": [
+              "started",
+              "finished"
+            ]
+          },
           "format": {
             "type": "string",
             "enum": [
@@ -15985,6 +15992,10 @@
           "token": {
             "type": "string",
             "description": "The bearer token. Shown once; only its hash is stored."
+          },
+          "scimBaseUrl": {
+            "type": "string",
+            "description": "The base URL to give the identity provider."
           }
         },
         "required": [
@@ -15995,7 +16006,8 @@
           "lastUsedAt",
           "revokedAt",
           "createdAt",
-          "token"
+          "token",
+          "scimBaseUrl"
         ]
       },
       "CreateScimTokenRequest": {

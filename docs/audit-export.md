@@ -44,9 +44,12 @@ cursor at the end: read it from the last row (`tula audit export` does and print
 
 ## What it records
 
-Each export is one `audit.exported` entry with the filters and the number of rows written, as
-the call ends, **also when the reader stops early**. The entry holds no row content. It is
-itself in the log, so the next export includes the one before it.
+Each export is two `audit.exported` entries with the filters. The first (`phase: "started"`,
+`rowCount: 0`) is written **before the first byte**, so an export that fails or is never read to the
+end is still on record. The second (`phase: "finished"`) is written as the call ends, **also when
+the reader stops early**, with the number of rows written. (A streamed response cannot carry a
+trailer, and the log is append-only, so the end is an entry of its own.) The entries hold no row
+content. An export leaves its own started entry out of its stream; the next export includes both.
 
 ## Single sign-on and provisioning events
 

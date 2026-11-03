@@ -3089,6 +3089,14 @@ export interface ProposalFailedEvent {
   test?: true;
 }
 
+export type AuditExportedEventDataPhase = typeof AuditExportedEventDataPhase[keyof typeof AuditExportedEventDataPhase];
+
+
+export const AuditExportedEventDataPhase = {
+  started: 'started',
+  finished: 'finished',
+} as const;
+
 export type AuditExportedEventDataFormat = typeof AuditExportedEventDataFormat[keyof typeof AuditExportedEventDataFormat];
 
 
@@ -3202,6 +3210,7 @@ export const AuditExportedEventDataActorType = {
  * An environment’s audit log was exported. The filters are those of the request; `rowCount` is how many entries were written (a stream that ended early counts what it wrote); `resumed` is true when the request continued an earlier export.
  */
 export interface AuditExportedEventData {
+  phase?: AuditExportedEventDataPhase;
   format: AuditExportedEventDataFormat;
   /**
      * @minimum 0
@@ -7032,6 +7041,8 @@ export interface CreatedScimToken {
   createdAt: string;
   /** The bearer token. Shown once; only its hash is stored. */
   token: string;
+  /** The base URL to give the identity provider. */
+  scimBaseUrl: string;
 }
 
 export interface CreateScimTokenRequest {

@@ -146,6 +146,8 @@ export async function create(
 ): Promise<CreatedSetupLink> {
   await requireOrganization(deps, tenant, input.organizationId)
   const now = deps.clock.now()
+  // shortcut: list-then-insert, so two simultaneous creates may land one past the cap; the
+  // cap keeps a list short and guards nothing, so no environment lock, until a limit is a security one.
   const live = (await deps.setupLinks.list(tenant.environmentId, input.organizationId)).filter(
     (one) => one.revokedAt === null && one.expiresAt.getTime() > now.getTime()
   )

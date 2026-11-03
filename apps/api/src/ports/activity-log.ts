@@ -136,13 +136,6 @@ export interface AuditCriteria {
   size: number
 }
 
-/**
- * Reads the audit log, and lets the retention job end it.
- *
- * Writing has no method here on purpose: activity is only ever written by a store, inside the
- * transaction of the change it records. Nothing changes an entry, and the one thing that
- * removes one is {@link ActivityLog.deleteAuditBefore}.
- */
 /** Which entries an export reads: the list's filters, and an organization. */
 export type AuditExportCriteria = Omit<AuditCriteria, 'page' | 'size'> & {
   /**
@@ -158,6 +151,13 @@ export interface AuditKey {
   id: string
 }
 
+/**
+ * Reads the audit log, and lets the retention job end it.
+ *
+ * Activity is written by a store, inside the transaction of the change it records; `append`
+ * is for the few entries that record no change of a store's (an export). Nothing changes an entry, and the one thing that
+ * removes one is {@link ActivityLog.deleteAuditBefore}.
+ */
 export interface ActivityLog {
   /**
    * Read the next entries of an export: the matches after a position, **oldest first**,

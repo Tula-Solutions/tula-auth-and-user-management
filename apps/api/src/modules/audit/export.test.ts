@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { type AuditLog, auditExportCursor } from '@tula-tech/contract'
 import { createApp } from '~/index'
 import * as Audit from '~/modules/audit/service'
@@ -160,21 +160,29 @@ describe('POST /v1/admin/audit-logs/export', () => {
     expect(Audit.csvCell(null)).toBe('')
   })
 
-  test('records one audit.exported entry with the filters and the row count', async () => {
+  test('records a started entry up front and a finished one with the filters and the row count', async () => {
     await seedEntries(5)
     const from = '2000-01-01T00:00:00.000Z'
     const res = await post({ format: 'csv', action: 'user.deleted', from })
     await res.text()
     const recorded = await exportedEntries()
-    expect(recorded).toHaveLength(1)
-    expect(recorded[0]?.metadata).toEqual({
-      format: 'csv',
-      rowCount: 5,
-      resumed: false,
-      action: 'user.deleted',
-      from,
-    })
+    expect(recorded).toHaveLength(2)
+    const byPhase = (phase: string) => recorded.find((r) => r.metadata.phase === phase)
+    const filters = { format: 'csv', resumed: false, action: 'user.deleted', from }
+    expect(byPhase('started')?.metadata).toEqual({ ...filters, phase: 'started', rowCount: 0 })
+    expect(byPhase('finished')?.metadata).toEqual({ ...filters, phase: 'finished', rowCount: 5 })
     expect(recorded[0]?.actor.type).toBe('admin')
+  })
+
+  test('a stream that fails mid-way still leaves the started entry with its filters', async () => {
+    await seedEntries(3)
+    const spy = spyOn(deps.activityLog, 'listAuditAfter').mockRejectedValue(new Error('db down'))
+    const res = await post({ action: 'user.deleted' })
+    await res.text().catch(() => undefined)
+    spy.mockRestore()
+    const started = (await exportedEntries()).filter((r) => r.metadata.phase === 'started')
+    expect(started).toHaveLength(1)
+    expect(started[0]?.metadata.action).toBe('user.deleted')
   })
 
   test('an export the reader abandons counts the rows it got', async () => {
@@ -183,7 +191,7 @@ describe('POST /v1/admin/audit-logs/export', () => {
     const reader = (res.body as ReadableStream<Uint8Array>).getReader()
     await reader.read()
     await reader.cancel()
-    const [recorded] = await exportedEntries()
+    const recorded = (await exportedEntries()).find((r) => r.metadata.phase === 'finished')
     expect(recorded?.metadata.resumed).toBe(false)
     expect(Number(recorded?.metadata.rowCount)).toBeLessThan(3000)
   })

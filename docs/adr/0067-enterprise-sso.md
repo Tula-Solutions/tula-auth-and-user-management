@@ -115,7 +115,10 @@ created, and who has no other membership, is banned or deleted by it; anyone els
 the membership. Membership changes go through the Organizations service, so the last-manager
 rule of ADR 0065 holds and answers 409. The actor of an audit entry is `directory`. A create
 that cannot join the organization removes the account it just made (a compensating delete, so a
-crash between the two leaves it), and a name sent by the directory is kept in step with the user.
+crash between the two leaves it), and a name sent by the directory is kept in step with the user. So is its
+address (`userName` on a PUT or PATCH), but only for a user the directory manages and only to an
+address on one of the organization's verified domains (400 `invalidValue` otherwise, 409
+`uniqueness` when taken); the entry says `changed: ['email']`. Resources carry `meta.location`.
 
 **Groups (TULA-150).** `/Groups` and `/Groups/:id` (list with `displayName eq`, create, read,
 replace, patch, delete) keep a group and its members per organization (`scim_groups`,
@@ -123,12 +126,25 @@ replace, patch, delete) keep a group and its members per organization (`scim_gro
 `members[value eq "id"]` paths (Okta); `excludedAttributes=members` leaves the members out. A
 group's role comes from the same mapping and the same function an SSO sign-in uses
 (`roleForGroups`), so the two cannot disagree; the SCIM default, when the organization maps no
-group a user is in, is `member`, which is not the connection's `defaultRole`. Role changes go
+group a user is in, is the organization's connection's `defaultRole` (the active one, else the
+most recently tested, else `member`), the same role an SSO sign-in gives. Role changes go
 through `Organizations.changeMemberRole`: taking the only manager out of the mapped group is a 409
 and nothing changes. The role changes and the group write are applied and rolled back by hand,
-not one database transaction. Group names never reach an audit entry or an event, only ids.
+not one database transaction: they are separate stores (organizations, SCIM), and a failure
+between them undoes the role changes in reverse. A user create is the same: a compensating
+delete, and when even that fails the retry adopts the half-made account (a managed user with no
+SCIM record) instead of answering 409, so the directory converges. Group names never reach an audit entry or an event, only ids.
 A setup-portal link creates the organization's SCIM token (`POST /v1/setup/scim-tokens`, shown
 once, no list or read). Bulk is not supported. Usage is in [docs/scim.md](../scim.md).
+
+**Decisions of the Phase 4 review.** A setup link cannot map a group to a role that holds a
+system permission (`sso.role_not_allowed`, 403): "privileged" means an `org:sys:*` key other than a
+`:read` one, so the built-in `member` stays mappable; an existing privileged mapping is kept and
+shown `locked`. The SCIM token request of the portal takes the organization from the link and
+never from the body. `audit.exported` is written twice: `phase: 'started'` before the first byte
+(the filters, no rows) and `phase: 'finished'` with the count; a response cannot carry a trailer
+and the log is append-only, so the second is a new entry, and the export leaves its own started
+entry out of the stream.
 
 ## Amendments
 

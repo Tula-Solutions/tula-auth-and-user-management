@@ -8,6 +8,7 @@ import {
   organizationMemberships,
   organizations,
   proposals,
+  scimGroupMembers,
   scimGroups,
   scimTokens,
   scimUsers,
@@ -565,6 +566,11 @@ test('SSO, SCIM and setup-link tables on a real server: another environment’s 
     await tx
       .insert(scimUsers)
       .values({ id: Bun.randomUUIDv7(), ...scope, organizationId, userId, externalId: 'ext-1' })
+    const groupId = Bun.randomUUIDv7()
+    await tx
+      .insert(scimGroups)
+      .values({ id: groupId, ...scope, organizationId, displayName: 'Engineering' })
+    await tx.insert(scimGroupMembers).values({ id: Bun.randomUUIDv7(), ...scope, groupId, userId })
     await tx.insert(setupLinks).values({
       id: Bun.randomUUIDv7(),
       ...scope,
@@ -583,6 +589,8 @@ test('SSO, SCIM and setup-link tables on a real server: another environment’s 
     organizationGroupRoles,
     scimTokens,
     scimUsers,
+    scimGroups,
+    scimGroupMembers,
     setupLinks,
   ] as const
   for (const table of tables) {
