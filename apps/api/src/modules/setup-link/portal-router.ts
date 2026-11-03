@@ -133,6 +133,7 @@ router.post(
     responses: {
       201: { description: 'The token and its secret.', content: json(CreatedScimTokenSchema) },
       409: openapi.responses[409],
+      413: openapi.responses[413],
       ...errors,
     },
   }),
