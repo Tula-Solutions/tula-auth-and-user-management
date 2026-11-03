@@ -252,6 +252,7 @@ describe('documentation routes', () => {
       '/v1/client/me/factors/backup-codes',
       '/v1/admin/users/{userId}/factors',
       '/v1/admin/audit-logs',
+      '/v1/admin/audit-logs/export',
       '/v1/admin/settings',
       '/v1/client/config',
       '/v1/admin/oauth-providers',

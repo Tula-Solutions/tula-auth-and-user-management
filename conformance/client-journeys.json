@@ -758,6 +758,24 @@
         "decision": "journey"
       }
     },
+    "audit log export": {
+      "core": {
+        "decision": "not_applicable",
+        "reason": "the export is a stream on the admin API, behind a secret key or a dashboard session, neither of which a client SDK holds; `@tula-tech/admin` is the client of that route and tests it."
+      },
+      "expo": {
+        "decision": "not_applicable",
+        "reason": "the export is a stream on the admin API, behind a secret key or a dashboard session; an app holds a publishable key and a user’s session and reaches neither."
+      },
+      "swift": {
+        "decision": "not_applicable",
+        "reason": "the export is a stream on the admin API, behind a secret key or a dashboard session; the Swift client talks to `/v1/client/*` only and reaches neither."
+      },
+      "kotlin": {
+        "decision": "not_applicable",
+        "reason": "the export is a stream on the admin API, behind a secret key or a dashboard session; the Kotlin client talks to `/v1/client/*` only and reaches neither."
+      }
+    },
     "authenticator code replay": {
       "core": {
         "decision": "journey"

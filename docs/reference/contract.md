@@ -191,6 +191,16 @@ dashboard session's) or with the instance admin token itself (no id).
 const AUDIT_ACTOR_TYPES: readonly ["user", "admin", "system", "agent", "instance_admin"]
 ```
 
+### `AUDIT_EXPORT_FORMATS`
+
+_constant_, defined in `packages/contract/src/audit.ts`
+
+The formats an audit export is written in: one JSON object per line, or CSV.
+
+```ts
+const AUDIT_EXPORT_FORMATS: readonly ["ndjson", "csv"]
+```
+
 ### `AUDIT_TARGET_TYPES`
 
 _constant_, defined in `packages/contract/src/audit.ts`
@@ -549,6 +559,28 @@ Who performed an action.
 
 ```ts
 export type AuditActorType = (typeof AUDIT_ACTOR_TYPES)[number]
+```
+
+### `AuditExportCursorSchema`
+
+_constant_, defined in `packages/contract/src/audit.ts`
+
+A position in an audit export: the `occurredAt` and the `id` of the last entry written,
+which is the key the export is ordered and paged by. An export asked to continue `after` it
+writes the entries that follow it, with no gap and no duplicate.
+
+```ts
+const AuditExportCursorSchema: z.ZodString
+```
+
+### `AuditExportFormat`
+
+_type_, defined in `packages/contract/src/audit.ts`
+
+One of {@link AUDIT_EXPORT_FORMATS}.
+
+```ts
+export type AuditExportFormat = (typeof AUDIT_EXPORT_FORMATS)[number]
 ```
 
 ### `AuditLog`
@@ -4404,6 +4436,16 @@ Longest app name, in characters. It is put in email subjects, so it stays short.
 
 ```ts
 const MAX_APP_NAME_LENGTH: 64
+```
+
+### `MAX_AUDIT_EXPORT_ROWS`
+
+_constant_, defined in `packages/contract/src/audit.ts`
+
+The most entries one export request returns; a longer trail is fetched by resuming.
+
+```ts
+const MAX_AUDIT_EXPORT_ROWS: 100000
 ```
 
 ### `MAX_AUDIT_RETENTION_DAYS`
@@ -10149,6 +10191,22 @@ assetLinks([{ platform: 'android', packageName: 'com.example.app', sha256CertFin
 // [{ relation: ['delegate_permission/common.get_login_creds'], target: { … } }]
 ```
 
+### `auditExportCursor`
+
+_function_, defined in `packages/contract/src/audit.ts`
+
+The cursor that resumes an export after an entry.
+
+```ts
+export function auditExportCursor(entry: { id: string; occurredAt: string }): string
+```
+
+**Parameters**
+
+- `entry`: The last entry an export wrote (its `occurredAt` and `id`).
+
+**Returns** The value for the export's `after` parameter.
+
 ### `bindsCodeWithPkce`
 
 _function_, defined in `packages/contract/src/redirect-url.ts`
@@ -11952,6 +12010,22 @@ export function ownClientIdAmong(clientId: string, additionalClientIds: readonly
 ```ts
 ownClientIdAmong('1-web.apps.googleusercontent.com', ['1-ios.apps.googleusercontent.com']) // -1
 ```
+
+### `parseAuditExportCursor`
+
+_function_, defined in `packages/contract/src/audit.ts`
+
+Take a cursor apart.
+
+```ts
+export function parseAuditExportCursor(cursor: string): { occurredAt: string; id: string } | null
+```
+
+**Parameters**
+
+- `cursor`: A value of {@link AuditExportCursorSchema}.
+
+**Returns** The instant and the entry id, or `null` when it is not a cursor.
 
 ### `parseEmailTemplate`
 

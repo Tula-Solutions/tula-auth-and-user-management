@@ -66,6 +66,11 @@ test('an API key is shown once, leaves nothing behind, and can be revoked', asyn
   await expectScreenAccessible(page, 'audit log, filtered')
   expect(await entries.innerHTML()).not.toContain(key)
 
+  // The export is a file the browser saves, and the export is itself recorded.
+  const download = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Export NDJSON' }).click()
+  expect((await download).suggestedFilename()).toBe('audit-log.ndjson')
+
   await page.getByLabel('Action').selectOption('user.deleted')
   await page.getByLabel('From (day, UTC)').fill('2001-01-01')
   await page.getByLabel('To (day, UTC)').fill('2001-01-02')

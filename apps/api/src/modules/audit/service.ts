@@ -1,11 +1,14 @@
 import {
   type ActivityType,
   type AuditActorType,
+  type AuditExportFormat,
   type AuditLog,
   type AuditLogList,
   DEFAULT_PAGE_SIZE,
   type EventData,
   type EventTargetType,
+  MAX_AUDIT_EXPORT_ROWS,
+  parseAuditExportCursor,
 } from '@tula-tech/contract'
 import type { Deps, Tenant } from '~/dependencies'
 import { type Actor, cleanOrigin } from '~/lib/actor'
@@ -156,5 +159,140 @@ export async function list(
   return {
     meta: { totalCount, totalPages: Math.ceil(totalCount / perPage), page, perPage },
     data: entries.map(toAuditLog),
+  }
+}
+
+/** What an export is asked for: the list's filters, an organization, a format and a cursor. */
+export interface ExportInput extends Omit<ListInput, 'page' | 'size'> {
+  /** Only entries about this organization. */
+  organizationId?: string
+  format: AuditExportFormat
+  /** A cursor from an earlier export: write the entries after it. */
+  after?: string
+}
+
+/** The entries read from the store at a time while an export streams. */
+const EXPORT_PAGE = 1000
+
+/** The columns of a CSV export: the list's fields, with `actor`, `target` and `metadata` flattened. */
+export const EXPORT_CSV_COLUMNS = [
+  'id',
+  'occurredAt',
+  'action',
+  'actorType',
+  'actorId',
+  'targetType',
+  'targetId',
+  'ipAddress',
+  'userAgent',
+  'metadata',
+] as const
+
+/**
+ * One CSV cell.
+ *
+ * A cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return is prefixed with `'`:
+ * a spreadsheet would run it as a formula, and the user agent and the metadata are text a
+ * stranger chose (OWASP "CSV injection"). Quoting follows RFC 4180.
+ *
+ * @param value - The cell's text, or `null` for an empty one.
+ * @returns The cell as written to the file.
+ */
+export function csvCell(value: string | null): string {
+  if (value === null || value === '') {
+    return ''
+  }
+  const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value
+  return /[",\r\n]/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe
+}
+
+function csvRow(log: AuditLog): string {
+  return `${[
+    log.id,
+    log.occurredAt,
+    log.action,
+    log.actor.type,
+    log.actor.id,
+    log.target?.type ?? null,
+    log.target?.id ?? null,
+    log.ipAddress,
+    log.userAgent,
+    JSON.stringify(log.metadata),
+  ]
+    .map(csvCell)
+    .join(',')}\r\n`
+}
+
+/**
+ * Stream an environment's audit log, oldest first, as NDJSON or CSV, and record the export.
+ *
+ * Keyset-paged on `(occurredAt, id)`, so memory stays at one page whatever the length and a
+ * resume with the last entry's cursor (`auditExportCursor`) continues with no gap and no
+ * duplicate. One request writes at most `MAX_AUDIT_EXPORT_ROWS` entries. The `audit.exported`
+ * entry is written when the stream ends, **also when the reader stops early**, with the
+ * number of rows actually written: the log shows what left the system.
+ *
+ * @param deps - Activity log, ids and clock.
+ * @param scope - The project and environment.
+ * @param actor - Who asked.
+ * @param input - Filters, format and optional cursor.
+ * @returns Chunks of text to write to the response, in order.
+ */
+export async function* exportEntries(
+  deps: Pick<Deps, 'activityLog' | 'ids' | 'clock'>,
+  scope: Pick<Tenant, 'projectId' | 'environmentId'>,
+  actor: Actor,
+  input: ExportInput
+): AsyncGenerator<string> {
+  const cursor = input.after ? parseAuditExportCursor(input.after) : null
+  let after = cursor ? { occurredAt: new Date(cursor.occurredAt), id: cursor.id } : null
+  const criteria = {
+    action: input.action,
+    actorId: input.actorId,
+    targetId: input.targetId,
+    actorType: input.actorType,
+    organizationId: input.organizationId,
+    from: input.from ? new Date(input.from) : undefined,
+    to: input.to ? new Date(input.to) : undefined,
+  }
+  let rows = 0
+  try {
+    if (input.format === 'csv') {
+      yield `${EXPORT_CSV_COLUMNS.join(',')}\r\n`
+    }
+    while (rows < MAX_AUDIT_EXPORT_ROWS) {
+      const want = Math.min(EXPORT_PAGE, MAX_AUDIT_EXPORT_ROWS - rows)
+      const page = await deps.activityLog.listAuditAfter(scope.environmentId, criteria, after, want)
+      for (const record of page) {
+        const log = toAuditLog(record)
+        rows += 1
+        yield input.format === 'csv' ? csvRow(log) : `${JSON.stringify(log)}\n`
+      }
+      const last = page.at(-1)
+      if (!last || page.length < want) {
+        break
+      }
+      after = { occurredAt: last.occurredAt, id: last.id }
+    }
+  } finally {
+    await deps.activityLog.append(
+      entry(deps, scope, {
+        type: 'audit.exported',
+        actor,
+        target: { type: 'environment', id: scope.environmentId },
+        data: {
+          format: input.format,
+          rowCount: rows,
+          resumed: cursor !== null,
+          ...(input.action && { action: input.action }),
+          ...(input.actorId && { actorId: input.actorId }),
+          ...(input.actorType && { actorType: input.actorType }),
+          ...(input.targetId && { targetId: input.targetId }),
+          ...(input.organizationId && { organizationId: input.organizationId }),
+          ...(input.from && { from: input.from }),
+          ...(input.to && { to: input.to }),
+        },
+      })
+    )
   }
 }

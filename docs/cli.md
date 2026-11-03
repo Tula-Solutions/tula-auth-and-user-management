@@ -460,6 +460,29 @@ One guide per provider says what to export and what is and is not carried:
 Exit codes: 0 done and nothing refused (or a report with nothing to refuse), 2 something was
 refused (an answer, not a failure), 1 an error. The progress file keeps what was done.
 
+## `tula audit export`
+
+```sh
+tula audit export --from 2026-01-01 --to 2026-02-01 > january.ndjson
+tula audit export --format csv --resume "$CURSOR" >> january.csv
+```
+
+Streams the environment's audit log to standard output, oldest entry first
+([Exporting the audit log](audit-export.md) says what the server sends and records).
+
+| Option | |
+| --- | --- |
+| `--format <ndjson\|csv>` | The default is `ndjson`. |
+| `--from <date>`, `--to <date>` | Only entries at or after, and before, these times (ISO 8601). |
+| `--action <type>`, `--organization <id>` | Only one kind of entry; only an organization's. |
+| `--resume <cursor>` | Continue after the entry a stopped export last wrote. |
+| `--env`, `--api-url`, `--insecure-http`, `--secret-key-file` | As for the other commands. |
+
+- **The cursor is printed on standard error** when the export ends, so that a redirected
+  file holds only entries. Pass it to `--resume` and append to the same file; a CSV resumed
+  has its header row again, so skip it.
+- Exit codes: 0 done, 1 an error (the cursor of what was written is still printed).
+
 ## `tula diff` and `tula apply`
 
 See [config.md](config.md). Exit codes of `diff`: 0 no changes, 2 changes pending, 1 an error.
