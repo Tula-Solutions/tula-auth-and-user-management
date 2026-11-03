@@ -220,13 +220,14 @@ router.post(
     },
   }),
   limit('my_sso_refresh_ip', SSO_MEMBER_WRITE_RATE_LIMIT),
+  publishableKey(),
+  // After the key: byEnvironment reads the tenant it resolves, and skips the count without it.
   rateLimit({
     name: 'sso_refresh_metadata',
     limit: REFRESH_RATE_LIMIT,
     window: '1m',
     key: byEnvironment,
   }),
-  publishableKey(),
   sessionAuth(),
   validator('param', ConnectionParam, validationHook),
   async (c) => {
@@ -262,8 +263,8 @@ router.post(
     },
   }),
   limit('my_sso_test_ip', SSO_MEMBER_WRITE_RATE_LIMIT),
-  rateLimit({ name: 'sso_test', limit: TEST_RATE_LIMIT, window: '1m', key: byEnvironment }),
   publishableKey(),
+  rateLimit({ name: 'sso_test', limit: TEST_RATE_LIMIT, window: '1m', key: byEnvironment }),
   sessionAuth(),
   validator('param', ConnectionParam, validationHook),
   validator('json', SsoTestStartRequestSchema, validationHook),

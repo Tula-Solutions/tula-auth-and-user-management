@@ -950,7 +950,7 @@ describe('enforcement of sign-up and recovery (decision 12)', () => {
       answers.push(await answer(await post('/v1/client/sign-ups', { email, password: PASSWORD })))
     }
     expect(answers[0]?.status).toBe(403)
-    expect((answers[0]?.body as { code: string }).code).toBe('auth.method_disabled')
+    expect((answers[0]?.body as { code: string } | undefined)?.code).toBe('auth.method_disabled')
     expect(answers[1]).toEqual(answers[0])
     expect(answers[2]).toEqual(answers[0])
     expect(deps.mailer.outbox).toHaveLength(0)
