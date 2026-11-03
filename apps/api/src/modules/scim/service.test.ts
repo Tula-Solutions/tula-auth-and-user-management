@@ -509,6 +509,29 @@ describe('a directory renames the address of an account it manages (DECISIONS 14
     expect(await emailOf(id)).toBe('maya@acme.test')
   })
 
+  test('a request refused for an externalId another user holds stores no new address', async () => {
+    await verifiedDomain(orgId, 'acme.test')
+    const id = await provision('maya@acme.test')
+    await provision('lee@acme.test')
+    const res = await scim(
+      'PUT',
+      `/Users/${id}`,
+      okta('maya.o@acme.test', { externalId: 'ext-lee@acme.test' })
+    )
+    expect(res.status).toBe(409)
+    expect(await emailOf(id)).toBe('maya@acme.test')
+  })
+
+  test('a deactivation sent with an off-domain userName still takes effect', async () => {
+    await verifiedDomain(orgId, 'acme.test')
+    const id = await provision('maya@acme.test')
+    const res = await scim('PUT', `/Users/${id}`, okta('maya@elsewhere.test', { active: false }))
+    expect(res.status).toBe(200)
+    expect(res.body.active).toBe(false)
+    expect(await members(id)).toBe(0)
+    expect(await emailOf(id)).toBe('maya@acme.test')
+  })
+
   test('an account the directory only linked keeps its address', async () => {
     await verifiedDomain(orgId, 'acme.test')
     const existing = await Users.create(

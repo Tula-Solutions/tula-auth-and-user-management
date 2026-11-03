@@ -139,9 +139,28 @@ async function apply(
 ) {
   const { record, user } = await load(deps, ctx, userId)
   const { environmentId } = ctx.tenant
+  const deactivating = changes.active === false && record.active
+  // Ending access comes first and never waits on the rest of the request; a rename sent with it
+  // is dropped when it is refused (off-domain or taken) rather than failing the deactivation.
+  if (deactivating) {
+    await setActive(deps, ctx, user, false)
+  }
+  const externalIdChanged =
+    changes.externalId !== undefined && changes.externalId !== record.externalId
+  // Every conflict is checked before the first write, so a refused request changes nothing.
+  if (externalIdChanged && changes.externalId !== null) {
+    const holder = await deps.scim.findUserByExternalId(
+      environmentId,
+      ctx.organizationId,
+      changes.externalId as string
+    )
+    if (holder && holder.userId !== userId) {
+      throw uniqueness()
+    }
+  }
+  await applyEmail(deps, ctx, user, changes.userName, !deactivating)
   await applyNames(deps, ctx, user, changes.name)
-  await applyEmail(deps, ctx, user, changes.userName)
-  if (changes.externalId !== undefined && changes.externalId !== record.externalId) {
+  if (externalIdChanged) {
     const refusal = await deps.scim.updateUser(
       environmentId,
       ctx.organizationId,
@@ -153,8 +172,8 @@ async function apply(
       throw uniqueness()
     }
   }
-  if (changes.active !== undefined && changes.active !== record.active) {
-    await setActive(deps, ctx, user, changes.active)
+  if (changes.active === true && !record.active) {
+    await setActive(deps, ctx, user, true)
   }
   const fresh = await load(deps, ctx, userId)
   return resource(deps, fresh.user, fresh.record)
@@ -200,21 +219,34 @@ async function applyNames(deps: Deps, ctx: ScimContext, user: UserRecord, name?:
  * Apply a directory's change of `userName` to the address of an account this directory
  * created (DECISIONS 14). A linked account's address is the person's own and is never changed
  * here. The new address must be on a domain the organization has verified and unused in the
- * environment (409 otherwise); the entry names the field, never the address, and no session
+ * environment (409 otherwise); with `refuse` false (the request deactivates the user) a refused
+ * rename is dropped instead. The entry names the field, never the address, and no session
  * ends.
  */
-async function applyEmail(deps: Deps, ctx: ScimContext, user: UserRecord, userName?: string) {
+async function applyEmail(
+  deps: Deps,
+  ctx: ScimContext,
+  user: UserRecord,
+  userName: string | undefined,
+  refuse: boolean
+) {
   if (userName === undefined || user.managedByDirectoryId !== ctx.organizationId) {
     return
   }
   const parsed = parseEmail(userName)
   if (!parsed) {
+    if (!refuse) {
+      return
+    }
     throw invalidValue('userName must be an email address.')
   }
   if (parsed.normalized === user.emailNormalized) {
     return
   }
   if (!(await onVerifiedDomain(deps, ctx, parsed.normalized))) {
+    if (!refuse) {
+      return
+    }
     throw invalidValue('userName is not on a domain this organization has verified.')
   }
   const stored = await deps.users.replaceEmail(
@@ -230,6 +262,9 @@ async function applyEmail(deps: Deps, ctx: ScimContext, user: UserRecord, userNa
     })
   )
   if (stored === 'taken') {
+    if (!refuse) {
+      return
+    }
     throw uniqueness()
   }
   if (stored === 'not_found') {

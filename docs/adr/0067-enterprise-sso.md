@@ -118,7 +118,8 @@ that cannot join the organization removes the account it just made (a compensati
 crash between the two leaves it), and a name sent by the directory is kept in step with the user. So is its
 address (`userName` on a PUT or PATCH), but only for a user the directory manages and only to an
 address on one of the organization's verified domains (400 `invalidValue` otherwise, 409
-`uniqueness` when taken); the entry says `changed: ['email']`. Resources carry `meta.location`.
+`uniqueness` when taken; a refused request changes nothing, and a request that deactivates the user
+deactivates first and drops a refused rename); the entry says `changed: ['email']`. Resources carry `meta.location`.
 
 **Groups (TULA-150).** `/Groups` and `/Groups/:id` (list with `displayName eq`, create, read,
 replace, patch, delete) keep a group and its members per organization (`scim_groups`,
