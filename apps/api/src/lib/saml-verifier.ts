@@ -389,6 +389,12 @@ async function check(
     'name_id_invalid'
   )
 
+  // The same for attribute values: a comment would be dropped by the signed form and joined.
+  const values = assertionEl.getElementsByTagNameNS(NS_ASSERTION, 'AttributeValue')
+  for (let i = 0; i < values.length; i++) {
+    plainText(values.item(i) as Element, 'attribute_invalid')
+  }
+
   // From here on, only the signed canonical XML is read for the assertion.
   const signedDoc = parse(signedXml)
   const a = signedDoc.documentElement
